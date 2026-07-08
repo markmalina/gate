@@ -11,7 +11,7 @@ Status: private
 Development is managed by a three-part workflow:
 
 ```text
-Mark → ChatGPT → Codex → GitHub PR → CI → ChatGPT review → Mark merge
+Mark → ChatGPT → Codex → GitHub PR → CI → ChatGPT review → Mark explicit merge approval
 ```
 
 Rules:
@@ -25,6 +25,8 @@ Rules:
 - Duplicate PRs are not allowed; one task should have one active PR.
 - Do not merge while CI is red.
 - Do not deploy from an unaccepted PR.
+- ChatGPT may merge through the GitHub connector only after Mark gives a direct merge command.
+- Green CI alone is not merge approval.
 
 Full team workflow: [`docs/TEAM_WORKFLOW.md`](docs/TEAM_WORKFLOW.md).
 
