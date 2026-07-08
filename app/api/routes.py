@@ -2,7 +2,6 @@
 
 import hmac
 import os
-import uuid
 from dataclasses import dataclass
 from typing import Annotated, Any, cast
 
@@ -88,7 +87,11 @@ async def telegram_webhook(
             detail="Telegram webhook secret is not configured",
         )
 
-    if x_telegram_secret is None or not hmac.compare_digest(x_telegram_secret, configured_secret):
+    invalid_secret = x_telegram_secret is None or not hmac.compare_digest(
+        x_telegram_secret,
+        configured_secret,
+    )
+    if invalid_secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid webhook secret")
 
     raw_update = await request.json()
