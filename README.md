@@ -8,25 +8,24 @@ Status: private
 
 ## 1. Development workflow
 
-Development is managed by a three-part workflow:
+Development is managed by a controlled GitHub workflow:
 
 ```text
-Mark → ChatGPT → Codex → GitHub PR → CI → ChatGPT review → Mark explicit merge approval
+Mark → ChatGPT → GitHub PR → CI → ChatGPT review → Mark explicit merge approval → Mark explicit deploy approval
 ```
 
 Rules:
 
-- Mark defines intent and copies approved tasks into Codex Cloud.
-- ChatGPT writes precise Codex tasks, reviews PRs and controls architecture quality.
-- Codex implements code and must push changes to GitHub PR branches.
-- GitHub PR + CI is the source of truth, not Codex's local workspace or textual summary.
-- A Codex task is not done until the PR branch is updated, the PR head SHA changes and CI starts.
-- A local Codex commit without GitHub push is not done.
+- Mark defines intent, priorities and constraints.
+- ChatGPT writes precise implementation tasks, reviews PRs and controls architecture quality.
+- ChatGPT may create or update GitHub PRs directly when it decides this is the correct next development step.
+- Codex may still be used to generate code or patches, but Codex local output is not the source of truth.
+- GitHub PR + CI is the source of truth, not a local Codex workspace or textual summary.
 - Duplicate PRs are not allowed; one task should have one active PR.
 - Do not merge while CI is red.
-- Do not deploy from an unaccepted PR.
 - ChatGPT may merge through the GitHub connector only after Mark gives a direct merge command.
 - Green CI alone is not merge approval.
+- Production deployment happens only after Mark gives a direct deploy command.
 
 Full team workflow: [`docs/TEAM_WORKFLOW.md`](docs/TEAM_WORKFLOW.md).
 
@@ -231,6 +230,7 @@ This section is the handoff for any future AI assistant, ChatGPT session, or Cod
 - `/deployment/fingerprint` does not expose `TELEGRAM_BOT_TOKEN` or other secrets.
 - No Telegram webhook sprint is merged yet.
 - No automatic Telegram sending exists in `main` yet.
+- Current Codex Tasks environment cannot reliably push branches or create PRs; ChatGPT may create GitHub PRs directly when needed.
 
 ### Immediate operational step
 
@@ -300,7 +300,16 @@ Do not:
 - commit real tokens or secrets;
 - log BotFather token;
 - expose secrets through `/health` or `/deployment/fingerprint`;
-- merge without green CI and Mark's explicit merge command.
+- merge without green CI and Mark's explicit merge command;
+- deploy without Mark's explicit deploy command.
+
+### PR, merge and deploy authority
+
+- ChatGPT may create or update PRs directly when this is the appropriate development step.
+- ChatGPT may merge only after Mark gives a direct merge command.
+- ChatGPT may deploy or trigger production redeploy only after Mark gives a direct deploy command.
+- Green CI is required for merge, but green CI alone is not merge approval.
+- Merge approval is not deploy approval.
 
 ### Codex task completion rule
 
