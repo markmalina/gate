@@ -1,0 +1,16 @@
+.env
+*.session
+*.sqlite
+*.db
+__pycache__/
+node_modules/
+dist/
+build/
+.DS_Store
+.idea/
+.vscode/
+logs/
+*.log
+.pytest_cache/
+.venv/
+venv/
