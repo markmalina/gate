@@ -44,8 +44,7 @@ class FakeSession:
 
     async def flush(self) -> None:
         for item in self.objects:
-            has_no_id = getattr(item, "id", None) is None
-            if isinstance(item, Bot | GateEvent | AuditLog) and has_no_id:
+            if isinstance(item, Bot | GateEvent | AuditLog) and item.id is None:
                 item.id = uuid.uuid4()
 
     async def commit(self) -> None:
