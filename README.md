@@ -1,35 +1,91 @@
 # Gate
 
-Gate is a separate technical project for a cloud-first communication gateway backend.
-It is the new architecture name that replaces the old working name “Secretary”, but
-Gate is not Alpha, not Mayak and not SysteM.
+Gate is a separate cloud-first communication gateway backend.
 
-Primary Telegram bot: `@gate_m_bot`.
-
-Repository: https://github.com/markmalina/gate
+Primary Telegram bot: `@gate_m_bot`  
+Repository: https://github.com/markmalina/gate  
 Status: private
 
-## Core formula
+## 1. Development workflow
+
+Development is managed by a three-part workflow:
+
+```text
+Mark → ChatGPT → Codex → GitHub PR → CI → ChatGPT review → Mark merge
+```
+
+Rules:
+
+- Mark defines intent and copies approved tasks into Codex Cloud.
+- ChatGPT writes precise Codex tasks, reviews PRs and controls architecture quality.
+- Codex implements code and must push changes to GitHub PR branches.
+- GitHub PR + CI is the source of truth, not Codex's local workspace or textual summary.
+- A Codex task is not done until the PR branch is updated, the PR head SHA changes and CI starts.
+- A local Codex commit without GitHub push is not done.
+- Duplicate PRs are not allowed; one task should have one active PR.
+- Do not merge while CI is red.
+- Do not deploy from an unaccepted PR.
+
+Full team workflow: [`docs/TEAM_WORKFLOW.md`](docs/TEAM_WORKFLOW.md).
+
+## 2. What Gate is
+
+Gate is the new architecture name that replaces the old working name “Secretary”.
+
+Gate is not Alpha.  
+Gate is not Mayak.  
+Gate is not SysteM.
+
+Gate is a separate technical project that connects Telegram bots, Telegram accounts and Mark's internal projects.
+
+Core formula:
 
 ```text
 Telegram → Gate → Project → Reply → Approval → Telegram → Memory
 ```
 
-Gate does not think by itself. Gate routes messages, delivers replies only when the
-configured mode permits it, and records communication facts.
+Gate does not think by itself. Gate routes messages, delivers replies only when the configured mode permits it, and records communication facts.
 
-## Product principles
+## 3. Current technical assignment
 
-- Gate is not Alpha.
-- Gate is not Mayak.
-- Gate is not SysteM.
-- Gate is a separate technical project.
-- Railway is the primary deployment target.
-- The default mode is `manual`.
-- There is no automatic sending in v0.
-- Bot tokens and bearer tokens must live only in cloud/runtime environment variables.
+Bootstrap Gate as a production-oriented backend using the same cloud-first stack pattern as the previous Telegram Gateway / Secretary project.
 
-## Stack
+Current v0 scope:
+
+- FastAPI backend;
+- PostgreSQL database;
+- SQLAlchemy 2 async domain models;
+- Alembic migrations;
+- `/health` endpoint;
+- `/deployment/fingerprint` endpoint with no secrets;
+- Railway deployment config;
+- Dockerfile;
+- GitHub Actions CI;
+- default reply mode: `manual`;
+- no automatic sending in v0.
+
+The first functional direction after the backend foundation is a safe owner workflow:
+
+```text
+incoming Telegram message
+→ Gate event
+→ project routing
+→ suggested reply / draft
+→ Mark approval
+→ explicit send
+→ audit log / memory fact
+```
+
+## 4. Product principles
+
+- Gate is a communication gateway, not the brain.
+- Bots are adapters, not business-logic containers.
+- Gate Core owns routing, permissions, reply modes and audit logging.
+- Contexts must not be mixed: personal Mark ≠ Mayak ≠ Alpha ≠ client project.
+- AI may suggest text in future versions, but must never approve or send by itself.
+- Real secrets must live only in Railway or GitHub secret storage.
+
+## 5. Stack
 
 - Python 3.12
 - FastAPI
@@ -45,9 +101,10 @@ configured mode permits it, and records communication facts.
 - Railway deployment
 - GitHub Actions CI
 
-## Cloud deployment
+## 6. Cloud deployment
 
 Gate is designed to run as a deployed backend rather than a localhost-only product path.
+
 Railway should provide these environment variables:
 
 ```text
@@ -62,23 +119,26 @@ ADMIN_BEARER_TOKEN=
 
 Use `.env.example` as a safe template only. Do not commit real secrets or Telegram tokens.
 
-## Health endpoints
+Railway deployment must run migrations before app start:
 
-- `GET /health` returns service health and the current non-secret mode metadata.
-- `GET /deployment/fingerprint` returns non-secret deployment metadata such as service,
-  environment, commit SHA, primary bot username and default mode.
+```text
+alembic upgrade head
+```
 
-## Core entities
+## 7. Health endpoints
+
+- `GET /health` returns service health and current non-secret mode metadata.
+- `GET /deployment/fingerprint` returns non-secret deployment metadata such as service, environment, commit SHA, primary bot username and default mode.
+
+## 8. Core entities
 
 ### Bot
 
 A concrete Telegram bot adapter: username, secret reference, runtime state and permissions.
-The current first bot is `@gate_m_bot`. The actual Telegram token is never stored in code.
 
 ### Account
 
-A concrete Telegram account context such as Mark’s personal account, a Belarus account,
-a Russian account, a project account or a future client account.
+A concrete Telegram account context: Mark's personal account, Belarus account, Russian account, project account or future client account.
 
 ### Project
 
@@ -96,7 +156,7 @@ A received communication event with bot, account, chat, sender, type, text and p
 
 An audit record for routing, approval, operational and future sending decisions.
 
-## Reply modes
+## 9. Reply modes
 
 | Mode | Meaning | v0 status |
 |---|---|---|
@@ -105,7 +165,7 @@ An audit record for routing, approval, operational and future sending decisions.
 | `auto-safe` | Gate answers only safe predefined cases. | Future |
 | `auto-full` | Gate answers autonomously inside a project boundary. | Future, explicit permission only |
 
-## Repository structure
+## 10. Repository structure
 
 ```text
 app/
@@ -120,6 +180,8 @@ app/
   services/
 alembic/
   versions/
+docs/
+  TEAM_WORKFLOW.md
 tests/
 .github/workflows/ci.yml
 Dockerfile
@@ -128,7 +190,7 @@ pyproject.toml
 .env.example
 ```
 
-## Development checks
+## 11. Development checks
 
 CI runs the production backend checks:
 
