@@ -8,7 +8,11 @@ import httpx
 class TelegramClient:
     """Small async Telegram Bot API client."""
 
-    def __init__(self, credential: str, api_base_url: str = "https://api.telegram.org") -> None:
+    def __init__(
+        self,
+        credential: str,
+        api_base_url: str = "https://api.telegram.org",
+    ) -> None:
         self._credential = credential
         self._api_base_url = api_base_url.rstrip("/")
 
