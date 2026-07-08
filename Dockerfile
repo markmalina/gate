@@ -10,7 +10,7 @@ COPY pyproject.toml alembic.ini ./
 COPY app ./app
 COPY alembic ./alembic
 
-RUN pip install --upgrade pip && pip install ".[dev]"
+RUN pip install --upgrade pip && pip install .
 
 EXPOSE 8000
 
