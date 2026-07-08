@@ -14,6 +14,7 @@ Mark:
 - copies approved task prompts from ChatGPT into Codex Cloud when Codex is useful;
 - returns Codex reports, PR links, errors and CI results back to ChatGPT when Codex is used;
 - may ask ChatGPT to create or update GitHub pull requests when ChatGPT decides a PR is the correct next step;
+- may allow ChatGPT to implement small, bounded development sprints directly when Codex is not the fastest reliable path;
 - gives the final explicit approval before merge;
 - may ask ChatGPT to perform the GitHub merge through the GitHub connector;
 - is the only authority who can approve production deployment;
@@ -30,6 +31,8 @@ ChatGPT:
 - checks PR scope, diffs, CI status and GitHub Actions logs;
 - decides whether a GitHub PR should be created or updated;
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
+- may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
+- must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
 - may use GitHub API for emergency repair, repository hygiene and documentation updates;
 - may merge a PR through the GitHub connector only after Mark gives a direct merge command;
 - must not merge automatically or infer merge approval from green CI alone;
@@ -44,6 +47,7 @@ Codex:
 
 - may write code or generate patches;
 - may be asked to implement a task when its environment has real repository access;
+- remains the preferred implementation path for larger or multi-file feature packages when its environment can create PRs reliably;
 - must stop if it cannot access GitHub, push branches or create PRs;
 - must not claim completion for a local-only commit.
 
@@ -65,7 +69,7 @@ A development task is complete only when:
 ```text
 Mark describes intent
 → ChatGPT decides the next development step
-→ ChatGPT may create/update a GitHub PR directly or delegate implementation to Codex
+→ ChatGPT may create/update a GitHub PR directly, implement a small bounded sprint directly, or delegate implementation to Codex
 → GitHub Actions CI runs
 → ChatGPT reviews GitHub state, not just summaries
 → ChatGPT decides: fix, accept, or reject
@@ -86,6 +90,10 @@ ChatGPT may create a PR without a separate confirmation when:
 - the PR does not deploy production;
 - secrets are not exposed.
 
+Permission to create a PR is not automatically permission to perform broad development instead of Codex.
+
+ChatGPT may perform implementation directly only under the small sprint policy below.
+
 ChatGPT must still report:
 
 - PR number;
@@ -93,6 +101,40 @@ ChatGPT must still report:
 - head SHA;
 - CI status;
 - whether the PR is ready, blocked or needs fixes.
+
+## Small sprint development policy
+
+ChatGPT may perform development directly instead of Codex only for small, bounded sprints.
+
+A small sprint means:
+
+- one narrow product behavior, bug fix or documentation update;
+- clear acceptance criteria;
+- limited architectural risk;
+- no broad refactor;
+- no large multi-module redesign;
+- no secret handling beyond references to environment variable names;
+- no production deployment;
+- CI can validate the change.
+
+Examples of small sprints:
+
+- add one endpoint with tests;
+- fix one failing CI issue;
+- add one safe predefined Telegram response rule;
+- update documentation or workflow policy;
+- adjust configuration plumbing for one already-defined behavior.
+
+Not small sprints:
+
+- redesign Gate routing architecture;
+- add AI reply generation;
+- implement broad approval workflows end-to-end;
+- change deployment infrastructure substantially;
+- rewrite database schema across multiple domains;
+- introduce autonomous sending beyond predefined safe rules.
+
+When the scope is not clearly small, ChatGPT must either delegate to Codex or ask Mark for explicit confirmation before implementing.
 
 ## Merge policy
 
@@ -115,7 +157,7 @@ ChatGPT must not merge based only on:
 
 ## Deployment policy
 
-Production deployment is more restricted than PR creation.
+Production deployment is more restricted than PR creation or small sprint implementation.
 
 ChatGPT must not trigger, force, retry, or approve production deployment unless Mark gives a direct deploy command.
 
@@ -126,7 +168,7 @@ Valid deploy commands include explicit language such as:
 - `деплой`;
 - `запускай в production`.
 
-PR creation, CI checks, review comments and documentation updates are not deployment approval.
+PR creation, small sprint implementation, CI checks, review comments, merge approval and documentation updates are not deployment approval.
 
 ## Codex task rules
 
@@ -186,13 +228,14 @@ If Codex cannot push to GitHub because of network, auth or tunnel errors, it mus
 - exact error output;
 - whether the working tree is clean.
 
-ChatGPT may then decide whether to transfer the changes through the GitHub connector, create a PR directly, or ask Mark to use another coding environment.
+ChatGPT may then decide whether to transfer the changes through the GitHub connector, implement a small bounded sprint directly, create a PR directly, or ask Mark to use another coding environment.
 
 ## Current active development policy
 
 For the current Gate Telegram Ping v1 sprint:
 
 - Railway backend is healthy;
-- next product PR should implement `ping` → `Gate online` through Telegram webhook;
-- PR creation may be done by ChatGPT when implementation is available;
+- `ping` → `Gate online` through Telegram webhook is considered a small bounded sprint;
+- ChatGPT may implement small fixes on the existing PR to get CI green;
+- larger follow-up features should be delegated to Codex or explicitly re-approved by Mark;
 - production deploy must wait for Mark's explicit deployment command.
