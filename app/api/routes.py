@@ -35,9 +35,8 @@ class TelegramUpdateEvent:
 def get_telegram_client(settings: Settings = settings_dependency) -> TelegramClient:
     """Build a Telegram API client from runtime configuration."""
 
-    credential = cast(str, getattr(settings, "telegram_" + "bot_" + "token"))
     api_base_url = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org")
-    return TelegramClient(credential=credential, api_base_url=api_base_url)
+    return TelegramClient(credential=settings.telegram_bot_token, api_base_url=api_base_url)
 
 
 telegram_client_dependency = Depends(get_telegram_client)
