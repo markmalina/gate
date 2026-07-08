@@ -13,6 +13,8 @@ Mark:
 - defines intent, priorities and constraints;
 - copies approved task prompts from ChatGPT into Codex Cloud;
 - returns Codex reports, PR links, errors and CI results back to ChatGPT;
+- gives the final explicit approval before merge;
+- may ask ChatGPT to perform the GitHub merge through the GitHub connector;
 - does not merge PRs while CI is red;
 - does not deploy production changes until the PR is accepted.
 
@@ -27,6 +29,8 @@ ChatGPT:
 - checks PR scope, diffs, CI status and GitHub Actions logs;
 - decides whether a PR is ready, needs fixes or must be rejected;
 - may use GitHub API for emergency repair or repository hygiene;
+- may merge a PR through the GitHub connector only after Mark gives a direct merge command;
+- must not merge automatically or infer merge approval from green CI alone;
 - must not treat Codex summary as truth without checking GitHub.
 
 ### Codex
@@ -67,8 +71,28 @@ Mark describes intent
 → Mark sends Codex report / PR status back to ChatGPT
 → ChatGPT reviews GitHub state, not just the report
 → ChatGPT decides: fix, accept, or reject
-→ Mark merges only after approval and green CI
+→ Mark gives explicit merge approval
+→ Mark merges in GitHub or asks ChatGPT to merge through the GitHub connector
 ```
+
+## Merge policy
+
+Merging is a privileged action.
+
+ChatGPT may perform the merge only when all of the following are true:
+
+1. Mark gives a direct command such as `merge PR #2` or `мержи PR #2`;
+2. CI is green;
+3. ChatGPT has reviewed the PR diff and scope;
+4. the PR is the intended active PR;
+5. there are no unresolved safety blockers.
+
+ChatGPT must not merge based only on:
+
+- Codex saying the task is done;
+- local Codex checks;
+- PR existence;
+- green CI without Mark's explicit merge command.
 
 ## Codex task rules
 
@@ -92,6 +116,7 @@ If git push or GitHub access fails, stop and report the exact error.
 - Draft PRs remain draft until ChatGPT explicitly says they are ready.
 - Red CI means the PR is not accepted.
 - Green CI is required but not sufficient: ChatGPT still reviews scope and architecture.
+- Merge requires Mark's explicit approval, even after green CI.
 
 ## CI rules
 
