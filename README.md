@@ -204,3 +204,131 @@ alembic upgrade head
 alembic downgrade base
 docker build -t gate:ci .
 ```
+
+## 12. Current status and next development step
+
+This section is the handoff for any future AI assistant, ChatGPT session, or Codex task. Read this before proposing the next action.
+
+### Current status
+
+- Bootstrap PR `#2` was merged into `main` with green CI.
+- The repository now contains the cloud-first FastAPI backend foundation.
+- Railway project/service exists for Gate.
+- Current Railway domain: `https://gate-production-bab1.up.railway.app`.
+- Current Railway deploy failed at pre-deploy command because `DATABASE_URL` is not configured or not linked to a PostgreSQL service.
+- No Telegram webhook sprint is merged yet.
+- No automatic Telegram sending exists in `main` yet.
+
+### Immediate operational step
+
+Fix Railway before testing product behavior:
+
+1. In Railway project `gate`, add a PostgreSQL service if it does not exist.
+2. In backend service `gate`, open `Variables`.
+3. Set `DATABASE_URL` to reference the PostgreSQL service, for example:
+
+```env
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+```
+
+or, if the database service is named `gate-postgres`:
+
+```env
+DATABASE_URL=${{gate-postgres.DATABASE_URL}}
+```
+
+4. Ensure backend variables include:
+
+```env
+TELEGRAM_BOT_TOKEN=<set only in Railway; never commit or paste into chat>
+TELEGRAM_BOT_USERNAME=gate_m_bot
+GATE_ENV=production
+GATE_DEFAULT_MODE=manual
+TELEGRAM_WEBHOOK_SECRET=<random long secret>
+ACTION_BEARER_TOKEN=<random long secret>
+ADMIN_BEARER_TOKEN=<random long secret>
+```
+
+5. Redeploy.
+6. Verify:
+
+```text
+GET https://gate-production-bab1.up.railway.app/health
+GET https://gate-production-bab1.up.railway.app/deployment/fingerprint
+```
+
+Expected `/health` response:
+
+```json
+{
+  "status": "ok",
+  "service": "gate",
+  "environment": "production",
+  "default_mode": "manual"
+}
+```
+
+`/deployment/fingerprint` must not expose `TELEGRAM_BOT_TOKEN` or any secret.
+
+### Next product sprint: Gate Telegram Ping v1
+
+The next development sprint must produce observable product functionality, not only infrastructure.
+
+Goal:
+
+```text
+Telegram Business / Telegram bot message
+→ Gate webhook
+→ PostgreSQL event storage
+→ exact safe keyword match
+→ Telegram auto-reply
+→ audit log
+```
+
+First product behavior:
+
+```text
+incoming text: ping
+reply: Gate online
+```
+
+Only `ping` should trigger automatic reply in the first product test. Do not add broad automatic replies.
+
+### Gate Telegram Ping v1 scope
+
+Implement in a new PR:
+
+- `POST /telegram/webhook`;
+- verification of `X-Telegram-Bot-Api-Secret-Token` against `TELEGRAM_WEBHOOK_SECRET`;
+- parsing of Telegram `message`, `business_message`, and `business_connection` updates;
+- persistence of incoming Telegram events into `gate_events`;
+- `app/services/telegram.py` with safe `send_message(...)` using `httpx.AsyncClient`;
+- exact keyword rule: `ping` → `Gate online`;
+- no other outgoing auto-replies;
+- `audit_logs` entries for incoming update and auto-safe reply;
+- tests for secret validation, event persistence, audit log, and one mocked Telegram send;
+- README update after implementation.
+
+### Safety constraints for the next sprint
+
+Do not:
+
+- add AI replies;
+- add free-form auto-replies;
+- send a reply for arbitrary messages;
+- commit real tokens or secrets;
+- log BotFather token;
+- expose secrets through `/health` or `/deployment/fingerprint`;
+- merge without green CI and Mark's explicit merge command.
+
+### Codex task completion rule
+
+A Codex task is complete only when:
+
+1. a GitHub PR is created or updated;
+2. the PR branch is pushed to GitHub;
+3. the PR head SHA changes;
+4. GitHub Actions CI starts;
+5. CI result is reported or explicitly still running.
+
+A local Codex commit without GitHub push is not complete.
