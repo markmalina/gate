@@ -62,20 +62,19 @@ Current v0 scope:
 - Railway deployment config;
 - Dockerfile;
 - GitHub Actions CI;
-- default reply mode: `manual`;
-- no automatic sending in v0.
+- default reply mode: `manual`.
 
-The first functional direction after the backend foundation is a safe owner workflow:
+The first functional product behavior after the backend foundation is a safe predefined Telegram response:
 
 ```text
-incoming Telegram message
+incoming Telegram text: ping
 → Gate event
-→ project routing
-→ suggested reply / draft
-→ Mark approval
-→ explicit send
-→ audit log / memory fact
+→ PostgreSQL persistence
+→ Gate online
+→ audit log
 ```
+
+No AI replies or free-form automatic responses are allowed in this sprint.
 
 ## 4. Product principles
 
@@ -95,6 +94,7 @@ incoming Telegram message
 - asyncpg
 - Alembic
 - pydantic-settings
+- httpx
 - pytest + anyio
 - ruff
 - mypy
@@ -112,6 +112,8 @@ Railway should provide these environment variables:
 DATABASE_URL=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_BOT_USERNAME=gate_m_bot
+TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_API_BASE_URL=https://api.telegram.org
 GATE_ENV=development
 GATE_DEFAULT_MODE=manual
 ACTION_BEARER_TOKEN=
@@ -163,7 +165,7 @@ An audit record for routing, approval, operational and future sending decisions.
 |---|---|---|
 | `manual` | Gate suggests or records a reply; Mark sends manually. | Default |
 | `approval` | Gate prepares a reply; Mark confirms before any send path. | Planned |
-| `auto-safe` | Gate answers only safe predefined cases. | Future |
+| `auto-safe` | Gate answers only safe predefined cases. | `ping` only |
 | `auto-full` | Gate answers autonomously inside a project boundary. | Future, explicit permission only |
 
 ## 10. Repository structure
@@ -179,6 +181,7 @@ app/
   models/
     domain.py
   services/
+    telegram.py
 alembic/
   versions/
 docs/
@@ -204,7 +207,32 @@ alembic downgrade base
 docker build -t gate:ci .
 ```
 
-## 12. Current status and next development step
+## 12. Telegram Ping v1
+
+`POST /telegram/webhook` receives Telegram updates and validates the Telegram secret header:
+
+```text
+X-Telegram-Bot-Api-Secret-Token
+```
+
+Supported Telegram update shapes:
+
+- `message`;
+- `business_message`;
+- `business_connection`.
+
+The only automatic response rule is:
+
+```text
+incoming normalized text: ping
+reply: Gate online
+```
+
+All other text is stored as a Gate event but does not trigger an outgoing Telegram message.
+
+For `business_message`, Gate passes `business_connection_id` to Telegram when sending the safe reply.
+
+## 13. Current status and next development step
 
 This section is the handoff for any future AI assistant, ChatGPT session, or Codex task. Read this before proposing the next action.
 
@@ -228,8 +256,8 @@ This section is the handoff for any future AI assistant, ChatGPT session, or Cod
 ```
 
 - `/deployment/fingerprint` does not expose `TELEGRAM_BOT_TOKEN` or other secrets.
-- No Telegram webhook sprint is merged yet.
-- No automatic Telegram sending exists in `main` yet.
+- Telegram Ping v1 is implemented as the first product sprint.
+- Automatic Telegram sending is limited to exact safe keyword `ping` → `Gate online`.
 - Current Codex Tasks environment cannot reliably push branches or create PRs; ChatGPT may create GitHub PRs directly when needed.
 
 ### Immediate operational step
@@ -251,46 +279,7 @@ ADMIN_BEARER_TOKEN=<random long secret>
 
 Do not paste secret values into ChatGPT or commit them to GitHub.
 
-### Next product sprint: Gate Telegram Ping v1
-
-The next development sprint must produce observable product functionality, not only infrastructure.
-
-Goal:
-
-```text
-Telegram Business / Telegram bot message
-→ Gate webhook
-→ PostgreSQL event storage
-→ exact safe keyword match
-→ Telegram auto-reply
-→ audit log
-```
-
-First product behavior:
-
-```text
-incoming text: ping
-reply: Gate online
-```
-
-Only `ping` should trigger automatic reply in the first product test. Do not add broad automatic replies.
-
-### Gate Telegram Ping v1 scope
-
-Implement in a new PR:
-
-- `POST /telegram/webhook`;
-- verification of `X-Telegram-Bot-Api-Secret-Token` against `TELEGRAM_WEBHOOK_SECRET`;
-- parsing of Telegram `message`, `business_message`, and `business_connection` updates;
-- persistence of incoming Telegram events into `gate_events`;
-- `app/services/telegram.py` with safe `send_message(...)` using `httpx.AsyncClient`;
-- exact keyword rule: `ping` → `Gate online`;
-- no other outgoing auto-replies;
-- `audit_logs` entries for incoming update and auto-safe reply;
-- tests for secret validation, event persistence, audit log, and one mocked Telegram send;
-- README update after implementation.
-
-### Safety constraints for the next sprint
+### Safety constraints
 
 Do not:
 
@@ -310,15 +299,3 @@ Do not:
 - ChatGPT may deploy or trigger production redeploy only after Mark gives a direct deploy command.
 - Green CI is required for merge, but green CI alone is not merge approval.
 - Merge approval is not deploy approval.
-
-### Codex task completion rule
-
-A Codex task is complete only when:
-
-1. a GitHub PR is created or updated;
-2. the PR branch is pushed to GitHub;
-3. the PR head SHA changes;
-4. GitHub Actions CI starts;
-5. CI result is reported or explicitly still running.
-
-A local Codex commit without GitHub push is not complete.
