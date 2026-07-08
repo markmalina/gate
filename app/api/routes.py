@@ -56,7 +56,9 @@ async def health(settings: Settings = settings_dependency) -> dict[str, str]:
 
 
 @router.get("/deployment/fingerprint")
-async def deployment_fingerprint(settings: Settings = settings_dependency) -> dict[str, str]:
+async def deployment_fingerprint(
+    settings: Settings = settings_dependency,
+) -> dict[str, str]:
     """Expose non-secret deployment metadata for cloud verification."""
 
     return {
@@ -92,18 +94,30 @@ async def telegram_webhook(
         configured_secret,
     )
     if invalid_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid webhook secret")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid webhook secret",
+        )
 
     raw_update = await request.json()
     if not isinstance(raw_update, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Telegram update")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Telegram update",
+        )
 
     update = cast(JsonObject, raw_update)
     normalized = _extract_update_event(update)
     if normalized is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported Telegram update")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported Telegram update",
+        )
 
-    bot = await _get_or_create_bot(session=session, username=settings.telegram_bot_username)
+    bot = await _get_or_create_bot(
+        session=session,
+        username=settings.telegram_bot_username,
+    )
     gate_event = GateEvent(
         bot_id=bot.id,
         chat_id=normalized.chat_id,
@@ -170,11 +184,18 @@ def _extract_update_event(update: JsonObject) -> TelegramUpdateEvent | None:
 
     business_message = update.get("business_message")
     if isinstance(business_message, dict):
-        return _extract_message_event("business_message", cast(JsonObject, business_message), update)
+        return _extract_message_event(
+            "business_message",
+            cast(JsonObject, business_message),
+            update,
+        )
 
     business_connection = update.get("business_connection")
     if isinstance(business_connection, dict):
-        return _extract_business_connection_event(cast(JsonObject, business_connection), update)
+        return _extract_business_connection_event(
+            cast(JsonObject, business_connection),
+            update,
+        )
 
     return None
 
