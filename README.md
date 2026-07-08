@@ -215,31 +215,31 @@ This section is the handoff for any future AI assistant, ChatGPT session, or Cod
 - The repository now contains the cloud-first FastAPI backend foundation.
 - Railway project/service exists for Gate.
 - Current Railway domain: `https://gate-production-bab1.up.railway.app`.
-- Current Railway deploy failed at pre-deploy command because `DATABASE_URL` is not configured or not linked to a PostgreSQL service.
+- Railway deployment is healthy.
+- Verified health endpoint response:
+
+```json
+{"status":"ok","service":"gate","environment":"production","default_mode":"manual"}
+```
+
+- Verified deployment fingerprint response:
+
+```json
+{"service":"gate","environment":"production","commit_sha":"9c764170afaf42d0031f2da7fd056f0652db0444","bot_username":"gate_m_bot","default_mode":"manual"}
+```
+
+- `/deployment/fingerprint` does not expose `TELEGRAM_BOT_TOKEN` or other secrets.
 - No Telegram webhook sprint is merged yet.
 - No automatic Telegram sending exists in `main` yet.
 
 ### Immediate operational step
 
-Fix Railway before testing product behavior:
+Railway is ready. Do not keep debugging infrastructure unless `/health` or `/deployment/fingerprint` regresses.
 
-1. In Railway project `gate`, add a PostgreSQL service if it does not exist.
-2. In backend service `gate`, open `Variables`.
-3. Set `DATABASE_URL` to reference the PostgreSQL service, for example:
+Before testing Telegram product behavior, ensure these backend variables exist in Railway service `gate`:
 
 ```env
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-```
-
-or, if the database service is named `gate-postgres`:
-
-```env
-DATABASE_URL=${{gate-postgres.DATABASE_URL}}
-```
-
-4. Ensure backend variables include:
-
-```env
+DATABASE_URL=<PostgreSQL URL using postgresql+asyncpg://...>
 TELEGRAM_BOT_TOKEN=<set only in Railway; never commit or paste into chat>
 TELEGRAM_BOT_USERNAME=gate_m_bot
 GATE_ENV=production
@@ -249,26 +249,7 @@ ACTION_BEARER_TOKEN=<random long secret>
 ADMIN_BEARER_TOKEN=<random long secret>
 ```
 
-5. Redeploy.
-6. Verify:
-
-```text
-GET https://gate-production-bab1.up.railway.app/health
-GET https://gate-production-bab1.up.railway.app/deployment/fingerprint
-```
-
-Expected `/health` response:
-
-```json
-{
-  "status": "ok",
-  "service": "gate",
-  "environment": "production",
-  "default_mode": "manual"
-}
-```
-
-`/deployment/fingerprint` must not expose `TELEGRAM_BOT_TOKEN` or any secret.
+Do not paste secret values into ChatGPT or commit them to GitHub.
 
 ### Next product sprint: Gate Telegram Ping v1
 
