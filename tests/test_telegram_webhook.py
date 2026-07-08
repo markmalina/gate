@@ -44,7 +44,8 @@ class FakeSession:
 
     async def flush(self) -> None:
         for item in self.objects:
-            if isinstance(item, Bot | GateEvent | AuditLog) and getattr(item, "id", None) is None:
+            has_no_id = getattr(item, "id", None) is None
+            if isinstance(item, Bot | GateEvent | AuditLog) and has_no_id:
                 item.id = uuid.uuid4()
 
     async def commit(self) -> None:
@@ -83,7 +84,9 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-def webhook_context(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FakeSession, FakeTelegramClient]]:
+def webhook_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[FakeSession, FakeTelegramClient]]:
     monkeypatch.setenv("TELEGRAM_" + "WEBHOOK_SECRET", "test-secret")
     get_settings.cache_clear()
 
@@ -122,7 +125,10 @@ def message_update(text: str) -> dict[str, Any]:
 async def test_telegram_webhook_rejects_invalid_secret(
     webhook_context: tuple[FakeSession, FakeTelegramClient],
 ) -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
         response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"},
@@ -138,7 +144,10 @@ async def test_telegram_webhook_accepts_valid_secret_without_auto_reply(
 ) -> None:
     session, telegram_client = webhook_context
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
         response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
@@ -157,7 +166,10 @@ async def test_ping_triggers_one_telegram_send_and_persists_event_and_audit(
 ) -> None:
     session, telegram_client = webhook_context
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
         response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
@@ -199,7 +211,10 @@ async def test_business_message_passes_business_connection_id(
         },
     }
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
         response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
@@ -229,7 +244,10 @@ async def test_business_connection_update_is_persisted_without_auto_reply(
         },
     }
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
         response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
