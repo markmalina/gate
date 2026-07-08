@@ -1,7 +1,7 @@
 """Core Gate domain models."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -72,7 +72,7 @@ class GateEvent:
     sender_id: str
     event_type: str
     text: str
-    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(frozen=True)

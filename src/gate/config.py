@@ -4,8 +4,8 @@ This module reads configuration from environment variables only.
 Secrets must not be committed to the repository.
 """
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
