@@ -36,6 +36,7 @@ ChatGPT:
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
 - must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require merge or production deployment approval;
+- must end project status replies with the exact next action Mark should take, including the exact merge or deploy command when that is the appropriate next owner action;
 - must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
 - may use GitHub API for emergency repair, repository hygiene and documentation updates;
 - may merge a PR through the GitHub connector only after Mark gives a direct merge command;
@@ -94,6 +95,18 @@ This rule does not override restricted actions. ChatGPT still must not:
 - expose or request real secrets;
 - add autonomous AI replies or free-form Telegram sending without explicit approval.
 
+## Next Mark action rule
+
+ChatGPT must end every project status or handoff response with the next concrete action Mark should take.
+
+If the next required action belongs to Mark, ChatGPT must say the exact command Mark should send. Examples:
+
+- when a PR is ready and CI is green: `мердж PR #<number>`;
+- when a merged change is ready for production and deployment is appropriate: `деплой PR #<number>`;
+- when Mark must inspect something manually: state the exact manual check or decision.
+
+This rule does not grant ChatGPT merge or deploy authority. It only requires ChatGPT to prompt Mark for the correct next owner command.
+
 ## Standard workflow
 
 ```text
@@ -104,6 +117,7 @@ Mark describes intent
 → ChatGPT reviews GitHub state, not just summaries
 → ChatGPT decides: fix, accept, or reject
 → ChatGPT performs the next allowed fix/review/status step when it is safe and bounded
+→ ChatGPT tells Mark the exact next owner command when owner approval is required
 → Mark gives explicit merge approval
 → Mark merges in GitHub or asks ChatGPT to merge through the GitHub connector
 → Production deploy happens only after Mark gives explicit deploy approval
@@ -131,7 +145,8 @@ ChatGPT must still report:
 - PR URL;
 - head SHA;
 - CI status with the required color-coded emoji;
-- whether the PR is ready, blocked or needs fixes.
+- whether the PR is ready, blocked or needs fixes;
+- exact next Mark action or command.
 
 ## Small sprint development policy
 
