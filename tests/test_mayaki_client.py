@@ -39,11 +39,12 @@ async def test_mayaki_forwarder_skips_when_not_configured() -> None:
 @pytest.mark.anyio
 async def test_mayaki_forwarder_sends_bearer_request(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = CaptureTransport(json_body={"status": "mayak_detected"})
+    original_async_client = httpx.AsyncClient
 
     class FakeAsyncClient:
         def __init__(self, *, timeout: float) -> None:
             assert timeout == 5.0
-            self._client = httpx.AsyncClient(transport=transport)
+            self._client = original_async_client(transport=transport)
 
         async def __aenter__(self) -> httpx.AsyncClient:
             return self._client
@@ -69,10 +70,11 @@ async def test_mayaki_forwarder_sends_bearer_request(monkeypatch: pytest.MonkeyP
 @pytest.mark.anyio
 async def test_mayaki_forwarder_reports_http_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = CaptureTransport(status_code=500, json_body={"error": "boom"})
+    original_async_client = httpx.AsyncClient
 
     class FakeAsyncClient:
         def __init__(self, *, timeout: float) -> None:
-            self._client = httpx.AsyncClient(transport=transport)
+            self._client = original_async_client(transport=transport)
 
         async def __aenter__(self) -> httpx.AsyncClient:
             return self._client
