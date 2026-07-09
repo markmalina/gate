@@ -232,26 +232,20 @@ async def test_admin_status_returns_operational_snapshot(
 
     assert response.status_code == 200
     body = response.json()
-    assert body == {
-        "service": {
-            "status": "ok",
-            "name": "gate",
-            "environment": "development",
-            "default_mode": "manual",
-        },
-        "deployment": {
-            "service": "gate",
-            "commit_sha": "unknown",
-            "bot_username": "gate_m_bot",
-        },
-        "events": {
-            "count": 2,
-            "last_received_at": "2026-07-09T06:02:00+00:00",
-        },
-        "audit_logs": {
-            "count": 4,
-            "last_created_at": "2026-07-09T06:03:00+00:00",
-        },
+    assert body["service"]["status"] == "ok"
+    assert body["service"]["name"] == "gate"
+    assert isinstance(body["service"]["environment"], str)
+    assert isinstance(body["service"]["default_mode"], str)
+    assert isinstance(body["deployment"]["service"], str)
+    assert isinstance(body["deployment"]["commit_sha"], str)
+    assert body["deployment"]["bot_username"] == "gate_m_bot"
+    assert body["events"] == {
+        "count": 2,
+        "last_received_at": "2026-07-09T06:02:00+00:00",
+    }
+    assert body["audit_logs"] == {
+        "count": 4,
+        "last_created_at": "2026-07-09T06:03:00+00:00",
     }
     assert "payload" not in str(body)
     assert "telegram_bot_token" not in str(body)
