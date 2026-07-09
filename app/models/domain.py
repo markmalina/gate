@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -41,6 +42,24 @@ class MessageDirection(StrEnum):
     OUTBOUND = "outbound"
 
 
+class ConversationStatus(StrEnum):
+    """Conversation lifecycle states."""
+
+    OPEN = "open"
+    REPLIED = "replied"
+    CLOSED = "closed"
+    MUTED = "muted"
+
+
+class ReplyTaskStatus(StrEnum):
+    """Reply task workflow states."""
+
+    NEEDS_REPLY = "needs_reply"
+    REPLIED = "replied"
+    DISMISSED = "dismissed"
+    SNOOZED = "snoozed"
+
+
 class Bot(Base):
     """Telegram bot adapter configuration without committed token values."""
 
@@ -56,6 +75,7 @@ class Bot(Base):
     )
 
     routes: Mapped[list["Route"]] = relationship(back_populates="bot")
+    conversations: Mapped[list["Conversation"]] = relationship(back_populates="bot")
 
 
 class Account(Base):
@@ -195,6 +215,78 @@ class Message(Base):
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Conversation(Base):
+    """State for a Telegram conversation grouped by routing context."""
+
+    __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_bot_chat_updated_at", "bot_id", "chat_id", "updated_at"),
+        Index("ix_conversations_requires_reply", "requires_reply", "updated_at"),
+        Index(
+            "uq_conversations_context",
+            "bot_id",
+            text("coalesce(account_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
+            text("coalesce(project_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
+            "chat_id",
+            text("coalesce(business_connection_id, '__gate_null_business_connection__')"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bots.id"), nullable=False, index=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    business_connection_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ConversationStatus.OPEN.value
+    )
+    requires_reply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_outbound_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    bot: Mapped[Bot] = relationship(back_populates="conversations")
+    reply_tasks: Mapped[list["ReplyTask"]] = relationship(back_populates="conversation")
+
+
+class ReplyTask(Base):
+    """Task representing an inbound message awaiting Mark's reply."""
+
+    __tablename__ = "reply_tasks"
+    __table_args__ = (
+        UniqueConstraint("trigger_message_id", name="uq_reply_tasks_trigger_message_id"),
+        Index("ix_reply_tasks_status_created_at", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    trigger_message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ReplyTaskStatus.NEEDS_REPLY.value
+    )
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    conversation: Mapped[Conversation] = relationship(back_populates="reply_tasks")
+    trigger_message: Mapped[Message] = relationship()
 
 
 class AuditLog(Base):
