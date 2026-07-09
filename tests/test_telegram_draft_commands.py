@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from app.api.routes import (
@@ -25,6 +25,7 @@ from app.models.domain import (
     ReplyTaskStatus,
     TelegramUpdate,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 MODEL_TYPES = (
     Bot,
@@ -147,19 +148,22 @@ def test_reply_draft_text_is_bounded_and_not_a_send_action() -> None:
 
 @pytest.mark.anyio
 async def test_create_reply_draft_stores_draft_without_closing_task() -> None:
-    session = FakeSession()
-    task, _conversation, _message = add_reply_task_context(session)
+    fake_session = FakeSession()
+    task, _conversation, _message = add_reply_task_context(fake_session)
     task_ref = str(task.id)[:8]
     command = TelegramAdminCommand(name="draft", task_ref=task_ref)
 
-    result = await _create_reply_draft(command=command, session=session)
+    result = await _create_reply_draft(
+        command=command,
+        session=cast(AsyncSession, fake_session),
+    )
 
     assert "Draft created:" in result
     assert f"task: {task_ref}" in result
     assert "please reply today" in result
     assert "Not sent." in result
 
-    drafts = [item for item in session.objects if isinstance(item, ReplyDraft)]
+    drafts = [item for item in fake_session.objects if isinstance(item, ReplyDraft)]
     assert len(drafts) == 1
     assert drafts[0].reply_task_id == task.id
     assert drafts[0].status == ReplyDraftStatus.GENERATED.value
@@ -168,5 +172,5 @@ async def test_create_reply_draft_stores_draft_without_closing_task() -> None:
     assert drafts[0].prompt_context["bounded_context"] is True
     assert task.status == ReplyTaskStatus.NEEDS_REPLY.value
 
-    audit_actions = [item.action for item in session.objects if isinstance(item, AuditLog)]
+    audit_actions = [item.action for item in fake_session.objects if isinstance(item, AuditLog)]
     assert "reply_draft_created_from_telegram" in audit_actions
