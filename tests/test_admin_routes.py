@@ -9,10 +9,10 @@ import pytest
 from app.api.deps import get_db_session
 from app.core.config import get_settings
 from app.main import app
-from app.models.domain import AuditLog, GateEvent
+from app.models.domain import AuditLog, GateEvent, Message, MessageDirection
 from httpx import ASGITransport, AsyncClient
 
-AdminRow = GateEvent | AuditLog
+AdminRow = GateEvent | AuditLog | Message
 
 
 class FakeScalarRows:
@@ -130,6 +130,8 @@ async def test_admin_events_returns_recent_events_without_raw_payload(
             event_type="message",
             text="ping",
             payload={"telegram_bot_token": "must-not-leak"},
+            telegram_update_id=100,
+            telegram_message_id=10,
             received_at=datetime(2026, 7, 9, 6, 0, tzinfo=UTC),
         )
     )
@@ -156,6 +158,9 @@ async def test_admin_events_returns_recent_events_without_raw_payload(
                 "sender_id": "111",
                 "event_type": "message",
                 "text": "ping",
+                "telegram_update_id": 100,
+                "telegram_message_id": 10,
+                "business_connection_id": None,
                 "received_at": "2026-07-09T06:00:00+00:00",
             }
         ]
@@ -218,6 +223,8 @@ async def test_admin_status_returns_operational_snapshot(
             datetime(2026, 7, 9, 6, 2, tzinfo=UTC),
             4,
             datetime(2026, 7, 9, 6, 3, tzinfo=UTC),
+            6,
+            datetime(2026, 7, 9, 6, 4, tzinfo=UTC),
         ]
     )
 
@@ -247,6 +254,43 @@ async def test_admin_status_returns_operational_snapshot(
         "count": 4,
         "last_created_at": "2026-07-09T06:03:00+00:00",
     }
+    assert body["messages"] == {
+        "count": 6,
+        "last_created_at": "2026-07-09T06:04:00+00:00",
+    }
     assert "payload" not in str(body)
     assert "telegram_bot_token" not in str(body)
     assert "ADMIN_BEARER_TOKEN" not in str(body)
+
+
+@pytest.mark.anyio
+async def test_admin_status_message_shape_uses_plain_counts(
+    admin_context: FakeAdminSession,
+) -> None:
+    bot_id = uuid.uuid4()
+    admin_context.rows.append(
+        Message(
+            bot_id=bot_id,
+            direction=MessageDirection.INBOUND.value,
+            source="telegram",
+            event_type="message",
+            chat_id="222",
+            sender_id="111",
+            text="hello",
+            payload={},
+        )
+    )
+
+    admin_context.scalar_results.extend([0, None, 0, None, 1, None])
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/admin/status",
+            headers={"Authorization": "Bearer admin-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["messages"] == {"count": 1, "last_created_at": None}

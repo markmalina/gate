@@ -41,6 +41,10 @@ Expected contract:
   "audit_logs": {
     "count": 0,
     "last_created_at": null
+  },
+  "messages": {
+    "count": 0,
+    "last_created_at": null
   }
 }
 ```
