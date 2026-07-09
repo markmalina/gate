@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
@@ -108,6 +108,53 @@ async def admin_recent_audit_logs(
     )
     audit_logs = result.scalars().all()
     return {"audit_logs": [_serialize_audit_log(audit_log) for audit_log in audit_logs]}
+
+
+@router.get("/admin/status")
+async def admin_status(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+) -> JsonObject:
+    """Return a compact read-only operational status snapshot for Gate."""
+
+    _require_admin_bearer(authorization=authorization, settings=settings)
+
+    event_count_result = await session.execute(select(func.count(GateEvent.id)))
+    latest_event_result = await session.execute(select(func.max(GateEvent.received_at)))
+    audit_count_result = await session.execute(select(func.count(AuditLog.id)))
+    latest_audit_result = await session.execute(select(func.max(AuditLog.created_at)))
+
+    latest_event_received_at = cast(
+        datetime | None,
+        latest_event_result.scalar_one(),
+    )
+    latest_audit_created_at = cast(
+        datetime | None,
+        latest_audit_result.scalar_one(),
+    )
+
+    return {
+        "service": {
+            "status": "ok",
+            "name": "gate",
+            "environment": settings.gate_env,
+            "default_mode": settings.gate_default_mode,
+        },
+        "deployment": {
+            "service": settings.deployment_service,
+            "commit_sha": settings.deployment_sha,
+            "bot_username": settings.telegram_bot_username,
+        },
+        "events": {
+            "count": _serialize_count(event_count_result.scalar_one()),
+            "last_received_at": _serialize_datetime(latest_event_received_at),
+        },
+        "audit_logs": {
+            "count": _serialize_count(audit_count_result.scalar_one()),
+            "last_created_at": _serialize_datetime(latest_audit_created_at),
+        },
+    }
 
 
 @router.post("/telegram/webhook")
@@ -275,6 +322,14 @@ def _serialize_datetime(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+def _serialize_count(value: Any) -> int:
+    """Serialize SQL aggregate counts into plain JSON integers."""
+
+    if value is None:
+        return 0
+    return int(value)
 
 
 def _extract_update_event(update: JsonObject) -> TelegramUpdateEvent | None:
