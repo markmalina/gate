@@ -82,7 +82,9 @@ async def admin_recent_events(
     _require_admin_bearer(authorization=authorization, settings=settings)
 
     result = await session.execute(
-        select(GateEvent).order_by(GateEvent.received_at.desc(), GateEvent.id.desc()).limit(limit)
+        select(GateEvent)
+        .order_by(GateEvent.received_at.desc(), GateEvent.id.desc())
+        .limit(limit)
     )
     events = result.scalars().all()
     return {"events": [_serialize_gate_event(event) for event in events]}
@@ -100,7 +102,9 @@ async def admin_recent_audit_logs(
     _require_admin_bearer(authorization=authorization, settings=settings)
 
     result = await session.execute(
-        select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+        select(AuditLog)
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(limit)
     )
     audit_logs = result.scalars().all()
     return {"audit_logs": [_serialize_audit_log(audit_log) for audit_log in audit_logs]}
