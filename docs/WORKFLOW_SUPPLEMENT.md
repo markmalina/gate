@@ -28,6 +28,25 @@ Codex is no longer the default Gate implementation path. Codex should be used on
 
 When Codex is not used, ChatGPT owns the full GitHub workflow for the bounded sprint: create branch, edit files, open or update PR, inspect CI, fix small CI failures, review scope, and ask Mark for explicit merge/deploy commands when required.
 
+## Single merge command execution rule
+
+A single direct merge command from Mark is complete merge authorization for the named pull request.
+
+Direct merge commands include `мердж PR #<number>`, `мержи PR #<number>`, `merge PR #<number>`, `merge if ready`, and equivalent wording that names or clearly refers to the active pull request.
+
+After receiving a direct merge command, ChatGPT must:
+
+1. fetch the current PR state;
+2. verify the exact current head SHA;
+3. verify that CI is green for that exact head SHA;
+4. review that the PR scope and diff still match the intended active PR;
+5. if the PR is mergeable and there are no safety blockers, merge immediately through the GitHub connector;
+6. if blocked, report the specific blocker.
+
+ChatGPT must not ask Mark to repeat the same merge command after these checks pass.
+
+The next Mark action after a successful merge may be a separate deploy command if production deployment is desired. A direct merge command still does not authorize production deployment.
+
 ## Error correction final-output gate
 
 After any ChatGPT workflow error, the final response must include:
