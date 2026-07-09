@@ -190,6 +190,50 @@ def message_update(text: str, update_id: int = 100, user_id: int = 111) -> dict[
     }
 
 
+def add_reply_task_context(
+    session: FakeSession,
+    *,
+    text: str = "please reply",
+    task_status: str = ReplyTaskStatus.NEEDS_REPLY.value,
+) -> tuple[ReplyTask, Conversation, Message]:
+    bot_id = uuid.uuid4()
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        bot_id=bot_id,
+        chat_id="222",
+        status=ConversationStatus.OPEN.value,
+        requires_reply=True,
+        last_message_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+        last_inbound_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+    )
+    message = Message(
+        id=uuid.uuid4(),
+        bot_id=bot_id,
+        direction=MessageDirection.INBOUND.value,
+        source="telegram",
+        event_type="message",
+        chat_id="222",
+        sender_id="111",
+        text=text,
+        payload={},
+        received_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+        created_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+    )
+    task = ReplyTask(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        trigger_message_id=message.id,
+        status=task_status,
+        priority=100,
+        reason="inbound_human_text",
+        created_at=datetime(2026, 7, 9, 11, 41, tzinfo=UTC),
+        updated_at=datetime(2026, 7, 9, 11, 41, tzinfo=UTC),
+    )
+    session.objects.extend([conversation, message, task])
+    session.inbox_rows.append((task, conversation, message))
+    return task, conversation, message
+
+
 @pytest.mark.anyio
 async def test_telegram_webhook_rejects_invalid_secret(
     webhook_context: tuple[FakeSession, FakeTelegramClient],
@@ -552,41 +596,8 @@ async def test_telegram_admin_inbox_command_replies_with_unanswered_messages(
 ) -> None:
     session, telegram_client = webhook_context
     monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "111")
-    bot_id = uuid.uuid4()
-    conversation = Conversation(
-        id=uuid.uuid4(),
-        bot_id=bot_id,
-        chat_id="222",
-        status=ConversationStatus.OPEN.value,
-        requires_reply=True,
-        last_message_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
-        last_inbound_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
-    )
-    message = Message(
-        id=uuid.uuid4(),
-        bot_id=bot_id,
-        direction=MessageDirection.INBOUND.value,
-        source="telegram",
-        event_type="message",
-        chat_id="222",
-        sender_id="111",
-        text="please reply",
-        payload={},
-        received_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
-        created_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
-    )
-    task = ReplyTask(
-        id=uuid.uuid4(),
-        conversation_id=conversation.id,
-        trigger_message_id=message.id,
-        status=ReplyTaskStatus.NEEDS_REPLY.value,
-        priority=100,
-        reason="inbound_human_text",
-        created_at=datetime(2026, 7, 9, 11, 41, tzinfo=UTC),
-        updated_at=datetime(2026, 7, 9, 11, 41, tzinfo=UTC),
-    )
-    session.objects.extend([conversation, message, task])
-    session.inbox_rows.append((task, conversation, message))
+    task, _conversation, _message = add_reply_task_context(session)
+    task_ref = str(task.id)[:8]
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -599,6 +610,7 @@ async def test_telegram_admin_inbox_command_replies_with_unanswered_messages(
     reply_text = telegram_client.calls[-1]["text"]
     assert "Unanswered inbox:" in reply_text
     assert "please reply" in reply_text
+    assert f"actions: /done {task_ref}" in reply_text
     assert "payload" not in reply_text
 
 
@@ -621,3 +633,98 @@ async def test_non_admin_inbox_command_does_not_expose_admin_data(
     assert telegram_client.calls[-1]["text"] == "Gate online"
     assert "Unanswered" not in telegram_client.calls[-1]["text"]
     assert len([item for item in session.objects if isinstance(item, ReplyTask)]) == 0
+
+
+@pytest.mark.anyio
+async def test_telegram_admin_done_command_marks_task_replied(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "111")
+    task, conversation, _message = add_reply_task_context(session)
+    task_ref = str(task.id)[:8]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update(f"/done {task_ref}", update_id=503),
+        )
+
+    assert response.status_code == 200
+    assert telegram_client.calls[-1]["text"] == f"Marked replied: {task_ref}"
+    assert task.status == ReplyTaskStatus.REPLIED.value
+    assert conversation.status == ConversationStatus.REPLIED.value
+    assert conversation.requires_reply is False
+    assert len([item for item in session.objects if isinstance(item, ReplyTask)]) == 1
+    audit_actions = [item.action for item in session.objects if isinstance(item, AuditLog)]
+    assert "reply_task_done_from_telegram" in audit_actions
+
+
+@pytest.mark.anyio
+async def test_telegram_admin_dismiss_snooze_and_reopen_commands_change_task_state(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "111")
+    task, conversation, _message = add_reply_task_context(session)
+    task_ref = str(task.id)[:8]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        dismiss_response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update(f"/dismiss {task_ref}", update_id=504),
+        )
+        snooze_response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update(f"/snooze {task_ref}", update_id=505),
+        )
+        reopen_response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update(f"/reopen {task_ref}", update_id=506),
+        )
+
+    assert dismiss_response.status_code == 200
+    assert snooze_response.status_code == 200
+    assert reopen_response.status_code == 200
+    assert telegram_client.calls[-3]["text"] == f"Dismissed: {task_ref}"
+    assert telegram_client.calls[-2]["text"] == f"Snoozed: {task_ref}"
+    assert telegram_client.calls[-1]["text"] == f"Reopened: {task_ref}"
+    assert task.status == ReplyTaskStatus.NEEDS_REPLY.value
+    assert conversation.status == ConversationStatus.OPEN.value
+    assert conversation.requires_reply is True
+
+    audit_actions = [item.action for item in session.objects if isinstance(item, AuditLog)]
+    assert "reply_task_dismiss_from_telegram" in audit_actions
+    assert "reply_task_snooze_from_telegram" in audit_actions
+    assert "reply_task_reopen_from_telegram" in audit_actions
+
+
+@pytest.mark.anyio
+async def test_non_admin_done_command_does_not_change_task_state(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "999")
+    task, conversation, _message = add_reply_task_context(session)
+    task_ref = str(task.id)[:8]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update(f"/done {task_ref}", update_id=507),
+        )
+
+    assert response.status_code == 200
+    assert telegram_client.calls[-1]["text"] == "Gate online"
+    assert task.status == ReplyTaskStatus.NEEDS_REPLY.value
+    assert conversation.requires_reply is True
+    audit_actions = [item.action for item in session.objects if isinstance(item, AuditLog)]
+    assert "reply_task_done_from_telegram" not in audit_actions
