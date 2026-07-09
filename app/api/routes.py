@@ -36,6 +36,7 @@ db_session_dependency = Depends(get_db_session)
 JsonObject = dict[str, Any]
 
 DRAFT_SOURCE = "gate-local-draft-v1"
+TEST_PROBE_TEXT = "test guided draft"
 
 
 @dataclass(frozen=True)
@@ -277,14 +278,27 @@ async def telegram_webhook(
     if _is_human_text_message(normalized) and admin_command is None:
         conversation.status = ConversationStatus.OPEN.value
         conversation.requires_reply = True
-        session.add(
-            ReplyTask(
-                conversation_id=conversation.id,
-                trigger_message_id=inbound_message.id,
-                status=ReplyTaskStatus.NEEDS_REPLY.value,
-                reason="inbound_human_text",
-            )
+        reply_task = ReplyTask(
+            conversation_id=conversation.id,
+            trigger_message_id=inbound_message.id,
+            status=ReplyTaskStatus.NEEDS_REPLY.value,
+            reason="inbound_human_text",
         )
+        session.add(reply_task)
+        await session.flush()
+        if _is_test_probe_text(normalized.text) and _is_telegram_admin_sender(
+            normalized.sender_id
+        ):
+            await _update_latest_test_guide_message(
+                session=session,
+                telegram=telegram,
+                settings=settings,
+                chat_id=normalized.chat_id,
+                business_connection_id=normalized.business_connection_id,
+                task_ref=str(reply_task.id)[:8],
+                bot_id=bot.id,
+                gate_event_id=gate_event.id,
+            )
     session.add(
         AuditLog(
             actor="telegram",
@@ -705,6 +719,108 @@ async def _find_reply_task_rows_by_ref(
     return [(task, conversation, message) for task, conversation, message in result.all()]
 
 
+async def _update_latest_test_guide_message(
+    *,
+    session: AsyncSession,
+    telegram: TelegramClient,
+    settings: Settings,
+    chat_id: str,
+    business_connection_id: str | None,
+    task_ref: str,
+    bot_id: Any,
+    gate_event_id: Any,
+) -> None:
+    guide_message = await _find_latest_test_guide_message(
+        session=session,
+        chat_id=chat_id,
+        business_connection_id=business_connection_id,
+    )
+    if guide_message is None:
+        return
+
+    message_id = _extract_telegram_message_id(guide_message.payload)
+    if message_id is None:
+        return
+
+    updated_text = _format_telegram_test_guide(
+        commit_sha=settings.deployment_sha,
+        bot_username=settings.telegram_bot_username,
+        task_ref=task_ref,
+    )
+    try:
+        edit_result = await telegram.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=updated_text,
+            business_connection_id=business_connection_id,
+        )
+    except Exception as exc:
+        session.add(
+            AuditLog(
+                actor="gate",
+                action="telegram_test_guide_update_failed",
+                bot_id=bot_id,
+                gate_event_id=gate_event_id,
+                metadata_={
+                    "task_ref": task_ref,
+                    "error_type": exc.__class__.__name__,
+                },
+            )
+        )
+        return
+
+    guide_message.text = updated_text
+    guide_message.payload = {
+        "original_send": guide_message.payload,
+        "latest_edit": edit_result,
+    }
+    session.add(
+        AuditLog(
+            actor="gate",
+            action="telegram_test_guide_updated",
+            bot_id=bot_id,
+            gate_event_id=gate_event_id,
+            metadata_={"task_ref": task_ref, "message_id": message_id},
+        )
+    )
+
+
+async def _find_latest_test_guide_message(
+    *,
+    session: AsyncSession,
+    chat_id: str,
+    business_connection_id: str | None,
+) -> Message | None:
+    business_filter = (
+        Message.business_connection_id.is_(None)
+        if business_connection_id is None
+        else Message.business_connection_id == business_connection_id
+    )
+    result = await session.execute(
+        select(Message)
+        .where(
+            Message.direction == MessageDirection.OUTBOUND.value,
+            Message.source == "gate",
+            Message.event_type == "telegram_admin_console_reply",
+            Message.chat_id == chat_id,
+            business_filter,
+            Message.text.like("Gate test: draft flow%"),
+        )
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    )
+    return cast(Message | None, result.scalar_one_or_none())
+
+
+def _extract_telegram_message_id(payload: JsonObject | None) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    return _optional_int(result.get("message_id"))
+
+
 def _build_reply_draft_text(message_text: str | None) -> str:
     text = _truncate_text((message_text or "").strip(), 360)
     if not text:
@@ -788,31 +904,36 @@ def _format_telegram_admin_status(status_payload: JsonObject) -> str:
     )
 
 
-def _format_telegram_test_guide(*, commit_sha: str, bot_username: str) -> str:
+def _format_telegram_test_guide(
+    *, commit_sha: str, bot_username: str, task_ref: str | None = None
+) -> str:
     short_sha = commit_sha[:12] if commit_sha != "unknown" else commit_sha
+    task_label = task_ref or "<pending>"
+    command_ref = task_ref or "<task>"
     return "\n".join(
         [
             "Gate test: draft flow",
             f"Commit: {short_sha}",
             f"Bot: {bot_username}",
+            f"Task: {task_label}",
             "",
             "1. Send text message:",
-            "test guided draft",
-            "Expected: no bot reply.",
+            TEST_PROBE_TEXT,
+            "Expected: this message is edited with the real task id.",
             "",
             "2. Press /inbox",
             "Expected: task appears with clickable actions.",
             "",
-            "3. Press /draft_<task> from /inbox",
+            f"3. Press /draft_{command_ref} from /inbox",
             "Expected: Draft created ... Not sent.",
             "",
-            "4. Press /drafts_<task>",
+            f"4. Press /drafts_{command_ref}",
             "Expected: saved draft history appears.",
             "",
             "5. Press /inbox",
             "Expected: task still appears.",
             "",
-            "6. Press /done_<task>",
+            f"6. Press /done_{command_ref}",
             "Expected: Marked replied.",
             "",
             "7. Press /inbox",
@@ -906,6 +1027,10 @@ def _is_telegram_admin_sender(sender_id: str) -> bool:
     normalized_config = configured.replace(";", ",").replace(" ", ",")
     admin_ids = {item.strip() for item in normalized_config.split(",") if item.strip()}
     return sender_id in admin_ids
+
+
+def _is_test_probe_text(text: str | None) -> bool:
+    return text is not None and text.strip().casefold() == TEST_PROBE_TEXT
 
 
 async def _get_or_create_conversation(
