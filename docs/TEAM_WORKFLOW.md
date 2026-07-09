@@ -29,12 +29,18 @@ ChatGPT:
 - translates Mark's intent into precise implementation tasks;
 - keeps the Gate architecture coherent;
 - checks PR scope, diffs, CI status and GitHub Actions logs;
+- reports CI status with a color-coded emoji every time CI status is mentioned;
+- first reads the repository workflow rules when Mark starts a work session by sending a README link;
+- reads the README/project handoff, project status and current active scope before proposing implementation;
 - decides whether a GitHub PR should be created or updated;
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
+- must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require merge or production deployment approval;
+- must end project status replies with the exact next action Mark should take, including the exact merge or deploy command when that is the appropriate next owner action;
+- must treat `мердж по готовности PR #<number>` as a conditional direct merge command: merge immediately if all merge-gate conditions are green, otherwise report that the PR is waiting and do not ask for a second merge command in the same status cycle;
 - must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
 - may use GitHub API for emergency repair, repository hygiene and documentation updates;
-- may merge a PR through the GitHub connector only after Mark gives a direct merge command;
+- may merge a PR through the GitHub connector only after Mark gives a direct merge command or conditional direct merge command;
 - must not merge automatically or infer merge approval from green CI alone;
 - must not deploy to production or trigger production deployment unless Mark gives a direct deployment command;
 - must not treat Codex summary as truth without checking GitHub.
@@ -64,6 +70,60 @@ A development task is complete only when:
 3. GitHub Actions CI starts;
 4. the CI result is known or explicitly still running.
 
+## Session entry protocol
+
+When Mark starts a work session by sending the repository README link, ChatGPT must follow this order:
+
+1. read the repository workflow/regulation file first, especially `docs/TEAM_WORKFLOW.md`;
+2. read the README and project handoff;
+3. identify the current project status, active PRs, CI status and deployment status when relevant;
+4. only then inspect the rest of the project files needed for the task;
+5. propose or perform the next development step according to the rules in this document.
+
+This order is mandatory for morning handoff sessions and any session where Mark provides the README as the entry point.
+
+## Next-step execution rule
+
+ChatGPT must not stop at a diagnosis when the next step is safe and already permitted.
+
+If ChatGPT determines that the next step is to fix a failing check, update a PR branch, inspect CI logs, refresh PR status, update documentation, or perform another small bounded action allowed by this workflow, ChatGPT should perform that step immediately without asking Mark for another explicit instruction.
+
+This rule does not override restricted actions. ChatGPT still must not:
+
+- merge without Mark's direct merge command;
+- deploy or trigger production deployment without Mark's direct deploy command;
+- introduce broad scope changes without confirmation;
+- expose or request real secrets;
+- add autonomous AI replies or free-form Telegram sending without explicit approval.
+
+## Next Mark action rule
+
+ChatGPT must end every project status or handoff response with the next concrete action Mark should take.
+
+If the next required action belongs to Mark, ChatGPT must say the exact command Mark should send. Examples:
+
+- when a PR is ready and CI is green: `мердж PR #<number>`;
+- when a PR is expected to become ready after CI completes: `мердж по готовности PR #<number>`;
+- when a merged change is ready for production and deployment is appropriate: `деплой PR #<number>`;
+- when Mark must inspect something manually: state the exact manual check or decision.
+
+This rule does not grant ChatGPT merge or deploy authority. It only requires ChatGPT to prompt Mark for the correct next owner command.
+
+## Conditional merge command rule
+
+`мердж по готовности PR #<number>` is a direct conditional merge command from Mark.
+
+When Mark sends this command, ChatGPT must:
+
+1. fetch the current PR state;
+2. verify the active head SHA;
+3. verify the latest CI result for that exact head SHA;
+4. review that the PR scope remains the intended active PR;
+5. if CI is 🟢 green, the PR is mergeable and there are no safety blockers, merge the PR without asking for another merge command;
+6. if CI is 🟡 pending/queued/in progress, 🔴 failed, or ⚪ unknown, do not merge and report that the PR is waiting or blocked.
+
+The conditional merge command does not authorize production deployment.
+
 ## Standard workflow
 
 ```text
@@ -73,7 +133,9 @@ Mark describes intent
 → GitHub Actions CI runs
 → ChatGPT reviews GitHub state, not just summaries
 → ChatGPT decides: fix, accept, or reject
-→ Mark gives explicit merge approval
+→ ChatGPT performs the next allowed fix/review/status step when it is safe and bounded
+→ ChatGPT tells Mark the exact next owner command when owner approval is required
+→ Mark gives explicit merge approval or conditional merge approval
 → Mark merges in GitHub or asks ChatGPT to merge through the GitHub connector
 → Production deploy happens only after Mark gives explicit deploy approval
 ```
@@ -99,8 +161,9 @@ ChatGPT must still report:
 - PR number;
 - PR URL;
 - head SHA;
-- CI status;
-- whether the PR is ready, blocked or needs fixes.
+- CI status with the required color-coded emoji;
+- whether the PR is ready, blocked or needs fixes;
+- exact next Mark action or command.
 
 ## Small sprint development policy
 
@@ -142,8 +205,8 @@ Merging is a privileged action.
 
 ChatGPT may perform the merge only when all of the following are true:
 
-1. Mark gives a direct command such as `merge PR #2` or `мержи PR #2`;
-2. CI is green;
+1. Mark gives a direct command such as `merge PR #2`, `мержи PR #2`, or `мердж по готовности PR #2`;
+2. CI is green for the current PR head SHA;
 3. ChatGPT has reviewed the PR diff and scope;
 4. the PR is the intended active PR;
 5. there are no unresolved safety blockers.
@@ -153,7 +216,7 @@ ChatGPT must not merge based only on:
 - Codex saying the task is done;
 - local Codex checks;
 - PR existence;
-- green CI without Mark's explicit merge command.
+- green CI without Mark's explicit direct or conditional merge command.
 
 ## Deployment policy
 
@@ -190,12 +253,20 @@ If git push or GitHub access fails, stop and report the exact error.
 - Duplicate PRs must be closed or clearly superseded.
 - Red CI means the PR is not accepted.
 - Green CI is required but not sufficient: ChatGPT still reviews scope and architecture.
-- Merge requires Mark's explicit approval, even after green CI.
+- Merge requires Mark's explicit direct or conditional approval, even after green CI.
 - Deployment requires Mark's explicit deploy approval, even after merge.
+- If CI fails for a small, obvious and safe reason, ChatGPT should inspect the failure and push a fix to the same PR branch without waiting for a separate instruction.
 
 ## CI rules
 
 CI is the production gate for code quality.
+
+When reporting CI status, ChatGPT must prefix the status with a color-coded emoji:
+
+- 🟢 green/passed/success;
+- 🟡 pending/queued/in progress;
+- 🔴 red/failed/cancelled;
+- ⚪ unknown/not started/not available.
 
 Required checks:
 
@@ -209,6 +280,8 @@ Required checks:
 If any check fails, the task is not done.
 
 If a check is skipped because an earlier check failed, the PR is not ready.
+
+When a CI failure is in an existing ChatGPT-managed PR and the needed fix is small, clear and safe, ChatGPT should make the fix directly, push it to the PR branch and re-check CI status.
 
 ## Secrets and safety
 
