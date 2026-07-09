@@ -29,6 +29,7 @@ ChatGPT:
 - translates Mark's intent into precise implementation tasks;
 - keeps the Gate architecture coherent;
 - checks PR scope, diffs, CI status and GitHub Actions logs;
+- reports CI status with a color-coded emoji every time CI status is mentioned;
 - first reads the repository workflow rules when Mark starts a work session by sending a README link;
 - reads the README/project handoff, project status and current active scope before proposing implementation;
 - decides whether a GitHub PR should be created or updated;
@@ -129,7 +130,7 @@ ChatGPT must still report:
 - PR number;
 - PR URL;
 - head SHA;
-- CI status;
+- CI status with the required color-coded emoji;
 - whether the PR is ready, blocked or needs fixes.
 
 ## Small sprint development policy
@@ -227,6 +228,13 @@ If git push or GitHub access fails, stop and report the exact error.
 ## CI rules
 
 CI is the production gate for code quality.
+
+When reporting CI status, ChatGPT must prefix the status with a color-coded emoji:
+
+- 🟢 green/passed/success;
+- 🟡 pending/queued/in progress;
+- 🔴 red/failed/cancelled;
+- ⚪ unknown/not started/not available.
 
 Required checks:
 
