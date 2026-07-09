@@ -3,9 +3,10 @@
 import hmac
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +68,42 @@ async def deployment_fingerprint(
         "bot_username": settings.telegram_bot_username,
         "default_mode": settings.gate_default_mode,
     }
+
+
+@router.get("/admin/events/recent")
+async def admin_recent_events(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+) -> dict[str, list[JsonObject]]:
+    """Return recent Gate events for operational inspection."""
+
+    _require_admin_bearer(authorization=authorization, settings=settings)
+
+    result = await session.execute(
+        select(GateEvent).order_by(GateEvent.received_at.desc(), GateEvent.id.desc()).limit(limit)
+    )
+    events = result.scalars().all()
+    return {"events": [_serialize_gate_event(event) for event in events]}
+
+
+@router.get("/admin/audit/recent")
+async def admin_recent_audit_logs(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+) -> dict[str, list[JsonObject]]:
+    """Return recent audit records for operational inspection."""
+
+    _require_admin_bearer(authorization=authorization, settings=settings)
+
+    result = await session.execute(
+        select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+    )
+    audit_logs = result.scalars().all()
+    return {"audit_logs": [_serialize_audit_log(audit_log) for audit_log in audit_logs]}
 
 
 @router.post("/telegram/webhook")
@@ -172,6 +209,68 @@ async def _get_or_create_bot(*, session: AsyncSession, username: str) -> Bot:
     session.add(bot)
     await session.flush()
     return bot
+
+
+def _require_admin_bearer(*, authorization: str | None, settings: Settings) -> None:
+    """Require the configured admin bearer token for read-only admin routes."""
+
+    if not settings.admin_bearer_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin bearer token is not configured",
+        )
+
+    scheme, _, token = (authorization or "").partition(" ")
+    invalid_token = (
+        scheme.casefold() != "bearer"
+        or not token
+        or not hmac.compare_digest(token, settings.admin_bearer_token)
+    )
+    if invalid_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid admin bearer token",
+        )
+
+
+def _serialize_gate_event(event: GateEvent) -> JsonObject:
+    """Serialize a Gate event without exposing raw Telegram payloads."""
+
+    return {
+        "id": str(event.id),
+        "bot_id": str(event.bot_id),
+        "account_id": _optional_string(event.account_id),
+        "project_id": _optional_string(event.project_id),
+        "chat_id": event.chat_id,
+        "sender_id": event.sender_id,
+        "event_type": event.event_type,
+        "text": event.text,
+        "received_at": _serialize_datetime(event.received_at),
+    }
+
+
+def _serialize_audit_log(audit_log: AuditLog) -> JsonObject:
+    """Serialize an audit log row for read-only inspection."""
+
+    return {
+        "id": str(audit_log.id),
+        "actor": audit_log.actor,
+        "action": audit_log.action,
+        "bot_id": _optional_string(audit_log.bot_id),
+        "account_id": _optional_string(audit_log.account_id),
+        "project_id": _optional_string(audit_log.project_id),
+        "gate_event_id": _optional_string(audit_log.gate_event_id),
+        "metadata": audit_log.metadata_,
+        "created_at": _serialize_datetime(audit_log.created_at),
+    }
+
+
+def _serialize_datetime(value: datetime | None) -> str | None:
+    """Serialize datetimes for JSON responses."""
+
+    if value is None:
+        return None
+    return value.isoformat()
 
 
 def _extract_update_event(update: JsonObject) -> TelegramUpdateEvent | None:
