@@ -118,7 +118,12 @@ GATE_ENV=development
 GATE_DEFAULT_MODE=manual
 ACTION_BEARER_TOKEN=
 ADMIN_BEARER_TOKEN=
+MAYAKI_INTAKE_URL=
+MAYAKI_INTAKE_BEARER_TOKEN=
+MAYAKI_INTAKE_TIMEOUT_SECONDS=5.0
 ```
+
+MAYAKI forwarding is optional. If `MAYAKI_INTAKE_URL` is empty, Gate skips forwarding and preserves its Telegram behavior.
 
 Use `.env.example` as a safe template only. Do not commit real secrets or Telegram tokens.
 
@@ -182,10 +187,12 @@ app/
     domain.py
   services/
     telegram.py
+    mayaki.py
 alembic/
   versions/
 docs/
   TEAM_WORKFLOW.md
+  MAYAKI_FORWARDING.md
 tests/
 .github/workflows/ci.yml
 Dockerfile
@@ -220,82 +227,3 @@ Supported Telegram update shapes:
 - `message`;
 - `business_message`;
 - `business_connection`.
-
-The only automatic response rule is:
-
-```text
-incoming normalized text: ping
-reply: Gate online
-```
-
-All other text is stored as a Gate event but does not trigger an outgoing Telegram message.
-
-For `business_message`, Gate passes `business_connection_id` to Telegram when sending the safe reply.
-
-## 13. Current status and next development step
-
-This section is the handoff for any future AI assistant, ChatGPT session, or Codex task. Read this before proposing the next action.
-
-### Current status
-
-- Bootstrap PR `#2` was merged into `main` with green CI.
-- The repository now contains the cloud-first FastAPI backend foundation.
-- Railway project/service exists for Gate.
-- Current Railway domain: `https://gate-production-bab1.up.railway.app`.
-- Railway deployment is healthy.
-- Verified health endpoint response:
-
-```json
-{"status":"ok","service":"gate","environment":"production","default_mode":"manual"}
-```
-
-- Verified deployment fingerprint response:
-
-```json
-{"service":"gate","environment":"production","commit_sha":"9c764170afaf42d0031f2da7fd056f0652db0444","bot_username":"gate_m_bot","default_mode":"manual"}
-```
-
-- `/deployment/fingerprint` does not expose `TELEGRAM_BOT_TOKEN` or other secrets.
-- Telegram Ping v1 is implemented as the first product sprint.
-- Automatic Telegram sending is limited to exact safe keyword `ping` → `Gate online`.
-- Current Codex Tasks environment cannot reliably push branches or create PRs; ChatGPT may create GitHub PRs directly when needed.
-
-### Immediate operational step
-
-Railway is ready. Do not keep debugging infrastructure unless `/health` or `/deployment/fingerprint` regresses.
-
-Before testing Telegram product behavior, ensure these backend variables exist in Railway service `gate`:
-
-```env
-DATABASE_URL=<PostgreSQL URL using postgresql+asyncpg://...>
-TELEGRAM_BOT_TOKEN=<set only in Railway; never commit or paste into chat>
-TELEGRAM_BOT_USERNAME=gate_m_bot
-GATE_ENV=production
-GATE_DEFAULT_MODE=manual
-TELEGRAM_WEBHOOK_SECRET=<random long secret>
-ACTION_BEARER_TOKEN=<random long secret>
-ADMIN_BEARER_TOKEN=<random long secret>
-```
-
-Do not paste secret values into ChatGPT or commit them to GitHub.
-
-### Safety constraints
-
-Do not:
-
-- add AI replies;
-- add free-form auto-replies;
-- send a reply for arbitrary messages;
-- commit real tokens or secrets;
-- log BotFather token;
-- expose secrets through `/health` or `/deployment/fingerprint`;
-- merge without green CI and Mark's explicit merge command;
-- deploy without Mark's explicit deploy command.
-
-### PR, merge and deploy authority
-
-- ChatGPT may create or update PRs directly when this is the appropriate development step.
-- ChatGPT may merge only after Mark gives a direct merge command.
-- ChatGPT may deploy or trigger production redeploy only after Mark gives a direct deploy command.
-- Green CI is required for merge, but green CI alone is not merge approval.
-- Merge approval is not deploy approval.
