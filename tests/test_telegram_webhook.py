@@ -25,6 +25,8 @@ from app.models.domain import (
 from app.services.telegram import TelegramClient
 from httpx import ASGITransport, AsyncClient
 
+MODEL_TYPES = (Bot, GateEvent, AuditLog, TelegramUpdate, Message, Conversation, ReplyTask)
+
 
 class FakeScalars:
     """Minimal scalar collection fake."""
@@ -97,12 +99,8 @@ class FakeSession:
 
     async def flush(self) -> None:
         for item in self.objects:
-            if isinstance(
-                item,
-                Bot | GateEvent | AuditLog | TelegramUpdate | Message | Conversation | ReplyTask,
-            ):
-                if item.id is None:
-                    item.id = uuid.uuid4()
+            if isinstance(item, MODEL_TYPES) and item.id is None:
+                item.id = uuid.uuid4()
 
     async def commit(self) -> None:
         self.commits += 1
@@ -522,6 +520,8 @@ async def test_telegram_admin_status_command_replies_with_status(
 ) -> None:
     session, telegram_client = webhook_context
     monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "111")
+    monkeypatch.setenv("GATE_ENV", "development")
+    get_settings.cache_clear()
     session.scalar_results.extend([12, None, 18, None, 4, None, 2, 0])
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
