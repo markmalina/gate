@@ -7,6 +7,7 @@ from app.api.routes import (
     TelegramAdminCommand,
     _build_reply_draft_text,
     _format_reply_draft_result,
+    _format_reply_drafts_result,
     _format_telegram_test_guide,
     _parse_admin_console_command,
 )
@@ -30,6 +31,18 @@ def test_draft_command_parser_accepts_clickable_underscore_task_reference() -> N
     command = _parse_admin_console_command("/draft_abc12345")
 
     assert command == TelegramAdminCommand(name="draft", task_ref="abc12345")
+
+
+def test_draft_history_parser_accepts_clickable_underscore_task_reference() -> None:
+    command = _parse_admin_console_command("/drafts_abc12345")
+
+    assert command == TelegramAdminCommand(name="drafts", task_ref="abc12345")
+
+
+def test_draft_history_parser_accepts_space_task_reference() -> None:
+    command = _parse_admin_console_command("/drafts abc12345")
+
+    assert command == TelegramAdminCommand(name="drafts", task_ref="abc12345")
 
 
 def test_action_command_parser_accepts_clickable_underscore_task_reference() -> None:
@@ -57,6 +70,7 @@ def test_test_guide_contains_clickable_flow_and_expected_results() -> None:
     assert "test guided draft" in guide
     assert "Press /inbox" in guide
     assert "Press /draft_<task> from /inbox" in guide
+    assert "Press /drafts_<task>" in guide
     assert "Press /done_<task>" in guide
     assert "No unanswered messages." in guide
 
@@ -98,6 +112,54 @@ def test_format_reply_draft_result_shows_not_sent() -> None:
     assert f"task: {str(task.id)[:8]}" in result
     assert draft.draft_text in result
     assert "Not sent." in result
+
+
+def test_format_reply_drafts_result_lists_saved_drafts() -> None:
+    message_id = uuid.uuid4()
+    task = ReplyTask(
+        id=uuid.uuid4(),
+        conversation_id=uuid.uuid4(),
+        trigger_message_id=message_id,
+        status=ReplyTaskStatus.NEEDS_REPLY.value,
+        priority=100,
+        reason="inbound_human_text",
+    )
+    draft = ReplyDraft(
+        id=uuid.uuid4(),
+        reply_task_id=task.id,
+        conversation_id=task.conversation_id,
+        trigger_message_id=message_id,
+        status=ReplyDraftStatus.GENERATED.value,
+        source="gate-local-draft-v1",
+        draft_text="Привет. Черновик сохранён.",
+        prompt_context={"bounded_context": True},
+        created_at=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
+    )
+
+    result = _format_reply_drafts_result(task=task, drafts=[draft])
+
+    assert f"Drafts for task: {str(task.id)[:8]}" in result
+    assert str(draft.id)[:8] in result
+    assert "created: 2026-07-09T12:00:00+00:00" in result
+    assert draft.draft_text in result
+    assert "Not sent." in result
+
+
+def test_format_reply_drafts_result_handles_empty_history() -> None:
+    task = ReplyTask(
+        id=uuid.uuid4(),
+        conversation_id=uuid.uuid4(),
+        trigger_message_id=uuid.uuid4(),
+        status=ReplyTaskStatus.NEEDS_REPLY.value,
+        priority=100,
+        reason="inbound_human_text",
+    )
+    task_ref = str(task.id)[:8]
+
+    result = _format_reply_drafts_result(task=task, drafts=[])
+
+    assert f"No drafts for task: {task_ref}" in result
+    assert f"Press /draft_{task_ref} to create one." in result
 
 
 def test_reply_draft_model_keeps_prompt_context_bounded() -> None:

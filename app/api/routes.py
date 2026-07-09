@@ -542,6 +542,9 @@ async def _build_telegram_admin_reply(
     if command.name == "test":
         return _format_telegram_test_guide()
 
+    if command.name == "drafts":
+        return await _list_reply_drafts(command=command, session=session)
+
     if command.name == "draft":
         return await _create_reply_draft(command=command, session=session)
 
@@ -602,6 +605,22 @@ async def _create_reply_draft(
         )
     )
     return _format_reply_draft_result(draft=draft, task=task)
+
+
+async def _list_reply_drafts(*, command: TelegramAdminCommand, session: AsyncSession) -> str:
+    rows_or_error = await _load_single_reply_task_row(command=command, session=session)
+    if isinstance(rows_or_error, str):
+        return rows_or_error
+
+    task, _conversation, _message = rows_or_error
+    result = await session.execute(
+        select(ReplyDraft)
+        .where(ReplyDraft.reply_task_id == task.id)
+        .order_by(ReplyDraft.created_at.desc(), ReplyDraft.id.desc())
+        .limit(5)
+    )
+    drafts = list(result.scalars().all())
+    return _format_reply_drafts_result(task=task, drafts=drafts)
 
 
 async def _apply_reply_task_action(
@@ -709,6 +728,31 @@ def _format_reply_draft_result(*, draft: ReplyDraft, task: ReplyTask) -> str:
     )
 
 
+def _format_reply_drafts_result(*, task: ReplyTask, drafts: list[ReplyDraft]) -> str:
+    task_ref = str(task.id)[:8]
+    if not drafts:
+        return "\n".join(
+            [
+                f"No drafts for task: {task_ref}",
+                f"Press /draft_{task_ref} to create one.",
+            ]
+        )
+
+    lines = [f"Drafts for task: {task_ref}"]
+    for index, draft in enumerate(drafts, start=1):
+        lines.extend(
+            [
+                "",
+                f"{index}. {str(draft.id)[:8]}",
+                f"created: {_serialize_datetime(draft.created_at)}",
+                _truncate_text(draft.draft_text, 700),
+                "",
+                "Not sent.",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _format_reply_task_action_result(
     *, command: TelegramAdminCommand, task: ReplyTask
 ) -> str:
@@ -756,13 +800,16 @@ def _format_telegram_test_guide() -> str:
             "3. Press /draft_<task> from /inbox",
             "Expected: Draft created ... Not sent.",
             "",
-            "4. Press /inbox",
+            "4. Press /drafts_<task>",
+            "Expected: saved draft history appears.",
+            "",
+            "5. Press /inbox",
             "Expected: task still appears.",
             "",
-            "5. Press /done_<task>",
+            "6. Press /done_<task>",
             "Expected: Marked replied.",
             "",
-            "6. Press /inbox",
+            "7. Press /inbox",
             "Expected: No unanswered messages.",
         ]
     )
@@ -788,8 +835,8 @@ def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
                 f"task: {task_ref}",
                 f"created: {task['created_at']}",
                 (
-                    f"actions: /draft_{task_ref} | /done_{task_ref} | "
-                    f"/dismiss_{task_ref} | /snooze_{task_ref}"
+                    f"actions: /draft_{task_ref} | /drafts_{task_ref} | "
+                    f"/done_{task_ref} | /dismiss_{task_ref} | /snooze_{task_ref}"
                 ),
             ]
         )
@@ -808,6 +855,8 @@ def _parse_admin_console_command(text: str | None) -> TelegramAdminCommand | Non
     action_aliases = {
         "/draft": "draft",
         "draft": "draft",
+        "/drafts": "drafts",
+        "drafts": "drafts",
         "/done": "done",
         "done": "done",
         "/dismiss": "dismiss",
@@ -822,6 +871,7 @@ def _parse_admin_console_command(text: str | None) -> TelegramAdminCommand | Non
         return TelegramAdminCommand(name=action)
 
     underscore_action_aliases = {
+        "/drafts_": "drafts",
         "/draft_": "draft",
         "/done_": "done",
         "/dismiss_": "dismiss",
