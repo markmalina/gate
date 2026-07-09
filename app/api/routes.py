@@ -7,8 +7,9 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from sqlalchemy import String, cast as sql_cast, func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
@@ -537,7 +538,9 @@ async def _build_telegram_admin_reply(
     return await _apply_reply_task_action(command=command, session=session)
 
 
-async def _apply_reply_task_action(*, command: TelegramAdminCommand, session: AsyncSession) -> str:
+async def _apply_reply_task_action(
+    *, command: TelegramAdminCommand, session: AsyncSession
+) -> str:
     task_ref = (command.task_ref or "").strip()
     if not task_ref:
         return f"Usage: /{command.name} <task>"
@@ -602,13 +605,12 @@ async def _find_reply_task_rows_by_ref(
         .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
         .limit(2)
     )
-    return [
-        (task, conversation, message)
-        for task, conversation, message in result.all()
-    ]
+    return [(task, conversation, message) for task, conversation, message in result.all()]
 
 
-def _format_reply_task_action_result(*, command: TelegramAdminCommand, task: ReplyTask) -> str:
+def _format_reply_task_action_result(
+    *, command: TelegramAdminCommand, task: ReplyTask
+) -> str:
     labels = {
         "done": "Marked replied",
         "dismiss": "Dismissed",
