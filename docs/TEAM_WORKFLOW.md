@@ -34,6 +34,7 @@ ChatGPT:
 - when a command includes a value Mark must replace, states exactly what to replace and where Mark should get the value;
 - first reads the repository workflow rules when Mark starts a work session by sending a README link;
 - reads the README/project handoff, project status and current active scope before proposing implementation;
+- before any project action, runs the pre-action rule check against the priority order in this document;
 - decides whether a GitHub PR should be created or updated;
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
@@ -76,6 +77,40 @@ A development task is complete only when:
 2. the PR head SHA changes;
 3. GitHub Actions CI starts;
 4. the CI result is known or explicitly still running.
+
+## Rule priority order
+
+Rules in this document are enforced in priority order. If a lower-priority rule conflicts with a higher-priority rule, the higher-priority rule wins.
+
+Priority order:
+
+1. Secrets and safety restrictions.
+2. Production deployment restrictions.
+3. Merge restrictions.
+4. Fixation gate: `зафиксируй` vs `зафиксируй сейчас` vs a substantive project PR.
+5. Scope restrictions: no broad, multi-scope, high-risk or unclear changes without confirmation or Codex delegation.
+6. GitHub source-of-truth and CI/review gates.
+7. Error correction rule.
+8. Next-step execution rule.
+9. Next Mark action and user task package rules.
+10. Reporting style and wording rules.
+
+Before any project action, ChatGPT must run this pre-action rule check:
+
+1. Identify the planned action.
+2. Identify which rule authorizes the action.
+3. Check all higher-priority rules first.
+4. If any higher-priority rule blocks the action, do not perform it.
+5. If performing the action violates a lower-priority rule because a higher-priority rule requires the action, explain exactly which higher-priority rule overrides which lower-priority rule.
+6. If rules at the same priority conflict, stop and ask Mark for an explicit decision.
+
+When ChatGPT says it violated or bypassed a rule, the explanation must name:
+
+- the violated or bypassed rule;
+- the higher-priority rule that required the action;
+- why the higher-priority rule applied in that situation.
+
+If no higher-priority rule applies, the action is an error and must be corrected under the error correction rule.
 
 ## Session entry protocol
 
@@ -143,6 +178,8 @@ When Mark says `зафиксируй сейчас`, ChatGPT must update the rele
 
 When any regulation rule is actually written to a file, ChatGPT must explicitly report what was written and where.
 
+The fixation rule is a high-priority gate. Error correction does not override it: after `зафиксируй`, ChatGPT may propose a prevention rule and queue it, but must not write it immediately unless Mark says `зафиксируй сейчас` or there is already a suitable substantive project PR.
+
 ## Error correction rule
 
 When ChatGPT makes an error, it must follow this priority order:
@@ -156,7 +193,7 @@ When ChatGPT makes an error, it must follow this priority order:
 
 An error explanation is incomplete if ChatGPT only describes the mistake and does not propose or write the prevention rule before giving the next action.
 
-This rule has priority over merely asking Mark for the next command. It does not override merge, deploy, secret or broad-scope restrictions.
+This rule has priority over merely asking Mark for the next command. It does not override secrets, safety, merge, deploy, fixation, CI, source-of-truth or broad-scope restrictions.
 
 ## Next-step execution rule
 
