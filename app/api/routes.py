@@ -757,7 +757,10 @@ def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
                 f"chat: {conversation['chat_id']}",
                 f"task: {task_ref}",
                 f"created: {task['created_at']}",
-                f"actions: /draft {task_ref} | /done {task_ref} | /dismiss {task_ref} | /snooze {task_ref}",
+                (
+                    f"actions: /draft {task_ref} | /done {task_ref} | "
+                    f"/dismiss {task_ref} | /snooze {task_ref}"
+                ),
             ]
         )
     return "\n".join(lines)
