@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -38,15 +39,27 @@ class FakeScalars:
 class FakeScalarResult:
     """Minimal SQLAlchemy scalar result fake."""
 
-    def __init__(self, row: object | None = None, rows: list[Any] | None = None) -> None:
+    def __init__(
+        self,
+        row: object | None = None,
+        rows: list[Any] | None = None,
+        scalar: Any | None = None,
+    ) -> None:
         self._row = row
         self._rows = rows or ([] if row is None else [row])
+        self._scalar = scalar
 
     def scalar_one_or_none(self) -> object | None:
         return self._row
 
+    def scalar_one(self) -> Any:
+        return self._scalar
+
     def scalars(self) -> FakeScalars:
         return FakeScalars(self._rows)
+
+    def all(self) -> list[Any]:
+        return self._rows
 
 
 class FakeSession:
@@ -54,6 +67,8 @@ class FakeSession:
 
     def __init__(self) -> None:
         self.objects: list[object] = []
+        self.inbox_rows: list[tuple[ReplyTask, Conversation, Message]] = []
+        self.scalar_results: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
 
@@ -65,12 +80,16 @@ class FakeSession:
         if "FROM telegram_updates" in statement_text:
             updates = [item for item in self.objects if isinstance(item, TelegramUpdate)]
             return FakeScalarResult(updates[0] if updates else None)
+        if "JOIN conversations" in statement_text:
+            return FakeScalarResult(rows=self.inbox_rows)
         if "FROM conversations" in statement_text:
             conversations = [item for item in self.objects if isinstance(item, Conversation)]
             return FakeScalarResult(conversations[0] if conversations else None)
-        if "FROM reply_tasks" in statement_text:
+        if "FROM reply_tasks" in statement_text and "count" not in statement_text:
             tasks = [item for item in self.objects if isinstance(item, ReplyTask)]
             return FakeScalarResult(rows=tasks)
+        if self.scalar_results:
+            return FakeScalarResult(scalar=self.scalar_results.pop(0))
         return FakeScalarResult(None)
 
     def add(self, instance: object) -> None:
@@ -139,6 +158,7 @@ def webhook_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[tuple[FakeSession, FakeTelegramClient]]:
     monkeypatch.setenv("TELEGRAM_" + "WEBHOOK_SECRET", "test-secret")
+    monkeypatch.delenv("TELEGRAM_ADMIN_USER_IDS", raising=False)
     get_settings.cache_clear()
 
     session = FakeSession()
@@ -159,12 +179,12 @@ def webhook_context(
     get_settings.cache_clear()
 
 
-def message_update(text: str, update_id: int = 100) -> dict[str, Any]:
+def message_update(text: str, update_id: int = 100, user_id: int = 111) -> dict[str, Any]:
     return {
         "update_id": update_id,
         "message": {
             "message_id": 10,
-            "from": {"id": 111},
+            "from": {"id": user_id},
             "chat": {"id": 222, "type": "private"},
             "date": 1,
             "text": text,
@@ -304,6 +324,7 @@ async def test_inbound_message_is_saved_when_auto_reply_send_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TELEGRAM_" + "WEBHOOK_SECRET", "test-secret")
+    monkeypatch.delenv("TELEGRAM_ADMIN_USER_IDS", raising=False)
     get_settings.cache_clear()
     session = FakeSession()
 
@@ -492,3 +513,111 @@ async def test_ping_auto_reply_satisfies_unanswered_task(
     assert conversations[0].status == ConversationStatus.REPLIED.value
     assert conversations[0].requires_reply is False
     assert tasks[0].status == ReplyTaskStatus.REPLIED.value
+
+
+@pytest.mark.anyio
+async def test_telegram_admin_status_command_replies_with_status(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "111")
+    session.scalar_results.extend([12, None, 18, None, 4, None, 2, 0])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("/status", update_id=500),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["send_status"] == "sent"
+    assert telegram_client.calls[-1]["text"].splitlines() == [
+        "Gate status",
+        "Environment: development",
+        "Commit: unknown",
+        "Bot: gate_m_bot",
+        "Messages: 4",
+        "Reply tasks: 2",
+        "Unanswered: 0",
+    ]
+    assert len([item for item in session.objects if isinstance(item, ReplyTask)]) == 0
+
+
+@pytest.mark.anyio
+async def test_telegram_admin_inbox_command_replies_with_unanswered_messages(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "111")
+    bot_id = uuid.uuid4()
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        bot_id=bot_id,
+        chat_id="222",
+        status=ConversationStatus.OPEN.value,
+        requires_reply=True,
+        last_message_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+        last_inbound_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+    )
+    message = Message(
+        id=uuid.uuid4(),
+        bot_id=bot_id,
+        direction=MessageDirection.INBOUND.value,
+        source="telegram",
+        event_type="message",
+        chat_id="222",
+        sender_id="111",
+        text="please reply",
+        payload={},
+        received_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+        created_at=datetime(2026, 7, 9, 11, 40, tzinfo=UTC),
+    )
+    task = ReplyTask(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        trigger_message_id=message.id,
+        status=ReplyTaskStatus.NEEDS_REPLY.value,
+        priority=100,
+        reason="inbound_human_text",
+        created_at=datetime(2026, 7, 9, 11, 41, tzinfo=UTC),
+        updated_at=datetime(2026, 7, 9, 11, 41, tzinfo=UTC),
+    )
+    session.objects.extend([conversation, message, task])
+    session.inbox_rows.append((task, conversation, message))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("где я не ответил", update_id=501),
+        )
+
+    assert response.status_code == 200
+    reply_text = telegram_client.calls[-1]["text"]
+    assert "Unanswered inbox:" in reply_text
+    assert "please reply" in reply_text
+    assert "payload" not in reply_text
+
+
+@pytest.mark.anyio
+async def test_non_admin_inbox_command_does_not_expose_admin_data(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", "999")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("/inbox", update_id=502),
+        )
+
+    assert response.status_code == 200
+    assert telegram_client.calls[-1]["text"] == "Gate online"
+    assert "Unanswered" not in telegram_client.calls[-1]["text"]
+    assert len([item for item in session.objects if isinstance(item, ReplyTask)]) == 0
