@@ -9,19 +9,44 @@ from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.core.config import get_settings
 from app.main import app
-from app.models.domain import AuditLog, Bot, GateEvent, Message, MessageDirection, TelegramUpdate
+from app.models.domain import (
+    AuditLog,
+    Bot,
+    Conversation,
+    ConversationStatus,
+    GateEvent,
+    Message,
+    MessageDirection,
+    ReplyTask,
+    ReplyTaskStatus,
+    TelegramUpdate,
+)
 from app.services.telegram import TelegramClient
 from httpx import ASGITransport, AsyncClient
+
+
+class FakeScalars:
+    """Minimal scalar collection fake."""
+
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
 
 
 class FakeScalarResult:
     """Minimal SQLAlchemy scalar result fake."""
 
-    def __init__(self, row: object | None) -> None:
+    def __init__(self, row: object | None = None, rows: list[Any] | None = None) -> None:
         self._row = row
+        self._rows = rows or ([] if row is None else [row])
 
     def scalar_one_or_none(self) -> object | None:
         return self._row
+
+    def scalars(self) -> FakeScalars:
+        return FakeScalars(self._rows)
 
 
 class FakeSession:
@@ -40,6 +65,12 @@ class FakeSession:
         if "FROM telegram_updates" in statement_text:
             updates = [item for item in self.objects if isinstance(item, TelegramUpdate)]
             return FakeScalarResult(updates[0] if updates else None)
+        if "FROM conversations" in statement_text:
+            conversations = [item for item in self.objects if isinstance(item, Conversation)]
+            return FakeScalarResult(conversations[0] if conversations else None)
+        if "FROM reply_tasks" in statement_text:
+            tasks = [item for item in self.objects if isinstance(item, ReplyTask)]
+            return FakeScalarResult(rows=tasks)
         return FakeScalarResult(None)
 
     def add(self, instance: object) -> None:
@@ -47,7 +78,10 @@ class FakeSession:
 
     async def flush(self) -> None:
         for item in self.objects:
-            if isinstance(item, Bot | GateEvent | AuditLog | TelegramUpdate | Message):
+            if isinstance(
+                item,
+                Bot | GateEvent | AuditLog | TelegramUpdate | Message | Conversation | ReplyTask,
+            ):
                 if item.id is None:
                     item.id = uuid.uuid4()
 
@@ -390,3 +424,71 @@ async def test_business_connection_update_is_persisted_without_auto_reply(
     assert len(messages) == 1
     assert messages[0].event_type == "business_connection"
     assert messages[0].text is None
+
+
+@pytest.mark.anyio
+async def test_inbound_non_ping_creates_conversation_and_needs_reply_task(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+) -> None:
+    session, _telegram_client = webhook_context
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("where are we?", update_id=400),
+        )
+
+    assert response.status_code == 200
+    conversations = [item for item in session.objects if isinstance(item, Conversation)]
+    tasks = [item for item in session.objects if isinstance(item, ReplyTask)]
+    assert len(conversations) == 1
+    assert conversations[0].chat_id == "222"
+    assert conversations[0].status == ConversationStatus.OPEN.value
+    assert conversations[0].requires_reply is True
+    assert len(tasks) == 1
+    assert tasks[0].status == ReplyTaskStatus.NEEDS_REPLY.value
+
+
+@pytest.mark.anyio
+async def test_duplicate_update_does_not_create_duplicate_reply_task(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+) -> None:
+    session, _telegram_client = webhook_context
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("hello", update_id=401),
+        )
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("hello", update_id=401),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["duplicate"] is True
+    assert len([item for item in session.objects if isinstance(item, ReplyTask)]) == 1
+
+
+@pytest.mark.anyio
+async def test_ping_auto_reply_satisfies_unanswered_task(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+) -> None:
+    session, _telegram_client = webhook_context
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=message_update("ping", update_id=402),
+        )
+
+    assert response.status_code == 200
+    conversations = [item for item in session.objects if isinstance(item, Conversation)]
+    tasks = [item for item in session.objects if isinstance(item, ReplyTask)]
+    assert conversations[0].status == ConversationStatus.REPLIED.value
+    assert conversations[0].requires_reply is False
+    assert tasks[0].status == ReplyTaskStatus.REPLIED.value
