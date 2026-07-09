@@ -7,8 +7,9 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
@@ -44,6 +45,14 @@ class TelegramUpdateEvent:
     sender_id: str
     text: str | None
     business_connection_id: str | None
+
+
+@dataclass(frozen=True)
+class TelegramAdminCommand:
+    """Parsed Telegram admin console command."""
+
+    name: str
+    task_ref: str | None = None
 
 
 def get_telegram_client(settings: Settings = settings_dependency) -> TelegramClient:
@@ -296,7 +305,7 @@ async def telegram_webhook(
                 session=session,
                 settings=settings,
             )
-            audit_action = f"telegram_admin_console_{admin_command}_sent"
+            audit_action = f"telegram_admin_console_{admin_command.name}_sent"
         else:
             auto_reply = "Gate online"
             audit_action = "telegram_admin_console_rejected"
@@ -315,7 +324,8 @@ async def telegram_webhook(
                     bot_id=bot.id,
                     gate_event_id=gate_event.id,
                     metadata_={
-                        "command": admin_command,
+                        "command": admin_command.name,
+                        "task_ref": admin_command.task_ref,
                         "error_type": exc.__class__.__name__,
                     },
                 )
@@ -351,7 +361,7 @@ async def telegram_webhook(
                 action=audit_action,
                 bot_id=bot.id,
                 gate_event_id=gate_event.id,
-                metadata_={"command": admin_command},
+                metadata_={"command": admin_command.name, "task_ref": admin_command.task_ref},
             )
         )
         await session.commit()
@@ -513,16 +523,101 @@ async def _load_unanswered_reply_tasks(*, session: AsyncSession, limit: int) -> 
 
 async def _build_telegram_admin_reply(
     *,
-    command: str,
+    command: TelegramAdminCommand,
     session: AsyncSession,
     settings: Settings,
 ) -> str:
-    if command == "status":
+    if command.name == "status":
         status_payload = await _build_admin_status_payload(session=session, settings=settings)
         return _format_telegram_admin_status(status_payload)
 
-    reply_tasks = await _load_unanswered_reply_tasks(session=session, limit=10)
-    return _format_telegram_unanswered_inbox(reply_tasks)
+    if command.name == "inbox":
+        reply_tasks = await _load_unanswered_reply_tasks(session=session, limit=10)
+        return _format_telegram_unanswered_inbox(reply_tasks)
+
+    return await _apply_reply_task_action(command=command, session=session)
+
+
+async def _apply_reply_task_action(
+    *, command: TelegramAdminCommand, session: AsyncSession
+) -> str:
+    task_ref = (command.task_ref or "").strip()
+    if not task_ref:
+        return f"Usage: /{command.name} <task>"
+    if len(task_ref) < 4:
+        return "Task reference is too short. Use the task id from /inbox."
+
+    rows = await _find_reply_task_rows_by_ref(session=session, task_ref=task_ref)
+    if not rows:
+        return f"Task not found: {task_ref}"
+    if len(rows) > 1:
+        return f"Task reference is ambiguous: {task_ref}"
+
+    task, conversation, _message = rows[0]
+    old_status = task.status
+    action_statuses = {
+        "done": ReplyTaskStatus.REPLIED.value,
+        "dismiss": ReplyTaskStatus.DISMISSED.value,
+        "snooze": ReplyTaskStatus.SNOOZED.value,
+        "reopen": ReplyTaskStatus.NEEDS_REPLY.value,
+    }
+    task.status = action_statuses[command.name]
+    task.due_at = None
+
+    if command.name == "reopen":
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = True
+    elif command.name == "done":
+        conversation.status = ConversationStatus.REPLIED.value
+        conversation.requires_reply = False
+    elif command.name == "dismiss":
+        conversation.status = ConversationStatus.CLOSED.value
+        conversation.requires_reply = False
+    else:
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = False
+
+    session.add(
+        AuditLog(
+            actor="gate",
+            action=f"reply_task_{command.name}_from_telegram",
+            bot_id=conversation.bot_id,
+            gate_event_id=None,
+            metadata_={
+                "task_id": str(task.id),
+                "task_ref": task_ref,
+                "from_status": old_status,
+                "to_status": task.status,
+            },
+        )
+    )
+    return _format_reply_task_action_result(command=command, task=task)
+
+
+async def _find_reply_task_rows_by_ref(
+    *, session: AsyncSession, task_ref: str
+) -> list[tuple[ReplyTask, Conversation, Message]]:
+    result = await session.execute(
+        select(ReplyTask, Conversation, Message)
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .where(sql_cast(ReplyTask.id, String).like(f"{task_ref}%"))
+        .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
+        .limit(2)
+    )
+    return [(task, conversation, message) for task, conversation, message in result.all()]
+
+
+def _format_reply_task_action_result(
+    *, command: TelegramAdminCommand, task: ReplyTask
+) -> str:
+    labels = {
+        "done": "Marked replied",
+        "dismiss": "Dismissed",
+        "snooze": "Snoozed",
+        "reopen": "Reopened",
+    }
+    return f"{labels[command.name]}: {str(task.id)[:8]}"
 
 
 def _format_telegram_admin_status(status_payload: JsonObject) -> str:
@@ -553,6 +648,7 @@ def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
     for index, task in enumerate(reply_tasks, start=1):
         conversation = cast(JsonObject, task["conversation"])
         message = cast(JsonObject, task["message"])
+        task_ref = str(task["id"])[:8]
         text = str(message.get("text") or "")
         if len(text) > 160:
             text = f"{text[:157]}..."
@@ -561,20 +657,39 @@ def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
                 "",
                 f"{index}. {text}",
                 f"chat: {conversation['chat_id']}",
-                f"task: {str(task['id'])[:8]}",
+                f"task: {task_ref}",
                 f"created: {task['created_at']}",
+                f"actions: /done {task_ref} | /dismiss {task_ref} | /snooze {task_ref}",
             ]
         )
     return "\n".join(lines)
 
 
-def _parse_admin_console_command(text: str | None) -> str | None:
+def _parse_admin_console_command(text: str | None) -> TelegramAdminCommand | None:
     normalized = (text or "").strip().casefold()
     if normalized in {"/status", "status", "статус"}:
-        return "status"
+        return TelegramAdminCommand(name="status")
     if normalized in {"/inbox", "inbox", "где я не ответил"}:
-        return "inbox"
-    return None
+        return TelegramAdminCommand(name="inbox")
+
+    parts = normalized.split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+
+    action_aliases = {
+        "/done": "done",
+        "done": "done",
+        "/dismiss": "dismiss",
+        "dismiss": "dismiss",
+        "/snooze": "snooze",
+        "snooze": "snooze",
+        "/reopen": "reopen",
+        "reopen": "reopen",
+    }
+    action = action_aliases.get(parts[0])
+    if action is None:
+        return None
+    return TelegramAdminCommand(name=action, task_ref=parts[1])
 
 
 def _is_telegram_admin_sender(sender_id: str) -> bool:
