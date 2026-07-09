@@ -60,6 +60,15 @@ class ReplyTaskStatus(StrEnum):
     SNOOZED = "snoozed"
 
 
+class ReplyDraftStatus(StrEnum):
+    """Reply draft lifecycle states."""
+
+    GENERATED = "generated"
+    EDITED = "edited"
+    REJECTED = "rejected"
+    APPROVED = "approved"
+
+
 class Bot(Base):
     """Telegram bot adapter configuration without committed token values."""
 
@@ -258,6 +267,7 @@ class Conversation(Base):
 
     bot: Mapped[Bot] = relationship(back_populates="conversations")
     reply_tasks: Mapped[list["ReplyTask"]] = relationship(back_populates="conversation")
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(back_populates="conversation")
 
 
 class ReplyTask(Base):
@@ -286,6 +296,40 @@ class ReplyTask(Base):
     )
 
     conversation: Mapped[Conversation] = relationship(back_populates="reply_tasks")
+    trigger_message: Mapped[Message] = relationship()
+    reply_drafts: Mapped[list["ReplyDraft"]] = relationship(back_populates="reply_task")
+
+
+class ReplyDraft(Base):
+    """AI-suggested draft text for a reply task, never sent directly."""
+
+    __tablename__ = "reply_drafts"
+    __table_args__ = (
+        Index("ix_reply_drafts_status_created_at", "status", "created_at"),
+        Index("ix_reply_drafts_task_created_at", "reply_task_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reply_task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reply_tasks.id"), nullable=False, index=True
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    trigger_message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("messages.id"), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ReplyDraftStatus.GENERATED.value
+    )
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    draft_text: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    reply_task: Mapped[ReplyTask] = relationship(back_populates="reply_drafts")
+    conversation: Mapped[Conversation] = relationship(back_populates="reply_drafts")
     trigger_message: Mapped[Message] = relationship()
 
 
