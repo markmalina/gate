@@ -63,10 +63,15 @@ def test_test_command_parser_accepts_test_command() -> None:
     assert command == TelegramAdminCommand(name="test")
 
 
-def test_test_guide_contains_clickable_flow_and_expected_results() -> None:
-    guide = _format_telegram_test_guide()
+def test_test_guide_contains_deployment_metadata_and_clickable_flow() -> None:
+    guide = _format_telegram_test_guide(
+        commit_sha="68a2e4f150f47fa30e8d2968ef665e9ce335a121",
+        bot_username="gate_m_bot",
+    )
 
     assert "Gate test: draft flow" in guide
+    assert "Commit: 68a2e4f150f4" in guide
+    assert "Bot: gate_m_bot" in guide
     assert "test guided draft" in guide
     assert "Press /inbox" in guide
     assert "Press /draft_<task> from /inbox" in guide
