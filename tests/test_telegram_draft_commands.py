@@ -7,6 +7,7 @@ from app.api.routes import (
     TelegramAdminCommand,
     _build_reply_draft_text,
     _format_reply_draft_result,
+    _format_telegram_test_guide,
     _parse_admin_console_command,
 )
 from app.models.domain import (
@@ -19,10 +20,45 @@ from app.models.domain import (
 )
 
 
-def test_draft_command_parser_accepts_task_reference() -> None:
+def test_draft_command_parser_accepts_space_task_reference() -> None:
     command = _parse_admin_console_command("/draft abc12345")
 
     assert command == TelegramAdminCommand(name="draft", task_ref="abc12345")
+
+
+def test_draft_command_parser_accepts_clickable_underscore_task_reference() -> None:
+    command = _parse_admin_console_command("/draft_abc12345")
+
+    assert command == TelegramAdminCommand(name="draft", task_ref="abc12345")
+
+
+def test_action_command_parser_accepts_clickable_underscore_task_reference() -> None:
+    assert _parse_admin_console_command("/done_abc12345") == TelegramAdminCommand(
+        name="done", task_ref="abc12345"
+    )
+    assert _parse_admin_console_command("/dismiss_abc12345") == TelegramAdminCommand(
+        name="dismiss", task_ref="abc12345"
+    )
+    assert _parse_admin_console_command("/snooze_abc12345") == TelegramAdminCommand(
+        name="snooze", task_ref="abc12345"
+    )
+
+
+def test_test_command_parser_accepts_test_command() -> None:
+    command = _parse_admin_console_command("/test")
+
+    assert command == TelegramAdminCommand(name="test")
+
+
+def test_test_guide_contains_clickable_flow_and_expected_results() -> None:
+    guide = _format_telegram_test_guide()
+
+    assert "Gate test: draft flow" in guide
+    assert "test guided draft" in guide
+    assert "Press /inbox" in guide
+    assert "Press /draft_<task> from /inbox" in guide
+    assert "Press /done_<task>" in guide
+    assert "No unanswered messages." in guide
 
 
 def test_reply_draft_text_is_bounded_and_not_a_send_action() -> None:
