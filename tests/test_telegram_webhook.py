@@ -618,7 +618,8 @@ async def test_telegram_admin_inbox_command_replies_with_unanswered_messages(
     reply_text = telegram_client.calls[-1]["text"]
     assert "Unanswered inbox:" in reply_text
     assert "please reply" in reply_text
-    assert f"actions: /done {task_ref}" in reply_text
+    assert f"actions: /draft {task_ref}" in reply_text
+    assert f"/done {task_ref}" in reply_text
     assert "payload" not in reply_text
 
 
