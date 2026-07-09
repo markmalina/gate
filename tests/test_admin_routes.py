@@ -236,12 +236,12 @@ async def test_admin_status_returns_operational_snapshot(
         "service": {
             "status": "ok",
             "name": "gate",
-            "environment": "test",
+            "environment": "development",
             "default_mode": "manual",
         },
         "deployment": {
             "service": "gate",
-            "commit_sha": "local",
+            "commit_sha": "unknown",
             "bot_username": "gate_m_bot",
         },
         "events": {
