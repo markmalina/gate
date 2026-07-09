@@ -154,6 +154,8 @@ When ChatGPT makes an error, it must follow this priority order:
 5. propose a workflow rule to prevent recurrence;
 6. if Mark says `зафиксируй` or the current PR is already the suitable documentation update, write the rule into the regulation file and report exactly what was written.
 
+An error explanation is incomplete if ChatGPT only describes the mistake and does not propose or write the prevention rule before giving the next action.
+
 This rule has priority over merely asking Mark for the next command. It does not override merge, deploy, secret or broad-scope restrictions.
 
 ## Next-step execution rule
