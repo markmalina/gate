@@ -505,7 +505,10 @@ async def _load_unanswered_reply_tasks(*, session: AsyncSession, limit: int) -> 
         .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
         .limit(limit)
     )
-    return [_serialize_reply_task(task, conversation, message) for task, conversation, message in result.all()]
+    return [
+        _serialize_reply_task(task, conversation, message)
+        for task, conversation, message in result.all()
+    ]
 
 
 async def _build_telegram_admin_reply(
@@ -576,11 +579,8 @@ def _parse_admin_console_command(text: str | None) -> str | None:
 
 def _is_telegram_admin_sender(sender_id: str) -> bool:
     configured = os.getenv("TELEGRAM_ADMIN_USER_IDS", "")
-    admin_ids = {
-        item.strip()
-        for item in configured.replace(";", ",").replace(" ", ",").split(",")
-        if item.strip()
-    }
+    normalized_config = configured.replace(";", ",").replace(" ", ",")
+    admin_ids = {item.strip() for item in normalized_config.split(",") if item.strip()}
     return sender_id in admin_ids
 
 
