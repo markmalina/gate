@@ -2,7 +2,6 @@
 
 import uuid
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
