@@ -540,7 +540,10 @@ async def _build_telegram_admin_reply(
         return _format_telegram_unanswered_inbox(reply_tasks)
 
     if command.name == "test":
-        return _format_telegram_test_guide()
+        return _format_telegram_test_guide(
+            commit_sha=settings.deployment_sha,
+            bot_username=settings.telegram_bot_username,
+        )
 
     if command.name == "drafts":
         return await _list_reply_drafts(command=command, session=session)
@@ -785,10 +788,13 @@ def _format_telegram_admin_status(status_payload: JsonObject) -> str:
     )
 
 
-def _format_telegram_test_guide() -> str:
+def _format_telegram_test_guide(*, commit_sha: str, bot_username: str) -> str:
+    short_sha = commit_sha[:12] if commit_sha != "unknown" else commit_sha
     return "\n".join(
         [
             "Gate test: draft flow",
+            f"Commit: {short_sha}",
+            f"Bot: {bot_username}",
             "",
             "1. Send text message:",
             "test guided draft",
