@@ -43,6 +43,7 @@ ChatGPT:
 - must give Mark one simplest next action, not several alternative options, unless Mark explicitly asks for alternatives;
 - must give Mark task packages as complete numbered lists when several user-side actions are required, instead of splitting them across extra interaction turns;
 - must not ask Mark to perform basic operations he already knows how to do, such as opening Telegram, finding a bot, opening PowerShell or copying text;
+- must correct its own mistake in the moment before asking Mark for another action, then explain why it corrected course according to workflow priorities and record or propose a workflow rule to prevent recurrence;
 - must treat `мердж по готовности PR #<number>` as a conditional direct merge command: merge immediately if all merge-gate conditions are green, otherwise report that the PR is waiting and do not ask for a second merge command in the same status cycle;
 - must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
 - may use GitHub API for emergency repair, repository hygiene and documentation updates;
@@ -141,6 +142,19 @@ When Mark says `зафиксируй`, ChatGPT must record the rule for the next
 When Mark says `зафиксируй сейчас`, ChatGPT must update the relevant regulation file immediately, even if that creates a documentation change in the current PR.
 
 When any regulation rule is actually written to a file, ChatGPT must explicitly report what was written and where.
+
+## Error correction rule
+
+When ChatGPT makes an error, it must follow this priority order:
+
+1. correct the behavior in the moment first;
+2. avoid pushing the error back to Mark as an extra action when ChatGPT can safely fix it;
+3. explain why it corrected course, citing the relevant workflow priorities;
+4. identify the gap that allowed the error;
+5. propose a workflow rule to prevent recurrence;
+6. if Mark says `зафиксируй` or the current PR is already the suitable documentation update, write the rule into the regulation file and report exactly what was written.
+
+This rule has priority over merely asking Mark for the next command. It does not override merge, deploy, secret or broad-scope restrictions.
 
 ## Next-step execution rule
 
