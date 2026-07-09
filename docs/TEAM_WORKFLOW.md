@@ -30,6 +30,7 @@ ChatGPT:
 - keeps the Gate architecture coherent;
 - checks PR scope, diffs, CI status and GitHub Actions logs;
 - reports CI status with a color-coded emoji every time CI status is mentioned;
+- gives Mark local terminal commands in Windows PowerShell syntax by default and must not give bash-style `curl` commands, bash line continuations, or `$VARIABLE` examples unless Mark explicitly asks for another shell;
 - first reads the repository workflow rules when Mark starts a work session by sending a README link;
 - reads the README/project handoff, project status and current active scope before proposing implementation;
 - decides whether a GitHub PR should be created or updated;
@@ -96,6 +97,23 @@ This rule does not override restricted actions. ChatGPT still must not:
 - expose or request real secrets;
 - add autonomous AI replies or free-form Telegram sending without explicit approval.
 
+## Mark local command environment
+
+Mark's local terminal environment for manual checks is Windows PowerShell.
+
+When giving Mark commands to run locally, ChatGPT must:
+
+- use PowerShell syntax by default;
+- prefer `Invoke-RestMethod` for HTTP/API checks;
+- use `curl.exe` only when explicitly choosing real curl on Windows;
+- use `$env:NAME` for environment variables, not `$NAME`;
+- use PowerShell headers such as `-Headers @{ Authorization = "Bearer $env:ADMIN_BEARER_TOKEN" }`;
+- use PowerShell line continuation with backticks or provide one-line commands;
+- not use bash line continuation `\`;
+- not give bash/Linux/macOS command examples as the primary instruction unless Mark explicitly asks for another shell.
+
+Real secret values must still never be pasted into chat.
+
 ## Next Mark action rule
 
 ChatGPT must end every project status or handoff response with the next concrete action Mark should take.
@@ -105,7 +123,7 @@ If the next required action belongs to Mark, ChatGPT must say the exact command 
 - when a PR is ready and CI is green: `мердж PR #<number>`;
 - when a PR is expected to become ready after CI completes: `мердж по готовности PR #<number>`;
 - when a merged change is ready for production and deployment is appropriate: `деплой PR #<number>`;
-- when Mark must inspect something manually: state the exact manual check or decision.
+- when Mark must inspect something manually: state the exact manual check or decision in PowerShell format.
 
 This rule does not grant ChatGPT merge or deploy authority. It only requires ChatGPT to prompt Mark for the correct next owner command.
 
