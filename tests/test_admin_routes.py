@@ -3,6 +3,7 @@
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from app.api.deps import get_db_session
@@ -27,11 +28,19 @@ class FakeScalarRows:
 class FakeResult:
     """Minimal SQLAlchemy result fake."""
 
-    def __init__(self, rows: list[AdminRow]) -> None:
-        self._rows = rows
+    def __init__(
+        self,
+        rows: list[AdminRow] | None = None,
+        scalar: Any | None = None,
+    ) -> None:
+        self._rows = rows or []
+        self._scalar = scalar
 
     def scalars(self) -> FakeScalarRows:
         return FakeScalarRows(self._rows)
+
+    def scalar_one(self) -> Any:
+        return self._scalar
 
 
 class FakeAdminSession:
@@ -39,10 +48,13 @@ class FakeAdminSession:
 
     def __init__(self, rows: list[AdminRow]) -> None:
         self.rows = rows
+        self.scalar_results: list[Any] = []
 
     async def execute(self, statement: object) -> FakeResult:
         del statement
-        return FakeResult(self.rows)
+        if self.scalar_results:
+            return FakeResult(scalar=self.scalar_results.pop(0))
+        return FakeResult(rows=self.rows)
 
 
 @pytest.fixture
@@ -194,3 +206,47 @@ async def test_admin_audit_returns_recent_audit_logs(
             }
         ]
     }
+
+
+@pytest.mark.anyio
+async def test_admin_status_returns_operational_snapshot(
+    admin_context: FakeAdminSession,
+) -> None:
+    admin_context.scalar_results.extend(
+        [
+            2,
+            datetime(2026, 7, 9, 6, 2, tzinfo=UTC),
+            4,
+            datetime(2026, 7, 9, 6, 3, tzinfo=UTC),
+        ]
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/admin/status",
+            headers={"Authorization": "Bearer admin-token"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["service"]["status"] == "ok"
+    assert body["service"]["name"] == "gate"
+    assert isinstance(body["service"]["environment"], str)
+    assert isinstance(body["service"]["default_mode"], str)
+    assert isinstance(body["deployment"]["service"], str)
+    assert isinstance(body["deployment"]["commit_sha"], str)
+    assert body["deployment"]["bot_username"] == "gate_m_bot"
+    assert body["events"] == {
+        "count": 2,
+        "last_received_at": "2026-07-09T06:02:00+00:00",
+    }
+    assert body["audit_logs"] == {
+        "count": 4,
+        "last_created_at": "2026-07-09T06:03:00+00:00",
+    }
+    assert "payload" not in str(body)
+    assert "telegram_bot_token" not in str(body)
+    assert "ADMIN_BEARER_TOKEN" not in str(body)

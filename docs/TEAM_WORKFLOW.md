@@ -30,13 +30,20 @@ ChatGPT:
 - keeps the Gate architecture coherent;
 - checks PR scope, diffs, CI status and GitHub Actions logs;
 - reports CI status with a color-coded emoji every time CI status is mentioned;
+- gives Mark local terminal commands in Windows PowerShell syntax by default and must not give bash-style `curl` commands, bash line continuations, or `$VARIABLE` examples unless Mark explicitly asks for another shell;
+- when a command includes a value Mark must replace, states exactly what to replace and where Mark should get the value;
 - first reads the repository workflow rules when Mark starts a work session by sending a README link;
 - reads the README/project handoff, project status and current active scope before proposing implementation;
 - decides whether a GitHub PR should be created or updated;
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
 - must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require merge or production deployment approval;
+- must run read-only project checks itself instead of asking Mark to request status separately;
 - must end project status replies with the exact next action Mark should take, including the exact merge or deploy command when that is the appropriate next owner action;
+- must give Mark one simplest next action, not several alternative options, unless Mark explicitly asks for alternatives;
+- must give Mark task packages as complete numbered lists when several user-side actions are required, instead of splitting them across extra interaction turns;
+- must not ask Mark to perform basic operations he already knows how to do, such as opening Telegram, finding a bot, opening PowerShell or copying text;
+- must correct its own mistake in the moment before asking Mark for another action, then explain why it corrected course according to workflow priorities and record or propose a workflow rule to prevent recurrence;
 - must treat `мердж по готовности PR #<number>` as a conditional direct merge command: merge immediately if all merge-gate conditions are green, otherwise report that the PR is waiting and do not ask for a second merge command in the same status cycle;
 - must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
 - may use GitHub API for emergency repair, repository hygiene and documentation updates;
@@ -82,11 +89,91 @@ When Mark starts a work session by sending the repository README link, ChatGPT m
 
 This order is mandatory for morning handoff sessions and any session where Mark provides the README as the entry point.
 
+## Mark known abilities
+
+Mark already knows how to perform basic local and user-interface operations. ChatGPT must not spend instructions on these basics unless Mark explicitly asks for them.
+
+Do not tell Mark to:
+
+- open Telegram;
+- find a bot in Telegram;
+- open PowerShell;
+- copy text;
+- paste text;
+- press Enter;
+- switch windows;
+- perform other obvious UI mechanics.
+
+Instead, give only the meaningful project action and expected result. Example:
+
+```text
+1. Send `ping` to `@gate_m_bot`.
+2. Send me the bot's reply.
+```
+
+## Mark local command environment
+
+Mark's local terminal environment for manual checks is Windows PowerShell.
+
+When giving Mark commands to run locally, ChatGPT must:
+
+- use PowerShell syntax by default;
+- prefer `Invoke-RestMethod` for HTTP/API checks;
+- use `curl.exe` only when explicitly choosing real curl on Windows;
+- use `$env:NAME` for environment variables, not `$NAME`;
+- use PowerShell headers such as `-Headers @{ Authorization = "Bearer $env:ADMIN_BEARER_TOKEN" }`;
+- use PowerShell line continuation with backticks or provide one-line commands;
+- not use bash line continuation `\`;
+- not give bash/Linux/macOS command examples as the primary instruction unless Mark explicitly asks for another shell.
+
+When a command contains a placeholder or required parameter:
+
+1. state whether the command can be run exactly as written;
+2. state exactly what must be replaced;
+3. state where Mark gets the replacement value;
+4. never ask Mark to paste real secret values into chat.
+
+Real secret values must still never be pasted into chat.
+
+## Fixation rule
+
+When Mark says `зафиксируй`, ChatGPT must record the rule for the next suitable project documentation update, but must not create a standalone docs-only PR merely for that rule if the existing workflow says to wait for a substantive development change.
+
+When Mark says `зафиксируй сейчас`, ChatGPT must update the relevant regulation file immediately, even if that creates a documentation change in the current PR.
+
+When any regulation rule is actually written to a file, ChatGPT must explicitly report what was written and where.
+
+## Error correction rule
+
+When ChatGPT makes an error, it must follow this priority order:
+
+1. correct the behavior in the moment first;
+2. avoid pushing the error back to Mark as an extra action when ChatGPT can safely fix it;
+3. explain why it corrected course, citing the relevant workflow priorities;
+4. identify the gap that allowed the error;
+5. propose a workflow rule to prevent recurrence;
+6. if Mark says `зафиксируй` or the current PR is already the suitable documentation update, write the rule into the regulation file and report exactly what was written.
+
+This rule has priority over merely asking Mark for the next command. It does not override merge, deploy, secret or broad-scope restrictions.
+
 ## Next-step execution rule
 
 ChatGPT must not stop at a diagnosis when the next step is safe and already permitted.
 
 If ChatGPT determines that the next step is to fix a failing check, update a PR branch, inspect CI logs, refresh PR status, update documentation, or perform another small bounded action allowed by this workflow, ChatGPT should perform that step immediately without asking Mark for another explicit instruction.
+
+Read-only checks are ChatGPT's responsibility when available through tools. ChatGPT must perform them itself before asking Mark to act. This includes checking:
+
+- repository state;
+- active PRs;
+- PR diffs;
+- CI status;
+- GitHub Actions logs;
+- deployment status;
+- README and workflow files;
+- production verification endpoints when they do not require exposing secrets.
+
+The rule to give Mark a next action applies only after ChatGPT has already performed all safe available checks.
 
 This rule does not override restricted actions. ChatGPT still must not:
 
@@ -100,14 +187,37 @@ This rule does not override restricted actions. ChatGPT still must not:
 
 ChatGPT must end every project status or handoff response with the next concrete action Mark should take.
 
-If the next required action belongs to Mark, ChatGPT must say the exact command Mark should send. Examples:
+If the next required action belongs to Mark, ChatGPT must say the exact command or task Mark should perform. Examples:
 
 - when a PR is ready and CI is green: `мердж PR #<number>`;
 - when a PR is expected to become ready after CI completes: `мердж по готовности PR #<number>`;
 - when a merged change is ready for production and deployment is appropriate: `деплой PR #<number>`;
-- when Mark must inspect something manually: state the exact manual check or decision.
+- when Mark must inspect something manually: state the exact manual check or decision in PowerShell or user-action format.
+
+ChatGPT must not give Mark multiple alternative next actions by default. Give one simplest and most appropriate next action.
 
 This rule does not grant ChatGPT merge or deploy authority. It only requires ChatGPT to prompt Mark for the correct next owner command.
+
+## User task package rule
+
+When Mark needs to perform several user-side actions to complete one verification or handoff, ChatGPT must give the full sequence at once as a numbered task list.
+
+Do not force additional interaction turns for predictable follow-up steps.
+
+Bad:
+
+```text
+Send `ping` to the bot.
+```
+
+Good:
+
+```text
+1. Send `ping` to `@gate_m_bot`.
+2. Send me the bot's reply.
+```
+
+If the task is actually ChatGPT's responsibility, ChatGPT must not assign it to Mark. ChatGPT should perform it directly through available tools.
 
 ## Conditional merge command rule
 
