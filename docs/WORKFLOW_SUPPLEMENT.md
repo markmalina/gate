@@ -10,6 +10,24 @@ Standalone regulation-only or workflow-only PRs are allowed only when Mark expli
 
 When Mark says only `зафиксируй`, ChatGPT queues the rule for the next suitable substantive project PR and does not create a standalone regulation-only PR.
 
+## ChatGPT-default Gate development mode
+
+For Gate, the default development mode is direct ChatGPT implementation through the GitHub connector, not Codex delegation.
+
+ChatGPT should implement directly when all of the following are true:
+
+1. the task is a small bounded product/code/docs sprint;
+2. the scope is narrow and understandable from the current repository state;
+3. the expected change is roughly 1-5 files, unless a small migration/test file makes the count slightly higher;
+4. GitHub CI can validate the change;
+5. no local-only debugging, broad refactor or complex multi-module work is required;
+6. no secrets need to be viewed, pasted or committed;
+7. the change does not merge itself and does not deploy production.
+
+Codex is no longer the default Gate implementation path. Codex should be used only as a backup/local implementation assistant when the task is large, broad, multi-file, local-test-heavy, unclear, or better suited to a local repository environment.
+
+When Codex is not used, ChatGPT owns the full GitHub workflow for the bounded sprint: create branch, edit files, open or update PR, inspect CI, fix small CI failures, review scope, and ask Mark for explicit merge/deploy commands when required.
+
 ## Error correction final-output gate
 
 After any ChatGPT workflow error, the final response must include:
