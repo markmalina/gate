@@ -11,7 +11,6 @@ from app.main import app
 from app.models.domain import AuditLog, GateEvent
 from httpx import ASGITransport, AsyncClient
 
-
 AdminRow = GateEvent | AuditLog
 
 
