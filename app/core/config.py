@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     gate_default_mode: str = Field(default="manual", validation_alias="GATE_DEFAULT_MODE")
     action_bearer_token: str = Field(default="", validation_alias="ACTION_BEARER_TOKEN")
     admin_bearer_token: str = Field(default="", validation_alias="ADMIN_BEARER_TOKEN")
+    mayaki_intake_url: str = Field(default="", validation_alias="MAYAKI_INTAKE_URL")
+    mayaki_intake_bearer_token: str = Field(
+        default="", validation_alias="MAYAKI_INTAKE_BEARER_TOKEN"
+    )
+    mayaki_intake_timeout_seconds: float = Field(
+        default=5.0, validation_alias="MAYAKI_INTAKE_TIMEOUT_SECONDS"
+    )
     deployment_sha: str = Field(default="unknown", validation_alias="RAILWAY_GIT_COMMIT_SHA")
     deployment_service: str = Field(default="gate", validation_alias="RAILWAY_SERVICE_NAME")
 
