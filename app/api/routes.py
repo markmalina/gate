@@ -3,7 +3,7 @@
 import hmac
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
-from app.models.domain import AuditLog, Bot, GateEvent
+from app.models.domain import AuditLog, Bot, GateEvent, Message, MessageDirection, TelegramUpdate
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -26,6 +26,8 @@ JsonObject = dict[str, Any]
 class TelegramUpdateEvent:
     """Normalized Telegram update data used by Gate v1."""
 
+    update_id: int
+    message_id: int | None
     event_type: str
     chat_id: str
     sender_id: str
@@ -124,6 +126,8 @@ async def admin_status(
     latest_event_result = await session.execute(select(func.max(GateEvent.received_at)))
     audit_count_result = await session.execute(select(func.count(AuditLog.id)))
     latest_audit_result = await session.execute(select(func.max(AuditLog.created_at)))
+    message_count_result = await session.execute(select(func.count(Message.id)))
+    latest_message_result = await session.execute(select(func.max(Message.created_at)))
 
     latest_event_received_at = cast(
         datetime | None,
@@ -132,6 +136,10 @@ async def admin_status(
     latest_audit_created_at = cast(
         datetime | None,
         latest_audit_result.scalar_one(),
+    )
+    latest_message_created_at = cast(
+        datetime | None,
+        latest_message_result.scalar_one(),
     )
 
     return {
@@ -154,6 +162,10 @@ async def admin_status(
             "count": _serialize_count(audit_count_result.scalar_one()),
             "last_created_at": _serialize_datetime(latest_audit_created_at),
         },
+        "messages": {
+            "count": _serialize_count(message_count_result.scalar_one()),
+            "last_created_at": _serialize_datetime(latest_message_created_at),
+        },
     }
 
 
@@ -166,8 +178,8 @@ async def telegram_webhook(
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
     telegram: TelegramClient = telegram_client_dependency,
-) -> dict[str, bool | str | None]:
-    """Receive Telegram updates and answer only the first safe ping keyword."""
+) -> JsonObject:
+    """Receive Telegram updates, persist them durably and answer safe ping only."""
 
     configured_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
     if not configured_secret:
@@ -205,6 +217,21 @@ async def telegram_webhook(
         session=session,
         username=settings.telegram_bot_username,
     )
+
+    existing_update = await _find_telegram_update(
+        session=session,
+        bot_id=bot.id,
+        update_id=normalized.update_id,
+    )
+    if existing_update is not None:
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": None,
+            "duplicate": True,
+            "send_status": "duplicate",
+        }
+
     gate_event = GateEvent(
         bot_id=bot.id,
         chat_id=normalized.chat_id,
@@ -212,27 +239,102 @@ async def telegram_webhook(
         event_type=normalized.event_type,
         text=normalized.text,
         payload=update,
+        telegram_update_id=normalized.update_id,
+        telegram_message_id=normalized.message_id,
+        business_connection_id=normalized.business_connection_id,
+    )
+    session.add(
+        TelegramUpdate(
+            bot_id=bot.id,
+            update_id=normalized.update_id,
+            payload=update,
+            processing_status="processed",
+            processed_at=datetime.now(UTC),
+        )
     )
     session.add(gate_event)
     await session.flush()
 
+    session.add(
+        Message(
+            bot_id=bot.id,
+            gate_event_id=gate_event.id,
+            direction=MessageDirection.INBOUND.value,
+            source="telegram",
+            event_type=normalized.event_type,
+            chat_id=normalized.chat_id,
+            sender_id=normalized.sender_id,
+            text=normalized.text,
+            telegram_update_id=normalized.update_id,
+            telegram_message_id=normalized.message_id,
+            business_connection_id=normalized.business_connection_id,
+            payload={"raw_update_ref": "telegram_updates"},
+            received_at=datetime.now(UTC),
+        )
+    )
     session.add(
         AuditLog(
             actor="telegram",
             action="telegram_update_received",
             bot_id=bot.id,
             gate_event_id=gate_event.id,
-            metadata_={"event_type": normalized.event_type},
+            metadata_={
+                "event_type": normalized.event_type,
+                "telegram_update_id": normalized.update_id,
+                "telegram_message_id": normalized.message_id,
+            },
         )
     )
+    await session.commit()
 
     auto_reply: str | None = None
+    send_status = "not_applicable"
     if _is_ping(normalized.text):
         auto_reply = "Gate online"
-        await telegram.send_message(
-            chat_id=normalized.chat_id,
-            text=auto_reply,
-            business_connection_id=normalized.business_connection_id,
+        try:
+            send_result = await telegram.send_message(
+                chat_id=normalized.chat_id,
+                text=auto_reply,
+                business_connection_id=normalized.business_connection_id,
+            )
+        except Exception as exc:
+            session.add(
+                AuditLog(
+                    actor="gate",
+                    action="auto_safe_reply_failed",
+                    bot_id=bot.id,
+                    gate_event_id=gate_event.id,
+                    metadata_={
+                        "reply": auto_reply,
+                        "rule": "ping",
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
+            )
+            await session.commit()
+            return {
+                "ok": True,
+                "event_type": normalized.event_type,
+                "auto_reply": auto_reply,
+                "duplicate": False,
+                "send_status": "failed",
+            }
+
+        session.add(
+            Message(
+                bot_id=bot.id,
+                gate_event_id=gate_event.id,
+                direction=MessageDirection.OUTBOUND.value,
+                source="gate",
+                event_type="auto_safe_reply",
+                chat_id=normalized.chat_id,
+                sender_id=settings.telegram_bot_username,
+                recipient_id=normalized.chat_id,
+                text=auto_reply,
+                business_connection_id=normalized.business_connection_id,
+                payload=send_result,
+                sent_at=datetime.now(UTC),
+            )
         )
         session.add(
             AuditLog(
@@ -243,9 +345,16 @@ async def telegram_webhook(
                 metadata_={"reply": auto_reply, "rule": "ping"},
             )
         )
+        await session.commit()
+        send_status = "sent"
 
-    await session.commit()
-    return {"ok": True, "event_type": normalized.event_type, "auto_reply": auto_reply}
+    return {
+        "ok": True,
+        "event_type": normalized.event_type,
+        "auto_reply": auto_reply,
+        "duplicate": False,
+        "send_status": send_status,
+    }
 
 
 async def _get_or_create_bot(*, session: AsyncSession, username: str) -> Bot:
@@ -260,6 +369,23 @@ async def _get_or_create_bot(*, session: AsyncSession, username: str) -> Bot:
     session.add(bot)
     await session.flush()
     return bot
+
+
+async def _find_telegram_update(
+    *,
+    session: AsyncSession,
+    bot_id: Any,
+    update_id: int,
+) -> TelegramUpdate | None:
+    """Return an existing Telegram update receipt for webhook idempotency."""
+
+    result = await session.execute(
+        select(TelegramUpdate).where(
+            TelegramUpdate.bot_id == bot_id,
+            TelegramUpdate.update_id == update_id,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 def _require_admin_bearer(*, authorization: str | None, settings: Settings) -> None:
@@ -296,6 +422,9 @@ def _serialize_gate_event(event: GateEvent) -> JsonObject:
         "sender_id": event.sender_id,
         "event_type": event.event_type,
         "text": event.text,
+        "telegram_update_id": event.telegram_update_id,
+        "telegram_message_id": event.telegram_message_id,
+        "business_connection_id": event.business_connection_id,
         "received_at": _serialize_datetime(event.received_at),
     }
 
@@ -335,32 +464,36 @@ def _serialize_count(value: Any) -> int:
 def _extract_update_event(update: JsonObject) -> TelegramUpdateEvent | None:
     """Extract the Telegram event shapes Gate currently supports."""
 
+    update_id = _optional_int(update.get("update_id"))
+    if update_id is None:
+        return None
+
     message = update.get("message")
     if isinstance(message, dict):
-        return _extract_message_event("message", cast(JsonObject, message), update)
+        return _extract_message_event(update_id, "message", cast(JsonObject, message))
 
     business_message = update.get("business_message")
     if isinstance(business_message, dict):
         return _extract_message_event(
+            update_id,
             "business_message",
             cast(JsonObject, business_message),
-            update,
         )
 
     business_connection = update.get("business_connection")
     if isinstance(business_connection, dict):
         return _extract_business_connection_event(
+            update_id,
             cast(JsonObject, business_connection),
-            update,
         )
 
     return None
 
 
 def _extract_message_event(
+    update_id: int,
     event_type: str,
     message: JsonObject,
-    update: JsonObject,
 ) -> TelegramUpdateEvent:
     chat = message.get("chat")
     chat_data = cast(JsonObject, chat) if isinstance(chat, dict) else {}
@@ -369,8 +502,7 @@ def _extract_message_event(
     sender_chat = message.get("sender_chat")
     sender_chat_data = cast(JsonObject, sender_chat) if isinstance(sender_chat, dict) else {}
 
-    update_id = _stringify(update.get("update_id"), "unknown")
-    chat_id = _stringify(chat_data.get("id"), update_id)
+    chat_id = _stringify(chat_data.get("id"), str(update_id))
     sender_id = _stringify(
         from_data.get("id", sender_chat_data.get("id")),
         chat_id,
@@ -381,6 +513,8 @@ def _extract_message_event(
     business_connection_id = _optional_string(message.get("business_connection_id"))
 
     return TelegramUpdateEvent(
+        update_id=update_id,
+        message_id=_optional_int(message.get("message_id")),
         event_type=event_type,
         chat_id=chat_id,
         sender_id=sender_id,
@@ -390,19 +524,20 @@ def _extract_message_event(
 
 
 def _extract_business_connection_event(
+    update_id: int,
     business_connection: JsonObject,
-    update: JsonObject,
 ) -> TelegramUpdateEvent:
     user = business_connection.get("user")
     user_data = cast(JsonObject, user) if isinstance(user, dict) else {}
-    update_id = _stringify(update.get("update_id"), "unknown")
     chat_id = _stringify(
         business_connection.get("user_chat_id", business_connection.get("id")),
-        update_id,
+        str(update_id),
     )
     sender_id = _stringify(user_data.get("id"), chat_id)
 
     return TelegramUpdateEvent(
+        update_id=update_id,
+        message_id=None,
         event_type="business_connection",
         chat_id=chat_id,
         sender_id=sender_id,
@@ -421,6 +556,16 @@ def _optional_string(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
 
 
 def _is_ping(text: str | None) -> bool:
