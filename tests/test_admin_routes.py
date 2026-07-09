@@ -9,10 +9,18 @@ import pytest
 from app.api.deps import get_db_session
 from app.core.config import get_settings
 from app.main import app
-from app.models.domain import AuditLog, GateEvent, Message, MessageDirection
+from app.models.domain import (
+    AuditLog,
+    Conversation,
+    GateEvent,
+    Message,
+    MessageDirection,
+    ReplyTask,
+    ReplyTaskStatus,
+)
 from httpx import ASGITransport, AsyncClient
 
-AdminRow = GateEvent | AuditLog | Message
+AdminRow = GateEvent | AuditLog | Message | tuple[ReplyTask, Conversation, Message]
 
 
 class FakeScalarRows:
@@ -38,6 +46,9 @@ class FakeResult:
 
     def scalars(self) -> FakeScalarRows:
         return FakeScalarRows(self._rows)
+
+    def all(self) -> list[AdminRow]:
+        return self._rows
 
     def scalar_one(self) -> Any:
         return self._scalar
@@ -225,6 +236,8 @@ async def test_admin_status_returns_operational_snapshot(
             datetime(2026, 7, 9, 6, 3, tzinfo=UTC),
             6,
             datetime(2026, 7, 9, 6, 4, tzinfo=UTC),
+            3,
+            2,
         ]
     )
 
@@ -258,6 +271,7 @@ async def test_admin_status_returns_operational_snapshot(
         "count": 6,
         "last_created_at": "2026-07-09T06:04:00+00:00",
     }
+    assert body["reply_tasks"] == {"count": 3, "unanswered": 2}
     assert "payload" not in str(body)
     assert "telegram_bot_token" not in str(body)
     assert "ADMIN_BEARER_TOKEN" not in str(body)
@@ -281,7 +295,7 @@ async def test_admin_status_message_shape_uses_plain_counts(
         )
     )
 
-    admin_context.scalar_results.extend([0, None, 0, None, 1, None])
+    admin_context.scalar_results.extend([0, None, 0, None, 1, None, 0, 0])
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -294,3 +308,74 @@ async def test_admin_status_message_shape_uses_plain_counts(
 
     assert response.status_code == 200
     assert response.json()["messages"] == {"count": 1, "last_created_at": None}
+    assert response.json()["reply_tasks"] == {"count": 0, "unanswered": 0}
+
+
+@pytest.mark.anyio
+async def test_admin_unanswered_inbox_requires_admin_token(
+    admin_context: FakeAdminSession,
+) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/admin/inbox/unanswered")
+
+    assert response.status_code == 403
+    assert admin_context.rows == []
+
+
+@pytest.mark.anyio
+async def test_admin_unanswered_inbox_returns_sanitized_context(
+    admin_context: FakeAdminSession,
+) -> None:
+    bot_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    message_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    conversation = Conversation(
+        id=conversation_id,
+        bot_id=bot_id,
+        chat_id="222",
+        status="open",
+        requires_reply=True,
+        last_message_at=datetime(2026, 7, 9, 6, 5, tzinfo=UTC),
+        last_inbound_at=datetime(2026, 7, 9, 6, 5, tzinfo=UTC),
+    )
+    message = Message(
+        id=message_id,
+        bot_id=bot_id,
+        direction=MessageDirection.INBOUND.value,
+        source="telegram",
+        event_type="message",
+        chat_id="222",
+        sender_id="111",
+        text="please reply",
+        telegram_update_id=500,
+        telegram_message_id=50,
+        payload={"telegram_bot_token": "must-not-leak"},
+        received_at=datetime(2026, 7, 9, 6, 5, tzinfo=UTC),
+        created_at=datetime(2026, 7, 9, 6, 5, tzinfo=UTC),
+    )
+    task = ReplyTask(
+        id=task_id,
+        conversation_id=conversation_id,
+        trigger_message_id=message_id,
+        status=ReplyTaskStatus.NEEDS_REPLY.value,
+        priority=100,
+        reason="inbound_human_text",
+        created_at=datetime(2026, 7, 9, 6, 6, tzinfo=UTC),
+        updated_at=datetime(2026, 7, 9, 6, 6, tzinfo=UTC),
+    )
+    admin_context.rows.append((task, conversation, message))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/admin/inbox/unanswered?limit=1",
+            headers={"Authorization": "Bearer admin-token"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reply_tasks"][0]["id"] == str(task_id)
+    assert body["reply_tasks"][0]["conversation"]["id"] == str(conversation_id)
+    assert body["reply_tasks"][0]["message"]["text"] == "please reply"
+    assert "payload" not in str(body)
+    assert "telegram_bot_token" not in str(body)
