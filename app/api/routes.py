@@ -21,6 +21,8 @@ from app.models.domain import (
     GateEvent,
     Message,
     MessageDirection,
+    ReplyDraft,
+    ReplyDraftStatus,
     ReplyTask,
     ReplyTaskStatus,
     TelegramUpdate,
@@ -32,6 +34,8 @@ settings_dependency = Depends(get_settings)
 db_session_dependency = Depends(get_db_session)
 
 JsonObject = dict[str, Any]
+
+DRAFT_SOURCE = "gate-local-draft-v1"
 
 
 @dataclass(frozen=True)
@@ -535,25 +539,76 @@ async def _build_telegram_admin_reply(
         reply_tasks = await _load_unanswered_reply_tasks(session=session, limit=10)
         return _format_telegram_unanswered_inbox(reply_tasks)
 
+    if command.name == "draft":
+        return await _create_reply_draft(command=command, session=session)
+
     return await _apply_reply_task_action(command=command, session=session)
+
+
+async def _create_reply_draft(
+    *, command: TelegramAdminCommand, session: AsyncSession
+) -> str:
+    rows_or_error = await _load_single_reply_task_row(command=command, session=session)
+    if isinstance(rows_or_error, str):
+        return rows_or_error
+
+    task, conversation, message = rows_or_error
+    draft_text = _build_reply_draft_text(message.text)
+    prompt_context: JsonObject = {
+        "bounded_context": True,
+        "source_message": {
+            "id": str(message.id),
+            "chat_id": message.chat_id,
+            "text": _truncate_text(message.text or "", 600),
+            "created_at": _serialize_datetime(message.created_at),
+            "received_at": _serialize_datetime(message.received_at),
+        },
+        "reply_task": {
+            "id": str(task.id),
+            "status": task.status,
+            "reason": task.reason,
+        },
+        "conversation": {
+            "id": str(conversation.id),
+            "chat_id": conversation.chat_id,
+            "business_connection_id": conversation.business_connection_id,
+        },
+    }
+    draft = ReplyDraft(
+        reply_task_id=task.id,
+        conversation_id=conversation.id,
+        trigger_message_id=message.id,
+        status=ReplyDraftStatus.GENERATED.value,
+        source=DRAFT_SOURCE,
+        draft_text=draft_text,
+        prompt_context=prompt_context,
+    )
+    session.add(draft)
+    await session.flush()
+    session.add(
+        AuditLog(
+            actor="gate",
+            action="reply_draft_created_from_telegram",
+            bot_id=conversation.bot_id,
+            gate_event_id=None,
+            metadata_={
+                "task_id": str(task.id),
+                "draft_id": str(draft.id),
+                "source": DRAFT_SOURCE,
+            },
+        )
+    )
+    return _format_reply_draft_result(draft=draft, task=task)
 
 
 async def _apply_reply_task_action(
     *, command: TelegramAdminCommand, session: AsyncSession
 ) -> str:
-    task_ref = (command.task_ref or "").strip()
-    if not task_ref:
-        return f"Usage: /{command.name} <task>"
-    if len(task_ref) < 4:
-        return "Task reference is too short. Use the task id from /inbox."
+    rows_or_error = await _load_single_reply_task_row(command=command, session=session)
+    if isinstance(rows_or_error, str):
+        return rows_or_error
 
-    rows = await _find_reply_task_rows_by_ref(session=session, task_ref=task_ref)
-    if not rows:
-        return f"Task not found: {task_ref}"
-    if len(rows) > 1:
-        return f"Task reference is ambiguous: {task_ref}"
-
-    task, conversation, _message = rows[0]
+    task, conversation, _message = rows_or_error
     old_status = task.status
     action_statuses = {
         "done": ReplyTaskStatus.REPLIED.value,
@@ -585,13 +640,30 @@ async def _apply_reply_task_action(
             gate_event_id=None,
             metadata_={
                 "task_id": str(task.id),
-                "task_ref": task_ref,
+                "task_ref": command.task_ref,
                 "from_status": old_status,
                 "to_status": task.status,
             },
         )
     )
     return _format_reply_task_action_result(command=command, task=task)
+
+
+async def _load_single_reply_task_row(
+    *, command: TelegramAdminCommand, session: AsyncSession
+) -> tuple[ReplyTask, Conversation, Message] | str:
+    task_ref = (command.task_ref or "").strip()
+    if not task_ref:
+        return f"Usage: /{command.name} <task>"
+    if len(task_ref) < 4:
+        return "Task reference is too short. Use the task id from /inbox."
+
+    rows = await _find_reply_task_rows_by_ref(session=session, task_ref=task_ref)
+    if not rows:
+        return f"Task not found: {task_ref}"
+    if len(rows) > 1:
+        return f"Task reference is ambiguous: {task_ref}"
+    return rows[0]
 
 
 async def _find_reply_task_rows_by_ref(
@@ -606,6 +678,32 @@ async def _find_reply_task_rows_by_ref(
         .limit(2)
     )
     return [(task, conversation, message) for task, conversation, message in result.all()]
+
+
+def _build_reply_draft_text(message_text: str | None) -> str:
+    text = _truncate_text((message_text or "").strip(), 360)
+    if not text:
+        return "Привет. Вижу сообщение. Вернусь с ответом чуть позже."
+    return "\n".join(
+        [
+            "Привет.",
+            f"Вижу твоё сообщение: «{text}».",
+            "Вернусь с ответом чуть позже.",
+        ]
+    )
+
+
+def _format_reply_draft_result(*, draft: ReplyDraft, task: ReplyTask) -> str:
+    return "\n".join(
+        [
+            f"Draft created: {str(draft.id)[:8]}",
+            f"task: {str(task.id)[:8]}",
+            "",
+            draft.draft_text,
+            "",
+            "Not sent.",
+        ]
+    )
 
 
 def _format_reply_task_action_result(
@@ -659,7 +757,10 @@ def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
                 f"chat: {conversation['chat_id']}",
                 f"task: {task_ref}",
                 f"created: {task['created_at']}",
-                f"actions: /done {task_ref} | /dismiss {task_ref} | /snooze {task_ref}",
+                (
+                    f"actions: /draft {task_ref} | /done {task_ref} | "
+                    f"/dismiss {task_ref} | /snooze {task_ref}"
+                ),
             ]
         )
     return "\n".join(lines)
@@ -677,6 +778,8 @@ def _parse_admin_console_command(text: str | None) -> TelegramAdminCommand | Non
         return None
 
     action_aliases = {
+        "/draft": "draft",
+        "draft": "draft",
         "/done": "done",
         "done": "done",
         "/dismiss": "dismiss",
@@ -927,6 +1030,12 @@ def _serialize_count(value: Any) -> int:
     if value is None:
         return 0
     return int(value)
+
+
+def _truncate_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 3]}..."
 
 
 def _extract_update_event(update: JsonObject) -> TelegramUpdateEvent | None:
