@@ -234,6 +234,14 @@ def add_reply_task_context(
     return task, conversation, message
 
 
+def clear_telegram_update_receipts(session: FakeSession) -> None:
+    """Clear fake idempotency receipts between distinct webhook updates in one test."""
+
+    session.objects = [
+        item for item in session.objects if not isinstance(item, TelegramUpdate)
+    ]
+
+
 @pytest.mark.anyio
 async def test_telegram_webhook_rejects_invalid_secret(
     webhook_context: tuple[FakeSession, FakeTelegramClient],
@@ -678,11 +686,13 @@ async def test_telegram_admin_dismiss_snooze_and_reopen_commands_change_task_sta
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
             json=message_update(f"/dismiss {task_ref}", update_id=504),
         )
+        clear_telegram_update_receipts(session)
         snooze_response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
             json=message_update(f"/snooze {task_ref}", update_id=505),
         )
+        clear_telegram_update_receipts(session)
         reopen_response = await client.post(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
