@@ -539,6 +539,9 @@ async def _build_telegram_admin_reply(
         reply_tasks = await _load_unanswered_reply_tasks(session=session, limit=10)
         return _format_telegram_unanswered_inbox(reply_tasks)
 
+    if command.name == "test":
+        return _format_telegram_test_guide()
+
     if command.name == "draft":
         return await _create_reply_draft(command=command, session=session)
 
@@ -738,6 +741,33 @@ def _format_telegram_admin_status(status_payload: JsonObject) -> str:
     )
 
 
+def _format_telegram_test_guide() -> str:
+    return "\n".join(
+        [
+            "Gate test: draft flow",
+            "",
+            "1. Send text message:",
+            "test guided draft",
+            "Expected: no bot reply.",
+            "",
+            "2. Press /inbox",
+            "Expected: task appears with clickable actions.",
+            "",
+            "3. Press /draft_<task> from /inbox",
+            "Expected: Draft created ... Not sent.",
+            "",
+            "4. Press /inbox",
+            "Expected: task still appears.",
+            "",
+            "5. Press /done_<task>",
+            "Expected: Marked replied.",
+            "",
+            "6. Press /inbox",
+            "Expected: No unanswered messages.",
+        ]
+    )
+
+
 def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
     if not reply_tasks:
         return "No unanswered messages."
@@ -758,8 +788,8 @@ def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
                 f"task: {task_ref}",
                 f"created: {task['created_at']}",
                 (
-                    f"actions: /draft {task_ref} | /done {task_ref} | "
-                    f"/dismiss {task_ref} | /snooze {task_ref}"
+                    f"actions: /draft_{task_ref} | /done_{task_ref} | "
+                    f"/dismiss_{task_ref} | /snooze_{task_ref}"
                 ),
             ]
         )
@@ -772,10 +802,8 @@ def _parse_admin_console_command(text: str | None) -> TelegramAdminCommand | Non
         return TelegramAdminCommand(name="status")
     if normalized in {"/inbox", "inbox", "где я не ответил"}:
         return TelegramAdminCommand(name="inbox")
-
-    parts = normalized.split(maxsplit=1)
-    if len(parts) != 2:
-        return None
+    if normalized in {"/test", "test"}:
+        return TelegramAdminCommand(name="test")
 
     action_aliases = {
         "/draft": "draft",
@@ -789,6 +817,28 @@ def _parse_admin_console_command(text: str | None) -> TelegramAdminCommand | Non
         "/reopen": "reopen",
         "reopen": "reopen",
     }
+    action = action_aliases.get(normalized)
+    if action is not None:
+        return TelegramAdminCommand(name=action)
+
+    underscore_action_aliases = {
+        "/draft_": "draft",
+        "/done_": "done",
+        "/dismiss_": "dismiss",
+        "/snooze_": "snooze",
+        "/reopen_": "reopen",
+    }
+    for prefix, underscore_action in underscore_action_aliases.items():
+        if normalized.startswith(prefix):
+            return TelegramAdminCommand(
+                name=underscore_action,
+                task_ref=normalized.removeprefix(prefix),
+            )
+
+    parts = normalized.split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+
     action = action_aliases.get(parts[0])
     if action is None:
         return None
