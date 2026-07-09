@@ -39,7 +39,7 @@ ChatGPT:
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
 - must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require merge or production deployment approval;
 - must run read-only project checks itself instead of asking Mark to request status separately;
-- must end project status replies with the exact next action Mark should take, including the exact merge or deploy command when that is the appropriate next owner action;
+- must end project status replies with an owner-tagged next action: either `Action owner: ChatGPT` or `Action owner: Mark`;
 - must give Mark one simplest next action, not several alternative options, unless Mark explicitly asks for alternatives;
 - must give Mark task packages as complete numbered lists when several user-side actions are required, instead of splitting them across extra interaction turns;
 - must not ask Mark to perform basic operations he already knows how to do, such as opening Telegram, finding a bot, opening PowerShell or copying text;
@@ -185,9 +185,33 @@ This rule does not override restricted actions. ChatGPT still must not:
 - expose or request real secrets;
 - add autonomous AI replies or free-form Telegram sending without explicit approval.
 
+## Next action ownership rule
+
+Every Gate project response must end with exactly one owner-tagged action block.
+
+Allowed formats:
+
+```text
+Action owner: ChatGPT
+I will <single concrete action>. When <condition> happens, I will <single follow-up action>.
+```
+
+```text
+Action owner: Mark
+<single concrete instruction for Mark>.
+```
+
+Rules:
+
+- The final action block must name exactly one owner: ChatGPT or Mark.
+- The final action block must contain a concrete verb.
+- Status summaries such as `done`, `closed`, `verified`, `nothing to do`, `действий нет`, or `ждём` are not valid next actions.
+- If no further project work is safe or implied, the next action must still be owner-tagged, for example: `Action owner: Mark — Send the next Gate task.`
+- If ChatGPT is already authorized to continue with a safe bounded step, ChatGPT must take ownership and perform it before asking Mark for anything.
+
 ## Next Mark action rule
 
-ChatGPT must end every project status or handoff response with the next concrete action Mark should take.
+ChatGPT must end every project status or handoff response with the next concrete action Mark should take when the next action belongs to Mark.
 
 If the next required action belongs to Mark, ChatGPT must say the exact command or task Mark should perform. Examples:
 
@@ -275,7 +299,7 @@ ChatGPT must still report:
 - head SHA;
 - CI status with the required color-coded emoji;
 - whether the PR is ready, blocked or needs fixes;
-- exact next Mark action or command.
+- exact owner-tagged next action.
 
 ## Small sprint development policy
 
