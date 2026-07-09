@@ -22,7 +22,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), server_default="generated", nullable=False),
         sa.Column("source", sa.String(length=128), nullable=False),
         sa.Column("draft_text", sa.Text(), nullable=False),
-        sa.Column("prompt_context", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column(
+            "prompt_context",
+            postgresql.JSONB(),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
@@ -36,7 +41,11 @@ def upgrade() -> None:
     op.create_index(op.f("ix_reply_drafts_conversation_id"), "reply_drafts", ["conversation_id"])
     op.create_index(op.f("ix_reply_drafts_reply_task_id"), "reply_drafts", ["reply_task_id"])
     op.create_index("ix_reply_drafts_status_created_at", "reply_drafts", ["status", "created_at"])
-    op.create_index("ix_reply_drafts_task_created_at", "reply_drafts", ["reply_task_id", "created_at"])
+    op.create_index(
+        "ix_reply_drafts_task_created_at",
+        "reply_drafts",
+        ["reply_task_id", "created_at"],
+    )
 
 
 def downgrade() -> None:
