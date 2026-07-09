@@ -12,7 +12,7 @@ Mark:
 
 - defines intent, priorities and constraints;
 - copies approved task prompts from ChatGPT into Codex Cloud when Codex is useful;
-- returns Codex reports, PR links, errors and CI results back to ChatGPT when Codex is used;
+- returns Codex reports, local summaries, local commit SHAs, errors and test results back to ChatGPT when Codex is used;
 - may ask ChatGPT to create or update GitHub pull requests when ChatGPT decides a PR is the correct next step;
 - may allow ChatGPT to implement small, bounded development sprints directly when Codex is not the fastest reliable path;
 - gives the final explicit approval before merge;
@@ -46,6 +46,8 @@ ChatGPT:
 - must not ask Mark to perform basic operations he already knows how to do, such as opening Telegram, finding a bot, opening PowerShell or copying text;
 - must correct its own mistake in the moment before asking Mark for another action, then explain why it corrected course according to workflow priorities and record or propose a workflow rule to prevent recurrence;
 - must treat `мердж по готовности PR #<number>` as a conditional direct merge command: merge immediately if all merge-gate conditions are green, otherwise report that the PR is waiting and do not ask for a second merge command in the same status cycle;
+- must delegate implementation thinking to Codex only as a local patch/handoff workflow, not as a GitHub PR workflow;
+- must not ask Codex to create GitHub PRs, update PR bodies, add PR comments, push branches, or otherwise publish GitHub state;
 - must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
 - may use GitHub API for emergency repair, repository hygiene and documentation updates;
 - may merge a PR through the GitHub connector only after Mark gives a direct merge command or conditional direct merge command;
@@ -60,9 +62,10 @@ Codex is an implementation assistant, not the source of truth.
 Codex:
 
 - may write code or generate patches;
-- may be asked to implement a task when its environment has real repository access;
-- remains the preferred implementation path for larger or multi-file feature packages when its environment can create PRs reliably;
-- must stop if it cannot access GitHub, push branches or create PRs;
+- may be asked to implement a task locally when that is useful;
+- must not be asked to create GitHub PRs, update PR bodies, add PR comments, push branches, or otherwise publish GitHub state in the current Gate workflow;
+- must not be treated as the GitHub publisher for Gate tasks;
+- must output a local handoff summary that Mark can paste back to ChatGPT;
 - must not claim completion for a local-only commit.
 
 ## Source of truth
@@ -73,10 +76,12 @@ A task is not complete if the changes exist only inside Codex.
 
 A development task is complete only when:
 
-1. the GitHub PR branch is updated;
+1. ChatGPT has created or updated the GitHub PR branch through a verified GitHub path;
 2. the PR head SHA changes;
 3. GitHub Actions CI starts;
 4. the CI result is known or explicitly still running.
+
+Codex local work is only a draft implementation or handoff until ChatGPT transfers it to GitHub and verifies the resulting PR.
 
 ## Rule priority order
 
@@ -89,11 +94,12 @@ Priority order:
 3. Merge restrictions.
 4. Fixation gate: `зафиксируй` vs `зафиксируй сейчас` vs a substantive project PR.
 5. Scope restrictions: no broad, multi-scope, high-risk or unclear changes without confirmation or Codex delegation.
-6. GitHub source-of-truth and CI/review gates.
-7. Error correction rule.
-8. Next-step execution rule.
-9. Next Mark action and user task package rules.
-10. Reporting style and wording rules.
+6. Codex no-GitHub-publication rule.
+7. GitHub source-of-truth and CI/review gates.
+8. Error correction rule.
+9. Next-step execution rule.
+10. Next Mark action and user task package rules.
+11. Reporting style and wording rules.
 
 Before any project action, ChatGPT must run this pre-action rule check:
 
@@ -193,7 +199,7 @@ When ChatGPT makes an error, it must follow this priority order:
 
 An error explanation is incomplete if ChatGPT only describes the mistake and does not propose or write the prevention rule before giving the next action.
 
-This rule has priority over merely asking Mark for the next command. It does not override secrets, safety, merge, deploy, fixation, CI, source-of-truth or broad-scope restrictions.
+This rule has priority over merely asking Mark for the next command. It does not override secrets, safety, merge, deploy, fixation, Codex no-GitHub-publication, CI, source-of-truth or broad-scope restrictions.
 
 ## Next-step execution rule
 
@@ -220,6 +226,7 @@ This rule does not override restricted actions. ChatGPT still must not:
 - deploy or trigger production deployment without Mark's direct deploy command;
 - introduce broad scope changes without confirmation;
 - expose or request real secrets;
+- ask Codex to publish GitHub state;
 - add autonomous AI replies or free-form Telegram sending without explicit approval.
 
 ## Next Mark action rule
@@ -278,7 +285,9 @@ The conditional merge command does not authorize production deployment.
 ```text
 Mark describes intent
 → ChatGPT decides the next development step
-→ ChatGPT may create/update a GitHub PR directly, implement a small bounded sprint directly, or delegate implementation to Codex
+→ ChatGPT may create/update a GitHub PR directly, implement a small bounded sprint directly, or delegate local implementation work to Codex
+→ Codex returns a local handoff only when used
+→ ChatGPT transfers accepted Codex work to GitHub if needed
 → GitHub Actions CI runs
 → ChatGPT reviews GitHub state, not just summaries
 → ChatGPT decides: fix, accept, or reject
@@ -300,6 +309,8 @@ ChatGPT may create a PR without a separate confirmation when:
 - the PR does not merge itself;
 - the PR does not deploy production;
 - secrets are not exposed.
+
+Codex must not be assigned GitHub PR creation or update responsibilities in the current Gate workflow.
 
 Permission to create a PR is not automatically permission to perform broad development instead of Codex.
 
@@ -346,7 +357,7 @@ Not small sprints:
 - rewrite database schema across multiple domains;
 - introduce autonomous sending beyond predefined safe rules.
 
-When the scope is not clearly small, ChatGPT must either delegate to Codex or ask Mark for explicit confirmation before implementing.
+When the scope is not clearly small, ChatGPT must either delegate local implementation work to Codex or ask Mark for explicit confirmation before implementing.
 
 ## Merge policy
 
@@ -387,14 +398,31 @@ PR creation, small sprint implementation, CI checks, review comments, merge appr
 Every Codex task must include these rules unless explicitly irrelevant:
 
 ```text
-Work in the existing PR branch unless told otherwise.
-Do not create duplicate PRs.
+Do not create GitHub PRs.
+Do not update GitHub PR bodies.
+Do not add GitHub PR comments.
+Do not push branches or otherwise publish GitHub state.
 Do not merge.
 Do not deploy.
-Done means: GitHub PR updated, PR head SHA changed, and CI started.
-A local commit without push is not done.
-If git push or GitHub access fails, stop and report the exact error.
+Work locally and print a final handoff summary in the Codex chat output.
+A local commit without ChatGPT transfer to GitHub is not done for the Gate project.
+If local implementation fails, stop and report the exact error.
 ```
+
+A Codex final handoff must include:
+
+- whether local implementation succeeded or failed;
+- current local commit SHA, if any;
+- branch name, if any;
+- whether the working tree is clean;
+- exact files changed;
+- implementation summary;
+- migration summary, if any;
+- new or changed endpoints, if any;
+- tests added or changed;
+- commands run locally and their results;
+- exact error output for any failed command;
+- known risks or follow-up items.
 
 ## PR rules
 
@@ -442,11 +470,15 @@ When a CI failure is in an existing ChatGPT-managed PR and the needed fix is sma
 
 ## GitHub access failure rule
 
-If Codex cannot push to GitHub because of network, auth or tunnel errors, it must stop and report:
+If Codex reports a GitHub push, PR creation, PR body update, or PR comment failure, ChatGPT must treat the failure as a prompt-design error unless Mark explicitly overrode the Codex no-GitHub-publication rule for that task.
 
-- current local commit SHA;
-- target branch;
-- exact push command attempted;
+Codex must not be asked to retry GitHub publication. It must stop and report:
+
+- local implementation status;
+- current local commit SHA, if any;
+- branch name, if any;
+- exact files changed;
+- exact command attempted, if any GitHub command was attempted;
 - exact error output;
 - whether the working tree is clean.
 
@@ -459,5 +491,5 @@ For the current Gate Telegram Ping v1 sprint:
 - Railway backend is healthy;
 - `ping` → `Gate online` through Telegram webhook is considered a small bounded sprint;
 - ChatGPT may implement small fixes on the existing PR to get CI green;
-- larger follow-up features should be delegated to Codex or explicitly re-approved by Mark;
+- larger follow-up features may be delegated to Codex only as local implementation/handoff work, not as GitHub PR work;
 - production deploy must wait for Mark's explicit deployment command.
