@@ -12,7 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
-from app.models.domain import AuditLog, Bot, GateEvent, Message, MessageDirection, TelegramUpdate
+from app.models.domain import (
+    AuditLog,
+    Bot,
+    Conversation,
+    ConversationStatus,
+    GateEvent,
+    Message,
+    MessageDirection,
+    ReplyTask,
+    ReplyTaskStatus,
+    TelegramUpdate,
+)
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -84,9 +95,7 @@ async def admin_recent_events(
     _require_admin_bearer(authorization=authorization, settings=settings)
 
     result = await session.execute(
-        select(GateEvent)
-        .order_by(GateEvent.received_at.desc(), GateEvent.id.desc())
-        .limit(limit)
+        select(GateEvent).order_by(GateEvent.received_at.desc(), GateEvent.id.desc()).limit(limit)
     )
     events = result.scalars().all()
     return {"events": [_serialize_gate_event(event) for event in events]}
@@ -104,9 +113,7 @@ async def admin_recent_audit_logs(
     _require_admin_bearer(authorization=authorization, settings=settings)
 
     result = await session.execute(
-        select(AuditLog)
-        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        .limit(limit)
+        select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
     )
     audit_logs = result.scalars().all()
     return {"audit_logs": [_serialize_audit_log(audit_log) for audit_log in audit_logs]}
@@ -128,6 +135,12 @@ async def admin_status(
     latest_audit_result = await session.execute(select(func.max(AuditLog.created_at)))
     message_count_result = await session.execute(select(func.count(Message.id)))
     latest_message_result = await session.execute(select(func.max(Message.created_at)))
+    reply_task_count_result = await session.execute(select(func.count(ReplyTask.id)))
+    unanswered_count_result = await session.execute(
+        select(func.count(ReplyTask.id)).where(
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value
+        )
+    )
 
     latest_event_received_at = cast(
         datetime | None,
@@ -166,6 +179,38 @@ async def admin_status(
             "count": _serialize_count(message_count_result.scalar_one()),
             "last_created_at": _serialize_datetime(latest_message_created_at),
         },
+        "reply_tasks": {
+            "count": _serialize_count(reply_task_count_result.scalar_one()),
+            "unanswered": _serialize_count(unanswered_count_result.scalar_one()),
+        },
+    }
+
+
+@router.get("/admin/inbox/unanswered")
+async def admin_unanswered_inbox(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+) -> dict[str, list[JsonObject]]:
+    """Return active reply tasks with sanitized conversation and message context."""
+
+    _require_admin_bearer(authorization=authorization, settings=settings)
+
+    result = await session.execute(
+        select(ReplyTask, Conversation, Message)
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .where(ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value)
+        .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+    return {
+        "reply_tasks": [
+            _serialize_reply_task(task, conversation, message)
+            for task, conversation, message in rows
+        ]
     }
 
 
@@ -255,23 +300,47 @@ async def telegram_webhook(
     session.add(gate_event)
     await session.flush()
 
-    session.add(
-        Message(
-            bot_id=bot.id,
-            gate_event_id=gate_event.id,
-            direction=MessageDirection.INBOUND.value,
-            source="telegram",
-            event_type=normalized.event_type,
-            chat_id=normalized.chat_id,
-            sender_id=normalized.sender_id,
-            text=normalized.text,
-            telegram_update_id=normalized.update_id,
-            telegram_message_id=normalized.message_id,
-            business_connection_id=normalized.business_connection_id,
-            payload={"raw_update_ref": "telegram_updates"},
-            received_at=datetime.now(UTC),
-        )
+    now = datetime.now(UTC)
+    conversation = await _get_or_create_conversation(
+        session=session,
+        bot_id=bot.id,
+        account_id=None,
+        project_id=None,
+        chat_id=normalized.chat_id,
+        business_connection_id=normalized.business_connection_id,
+        title=None,
+        happened_at=now,
     )
+
+    inbound_message = Message(
+        bot_id=bot.id,
+        gate_event_id=gate_event.id,
+        direction=MessageDirection.INBOUND.value,
+        source="telegram",
+        event_type=normalized.event_type,
+        chat_id=normalized.chat_id,
+        sender_id=normalized.sender_id,
+        text=normalized.text,
+        telegram_update_id=normalized.update_id,
+        telegram_message_id=normalized.message_id,
+        business_connection_id=normalized.business_connection_id,
+        payload={"raw_update_ref": "telegram_updates"},
+        received_at=now,
+    )
+    session.add(inbound_message)
+    await session.flush()
+
+    if _is_human_text_message(normalized):
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = True
+        session.add(
+            ReplyTask(
+                conversation_id=conversation.id,
+                trigger_message_id=inbound_message.id,
+                status=ReplyTaskStatus.NEEDS_REPLY.value,
+                reason="inbound_human_text",
+            )
+        )
     session.add(
         AuditLog(
             actor="telegram",
@@ -320,6 +389,7 @@ async def telegram_webhook(
                 "send_status": "failed",
             }
 
+        outbound_at = datetime.now(UTC)
         session.add(
             Message(
                 bot_id=bot.id,
@@ -333,9 +403,14 @@ async def telegram_webhook(
                 text=auto_reply,
                 business_connection_id=normalized.business_connection_id,
                 payload=send_result,
-                sent_at=datetime.now(UTC),
+                sent_at=outbound_at,
             )
         )
+        conversation.status = ConversationStatus.REPLIED.value
+        conversation.requires_reply = False
+        conversation.last_outbound_at = outbound_at
+        conversation.last_message_at = outbound_at
+        await _satisfy_reply_tasks(session=session, conversation_id=conversation.id)
         session.add(
             AuditLog(
                 actor="gate",
@@ -355,6 +430,88 @@ async def telegram_webhook(
         "duplicate": False,
         "send_status": send_status,
     }
+
+
+async def _get_or_create_conversation(
+    *,
+    session: AsyncSession,
+    bot_id: Any,
+    account_id: Any | None,
+    project_id: Any | None,
+    chat_id: str,
+    business_connection_id: str | None,
+    title: str | None,
+    happened_at: datetime,
+) -> Conversation:
+    """Return and update the conversation for an inbound Telegram message."""
+
+    account_filter = (
+        Conversation.account_id.is_(None)
+        if account_id is None
+        else Conversation.account_id == account_id
+    )
+    project_filter = (
+        Conversation.project_id.is_(None)
+        if project_id is None
+        else Conversation.project_id == project_id
+    )
+    business_connection_filter = (
+        Conversation.business_connection_id.is_(None)
+        if business_connection_id is None
+        else Conversation.business_connection_id == business_connection_id
+    )
+
+    result = await session.execute(
+        select(Conversation).where(
+            Conversation.bot_id == bot_id,
+            account_filter,
+            project_filter,
+            Conversation.chat_id == chat_id,
+            business_connection_filter,
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    if conversation is None:
+        conversation = Conversation(
+            bot_id=bot_id,
+            account_id=account_id,
+            project_id=project_id,
+            chat_id=chat_id,
+            business_connection_id=business_connection_id,
+            title=title,
+            status=ConversationStatus.OPEN.value,
+            requires_reply=False,
+            last_message_at=happened_at,
+            last_inbound_at=happened_at,
+        )
+        session.add(conversation)
+        await session.flush()
+        return conversation
+
+    conversation.last_message_at = happened_at
+    conversation.last_inbound_at = happened_at
+    if title and conversation.title is None:
+        conversation.title = title
+    return conversation
+
+
+async def _satisfy_reply_tasks(*, session: AsyncSession, conversation_id: Any) -> None:
+    """Mark open reply tasks for a conversation as replied."""
+
+    result = await session.execute(
+        select(ReplyTask).where(
+            ReplyTask.conversation_id == conversation_id,
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+        )
+    )
+    for task in result.scalars().all():
+        task.status = ReplyTaskStatus.REPLIED.value
+
+
+def _is_human_text_message(normalized: TelegramUpdateEvent) -> bool:
+    """Return true when a Telegram update is an inbound human text message."""
+
+    return normalized.event_type in {"message", "business_message"} and bool(normalized.text)
 
 
 async def _get_or_create_bot(*, session: AsyncSession, username: str) -> Bot:
@@ -408,6 +565,50 @@ def _require_admin_bearer(*, authorization: str | None, settings: Settings) -> N
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid admin bearer token",
         )
+
+
+def _serialize_reply_task(
+    task: ReplyTask, conversation: Conversation, message: Message
+) -> JsonObject:
+    """Serialize a reply task without raw Telegram payloads or secret-bearing fields."""
+
+    return {
+        "id": str(task.id),
+        "status": task.status,
+        "priority": task.priority,
+        "reason": task.reason,
+        "due_at": _serialize_datetime(task.due_at),
+        "created_at": _serialize_datetime(task.created_at),
+        "updated_at": _serialize_datetime(task.updated_at),
+        "conversation": {
+            "id": str(conversation.id),
+            "bot_id": str(conversation.bot_id),
+            "account_id": _optional_string(conversation.account_id),
+            "project_id": _optional_string(conversation.project_id),
+            "chat_id": conversation.chat_id,
+            "business_connection_id": conversation.business_connection_id,
+            "title": conversation.title,
+            "status": conversation.status,
+            "requires_reply": conversation.requires_reply,
+            "last_message_at": _serialize_datetime(conversation.last_message_at),
+            "last_inbound_at": _serialize_datetime(conversation.last_inbound_at),
+            "last_outbound_at": _serialize_datetime(conversation.last_outbound_at),
+        },
+        "message": {
+            "id": str(message.id),
+            "direction": message.direction,
+            "source": message.source,
+            "event_type": message.event_type,
+            "chat_id": message.chat_id,
+            "sender_id": message.sender_id,
+            "text": message.text,
+            "telegram_update_id": message.telegram_update_id,
+            "telegram_message_id": message.telegram_message_id,
+            "business_connection_id": message.business_connection_id,
+            "received_at": _serialize_datetime(message.received_at),
+            "created_at": _serialize_datetime(message.created_at),
+        },
+    }
 
 
 def _serialize_gate_event(event: GateEvent) -> JsonObject:
