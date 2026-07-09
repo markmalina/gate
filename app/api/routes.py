@@ -128,62 +128,7 @@ async def admin_status(
     """Return a compact read-only operational status snapshot for Gate."""
 
     _require_admin_bearer(authorization=authorization, settings=settings)
-
-    event_count_result = await session.execute(select(func.count(GateEvent.id)))
-    latest_event_result = await session.execute(select(func.max(GateEvent.received_at)))
-    audit_count_result = await session.execute(select(func.count(AuditLog.id)))
-    latest_audit_result = await session.execute(select(func.max(AuditLog.created_at)))
-    message_count_result = await session.execute(select(func.count(Message.id)))
-    latest_message_result = await session.execute(select(func.max(Message.created_at)))
-    reply_task_count_result = await session.execute(select(func.count(ReplyTask.id)))
-    unanswered_count_result = await session.execute(
-        select(func.count(ReplyTask.id)).where(
-            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value
-        )
-    )
-
-    latest_event_received_at = cast(
-        datetime | None,
-        latest_event_result.scalar_one(),
-    )
-    latest_audit_created_at = cast(
-        datetime | None,
-        latest_audit_result.scalar_one(),
-    )
-    latest_message_created_at = cast(
-        datetime | None,
-        latest_message_result.scalar_one(),
-    )
-
-    return {
-        "service": {
-            "status": "ok",
-            "name": "gate",
-            "environment": settings.gate_env,
-            "default_mode": settings.gate_default_mode,
-        },
-        "deployment": {
-            "service": settings.deployment_service,
-            "commit_sha": settings.deployment_sha,
-            "bot_username": settings.telegram_bot_username,
-        },
-        "events": {
-            "count": _serialize_count(event_count_result.scalar_one()),
-            "last_received_at": _serialize_datetime(latest_event_received_at),
-        },
-        "audit_logs": {
-            "count": _serialize_count(audit_count_result.scalar_one()),
-            "last_created_at": _serialize_datetime(latest_audit_created_at),
-        },
-        "messages": {
-            "count": _serialize_count(message_count_result.scalar_one()),
-            "last_created_at": _serialize_datetime(latest_message_created_at),
-        },
-        "reply_tasks": {
-            "count": _serialize_count(reply_task_count_result.scalar_one()),
-            "unanswered": _serialize_count(unanswered_count_result.scalar_one()),
-        },
-    }
+    return await _build_admin_status_payload(session=session, settings=settings)
 
 
 @router.get("/admin/inbox/unanswered")
@@ -196,22 +141,7 @@ async def admin_unanswered_inbox(
     """Return active reply tasks with sanitized conversation and message context."""
 
     _require_admin_bearer(authorization=authorization, settings=settings)
-
-    result = await session.execute(
-        select(ReplyTask, Conversation, Message)
-        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
-        .join(Message, ReplyTask.trigger_message_id == Message.id)
-        .where(ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value)
-        .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
-        .limit(limit)
-    )
-    rows = result.all()
-    return {
-        "reply_tasks": [
-            _serialize_reply_task(task, conversation, message)
-            for task, conversation, message in rows
-        ]
-    }
+    return {"reply_tasks": await _load_unanswered_reply_tasks(session=session, limit=limit)}
 
 
 @router.post("/telegram/webhook")
@@ -330,7 +260,8 @@ async def telegram_webhook(
     session.add(inbound_message)
     await session.flush()
 
-    if _is_human_text_message(normalized):
+    admin_command = _parse_admin_console_command(normalized.text)
+    if _is_human_text_message(normalized) and admin_command is None:
         conversation.status = ConversationStatus.OPEN.value
         conversation.requires_reply = True
         session.add(
@@ -358,6 +289,81 @@ async def telegram_webhook(
 
     auto_reply: str | None = None
     send_status = "not_applicable"
+    if admin_command is not None:
+        if _is_telegram_admin_sender(normalized.sender_id):
+            auto_reply = await _build_telegram_admin_reply(
+                command=admin_command,
+                session=session,
+                settings=settings,
+            )
+            audit_action = f"telegram_admin_console_{admin_command}_sent"
+        else:
+            auto_reply = "Gate online"
+            audit_action = "telegram_admin_console_rejected"
+
+        try:
+            send_result = await telegram.send_message(
+                chat_id=normalized.chat_id,
+                text=auto_reply,
+                business_connection_id=normalized.business_connection_id,
+            )
+        except Exception as exc:
+            session.add(
+                AuditLog(
+                    actor="gate",
+                    action="telegram_admin_console_reply_failed",
+                    bot_id=bot.id,
+                    gate_event_id=gate_event.id,
+                    metadata_={
+                        "command": admin_command,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
+            )
+            await session.commit()
+            return {
+                "ok": True,
+                "event_type": normalized.event_type,
+                "auto_reply": auto_reply,
+                "duplicate": False,
+                "send_status": "failed",
+            }
+
+        session.add(
+            Message(
+                bot_id=bot.id,
+                gate_event_id=gate_event.id,
+                direction=MessageDirection.OUTBOUND.value,
+                source="gate",
+                event_type="telegram_admin_console_reply",
+                chat_id=normalized.chat_id,
+                sender_id=settings.telegram_bot_username,
+                recipient_id=normalized.chat_id,
+                text=auto_reply,
+                business_connection_id=normalized.business_connection_id,
+                payload=send_result,
+                sent_at=datetime.now(UTC),
+            )
+        )
+        session.add(
+            AuditLog(
+                actor="gate",
+                action=audit_action,
+                bot_id=bot.id,
+                gate_event_id=gate_event.id,
+                metadata_={"command": admin_command},
+            )
+        )
+        await session.commit()
+        send_status = "sent"
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": auto_reply,
+            "duplicate": False,
+            "send_status": send_status,
+        }
+
     if _is_ping(normalized.text):
         auto_reply = "Gate online"
         try:
@@ -430,6 +436,152 @@ async def telegram_webhook(
         "duplicate": False,
         "send_status": send_status,
     }
+
+
+async def _build_admin_status_payload(*, session: AsyncSession, settings: Settings) -> JsonObject:
+    event_count_result = await session.execute(select(func.count(GateEvent.id)))
+    latest_event_result = await session.execute(select(func.max(GateEvent.received_at)))
+    audit_count_result = await session.execute(select(func.count(AuditLog.id)))
+    latest_audit_result = await session.execute(select(func.max(AuditLog.created_at)))
+    message_count_result = await session.execute(select(func.count(Message.id)))
+    latest_message_result = await session.execute(select(func.max(Message.created_at)))
+    reply_task_count_result = await session.execute(select(func.count(ReplyTask.id)))
+    unanswered_count_result = await session.execute(
+        select(func.count(ReplyTask.id)).where(
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value
+        )
+    )
+
+    latest_event_received_at = cast(
+        datetime | None,
+        latest_event_result.scalar_one(),
+    )
+    latest_audit_created_at = cast(
+        datetime | None,
+        latest_audit_result.scalar_one(),
+    )
+    latest_message_created_at = cast(
+        datetime | None,
+        latest_message_result.scalar_one(),
+    )
+
+    return {
+        "service": {
+            "status": "ok",
+            "name": "gate",
+            "environment": settings.gate_env,
+            "default_mode": settings.gate_default_mode,
+        },
+        "deployment": {
+            "service": settings.deployment_service,
+            "commit_sha": settings.deployment_sha,
+            "bot_username": settings.telegram_bot_username,
+        },
+        "events": {
+            "count": _serialize_count(event_count_result.scalar_one()),
+            "last_received_at": _serialize_datetime(latest_event_received_at),
+        },
+        "audit_logs": {
+            "count": _serialize_count(audit_count_result.scalar_one()),
+            "last_created_at": _serialize_datetime(latest_audit_created_at),
+        },
+        "messages": {
+            "count": _serialize_count(message_count_result.scalar_one()),
+            "last_created_at": _serialize_datetime(latest_message_created_at),
+        },
+        "reply_tasks": {
+            "count": _serialize_count(reply_task_count_result.scalar_one()),
+            "unanswered": _serialize_count(unanswered_count_result.scalar_one()),
+        },
+    }
+
+
+async def _load_unanswered_reply_tasks(*, session: AsyncSession, limit: int) -> list[JsonObject]:
+    result = await session.execute(
+        select(ReplyTask, Conversation, Message)
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .where(ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value)
+        .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
+        .limit(limit)
+    )
+    return [
+        _serialize_reply_task(task, conversation, message)
+        for task, conversation, message in result.all()
+    ]
+
+
+async def _build_telegram_admin_reply(
+    *,
+    command: str,
+    session: AsyncSession,
+    settings: Settings,
+) -> str:
+    if command == "status":
+        status_payload = await _build_admin_status_payload(session=session, settings=settings)
+        return _format_telegram_admin_status(status_payload)
+
+    reply_tasks = await _load_unanswered_reply_tasks(session=session, limit=10)
+    return _format_telegram_unanswered_inbox(reply_tasks)
+
+
+def _format_telegram_admin_status(status_payload: JsonObject) -> str:
+    service = cast(JsonObject, status_payload["service"])
+    deployment = cast(JsonObject, status_payload["deployment"])
+    messages = cast(JsonObject, status_payload["messages"])
+    reply_tasks = cast(JsonObject, status_payload["reply_tasks"])
+    commit_sha = str(deployment["commit_sha"])
+    short_sha = commit_sha[:12] if commit_sha != "unknown" else commit_sha
+    return "\n".join(
+        [
+            "Gate status",
+            f"Environment: {service['environment']}",
+            f"Commit: {short_sha}",
+            f"Bot: {deployment['bot_username']}",
+            f"Messages: {messages['count']}",
+            f"Reply tasks: {reply_tasks['count']}",
+            f"Unanswered: {reply_tasks['unanswered']}",
+        ]
+    )
+
+
+def _format_telegram_unanswered_inbox(reply_tasks: list[JsonObject]) -> str:
+    if not reply_tasks:
+        return "No unanswered messages."
+
+    lines = ["Unanswered inbox:"]
+    for index, task in enumerate(reply_tasks, start=1):
+        conversation = cast(JsonObject, task["conversation"])
+        message = cast(JsonObject, task["message"])
+        text = str(message.get("text") or "")
+        if len(text) > 160:
+            text = f"{text[:157]}..."
+        lines.extend(
+            [
+                "",
+                f"{index}. {text}",
+                f"chat: {conversation['chat_id']}",
+                f"task: {str(task['id'])[:8]}",
+                f"created: {task['created_at']}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _parse_admin_console_command(text: str | None) -> str | None:
+    normalized = (text or "").strip().casefold()
+    if normalized in {"/status", "status", "статус"}:
+        return "status"
+    if normalized in {"/inbox", "inbox", "где я не ответил"}:
+        return "inbox"
+    return None
+
+
+def _is_telegram_admin_sender(sender_id: str) -> bool:
+    configured = os.getenv("TELEGRAM_ADMIN_USER_IDS", "")
+    normalized_config = configured.replace(";", ",").replace(" ", ",")
+    admin_ids = {item.strip() for item in normalized_config.split(",") if item.strip()}
+    return sender_id in admin_ids
 
 
 async def _get_or_create_conversation(
