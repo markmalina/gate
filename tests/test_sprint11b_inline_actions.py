@@ -1,9 +1,12 @@
 """Sprint 11b inline action regression tests."""
 
+import json
 from typing import Any
 
 import pytest
+from starlette.requests import Request
 
+from app.api import sprint11b_routes as sprint11b
 from app.api.sprint11b_routes import _extract_draft_callback_action
 from app.services.telegram import TelegramClient, _build_internal_reply_markup
 
@@ -169,3 +172,59 @@ def test_extracts_gate_draft_callback_action() -> None:
 )
 def test_rejects_non_gate_draft_callbacks(payload: dict[str, Any]) -> None:
     assert _extract_draft_callback_action(payload) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["/test", "/inbox"])
+async def test_normal_admin_commands_delegate_to_sprint10(
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    payload = {
+        "update_id": 500,
+        "message": {
+            "message_id": 30,
+            "from": {"id": 111},
+            "chat": {"id": 111},
+            "text": text,
+        },
+    }
+    body = json.dumps(payload).encode()
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/telegram/webhook",
+            "query_string": b"",
+            "headers": [],
+            "server": ("test", 80),
+            "client": ("test", 123),
+        },
+        receive,
+    )
+    delegated: dict[str, Any] = {}
+
+    async def fake_sprint10_webhook(**kwargs: Any) -> dict[str, Any]:
+        delegated.update(kwargs)
+        return {"ok": True, "delegated": True}
+
+    monkeypatch.setattr(
+        sprint11b.sprint10,
+        "sprint10_telegram_webhook",
+        fake_sprint10_webhook,
+    )
+
+    result = await sprint11b.sprint11b_telegram_webhook(
+        request=request,
+        x_telegram_secret="test-secret",
+        settings=object(),
+        session=object(),
+        telegram=object(),
+    )
+
+    assert result == {"ok": True, "delegated": True}
+    assert delegated["request"] is request
