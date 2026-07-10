@@ -22,13 +22,13 @@ def test_edit_draft_ref_parser_accepts_clickable_and_space_forms() -> None:
 
 
 def test_draft_edit_token_is_stable_and_secret_bound() -> None:
-    settings = Settings(admin_bearer_token="secret-one")
+    settings = Settings(ADMIN_BEARER_TOKEN="secret-one")
 
     token = _draft_edit_token(draft_ref="abcd1234", settings=settings)
 
     assert token == _draft_edit_token(draft_ref="abcd1234", settings=settings)
     assert token != _draft_edit_token(
-        draft_ref="abcd1234", settings=Settings(admin_bearer_token="secret-two")
+        draft_ref="abcd1234", settings=Settings(ADMIN_BEARER_TOKEN="secret-two")
     )
     assert len(token) == 40
 
