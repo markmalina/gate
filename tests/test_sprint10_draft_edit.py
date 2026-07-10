@@ -184,7 +184,11 @@ async def test_refresh_saved_draft_card_edits_original_telegram_message(
     session = FakeSession()
     telegram = FakeTelegramClient()
 
-    async def fake_find_latest_draft_card_message(*, session: Any, draft: ReplyDraft) -> Message:
+    async def fake_find_latest_draft_card_message(
+        *,
+        session: Any,
+        draft: ReplyDraft,
+    ) -> Message:
         del session, draft
         return message
 
