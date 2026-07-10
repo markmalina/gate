@@ -72,12 +72,28 @@ def test_test_guide_contains_deployment_metadata_and_clickable_flow() -> None:
     assert "Gate test: draft flow" in guide
     assert "Commit: 68a2e4f150f4" in guide
     assert "Bot: gate_m_bot" in guide
+    assert "Task: <pending>" in guide
     assert "test guided draft" in guide
     assert "Press /inbox" in guide
     assert "Press /draft_<task> from /inbox" in guide
     assert "Press /drafts_<task>" in guide
     assert "Press /done_<task>" in guide
     assert "No unanswered messages." in guide
+
+
+def test_test_guide_resolves_task_ref_after_probe_message() -> None:
+    guide = _format_telegram_test_guide(
+        commit_sha="68a2e4f150f47fa30e8d2968ef665e9ce335a121",
+        bot_username="gate_m_bot",
+        task_ref="593df0bb",
+    )
+
+    assert "Task: 593df0bb" in guide
+    assert "Press /draft_593df0bb from /inbox" in guide
+    assert "Press /drafts_593df0bb" in guide
+    assert "Press /done_593df0bb" in guide
+    assert "<task>" not in guide
+    assert "<pending>" not in guide
 
 
 def test_reply_draft_text_is_bounded_and_not_a_send_action() -> None:
