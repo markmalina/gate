@@ -5,14 +5,16 @@ from dataclasses import dataclass
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, Request
+from sqlalchemy import String, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api import routes as legacy
 from app.api import sprint9_routes as sprint9
 from app.api import sprint10_routes as sprint10
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
-from app.models.domain import AuditLog
+from app.models.domain import AuditLog, ReplyDraft, ReplyTask
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -125,6 +127,10 @@ async def sprint11b_telegram_webhook(
         )
         send_status = "edit_link_sent"
     else:
+        await _lock_draft_and_task_by_ref(
+            session=session,
+            draft_ref=callback_action.draft_ref,
+        )
         result_text = await sprint10._send_approved_draft_once(
             session=session,
             telegram=telegram,
@@ -159,6 +165,23 @@ async def sprint11b_telegram_webhook(
     )
     await session.commit()
     return sprint9._telegram_result(text=result_text, send_status=send_status)
+
+
+async def _lock_draft_and_task_by_ref(
+    *,
+    session: AsyncSession,
+    draft_ref: str,
+) -> None:
+    """Serialize send callbacks for the same draft until the transaction commits."""
+
+    await session.execute(
+        select(ReplyDraft, ReplyTask)
+        .join(ReplyTask, ReplyDraft.reply_task_id == ReplyTask.id)
+        .where(sql_cast(ReplyDraft.id, String).like(f"{draft_ref}%"))
+        .order_by(ReplyDraft.created_at.desc(), ReplyDraft.id.desc())
+        .limit(2)
+        .with_for_update()
+    )
 
 
 def _extract_draft_callback_action(update: JsonObject) -> DraftCallbackAction | None:
