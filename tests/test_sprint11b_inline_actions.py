@@ -1,7 +1,7 @@
 # mypy: ignore-errors
 """Sprint 11b inline draft action regression tests."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
@@ -30,7 +30,7 @@ def anyio_backend() -> str:
 @pytest.fixture
 def delegated_app_context(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[dict[str, Any]]:
+) -> Iterator[list[dict[str, Any]]]:
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret")
     get_settings.cache_clear()
     delegated_updates: list[dict[str, Any]] = []
