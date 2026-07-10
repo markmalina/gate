@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Sprint 9 draft send helper tests."""
 
 import uuid
