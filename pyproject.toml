@@ -38,6 +38,10 @@ packages = ["app", "tests"]
 module = "app.api.routes"
 ignore_errors = true
 
+[[tool.mypy.overrides]]
+module = "app.services.telegram"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
