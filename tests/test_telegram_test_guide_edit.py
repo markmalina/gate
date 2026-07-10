@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Telegram /test guide edit flow tests."""
 
 import uuid
