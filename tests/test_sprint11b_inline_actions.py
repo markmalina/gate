@@ -118,14 +118,24 @@ async def test_edit_message_reply_markup_clears_keyboard_by_default() -> None:
     ]
 
 
-def test_extracts_gate_draft_callback_action() -> None:
+@pytest.mark.parametrize(
+    ("callback_data", "expected_action"),
+    [
+        ("gate:edit:abcd1234", "edit"),
+        ("gate:send:abcd1234", "send"),
+    ],
+)
+def test_extracts_gate_draft_callback_actions(
+    callback_data: str,
+    expected_action: str,
+) -> None:
     action = _extract_draft_callback_action(
         {
             "update_id": 123,
             "callback_query": {
                 "id": "callback-1",
                 "from": {"id": 111},
-                "data": "gate:send:abcd1234",
+                "data": callback_data,
                 "message": {
                     "message_id": 999,
                     "chat": {"id": 222, "type": "private"},
@@ -136,14 +146,14 @@ def test_extracts_gate_draft_callback_action() -> None:
 
     assert action is not None
     assert action.callback_query_id == "callback-1"
-    assert action.action == "send"
+    assert action.action == expected_action
     assert action.draft_ref == "abcd1234"
     assert action.normalized.event_type == "callback_query"
     assert action.normalized.update_id == 123
     assert action.normalized.message_id == 999
     assert action.normalized.chat_id == "222"
     assert action.normalized.sender_id == "111"
-    assert action.normalized.text == "gate:send:abcd1234"
+    assert action.normalized.text == callback_data
 
 
 @pytest.mark.parametrize(
