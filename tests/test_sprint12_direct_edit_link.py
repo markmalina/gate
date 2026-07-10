@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from app.api import sprint12_routes as sprint12
 from app.core.config import Settings
 
