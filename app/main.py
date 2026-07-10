@@ -4,12 +4,13 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
+from fastapi import FastAPI
+
 from app.api.routes import router
 from app.api.sprint9_routes import router as sprint9_router
 from app.api.sprint10_routes import router as sprint10_router
 from app.core.config import get_settings
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
-from fastapi import FastAPI
 
 
 @asynccontextmanager
