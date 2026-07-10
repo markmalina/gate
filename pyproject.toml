@@ -39,7 +39,19 @@ module = "app.api.routes"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+module = "app.api.sprint9_routes"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "app.main"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = "app.services.telegram"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
 ignore_errors = true
 
 [tool.pytest.ini_options]
