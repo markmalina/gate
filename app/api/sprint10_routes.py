@@ -4,7 +4,6 @@
 import hashlib
 import hmac
 import os
-from datetime import UTC, datetime
 from html import escape
 from typing import Annotated, Any, cast
 from urllib.parse import parse_qs
@@ -17,7 +16,15 @@ from app.api import routes as legacy
 from app.api import sprint9_routes as sprint9
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
-from app.models.domain import AuditLog, Bot, GateEvent, ReplyDraft, ReplyTask
+from app.models.domain import (
+    AuditLog,
+    Bot,
+    GateEvent,
+    ReplyDraft,
+    ReplyDraftStatus,
+    ReplyTask,
+    ReplyTaskStatus,
+)
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -153,6 +160,7 @@ async def save_draft_form(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Draft text is too long")
 
     draft.draft_text = draft_text
+    draft.status = ReplyDraftStatus.EDITED.value
     session.add(
         AuditLog(
             actor="gate",
@@ -185,19 +193,22 @@ async def _send_draft_edit_link(
         text = f"Draft reference is ambiguous: {draft_ref}"
     else:
         draft, task, _conversation = rows[0]
-        full_ref = str(draft.id)
-        token = _draft_edit_token(draft_ref=full_ref, settings=settings)
-        base_url = str(request.base_url).rstrip("/")
-        edit_url = f"{base_url}/admin/drafts/{full_ref}/edit?token={token}"
-        text = "\n".join(
-            [
-                f"Edit draft: {str(draft.id)[:8]}",
-                edit_url,
-                "",
-                f"After save: /send_{str(draft.id)[:8]}",
-                f"Task: {str(task.id)[:8]}",
-            ]
-        )
+        if not _is_draft_open(draft=draft, task=task):
+            text = _closed_draft_message(action="edited", draft=draft, task=task)
+        else:
+            full_ref = str(draft.id)
+            token = _draft_edit_token(draft_ref=full_ref, settings=settings)
+            base_url = str(request.base_url).rstrip("/")
+            edit_url = f"{base_url}/admin/drafts/{full_ref}/edit?token={token}"
+            text = "\n".join(
+                [
+                    f"Edit draft: {str(draft.id)[:8]}",
+                    edit_url,
+                    "",
+                    f"After save: /send_{str(draft.id)[:8]}",
+                    f"Task: {str(task.id)[:8]}",
+                ]
+            )
     await sprint9._send_admin_reply(
         session=session,
         telegram=telegram,
@@ -222,6 +233,11 @@ async def _load_single_draft_for_edit(
     if len(rows) > 1:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Draft reference is ambiguous")
     draft, task, _conversation = rows[0]
+    if not _is_draft_open(draft=draft, task=task):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_closed_draft_message(action="edited", draft=draft, task=task),
+        )
     return draft, task
 
 
@@ -247,6 +263,23 @@ def _extract_edit_draft_ref(text: str) -> str | None:
     if len(parts) == 2 and parts[0] in {"/edit", "edit", "/editdraft", "editdraft"}:
         return parts[1].strip()
     return None
+
+
+def _is_draft_open(*, draft: ReplyDraft, task: ReplyTask) -> bool:
+    return draft.status in {
+        ReplyDraftStatus.GENERATED.value,
+        ReplyDraftStatus.EDITED.value,
+    } and task.status == ReplyTaskStatus.NEEDS_REPLY.value
+
+
+def _closed_draft_message(*, action: str, draft: ReplyDraft, task: ReplyTask) -> str:
+    return "\n".join(
+        [
+            f"Draft cannot be {action}: {str(draft.id)[:8]}",
+            f"draft status: {draft.status}",
+            f"task status: {task.status}",
+        ]
+    )
 
 
 def _render_draft_edit_form(*, draft: ReplyDraft, task: ReplyTask, token: str) -> str:
@@ -301,8 +334,67 @@ def _render_draft_saved_page(*, draft: ReplyDraft, task: ReplyTask) -> str:
 """
 
 
+_original_send_approved_draft = sprint9._send_approved_draft
 _original_format_reply_draft_result = legacy._format_reply_draft_result
 _original_format_reply_drafts_result = legacy._format_reply_drafts_result
+
+
+async def _send_approved_draft_once(
+    *,
+    session: AsyncSession,
+    telegram: TelegramClient,
+    settings: Settings,
+    bot: Bot,
+    gate_event: GateEvent,
+    admin_chat_id: str,
+    admin_business_connection_id: str | None,
+    draft_ref: str,
+) -> str:
+    rows = await sprint9._find_reply_draft_rows_by_ref(session=session, draft_ref=draft_ref)
+    if len(rows) != 1:
+        return await _original_send_approved_draft(
+            session=session,
+            telegram=telegram,
+            settings=settings,
+            bot=bot,
+            gate_event=gate_event,
+            admin_chat_id=admin_chat_id,
+            admin_business_connection_id=admin_business_connection_id,
+            draft_ref=draft_ref,
+        )
+
+    draft, task, _conversation = rows[0]
+    if _is_draft_open(draft=draft, task=task):
+        return await _original_send_approved_draft(
+            session=session,
+            telegram=telegram,
+            settings=settings,
+            bot=bot,
+            gate_event=gate_event,
+            admin_chat_id=admin_chat_id,
+            admin_business_connection_id=admin_business_connection_id,
+            draft_ref=draft_ref,
+        )
+
+    text = _closed_draft_message(action="sent", draft=draft, task=task)
+    await sprint9._send_admin_reply(
+        session=session,
+        telegram=telegram,
+        settings=settings,
+        bot=bot,
+        gate_event=gate_event,
+        chat_id=admin_chat_id,
+        business_connection_id=admin_business_connection_id,
+        text=text,
+        audit_action="reply_draft_send_rejected_closed",
+        metadata={
+            "draft_id": str(draft.id),
+            "task_id": str(task.id),
+            "draft_status": draft.status,
+            "task_status": task.status,
+        },
+    )
+    return text
 
 
 def _format_reply_draft_result_with_edit(*, draft: ReplyDraft, task: ReplyTask) -> str:
@@ -323,5 +415,6 @@ def _format_reply_drafts_result_with_edit(*, task: ReplyTask, drafts: list[Reply
     return "\n".join([result, *edit_lines])
 
 
+sprint9._send_approved_draft = _send_approved_draft_once
 legacy._format_reply_draft_result = _format_reply_draft_result_with_edit
 legacy._format_reply_drafts_result = _format_reply_drafts_result_with_edit
