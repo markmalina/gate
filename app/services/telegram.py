@@ -99,10 +99,13 @@ class TelegramClient:
         if not self._credential:
             raise RuntimeError("Telegram credential is required")
 
+        effective_reply_markup = (
+            reply_markup if reply_markup is not None else {"inline_keyboard": []}
+        )
         payload: dict[str, Any] = {
             "chat_id": chat_id,
             "message_id": message_id,
-            "reply_markup": reply_markup if reply_markup is not None else {"inline_keyboard": []},
+            "reply_markup": effective_reply_markup,
         }
         if business_connection_id is not None:
             payload["business_connection_id"] = business_connection_id
