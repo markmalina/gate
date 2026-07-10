@@ -23,6 +23,7 @@ class TelegramClient:
         text: str,
         business_connection_id: str | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send a Telegram text message and return the Telegram API response."""
 
@@ -40,6 +41,12 @@ class TelegramClient:
         elif _looks_like_html_message(text):
             payload["parse_mode"] = "HTML"
 
+        effective_reply_markup = (
+            reply_markup if reply_markup is not None else _build_internal_reply_markup(text)
+        )
+        if effective_reply_markup is not None:
+            payload["reply_markup"] = effective_reply_markup
+
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)
 
@@ -51,6 +58,7 @@ class TelegramClient:
         text: str,
         business_connection_id: str | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Edit a Telegram text message and return the Telegram API response."""
 
@@ -69,7 +77,62 @@ class TelegramClient:
         elif _looks_like_html_message(text):
             payload["parse_mode"] = "HTML"
 
+        effective_reply_markup = (
+            reply_markup if reply_markup is not None else _build_internal_reply_markup(text)
+        )
+        if effective_reply_markup is not None:
+            payload["reply_markup"] = effective_reply_markup
+
         url = f"{self._api_base_url}/bot{self._credential}/editMessageText"
+        return await self._post_telegram_json(url=url, payload=payload)
+
+    async def edit_message_reply_markup(
+        self,
+        *,
+        chat_id: str,
+        message_id: int,
+        business_connection_id: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Replace or clear a Telegram message's inline keyboard."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+
+        effective_reply_markup = (
+            reply_markup if reply_markup is not None else {"inline_keyboard": []}
+        )
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": effective_reply_markup,
+        }
+        if business_connection_id is not None:
+            payload["business_connection_id"] = business_connection_id
+
+        url = f"{self._api_base_url}/bot{self._credential}/editMessageReplyMarkup"
+        return await self._post_telegram_json(url=url, payload=payload)
+
+    async def answer_callback_query(
+        self,
+        *,
+        callback_query_id: str,
+        text: str | None = None,
+        show_alert: bool = False,
+    ) -> dict[str, Any]:
+        """Acknowledge a Telegram inline-keyboard callback query."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+
+        payload: dict[str, Any] = {
+            "callback_query_id": callback_query_id,
+            "show_alert": show_alert,
+        }
+        if text is not None:
+            payload["text"] = text
+
+        url = f"{self._api_base_url}/bot{self._credential}/answerCallbackQuery"
         return await self._post_telegram_json(url=url, payload=payload)
 
     async def _post_telegram_json(
@@ -90,3 +153,55 @@ def _looks_like_html_message(text: str) -> bool:
     """Return true for internal messages that intentionally use Telegram HTML."""
 
     return "<code>" in text or "<pre>" in text
+
+
+def _build_internal_reply_markup(text: str) -> dict[str, Any] | None:
+    """Build inline actions for Gate's internal draft messages."""
+
+    draft_ref = _extract_line_value(text=text, prefix="Draft created:")
+    if draft_ref:
+        return {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✏️ Редактировать",
+                        "callback_data": f"gate:edit:{draft_ref}",
+                    },
+                    {
+                        "text": "✅ Отправить",
+                        "callback_data": f"gate:send:{draft_ref}",
+                    },
+                ]
+            ]
+        }
+
+    edit_url = _extract_https_line(text)
+    if text.startswith("Edit draft:") and edit_url:
+        return {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✏️ Открыть редактор",
+                        "url": edit_url,
+                    }
+                ]
+            ]
+        }
+
+    return None
+
+
+def _extract_line_value(*, text: str, prefix: str) -> str | None:
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            value = line.removeprefix(prefix).strip()
+            return value or None
+    return None
+
+
+def _extract_https_line(text: str) -> str | None:
+    for line in text.splitlines():
+        value = line.strip()
+        if value.startswith("https://"):
+            return value
+    return None
