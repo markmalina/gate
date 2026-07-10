@@ -10,6 +10,7 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import routes as legacy
@@ -20,6 +21,8 @@ from app.models.domain import (
     AuditLog,
     Bot,
     GateEvent,
+    Message,
+    MessageDirection,
     ReplyDraft,
     ReplyDraftStatus,
     ReplyTask,
@@ -146,8 +149,9 @@ async def save_draft_form(
     request: Request,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
+    telegram: TelegramClient = telegram_client_dependency,
 ) -> HTMLResponse:
-    """Persist edited draft text from the external form."""
+    """Persist edited draft text from the external form and refresh the Telegram draft card."""
 
     await _require_valid_draft_token(draft_ref=draft_ref, token=token, settings=settings)
     draft, task = await _load_single_draft_for_edit(session=session, draft_ref=draft_ref)
@@ -170,8 +174,143 @@ async def save_draft_form(
             metadata_={"draft_id": str(draft.id), "task_id": str(task.id)},
         )
     )
+    await _refresh_saved_draft_card(
+        session=session,
+        telegram=telegram,
+        draft=draft,
+        task=task,
+    )
     await session.commit()
     return HTMLResponse(_render_draft_saved_page(draft=draft, task=task))
+
+
+async def _refresh_saved_draft_card(
+    *,
+    session: AsyncSession,
+    telegram: TelegramClient,
+    draft: ReplyDraft,
+    task: ReplyTask,
+) -> None:
+    """Edit the original Telegram draft card after the external form is saved."""
+
+    card_message = await _find_latest_draft_card_message(session=session, draft=draft)
+    if card_message is None:
+        session.add(
+            AuditLog(
+                actor="gate",
+                action="telegram_draft_card_refresh_skipped",
+                bot_id=None,
+                gate_event_id=None,
+                metadata_={
+                    "draft_id": str(draft.id),
+                    "reason": "draft_card_not_found",
+                },
+            )
+        )
+        return
+
+    telegram_message_id = _extract_telegram_message_id(card_message.payload)
+    if telegram_message_id is None:
+        session.add(
+            AuditLog(
+                actor="gate",
+                action="telegram_draft_card_refresh_skipped",
+                bot_id=card_message.bot_id,
+                gate_event_id=card_message.gate_event_id,
+                metadata_={
+                    "draft_id": str(draft.id),
+                    "message_id": str(card_message.id),
+                    "reason": "telegram_message_id_not_found",
+                },
+            )
+        )
+        return
+
+    updated_text = _format_reply_draft_result_with_edit(draft=draft, task=task)
+    try:
+        edit_result = await telegram.edit_message_text(
+            chat_id=card_message.chat_id,
+            message_id=telegram_message_id,
+            text=updated_text,
+            business_connection_id=card_message.business_connection_id,
+        )
+    except Exception as exc:
+        session.add(
+            AuditLog(
+                actor="gate",
+                action="telegram_draft_card_refresh_failed",
+                bot_id=card_message.bot_id,
+                gate_event_id=card_message.gate_event_id,
+                metadata_={
+                    "draft_id": str(draft.id),
+                    "message_id": str(card_message.id),
+                    "telegram_message_id": telegram_message_id,
+                    "error_type": exc.__class__.__name__,
+                },
+            )
+        )
+        return
+
+    card_message.text = updated_text
+    card_message.payload = {
+        "original_send": card_message.payload,
+        "latest_edit": edit_result,
+    }
+    card_message.telegram_message_id = telegram_message_id
+    session.add(
+        AuditLog(
+            actor="gate",
+            action="telegram_draft_card_refreshed",
+            bot_id=card_message.bot_id,
+            gate_event_id=card_message.gate_event_id,
+            metadata_={
+                "draft_id": str(draft.id),
+                "message_id": str(card_message.id),
+                "telegram_message_id": telegram_message_id,
+            },
+        )
+    )
+
+
+async def _find_latest_draft_card_message(
+    *,
+    session: AsyncSession,
+    draft: ReplyDraft,
+) -> Message | None:
+    draft_ref = str(draft.id)[:8]
+    result = await session.execute(
+        select(Message)
+        .where(
+            Message.direction == MessageDirection.OUTBOUND.value,
+            Message.source == "gate",
+            Message.event_type == "telegram_admin_console_reply",
+            Message.text.like(f"Draft created: {draft_ref}%"),
+        )
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    )
+    return cast(Message | None, result.scalar_one_or_none())
+
+
+def _extract_telegram_message_id(payload: JsonObject | None) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("latest_edit")
+    if isinstance(result, dict):
+        nested_result = result.get("result")
+        if isinstance(nested_result, dict):
+            value = nested_result.get("message_id")
+            if isinstance(value, int):
+                return value
+    result = payload.get("result")
+    if isinstance(result, dict):
+        value = result.get("message_id")
+        if isinstance(value, int):
+            return value
+    original_send = payload.get("original_send")
+    if isinstance(original_send, dict):
+        return _extract_telegram_message_id(cast(JsonObject, original_send))
+    return None
 
 
 async def _send_draft_edit_link(
