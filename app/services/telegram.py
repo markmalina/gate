@@ -217,7 +217,11 @@ def _build_draft_edit_url(
         return None
 
     base_url = raw_base_url if "://" in raw_base_url else f"https://{raw_base_url}"
-    token = hmac.new(secret.encode(), draft_ref.encode(), hashlib.sha256).hexdigest()[:40]
+    token = hmac.new(
+        secret.encode(),
+        draft_ref.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:40]
     return f"{base_url.rstrip('/')}/admin/drafts/{draft_ref}/web-edit?token={token}"
 
 
