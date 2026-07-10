@@ -1,9 +1,10 @@
 """Application factory for the Gate backend."""
 
+from fastapi import FastAPI
+
 from app.api.routes import router
 from app.api.sprint9_routes import router as sprint9_router
 from app.api.sprint10_routes import router as sprint10_router
-from fastapi import FastAPI
 
 
 def create_app() -> FastAPI:
