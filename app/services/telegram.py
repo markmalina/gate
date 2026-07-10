@@ -1,6 +1,6 @@
 """Telegram Bot API client for safe outbound messages."""
 
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -73,4 +73,4 @@ class TelegramClient:
         if not isinstance(result, dict):
             raise RuntimeError("Telegram API returned a non-object response")
 
-        return result
+        return cast(dict[str, Any], result)
