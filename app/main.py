@@ -4,19 +4,17 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from typing import Any
-
-from fastapi import FastAPI, Request
-from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import Response
 
 from app.api.routes import router
 from app.api.sprint9_routes import router as sprint9_router
 from app.api.sprint10_routes import router as sprint10_router
 from app.core.config import get_settings
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
 
@@ -51,16 +49,19 @@ async def telegram_http_exception_handler(
     if not is_unsupported_telegram_update:
         return await http_exception_handler(request, exc)
 
-    update_id: Any = None
-    update_types: list[str] = []
     try:
         payload = await request.json()
     except Exception:
-        payload = None
-    if isinstance(payload, dict):
-        update_id = payload.get("update_id")
-        update_types = sorted(str(key) for key in payload if key != "update_id")
+        return await http_exception_handler(request, exc)
 
+    if not isinstance(payload, dict):
+        return await http_exception_handler(request, exc)
+
+    update_id = payload.get("update_id")
+    if type(update_id) is not int:
+        return await http_exception_handler(request, exc)
+
+    update_types = sorted(str(key) for key in payload if key != "update_id")
     logger.warning(
         "Acknowledging unsupported Telegram update: update_id=%s types=%s",
         update_id,
