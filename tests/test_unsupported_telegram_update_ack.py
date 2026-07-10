@@ -1,15 +1,14 @@
 """Regression tests for unsupported Telegram update acknowledgement."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.core.config import get_settings
 from app.main import app
 from app.services.telegram import TelegramClient
+from httpx import ASGITransport, AsyncClient
 
 
 class DummyTelegramClient(TelegramClient):
@@ -25,7 +24,9 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-def unsupported_update_context(monkeypatch: pytest.MonkeyPatch) -> None:
+def unsupported_update_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret")
     get_settings.cache_clear()
 
@@ -109,6 +110,25 @@ async def test_non_object_payload_still_returns_400(
             "/telegram/webhook",
             headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
             json=[],
+        )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_object_without_integer_update_id_still_returns_400(
+    unsupported_update_context: None,
+) -> None:
+    del unsupported_update_context
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json={"callback_query": {"id": "callback-3"}},
         )
 
     assert response.status_code == 400
