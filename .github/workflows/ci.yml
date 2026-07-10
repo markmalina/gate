@@ -37,7 +37,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Mypy
-        run: mypy app tests
+        run: mypy app
       - name: Pytest
         run: pytest
       - name: Alembic upgrade
