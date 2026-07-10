@@ -23,6 +23,9 @@ db_session_dependency = Depends(get_db_session)
 telegram_client_dependency = Depends(legacy.get_telegram_client)
 
 JsonObject = dict[str, Any]
+CALLBACK_PREFIX = "gate"
+CALLBACK_EDIT = "edit"
+CALLBACK_SEND = "send"
 
 
 @dataclass(frozen=True)
@@ -45,11 +48,11 @@ async def sprint11b_telegram_webhook(
     session: AsyncSession = db_session_dependency,
     telegram: TelegramClient = telegram_client_dependency,
 ) -> JsonObject:
-    """Handle Gate draft callbacks and delegate non-callback updates to Sprint 10."""
+    """Handle Gate draft callbacks and delegate every non-callback update to Sprint 10."""
 
     raw_update = await request.json()
     if not isinstance(raw_update, dict):
-        return await sprint10.sprint10_telegram_webhook(
+        return await _delegate_to_sprint10(
             request=request,
             x_telegram_secret=x_telegram_secret,
             settings=settings,
@@ -59,7 +62,7 @@ async def sprint11b_telegram_webhook(
 
     callback_action = _extract_draft_callback_action(cast(JsonObject, raw_update))
     if callback_action is None:
-        return await sprint10.sprint10_telegram_webhook(
+        return await _delegate_to_sprint10(
             request=request,
             x_telegram_secret=x_telegram_secret,
             settings=settings,
@@ -83,13 +86,12 @@ async def sprint11b_telegram_webhook(
             bot_id=bot.id,
             gate_event_id=gate_event.id,
         )
-        return {
-            "ok": True,
-            "event_type": callback_action.normalized.event_type,
-            "auto_reply": None,
-            "duplicate": True,
-            "send_status": "duplicate",
-        }
+        return _callback_result(
+            action=callback_action,
+            text=None,
+            duplicate=True,
+            send_status="duplicate",
+        )
 
     if not legacy._is_telegram_admin_sender(callback_action.normalized.sender_id):
         await _answer_callback_safely(
@@ -102,7 +104,11 @@ async def sprint11b_telegram_webhook(
             gate_event_id=gate_event.id,
         )
         await session.commit()
-        return sprint9._telegram_result(text="Gate online")
+        return _callback_result(
+            action=callback_action,
+            text="Gate online",
+            send_status="rejected",
+        )
 
     await _answer_callback_safely(
         telegram=telegram,
@@ -113,7 +119,7 @@ async def sprint11b_telegram_webhook(
         gate_event_id=gate_event.id,
     )
 
-    if callback_action.action == "edit":
+    if callback_action.action == CALLBACK_EDIT:
         result_text = await sprint10._send_draft_edit_link(
             request=request,
             session=session,
@@ -142,7 +148,7 @@ async def sprint11b_telegram_webhook(
             draft_ref=callback_action.draft_ref,
         )
         send_status = "sent" if result_text.startswith("Draft sent:") else "rejected"
-        if result_text.startswith("Draft sent:"):
+        if send_status == "sent":
             await _clear_callback_keyboard_safely(
                 telegram=telegram,
                 callback_action=callback_action,
@@ -160,11 +166,49 @@ async def sprint11b_telegram_webhook(
             metadata_={
                 "draft_ref": callback_action.draft_ref,
                 "callback_query_id": callback_action.callback_query_id,
+                "send_status": send_status,
             },
         )
     )
     await session.commit()
-    return sprint9._telegram_result(text=result_text, send_status=send_status)
+    return _callback_result(
+        action=callback_action,
+        text=result_text,
+        send_status=send_status,
+    )
+
+
+async def _delegate_to_sprint10(
+    *,
+    request: Request,
+    x_telegram_secret: str | None,
+    settings: Settings,
+    session: AsyncSession,
+    telegram: TelegramClient,
+) -> JsonObject:
+    return await sprint10.sprint10_telegram_webhook(
+        request=request,
+        x_telegram_secret=x_telegram_secret,
+        settings=settings,
+        session=session,
+        telegram=telegram,
+    )
+
+
+def _callback_result(
+    *,
+    action: DraftCallbackAction,
+    text: str | None,
+    send_status: str,
+    duplicate: bool = False,
+) -> JsonObject:
+    return {
+        "ok": True,
+        "event_type": action.normalized.event_type,
+        "auto_reply": text,
+        "duplicate": duplicate,
+        "send_status": send_status,
+    }
 
 
 async def _lock_draft_and_task_by_ref(
@@ -187,7 +231,7 @@ async def _lock_draft_and_task_by_ref(
 def _extract_draft_callback_action(update: JsonObject) -> DraftCallbackAction | None:
     update_id = update.get("update_id")
     callback_query = update.get("callback_query")
-    if not isinstance(update_id, int) or not isinstance(callback_query, dict):
+    if type(update_id) is not int or not isinstance(callback_query, dict):
         return None
 
     callback_query_id = callback_query.get("id")
@@ -200,21 +244,16 @@ def _extract_draft_callback_action(update: JsonObject) -> DraftCallbackAction | 
         return None
 
     sender_id = sender.get("id")
-    message_id = message.get("message_id")
-    chat = message.get("chat")
-    if not isinstance(chat, dict):
-        return None
-    chat_id = chat.get("id")
+    chat_id = _extract_callback_chat_id(message)
     if sender_id is None or chat_id is None:
         return None
 
-    parts = data.split(":", maxsplit=2)
-    if len(parts) != 3 or parts[0] != "gate":
+    parsed = _parse_callback_data(data)
+    if parsed is None:
         return None
-    action, draft_ref = parts[1], parts[2].strip()
-    if action not in {"edit", "send"} or len(draft_ref) < 4:
-        return None
+    action, draft_ref = parsed
 
+    message_id = message.get("message_id")
     business_connection_id = message.get("business_connection_id")
     normalized = legacy.TelegramUpdateEvent(
         update_id=update_id,
@@ -233,6 +272,24 @@ def _extract_draft_callback_action(update: JsonObject) -> DraftCallbackAction | 
         draft_ref=draft_ref,
         normalized=normalized,
     )
+
+
+def _parse_callback_data(data: str) -> tuple[str, str] | None:
+    parts = data.split(":", maxsplit=2)
+    if len(parts) != 3 or parts[0] != CALLBACK_PREFIX:
+        return None
+
+    action, draft_ref = parts[1], parts[2].strip()
+    if action not in {CALLBACK_EDIT, CALLBACK_SEND} or len(draft_ref) < 4:
+        return None
+    return action, draft_ref
+
+
+def _extract_callback_chat_id(message: JsonObject) -> Any | None:
+    chat = message.get("chat")
+    if not isinstance(chat, dict):
+        return None
+    return chat.get("id")
 
 
 async def _answer_callback_safely(
@@ -282,6 +339,7 @@ async def _clear_callback_keyboard_safely(
             chat_id=callback_action.normalized.chat_id,
             message_id=message_id,
             business_connection_id=callback_action.normalized.business_connection_id,
+            reply_markup={"inline_keyboard": []},
         )
     except Exception as exc:
         session.add(
