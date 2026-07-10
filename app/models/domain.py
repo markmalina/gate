@@ -1,4 +1,4 @@
-"""Initial Gate SQLAlchemy domain models."""
+"""Gate SQLAlchemy domain models."""
 
 import uuid
 from datetime import datetime
@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -20,6 +21,16 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+TELEGRAM_MARK_RU_ACCOUNT_ID = uuid.UUID("0d8e025f-323d-5e86-a44c-a620f690ae4f")
+TELEGRAM_MARK_BY_ACCOUNT_ID = uuid.UUID("0f26e375-e470-5aa2-9a4e-c2f9ad9d24b2")
+ALPHA_PERSONAL_PROJECT_ID = uuid.UUID("9d2010e7-9583-5aa5-b7a9-ce73ac5e22eb")
+OKO_PROJECT_ID = uuid.UUID("f2659ed6-9a1d-5f72-8bf1-fe45420cfef7")
+ALPHA_MAYAKI_PROJECT_ID = uuid.UUID("329d252f-f839-5ddd-963e-50b82469cf39")
+UNCLASSIFIED_PROJECT_ID = uuid.UUID("e12d3d85-6c5f-5f8a-a2fa-ac35f7ac80c0")
+
+DEFAULT_ACCOUNT_ID = TELEGRAM_MARK_RU_ACCOUNT_ID
+DEFAULT_PROJECT_ID = UNCLASSIFIED_PROJECT_ID
 
 
 class Base(DeclarativeBase):
@@ -93,7 +104,11 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alias: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
+    country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    phone_masked: Mapped[str | None] = mapped_column(String(64), nullable=True)
     account_type: Mapped[str] = mapped_column(String(64), nullable=False)
     linked_project_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("projects.id"), nullable=True
@@ -103,6 +118,9 @@ class Account(Base):
         String(32), nullable=False, default=ReplyMode.MANUAL.value
     )
     audit_log_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    read_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    send_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -118,6 +136,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alias: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     adapter_type: Mapped[str] = mapped_column(String(128), nullable=False)
     memory_target: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -194,6 +213,127 @@ class TelegramUpdate(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Person(Base):
+    """A human represented by one or more platform identities."""
+
+    __tablename__ = "people"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PersonIdentity(Base):
+    """Platform identity connecting a person to a Gate account context."""
+
+    __tablename__ = "person_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "platform",
+            "platform_user_id",
+            name="uq_person_identities_account_platform_user",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("people.id"), nullable=False, index=True
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id"), nullable=False, index=True
+    )
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, default="telegram")
+    platform_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone_masked: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PersonProjectRelation(Base):
+    """Historical relationship between a person and a project."""
+
+    __tablename__ = "person_project_relations"
+    __table_args__ = (
+        Index(
+            "ix_person_project_relations_active",
+            "person_id",
+            "project_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("people.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"), nullable=False, index=True
+    )
+    relation_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TelegramBusinessConnection(Base):
+    """Telegram Business connection assigned to one Gate account."""
+
+    __tablename__ = "telegram_business_connections"
+    __table_args__ = (
+        Index(
+            "uq_telegram_business_connections_enabled_account",
+            "account_id",
+            unique=True,
+            postgresql_where=text("is_enabled"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id"), nullable=False, index=True
+    )
+    business_connection_id: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    user_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rights: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_update_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Message(Base):
     """Normalized inbound or outbound communication message."""
 
@@ -201,12 +341,39 @@ class Message(Base):
     __table_args__ = (
         Index("ix_messages_bot_chat_created_at", "bot_id", "chat_id", "created_at"),
         Index("ix_messages_direction_created_at", "direction", "created_at"),
+        Index(
+            "uq_messages_telegram_identity",
+            "account_id",
+            text("coalesce(business_connection_id, '')"),
+            "chat_id",
+            "telegram_message_id",
+            unique=True,
+            postgresql_where=text("telegram_message_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bots.id"), nullable=False, index=True)
-    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
-    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id"),
+        nullable=False,
+        default=lambda: DEFAULT_ACCOUNT_ID,
+        server_default=text(f"'{DEFAULT_ACCOUNT_ID}'::uuid"),
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"),
+        nullable=False,
+        default=lambda: DEFAULT_PROJECT_ID,
+        server_default=text(f"'{DEFAULT_PROJECT_ID}'::uuid"),
+        index=True,
+    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id"), nullable=True, index=True
+    )
+    context_binding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_context_bindings.id"), nullable=True, index=True
+    )
     gate_event_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("gate_events.id"), nullable=True, index=True
     )
@@ -236,8 +403,8 @@ class Conversation(Base):
         Index(
             "uq_conversations_context",
             "bot_id",
-            text("coalesce(account_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
-            text("coalesce(project_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
+            "account_id",
+            "project_id",
             "chat_id",
             text("coalesce(business_connection_id, '__gate_null_business_connection__')"),
             unique=True,
@@ -246,8 +413,18 @@ class Conversation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bots.id"), nullable=False, index=True)
-    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
-    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("accounts.id"), nullable=True, index=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id"), nullable=True, index=True
+    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id"), nullable=True, index=True
+    )
+    context_binding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_context_bindings.id"), nullable=True, index=True
+    )
     chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
     business_connection_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -270,6 +447,74 @@ class Conversation(Base):
     reply_drafts: Mapped[list["ReplyDraft"]] = relationship(back_populates="conversation")
 
 
+class ConversationContextBinding(Base):
+    """A time-bounded project context assigned to a conversation segment."""
+
+    __tablename__ = "conversation_context_bindings"
+    __table_args__ = (
+        Index(
+            "ix_conversation_context_bindings_active",
+            "conversation_id",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"), nullable=False, index=True
+    )
+    effective_from_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id"), nullable=True
+    )
+    effective_to_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id"), nullable=True
+    )
+    context_type: Mapped[str] = mapped_column(String(64), nullable=False, default="conversation")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    assigned_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    assignment_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class MessageContextAssignment(Base):
+    """Persisted project assignment for one message."""
+
+    __tablename__ = "message_context_assignments"
+    __table_args__ = (
+        Index(
+            "ix_message_context_assignments_message_created",
+            "message_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("messages.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"), nullable=False, index=True
+    )
+    context_binding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_context_bindings.id"), nullable=True
+    )
+    assigned_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    assignment_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ReplyTask(Base):
     """Task representing an inbound message awaiting Mark's reply."""
 
@@ -280,6 +525,26 @@ class ReplyTask(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id"),
+        nullable=False,
+        default=lambda: DEFAULT_ACCOUNT_ID,
+        server_default=text(f"'{DEFAULT_ACCOUNT_ID}'::uuid"),
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"),
+        nullable=False,
+        default=lambda: DEFAULT_PROJECT_ID,
+        server_default=text(f"'{DEFAULT_PROJECT_ID}'::uuid"),
+        index=True,
+    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id"), nullable=True, index=True
+    )
+    context_binding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_context_bindings.id"), nullable=True, index=True
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"), nullable=False, index=True
     )
@@ -310,6 +575,26 @@ class ReplyDraft(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id"),
+        nullable=False,
+        default=lambda: DEFAULT_ACCOUNT_ID,
+        server_default=text(f"'{DEFAULT_ACCOUNT_ID}'::uuid"),
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"),
+        nullable=False,
+        default=lambda: DEFAULT_PROJECT_ID,
+        server_default=text(f"'{DEFAULT_PROJECT_ID}'::uuid"),
+        index=True,
+    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("people.id"), nullable=True, index=True
+    )
+    context_binding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_context_bindings.id"), nullable=True, index=True
+    )
     reply_task_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("reply_tasks.id"), nullable=False, index=True
     )
