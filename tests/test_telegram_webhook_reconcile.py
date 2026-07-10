@@ -1,7 +1,6 @@
 """Telegram webhook reconciliation helper tests."""
 
 import pytest
-
 from app.services.telegram_webhook import (
     _require_telegram_ok,
     build_public_webhook_url,
