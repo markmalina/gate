@@ -1,6 +1,7 @@
 """Sprint 11b inline action regression tests."""
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,9 +26,47 @@ class CapturingTelegramClient(TelegramClient):
         return {"ok": True, "result": {"message_id": 999}}
 
 
+class FakeSession:
+    """Minimal async session fake for callback route unit tests."""
+
+    def __init__(self) -> None:
+        self.added: list[Any] = []
+        self.committed = False
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def execute(self, statement: Any) -> None:
+        del statement
+        return None
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+def _request_for_payload(payload: dict[str, Any]) -> Request:
+    body = json.dumps(payload).encode()
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/telegram/webhook",
+            "query_string": b"",
+            "headers": [],
+            "server": ("test", 80),
+            "client": ("test", 123),
+        },
+        receive,
+    )
 
 
 def test_draft_created_message_gets_edit_and_send_buttons() -> None:
@@ -149,6 +188,7 @@ def test_extracts_gate_draft_callback_action() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
+        {"update_id": True, "callback_query": {"id": "callback-1"}},
         {"update_id": 123, "callback_query": {"id": "callback-1"}},
         {
             "update_id": 123,
@@ -180,31 +220,16 @@ async def test_normal_admin_commands_delegate_to_sprint10(
     monkeypatch: pytest.MonkeyPatch,
     text: str,
 ) -> None:
-    payload = {
-        "update_id": 500,
-        "message": {
-            "message_id": 30,
-            "from": {"id": 111},
-            "chat": {"id": 111},
-            "text": text,
-        },
-    }
-    body = json.dumps(payload).encode()
-
-    async def receive() -> dict[str, Any]:
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request = Request(
+    request = _request_for_payload(
         {
-            "type": "http",
-            "method": "POST",
-            "path": "/telegram/webhook",
-            "query_string": b"",
-            "headers": [],
-            "server": ("test", 80),
-            "client": ("test", 123),
-        },
-        receive,
+            "update_id": 500,
+            "message": {
+                "message_id": 30,
+                "from": {"id": 111},
+                "chat": {"id": 111},
+                "text": text,
+            },
+        }
     )
     delegated: dict[str, Any] = {}
 
@@ -228,3 +253,62 @@ async def test_normal_admin_commands_delegate_to_sprint10(
 
     assert result == {"ok": True, "delegated": True}
     assert delegated["request"] is request
+
+
+@pytest.mark.anyio
+async def test_edit_callback_returns_clean_callback_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request_for_payload(
+        {
+            "update_id": 501,
+            "callback_query": {
+                "id": "callback-1",
+                "from": {"id": 111},
+                "data": "gate:edit:abcd1234",
+                "message": {"message_id": 31, "chat": {"id": 111}},
+            },
+        }
+    )
+    session = FakeSession()
+    telegram = CapturingTelegramClient()
+
+    monkeypatch.setattr(sprint11b.sprint9, "_require_telegram_secret", lambda secret: None)
+    monkeypatch.setattr(sprint11b.legacy, "_is_telegram_admin_sender", lambda sender_id: True)
+
+    async def fake_persist_admin_command_receipt(**kwargs: Any) -> tuple[Any, Any, bool]:
+        del kwargs
+        return SimpleNamespace(id="bot-1"), SimpleNamespace(id="event-1"), False
+
+    async def fake_send_draft_edit_link(**kwargs: Any) -> str:
+        assert kwargs["draft_ref"] == "abcd1234"
+        return "Edit draft: abcd1234"
+
+    monkeypatch.setattr(
+        sprint11b.sprint9,
+        "_persist_admin_command_receipt",
+        fake_persist_admin_command_receipt,
+    )
+    monkeypatch.setattr(
+        sprint11b.sprint10,
+        "_send_draft_edit_link",
+        fake_send_draft_edit_link,
+    )
+
+    result = await sprint11b.sprint11b_telegram_webhook(
+        request=request,
+        x_telegram_secret="test-secret",
+        settings=object(),
+        session=session,
+        telegram=telegram,
+    )
+
+    assert result == {
+        "ok": True,
+        "event_type": "callback_query",
+        "auto_reply": "Edit draft: abcd1234",
+        "duplicate": False,
+        "send_status": "edit_link_sent",
+    }
+    assert session.committed is True
+    assert telegram.requests[0]["url"] == "https://telegram.test/bottest-token/answerCallbackQuery"
