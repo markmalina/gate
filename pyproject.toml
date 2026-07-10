@@ -32,8 +32,8 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 "app/api/sprint10_routes.py" = ["E501", "F401", "I001"]
 "tests/test_sprint10_draft_edit.py" = ["I001"]
-"app/api/sprint11b_routes.py" = ["E501"]
-"tests/test_sprint11b_inline_actions.py" = ["E501"]
+"app/api/sprint11b_routes.py" = ["E501", "I001"]
+"tests/test_sprint11b_inline_actions.py" = ["E501", "I001"]
 
 [tool.mypy]
 python_version = "3.12"
