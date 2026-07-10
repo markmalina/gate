@@ -207,7 +207,13 @@ alembic downgrade base
 docker build -t gate:ci .
 ```
 
-## 12. Telegram Ping v1
+## 12. Production checklist
+
+Production readiness must be verified in the real Telegram client and Railway runtime. CI success alone is not a production verification.
+
+- [x] Telegram production smoke test passed: Mark verified in the Telegram app that `@gate_m_bot` responds and the current production flow works after refreshing/updating the Telegram client.
+
+## 13. Telegram Ping v1
 
 `POST /telegram/webhook` receives Telegram updates and validates the Telegram secret header:
 
@@ -232,7 +238,7 @@ All other text is stored as a Gate event but does not trigger an outgoing Telegr
 
 For `business_message`, Gate passes `business_connection_id` to Telegram when sending the safe reply.
 
-## 13. Current status and next development step
+## 14. Current status and next development step
 
 This section is the handoff for any future AI assistant, ChatGPT session, or Codex task. Read this before proposing the next action.
 
