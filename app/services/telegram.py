@@ -22,6 +22,7 @@ class TelegramClient:
         chat_id: str,
         text: str,
         business_connection_id: str | None = None,
+        parse_mode: str | None = None,
     ) -> dict[str, Any]:
         """Send a Telegram text message and return the Telegram API response."""
 
@@ -34,6 +35,10 @@ class TelegramClient:
         }
         if business_connection_id is not None:
             payload["business_connection_id"] = business_connection_id
+        if parse_mode is not None:
+            payload["parse_mode"] = parse_mode
+        elif _looks_like_html_message(text):
+            payload["parse_mode"] = "HTML"
 
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)
@@ -45,6 +50,7 @@ class TelegramClient:
         message_id: int,
         text: str,
         business_connection_id: str | None = None,
+        parse_mode: str | None = None,
     ) -> dict[str, Any]:
         """Edit a Telegram text message and return the Telegram API response."""
 
@@ -58,6 +64,10 @@ class TelegramClient:
         }
         if business_connection_id is not None:
             payload["business_connection_id"] = business_connection_id
+        if parse_mode is not None:
+            payload["parse_mode"] = parse_mode
+        elif _looks_like_html_message(text):
+            payload["parse_mode"] = "HTML"
 
         url = f"{self._api_base_url}/bot{self._credential}/editMessageText"
         return await self._post_telegram_json(url=url, payload=payload)
@@ -74,3 +84,9 @@ class TelegramClient:
             raise RuntimeError("Telegram API returned a non-object response")
 
         return cast(dict[str, Any], result)
+
+
+def _looks_like_html_message(text: str) -> bool:
+    """Return true for internal messages that intentionally use Telegram HTML."""
+
+    return "<code>" in text or "<pre>" in text
