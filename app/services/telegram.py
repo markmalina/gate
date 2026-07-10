@@ -82,6 +82,30 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/editMessageText"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def edit_message_reply_markup(
+        self,
+        *,
+        chat_id: str,
+        message_id: int,
+        business_connection_id: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Replace or clear a Telegram message's inline keyboard."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": reply_markup or {"inline_keyboard": []},
+        }
+        if business_connection_id is not None:
+            payload["business_connection_id"] = business_connection_id
+
+        url = f"{self._api_base_url}/bot{self._credential}/editMessageReplyMarkup"
+        return await self._post_telegram_json(url=url, payload=payload)
+
     async def answer_callback_query(
         self,
         *,
