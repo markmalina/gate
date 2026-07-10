@@ -6,6 +6,14 @@ Primary Telegram bot: `@gate_m_bot`
 Repository: https://github.com/markmalina/gate  
 Status: private
 
+## Product and engineering specification
+
+The authoritative roadmap for the next Gate development stages is:
+
+[`docs/GATE_FULL_TECHNICAL_SPEC.md`](docs/GATE_FULL_TECHNICAL_SPEC.md)
+
+It covers two personal Telegram accounts, Telegram Business connections, manual Telegram Desktop history imports, project routing and isolation, voice messages, ChatGPT MCP access, drafts, confirmed sending, security and the sprint-by-sprint rollout plan.
+
 ## 1. Development workflow
 
 Development is managed by a controlled GitHub workflow:
