@@ -54,7 +54,7 @@ def test_draft_created_message_gets_direct_edit_link_and_send_button() -> None:
                 {
                     "text": "✏️ Редактировать",
                     "url": (
-                        "https://gate.example/admin/drafts/abcd1234/edit"
+                        "https://gate.example/admin/drafts/abcd1234/web-edit"
                         "?token=5546bb49edb41003c548bc411ed8016a826c8c12"
                     ),
                 },
