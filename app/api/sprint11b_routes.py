@@ -43,7 +43,7 @@ async def sprint11b_telegram_webhook(
     session: AsyncSession = db_session_dependency,
     telegram: TelegramClient = telegram_client_dependency,
 ) -> JsonObject:
-    """Handle Gate draft callbacks and delegate every other update to Sprint 10."""
+    """Handle Gate draft callbacks and delegate non-callback updates to Sprint 10."""
 
     raw_update = await request.json()
     if not isinstance(raw_update, dict):
@@ -123,6 +123,7 @@ async def sprint11b_telegram_webhook(
             admin_business_connection_id=callback_action.normalized.business_connection_id,
             draft_ref=callback_action.draft_ref,
         )
+        send_status = "edit_link_sent"
     else:
         result_text = await sprint10._send_approved_draft_once(
             session=session,
@@ -134,6 +135,7 @@ async def sprint11b_telegram_webhook(
             admin_business_connection_id=callback_action.normalized.business_connection_id,
             draft_ref=callback_action.draft_ref,
         )
+        send_status = "sent" if result_text.startswith("Draft sent:") else "rejected"
         if result_text.startswith("Draft sent:"):
             await _clear_callback_keyboard_safely(
                 telegram=telegram,
@@ -149,17 +151,20 @@ async def sprint11b_telegram_webhook(
             action=f"telegram_draft_{callback_action.action}_callback_handled",
             bot_id=bot.id,
             gate_event_id=gate_event.id,
-            metadata_={"draft_ref": callback_action.draft_ref},
+            metadata_={
+                "draft_ref": callback_action.draft_ref,
+                "callback_query_id": callback_action.callback_query_id,
+            },
         )
     )
     await session.commit()
-    return sprint9._telegram_result(text=result_text)
+    return sprint9._telegram_result(text=result_text, send_status=send_status)
 
 
 def _extract_draft_callback_action(update: JsonObject) -> DraftCallbackAction | None:
     update_id = update.get("update_id")
     callback_query = update.get("callback_query")
-    if type(update_id) is not int or not isinstance(callback_query, dict):
+    if not isinstance(update_id, int) or not isinstance(callback_query, dict):
         return None
 
     callback_query_id = callback_query.get("id")
@@ -230,7 +235,10 @@ async def _answer_callback_safely(
                 action="telegram_callback_answer_failed",
                 bot_id=bot_id,
                 gate_event_id=gate_event_id,
-                metadata_={"error_type": exc.__class__.__name__},
+                metadata_={
+                    "callback_query_id": callback_query_id,
+                    "error_type": exc.__class__.__name__,
+                },
             )
         )
 
