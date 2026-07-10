@@ -58,6 +58,11 @@ class FakeTelegramClient:
         return {"ok": True, "result": {"message_id": message_id, "text": text}}
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 def _make_task_and_draft(
     *,
     draft_status: str = ReplyDraftStatus.GENERATED.value,
