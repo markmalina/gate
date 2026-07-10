@@ -32,7 +32,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["app", "tests"]
+packages = ["app"]
 
 [[tool.mypy.overrides]]
 module = "app.api.routes"
@@ -48,10 +48,6 @@ ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "app.services.telegram"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
 ignore_errors = true
 
 [tool.pytest.ini_options]
