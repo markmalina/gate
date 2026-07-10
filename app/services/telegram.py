@@ -1,5 +1,9 @@
 """Telegram Bot API client for safe outbound messages."""
 
+import hashlib
+import hmac
+import os
+from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
@@ -155,25 +159,27 @@ def _looks_like_html_message(text: str) -> bool:
     return "<code>" in text or "<pre>" in text
 
 
-def _build_internal_reply_markup(text: str) -> dict[str, Any] | None:
+def _build_internal_reply_markup(
+    text: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any] | None:
     """Build inline actions for Gate's internal draft messages."""
 
     draft_ref = _extract_line_value(text=text, prefix="Draft created:")
     if draft_ref:
-        return {
-            "inline_keyboard": [
-                [
-                    {
-                        "text": "✏️ Редактировать",
-                        "callback_data": f"gate:edit:{draft_ref}",
-                    },
-                    {
-                        "text": "✅ Отправить",
-                        "callback_data": f"gate:send:{draft_ref}",
-                    },
-                ]
-            ]
-        }
+        runtime_environ = os.environ if environ is None else environ
+        buttons: list[dict[str, str]] = []
+        edit_url = _build_draft_edit_url(draft_ref=draft_ref, environ=runtime_environ)
+        if edit_url is not None:
+            buttons.append({"text": "✏️ Редактировать", "url": edit_url})
+        buttons.append(
+            {
+                "text": "✅ Отправить",
+                "callback_data": f"gate:send:{draft_ref}",
+            }
+        )
+        return {"inline_keyboard": [buttons]}
 
     edit_url = _extract_https_line(text)
     if text.startswith("Edit draft:") and edit_url:
@@ -189,6 +195,34 @@ def _build_internal_reply_markup(text: str) -> dict[str, Any] | None:
         }
 
     return None
+
+
+def _build_draft_edit_url(
+    *,
+    draft_ref: str,
+    environ: Mapping[str, str],
+) -> str | None:
+    raw_base_url = (
+        environ.get("PUBLIC_BASE_URL")
+        or environ.get("RAILWAY_PUBLIC_DOMAIN")
+        or environ.get("RAILWAY_STATIC_URL")
+        or ""
+    ).strip()
+    secret = (
+        environ.get("ADMIN_BEARER_TOKEN")
+        or environ.get("TELEGRAM_WEBHOOK_SECRET")
+        or ""
+    ).strip()
+    if not raw_base_url or not secret:
+        return None
+
+    base_url = raw_base_url if "://" in raw_base_url else f"https://{raw_base_url}"
+    token = hmac.new(
+        secret.encode(),
+        draft_ref.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:40]
+    return f"{base_url.rstrip('/')}/admin/drafts/{draft_ref}/web-edit?token={token}"
 
 
 def _extract_line_value(*, text: str, prefix: str) -> str | None:

@@ -30,7 +30,7 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def test_draft_created_message_gets_edit_and_send_buttons() -> None:
+def test_draft_created_message_gets_direct_edit_link_and_send_button() -> None:
     markup = _build_internal_reply_markup(
         "\n".join(
             [
@@ -41,15 +41,38 @@ def test_draft_created_message_gets_edit_and_send_buttons() -> None:
                 "",
                 "Not sent.",
             ]
-        )
+        ),
+        environ={
+            "RAILWAY_PUBLIC_DOMAIN": "gate.example",
+            "ADMIN_BEARER_TOKEN": "secret",
+        },
     )
 
     assert markup == {
         "inline_keyboard": [
             [
-                {"text": "✏️ Редактировать", "callback_data": "gate:edit:abcd1234"},
+                {
+                    "text": "✏️ Редактировать",
+                    "url": (
+                        "https://gate.example/admin/drafts/abcd1234/web-edit"
+                        "?token=5546bb49edb41003c548bc411ed8016a826c8c12"
+                    ),
+                },
                 {"text": "✅ Отправить", "callback_data": "gate:send:abcd1234"},
             ]
+        ]
+    }
+
+
+def test_draft_created_message_never_falls_back_to_edit_callback() -> None:
+    markup = _build_internal_reply_markup(
+        "Draft created: abcd1234",
+        environ={},
+    )
+
+    assert markup == {
+        "inline_keyboard": [
+            [{"text": "✅ Отправить", "callback_data": "gate:send:abcd1234"}]
         ]
     }
 
