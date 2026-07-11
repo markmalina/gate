@@ -1,0 +1,515 @@
+"""Sprint 14 Telegram Business connection routing layer."""
+
+import hmac
+import os
+from datetime import UTC, datetime
+from typing import Annotated, Any, cast
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api import routes as legacy
+from app.api import sprint11b_routes as sprint11b
+from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
+from app.core.config import Settings, get_settings
+from app.models.domain import (
+    DEFAULT_PROJECT_ID,
+    TELEGRAM_MARK_BY_ACCOUNT_ID,
+    TELEGRAM_MARK_RU_ACCOUNT_ID,
+    AuditLog,
+    ConversationStatus,
+    GateEvent,
+    Message,
+    MessageDirection,
+    ReplyTask,
+    ReplyTaskStatus,
+    TelegramBusinessConnection,
+    TelegramUpdate,
+)
+from app.services.telegram import TelegramClient
+
+router = APIRouter()
+settings_dependency = Depends(get_settings)
+db_session_dependency = Depends(get_db_session)
+telegram_client_dependency = Depends(get_telegram_client)
+
+JsonObject = dict[str, Any]
+
+
+@router.post("/telegram/webhook")
+async def sprint14_telegram_webhook(
+    request: Request,
+    x_telegram_secret: Annotated[
+        str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
+    ] = None,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+    telegram: TelegramClient = telegram_client_dependency,
+) -> JsonObject:
+    """Persist Telegram Business updates with account-aware context."""
+
+    update = await _read_update(request)
+    if not _is_business_update(update):
+        return await sprint11b.sprint11b_telegram_webhook(
+            request=request,
+            x_telegram_secret=x_telegram_secret,
+            settings=settings,
+            session=session,
+            telegram=telegram,
+        )
+
+    _require_telegram_secret(x_telegram_secret=x_telegram_secret)
+    normalized = legacy._extract_update_event(update)
+    if normalized is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported Telegram update",
+        )
+
+    bot = await legacy._get_or_create_bot(
+        session=session,
+        username=settings.telegram_bot_username,
+    )
+    existing_update = await legacy._find_telegram_update(
+        session=session,
+        bot_id=bot.id,
+        update_id=normalized.update_id,
+    )
+    if existing_update is not None:
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": None,
+            "duplicate": True,
+            "send_status": "duplicate",
+        }
+
+    account_id = await _resolve_account_id(
+        session=session,
+        business_connection_id=normalized.business_connection_id,
+        settings=settings,
+    )
+    if normalized.event_type == "business_connection":
+        account_id = _account_id_from_configured_connection(
+            normalized.business_connection_id,
+            settings=settings,
+        ) or account_id
+        await _upsert_business_connection(
+            session=session,
+            account_id=account_id,
+            update=update,
+            received_at=datetime.now(UTC),
+        )
+
+    gate_event = GateEvent(
+        bot_id=bot.id,
+        account_id=account_id,
+        project_id=DEFAULT_PROJECT_ID,
+        chat_id=normalized.chat_id,
+        sender_id=normalized.sender_id,
+        event_type=normalized.event_type,
+        text=normalized.text,
+        payload=update,
+        telegram_update_id=normalized.update_id,
+        telegram_message_id=normalized.message_id,
+        business_connection_id=normalized.business_connection_id,
+    )
+    session.add(
+        TelegramUpdate(
+            bot_id=bot.id,
+            update_id=normalized.update_id,
+            payload=update,
+            processing_status="processed",
+            processed_at=datetime.now(UTC),
+        )
+    )
+    session.add(gate_event)
+    await session.flush()
+
+    now = datetime.now(UTC)
+    conversation = await legacy._get_or_create_conversation(
+        session=session,
+        bot_id=bot.id,
+        account_id=account_id,
+        project_id=DEFAULT_PROJECT_ID,
+        chat_id=normalized.chat_id,
+        business_connection_id=normalized.business_connection_id,
+        title=None,
+        happened_at=now,
+    )
+    inbound_message = Message(
+        bot_id=bot.id,
+        account_id=account_id,
+        project_id=DEFAULT_PROJECT_ID,
+        gate_event_id=gate_event.id,
+        direction=MessageDirection.INBOUND.value,
+        source="telegram",
+        event_type=normalized.event_type,
+        chat_id=normalized.chat_id,
+        sender_id=normalized.sender_id,
+        text=normalized.text,
+        telegram_update_id=normalized.update_id,
+        telegram_message_id=normalized.message_id,
+        business_connection_id=normalized.business_connection_id,
+        payload={"raw_update_ref": "telegram_updates"},
+        received_at=now,
+    )
+    session.add(inbound_message)
+    await session.flush()
+
+    admin_command = legacy._parse_admin_console_command(normalized.text)
+    if legacy._is_human_text_message(normalized) and admin_command is None:
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = True
+        session.add(
+            ReplyTask(
+                account_id=account_id,
+                project_id=DEFAULT_PROJECT_ID,
+                conversation_id=conversation.id,
+                trigger_message_id=inbound_message.id,
+                status=ReplyTaskStatus.NEEDS_REPLY.value,
+                reason="inbound_human_text",
+            )
+        )
+        await session.flush()
+
+    session.add(
+        AuditLog(
+            actor="telegram",
+            action="telegram_business_update_received",
+            bot_id=bot.id,
+            account_id=account_id,
+            project_id=DEFAULT_PROJECT_ID,
+            gate_event_id=gate_event.id,
+            metadata_={
+                "event_type": normalized.event_type,
+                "telegram_update_id": normalized.update_id,
+                "telegram_message_id": normalized.message_id,
+                "business_connection_id": normalized.business_connection_id,
+            },
+        )
+    )
+    await session.commit()
+
+    return await _maybe_send_business_reply(
+        normalized=normalized,
+        account_id=account_id,
+        bot_id=bot.id,
+        gate_event_id=gate_event.id,
+        conversation=conversation,
+        admin_command=admin_command,
+        session=session,
+        settings=settings,
+        telegram=telegram,
+    )
+
+
+async def _maybe_send_business_reply(
+    *,
+    normalized: legacy.TelegramUpdateEvent,
+    account_id: Any,
+    bot_id: Any,
+    gate_event_id: Any,
+    conversation: Any,
+    admin_command: legacy.TelegramAdminCommand | None,
+    session: AsyncSession,
+    settings: Settings,
+    telegram: TelegramClient,
+) -> JsonObject:
+    auto_reply: str | None = None
+    send_status = "not_applicable"
+
+    if admin_command is not None:
+        if legacy._is_telegram_admin_sender(normalized.sender_id):
+            auto_reply = await legacy._build_telegram_admin_reply(
+                command=admin_command,
+                session=session,
+                settings=settings,
+            )
+            audit_action = f"telegram_admin_console_{admin_command.name}_sent"
+        else:
+            auto_reply = "Gate online"
+            audit_action = "telegram_admin_console_rejected"
+        return await _send_business_text_reply(
+            normalized=normalized,
+            account_id=account_id,
+            bot_id=bot_id,
+            gate_event_id=gate_event_id,
+            conversation=conversation,
+            text=auto_reply,
+            audit_action=audit_action,
+            session=session,
+            settings=settings,
+            telegram=telegram,
+        )
+
+    if legacy._is_ping(normalized.text):
+        auto_reply = "Gate online"
+        return await _send_business_text_reply(
+            normalized=normalized,
+            account_id=account_id,
+            bot_id=bot_id,
+            gate_event_id=gate_event_id,
+            conversation=conversation,
+            text=auto_reply,
+            audit_action="auto_safe_reply_sent",
+            session=session,
+            settings=settings,
+            telegram=telegram,
+        )
+
+    return {
+        "ok": True,
+        "event_type": normalized.event_type,
+        "auto_reply": auto_reply,
+        "duplicate": False,
+        "send_status": send_status,
+    }
+
+
+async def _send_business_text_reply(
+    *,
+    normalized: legacy.TelegramUpdateEvent,
+    account_id: Any,
+    bot_id: Any,
+    gate_event_id: Any,
+    conversation: Any,
+    text: str,
+    audit_action: str,
+    session: AsyncSession,
+    settings: Settings,
+    telegram: TelegramClient,
+) -> JsonObject:
+    if not _is_business_send_enabled(account_id=account_id, settings=settings):
+        session.add(
+            AuditLog(
+                actor="gate",
+                action="telegram_business_reply_blocked",
+                bot_id=bot_id,
+                account_id=account_id,
+                project_id=DEFAULT_PROJECT_ID,
+                gate_event_id=gate_event_id,
+                metadata_={
+                    "reason": "send_disabled",
+                    "business_connection_id": normalized.business_connection_id,
+                },
+            )
+        )
+        await session.commit()
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": text,
+            "duplicate": False,
+            "send_status": "blocked",
+        }
+
+    try:
+        send_result = await telegram.send_message(
+            chat_id=normalized.chat_id,
+            text=text,
+            business_connection_id=normalized.business_connection_id,
+        )
+    except Exception as exc:
+        session.add(
+            AuditLog(
+                actor="gate",
+                action="telegram_business_reply_failed",
+                bot_id=bot_id,
+                account_id=account_id,
+                project_id=DEFAULT_PROJECT_ID,
+                gate_event_id=gate_event_id,
+                metadata_={
+                    "error_type": exc.__class__.__name__,
+                    "business_connection_id": normalized.business_connection_id,
+                },
+            )
+        )
+        await session.commit()
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": text,
+            "duplicate": False,
+            "send_status": "failed",
+        }
+
+    outbound_at = datetime.now(UTC)
+    session.add(
+        Message(
+            bot_id=bot_id,
+            account_id=account_id,
+            project_id=DEFAULT_PROJECT_ID,
+            gate_event_id=gate_event_id,
+            direction=MessageDirection.OUTBOUND.value,
+            source="gate",
+            event_type="telegram_business_reply",
+            chat_id=normalized.chat_id,
+            sender_id=settings.telegram_bot_username,
+            recipient_id=normalized.chat_id,
+            text=text,
+            business_connection_id=normalized.business_connection_id,
+            payload=send_result,
+            sent_at=outbound_at,
+        )
+    )
+    conversation.status = ConversationStatus.REPLIED.value
+    conversation.requires_reply = False
+    conversation.last_outbound_at = outbound_at
+    conversation.last_message_at = outbound_at
+    await legacy._satisfy_reply_tasks(session=session, conversation_id=conversation.id)
+    session.add(
+        AuditLog(
+            actor="gate",
+            action=audit_action,
+            bot_id=bot_id,
+            account_id=account_id,
+            project_id=DEFAULT_PROJECT_ID,
+            gate_event_id=gate_event_id,
+            metadata_={"business_connection_id": normalized.business_connection_id},
+        )
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "event_type": normalized.event_type,
+        "auto_reply": text,
+        "duplicate": False,
+        "send_status": "sent",
+    }
+
+
+async def _resolve_account_id(
+    *,
+    session: AsyncSession,
+    business_connection_id: str | None,
+    settings: Settings,
+) -> Any:
+    configured = _account_id_from_configured_connection(
+        business_connection_id,
+        settings=settings,
+    )
+    if configured is not None:
+        return configured
+    if business_connection_id:
+        result = await session.execute(
+            select(TelegramBusinessConnection).where(
+                TelegramBusinessConnection.business_connection_id == business_connection_id,
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            return existing.account_id
+    return TELEGRAM_MARK_RU_ACCOUNT_ID
+
+
+def _account_id_from_configured_connection(
+    business_connection_id: str | None,
+    *,
+    settings: Settings,
+) -> Any | None:
+    if not business_connection_id:
+        return None
+    if business_connection_id == settings.gate_account_ru_business_connection_id:
+        return TELEGRAM_MARK_RU_ACCOUNT_ID
+    if business_connection_id == settings.gate_account_by_business_connection_id:
+        return TELEGRAM_MARK_BY_ACCOUNT_ID
+    return None
+
+
+async def _upsert_business_connection(
+    *,
+    session: AsyncSession,
+    account_id: Any,
+    update: JsonObject,
+    received_at: datetime,
+) -> None:
+    business_connection = cast(JsonObject, update.get("business_connection"))
+    business_connection_id = legacy._optional_string(business_connection.get("id"))
+    if business_connection_id is None:
+        return
+
+    result = await session.execute(
+        select(TelegramBusinessConnection).where(
+            TelegramBusinessConnection.business_connection_id == business_connection_id
+        )
+    )
+    row = result.scalar_one_or_none()
+    user = business_connection.get("user")
+    user_data = cast(JsonObject, user) if isinstance(user, dict) else {}
+    rights = {
+        key: value
+        for key, value in business_connection.items()
+        if key.startswith("can_") or key.endswith("_right")
+    }
+    is_enabled = bool(business_connection.get("is_enabled", True))
+    if row is None:
+        row = TelegramBusinessConnection(
+            account_id=account_id,
+            business_connection_id=business_connection_id,
+            telegram_user_id=legacy._optional_int(user_data.get("id")),
+            user_chat_id=legacy._optional_int(business_connection.get("user_chat_id")),
+            rights=rights,
+            is_enabled=is_enabled,
+            received_at=received_at,
+            last_update_at=received_at,
+        )
+        session.add(row)
+        return
+
+    row.account_id = account_id
+    row.telegram_user_id = legacy._optional_int(user_data.get("id"))
+    row.user_chat_id = legacy._optional_int(business_connection.get("user_chat_id"))
+    row.rights = rights
+    row.is_enabled = is_enabled
+    row.last_update_at = received_at
+    if is_enabled:
+        row.last_error = None
+
+
+def _is_business_send_enabled(*, account_id: Any, settings: Settings) -> bool:
+    if not settings.gate_send_enabled:
+        return False
+    if account_id == TELEGRAM_MARK_RU_ACCOUNT_ID:
+        return settings.gate_account_ru_send_enabled
+    if account_id == TELEGRAM_MARK_BY_ACCOUNT_ID:
+        return settings.gate_account_by_send_enabled
+    return False
+
+
+def _is_business_update(update: JsonObject) -> bool:
+    return isinstance(update.get("business_connection"), dict) or isinstance(
+        update.get("business_message"),
+        dict,
+    )
+
+
+def _require_telegram_secret(*, x_telegram_secret: str | None) -> None:
+    configured_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+    if not configured_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram webhook secret is not configured",
+        )
+    invalid_secret = x_telegram_secret is None or not hmac.compare_digest(
+        x_telegram_secret,
+        configured_secret,
+    )
+    if invalid_secret:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid webhook secret",
+        )
+
+
+async def _read_update(request: Request) -> JsonObject:
+    raw_update = await request.json()
+    if not isinstance(raw_update, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Telegram update",
+        )
+    return cast(JsonObject, raw_update)

@@ -26,6 +26,19 @@ class Settings(BaseSettings):
     admin_bearer_token: str = Field(default="", validation_alias="ADMIN_BEARER_TOKEN")
     deployment_sha: str = Field(default="unknown", validation_alias="RAILWAY_GIT_COMMIT_SHA")
     deployment_service: str = Field(default="gate", validation_alias="RAILWAY_SERVICE_NAME")
+    gate_account_ru_business_connection_id: str = Field(
+        default="", validation_alias="GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID"
+    )
+    gate_account_by_business_connection_id: str = Field(
+        default="", validation_alias="GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID"
+    )
+    gate_send_enabled: bool = Field(default=True, validation_alias="GATE_SEND_ENABLED")
+    gate_account_ru_send_enabled: bool = Field(
+        default=True, validation_alias="GATE_ACCOUNT_RU_SEND_ENABLED"
+    )
+    gate_account_by_send_enabled: bool = Field(
+        default=True, validation_alias="GATE_ACCOUNT_BY_SEND_ENABLED"
+    )
 
 
 @lru_cache
