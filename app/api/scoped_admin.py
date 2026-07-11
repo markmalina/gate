@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import String, select
+from sqlalchemy import String, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import cast as sql_cast
 
@@ -358,8 +358,25 @@ def _scoped_reply_task_query(*, account_id: Any | None) -> Any:
         .join(Message, ReplyTask.trigger_message_id == Message.id)
     )
     if account_id is not None:
-        query = query.where(Conversation.account_id == account_id)
+        connection_ids = select(TelegramBusinessConnection.business_connection_id).where(
+            TelegramBusinessConnection.account_id == account_id,
+            TelegramBusinessConnection.is_enabled.is_(True),
+        )
+        user_chat_ids = select(sql_cast(TelegramBusinessConnection.user_chat_id, String)).where(
+            TelegramBusinessConnection.account_id == account_id,
+            TelegramBusinessConnection.is_enabled.is_(True),
+            TelegramBusinessConnection.user_chat_id.is_not(None),
+        )
+        query = query.where(
+            or_(
+                Conversation.account_id == account_id,
+                Conversation.business_connection_id.in_(connection_ids),
+                Message.chat_id.in_(user_chat_ids),
+                Message.sender_id.in_(user_chat_ids),
+            )
+        )
     return query
+
 
 
 def _format_scoped_inbox(
