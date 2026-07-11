@@ -47,11 +47,12 @@ async def sprint16d_telegram_webhook(
     session: AsyncSession = db_session_dependency,
     telegram: TelegramClient = telegram_client_dependency,
 ) -> JsonObject:
-    """Handle clean scoped /inbox before delegating other webhook updates."""
+    """Handle clean scoped inbox commands before delegating other webhook updates."""
 
     update = await sprint14._read_update(request)
     normalized = legacy._extract_update_event(update)
-    if normalized is None or not _is_inbox_command(normalized.text):
+    command = _clean_inbox_command(normalized.text if normalized else None)
+    if normalized is None or command is None:
         return await sprint16_raw.sprint16_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
@@ -86,14 +87,25 @@ async def sprint16d_telegram_webhook(
         normalized=normalized,
         session=session,
     )
+    scope_label = "all" if admin_context.is_super_admin else admin_context.account_alias or "unknown"
     if admin_context.is_admin:
-        reply_text = await _build_clean_inbox_reply(
-            session=session,
-            settings=settings,
-            account_id=admin_context.scoped_account_id,
-            scope_label="all" if admin_context.is_super_admin else admin_context.account_alias or "unknown",
-        )
-        audit_action = "telegram_admin_console_clean_inbox_sent"
+        if command == "inbox":
+            reply_text = await _build_clean_inbox_reply(
+                session=session,
+                settings=settings,
+                account_id=admin_context.scoped_account_id,
+                scope_label=scope_label,
+            )
+            audit_action = "telegram_admin_console_clean_inbox_sent"
+        else:
+            reply_text = await _clean_inbox_tasks_reply(
+                session=session,
+                settings=settings,
+                account_id=admin_context.scoped_account_id,
+                scope_label=scope_label,
+                cleanup_kind=command,
+            )
+            audit_action = f"telegram_admin_console_{command}_sent"
     else:
         reply_text = "Gate online"
         audit_action = "telegram_admin_console_rejected"
@@ -155,16 +167,88 @@ async def _build_clean_inbox_reply(
     account_id: Any | None,
     scope_label: str,
 ) -> str:
+    rows = await _load_scoped_task_rows(
+        session=session,
+        account_id=account_id,
+        service_filter="exclude",
+        test_filter="all",
+        limit=10,
+    )
+    reply_tasks = [
+        legacy._serialize_reply_task(task, conversation, message)
+        for task, conversation, message in rows
+    ]
+    body = legacy._format_telegram_unanswered_inbox(reply_tasks)
+    return "\n".join([_commit_header(settings), "", f"scope: {scope_label}", "", body])
+
+
+async def _clean_inbox_tasks_reply(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+    account_id: Any | None,
+    scope_label: str,
+    cleanup_kind: str,
+) -> str:
+    if cleanup_kind == "clean_inbox_tests":
+        rows = await _load_scoped_task_rows(
+            session=session,
+            account_id=account_id,
+            service_filter="all",
+            test_filter="only",
+            limit=100,
+        )
+        label = "test tasks"
+    else:
+        rows = await _load_scoped_task_rows(
+            session=session,
+            account_id=account_id,
+            service_filter="only",
+            test_filter="all",
+            limit=100,
+        )
+        label = "service/admin tasks"
+
+    for task, conversation, _message in rows:
+        task.status = ReplyTaskStatus.DISMISSED.value
+        task.due_at = None
+        conversation.requires_reply = False
+    lines = [
+        _commit_header(settings),
+        "",
+        "Inbox cleanup",
+        f"scope: {scope_label}",
+        f"kind: {label}",
+        f"dismissed: {len(rows)}",
+        "next: /inbox",
+    ]
+    return "\n".join(lines)
+
+
+async def _load_scoped_task_rows(
+    *,
+    session: AsyncSession,
+    account_id: Any | None,
+    service_filter: str,
+    test_filter: str,
+    limit: int,
+) -> list[tuple[ReplyTask, Conversation, Message]]:
     query = (
         select(ReplyTask, Conversation, Message)
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .where(ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value)
         .where(Message.direction == MessageDirection.INBOUND.value)
-        .where(_non_service_message_filter())
         .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
-        .limit(10)
+        .limit(limit)
     )
+    if service_filter == "exclude":
+        query = query.where(_non_service_message_filter())
+    elif service_filter == "only":
+        query = query.where(_service_message_filter())
+    if test_filter == "only":
+        query = query.where(Message.text.ilike("TEST-%"))
+
     if account_id is not None:
         connection_ids = select(TelegramBusinessConnection.business_connection_id).where(
             TelegramBusinessConnection.account_id == account_id,
@@ -185,41 +269,66 @@ async def _build_clean_inbox_reply(
         )
 
     result = await session.execute(query)
-    rows = result.all()
-    reply_tasks = [
-        legacy._serialize_reply_task(task, conversation, message)
-        for task, conversation, message in rows
-    ]
-    body = legacy._format_telegram_unanswered_inbox(reply_tasks)
-    return "\n".join([_commit_header(settings), "", f"scope: {scope_label}", "", body])
+    return [(task, conversation, message) for task, conversation, message in result.all()]
 
 
 def _non_service_message_filter() -> Any:
-    return or_(
-        Message.text.is_(None),
-        and_(
-            Message.text.notilike("/start bizChat%"),
-            Message.text.notilike("/webhook%"),
-            Message.text.notilike("/events%"),
-            Message.text.notilike("/messages%"),
-            Message.text.notilike("/raw%"),
-            Message.text.notilike("/status%"),
-            Message.text.notilike("/inbox%"),
-            Message.text.notilike("/draft%"),
-            Message.text.notilike("/drafts%"),
-            Message.text.notilike("/done%"),
-            Message.text.notilike("/dismiss%"),
-            Message.text.notilike("/snooze%"),
-            Message.text.notilike("/reopen%"),
-            Message.text.notilike("/business%"),
-            Message.text.notilike("Commit:%"),
-        ),
-    )
+    return or_(Message.text.is_(None), and_(*_service_message_negative_clauses()))
 
 
-def _is_inbox_command(text: str | None) -> bool:
+def _service_message_filter() -> Any:
+    return or_(*_service_message_positive_clauses())
+
+
+def _service_message_negative_clauses() -> list[Any]:
+    return [
+        Message.text.notilike("/start bizChat%"),
+        Message.text.notilike("/webhook%"),
+        Message.text.notilike("/events%"),
+        Message.text.notilike("/messages%"),
+        Message.text.notilike("/raw%"),
+        Message.text.notilike("/status%"),
+        Message.text.notilike("/inbox%"),
+        Message.text.notilike("/draft%"),
+        Message.text.notilike("/drafts%"),
+        Message.text.notilike("/done%"),
+        Message.text.notilike("/dismiss%"),
+        Message.text.notilike("/snooze%"),
+        Message.text.notilike("/reopen%"),
+        Message.text.notilike("/business%"),
+        Message.text.notilike("Commit:%"),
+    ]
+
+
+def _service_message_positive_clauses() -> list[Any]:
+    return [
+        Message.text.ilike("/start bizChat%"),
+        Message.text.ilike("/webhook%"),
+        Message.text.ilike("/events%"),
+        Message.text.ilike("/messages%"),
+        Message.text.ilike("/raw%"),
+        Message.text.ilike("/status%"),
+        Message.text.ilike("/inbox%"),
+        Message.text.ilike("/draft%"),
+        Message.text.ilike("/drafts%"),
+        Message.text.ilike("/done%"),
+        Message.text.ilike("/dismiss%"),
+        Message.text.ilike("/snooze%"),
+        Message.text.ilike("/reopen%"),
+        Message.text.ilike("/business%"),
+        Message.text.ilike("Commit:%"),
+    ]
+
+
+def _clean_inbox_command(text: str | None) -> str | None:
     normalized = (text or "").strip().casefold()
-    return normalized in {"/inbox", "inbox", "инбокс", "входящие"}
+    if normalized in {"/inbox", "inbox", "инбокс", "входящие"}:
+        return "inbox"
+    if normalized in {"/clean_inbox_tests", "clean_inbox_tests", "/clean_tests", "clean_tests"}:
+        return "clean_inbox_tests"
+    if normalized in {"/clean_inbox_service", "clean_inbox_service", "/clean_service", "clean_service"}:
+        return "clean_inbox_service"
+    return None
 
 
 def _commit_header(settings: Settings) -> str:
