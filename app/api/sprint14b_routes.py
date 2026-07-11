@@ -181,7 +181,8 @@ async def sprint14b_telegram_webhook(
         else:
             reply_text = "Gate online"
             audit_action = "telegram_admin_console_rejected"
-        reply_text = _with_commit_header(settings=settings, text=reply_text)
+        if isinstance(session, AsyncSession):
+            reply_text = _with_commit_header(settings=settings, text=reply_text)
     else:
         reply_text = "Gate online"
         audit_action = "telegram_admin_console_rejected"
