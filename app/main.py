@@ -55,11 +55,7 @@ async def telegram_http_exception_handler(
     if not is_unsupported_telegram_update:
         return await http_exception_handler(request, exc)
 
-    try:
-        payload = await request.json()
-    except Exception:
-        return await http_exception_handler(request, exc)
-
+    payload = await _safe_request_json(request)
     if not isinstance(payload, dict):
         return await http_exception_handler(request, exc)
 
@@ -67,7 +63,7 @@ async def telegram_http_exception_handler(
     if type(update_id) is not int:
         return await http_exception_handler(request, exc)
 
-    update_types = sorted(str(key) for key in payload if key != "update_id")
+    update_types = _telegram_update_types(payload)
     logger.warning(
         "Acknowledging unsupported Telegram update: update_id=%s types=%s",
         update_id,
@@ -85,6 +81,52 @@ async def telegram_http_exception_handler(
     )
 
 
+async def telegram_unhandled_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> Response:
+    """Acknowledge poison Telegram updates so Telegram can drain its retry queue."""
+
+    if request.url.path != "/telegram/webhook":
+        logger.exception("Unhandled request exception")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"},
+        )
+
+    payload = await _safe_request_json(request)
+    update_id = payload.get("update_id") if isinstance(payload, dict) else None
+    update_types = _telegram_update_types(payload) if isinstance(payload, dict) else []
+    logger.exception(
+        "Acknowledging failing Telegram update: update_id=%s types=%s error_type=%s",
+        update_id if update_id is not None else "unknown",
+        ",".join(update_types) or "unknown",
+        exc.__class__.__name__,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "ignored": True,
+            "reason": "handler_exception",
+            "error_type": exc.__class__.__name__,
+            "update_id": update_id,
+            "update_types": update_types,
+        },
+    )
+
+
+async def _safe_request_json(request: Request) -> object | None:
+    try:
+        return await request.json()
+    except Exception:
+        return None
+
+
+def _telegram_update_types(payload: dict) -> list[str]:
+    return sorted(str(key) for key in payload if key != "update_id")
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI app for cloud deployment."""
 
@@ -95,6 +137,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.add_exception_handler(StarletteHTTPException, telegram_http_exception_handler)
+    app.add_exception_handler(Exception, telegram_unhandled_exception_handler)
     app.include_router(sprint15b_router)
     app.include_router(sprint14b_router)
     app.include_router(sprint14_router)
