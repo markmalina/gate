@@ -531,6 +531,7 @@ class ReplyTask(Base):
         default=lambda: DEFAULT_ACCOUNT_ID,
         server_default=text(f"'{DEFAULT_ACCOUNT_ID}'::uuid"),
         index=True,
+        deferred=True,
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id"),
