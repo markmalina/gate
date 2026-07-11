@@ -98,6 +98,7 @@ async def sprint14b_telegram_webhook(
     await session.flush()
 
     business_connections: list[JsonObject] = []
+    include_empty_business_connections = settings.gate_env != "development"
     if legacy._is_telegram_admin_sender(normalized.sender_id):
         status_payload = await legacy._build_admin_status_payload(
             session=session,
@@ -110,7 +111,7 @@ async def sprint14b_telegram_webhook(
         reply_text = _format_status_with_business_connections(
             status_payload=status_payload,
             business_connections=business_connections,
-            include_empty=settings.gate_env != "development",
+            include_empty=include_empty_business_connections,
         )
         audit_action = "telegram_admin_console_status_sent"
     else:
@@ -169,7 +170,8 @@ async def sprint14b_telegram_webhook(
             gate_event_id=gate_event.id,
             metadata_={
                 "command": "status",
-                "business_connections_included": bool(business_connections) or settings.gate_env != "development",
+                "business_connections_included": bool(business_connections)
+                or include_empty_business_connections,
                 "business_connections_count": len(business_connections),
             },
         )
