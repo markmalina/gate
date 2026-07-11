@@ -53,14 +53,15 @@ async def sprint14b_telegram_webhook(
     session: AsyncSession = db_session_dependency,
     telegram: TelegramClient = telegram_client_dependency,
 ) -> JsonObject:
-    """Handle Telegram /status with Business connection visibility."""
+    """Handle Telegram admin commands with Business connection visibility."""
 
     update = await sprint14._read_update(request)
     normalized = legacy._extract_update_event(update)
+    admin_command = legacy._parse_admin_console_command(normalized.text if normalized else None)
     assignment_command = _parse_business_assignment_command(
         normalized.text if normalized else None
     )
-    if not _is_status_command(normalized) and assignment_command is None:
+    if admin_command is None and assignment_command is None:
         return await sprint14.sprint14_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
@@ -113,14 +114,18 @@ async def sprint14b_telegram_webhook(
 
     business_connections: list[JsonObject] = []
     include_empty_business_connections = settings.gate_env != "development"
-    if legacy._is_telegram_admin_sender(normalized.sender_id):
+    is_admin_context = await _is_telegram_admin_context(
+        normalized=normalized,
+        session=session,
+    )
+    if is_admin_context:
         if assignment_command is not None:
             reply_text = await _assign_business_connection(
                 command=assignment_command,
                 session=session,
             )
             audit_action = "telegram_business_connection_assigned"
-        else:
+        elif admin_command is not None and admin_command.name == "status":
             status_payload = await legacy._build_admin_status_payload(
                 session=session,
                 settings=settings,
@@ -135,6 +140,16 @@ async def sprint14b_telegram_webhook(
                 include_empty=include_empty_business_connections,
             )
             audit_action = "telegram_admin_console_status_sent"
+        elif admin_command is not None:
+            reply_text = await legacy._build_telegram_admin_reply(
+                command=admin_command,
+                session=session,
+                settings=settings,
+            )
+            audit_action = f"telegram_admin_console_{admin_command.name}_sent"
+        else:
+            reply_text = "Gate online"
+            audit_action = "telegram_admin_console_rejected"
     else:
         reply_text = "Gate online"
         audit_action = "telegram_admin_console_rejected"
@@ -194,6 +209,7 @@ async def sprint14b_telegram_webhook(
                 "business_connections_included": bool(business_connections)
                 or include_empty_business_connections,
                 "business_connections_count": len(business_connections),
+                "admin_context": is_admin_context,
             },
         )
     )
@@ -241,6 +257,27 @@ async def _load_business_connection_statuses(
             }
         )
     return rows
+
+
+async def _is_telegram_admin_context(
+    *,
+    normalized: legacy.TelegramUpdateEvent,
+    session: AsyncSession,
+) -> bool:
+    if legacy._is_telegram_admin_sender(normalized.sender_id):
+        return True
+
+    sender_id = legacy._optional_int(normalized.sender_id)
+    if sender_id is None:
+        return False
+
+    result = await session.execute(
+        select(TelegramBusinessConnection).where(
+            TelegramBusinessConnection.user_chat_id == sender_id,
+            TelegramBusinessConnection.is_enabled.is_(True),
+        )
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def _assign_business_connection(
@@ -396,6 +433,16 @@ def _is_status_command(normalized: legacy.TelegramUpdateEvent | None) -> bool:
     )
 
 
+def _yes_no(value: Any) -> str:
+    return "yes" if bool(value) else "no"
+
+
+def _optional_bool(value: Any) -> str:
+    if value is None:
+        return "unknown"
+    return _yes_no(value)
+
+
 def _is_configured_connection(
     *,
     account_alias: str,
@@ -417,13 +464,3 @@ def _send_enabled_for_account_alias(*, account_alias: str, settings: Settings) -
     if account_alias == "telegram_mark_by":
         return settings.gate_account_by_send_enabled
     return False
-
-
-def _yes_no(value: Any) -> str:
-    return "yes" if bool(value) else "no"
-
-
-def _optional_bool(value: Any) -> str:
-    if value is None:
-        return "unknown"
-    return _yes_no(value)
