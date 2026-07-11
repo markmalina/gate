@@ -140,19 +140,44 @@ def _enhance_draft_reply(*, base_reply: str, task_ref: str | None) -> str:
     if not draft_ref:
         return base_reply
     task = task_ref or "<task>"
+    cleaned_reply = _strip_existing_actions(base_reply)
     return "\n".join(
         [
-            base_reply,
+            cleaned_reply,
             "",
             "Действия:",
             f"✅ Отправить: /send_{draft_ref}",
             f"📄 Все драфты: /drafts_{task}",
+            f"✏️ Новый драфт: /draft_{task}",
             f"✅ Закрыть как отвеченное: /done_{task}",
-            f"❌ Убрать из inbox: /dismiss_{task}",
+            f"❌ Закрыть без ответа: /dismiss_{task}",
+            f"⏸ Отложить: /snooze_{task}",
             "",
             "Нажимай синюю команду. ID руками вводить не нужно.",
         ]
     )
+
+
+def _strip_existing_actions(text: str) -> str:
+    lines = text.splitlines()
+    result: list[str] = []
+    skip = False
+    for line in lines:
+        normalized = line.strip().casefold()
+        if normalized in {"actions:", "действия:"}:
+            skip = True
+            continue
+        if skip:
+            if normalized.startswith("наж") or normalized.startswith("press "):
+                skip = False
+                continue
+            if normalized.startswith(("/", "✅", "👀", "📄", "✏️", "❌", "⏸")):
+                continue
+            if any(token in normalized for token in ("/send_", "/draft", "/done_", "/dismiss_", "/snooze_")):
+                continue
+            skip = False
+        result.append(line)
+    return "\n".join(result).rstrip()
 
 
 def _extract_draft_ref(text: str) -> str | None:
