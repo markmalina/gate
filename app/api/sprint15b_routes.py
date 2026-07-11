@@ -28,7 +28,7 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
-from app.services.telegram_webhook import TELEGRAM_ALLOWED_UPDATES
+from app.services.telegram_webhook import TELEGRAM_ALLOWED_UPDATES, build_public_webhook_url
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -55,7 +55,8 @@ async def sprint15b_telegram_webhook(
     text = normalized.text if normalized else None
     is_events_command = _is_events_command(text)
     is_webhook_command = _is_webhook_command(text)
-    if not is_events_command and not is_webhook_command:
+    is_webhook_drop_pending_command = _is_webhook_drop_pending_command(text)
+    if not is_events_command and not is_webhook_command and not is_webhook_drop_pending_command:
         return await sprint14b.sprint14b_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
@@ -114,6 +115,9 @@ async def sprint15b_telegram_webhook(
         if is_webhook_command:
             reply_text = await _build_webhook_reply(settings=settings)
             audit_action = "telegram_admin_console_webhook_sent"
+        elif is_webhook_drop_pending_command:
+            reply_text = await _build_webhook_drop_pending_reply(settings=settings)
+            audit_action = "telegram_admin_console_webhook_drop_pending_sent"
         else:
             reply_text = await _build_recent_events_reply(
                 session=session,
@@ -324,6 +328,59 @@ async def _build_webhook_reply(*, settings: Settings) -> str:
     )
 
 
+async def _build_webhook_drop_pending_reply(*, settings: Settings) -> str:
+    header = _commit_header(settings)
+    if not settings.telegram_bot_token:
+        return f"{header}\n\nTelegram webhook reset\nstatus: missing TELEGRAM_BOT_TOKEN"
+
+    webhook_url = build_public_webhook_url(os.environ)
+    webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    if webhook_url is None:
+        return f"{header}\n\nTelegram webhook reset\nstatus: missing_public_domain"
+    if not webhook_secret:
+        return f"{header}\n\nTelegram webhook reset\nstatus: missing_webhook_secret"
+
+    api_base = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org").rstrip("/")
+    bot_api_base = f"{api_base}/bot{settings.telegram_bot_token}"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                f"{bot_api_base}/setWebhook",
+                json={
+                    "url": webhook_url,
+                    "secret_token": webhook_secret,
+                    "drop_pending_updates": True,
+                    "allowed_updates": TELEGRAM_ALLOWED_UPDATES,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        return "\n".join(
+            [
+                header,
+                "",
+                "Telegram webhook reset",
+                "status: failed",
+                f"error_type: {exc.__class__.__name__}",
+            ]
+        )
+
+    status = "dropped" if isinstance(payload, dict) and payload.get("ok") is True else "rejected"
+    return "\n".join(
+        [
+            header,
+            "",
+            "Telegram webhook reset",
+            f"status: {status}",
+            f"url: {webhook_url}",
+            "drop_pending_updates: true",
+            f"allowed_updates: {', '.join(TELEGRAM_ALLOWED_UPDATES)}",
+            "next: /webhook",
+        ]
+    )
+
+
 def _commit_header(settings: Settings) -> str:
     commit = (settings.deployment_sha or "unknown")[:12]
     return f"Commit: {commit}"
@@ -348,6 +405,18 @@ def _is_webhook_command(text: str | None) -> bool:
         "webhook",
         "/вебхук",
         "вебхук",
+    }
+
+
+def _is_webhook_drop_pending_command(text: str | None) -> bool:
+    normalized = (text or "").strip().casefold()
+    return normalized in {
+        "/webhook_drop_pending",
+        "webhook_drop_pending",
+        "/webhook_reset",
+        "webhook_reset",
+        "/webhook_drop",
+        "webhook_drop",
     }
 
 
