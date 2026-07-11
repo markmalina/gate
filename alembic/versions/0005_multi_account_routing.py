@@ -300,7 +300,7 @@ def _extend_messages() -> None:
     op.create_index("ix_messages_account_id", "messages", ["account_id"])
     op.create_index("ix_messages_project_id", "messages", ["project_id"])
     op.create_index(
-        "uq_messages_telegram_identity",
+        "ix_messages_telegram_identity_lookup",
         "messages",
         [
             "account_id",
@@ -308,7 +308,7 @@ def _extend_messages() -> None:
             "chat_id",
             "telegram_message_id",
         ],
-        unique=True,
+        unique=False,
         postgresql_where=sa.text("telegram_message_id IS NOT NULL"),
     )
 
@@ -562,7 +562,7 @@ def _drop_conversation_extensions() -> None:
 
 
 def _drop_message_extensions() -> None:
-    op.drop_index("uq_messages_telegram_identity", table_name="messages")
+    op.drop_index("ix_messages_telegram_identity_lookup", table_name="messages")
     op.drop_index("ix_messages_project_id", table_name="messages")
     op.drop_index("ix_messages_account_id", table_name="messages")
     op.alter_column(

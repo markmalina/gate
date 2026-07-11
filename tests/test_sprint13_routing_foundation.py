@@ -68,14 +68,14 @@ def test_conversation_and_message_have_person_and_context_links() -> None:
         assert "context_binding_id" in model.__table__.c
 
 
-def test_message_identity_is_scoped_by_account() -> None:
+def test_message_identity_lookup_is_scoped_by_account() -> None:
     index = next(
         item
         for item in Message.__table__.indexes
-        if item.name == "uq_messages_telegram_identity"
+        if item.name == "ix_messages_telegram_identity_lookup"
     )
 
-    assert index.unique is True
+    assert index.unique is False
     expression_text = " ".join(str(expression) for expression in index.expressions)
     assert "account_id" in expression_text
     assert "business_connection_id" in expression_text
