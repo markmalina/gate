@@ -239,13 +239,10 @@ def _format_status_with_business_connections(
 
     for item in business_connections:
         connection_id = str(item["business_connection_id"])
-        short_connection_id = (
-            connection_id if len(connection_id) <= 24 else f"{connection_id[:24]}..."
-        )
         lines.extend(
             [
                 f"- {item['account_alias']}",
-                f"  id: {short_connection_id}",
+                f"  id: {connection_id}",
                 f"  enabled: {_yes_no(item['is_enabled'])}",
                 f"  configured: {_yes_no(item['configured'])}",
                 f"  send: {_yes_no(item['send_enabled'])}",
