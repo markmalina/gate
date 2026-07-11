@@ -1,3 +1,4 @@
+# ruff: noqa: I001,E501
 """Reconcile Telegram webhook configuration with the current public service URL."""
 
 import asyncio
@@ -11,6 +12,15 @@ import httpx
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
+
+TELEGRAM_ALLOWED_UPDATES = [
+    "message",
+    "callback_query",
+    "business_connection",
+    "business_message",
+    "edited_business_message",
+    "deleted_business_messages",
+]
 
 
 def build_public_webhook_url(environ: Mapping[str, str]) -> str | None:
@@ -51,8 +61,13 @@ async def reconcile_telegram_webhook(settings: Settings) -> str:
         result = info_payload.get("result")
         current_url = result.get("url") if isinstance(result, dict) else None
         last_error = result.get("last_error_message") if isinstance(result, dict) else None
+        current_allowed_updates = _normalize_allowed_updates(result)
 
-        if current_url == webhook_url and not last_error:
+        if (
+            current_url == webhook_url
+            and not last_error
+            and current_allowed_updates == _normalized_expected_allowed_updates()
+        ):
             return "already_current"
 
         set_response = await client.post(
@@ -61,6 +76,7 @@ async def reconcile_telegram_webhook(settings: Settings) -> str:
                 "url": webhook_url,
                 "secret_token": webhook_secret,
                 "drop_pending_updates": False,
+                "allowed_updates": TELEGRAM_ALLOWED_UPDATES,
             },
         )
         set_response.raise_for_status()
@@ -86,6 +102,20 @@ async def reconcile_telegram_webhook_with_retries(settings: Settings) -> None:
 
         logger.info("Telegram webhook reconciliation result: %s", result)
         return
+
+
+def _normalize_allowed_updates(result: Any) -> list[str] | None:
+    if not isinstance(result, dict):
+        return None
+    allowed_updates = result.get("allowed_updates")
+    if not isinstance(allowed_updates, list):
+        return None
+    normalized = [item for item in allowed_updates if isinstance(item, str)]
+    return sorted(normalized)
+
+
+def _normalized_expected_allowed_updates() -> list[str]:
+    return sorted(TELEGRAM_ALLOWED_UPDATES)
 
 
 def _require_telegram_ok(payload: Any) -> dict[str, Any]:
