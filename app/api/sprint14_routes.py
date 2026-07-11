@@ -481,10 +481,12 @@ def _is_business_send_enabled(*, account_id: Any, settings: Settings) -> bool:
 
 
 def _is_business_update(update: JsonObject) -> bool:
-    return isinstance(update.get("business_connection"), dict) or isinstance(
-        update.get("business_message"),
-        dict,
-    )
+    if isinstance(update.get("business_connection"), dict):
+        return True
+    if isinstance(update.get("business_message"), dict):
+        return True
+    message = update.get("message")
+    return isinstance(message, dict) and message.get("business_connection_id") is not None
 
 
 def _require_telegram_secret(*, x_telegram_secret: str | None) -> None:
