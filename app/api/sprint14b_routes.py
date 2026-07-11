@@ -97,6 +97,7 @@ async def sprint14b_telegram_webhook(
     session.add(gate_event)
     await session.flush()
 
+    business_connections: list[JsonObject] = []
     if legacy._is_telegram_admin_sender(normalized.sender_id):
         status_payload = await legacy._build_admin_status_payload(
             session=session,
@@ -167,7 +168,8 @@ async def sprint14b_telegram_webhook(
             gate_event_id=gate_event.id,
             metadata_={
                 "command": "status",
-                "business_connections_included": bool(business_connections),
+                "business_connections_included": True,
+                "business_connections_count": len(business_connections),
             },
         )
     )
@@ -222,11 +224,11 @@ def _format_status_with_business_connections(
     status_payload: JsonObject,
     business_connections: list[JsonObject],
 ) -> str:
-    lines = [legacy._format_telegram_admin_status(status_payload)]
+    lines = [legacy._format_telegram_admin_status(status_payload), "", "Business connections:"]
     if not business_connections:
+        lines.append("- none stored yet")
         return "\n".join(lines)
 
-    lines.extend(["", "Business connections:"])
     for item in business_connections:
         connection_id = str(item["business_connection_id"])
         short_connection_id = (
