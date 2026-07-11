@@ -8,8 +8,9 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, Header, Request
-from sqlalchemy import or_, select
+from sqlalchemy import String, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api import routes as legacy
 from app.api import sprint14_routes as sprint14
@@ -220,10 +221,17 @@ async def _build_recent_events_reply(
             TelegramBusinessConnection.account_id == account_id,
             TelegramBusinessConnection.is_enabled.is_(True),
         )
+        user_chat_ids = select(sql_cast(TelegramBusinessConnection.user_chat_id, String)).where(
+            TelegramBusinessConnection.account_id == account_id,
+            TelegramBusinessConnection.is_enabled.is_(True),
+            TelegramBusinessConnection.user_chat_id.is_not(None),
+        )
         query = query.where(
             or_(
                 Message.account_id == account_id,
                 Message.business_connection_id.in_(connection_ids),
+                Message.chat_id.in_(user_chat_ids),
+                Message.sender_id.in_(user_chat_ids),
             )
         )
 
