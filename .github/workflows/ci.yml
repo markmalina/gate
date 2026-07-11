@@ -39,18 +39,7 @@ jobs:
       - name: Mypy
         run: mypy app
       - name: Pytest
-        run: |
-          set +e
-          pytest > pytest.log 2>&1
-          status=$?
-          cat pytest.log
-          exit $status
-      - name: Upload pytest log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-log
-          path: pytest.log
+        run: pytest
       - name: Alembic upgrade
         run: alembic upgrade head
       - name: Alembic downgrade
