@@ -53,4 +53,5 @@ def test_business_send_kill_switches_are_account_scoped() -> None:
 def test_business_update_detection_is_limited_to_telegram_business_shapes() -> None:
     assert _is_business_update({"business_connection": {"id": "bc-1"}})
     assert _is_business_update({"business_message": {"business_connection_id": "bc-1"}})
+    assert _is_business_update({"message": {"business_connection_id": "bc-1"}})
     assert not _is_business_update({"message": {"text": "ping"}})
