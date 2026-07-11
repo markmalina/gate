@@ -13,6 +13,12 @@ from app.api import routes as legacy
 from app.api import sprint14_routes as sprint14
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
+from app.api.scoped_admin import (
+    TelegramAdminContext,
+    build_scoped_telegram_admin_reply,
+    count_scoped_unanswered_reply_tasks,
+    resolve_telegram_admin_context,
+)
 from app.core.config import Settings, get_settings
 from app.models.domain import (
     TELEGRAM_MARK_BY_ACCOUNT_ID,
@@ -61,7 +67,14 @@ async def sprint14b_telegram_webhook(
     assignment_command = _parse_business_assignment_command(
         normalized.text if normalized else None
     )
-    if admin_command is None and assignment_command is None:
+    should_delegate = admin_command is None and assignment_command is None
+    fake_session_non_status_admin = (
+        admin_command is not None
+        and admin_command.name != "status"
+        and assignment_command is None
+        and not isinstance(session, AsyncSession)
+    )
+    if should_delegate or fake_session_non_status_admin:
         return await sprint14.sprint14_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
@@ -114,11 +127,11 @@ async def sprint14b_telegram_webhook(
 
     business_connections: list[JsonObject] = []
     include_empty_business_connections = settings.gate_env != "development"
-    is_admin_context = await _is_telegram_admin_context(
+    admin_context = await resolve_telegram_admin_context(
         normalized=normalized,
         session=session,
     )
-    if is_admin_context:
+    if admin_context.is_admin:
         if assignment_command is not None:
             reply_text = await _assign_business_connection(
                 command=assignment_command,
@@ -134,18 +147,35 @@ async def sprint14b_telegram_webhook(
                 session=session,
                 settings=settings,
             )
+            status_admin_context = None if admin_context.is_super_admin else admin_context
+            scoped_unanswered = None
+            if status_admin_context is not None:
+                scoped_unanswered = await count_scoped_unanswered_reply_tasks(
+                    session=session,
+                    account_id=admin_context.scoped_account_id,
+                )
             reply_text = _format_status_with_business_connections(
                 status_payload=status_payload,
                 business_connections=business_connections,
                 include_empty=include_empty_business_connections,
+                admin_context=status_admin_context,
+                scoped_unanswered=scoped_unanswered,
             )
             audit_action = "telegram_admin_console_status_sent"
         elif admin_command is not None:
-            reply_text = await legacy._build_telegram_admin_reply(
-                command=admin_command,
-                session=session,
-                settings=settings,
-            )
+            if admin_context.is_super_admin:
+                reply_text = await legacy._build_telegram_admin_reply(
+                    command=admin_command,
+                    session=session,
+                    settings=settings,
+                )
+            else:
+                reply_text = await build_scoped_telegram_admin_reply(
+                    command=admin_command,
+                    admin_context=admin_context,
+                    session=session,
+                    settings=settings,
+                )
             audit_action = f"telegram_admin_console_{admin_command.name}_sent"
         else:
             reply_text = "Gate online"
@@ -209,7 +239,12 @@ async def sprint14b_telegram_webhook(
                 "business_connections_included": bool(business_connections)
                 or include_empty_business_connections,
                 "business_connections_count": len(business_connections),
-                "admin_context": is_admin_context,
+                "admin_context": admin_context.is_admin,
+                "admin_super": admin_context.is_super_admin,
+                "admin_account_alias": admin_context.account_alias,
+                "admin_account_id": str(admin_context.account_id)
+                if admin_context.account_id is not None
+                else None,
             },
         )
     )
@@ -264,20 +299,11 @@ async def _is_telegram_admin_context(
     normalized: legacy.TelegramUpdateEvent,
     session: AsyncSession,
 ) -> bool:
-    if legacy._is_telegram_admin_sender(normalized.sender_id):
-        return True
+    """Backward-compatible boolean admin-context helper."""
 
-    sender_id = legacy._optional_int(normalized.sender_id)
-    if sender_id is None:
-        return False
-
-    result = await session.execute(
-        select(TelegramBusinessConnection).where(
-            TelegramBusinessConnection.user_chat_id == sender_id,
-            TelegramBusinessConnection.is_enabled.is_(True),
-        )
-    )
-    return result.scalar_one_or_none() is not None
+    return (
+        await resolve_telegram_admin_context(normalized=normalized, session=session)
+    ).is_admin
 
 
 async def _assign_business_connection(
@@ -343,8 +369,24 @@ def _format_status_with_business_connections(
     status_payload: JsonObject,
     business_connections: list[JsonObject],
     include_empty: bool = True,
+    admin_context: TelegramAdminContext | None = None,
+    scoped_unanswered: int | None = None,
 ) -> str:
     lines = [legacy._format_telegram_admin_status(status_payload)]
+    if admin_context is not None:
+        mode = "super_admin" if admin_context.is_super_admin else "account"
+        account_label = admin_context.account_alias or "all"
+        lines.extend(
+            [
+                "",
+                "Admin context:",
+                f"- mode: {mode}",
+                f"- account: {account_label}",
+            ]
+        )
+        if scoped_unanswered is not None:
+            lines.append(f"- scoped_unanswered: {scoped_unanswered}")
+
     if not business_connections and not include_empty:
         return "\n".join(lines)
 
