@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
-
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
