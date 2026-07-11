@@ -47,6 +47,28 @@ async def resolve_telegram_admin_context(
 ) -> TelegramAdminContext:
     """Resolve whether the Telegram sender is a super-admin or account admin."""
 
+    sender_id = legacy._optional_int(normalized.sender_id)
+    if sender_id is not None and isinstance(session, AsyncSession):
+        result = await session.execute(
+            select(TelegramBusinessConnection, Account)
+            .join(Account, TelegramBusinessConnection.account_id == Account.id)
+            .where(
+                TelegramBusinessConnection.user_chat_id == sender_id,
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+            .order_by(TelegramBusinessConnection.last_update_at.desc())
+            .limit(1)
+        )
+        row = result.one_or_none()
+        if row is not None:
+            connection, account = row
+            return TelegramAdminContext(
+                is_admin=True,
+                is_super_admin=False,
+                account_id=connection.account_id,
+                account_alias=account.alias,
+            )
+
     if legacy._is_telegram_admin_sender(normalized.sender_id):
         return TelegramAdminContext(
             is_admin=True,
@@ -54,31 +76,7 @@ async def resolve_telegram_admin_context(
             account_alias="super_admin",
         )
 
-    sender_id = legacy._optional_int(normalized.sender_id)
-    if sender_id is None:
-        return TelegramAdminContext(is_admin=False)
-
-    result = await session.execute(
-        select(TelegramBusinessConnection, Account)
-        .join(Account, TelegramBusinessConnection.account_id == Account.id)
-        .where(
-            TelegramBusinessConnection.user_chat_id == sender_id,
-            TelegramBusinessConnection.is_enabled.is_(True),
-        )
-        .order_by(TelegramBusinessConnection.last_update_at.desc())
-        .limit(1)
-    )
-    row = result.one_or_none()
-    if row is None:
-        return TelegramAdminContext(is_admin=False)
-
-    connection, account = row
-    return TelegramAdminContext(
-        is_admin=True,
-        is_super_admin=False,
-        account_id=connection.account_id,
-        account_alias=account.alias,
-    )
+    return TelegramAdminContext(is_admin=False)
 
 
 async def count_scoped_unanswered_reply_tasks(
@@ -360,7 +358,7 @@ def _scoped_reply_task_query(*, account_id: Any | None) -> Any:
         .join(Message, ReplyTask.trigger_message_id == Message.id)
     )
     if account_id is not None:
-        query = query.where(ReplyTask.account_id == account_id)
+        query = query.where(Conversation.account_id == account_id)
     return query
 
 
