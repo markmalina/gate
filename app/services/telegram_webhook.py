@@ -65,7 +65,7 @@ async def reconcile_telegram_webhook(settings: Settings) -> str:
         if (
             current_url == webhook_url
             and not last_error
-            and current_allowed_updates == TELEGRAM_ALLOWED_UPDATES
+            and current_allowed_updates == _normalized_expected_allowed_updates()
         ):
             return "already_current"
 
@@ -111,6 +111,10 @@ def _normalize_allowed_updates(result: Any) -> list[str] | None:
         return None
     normalized = [item for item in allowed_updates if isinstance(item, str)]
     return sorted(normalized)
+
+
+def _normalized_expected_allowed_updates() -> list[str]:
+    return sorted(TELEGRAM_ALLOWED_UPDATES)
 
 
 def _require_telegram_ok(payload: Any) -> dict[str, Any]:
