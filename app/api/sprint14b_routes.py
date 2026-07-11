@@ -67,7 +67,14 @@ async def sprint14b_telegram_webhook(
     assignment_command = _parse_business_assignment_command(
         normalized.text if normalized else None
     )
-    if admin_command is None and assignment_command is None:
+    should_delegate = admin_command is None and assignment_command is None
+    fake_session_non_status_admin = (
+        admin_command is not None
+        and admin_command.name != "status"
+        and assignment_command is None
+        and not isinstance(session, AsyncSession)
+    )
+    if should_delegate or fake_session_non_status_admin:
         return await sprint14.sprint14_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
