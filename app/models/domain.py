@@ -342,12 +342,11 @@ class Message(Base):
         Index("ix_messages_bot_chat_created_at", "bot_id", "chat_id", "created_at"),
         Index("ix_messages_direction_created_at", "direction", "created_at"),
         Index(
-            "uq_messages_telegram_identity",
+            "ix_messages_telegram_identity_lookup",
             "account_id",
             text("coalesce(business_connection_id, '')"),
             "chat_id",
             "telegram_message_id",
-            unique=True,
             postgresql_where=text("telegram_message_id IS NOT NULL"),
         ),
     )
