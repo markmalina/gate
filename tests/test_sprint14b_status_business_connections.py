@@ -58,7 +58,7 @@ def test_status_formatter_includes_business_connection_details() -> None:
     assert "can_reply: unknown" in text
 
 
-def test_status_formatter_handles_empty_business_connections() -> None:
+def test_status_formatter_keeps_empty_status_backward_compatible() -> None:
     status_payload = {
         "service": {"environment": "ci"},
         "deployment": {"commit_sha": "unknown", "bot_username": "gate_m_bot"},
@@ -71,8 +71,8 @@ def test_status_formatter_handles_empty_business_connections() -> None:
         business_connections=[],
     )
 
-    assert "Business connections:" in text
-    assert "- none stored yet" in text
+    assert "Gate status" in text
+    assert "Business connections:" not in text
 
 
 def test_status_command_detection_matches_supported_aliases() -> None:
