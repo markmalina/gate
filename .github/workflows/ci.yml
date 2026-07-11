@@ -52,7 +52,18 @@ jobs:
           name: pytest-log
           path: pytest.log
       - name: Alembic upgrade
-        run: alembic upgrade head
+        run: |
+          set +e
+          alembic upgrade head > alembic-upgrade.log 2>&1
+          status=$?
+          cat alembic-upgrade.log
+          exit $status
+      - name: Upload Alembic upgrade log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alembic-upgrade-log
+          path: alembic-upgrade.log
       - name: Alembic downgrade
         run: alembic downgrade base
       - name: Docker build
