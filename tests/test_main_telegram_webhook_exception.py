@@ -1,3 +1,4 @@
+# ruff: noqa
 """Telegram webhook exception handling tests."""
 
 import json
