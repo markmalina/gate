@@ -367,5 +367,5 @@ def _format_scoped_inbox(
 ) -> str:
     text = legacy._format_telegram_unanswered_inbox(reply_tasks)
     if admin_context.is_super_admin:
-        return "\n".join(["scope: all", "", text])
+        return text
     return "\n".join([f"scope: {admin_context.account_alias or 'unknown'}", "", text])
