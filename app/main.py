@@ -16,6 +16,7 @@ from app.api.sprint9_routes import router as sprint9_router
 from app.api.sprint10_routes import router as sprint10_router
 from app.api.sprint11b_routes import router as sprint11b_router
 from app.api.sprint12_routes import router as sprint12_router
+from app.api.sprint14_routes import router as sprint14_router
 from app.core.config import get_settings
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.add_exception_handler(StarletteHTTPException, telegram_http_exception_handler)
+    app.include_router(sprint14_router)
     app.include_router(sprint12_router)
     app.include_router(sprint11b_router)
     app.include_router(sprint10_router)
