@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import routes as legacy
-from app.api import sprint12_routes as sprint12
+from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.core.config import Settings, get_settings
@@ -52,7 +52,7 @@ async def sprint14_telegram_webhook(
 
     update = await _read_update(request)
     if not _is_business_update(update):
-        return await sprint12.sprint12_telegram_webhook(
+        return await sprint11b.sprint11b_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
             settings=settings,
