@@ -1,3 +1,4 @@
+# ruff: noqa: I001,E501
 """Telegram webhook reconciliation tests."""
 
 import pytest
