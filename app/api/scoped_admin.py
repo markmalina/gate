@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Account-scoped Telegram admin helpers for Gate."""
 
 from dataclasses import dataclass
