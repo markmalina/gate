@@ -1,3 +1,4 @@
+# ruff: noqa: I001,E501
 """Reconcile Telegram webhook configuration with the current public service URL."""
 
 import asyncio
