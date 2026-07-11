@@ -2,7 +2,7 @@
 """Sprint 14b Telegram status with Business connection visibility."""
 
 from datetime import UTC, datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import select
@@ -229,7 +229,9 @@ def _format_status_with_business_connections(
 
     for item in business_connections:
         connection_id = str(item["business_connection_id"])
-        short_connection_id = connection_id if len(connection_id) <= 24 else f"{connection_id[:24]}..."
+        short_connection_id = (
+            connection_id if len(connection_id) <= 24 else f"{connection_id[:24]}..."
+        )
         lines.extend(
             [
                 f"- {item['account_alias']}",
