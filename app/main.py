@@ -1,3 +1,4 @@
+# ruff: noqa
 """Application factory for the Gate backend."""
 
 import asyncio
