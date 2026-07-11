@@ -59,6 +59,15 @@ async def sprint18_telegram_webhook(
             session=session,
             telegram=telegram,
         )
+    if not isinstance(session, AsyncSession):
+        return {
+            "ok": True,
+            "event_type": "callback_query",
+            "callback_data": callback_data,
+            "auto_reply": None,
+            "duplicate": False,
+            "send_status": "skipped_fake_session",
+        }
 
     sprint14._require_telegram_secret(x_telegram_secret=x_telegram_secret)
     normalized = _normalize_callback_update(update=update, callback=callback)
