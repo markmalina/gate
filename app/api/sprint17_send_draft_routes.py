@@ -5,6 +5,7 @@
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
+import httpx
 from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import String, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -206,6 +207,7 @@ async def _send_draft_reply(
             business_connection_id=connection.business_connection_id,
         )
     except Exception as exc:
+        error_detail = _telegram_exception_detail(exc)
         session.add(
             AuditLog(
                 actor="gate",
@@ -220,10 +222,11 @@ async def _send_draft_reply(
                     "target_chat_id": target_chat_id,
                     "business_connection_id": connection.business_connection_id,
                     "error_type": exc.__class__.__name__,
+                    "error_detail": error_detail,
                 },
             )
         )
-        return _send_result_text(settings=settings, scope_label=scope_label, status="failed", detail=exc.__class__.__name__)
+        return _send_result_text(settings=settings, scope_label=scope_label, status="failed", detail=error_detail)
 
     now = datetime.now(UTC)
     draft.status = ReplyDraftStatus.APPROVED.value
@@ -352,6 +355,16 @@ def _resolve_target_chat_id(*, trigger_message: Message, connection: TelegramBus
     if owner_chat_id and trigger_message.chat_id == owner_chat_id and trigger_message.sender_id != owner_chat_id:
         return trigger_message.sender_id
     return trigger_message.chat_id
+
+
+def _telegram_exception_detail(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        detail = response.text.strip().replace("\n", " ")
+        if len(detail) > 500:
+            detail = f"{detail[:497]}..."
+        return f"HTTP {response.status_code}: {detail or response.reason_phrase}"
+    return exc.__class__.__name__
 
 
 def _account_send_enabled(*, settings: Settings, account_alias: str) -> bool:
