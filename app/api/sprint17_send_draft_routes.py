@@ -322,6 +322,29 @@ async def _resolve_send_connection(
     conversation: Conversation,
     trigger_message: Message,
 ) -> tuple[TelegramBusinessConnection | None, Account | None]:
+    origin_business_connection_id = (
+        conversation.business_connection_id or trigger_message.business_connection_id
+    )
+    if origin_business_connection_id:
+        origin_result = await session.execute(
+            select(TelegramBusinessConnection, Account)
+            .join(Account, TelegramBusinessConnection.account_id == Account.id)
+            .where(
+                TelegramBusinessConnection.business_connection_id == origin_business_connection_id,
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+            .limit(1)
+        )
+        origin_row = origin_result.one_or_none()
+        if origin_row is not None:
+            origin_connection, origin_account = origin_row
+            if account_id is None or await _origin_connection_allowed_for_scope(
+                session=session,
+                account_id=account_id,
+                trigger_message=trigger_message,
+            ):
+                return origin_connection, origin_account
+
     if account_id is not None:
         result = await session.execute(
             select(TelegramBusinessConnection, Account)
@@ -335,19 +358,24 @@ async def _resolve_send_connection(
         )
         return result.one_or_none() or (None, None)
 
-    business_connection_id = conversation.business_connection_id or trigger_message.business_connection_id
-    if not business_connection_id:
-        return None, None
-    result = await session.execute(
-        select(TelegramBusinessConnection, Account)
-        .join(Account, TelegramBusinessConnection.account_id == Account.id)
-        .where(
-            TelegramBusinessConnection.business_connection_id == business_connection_id,
+    return None, None
+
+
+async def _origin_connection_allowed_for_scope(
+    *,
+    session: AsyncSession,
+    account_id: Any,
+    trigger_message: Message,
+) -> bool:
+    user_chat_ids_result = await session.execute(
+        select(sql_cast(TelegramBusinessConnection.user_chat_id, String)).where(
+            TelegramBusinessConnection.account_id == account_id,
             TelegramBusinessConnection.is_enabled.is_(True),
+            TelegramBusinessConnection.user_chat_id.is_not(None),
         )
-        .limit(1)
     )
-    return result.one_or_none() or (None, None)
+    user_chat_ids = set(user_chat_ids_result.scalars().all())
+    return trigger_message.chat_id in user_chat_ids or trigger_message.sender_id in user_chat_ids
 
 
 def _resolve_target_chat_id(*, trigger_message: Message, connection: TelegramBusinessConnection) -> str:
