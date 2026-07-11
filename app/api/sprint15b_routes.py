@@ -1,9 +1,11 @@
 # mypy: ignore-errors
 """Sprint 15b Telegram diagnostics for account-scoped Business messages."""
 
+import os
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
+import httpx
 from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +27,7 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
+from app.services.telegram_webhook import TELEGRAM_ALLOWED_UPDATES
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -48,7 +51,10 @@ async def sprint15b_telegram_webhook(
 
     update = await sprint14._read_update(request)
     normalized = legacy._extract_update_event(update)
-    if not _is_events_command(normalized.text if normalized else None):
+    text = normalized.text if normalized else None
+    is_events_command = _is_events_command(text)
+    is_webhook_command = _is_webhook_command(text)
+    if not is_events_command and not is_webhook_command:
         return await sprint14b.sprint14b_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
@@ -104,11 +110,15 @@ async def sprint15b_telegram_webhook(
         session=session,
     )
     if admin_context.is_admin:
-        reply_text = await _build_recent_events_reply(
-            session=session,
-            admin_context=admin_context,
-        )
-        audit_action = "telegram_admin_console_events_sent"
+        if is_webhook_command:
+            reply_text = await _build_webhook_reply(settings=settings)
+            audit_action = "telegram_admin_console_webhook_sent"
+        else:
+            reply_text = await _build_recent_events_reply(
+                session=session,
+                admin_context=admin_context,
+            )
+            audit_action = "telegram_admin_console_events_sent"
     else:
         reply_text = "Gate online"
         audit_action = "telegram_admin_console_rejected"
@@ -212,7 +222,9 @@ async def _build_recent_events_reply(
 
     result = await session.execute(query)
     rows = result.all()
-    scope = "all" if admin_context.is_super_admin else admin_context.account_alias or "unknown"
+    scope = (
+        "all" if admin_context.is_super_admin else admin_context.account_alias or "unknown"
+    )
     lines = ["Recent inbound messages", f"scope: {scope}"]
     if not rows:
         lines.append("No recent inbound messages in this account scope.")
@@ -239,6 +251,67 @@ async def _build_recent_events_reply(
     return "\n".join(lines)
 
 
+async def _build_webhook_reply(*, settings: Settings) -> str:
+    if not settings.telegram_bot_token:
+        return "Telegram webhook\nstatus: missing TELEGRAM_BOT_TOKEN"
+
+    api_base = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org").rstrip("/")
+    bot_api_base = f"{api_base}/bot{settings.telegram_bot_token}"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(f"{bot_api_base}/getWebhookInfo", json={})
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        return "\n".join(
+            [
+                "Telegram webhook",
+                "status: failed",
+                f"error_type: {exc.__class__.__name__}",
+            ]
+        )
+
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        return "\n".join(
+            [
+                "Telegram webhook",
+                "status: rejected",
+            ]
+        )
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return "\n".join(
+            [
+                "Telegram webhook",
+                "status: invalid_response",
+            ]
+        )
+
+    allowed_updates = result.get("allowed_updates")
+    if not isinstance(allowed_updates, list):
+        allowed_updates_text = "unknown"
+    elif not allowed_updates:
+        allowed_updates_text = "all"
+    else:
+        allowed_updates_text = ", ".join(
+            str(item) for item in allowed_updates if isinstance(item, str)
+        )
+
+    expected_text = ", ".join(TELEGRAM_ALLOWED_UPDATES)
+    return "\n".join(
+        [
+            "Telegram webhook",
+            f"url: {result.get('url') or 'empty'}",
+            f"pending_update_count: {result.get('pending_update_count', 'unknown')}",
+            f"allowed_updates: {allowed_updates_text}",
+            f"expected_updates: {expected_text}",
+            f"last_error_date: {result.get('last_error_date') or 'none'}",
+            f"last_error_message: {result.get('last_error_message') or 'none'}",
+        ]
+    )
+
+
 def _is_events_command(text: str | None) -> bool:
     normalized = (text or "").strip().casefold()
     return normalized in {
@@ -248,6 +321,16 @@ def _is_events_command(text: str | None) -> bool:
         "messages",
         "события",
         "сообщения",
+    }
+
+
+def _is_webhook_command(text: str | None) -> bool:
+    normalized = (text or "").strip().casefold()
+    return normalized in {
+        "/webhook",
+        "webhook",
+        "/вебхук",
+        "вебхук",
     }
 
 
