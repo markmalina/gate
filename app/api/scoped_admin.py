@@ -222,7 +222,7 @@ async def _create_scoped_reply_draft(
             },
         )
     )
-    return legacy._format_reply_draft_result(draft=draft, task=task)
+    return _format_scoped_reply_draft_result(draft=draft, task=task)
 
 
 async def _list_scoped_reply_drafts(
@@ -377,6 +377,30 @@ def _scoped_reply_task_query(*, account_id: Any | None) -> Any:
         )
     return query
 
+
+def _format_scoped_reply_draft_result(*, draft: ReplyDraft, task: ReplyTask) -> str:
+    draft_ref = str(draft.id)[:8]
+    task_ref = str(task.id)[:8]
+    return "\n".join(
+        [
+            f"Draft created: {draft_ref}",
+            f"task: {task_ref}",
+            "",
+            draft.draft_text,
+            "",
+            "Not sent.",
+            "",
+            "Actions:",
+            f"✅ Отправить: /send_{draft_ref}",
+            f"👀 Все драфты: /drafts_{task_ref}",
+            f"✏️ Новый драфт: /draft_{task_ref}",
+            f"✅ Закрыть как отвеченное: /done_{task_ref}",
+            f"❌ Закрыть без ответа: /dismiss_{task_ref}",
+            f"⏸ Отложить: /snooze_{task_ref}",
+            "",
+            "Нажми синюю команду. ID вводить руками не нужно.",
+        ]
+    )
 
 
 def _format_scoped_inbox(
