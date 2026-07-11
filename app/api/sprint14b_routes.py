@@ -425,6 +425,14 @@ def _account_id_from_alias(account_alias: str) -> Any | None:
     return None
 
 
+def _is_status_command(normalized: legacy.TelegramUpdateEvent | None) -> bool:
+    if normalized is None:
+        return False
+    return legacy._parse_admin_console_command(normalized.text) == legacy.TelegramAdminCommand(
+        name="status"
+    )
+
+
 def _yes_no(value: Any) -> str:
     return "yes" if bool(value) else "no"
 
