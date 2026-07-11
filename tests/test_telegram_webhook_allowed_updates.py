@@ -62,7 +62,10 @@ async def test_reconcile_updates_webhook_when_business_updates_missing(
 
     assert result == "updated"
     assert _FakeAsyncClient.calls[-1]["url"].endswith("/setWebhook")
-    assert _FakeAsyncClient.calls[-1]["json"]["allowed_updates"] == TELEGRAM_ALLOWED_UPDATES
+    assert (
+        _FakeAsyncClient.calls[-1]["json"]["allowed_updates"]
+        == TELEGRAM_ALLOWED_UPDATES
+    )
 
 
 @pytest.mark.anyio
