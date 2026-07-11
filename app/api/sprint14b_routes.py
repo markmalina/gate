@@ -287,6 +287,18 @@ async def _load_business_connection_statuses(
     return rows
 
 
+async def _is_telegram_admin_context(
+    *,
+    normalized: legacy.TelegramUpdateEvent,
+    session: AsyncSession,
+) -> bool:
+    """Backward-compatible boolean admin-context helper."""
+
+    return (
+        await resolve_telegram_admin_context(normalized=normalized, session=session)
+    ).is_admin
+
+
 async def _assign_business_connection(
     *,
     command: BusinessAssignmentCommand,
