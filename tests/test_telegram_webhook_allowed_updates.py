@@ -1,7 +1,6 @@
 """Telegram webhook reconciliation tests."""
 
 import pytest
-
 from app.core.config import Settings
 from app.services.telegram_webhook import (
     TELEGRAM_ALLOWED_UPDATES,
