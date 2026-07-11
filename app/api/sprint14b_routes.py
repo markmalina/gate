@@ -304,20 +304,27 @@ async def _assign_business_connection(
             ]
         )
 
-    if connection.is_enabled:
-        enabled_result = await session.execute(
-            select(TelegramBusinessConnection).where(
-                TelegramBusinessConnection.account_id == account_id,
-                TelegramBusinessConnection.is_enabled.is_(True),
-            )
+    assigned_at = datetime.now(UTC)
+    enabled_result = await session.execute(
+        select(TelegramBusinessConnection).where(
+            TelegramBusinessConnection.account_id == account_id,
+            TelegramBusinessConnection.is_enabled.is_(True),
         )
-        for enabled_connection in enabled_result.scalars().all():
-            if enabled_connection.business_connection_id != connection.business_connection_id:
-                enabled_connection.is_enabled = False
-                enabled_connection.last_update_at = datetime.now(UTC)
+    )
+    for enabled_connection in enabled_result.scalars().all():
+        if enabled_connection.business_connection_id != connection.business_connection_id:
+            enabled_connection.is_enabled = False
+            enabled_connection.last_update_at = assigned_at
 
     connection.account_id = account_id
-    connection.last_update_at = datetime.now(UTC)
+    connection.is_enabled = True
+    connection.rights = {
+        **(connection.rights or {}),
+        "can_reply": True,
+        "manual_assignment_confirmed": True,
+    }
+    connection.last_update_at = assigned_at
+    connection.last_error = None
     return "\n".join(
         [
             "Business connection assigned",
@@ -326,6 +333,7 @@ async def _assign_business_connection(
             f"enabled: {_yes_no(connection.is_enabled)}",
             f"can_reply: {_optional_bool(connection.rights.get('can_reply'))}",
             f"user_chat_id: {connection.user_chat_id or 'unknown'}",
+            "manual_assignment: yes",
         ]
     )
 
