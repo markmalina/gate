@@ -1,4 +1,5 @@
 # mypy: ignore-errors
+# ruff: noqa
 """Sprint 14b Telegram status with Business connection visibility."""
 
 from dataclasses import dataclass
@@ -180,6 +181,7 @@ async def sprint14b_telegram_webhook(
         else:
             reply_text = "Gate online"
             audit_action = "telegram_admin_console_rejected"
+        reply_text = _with_commit_header(settings=settings, text=reply_text)
     else:
         reply_text = "Gate online"
         audit_action = "telegram_admin_console_rejected"
@@ -410,6 +412,13 @@ def _format_status_with_business_connections(
             ]
         )
     return "\n".join(lines)
+
+
+def _with_commit_header(*, settings: Settings, text: str) -> str:
+    header = f"Commit: {(settings.deployment_sha or 'unknown')[:12]}"
+    if text.startswith(header):
+        return text
+    return "\n".join([header, "", text])
 
 
 def _parse_business_assignment_command(text: str | None) -> BusinessAssignmentCommand | None:
