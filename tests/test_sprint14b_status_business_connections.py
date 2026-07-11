@@ -4,6 +4,7 @@ from app.api import routes as legacy
 from app.api.sprint14b_routes import (
     _format_status_with_business_connections,
     _is_status_command,
+    _parse_business_assignment_command,
 )
 
 
@@ -14,12 +15,13 @@ def test_status_formatter_includes_business_connection_details() -> None:
         "messages": {"count": 7},
         "reply_tasks": {"count": 3, "unanswered": 2},
     }
+    full_connection_id = "hwOpkm0xiUoOHAAA866WWGZ4-full-id"
     text = _format_status_with_business_connections(
         status_payload=status_payload,
         business_connections=[
             {
                 "account_alias": "telegram_mark_ru",
-                "business_connection_id": "bc-ru-123",
+                "business_connection_id": full_connection_id,
                 "configured": True,
                 "is_enabled": True,
                 "send_enabled": True,
@@ -45,7 +47,8 @@ def test_status_formatter_includes_business_connection_details() -> None:
     assert "Gate status" in text
     assert "Business connections:" in text
     assert "- telegram_mark_ru" in text
-    assert "id: bc-ru-123" in text
+    assert f"id: {full_connection_id}" in text
+    assert "..." not in text
     assert "enabled: yes" in text
     assert "configured: yes" in text
     assert "send: yes" in text
@@ -110,3 +113,31 @@ def test_status_command_detection_matches_supported_aliases() -> None:
             business_connection_id=None,
         )
     )
+
+
+def test_business_assignment_command_parser_accepts_spaced_forms() -> None:
+    command = _parse_business_assignment_command("/business by hwOpkm0xiUoOHAAA")
+
+    assert command is not None
+    assert command.account_alias == "telegram_mark_by"
+    assert command.connection_ref == "hwOpkm0xiUoOHAAA"
+
+    command = _parse_business_assignment_command("/business ru Bc-jIeb4eEoaEwAA")
+
+    assert command is not None
+    assert command.account_alias == "telegram_mark_ru"
+    assert command.connection_ref == "Bc-jIeb4eEoaEwAA"
+
+
+def test_business_assignment_command_parser_accepts_compact_forms() -> None:
+    command = _parse_business_assignment_command("/business_by_hwOpkm0xiUoOHAAA")
+
+    assert command is not None
+    assert command.account_alias == "telegram_mark_by"
+    assert command.connection_ref == "hwOpkm0xiUoOHAAA"
+
+    command = _parse_business_assignment_command("/business_ru Bc-jIeb4eEoaEwAA")
+
+    assert command is not None
+    assert command.account_alias == "telegram_mark_ru"
+    assert command.connection_ref == "Bc-jIeb4eEoaEwAA"
