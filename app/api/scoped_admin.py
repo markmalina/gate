@@ -328,8 +328,12 @@ async def _load_scoped_single_reply_task_row(
         account_id=account_id,
     )
     if not rows:
+        if account_id is None:
+            return f"Task not found: {task_ref}"
         return f"Task not found in this account scope: {task_ref}"
     if len(rows) > 1:
+        if account_id is None:
+            return f"Task reference is ambiguous: {task_ref}"
         return f"Task reference is ambiguous in this account scope: {task_ref}"
     return rows[0]
 
