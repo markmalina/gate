@@ -22,11 +22,11 @@ ChatGPT should implement directly when all of the following are true:
 4. GitHub CI can validate the change;
 5. no local-only debugging, broad refactor or complex multi-module work is required;
 6. no secrets need to be viewed, pasted or committed;
-7. the change does not merge itself and does not deploy production.
+7. merge is either explicitly approved for the named PR or covered by an active standing merge authorization from Mark.
 
 Codex is no longer the default Gate implementation path. Codex should be used only as a backup/local implementation assistant when the task is large, broad, multi-file, local-test-heavy, unclear, or better suited to a local repository environment.
 
-When Codex is not used, ChatGPT owns the full GitHub workflow for the bounded sprint: create branch, edit files, open or update PR, inspect CI, fix small CI failures, review scope, and ask Mark for explicit merge/deploy commands when required.
+When Codex is not used, ChatGPT owns the full GitHub workflow for the bounded sprint: create branch, edit files, open or update PR, inspect CI, fix small CI failures, review scope, and merge when the applicable authorization rule permits it.
 
 ## Single merge command execution rule
 
@@ -45,7 +45,36 @@ After receiving a direct merge command, ChatGPT must:
 
 ChatGPT must not ask Mark to repeat the same merge command after these checks pass.
 
-The next Mark action after a successful merge may be a separate deploy command if production deployment is desired. A direct merge command still does not authorize production deployment.
+## Standing merge authorization
+
+Mark may grant a standing merge authorization for Gate development.
+
+While that authorization is active, ChatGPT may merge an active Gate PR without requesting another merge command only when all of the following are true:
+
+1. the PR implements the already approved bounded sprint or task;
+2. the final diff contains no unrelated scope;
+3. the exact current head SHA has green CI;
+4. the PR is mergeable;
+5. review found no unresolved safety, data-loss, secret, or architecture blocker;
+6. the merge does not authorize any separate external action beyond the repository merge.
+
+If any condition is not met, ChatGPT must not merge and must report or fix the blocker first.
+
+Mark's instruction on 2026-07-11 — `Мерджи сам без моей команды если все в порядке` — activates standing merge authorization for subsequent Gate PRs until Mark revokes or narrows it.
+
+## Automatic Railway deployment
+
+Gate's current Railway production service deploys automatically after a merge to `main`.
+
+The operational sequence is:
+
+```text
+merge to main
+→ automatic Railway deployment
+→ production verification
+```
+
+A separate deploy command is not required while this automatic deployment configuration remains active. Merge authorization is still governed by the direct or standing merge authorization rules above.
 
 ## Error correction final-output gate
 
