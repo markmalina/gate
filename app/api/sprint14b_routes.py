@@ -140,15 +140,20 @@ async def sprint14b_telegram_webhook(
                 session=session,
                 settings=settings,
             )
-            scoped_unanswered = await count_scoped_unanswered_reply_tasks(
-                session=session,
-                account_id=admin_context.scoped_account_id,
-            )
+            status_admin_context = admin_context
+            if admin_context.is_super_admin and not include_empty_business_connections:
+                status_admin_context = None
+            scoped_unanswered = None
+            if status_admin_context is not None:
+                scoped_unanswered = await count_scoped_unanswered_reply_tasks(
+                    session=session,
+                    account_id=admin_context.scoped_account_id,
+                )
             reply_text = _format_status_with_business_connections(
                 status_payload=status_payload,
                 business_connections=business_connections,
                 include_empty=include_empty_business_connections,
-                admin_context=admin_context,
+                admin_context=status_admin_context,
                 scoped_unanswered=scoped_unanswered,
             )
             audit_action = "telegram_admin_console_status_sent"
