@@ -1,6 +1,7 @@
 # mypy: ignore-errors
 """Sprint 14b Telegram status with Business connection visibility."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -14,6 +15,8 @@ from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.core.config import Settings, get_settings
 from app.models.domain import (
+    TELEGRAM_MARK_BY_ACCOUNT_ID,
+    TELEGRAM_MARK_RU_ACCOUNT_ID,
     Account,
     AuditLog,
     GateEvent,
@@ -32,6 +35,14 @@ telegram_client_dependency = Depends(get_telegram_client)
 JsonObject = dict[str, Any]
 
 
+@dataclass(frozen=True)
+class BusinessAssignmentCommand:
+    """Admin command assigning a stored Business connection to a Gate account."""
+
+    account_alias: str
+    connection_ref: str
+
+
 @router.post("/telegram/webhook")
 async def sprint14b_telegram_webhook(
     request: Request,
@@ -46,7 +57,10 @@ async def sprint14b_telegram_webhook(
 
     update = await sprint14._read_update(request)
     normalized = legacy._extract_update_event(update)
-    if not _is_status_command(normalized):
+    assignment_command = _parse_business_assignment_command(
+        normalized.text if normalized else None
+    )
+    if not _is_status_command(normalized) and assignment_command is None:
         return await sprint14.sprint14_telegram_webhook(
             request=request,
             x_telegram_secret=x_telegram_secret,
@@ -100,20 +114,27 @@ async def sprint14b_telegram_webhook(
     business_connections: list[JsonObject] = []
     include_empty_business_connections = settings.gate_env != "development"
     if legacy._is_telegram_admin_sender(normalized.sender_id):
-        status_payload = await legacy._build_admin_status_payload(
-            session=session,
-            settings=settings,
-        )
-        business_connections = await _load_business_connection_statuses(
-            session=session,
-            settings=settings,
-        )
-        reply_text = _format_status_with_business_connections(
-            status_payload=status_payload,
-            business_connections=business_connections,
-            include_empty=include_empty_business_connections,
-        )
-        audit_action = "telegram_admin_console_status_sent"
+        if assignment_command is not None:
+            reply_text = await _assign_business_connection(
+                command=assignment_command,
+                session=session,
+            )
+            audit_action = "telegram_business_connection_assigned"
+        else:
+            status_payload = await legacy._build_admin_status_payload(
+                session=session,
+                settings=settings,
+            )
+            business_connections = await _load_business_connection_statuses(
+                session=session,
+                settings=settings,
+            )
+            reply_text = _format_status_with_business_connections(
+                status_payload=status_payload,
+                business_connections=business_connections,
+                include_empty=include_empty_business_connections,
+            )
+            audit_action = "telegram_admin_console_status_sent"
     else:
         reply_text = "Gate online"
         audit_action = "telegram_admin_console_rejected"
@@ -132,7 +153,7 @@ async def sprint14b_telegram_webhook(
                 bot_id=bot.id,
                 gate_event_id=gate_event.id,
                 metadata_={
-                    "command": "status",
+                    "command": normalized.text,
                     "error_type": exc.__class__.__name__,
                 },
             )
@@ -169,7 +190,7 @@ async def sprint14b_telegram_webhook(
             bot_id=bot.id,
             gate_event_id=gate_event.id,
             metadata_={
-                "command": "status",
+                "command": normalized.text,
                 "business_connections_included": bool(business_connections)
                 or include_empty_business_connections,
                 "business_connections_count": len(business_connections),
@@ -222,6 +243,56 @@ async def _load_business_connection_statuses(
     return rows
 
 
+async def _assign_business_connection(
+    *,
+    command: BusinessAssignmentCommand,
+    session: AsyncSession,
+) -> str:
+    account_id = _account_id_from_alias(command.account_alias)
+    if account_id is None:
+        return f"Unknown Business account alias: {command.account_alias}"
+
+    result = await session.execute(
+        select(TelegramBusinessConnection).where(
+            TelegramBusinessConnection.business_connection_id == command.connection_ref
+        )
+    )
+    connection = result.scalar_one_or_none()
+    if connection is None:
+        return "\n".join(
+            [
+                "Business connection not found.",
+                f"id: {command.connection_ref}",
+                "Use /status and copy the full id exactly.",
+            ]
+        )
+
+    if connection.is_enabled:
+        enabled_result = await session.execute(
+            select(TelegramBusinessConnection).where(
+                TelegramBusinessConnection.account_id == account_id,
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+        )
+        for enabled_connection in enabled_result.scalars().all():
+            if enabled_connection.business_connection_id != connection.business_connection_id:
+                enabled_connection.is_enabled = False
+                enabled_connection.last_update_at = datetime.now(UTC)
+
+    connection.account_id = account_id
+    connection.last_update_at = datetime.now(UTC)
+    return "\n".join(
+        [
+            "Business connection assigned",
+            f"account: {command.account_alias}",
+            f"id: {connection.business_connection_id}",
+            f"enabled: {_yes_no(connection.is_enabled)}",
+            f"can_reply: {_optional_bool(connection.rights.get('can_reply'))}",
+            f"user_chat_id: {connection.user_chat_id or 'unknown'}",
+        ]
+    )
+
+
 def _format_status_with_business_connections(
     *,
     status_payload: JsonObject,
@@ -252,6 +323,69 @@ def _format_status_with_business_connections(
             ]
         )
     return "\n".join(lines)
+
+
+def _parse_business_assignment_command(text: str | None) -> BusinessAssignmentCommand | None:
+    normalized = (text or "").strip()
+    if not normalized:
+        return None
+
+    parts = normalized.split(maxsplit=2)
+    if len(parts) == 3 and parts[0].casefold() == "/business":
+        account_alias = _normalize_business_account_alias(parts[1])
+        if account_alias is not None:
+            return BusinessAssignmentCommand(
+                account_alias=account_alias,
+                connection_ref=parts[2].strip(),
+            )
+
+    parts = normalized.split(maxsplit=1)
+    if len(parts) == 2:
+        prefix_aliases = {
+            "/business_ru": "telegram_mark_ru",
+            "/business_by": "telegram_mark_by",
+        }
+        account_alias = prefix_aliases.get(parts[0].casefold())
+        if account_alias is not None:
+            return BusinessAssignmentCommand(
+                account_alias=account_alias,
+                connection_ref=parts[1].strip(),
+            )
+
+    compact_prefixes = {
+        "/business_ru_": "telegram_mark_ru",
+        "/business_by_": "telegram_mark_by",
+    }
+    normalized_casefold = normalized.casefold()
+    for prefix, account_alias in compact_prefixes.items():
+        if normalized_casefold.startswith(prefix):
+            return BusinessAssignmentCommand(
+                account_alias=account_alias,
+                connection_ref=normalized[len(prefix) :].strip(),
+            )
+    return None
+
+
+def _normalize_business_account_alias(value: str) -> str | None:
+    normalized = value.strip().casefold()
+    aliases = {
+        "ru": "telegram_mark_ru",
+        "ру": "telegram_mark_ru",
+        "telegram_mark_ru": "telegram_mark_ru",
+        "by": "telegram_mark_by",
+        "бу": "telegram_mark_by",
+        "бел": "telegram_mark_by",
+        "telegram_mark_by": "telegram_mark_by",
+    }
+    return aliases.get(normalized)
+
+
+def _account_id_from_alias(account_alias: str) -> Any | None:
+    if account_alias == "telegram_mark_ru":
+        return TELEGRAM_MARK_RU_ACCOUNT_ID
+    if account_alias == "telegram_mark_by":
+        return TELEGRAM_MARK_BY_ACCOUNT_ID
+    return None
 
 
 def _is_status_command(normalized: legacy.TelegramUpdateEvent | None) -> bool:
