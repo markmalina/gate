@@ -5,8 +5,8 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-import httpx
 from fastapi import APIRouter, Depends, Header, Request
+import httpx
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -222,7 +222,9 @@ async def _build_recent_events_reply(
 
     result = await session.execute(query)
     rows = result.all()
-    scope = "all" if admin_context.is_super_admin else admin_context.account_alias or "unknown"
+    scope = (
+        "all" if admin_context.is_super_admin else admin_context.account_alias or "unknown"
+    )
     lines = ["Recent inbound messages", f"scope: {scope}"]
     if not rows:
         lines.append("No recent inbound messages in this account scope.")
