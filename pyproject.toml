@@ -34,6 +34,7 @@ select = ["E", "F", "I", "UP", "B"]
 "tests/test_sprint10_draft_edit.py" = ["I001"]
 "app/api/sprint11b_routes.py" = ["E501", "I001"]
 "tests/test_sprint11b_inline_actions.py" = ["E501", "I001"]
+"alembic/versions/0005_multi_account_routing.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
