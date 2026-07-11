@@ -156,12 +156,19 @@ async def sprint14b_telegram_webhook(
             )
             audit_action = "telegram_admin_console_status_sent"
         elif admin_command is not None:
-            reply_text = await build_scoped_telegram_admin_reply(
-                command=admin_command,
-                admin_context=admin_context,
-                session=session,
-                settings=settings,
-            )
+            if admin_context.is_super_admin:
+                reply_text = await legacy._build_telegram_admin_reply(
+                    command=admin_command,
+                    session=session,
+                    settings=settings,
+                )
+            else:
+                reply_text = await build_scoped_telegram_admin_reply(
+                    command=admin_command,
+                    admin_context=admin_context,
+                    session=session,
+                    settings=settings,
+                )
             audit_action = f"telegram_admin_console_{admin_command.name}_sent"
         else:
             reply_text = "Gate online"
