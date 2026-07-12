@@ -36,16 +36,16 @@ class FakeMcpSession:
     def __init__(
         self,
         scalar_results: list[int] | None = None,
-        row_results: list[Any] | None = None,
+        row_result_batches: list[list[Any]] | None = None,
     ) -> None:
-        self.scalar_results = scalar_results or [0] * 8
-        self.row_results = row_results or []
+        self.scalar_results = scalar_results or [0] * 9
+        self.row_result_batches = row_result_batches or []
         self.statements: list[Any] = []
 
     async def execute(self, statement: object) -> FakeMcpResult:
         self.statements.append(statement)
-        if self.row_results:
-            return FakeMcpResult(rows=self.row_results)
+        if self.row_result_batches:
+            return FakeMcpResult(rows=self.row_result_batches.pop(0))
         return FakeMcpResult(scalar=self.scalar_results.pop(0))
 
 
@@ -70,7 +70,7 @@ def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.fixture
 def mcp_context() -> Iterator[FakeMcpSession]:
-    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 7])
+    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7])
 
     async def override_session() -> AsyncIterator[FakeMcpSession]:
         yield session
@@ -102,13 +102,60 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
         id=UUID("55555555-5555-5555-5555-555555555555"),
         account_id=UUID(ACCOUNT_ID),
         project_id=UUID(PROJECT_ID),
+        direction="inbound",
+        source="telegram",
         chat_id="8648171437",
         sender_id="12345",
+        recipient_id=None,
         text="Привет, хочу заниматься Око Возрождения",
         created_at=now,
         received_at=now,
+        sent_at=None,
     )
-    session = FakeMcpSession(row_results=[(task, conversation, message)])
+    inbound_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "from": {
+                    "id": 12345,
+                    "first_name": "Анна",
+                    "username": "anna_example",
+                },
+                "chat": {"id": 8648171437},
+            }
+        }
+    )
+    outbound_message = SimpleNamespace(
+        id=UUID("66666666-6666-6666-6666-666666666666"),
+        account_id=UUID(ACCOUNT_ID),
+        project_id=UUID(PROJECT_ID),
+        direction="outbound",
+        source="telegram",
+        chat_id="8648171437",
+        sender_id="7819816320",
+        recipient_id="8648171437",
+        text="Анна, привет!",
+        created_at=now,
+        received_at=None,
+        sent_at=now,
+    )
+    outbound_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "from": {"id": 7819816320, "first_name": "Марк"},
+                "chat": {
+                    "id": 8648171437,
+                    "first_name": "Анна",
+                    "username": "anna_example",
+                },
+            }
+        }
+    )
+    session = FakeMcpSession(
+        row_result_batches=[
+            [(task, conversation, message, inbound_update)],
+            [(outbound_message, outbound_update)],
+        ]
+    )
 
     async def override_session() -> AsyncIterator[FakeMcpSession]:
         yield session
@@ -201,7 +248,8 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert structured["counts"]["accounts"] == 2
     assert structured["counts"]["unanswered"] == 1
     assert structured["mcp"]["auth"] == "temporary_bearer_enforced"
-    assert len(mcp_context.statements) == 8
+    assert structured["counts"]["answered_messages"] == 2
+    assert len(mcp_context.statements) == 9
 
 
 @pytest.mark.anyio
@@ -221,10 +269,26 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     item = result["structuredContent"]["items"][0]
     assert item["account_id"] == ACCOUNT_ID
     assert item["project_id"] == PROJECT_ID
+    assert item["message"]["direction"] == "inbound"
     assert item["message"]["text_preview"] == "Привет, хочу заниматься Око Возрождения"
-    statement = str(unanswered_context.statements[0])
-    assert "reply_tasks.account_id IN" in statement
-    assert "reply_tasks.project_id IN" in statement
+    assert item["counterparty"] == {
+        "platform": "telegram",
+        "platform_user_id": "12345",
+        "display_name": "Анна",
+        "username": "anna_example",
+        "label": "Анна",
+    }
+    assert result["structuredContent"]["answered_count"] == 1
+    answered = result["structuredContent"]["answered_items"][0]
+    assert answered["message"]["direction"] == "outbound"
+    assert answered["message"]["text_preview"] == "Анна, привет!"
+    assert answered["counterparty"]["label"] == "Анна"
+    unanswered_statement = str(unanswered_context.statements[0])
+    answered_statement = str(unanswered_context.statements[1])
+    assert "reply_tasks.account_id IN" in unanswered_statement
+    assert "reply_tasks.project_id IN" in unanswered_statement
+    assert "messages.direction" in unanswered_statement
+    assert "messages.direction" in answered_statement
 
 
 @pytest.mark.anyio

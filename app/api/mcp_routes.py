@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -25,10 +25,12 @@ from app.models.domain import (
     Account,
     Conversation,
     Message,
+    MessageDirection,
     ReplyDraft,
     ReplyTask,
     ReplyTaskStatus,
     TelegramBusinessConnection,
+    TelegramUpdate,
 )
 
 router = APIRouter()
@@ -262,13 +264,18 @@ async def _build_gate_status(
             model=ReplyTask,
             where=(ReplyTask.account_id.in_(accounts), ReplyTask.project_id.in_(projects)),
         ),
-        "unanswered": await _count(
+        "unanswered": await _count_unanswered(
             session=session,
-            model=ReplyTask,
+            accounts=accounts,
+            projects=projects,
+        ),
+        "answered_messages": await _count(
+            session=session,
+            model=Message,
             where=(
-                ReplyTask.account_id.in_(accounts),
-                ReplyTask.project_id.in_(projects),
-                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                Message.account_id.in_(accounts),
+                Message.project_id.in_(projects),
+                Message.direction == MessageDirection.OUTBOUND.value,
             ),
         ),
         "drafts": await _count(
@@ -312,8 +319,84 @@ async def _build_unanswered_list(
     accounts = principal.access_scope.account_ids
     projects = principal.access_scope.project_ids
     result = await session.execute(
-        select(ReplyTask, Conversation, Message)
+        select(ReplyTask, Conversation, Message, TelegramUpdate)
         .options(undefer(ReplyTask.account_id))
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
+        .where(
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+            ReplyTask.account_id.in_(accounts),
+            ReplyTask.project_id.in_(projects),
+            Conversation.account_id.in_(accounts),
+            Conversation.project_id.in_(projects),
+            Message.account_id.in_(accounts),
+            Message.project_id.in_(projects),
+            Message.direction == MessageDirection.INBOUND.value,
+            _non_service_message_filter(),
+        )
+        .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
+        .limit(limit)
+    )
+    items = [
+        _serialize_unanswered_item(
+            task=task,
+            conversation=conversation,
+            message=message,
+            telegram_update=telegram_update,
+        )
+        for task, conversation, message, telegram_update in result.all()
+    ]
+
+    answered_result = await session.execute(
+        select(Message, TelegramUpdate)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
+        .where(
+            Message.account_id.in_(accounts),
+            Message.project_id.in_(projects),
+            Message.direction == MessageDirection.OUTBOUND.value,
+            _non_service_message_filter(),
+        )
+        .order_by(
+            func.coalesce(Message.sent_at, Message.created_at).desc(),
+            Message.id.desc(),
+        )
+        .limit(limit)
+    )
+    answered_items = [
+        _serialize_answered_item(message=message, telegram_update=telegram_update)
+        for message, telegram_update in answered_result.all()
+    ]
+    return {
+        "items": items,
+        "count": len(items),
+        "answered_items": answered_items,
+        "answered_count": len(answered_items),
+        "limit": limit,
+        "next_cursor": None,
+    }
+
+
+async def _count_unanswered(
+    *,
+    session: AsyncSession,
+    accounts: frozenset[UUID],
+    projects: frozenset[UUID],
+) -> int:
+    result = await session.execute(
+        select(func.count(ReplyTask.id))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .where(
@@ -324,15 +407,11 @@ async def _build_unanswered_list(
             Conversation.project_id.in_(projects),
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
+            Message.direction == MessageDirection.INBOUND.value,
+            _non_service_message_filter(),
         )
-        .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
-        .limit(limit)
     )
-    items = [
-        _serialize_unanswered_item(task=task, conversation=conversation, message=message)
-        for task, conversation, message in result.all()
-    ]
-    return {"items": items, "count": len(items), "limit": limit, "next_cursor": None}
+    return int(result.scalar_one())
 
 
 async def _count(
@@ -344,7 +423,11 @@ async def _count(
 
 
 def _serialize_unanswered_item(
-    *, task: ReplyTask, conversation: Conversation, message: Message
+    *,
+    task: ReplyTask,
+    conversation: Conversation,
+    message: Message,
+    telegram_update: TelegramUpdate | None,
 ) -> JsonObject:
     task_id = str(task.id)
     return {
@@ -360,16 +443,120 @@ def _serialize_unanswered_item(
             "chat_id": conversation.chat_id,
             "business_connection_id": conversation.business_connection_id,
         },
-        "message": {
-            "id": str(message.id),
-            "chat_id": message.chat_id,
-            "sender_id": message.sender_id,
-            "text_preview": _truncate_text(message.text or "", 240),
-            "created_at": _serialize_datetime(message.created_at),
-            "received_at": _serialize_datetime(message.received_at),
-        },
+        "counterparty": _counterparty(
+            message=message,
+            telegram_update=telegram_update,
+            fallback_name=getattr(conversation, "title", None),
+        ),
+        "message": _serialize_message(message),
         "created_at": _serialize_datetime(task.created_at),
     }
+
+
+def _serialize_answered_item(
+    *, message: Message, telegram_update: TelegramUpdate | None
+) -> JsonObject:
+    return {
+        "account_id": str(message.account_id),
+        "project_id": str(message.project_id),
+        "counterparty": _counterparty(
+            message=message,
+            telegram_update=telegram_update,
+        ),
+        "message": _serialize_message(message),
+    }
+
+
+def _serialize_message(message: Message) -> JsonObject:
+    return {
+        "id": str(message.id),
+        "direction": message.direction,
+        "source": message.source,
+        "chat_id": message.chat_id,
+        "sender_id": message.sender_id,
+        "recipient_id": message.recipient_id,
+        "text_preview": _truncate_text(message.text or "", 240),
+        "created_at": _serialize_datetime(message.created_at),
+        "received_at": _serialize_datetime(message.received_at),
+        "sent_at": _serialize_datetime(message.sent_at),
+    }
+
+
+def _counterparty(
+    *,
+    message: Message,
+    telegram_update: TelegramUpdate | None,
+    fallback_name: str | None = None,
+) -> JsonObject:
+    payload = telegram_update.payload if telegram_update is not None else {}
+    telegram_message = _telegram_message_payload(payload)
+    raw_person = (
+        telegram_message.get("from")
+        if message.direction == MessageDirection.INBOUND.value
+        else telegram_message.get("chat")
+    )
+    person = raw_person if isinstance(raw_person, dict) else {}
+    first_name = _optional_text(person.get("first_name"))
+    last_name = _optional_text(person.get("last_name"))
+    title = _optional_text(person.get("title"))
+    username = _optional_text(person.get("username"))
+    display_name = " ".join(
+        part for part in (first_name, last_name) if part
+    ) or title or fallback_name
+    platform_user_id = _optional_text(person.get("id")) or (
+        message.sender_id
+        if message.direction == MessageDirection.INBOUND.value
+        else message.recipient_id or message.chat_id
+    )
+    label = display_name or (f"@{username}" if username else None) or platform_user_id
+    return {
+        "platform": "telegram",
+        "platform_user_id": platform_user_id,
+        "display_name": display_name,
+        "username": username,
+        "label": label,
+    }
+
+
+def _telegram_message_payload(payload: Any) -> JsonObject:
+    if not isinstance(payload, dict):
+        return {}
+    for key in ("business_message", "edited_business_message", "message"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _non_service_message_filter() -> Any:
+    return or_(
+        Message.text.is_(None),
+        and_(
+            Message.text.notilike("/start bizChat%"),
+            Message.text.notilike("/webhook%"),
+            Message.text.notilike("/events%"),
+            Message.text.notilike("/messages%"),
+            Message.text.notilike("/raw%"),
+            Message.text.notilike("/status%"),
+            Message.text.notilike("/inbox%"),
+            Message.text.notilike("/draft%"),
+            Message.text.notilike("/drafts%"),
+            Message.text.notilike("/done%"),
+            Message.text.notilike("/dismiss%"),
+            Message.text.notilike("/snooze%"),
+            Message.text.notilike("/reopen%"),
+            Message.text.notilike("/business%"),
+            Message.text.notilike("Commit:%"),
+            Message.text.notilike("TEST-%"),
+        ),
+    )
 
 
 def _gate_status_tool(settings: Settings) -> JsonObject:
@@ -387,7 +574,10 @@ def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_list_unanswered",
         "title": "List unanswered Gate tasks",
-        "description": "Return scoped unanswered tasks with trigger message context.",
+        "description": (
+            "Return scoped unanswered inbound tasks and a separate list of recent "
+            "answered/outbound messages with Telegram counterparty context."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -576,16 +766,30 @@ def _format_status_text(snapshot: JsonObject) -> str:
 
 
 def _format_unanswered_text(inbox: JsonObject) -> str:
+    lines = [f"Unanswered inbound Gate tasks: {inbox['count']}"]
     if not inbox["items"]:
-        return "No unanswered Gate tasks."
-    lines = [f"Unanswered Gate tasks: {inbox['count']}"]
+        lines.append("No unanswered inbound messages.")
     for index, item in enumerate(inbox["items"], start=1):
         lines.extend(
             [
                 "",
-                f"{index}. {item['message']['text_preview'] or '<empty>'}",
+                f"{index}. {item['counterparty']['label']}: "
+                f"{item['message']['text_preview'] or '<empty>'}",
                 f"task: {item['task_ref']}",
                 f"chat: {item['conversation']['chat_id']}",
+            ]
+        )
+
+    lines.extend(["", f"Answered/outbound Gate messages: {inbox['answered_count']}"])
+    if not inbox["answered_items"]:
+        lines.append("No answered/outbound messages.")
+    for index, item in enumerate(inbox["answered_items"], start=1):
+        lines.extend(
+            [
+                "",
+                f"{index}. {item['counterparty']['label']}: "
+                f"{item['message']['text_preview'] or '<empty>'}",
+                f"chat: {item['message']['chat_id']}",
             ]
         )
     return "\n".join(lines)
