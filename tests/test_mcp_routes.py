@@ -57,6 +57,7 @@ def anyio_backend() -> str:
 @pytest.fixture(autouse=True)
 def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("GATE_MCP_ENABLED", "true")
+    monkeypatch.setenv("MCP_AUTH_MODE", "temporary_bearer")
     monkeypatch.setenv("MCP_READ_BEARER_TOKEN", TOKEN)
     monkeypatch.setenv("MCP_READ_WORKSPACE_ID", "mark-personal")
     monkeypatch.setenv("MCP_READ_ACCOUNT_IDS", ACCOUNT_ID)
