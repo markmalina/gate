@@ -27,10 +27,8 @@ async def test_oauth_protected_resource_metadata() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["resource"] == "https://gate.example"
-    assert payload["authorization_servers"] == [
-        "https://gate.example/.well-known/oauth-authorization-server"
-    ]
+    assert payload["resource"] == "https://gate.example/mcp"
+    assert payload["authorization_servers"] == []
     assert "gate:status:read" in payload["scopes_supported"]
     assert "gate:messages:send" in payload["scopes_supported"]
     assert payload["bearer_methods_supported"] == ["header"]
@@ -52,9 +50,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["resource"] == "https://gate.example/mcp"
-    assert payload["authorization_servers"] == [
-        "https://gate.example/.well-known/oauth-authorization-server"
-    ]
+    assert payload["authorization_servers"] == []
     assert "gate:inbox:read" in payload["scopes_supported"]
     assert payload["mcp"]["read_only_tools"] == ["gate_get_status", "gate_list_unanswered"]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
