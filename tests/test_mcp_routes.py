@@ -119,11 +119,7 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
 async def _post(payload: dict[str, Any], headers: dict[str, str] | None = None):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.post(
-            "/mcp",
-            json=payload,
-            headers=AUTH_HEADERS if headers is None else headers,
-        )
+        return await client.post("/mcp", json=payload, headers=headers or AUTH_HEADERS)
 
 
 @pytest.mark.anyio
@@ -169,8 +165,19 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     assert initialize.status_code == 200
     assert initialize.json()["result"]["serverInfo"]["name"] == "gate"
     tools = tools_response.json()["result"]["tools"]
-    assert [tool["name"] for tool in tools] == ["gate_get_status", "gate_list_unanswered"]
-    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
+    assert [tool["name"] for tool in tools] == [
+        "gate_get_status",
+        "gate_list_unanswered",
+        "gate_save_reply_draft",
+    ]
+    assert tools[0]["annotations"]["readOnlyHint"] is True
+    assert tools[1]["annotations"]["readOnlyHint"] is True
+    assert tools[2]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
 
 
 @pytest.mark.anyio
@@ -229,3 +236,24 @@ async def test_mcp_unknown_tool_returns_jsonrpc_error(mcp_context: FakeMcpSessio
     payload = response.json()
     assert payload["error"]["code"] == -32601
     assert payload["error"]["message"] == "Unknown tool: gate_send_draft"
+
+
+@pytest.mark.anyio
+async def test_temporary_read_bearer_cannot_save_drafts(mcp_context: FakeMcpSession) -> None:
+    response = await _post(
+        {
+            "jsonrpc": "2.0",
+            "id": "write-blocked",
+            "method": "tools/call",
+            "params": {
+                "name": "gate_save_reply_draft",
+                "arguments": {
+                    "task_id": "11111111-1111-1111-1111-111111111111",
+                    "text": "Привет!",
+                },
+            },
+        }
+    )
+
+    assert response.status_code == 403
+    assert mcp_context.statements == []
