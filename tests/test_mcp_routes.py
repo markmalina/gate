@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db_session
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.main import app
 
 TOKEN = "mcp-read-token"
@@ -137,6 +137,15 @@ async def test_mcp_is_disabled_by_default(
 @pytest.mark.anyio
 async def test_mcp_rejects_missing_or_wrong_bearer(mcp_context: FakeMcpSession) -> None:
     del mcp_context
+    settings = Settings(
+        GATE_MCP_ENABLED=True,
+        MCP_AUTH_MODE="temporary_bearer",
+        MCP_READ_BEARER_TOKEN=TOKEN,
+        MCP_READ_WORKSPACE_ID="mark-personal",
+        MCP_READ_ACCOUNT_IDS=ACCOUNT_ID,
+        MCP_READ_PROJECT_IDS=PROJECT_ID,
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
     payload = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
     missing = await _post(payload, headers={})
     wrong = await _post(payload, headers={"Authorization": "Bearer wrong"})
