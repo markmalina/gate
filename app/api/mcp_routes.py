@@ -38,6 +38,12 @@ READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "openWorldHint": False,
 }
 MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered"]
+MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
+MCP_AUTH_MODE_OAUTH = "oauth"
+MCP_TOOL_SCOPES = {
+    "gate_get_status": "gate:status:read",
+    "gate_list_unanswered": "gate:inbox:read",
+}
 
 
 @router.post("/mcp")
@@ -47,12 +53,15 @@ async def mcp_endpoint(
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
 ) -> JsonObject:
-    """Handle the temporary bearer-protected, read-only MCP surface."""
+    """Handle contained reads and the provider-neutral ChatGPT OAuth contract."""
 
-    principal = _require_mcp_principal(authorization=authorization, settings=settings)
+    _require_mcp_ready(settings)
     request_id = payload.get("id")
     method = payload.get("method")
+    oauth_discovery = settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH
     if method == "initialize":
+        if not oauth_discovery:
+            _require_mcp_principal(authorization=authorization, settings=settings)
         return _jsonrpc_result(
             request_id=request_id,
             result={
@@ -65,9 +74,16 @@ async def mcp_endpoint(
             },
         )
     if method == "tools/list":
+        if not oauth_discovery:
+            _require_mcp_principal(authorization=authorization, settings=settings)
         return _jsonrpc_result(
             request_id=request_id,
-            result={"tools": [_gate_status_tool(), _gate_list_unanswered_tool()]},
+            result={
+                "tools": [
+                    _gate_status_tool(settings),
+                    _gate_list_unanswered_tool(settings),
+                ]
+            },
         )
     if method == "tools/call":
         params = payload.get("params")
@@ -77,6 +93,19 @@ async def mcp_endpoint(
         arguments = params.get("arguments")
         if not isinstance(arguments, dict):
             arguments = {}
+        if tool_name not in MCP_TOOL_SCOPES:
+            return _jsonrpc_error(
+                request_id=request_id,
+                code=-32601,
+                message=f"Unknown tool: {tool_name}",
+            )
+        if oauth_discovery:
+            return _oauth_required_tool_result(
+                request_id=request_id,
+                settings=settings,
+                scope=MCP_TOOL_SCOPES[tool_name],
+            )
+        principal = _require_mcp_principal(authorization=authorization, settings=settings)
         if tool_name == "gate_get_status":
             snapshot = await _build_gate_status(
                 session=session,
@@ -91,12 +120,9 @@ async def mcp_endpoint(
                 principal=principal,
             )
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
-        return _jsonrpc_error(
-            request_id=request_id,
-            code=-32601,
-            message=f"Unknown tool: {tool_name}",
-        )
     if method == "notifications/initialized":
+        if not oauth_discovery:
+            _require_mcp_principal(authorization=authorization, settings=settings)
         return {"ok": True}
     return _jsonrpc_error(
         request_id=request_id,
@@ -105,9 +131,32 @@ async def mcp_endpoint(
     )
 
 
-def _require_mcp_principal(*, authorization: str | None, settings: Settings) -> Principal:
+def _require_mcp_ready(settings: Settings) -> None:
     if not settings.gate_mcp_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if settings.mcp_auth_mode not in {
+        MCP_AUTH_MODE_TEMPORARY_BEARER,
+        MCP_AUTH_MODE_OAUTH,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unsupported MCP authentication mode",
+        )
+    if settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH and not (
+        settings.mcp_authorization_server and settings.mcp_public_resource_url
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MCP OAuth discovery is not configured",
+        )
+
+
+def _require_mcp_principal(*, authorization: str | None, settings: Settings) -> Principal:
+    if settings.mcp_auth_mode != MCP_AUTH_MODE_TEMPORARY_BEARER:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MCP OAuth token validation is not active yet",
+        )
     if not bearer_token_matches(authorization, settings.mcp_read_bearer_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -268,18 +317,19 @@ def _serialize_unanswered_item(
     }
 
 
-def _gate_status_tool() -> JsonObject:
-    return {
+def _gate_status_tool(settings: Settings) -> JsonObject:
+    tool = {
         "name": "gate_get_status",
         "title": "Get Gate status",
         "description": "Return a scoped read-only Gate status snapshot.",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:status:read")
 
 
-def _gate_list_unanswered_tool() -> JsonObject:
-    return {
+def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
+    tool = {
         "name": "gate_list_unanswered",
         "title": "List unanswered Gate tasks",
         "description": "Return scoped unanswered tasks with trigger message context.",
@@ -292,6 +342,46 @@ def _gate_list_unanswered_tool() -> JsonObject:
         },
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
+
+
+def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -> JsonObject:
+    if settings.mcp_auth_mode != MCP_AUTH_MODE_OAUTH:
+        return tool
+    schemes = [{"type": "oauth2", "scopes": [scope]}]
+    tool["securitySchemes"] = schemes
+    tool["_meta"] = {"securitySchemes": schemes}
+    return tool
+
+
+def _oauth_required_tool_result(
+    *, request_id: Any, settings: Settings, scope: str
+) -> JsonObject:
+    challenge = _oauth_challenge(settings=settings, scope=scope)
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Authentication required: connect Gate to continue.",
+                }
+            ],
+            "_meta": {"mcp/www_authenticate": [challenge]},
+            "isError": True,
+        },
+    )
+
+
+def _oauth_challenge(*, settings: Settings, scope: str) -> str:
+    resource = settings.mcp_public_resource_url.rstrip("/")
+    origin = resource.removesuffix("/mcp")
+    metadata_url = f"{origin}/.well-known/oauth-protected-resource/mcp"
+    return (
+        f'Bearer resource_metadata="{metadata_url}", scope="{scope}", '
+        'error="invalid_token", '
+        'error_description="A valid Gate access token is required"'
+    )
 
 
 def _tool_result(content: JsonObject, text: str, request_id: Any) -> JsonObject:
