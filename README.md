@@ -3,7 +3,7 @@
 > **PROJECT STATUS: ACTIVE / ORDERED STABILIZATION AND MVP DELIVERY**  
 > Development resumed by Mark: **2026-07-12**  
 > Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
-> Current active scope: **Sprint 25 — Auth0 + ChatGPT activation readiness**, starting from `main` at `bf81c07e`.  
+> Current active scope: **Private Gate MCP MVP live in ChatGPT Work with Auth0 OAuth and least-privilege scopes**.  
 > Do not start feature development from an old sprint branch. Read this README completely before touching code.
 
 Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
@@ -34,12 +34,12 @@ During the current ChatGPT connection scope:
 - do not add MCP tools;
 - do not build Oko / Oko Vozrozhdeniya behavior;
 - do not merge old branches into `main`;
-- do not deploy or change production configuration;
+- eligible green PRs auto-merge and Railway auto-deploy under the standing Team Workflow authorization; manual deploy, retry, rollback and production configuration changes still require Mark's direct command;
 - do not activate write/send MCP capabilities;
 - do not add autonomous AI replies;
 - do not paste or commit secrets;
 - provider-neutral OAuth token verification and the explicitly active ChatGPT connection implementation are allowed;
-- work proceeds in the ordered PR sequence below, with production deployment remaining a separate Mark decision.
+- work proceeds in the ordered PR sequence below; every eligible merge is followed by verification of the exact Railway production commit and safety smoke checks.
 
 ## Active delivery strategy
 
@@ -52,7 +52,7 @@ MVP adapters must use the same scoped application services being built for the t
 
 ## Current ChatGPT connection boundary
 
-Sprint 25 prepares the deployed OAuth resource server for Auth0 and ChatGPT activation. Gate preserves exact issuer identifiers (including Auth0's trailing slash), verifies JWT/JWKS tokens and documents the tenant, claims, Railway and Developer Mode setup. Production MCP remains disabled until the external tenant and exact grants are configured.
+The private Gate MCP MVP is active in production behind Auth0 OAuth. Gate preserves the exact Auth0 issuer, verifies JWT/JWKS tokens, enforces workspace/account/project claims and advertises only the three active scopes: `gate:status:read`, `gate:inbox:read` and `gate:drafts:write`. The available tools can read status, list scoped unanswered messages and save a draft. No MCP approval or send tool is exposed.
 
 ## 2. Exact repository state at freeze
 
@@ -133,9 +133,9 @@ No free-form outbound text may be sent without Mark explicit confirmation.
 
 ## 4. Current MCP security boundary
 
-PR #75 closed the unauthenticated MCP data-access risk: MCP is disabled by default, temporary bearer access is fail-closed, and every query requires explicit account/project grants. PR #76 added the ChatGPT OAuth discovery contract without exposing data.
+PR #75 closed the unauthenticated MCP data-access risk: MCP is disabled by default, temporary bearer access is fail-closed, and every query requires explicit account/project grants. PR #76 added the ChatGPT OAuth discovery contract without exposing data. PRs #77–79 added provider-neutral JWT/JWKS verification, the scoped draft tool and Auth0 activation readiness. PR #80 limited OAuth metadata to the three active least-privilege scopes.
 
-Sprint 23 replaces the OAuth validation placeholder with provider-neutral JWT/JWKS verification. Production remains unchanged until a separate IdP configuration and activation decision. MCP remains read-only; no draft, approval or send tool is part of this sprint.
+Production now uses Auth0 OAuth with exact issuer, audience, scope and custom grant-claim validation. The draft tool persists proposed text only and reports that nothing was sent. No MCP approval or send tool is exposed.
 
 ## 5. Why a full refactor is required before further MCP
 
@@ -475,7 +475,7 @@ The refactor is complete only when:
 - the billion-message path is supported by measurements and capacity plans;
 - migrations are reversible during expand/cutover;
 - CI is green and architecture review is complete;
-- production deployment occurs only after a separate direct command from Mark.
+- every eligible green PR auto-merges, Railway auto-deploys the exact merge commit and Work verifies fingerprint plus smoke checks; manual deploy, retry, rollback and configuration changes require Mark's direct command.
 
 ## 18. Instructions for the next executor
 
