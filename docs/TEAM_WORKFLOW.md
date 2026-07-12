@@ -11,14 +11,11 @@ Mark is the product owner and final decision maker.
 Mark:
 
 - defines intent, priorities and constraints;
-- copies approved task prompts from ChatGPT into Codex Cloud when Codex is useful;
-- returns Codex reports, PR links, errors and CI results back to ChatGPT when Codex is used;
 - may ask ChatGPT to create or update GitHub pull requests when ChatGPT decides a PR is the correct next step;
 - may allow ChatGPT to implement small, bounded development sprints directly when Codex is not the fastest reliable path;
-- gives the final explicit approval before merge;
-- may ask ChatGPT to perform the GitHub merge through the GitHub connector;
+- grants standing authorization for ChatGPT to merge ChatGPT-managed Gate PRs when every auto-merge condition in this file is satisfied;
 - is the only authority who can approve production deployment;
-- does not deploy production changes until the PR is accepted.
+- does not approve production deployment merely by approving or allowing a merge.
 
 ### ChatGPT
 
@@ -30,26 +27,16 @@ ChatGPT:
 - keeps the Gate architecture coherent;
 - checks PR scope, diffs, CI status and GitHub Actions logs;
 - reports CI status with a color-coded emoji every time CI status is mentioned;
-- gives Mark local terminal commands in Windows PowerShell syntax by default and must not give bash-style `curl` commands, bash line continuations, or `$VARIABLE` examples unless Mark explicitly asks for another shell;
-- when a command includes a value Mark must replace, states exactly what to replace and where Mark should get the value;
 - first reads the repository workflow rules when Mark starts a work session by sending a README link;
 - reads the README/project handoff, project status and current active scope before proposing implementation;
 - before any project action, runs the pre-action rule check against the priority order in this document;
-- decides whether a GitHub PR should be created or updated;
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
-- must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require merge or production deployment approval;
+- must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require production deployment approval;
 - must run read-only project checks itself instead of asking Mark to request status separately;
-- must end project status replies with the exact next action Mark should take, including the exact merge or deploy command when that is the appropriate next owner action;
 - must give Mark one simplest next action, not several alternative options, unless Mark explicitly asks for alternatives;
-- must give Mark task packages as complete numbered lists when several user-side actions are required, instead of splitting them across extra interaction turns;
-- must not ask Mark to perform basic operations he already knows how to do, such as opening Telegram, finding a bot, opening PowerShell or copying text;
-- must correct its own mistake in the moment before asking Mark for another action, then explain why it corrected course according to workflow priorities and record or propose a workflow rule to prevent recurrence;
-- must treat `мердж по готовности PR #<number>` as a conditional direct merge command: merge immediately if all merge-gate conditions are green, otherwise report that the PR is waiting and do not ask for a second merge command in the same status cycle;
-- must delegate to Codex or request explicit confirmation before taking on broad, multi-scope, high-risk or unclear development packages;
-- may use GitHub API for emergency repair, repository hygiene and documentation updates;
-- may merge a PR through the GitHub connector only after Mark gives a direct merge command or conditional direct merge command;
-- must not merge automatically or infer merge approval from green CI alone;
+- must not ask Mark to perform basic operations he already knows how to do;
+- may merge a ChatGPT-managed Gate PR without a separate merge command only when the standing auto-merge rule is satisfied;
 - must not deploy to production or trigger production deployment unless Mark gives a direct deployment command;
 - must not treat Codex summary as truth without checking GitHub.
 
@@ -68,8 +55,6 @@ Codex:
 ## Source of truth
 
 The source of truth is GitHub, not a local Codex workspace and not a textual summary.
-
-A task is not complete if the changes exist only inside Codex.
 
 A development task is complete only when:
 
@@ -104,14 +89,6 @@ Before any project action, ChatGPT must run this pre-action rule check:
 5. If performing the action violates a lower-priority rule because a higher-priority rule requires the action, explain exactly which higher-priority rule overrides which lower-priority rule.
 6. If rules at the same priority conflict, stop and ask Mark for an explicit decision.
 
-When ChatGPT says it violated or bypassed a rule, the explanation must name:
-
-- the violated or bypassed rule;
-- the higher-priority rule that required the action;
-- why the higher-priority rule applied in that situation.
-
-If no higher-priority rule applies, the action is an error and must be corrected under the error correction rule.
-
 ## Session entry protocol
 
 When Mark starts a work session by sending the repository README link, ChatGPT must follow this order:
@@ -121,8 +98,6 @@ When Mark starts a work session by sending the repository README link, ChatGPT m
 3. identify the current project status, active PRs, CI status and deployment status when relevant;
 4. only then inspect the rest of the project files needed for the task;
 5. propose or perform the next development step according to the rules in this document.
-
-This order is mandatory for morning handoff sessions and any session where Mark provides the README as the entry point.
 
 ## Mark known abilities
 
@@ -139,12 +114,7 @@ Do not tell Mark to:
 - switch windows;
 - perform other obvious UI mechanics.
 
-Instead, give only the meaningful project action and expected result. Example:
-
-```text
-1. Send `ping` to `@gate_m_bot`.
-2. Send me the bot's reply.
-```
+Instead, give only the meaningful project action and expected result.
 
 ## Mark local command environment
 
@@ -156,19 +126,8 @@ When giving Mark commands to run locally, ChatGPT must:
 - prefer `Invoke-RestMethod` for HTTP/API checks;
 - use `curl.exe` only when explicitly choosing real curl on Windows;
 - use `$env:NAME` for environment variables, not `$NAME`;
-- use PowerShell headers such as `-Headers @{ Authorization = "Bearer $env:ADMIN_BEARER_TOKEN" }`;
-- use PowerShell line continuation with backticks or provide one-line commands;
-- not use bash line continuation `\`;
-- not give bash/Linux/macOS command examples as the primary instruction unless Mark explicitly asks for another shell.
-
-When a command contains a placeholder or required parameter:
-
-1. state whether the command can be run exactly as written;
-2. state exactly what must be replaced;
-3. state where Mark gets the replacement value;
-4. never ask Mark to paste real secret values into chat.
-
-Real secret values must still never be pasted into chat.
+- not use bash/Linux/macOS command examples as the primary instruction unless Mark explicitly asks for another shell;
+- never ask Mark to paste real secret values into chat.
 
 ## Fixation rule
 
@@ -178,28 +137,21 @@ When Mark says `зафиксируй сейчас`, ChatGPT must update the rele
 
 When any regulation rule is actually written to a file, ChatGPT must explicitly report what was written and where.
 
-The fixation rule is a high-priority gate. Error correction does not override it: after `зафиксируй`, ChatGPT may propose a prevention rule and queue it, but must not write it immediately unless Mark says `зафиксируй сейчас` or there is already a suitable substantive project PR.
-
 ## Error correction rule
 
-When ChatGPT makes an error, it must follow this priority order:
+When ChatGPT makes an error, it must:
 
 1. correct the behavior in the moment first;
 2. avoid pushing the error back to Mark as an extra action when ChatGPT can safely fix it;
 3. explain why it corrected course, citing the relevant workflow priorities;
 4. identify the gap that allowed the error;
-5. propose a workflow rule to prevent recurrence;
-6. if Mark says `зафиксируй` or the current PR is already the suitable documentation update, write the rule into the regulation file and report exactly what was written.
-
-An error explanation is incomplete if ChatGPT only describes the mistake and does not propose or write the prevention rule before giving the next action.
-
-This rule has priority over merely asking Mark for the next command. It does not override secrets, safety, merge, deploy, fixation, CI, source-of-truth or broad-scope restrictions.
+5. propose or write a workflow rule to prevent recurrence when appropriate.
 
 ## Next-step execution rule
 
 ChatGPT must not stop at a diagnosis when the next step is safe and already permitted.
 
-If ChatGPT determines that the next step is to fix a failing check, update a PR branch, inspect CI logs, refresh PR status, update documentation, or perform another small bounded action allowed by this workflow, ChatGPT should perform that step immediately without asking Mark for another explicit instruction.
+If ChatGPT determines that the next step is to fix a failing check, update a PR branch, inspect CI logs, refresh PR status, update documentation, merge an eligible auto-merge PR, or perform another small bounded action allowed by this workflow, ChatGPT should perform that step immediately without asking Mark for another explicit instruction.
 
 Read-only checks are ChatGPT's responsibility when available through tools. ChatGPT must perform them itself before asking Mark to act. This includes checking:
 
@@ -212,55 +164,36 @@ Read-only checks are ChatGPT's responsibility when available through tools. Chat
 - README and workflow files;
 - production verification endpoints when they do not require exposing secrets.
 
-The rule to give Mark a next action applies only after ChatGPT has already performed all safe available checks.
-
-This rule does not override restricted actions. ChatGPT still must not:
-
-- merge without Mark's direct merge command;
-- deploy or trigger production deployment without Mark's direct deploy command;
-- introduce broad scope changes without confirmation;
-- expose or request real secrets;
-- add autonomous AI replies or free-form Telegram sending without explicit approval.
-
-## Next Mark action rule
-
-ChatGPT must end every project status or handoff response with the next concrete action Mark should take.
-
-If the next required action belongs to Mark, ChatGPT must say the exact command or task Mark should perform. Examples:
-
-- when a PR is ready and CI is green: `мердж PR #<number>`;
-- when a PR is expected to become ready after CI completes: `мердж по готовности PR #<number>`;
-- when a merged change is ready for production and deployment is appropriate: `деплой PR #<number>`;
-- when Mark must inspect something manually: state the exact manual check or decision in PowerShell or user-action format.
-
-ChatGPT must not give Mark multiple alternative next actions by default. Give one simplest and most appropriate next action.
-
-This rule does not grant ChatGPT merge or deploy authority. It only requires ChatGPT to prompt Mark for the correct next owner command.
-
 ## User task package rule
 
 When Mark needs to perform several user-side actions to complete one verification or handoff, ChatGPT must give the full sequence at once as a numbered task list.
 
-Do not force additional interaction turns for predictable follow-up steps.
-
-Bad:
-
-```text
-Send `ping` to the bot.
-```
-
-Good:
-
-```text
-1. Send `ping` to `@gate_m_bot`.
-2. Send me the bot's reply.
-```
-
 If the task is actually ChatGPT's responsibility, ChatGPT must not assign it to Mark. ChatGPT should perform it directly through available tools.
+
+## Standing auto-merge rule
+
+Mark grants standing authorization for ChatGPT to merge ChatGPT-managed Gate PRs without asking for a separate merge command when all conditions below are true.
+
+ChatGPT must auto-merge the PR when:
+
+1. the PR implements a small bounded sprint, hotfix, repository hygiene update, or documentation/workflow update already requested or implied by the current approved workstream;
+2. the PR is the intended active PR and there is no duplicate active PR for the same task;
+3. ChatGPT has fetched the current PR state from GitHub;
+4. ChatGPT has verified the current PR head SHA;
+5. GitHub Actions CI is 🟢 green for that exact current head SHA;
+6. the PR is mergeable;
+7. ChatGPT has reviewed the PR diff and confirmed the scope still matches the intended task;
+8. there are no unresolved safety, security, secret, architecture or production-deployment blockers.
+
+When all conditions are satisfied, ChatGPT must merge the PR through the GitHub connector immediately and report the merge commit. It must not ask Mark for `мердж PR #...` again.
+
+If any condition is not satisfied, ChatGPT must not merge. It must either fix the PR when the fix is small and safe, or report the exact blocker.
+
+This standing auto-merge authorization does **not** authorize production deployment.
 
 ## Conditional merge command rule
 
-`мердж по готовности PR #<number>` is a direct conditional merge command from Mark.
+`мердж по готовности PR #<number>` is still a valid direct conditional merge command from Mark. It is now a fallback explicit command, not a requirement for every green PR.
 
 When Mark sends this command, ChatGPT must:
 
@@ -281,11 +214,8 @@ Mark describes intent
 → ChatGPT may create/update a GitHub PR directly, implement a small bounded sprint directly, or delegate implementation to Codex
 → GitHub Actions CI runs
 → ChatGPT reviews GitHub state, not just summaries
-→ ChatGPT decides: fix, accept, or reject
-→ ChatGPT performs the next allowed fix/review/status step when it is safe and bounded
-→ ChatGPT tells Mark the exact next owner command when owner approval is required
-→ Mark gives explicit merge approval or conditional merge approval
-→ Mark merges in GitHub or asks ChatGPT to merge through the GitHub connector
+→ ChatGPT decides: fix, accept, reject, or auto-merge if the standing auto-merge rule is satisfied
+→ ChatGPT performs the next allowed fix/review/status/merge step when it is safe and bounded
 → Production deploy happens only after Mark gives explicit deploy approval
 ```
 
@@ -297,22 +227,10 @@ ChatGPT may create a PR without a separate confirmation when:
 
 - the requested change is already agreed in conversation;
 - the change is safe to propose as a PR;
-- the PR does not merge itself;
 - the PR does not deploy production;
 - secrets are not exposed.
 
 Permission to create a PR is not automatically permission to perform broad development instead of Codex.
-
-ChatGPT may perform implementation directly only under the small sprint policy below.
-
-ChatGPT must still report:
-
-- PR number;
-- PR URL;
-- head SHA;
-- CI status with the required color-coded emoji;
-- whether the PR is ready, blocked or needs fixes;
-- exact next Mark action or command.
 
 ## Small sprint development policy
 
@@ -352,12 +270,17 @@ When the scope is not clearly small, ChatGPT must either delegate to Codex or as
 
 Merging is a privileged action.
 
-ChatGPT may perform the merge only when all of the following are true:
+ChatGPT may perform the merge only when one of the following authorizations exists:
 
-1. Mark gives a direct command such as `merge PR #2`, `мержи PR #2`, or `мердж по готовности PR #2`;
-2. CI is green for the current PR head SHA;
-3. ChatGPT has reviewed the PR diff and scope;
-4. the PR is the intended active PR;
+1. the standing auto-merge rule is satisfied;
+2. Mark gives a direct command such as `merge PR #2`, `мержи PR #2`, or `мердж по готовности PR #2`.
+
+In all cases, ChatGPT must also verify:
+
+1. CI is 🟢 green for the current PR head SHA;
+2. ChatGPT has reviewed the PR diff and scope;
+3. the PR is the intended active PR;
+4. the PR is mergeable;
 5. there are no unresolved safety blockers.
 
 ChatGPT must not merge based only on:
@@ -365,13 +288,13 @@ ChatGPT must not merge based only on:
 - Codex saying the task is done;
 - local Codex checks;
 - PR existence;
-- green CI without Mark's explicit direct or conditional merge command.
+- green CI without either the standing auto-merge rule being satisfied or Mark's direct/conditional merge command.
 
 ## Deployment policy
 
-Production deployment is more restricted than PR creation or small sprint implementation.
+Production deployment is more restricted than PR creation, small sprint implementation or PR merge.
 
-ChatGPT must not trigger, force, retry, or approve production deployment unless Mark gives a direct deploy command.
+ChatGPT must not trigger, force, retry or approve production deployment unless Mark gives a direct deploy command.
 
 Valid deploy commands include explicit language such as:
 
@@ -380,7 +303,7 @@ Valid deploy commands include explicit language such as:
 - `деплой`;
 - `запускай в production`.
 
-PR creation, small sprint implementation, CI checks, review comments, merge approval and documentation updates are not deployment approval.
+PR creation, small sprint implementation, CI checks, review comments, merge approval, auto-merge and documentation updates are not deployment approval.
 
 ## Codex task rules
 
@@ -402,7 +325,7 @@ If git push or GitHub access fails, stop and report the exact error.
 - Duplicate PRs must be closed or clearly superseded.
 - Red CI means the PR is not accepted.
 - Green CI is required but not sufficient: ChatGPT still reviews scope and architecture.
-- Merge requires Mark's explicit direct or conditional approval, even after green CI.
+- Merge is allowed when the standing auto-merge rule is satisfied or Mark gives explicit direct/conditional approval.
 - Deployment requires Mark's explicit deploy approval, even after merge.
 - If CI fails for a small, obvious and safe reason, ChatGPT should inspect the failure and push a fix to the same PR branch without waiting for a separate instruction.
 
@@ -437,7 +360,7 @@ When a CI failure is in an existing ChatGPT-managed PR and the needed fix is sma
 - Telegram tokens must never be written in chat, README, source code, tests or committed files.
 - Real secrets belong only in Railway or GitHub secret storage.
 - `.env.example` may contain variable names and safe defaults only.
-- Gate v0 must not send Telegram messages automatically.
+- Gate must not send Telegram messages automatically unless the product scope explicitly defines a safe/manual send path.
 - Any future send path requires explicit owner approval and audit logging.
 
 ## GitHub access failure rule
@@ -451,13 +374,3 @@ If Codex cannot push to GitHub because of network, auth or tunnel errors, it mus
 - whether the working tree is clean.
 
 ChatGPT may then decide whether to transfer the changes through the GitHub connector, implement a small bounded sprint directly, create a PR directly, or ask Mark to use another coding environment.
-
-## Current active development policy
-
-For the current Gate Telegram Ping v1 sprint:
-
-- Railway backend is healthy;
-- `ping` → `Gate online` through Telegram webhook is considered a small bounded sprint;
-- ChatGPT may implement small fixes on the existing PR to get CI green;
-- larger follow-up features should be delegated to Codex or explicitly re-approved by Mark;
-- production deploy must wait for Mark's explicit deployment command.
