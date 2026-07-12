@@ -74,7 +74,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["commit"] == "abc123456789"
     assert payload["auth"]["enforced"] is False
-    assert payload["auth"]["type"] == "temporary_bearer_oauth2.1_planned"
+    assert payload["auth"]["type"] == "temporary_bearer_or_oauth2.1"
     assert payload["auth"]["protected_resource_metadata"] == (
         "https://gate.example/.well-known/oauth-protected-resource/mcp"
     )
@@ -111,6 +111,9 @@ async def test_metadata_uses_configured_oauth_issuer_and_resource(
     monkeypatch.setenv("MCP_AUTH_MODE", "oauth")
     monkeypatch.setenv("MCP_AUTHORIZATION_SERVER", "https://auth.gate.example/")
     monkeypatch.setenv("MCP_PUBLIC_RESOURCE_URL", "https://gate.example/mcp")
+    monkeypatch.setenv(
+        "MCP_OAUTH_JWKS_URL", "https://auth.gate.example/.well-known/jwks.json"
+    )
     get_settings.cache_clear()
 
     transport = ASGITransport(app=app)
@@ -121,6 +124,4 @@ async def test_metadata_uses_configured_oauth_issuer_and_resource(
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["authorization_servers"] == ["https://auth.gate.example"]
     assert payload["mcp"]["auth_mode"] == "oauth"
-    assert payload["mcp"]["auth_status"] == (
-        "oauth_discovery_configured_token_validation_pending"
-    )
+    assert payload["mcp"]["auth_status"] == "oauth_token_validation_configured"
