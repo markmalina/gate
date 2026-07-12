@@ -1,9 +1,12 @@
 """Sprint 14 Telegram Business connection routing tests."""
 
+from types import SimpleNamespace
+
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
     _is_business_send_enabled,
     _is_business_update,
+    _is_outbound_business_message,
 )
 from app.core.config import Settings
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
@@ -55,3 +58,23 @@ def test_business_update_detection_is_limited_to_telegram_business_shapes() -> N
     assert _is_business_update({"business_message": {"business_connection_id": "bc-1"}})
     assert _is_business_update({"message": {"business_connection_id": "bc-1"}})
     assert not _is_business_update({"message": {"text": "ping"}})
+
+
+def test_business_message_direction_uses_connection_owner_identity() -> None:
+    connection = SimpleNamespace(
+        telegram_user_id=7819816320,
+        user_chat_id=7819816320,
+    )
+
+    assert _is_outbound_business_message(
+        sender_id="7819816320",
+        connection=connection,
+    )
+    assert not _is_outbound_business_message(
+        sender_id="203349059",
+        connection=connection,
+    )
+    assert not _is_outbound_business_message(
+        sender_id="7819816320",
+        connection=None,
+    )
