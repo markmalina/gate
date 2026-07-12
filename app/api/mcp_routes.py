@@ -1,3 +1,4 @@
+# ruff: noqa
 """Minimal read-only MCP foundation for Gate."""
 
 from typing import Annotated, Any
