@@ -56,7 +56,7 @@ async def test_mcp_initialize_returns_server_info(
         "DATABASE_URL",
         "postgresql+asyncpg://user:pass@localhost:5432/gate_test",
     )
-    monkeypatch.setenv("DEPLOYMENT_SHA", "abc123456789deadbeef")
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "abc123456789deadbeef")
     get_settings.cache_clear()
 
     transport = ASGITransport(app=app)
@@ -101,7 +101,7 @@ async def test_mcp_status_tool_returns_structured_content(
     mcp_context: FakeMcpSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DEPLOYMENT_SHA", "fedcba987654321")
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "fedcba987654321")
     get_settings.cache_clear()
 
     transport = ASGITransport(app=app)
