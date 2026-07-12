@@ -157,7 +157,10 @@ def _gate_status_tool() -> JsonObject:
     return {
         "name": "gate_get_status",
         "title": "Get Gate status",
-        "description": "Return a read-only Gate status snapshot with deployment metadata and aggregate counts.",
+        "description": (
+            "Return a read-only Gate status snapshot with deployment metadata "
+            "and aggregate counts."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {},
