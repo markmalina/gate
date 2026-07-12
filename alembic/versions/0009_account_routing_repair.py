@@ -127,8 +127,8 @@ def upgrade() -> None:
         """
     )
 
-    # Business connection is the source of truth for every stored Telegram fact.
-    for table_name in ("gate_events", "messages", "conversations"):
+    # Business connection is the source of truth for stored Telegram facts.
+    for table_name in ("gate_events", "messages"):
         op.execute(
             f"""
             UPDATE {table_name} AS item
@@ -138,6 +138,150 @@ def upgrade() -> None:
               AND item.account_id IS DISTINCT FROM connection.account_id
             """
         )
+
+    # A correctly routed BY conversation can already coexist with an older
+    # copy that was defaulted to RU. Drop the context index while converging
+    # ownership, then merge duplicate contexts before recreating it.
+    op.execute("DROP INDEX IF EXISTS uq_conversations_context")
+    op.execute(
+        """
+        UPDATE conversations AS conversation
+        SET account_id = connection.account_id
+        FROM telegram_business_connections AS connection
+        WHERE conversation.business_connection_id = connection.business_connection_id
+          AND conversation.account_id IS DISTINCT FROM connection.account_id
+        """
+    )
+    op.execute(
+        """
+        CREATE TEMP TABLE gate_conversation_merge ON COMMIT DROP AS
+        WITH ranked AS (
+            SELECT
+                conversation.id AS source_id,
+                FIRST_VALUE(conversation.id) OVER (
+                    PARTITION BY
+                        conversation.bot_id,
+                        conversation.account_id,
+                        conversation.project_id,
+                        conversation.chat_id,
+                        COALESCE(
+                            conversation.business_connection_id,
+                            '__gate_null_business_connection__'
+                        )
+                    ORDER BY
+                        conversation.last_message_at DESC NULLS LAST,
+                        conversation.updated_at DESC NULLS LAST,
+                        conversation.created_at DESC,
+                        conversation.id
+                ) AS target_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        conversation.bot_id,
+                        conversation.account_id,
+                        conversation.project_id,
+                        conversation.chat_id,
+                        COALESCE(
+                            conversation.business_connection_id,
+                            '__gate_null_business_connection__'
+                        )
+                    ORDER BY
+                        conversation.last_message_at DESC NULLS LAST,
+                        conversation.updated_at DESC NULLS LAST,
+                        conversation.created_at DESC,
+                        conversation.id
+                ) AS context_rank
+            FROM conversations AS conversation
+        )
+        SELECT source_id, target_id
+        FROM ranked
+        WHERE context_rank > 1
+        """
+    )
+
+    for table_name in (
+        "reply_tasks",
+        "reply_drafts",
+        "conversation_context_bindings",
+        "send_attempts",
+    ):
+        op.execute(
+            f"""
+            UPDATE {table_name} AS item
+            SET conversation_id = merge.target_id
+            FROM gate_conversation_merge AS merge
+            WHERE item.conversation_id = merge.source_id
+            """
+        )
+
+    op.execute(
+        """
+        DELETE FROM conversations AS conversation
+        USING gate_conversation_merge AS merge
+        WHERE conversation.id = merge.source_id
+        """
+    )
+    op.execute(
+        """
+        CREATE UNIQUE INDEX uq_conversations_context
+        ON conversations (
+            bot_id,
+            account_id,
+            project_id,
+            chat_id,
+            COALESCE(
+                business_connection_id,
+                '__gate_null_business_connection__'
+            )
+        )
+        """
+    )
+
+    # Rebuild the merged conversation state from message facts.
+    op.execute(
+        """
+        WITH activity AS (
+            SELECT
+                conversation.id AS conversation_id,
+                MAX(message.created_at)
+                    FILTER (WHERE message.direction = 'inbound') AS last_inbound_at,
+                MAX(COALESCE(message.sent_at, message.created_at))
+                    FILTER (WHERE message.direction = 'outbound') AS last_outbound_at,
+                MAX(COALESCE(message.sent_at, message.received_at, message.created_at))
+                    AS last_message_at
+            FROM conversations AS conversation
+            LEFT JOIN messages AS message
+              ON message.account_id = conversation.account_id
+             AND message.project_id = conversation.project_id
+             AND message.chat_id = conversation.chat_id
+             AND message.business_connection_id
+                 IS NOT DISTINCT FROM conversation.business_connection_id
+            GROUP BY conversation.id
+        )
+        UPDATE conversations AS conversation
+        SET
+            last_inbound_at = activity.last_inbound_at,
+            last_outbound_at = activity.last_outbound_at,
+            last_message_at = activity.last_message_at,
+            requires_reply = (
+                activity.last_inbound_at IS NOT NULL
+                AND (
+                    activity.last_outbound_at IS NULL
+                    OR activity.last_inbound_at > activity.last_outbound_at
+                )
+            ),
+            status = CASE
+                WHEN activity.last_inbound_at IS NOT NULL
+                 AND (
+                    activity.last_outbound_at IS NULL
+                    OR activity.last_inbound_at > activity.last_outbound_at
+                 )
+                THEN 'open'
+                ELSE 'replied'
+            END
+        FROM activity
+        WHERE conversation.id = activity.conversation_id
+        """
+    )
 
     # Derived reply objects inherit the repaired conversation account.
     for table_name in ("reply_tasks", "reply_drafts"):
