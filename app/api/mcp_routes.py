@@ -1,6 +1,6 @@
 # mypy: ignore-errors
 # ruff: noqa
-"""Contained read-only MCP endpoint for Gate."""
+"""Scoped Gate MCP endpoint for inbox, drafts and explicit reply sending."""
 
 from datetime import datetime
 from typing import Annotated, Any
@@ -12,15 +12,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
+from app.application.account_labels import account_label
 from app.application.reply_drafts import (
     ReplyDraftError,
     SaveReplyDraftCommand,
     SaveReplyDraftService,
 )
+from app.application.reply_sends import (
+    ReplySendError,
+    SendApprovedReplyCommand,
+    SendApprovedReplyService,
+)
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
 from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
+from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
     Account,
     Conversation,
@@ -32,10 +40,12 @@ from app.models.domain import (
     TelegramBusinessConnection,
     TelegramUpdate,
 )
+from app.services.telegram import TelegramClient
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
 db_session_dependency = Depends(get_db_session)
+telegram_client_dependency = Depends(get_telegram_client)
 
 JsonObject = dict[str, Any]
 JSONRPC_VERSION = "2.0"
@@ -47,14 +57,22 @@ READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "idempotentHint": True,
     "openWorldHint": False,
 }
-MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered", "gate_save_reply_draft"]
+MCP_TOOL_NAMES = [
+    "gate_get_status",
+    "gate_list_unanswered",
+    "gate_get_reply_context",
+    "gate_save_reply_draft",
+    "gate_send_approved_reply",
+]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
 ANSWERED_MESSAGE_SOURCES = ("telegram", "gate-approved-draft")
 MCP_TOOL_SCOPES = {
     "gate_get_status": "gate:status:read",
     "gate_list_unanswered": "gate:inbox:read",
+    "gate_get_reply_context": "gate:inbox:read",
     "gate_save_reply_draft": "gate:drafts:write",
+    "gate_send_approved_reply": "gate:messages:send",
 }
 
 
@@ -64,6 +82,7 @@ async def mcp_endpoint(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
+    telegram: TelegramClient = telegram_client_dependency,
 ) -> JsonObject:
     """Handle contained reads and the provider-neutral ChatGPT OAuth contract."""
 
@@ -102,7 +121,9 @@ async def mcp_endpoint(
                 "tools": [
                     _gate_status_tool(settings),
                     _gate_list_unanswered_tool(settings),
+                    _gate_get_reply_context_tool(settings),
                     _gate_save_reply_draft_tool(settings),
+                    _gate_send_approved_reply_tool(settings),
                 ]
             },
         )
@@ -148,12 +169,28 @@ async def mcp_endpoint(
                 principal=principal,
             )
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
+        if tool_name == "gate_get_reply_context":
+            return await _get_reply_context_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+            )
         if tool_name == "gate_save_reply_draft":
             return await _save_reply_draft_tool_result(
                 request_id=request_id,
                 arguments=arguments,
                 principal=principal,
                 session=session,
+            )
+        if tool_name == "gate_send_approved_reply":
+            return await _send_approved_reply_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                telegram=telegram,
+                settings=settings,
             )
     if method == "notifications/initialized":
         if not oauth_discovery:
