@@ -1,10 +1,13 @@
 """Sprint 14 Telegram Business connection routing tests."""
 
+import asyncio
+
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
     _is_business_send_enabled,
     _is_business_update,
     _is_outbound_business_message,
+    _resolve_account_id,
 )
 from app.core.config import Settings
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
@@ -76,4 +79,62 @@ def test_business_message_direction_uses_all_owner_identities() -> None:
     assert not _is_outbound_business_message(
         sender_id="7819816320",
         owner_identity_ids=frozenset(),
+    )
+
+
+class _Result:
+    def __init__(self, value: object | None) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object | None:
+        return self._value
+
+
+class _Session:
+    def __init__(self, value: object | None) -> None:
+        self._value = value
+
+    async def execute(self, _statement: object) -> _Result:
+        return _Result(self._value)
+
+
+class _Connection:
+    def __init__(self, account_id: object) -> None:
+        self.account_id = account_id
+
+
+def test_unknown_business_connection_fails_closed() -> None:
+    settings = Settings(
+        GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID="",
+        GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID="",
+    )
+    try:
+        asyncio.run(
+            _resolve_account_id(
+                session=_Session(None),  # type: ignore[arg-type]
+                business_connection_id="unknown-connection",
+                settings=settings,
+            )
+        )
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+        assert "Unknown Telegram Business connection" in str(getattr(exc, "detail", ""))
+    else:
+        raise AssertionError("Unknown Business connections must fail closed")
+
+
+def test_existing_business_connection_keeps_its_account() -> None:
+    settings = Settings(
+        GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID="",
+        GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID="",
+    )
+    assert (
+        asyncio.run(
+            _resolve_account_id(
+                session=_Session(_Connection(TELEGRAM_MARK_BY_ACCOUNT_ID)),  # type: ignore[arg-type]
+                business_connection_id="known-connection",
+                settings=settings,
+            )
+        )
+        == TELEGRAM_MARK_BY_ACCOUNT_ID
     )

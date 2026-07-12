@@ -421,8 +421,11 @@ async def test_inbound_message_is_saved_when_auto_reply_send_fails(
 @pytest.mark.anyio
 async def test_business_message_passes_business_connection_id(
     webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session, telegram_client = webhook_context
+    monkeypatch.setenv("GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID", "bc-1")
+    get_settings.cache_clear()
     update = {
         "update_id": 101,
         "business_message": {
@@ -460,8 +463,11 @@ async def test_business_message_passes_business_connection_id(
 @pytest.mark.anyio
 async def test_business_connection_update_is_persisted_without_auto_reply(
     webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session, telegram_client = webhook_context
+    monkeypatch.setenv("GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID", "connection-1")
+    get_settings.cache_clear()
     update = {
         "update_id": 102,
         "business_connection": {

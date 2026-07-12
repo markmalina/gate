@@ -101,15 +101,16 @@ async def sprint14_telegram_webhook(
         owner_identity_ids=owner_identity_ids,
     )
     message_direction = (
-        MessageDirection.OUTBOUND.value
-        if is_outbound
-        else MessageDirection.INBOUND.value
+        MessageDirection.OUTBOUND.value if is_outbound else MessageDirection.INBOUND.value
     )
     if normalized.event_type == "business_connection":
-        account_id = _account_id_from_configured_connection(
-            normalized.business_connection_id,
-            settings=settings,
-        ) or account_id
+        account_id = (
+            _account_id_from_configured_connection(
+                normalized.business_connection_id,
+                settings=settings,
+            )
+            or account_id
+        )
         await _upsert_business_connection(
             session=session,
             account_id=account_id,
@@ -423,9 +424,7 @@ async def _find_owner_identity_ids(
     session: AsyncSession,
     account_id: Any,
 ) -> frozenset[str]:
-    owner_result = await session.execute(
-        select(Account.owner).where(Account.id == account_id)
-    )
+    owner_result = await session.execute(select(Account.owner).where(Account.id == account_id))
     owner = owner_result.scalar_one_or_none()
     if owner is None:
         return frozenset()
@@ -446,10 +445,7 @@ async def _find_owner_identity_ids(
         )
     )
     return frozenset(
-        str(value)
-        for row in identity_result.all()
-        for value in row
-        if value is not None
+        str(value) for row in identity_result.all() for value in row if value is not None
     )
 
 
@@ -483,7 +479,13 @@ async def _resolve_account_id(
         existing = result.scalar_one_or_none()
         if existing is not None:
             return existing.account_id
-    return TELEGRAM_MARK_RU_ACCOUNT_ID
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Unknown Telegram Business connection. Configure its Gate account mapping "
+            "before processing messages."
+        ),
+    )
 
 
 def _account_id_from_configured_connection(
