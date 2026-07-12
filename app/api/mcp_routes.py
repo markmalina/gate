@@ -50,6 +50,7 @@ READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
 MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered", "gate_save_reply_draft"]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
+ANSWERED_MESSAGE_SOURCES = ("telegram", "gate-approved-draft")
 MCP_TOOL_SCOPES = {
     "gate_get_status": "gate:status:read",
     "gate_list_unanswered": "gate:inbox:read",
@@ -276,6 +277,8 @@ async def _build_gate_status(
                 Message.account_id.in_(accounts),
                 Message.project_id.in_(projects),
                 Message.direction == MessageDirection.OUTBOUND.value,
+                Message.source.in_(ANSWERED_MESSAGE_SOURCES),
+                _non_service_message_filter(),
             ),
         ),
         "drafts": await _count(
@@ -367,6 +370,7 @@ async def _build_unanswered_list(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.OUTBOUND.value,
+            Message.source.in_(ANSWERED_MESSAGE_SOURCES),
             _non_service_message_filter(),
         )
         .order_by(
