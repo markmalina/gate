@@ -289,6 +289,7 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     assert "reply_tasks.project_id IN" in unanswered_statement
     assert "messages.direction" in unanswered_statement
     assert "messages.direction" in answered_statement
+    assert "messages.source IN" in answered_statement
 
 
 @pytest.mark.anyio
