@@ -26,6 +26,7 @@ def oauth_discovery_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("MCP_AUTH_MODE", "oauth")
     monkeypatch.setenv("MCP_AUTHORIZATION_SERVER", "https://auth.gate.example")
     monkeypatch.setenv("MCP_PUBLIC_RESOURCE_URL", "https://gate.example/mcp")
+    monkeypatch.setenv("MCP_OAUTH_JWKS_URL", "https://auth.gate.example/.well-known/jwks.json")
     get_settings.cache_clear()
 
     async def override_session() -> AsyncIterator[NoQuerySession]:
@@ -94,4 +95,4 @@ async def test_oauth_mode_fails_closed_when_discovery_is_incomplete(
     get_settings.cache_clear()
     response = await _post({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
     assert response.status_code == 503
-    assert response.json()["detail"] == "MCP OAuth discovery is not configured"
+    assert response.json()["detail"] == "MCP OAuth validation is not configured"
