@@ -80,10 +80,10 @@ class SendApprovedReplyService:
                 message="Explicit confirmation is required before sending",
             )
         expected_account = command.expected_account.strip().upper()
-        if not expected_account:
+        if expected_account not in {"RU", "BY"}:
             raise ReplySendError(
                 code="invalid_confirmation",
-                message="Expected RU/BY account label is required",
+                message="Expected account must be RU or BY",
             )
         recipient = command.expected_recipient_chat_id.strip()
         if not recipient:
