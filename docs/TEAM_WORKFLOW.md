@@ -32,7 +32,7 @@ Work:
 - before any project action, runs the pre-action rule check against the priority order in this document;
 - may create or update GitHub pull requests through the GitHub connector when this is the correct development step;
 - may implement small, bounded development sprints directly through GitHub when Mark has permitted this mode and Codex is not the fastest reliable path;
-- must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require production deployment approval;
+- must continue with the next obvious allowed step without waiting for another explicit instruction when that step is safe, bounded, already implied by the current task and does not require a manual production action outside the authorized auto-merge path;
 - must run read-only project checks itself instead of asking Mark to request status separately;
 - must give Mark one simplest next action, not several alternative options, unless Mark explicitly asks for alternatives;
 - must not ask Mark to perform basic operations he already knows how to do;
