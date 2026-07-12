@@ -13,7 +13,7 @@ from app.api import mcp_routes
 from app.api.mcp_routes import _require_mcp_principal
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
-from app.main import app
+from app.main import app, create_app
 
 TOKEN = "mcp-read-token"
 ACCOUNT_ID = "22222222-2222-2222-2222-222222222222"
@@ -150,7 +150,8 @@ async def test_mcp_rejects_missing_or_wrong_bearer(mcp_context: FakeMcpSession) 
     )
     settings_provider = mcp_routes.settings_dependency.dependency
     assert settings_provider is not None
-    app.dependency_overrides[settings_provider] = lambda: settings
+    isolated_app = create_app()
+    isolated_app.dependency_overrides[settings_provider] = lambda: settings
     with pytest.raises(HTTPException) as direct_error:
         await _require_mcp_principal(
             authorization=None,
@@ -159,8 +160,12 @@ async def test_mcp_rejects_missing_or_wrong_bearer(mcp_context: FakeMcpSession) 
         )
     assert direct_error.value.status_code == 401
     payload = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
-    missing = await _post(payload, headers={})
-    wrong = await _post(payload, headers={"Authorization": "Bearer wrong"})
+    transport = ASGITransport(app=isolated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        missing = await client.post("/mcp", json=payload, headers={})
+        wrong = await client.post(
+            "/mcp", json=payload, headers={"Authorization": "Bearer wrong"}
+        )
     assert missing.status_code == 401, missing.json()
     assert missing.headers["www-authenticate"] == "Bearer"
     assert wrong.status_code == 401
