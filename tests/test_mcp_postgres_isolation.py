@@ -89,6 +89,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             await session.flush()
             now = datetime.now(UTC)
             task_ids: dict[str, UUID] = {}
+            conversation_chat_ids: dict[str, str] = {}
             for account_id, project_id, label in (
                 (allowed_account, allowed_project, "allowed message"),
                 (denied_account, denied_project, "denied message"),
@@ -116,6 +117,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     received_at=now,
                 )
                 session.add_all([conversation, message])
+                conversation_chat_ids[label] = conversation.chat_id
                 await session.flush()
                 task = ReplyTask(
                     id=uuid4(),
@@ -128,6 +130,22 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 )
                 session.add(task)
                 task_ids[label] = task.id
+
+            answered_message = Message(
+                id=uuid4(),
+                bot_id=bot.id,
+                account_id=allowed_account,
+                project_id=allowed_project,
+                direction=MessageDirection.OUTBOUND.value,
+                source="telegram",
+                event_type="business_message",
+                chat_id=conversation_chat_ids["allowed message"],
+                sender_id="account-owner",
+                recipient_id=conversation_chat_ids["allowed message"],
+                text="allowed answer",
+                sent_at=now,
+            )
+            session.add(answered_message)
             await session.flush()
 
             async def override_session() -> AsyncIterator[AsyncSession]:
@@ -156,8 +174,16 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 )
 
             assert response.status_code == 200
-            items = response.json()["result"]["structuredContent"]["items"]
+            structured = response.json()["result"]["structuredContent"]
+            items = structured["items"]
             assert [item["message"]["text_preview"] for item in items] == ["allowed message"]
+            assert [item["message"]["direction"] for item in items] == ["inbound"]
+            assert [
+                item["message"]["text_preview"] for item in structured["answered_items"]
+            ] == ["allowed answer"]
+            assert [
+                item["message"]["direction"] for item in structured["answered_items"]
+            ] == ["outbound"]
 
             async def authenticate(**_kwargs: object) -> Principal:
                 return Principal(
