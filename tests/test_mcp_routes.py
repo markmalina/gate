@@ -6,8 +6,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
+from app.api.mcp_routes import _require_mcp_principal
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
 from app.main import app
@@ -146,10 +148,17 @@ async def test_mcp_rejects_missing_or_wrong_bearer(mcp_context: FakeMcpSession) 
         MCP_READ_PROJECT_IDS=PROJECT_ID,
     )
     app.dependency_overrides[get_settings] = lambda: settings
+    with pytest.raises(HTTPException) as direct_error:
+        await _require_mcp_principal(
+            authorization=None,
+            settings=settings,
+            required_scope="gate:status:read",
+        )
+    assert direct_error.value.status_code == 401
     payload = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
     missing = await _post(payload, headers={})
     wrong = await _post(payload, headers={"Authorization": "Bearer wrong"})
-    assert missing.status_code == 401
+    assert missing.status_code == 401, missing.json()
     assert missing.headers["www-authenticate"] == "Bearer"
     assert wrong.status_code == 401
 
