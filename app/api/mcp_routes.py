@@ -12,6 +12,7 @@ from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
+from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
 from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
 from app.models.domain import (
     Account,
@@ -61,7 +62,11 @@ async def mcp_endpoint(
     oauth_discovery = settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH
     if method == "initialize":
         if not oauth_discovery:
-            _require_mcp_principal(authorization=authorization, settings=settings)
+            await _require_mcp_principal(
+                authorization=authorization,
+                settings=settings,
+                required_scope="gate:status:read",
+            )
         return _jsonrpc_result(
             request_id=request_id,
             result={
@@ -75,7 +80,11 @@ async def mcp_endpoint(
         )
     if method == "tools/list":
         if not oauth_discovery:
-            _require_mcp_principal(authorization=authorization, settings=settings)
+            await _require_mcp_principal(
+                authorization=authorization,
+                settings=settings,
+                required_scope="gate:status:read",
+            )
         return _jsonrpc_result(
             request_id=request_id,
             result={
@@ -99,13 +108,20 @@ async def mcp_endpoint(
                 code=-32601,
                 message=f"Unknown tool: {tool_name}",
             )
-        if oauth_discovery:
+        try:
+            principal = await _require_mcp_principal(
+                authorization=authorization,
+                settings=settings,
+                required_scope=MCP_TOOL_SCOPES[tool_name],
+            )
+        except McpOAuthError as exc:
             return _oauth_required_tool_result(
                 request_id=request_id,
                 settings=settings,
                 scope=MCP_TOOL_SCOPES[tool_name],
+                error=exc.error,
+                description=exc.description,
             )
-        principal = _require_mcp_principal(authorization=authorization, settings=settings)
         if tool_name == "gate_get_status":
             snapshot = await _build_gate_status(
                 session=session,
@@ -122,7 +138,11 @@ async def mcp_endpoint(
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
     if method == "notifications/initialized":
         if not oauth_discovery:
-            _require_mcp_principal(authorization=authorization, settings=settings)
+            await _require_mcp_principal(
+                authorization=authorization,
+                settings=settings,
+                required_scope="gate:status:read",
+            )
         return {"ok": True}
     return _jsonrpc_error(
         request_id=request_id,
@@ -142,21 +162,30 @@ def _require_mcp_ready(settings: Settings) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unsupported MCP authentication mode",
         )
-    if settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH and not (
-        settings.mcp_authorization_server and settings.mcp_public_resource_url
+    if settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH and not all(
+        (
+            settings.mcp_authorization_server,
+            settings.mcp_public_resource_url,
+            settings.mcp_oauth_jwks_url,
+        )
     ):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MCP OAuth discovery is not configured",
+            detail="MCP OAuth validation is not configured",
         )
 
 
-def _require_mcp_principal(*, authorization: str | None, settings: Settings) -> Principal:
+async def _require_mcp_principal(
+    *, authorization: str | None, settings: Settings, required_scope: str
+) -> Principal:
+    if settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH:
+        return await authenticate_mcp_oauth(
+            authorization=authorization,
+            settings=settings,
+            required_scope=required_scope,
+        )
     if settings.mcp_auth_mode != MCP_AUTH_MODE_TEMPORARY_BEARER:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MCP OAuth token validation is not active yet",
-        )
+        raise HTTPException(status_code=503, detail="Unsupported MCP authentication mode")
     if not bearer_token_matches(authorization, settings.mcp_read_bearer_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -245,7 +274,11 @@ async def _build_gate_status(
             "tools": MCP_TOOL_NAMES,
             "writes_enabled": False,
             "send_enabled": False,
-            "auth": "temporary_bearer_enforced",
+            "auth": (
+                "temporary_bearer_enforced"
+                if principal.auth_method == "bearer"
+                else f"{principal.auth_method}_enforced"
+            ),
         },
     }
 
@@ -355,9 +388,19 @@ def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -
 
 
 def _oauth_required_tool_result(
-    *, request_id: Any, settings: Settings, scope: str
+    *,
+    request_id: Any,
+    settings: Settings,
+    scope: str,
+    error: str = "invalid_token",
+    description: str = "A valid Gate access token is required",
 ) -> JsonObject:
-    challenge = _oauth_challenge(settings=settings, scope=scope)
+    challenge = _oauth_challenge(
+        settings=settings,
+        scope=scope,
+        error=error,
+        description=description,
+    )
     return _jsonrpc_result(
         request_id=request_id,
         result={
@@ -373,14 +416,16 @@ def _oauth_required_tool_result(
     )
 
 
-def _oauth_challenge(*, settings: Settings, scope: str) -> str:
+def _oauth_challenge(
+    *, settings: Settings, scope: str, error: str, description: str
+) -> str:
     resource = settings.mcp_public_resource_url.rstrip("/")
     origin = resource.removesuffix("/mcp")
     metadata_url = f"{origin}/.well-known/oauth-protected-resource/mcp"
     return (
         f'Bearer resource_metadata="{metadata_url}", scope="{scope}", '
-        'error="invalid_token", '
-        'error_description="A valid Gate access token is required"'
+        f'error="{error}", '
+        f'error_description="{description}"'
     )
 
 
