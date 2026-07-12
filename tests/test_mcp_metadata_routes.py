@@ -101,3 +101,26 @@ async def test_mcp_metadata_reports_temporary_bearer_when_enabled(
     assert payload["auth"]["enabled"] is True
     assert payload["auth"]["enforced"] is True
     assert payload["auth"]["status"] == "temporary_bearer_enforced"
+
+
+@pytest.mark.anyio
+async def test_metadata_uses_configured_oauth_issuer_and_resource(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GATE_MCP_ENABLED", "true")
+    monkeypatch.setenv("MCP_AUTH_MODE", "oauth")
+    monkeypatch.setenv("MCP_AUTHORIZATION_SERVER", "https://auth.gate.example/")
+    monkeypatch.setenv("MCP_PUBLIC_RESOURCE_URL", "https://gate.example/mcp")
+    get_settings.cache_clear()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://internal.example") as client:
+        response = await client.get("/.well-known/oauth-protected-resource/mcp")
+
+    payload = response.json()
+    assert payload["resource"] == "https://gate.example/mcp"
+    assert payload["authorization_servers"] == ["https://auth.gate.example"]
+    assert payload["mcp"]["auth_mode"] == "oauth"
+    assert payload["mcp"]["auth_status"] == (
+        "oauth_discovery_configured_token_validation_pending"
+    )
