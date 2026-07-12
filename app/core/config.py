@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     gate_default_mode: str = Field(default="manual", validation_alias="GATE_DEFAULT_MODE")
     action_bearer_token: str = Field(default="", validation_alias="ACTION_BEARER_TOKEN")
     admin_bearer_token: str = Field(default="", validation_alias="ADMIN_BEARER_TOKEN")
+    gate_mcp_enabled: bool = Field(default=False, validation_alias="GATE_MCP_ENABLED")
+    mcp_read_bearer_token: str = Field(default="", validation_alias="MCP_READ_BEARER_TOKEN")
+    mcp_read_workspace_id: str = Field(default="", validation_alias="MCP_READ_WORKSPACE_ID")
+    mcp_read_account_ids: str = Field(default="", validation_alias="MCP_READ_ACCOUNT_IDS")
+    mcp_read_project_ids: str = Field(default="", validation_alias="MCP_READ_PROJECT_IDS")
     deployment_sha: str = Field(default="unknown", validation_alias="RAILWAY_GIT_COMMIT_SHA")
     deployment_service: str = Field(default="gate", validation_alias="RAILWAY_SERVICE_NAME")
     gate_account_ru_business_connection_id: str = Field(
