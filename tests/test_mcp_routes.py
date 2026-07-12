@@ -47,7 +47,11 @@ def mcp_context() -> Iterator[FakeMcpSession]:
 
 
 @pytest.mark.anyio("asyncio")
-async def test_mcp_initialize_returns_server_info(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mcp_initialize_returns_server_info(
+    mcp_context: FakeMcpSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del mcp_context
     monkeypatch.setenv(
         "DATABASE_URL",
         "postgresql+asyncpg://user:pass@localhost:5432/gate_test",
@@ -72,7 +76,10 @@ async def test_mcp_initialize_returns_server_info(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.anyio("asyncio")
-async def test_mcp_tools_list_exposes_read_only_status_tool() -> None:
+async def test_mcp_tools_list_exposes_read_only_status_tool(
+    mcp_context: FakeMcpSession,
+) -> None:
+    del mcp_context
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -129,7 +136,10 @@ async def test_mcp_status_tool_returns_structured_content(
 
 
 @pytest.mark.anyio("asyncio")
-async def test_mcp_unknown_tool_returns_jsonrpc_error() -> None:
+async def test_mcp_unknown_tool_returns_jsonrpc_error(
+    mcp_context: FakeMcpSession,
+) -> None:
+    del mcp_context
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
