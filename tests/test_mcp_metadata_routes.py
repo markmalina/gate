@@ -123,6 +123,6 @@ async def test_metadata_uses_configured_oauth_issuer_and_resource(
 
     payload = response.json()
     assert payload["resource"] == "https://gate.example/mcp"
-    assert payload["authorization_servers"] == ["https://auth.gate.example"]
+    assert payload["authorization_servers"] == ["https://auth.gate.example/"]
     assert payload["mcp"]["auth_mode"] == "oauth"
     assert payload["mcp"]["auth_status"] == "oauth_token_validation_configured"
