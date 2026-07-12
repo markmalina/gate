@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -339,6 +339,7 @@ async def _build_unanswered_list(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.INBOUND.value,
+            _non_service_message_filter(),
         )
         .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
         .limit(limit)
@@ -366,6 +367,7 @@ async def _build_unanswered_list(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.OUTBOUND.value,
+            _non_service_message_filter(),
         )
         .order_by(
             func.coalesce(Message.sent_at, Message.created_at).desc(),
@@ -406,6 +408,7 @@ async def _count_unanswered(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.INBOUND.value,
+            _non_service_message_filter(),
         )
     )
     return int(result.scalar_one())
@@ -530,6 +533,30 @@ def _optional_text(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _non_service_message_filter() -> Any:
+    return or_(
+        Message.text.is_(None),
+        and_(
+            Message.text.notilike("/start bizChat%"),
+            Message.text.notilike("/webhook%"),
+            Message.text.notilike("/events%"),
+            Message.text.notilike("/messages%"),
+            Message.text.notilike("/raw%"),
+            Message.text.notilike("/status%"),
+            Message.text.notilike("/inbox%"),
+            Message.text.notilike("/draft%"),
+            Message.text.notilike("/drafts%"),
+            Message.text.notilike("/done%"),
+            Message.text.notilike("/dismiss%"),
+            Message.text.notilike("/snooze%"),
+            Message.text.notilike("/reopen%"),
+            Message.text.notilike("/business%"),
+            Message.text.notilike("Commit:%"),
+            Message.text.notilike("TEST-%"),
+        ),
+    )
 
 
 def _gate_status_tool(settings: Settings) -> JsonObject:
