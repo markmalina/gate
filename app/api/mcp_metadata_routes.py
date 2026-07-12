@@ -16,6 +16,7 @@ MCP_RESOURCE_SCOPES = [
     "gate:status:read",
     "gate:inbox:read",
     "gate:drafts:write",
+    "gate:messages:send",
 ]
 
 MCP_READ_ONLY_SCOPES = [
@@ -85,9 +86,14 @@ async def mcp_metadata(
             "current_read_only_scopes": MCP_READ_ONLY_SCOPES,
         },
         "tools": {
-            "read_only": ["gate_get_status", "gate_list_unanswered"],
+            "read_only": [
+                "gate_get_status",
+                "gate_list_unanswered",
+                "gate_get_reply_context",
+            ],
             "write": ["gate_save_reply_draft"],
-            "send": [],
+            "send": ["gate_send_approved_reply"],
+            "send_requires_explicit_confirmation": True,
         },
     }
 
@@ -102,10 +108,16 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "auth_mode": settings.mcp_auth_mode,
         "auth_enforced": settings.gate_mcp_enabled,
         "auth_status": _auth_status(settings),
-        "read_only_tools": ["gate_get_status", "gate_list_unanswered"],
+        "read_only_tools": [
+            "gate_get_status",
+            "gate_list_unanswered",
+            "gate_get_reply_context",
+        ],
         "write_tools_enabled": True,
         "write_tools": ["gate_save_reply_draft"],
-        "send_tools_enabled": False,
+        "send_tools_enabled": settings.gate_send_enabled,
+        "send_tools": ["gate_send_approved_reply"],
+        "send_requires_explicit_confirmation": True,
     }
 
 
