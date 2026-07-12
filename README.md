@@ -131,29 +131,11 @@ Telegram inbound
 
 No free-form outbound text may be sent without Mark explicit confirmation.
 
-## 4. P0 security warning for the next executor
+## 4. Current MCP security boundary
 
-The current `/mcp` implementation accepts the `Authorization` header but does not validate it. `gate_list_unanswered` can return account/project identifiers, chat and sender identifiers, Business connection data and a text preview.
+PR #75 closed the unauthenticated MCP data-access risk: MCP is disabled by default, temporary bearer access is fail-closed, and every query requires explicit account/project grants. PR #76 added the ChatGPT OAuth discovery contract without exposing data.
 
-Sprint 21 publishes protected-resource metadata but explicitly reports:
-
-```text
-auth_enforced = false
-auth_status = metadata_published_oauth_not_enforced
-```
-
-Therefore the first implementation after unfreeze must be a separate bounded MCP containment PR:
-
-1. Add `GATE_MCP_ENABLED`, disabled by default for production.
-2. Until OAuth exists, require a dedicated `MCP_READ_BEARER_TOKEN` for all MCP data access.
-3. Never reuse `ADMIN_BEARER_TOKEN`, Telegram tokens or webhook secrets for MCP.
-4. Create internal `Principal` and `AccessScope` abstractions.
-5. Deny access without explicit workspace/account/project grants.
-6. Add PostgreSQL integration tests proving unauthenticated and cross-project reads return no data.
-7. Fix possible async deferred-load failure: `ReplyTask.account_id` is deferred but MCP serializes it.
-8. Keep MCP read-only. Do not add tools, write behavior, send behavior or full OAuth in this containment PR.
-
-No production deployment follows automatically. Deployment remains a separate Mark decision.
+Sprint 23 replaces the OAuth validation placeholder with provider-neutral JWT/JWKS verification. Production remains unchanged until a separate IdP configuration and activation decision. MCP remains read-only; no draft, approval or send tool is part of this sprint.
 
 ## 5. Why a full refactor is required before further MCP
 
