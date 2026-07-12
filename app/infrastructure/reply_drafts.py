@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
+from app.application.account_labels import account_label
 from app.application.reply_drafts import (
     ReplyTaskClosedError,
     ReplyTaskNotFoundError,
@@ -11,7 +12,10 @@ from app.application.reply_drafts import (
     SaveReplyDraftCommand,
 )
 from app.models.domain import (
+    Account,
     AuditLog,
+    Conversation,
+    Message,
     ReplyDraft,
     ReplyDraftStatus,
     ReplyTask,
@@ -28,21 +32,31 @@ class SqlReplyDraftWriter:
     async def save(self, command: SaveReplyDraftCommand) -> SavedReplyDraft:
         scope = command.principal.access_scope
         result = await self._session.execute(
-            select(ReplyTask)
+            select(ReplyTask, Conversation, Message, Account)
             .options(undefer(ReplyTask.account_id))
+            .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+            .join(Message, ReplyTask.trigger_message_id == Message.id)
+            .join(Account, ReplyTask.account_id == Account.id)
             .where(
                 ReplyTask.id == command.task_id,
                 ReplyTask.account_id.in_(scope.account_ids),
                 ReplyTask.project_id.in_(scope.project_ids),
+                Conversation.account_id.in_(scope.account_ids),
+                Conversation.project_id.in_(scope.project_ids),
+                Message.account_id.in_(scope.account_ids),
+                Message.project_id.in_(scope.project_ids),
             )
             .with_for_update()
         )
-        task = result.scalar_one_or_none()
-        if task is None:
+        row = result.one_or_none()
+        if row is None:
             raise ReplyTaskNotFoundError()
+        task, conversation, trigger_message, account = row
         if task.status != ReplyTaskStatus.NEEDS_REPLY.value:
             raise ReplyTaskClosedError()
 
+        label = account_label(alias=account.alias, country_code=account.country_code)
+        recipient_chat_id = trigger_message.sender_id
         draft = ReplyDraft(
             account_id=task.account_id,
             project_id=task.project_id,
@@ -67,6 +81,9 @@ class SqlReplyDraftWriter:
                 metadata_={
                     "draft_id": str(draft.id),
                     "task_id": str(task.id),
+                    "account_alias": account.alias,
+                    "account_label": label,
+                    "recipient_chat_id": recipient_chat_id,
                     "sent": False,
                 },
             )
@@ -77,6 +94,9 @@ class SqlReplyDraftWriter:
             task_id=task.id,
             account_id=task.account_id,
             project_id=task.project_id,
+            account_alias=account.alias,
+            account_label=label,
+            recipient_chat_id=recipient_chat_id,
             status=draft.status,
             text=draft.draft_text,
         )
