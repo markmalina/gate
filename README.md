@@ -3,7 +3,7 @@
 > **PROJECT STATUS: ACTIVE / ORDERED STABILIZATION AND MVP DELIVERY**  
 > Development resumed by Mark: **2026-07-12**  
 > Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
-> Current active scope: **Sprint 23 — OAuth JWT/JWKS verification**, starting from `main` at `c664e591`.  
+> Current active scope: **Sprint 24 — scoped ChatGPT reply drafts**, starting from `main` at `48e6e8ac`.  
 > Do not start feature development from an old sprint branch. Read this README completely before touching code.
 
 Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
@@ -52,7 +52,7 @@ MVP adapters must use the same scoped application services being built for the t
 
 ## Current ChatGPT connection boundary
 
-Sprint 23 validates OAuth access tokens through an established provider JWKS endpoint. Gate verifies asymmetric signatures, issuer, audience, expiry/not-before, per-tool scopes and explicit workspace/account/project grants. It does not activate MCP in production, choose or provision an identity provider, or expose write/send tools.
+Sprint 24 adds the first safe write capability: ChatGPT may save proposed text as a scoped reply draft for an unanswered task. The tool requires OAuth scope `gate:drafts:write`, validates explicit account/project grants and never approves or sends the message. Production MCP remains disabled until a separate activation decision.
 
 ## 2. Exact repository state at freeze
 
