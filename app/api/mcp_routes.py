@@ -4,6 +4,7 @@
 
 from datetime import datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import func, select
@@ -11,9 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
+from app.application.reply_drafts import (
+    ReplyDraftError,
+    SaveReplyDraftCommand,
+    SaveReplyDraftService,
+)
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
 from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
+from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.models.domain import (
     Account,
     Conversation,
@@ -38,12 +45,13 @@ READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "idempotentHint": True,
     "openWorldHint": False,
 }
-MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered"]
+MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered", "gate_save_reply_draft"]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
 MCP_TOOL_SCOPES = {
     "gate_get_status": "gate:status:read",
     "gate_list_unanswered": "gate:inbox:read",
+    "gate_save_reply_draft": "gate:drafts:write",
 }
 
 
@@ -91,6 +99,7 @@ async def mcp_endpoint(
                 "tools": [
                     _gate_status_tool(settings),
                     _gate_list_unanswered_tool(settings),
+                    _gate_save_reply_draft_tool(settings),
                 ]
             },
         )
@@ -136,6 +145,13 @@ async def mcp_endpoint(
                 principal=principal,
             )
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
+        if tool_name == "gate_save_reply_draft":
+            return await _save_reply_draft_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+            )
     if method == "notifications/initialized":
         if not oauth_discovery:
             await _require_mcp_principal(
@@ -193,7 +209,7 @@ async def _require_mcp_principal(
             headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        return build_mcp_read_principal(
+        principal = build_mcp_read_principal(
             workspace_id=settings.mcp_read_workspace_id,
             account_grants=settings.mcp_read_account_ids,
             project_grants=settings.mcp_read_project_ids,
@@ -203,6 +219,12 @@ async def _require_mcp_principal(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MCP access scope is not configured",
         ) from exc
+    if required_scope not in principal.scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MCP bearer token does not grant the required scope",
+        )
+    return principal
 
 
 async def _build_gate_status(
@@ -272,7 +294,7 @@ async def _build_gate_status(
         "mcp": {
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tools": MCP_TOOL_NAMES,
-            "writes_enabled": False,
+            "draft_writes_enabled": True,
             "send_enabled": False,
             "auth": (
                 "temporary_bearer_enforced"
@@ -378,6 +400,91 @@ def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
 
 
+def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_save_reply_draft",
+        "title": "Save a Gate reply draft",
+        "description": (
+            "Save proposed text as a scoped draft for an unanswered task. "
+            "This tool never approves or sends the message."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "format": "uuid"},
+                "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+            },
+            "required": ["task_id", "text"],
+            "additionalProperties": False,
+        },
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        },
+    }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:drafts:write")
+
+
+async def _save_reply_draft_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_task_id = arguments.get("task_id")
+    raw_text = arguments.get("text")
+    if not isinstance(raw_task_id, str) or not isinstance(raw_text, str):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="task_id and text are required",
+        )
+    try:
+        task_id = UUID(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="task_id must be a UUID",
+        )
+
+    service = SaveReplyDraftService(SqlReplyDraftWriter(session))
+    try:
+        saved = await service.execute(
+            SaveReplyDraftCommand(principal=principal, task_id=task_id, text=raw_text)
+        )
+    except ReplyDraftError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+    await session.commit()
+    content = {
+        "draft_id": str(saved.draft_id),
+        "draft_ref": str(saved.draft_id)[:8],
+        "task_id": str(saved.task_id),
+        "account_id": str(saved.account_id),
+        "project_id": str(saved.project_id),
+        "status": saved.status,
+        "text": saved.text,
+        "sent": False,
+        "approval_required": True,
+        "send_available": False,
+    }
+    return _tool_result(
+        content,
+        (
+            f"Draft saved: {content['draft_ref']}\n"
+            "Not approved. Not sent. Sending is not available through MCP yet."
+        ),
+        request_id,
+    )
+
+
 def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -> JsonObject:
     if settings.mcp_auth_mode != MCP_AUTH_MODE_OAUTH:
         return tool
@@ -436,6 +543,17 @@ def _tool_result(content: JsonObject, text: str, request_id: Any) -> JsonObject:
             "content": [{"type": "text", "text": text}],
             "structuredContent": content,
             "isError": False,
+        },
+    )
+
+
+def _tool_error_result(*, request_id: Any, code: str, message: str) -> JsonObject:
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [{"type": "text", "text": message}],
+            "structuredContent": {"error": code},
+            "isError": True,
         },
     )
 
