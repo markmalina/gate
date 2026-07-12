@@ -1,6 +1,12 @@
 # Gate Team Workflow
 
-This document defines how Mark, Work and Codex work together on the Gate project.
+This document defines how Mark, WorkGPT and Codex work together on the Gate project.
+
+## Product and tool terminology
+
+- **ChatGPT** is the product and user-interface name. Continue to call the product, its interface and its user-facing features ChatGPT.
+- **WorkGPT** is the workflow agent Mark is currently using inside the ChatGPT Work tab. In this document, the shorter role name **Work** means WorkGPT only.
+- **Codex** is a separate implementation environment for larger development tasks. It is not the current working tool unless WorkGPT explicitly delegates a task to Codex.
 
 ## Team roles
 
