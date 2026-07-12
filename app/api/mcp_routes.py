@@ -446,7 +446,7 @@ def _serialize_unanswered_item(
         "counterparty": _counterparty(
             message=message,
             telegram_update=telegram_update,
-            fallback_name=conversation.title,
+            fallback_name=getattr(conversation, "title", None),
         ),
         "message": _serialize_message(message),
         "created_at": _serialize_datetime(task.created_at),
