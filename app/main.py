@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
+from app.api.mcp_metadata_routes import router as mcp_metadata_router
 from app.api.mcp_routes import router as mcp_router
 from app.api.routes import router
 from app.api.sprint9_routes import router as sprint9_router
@@ -144,6 +145,7 @@ def create_app() -> FastAPI:
     )
     app.add_exception_handler(StarletteHTTPException, telegram_http_exception_handler)
     app.add_exception_handler(Exception, telegram_unhandled_exception_handler)
+    app.include_router(mcp_metadata_router)
     app.include_router(mcp_router)
     app.include_router(sprint18b_draft_ux_router)
     app.include_router(sprint17_send_draft_router)
