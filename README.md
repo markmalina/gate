@@ -2,7 +2,7 @@
 
 > **PROJECT STATUS: FROZEN / DEVELOPMENT PAUSED**  
 > Freeze recorded: **2026-07-12**  
-> Current baseline: `main` at `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
+> Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
 > Do not start feature development from an old sprint branch. Read this README completely before touching code.
 
 Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
@@ -42,7 +42,7 @@ While frozen:
 
 ## 2. Exact repository state at freeze
 
-Current `main`:
+Frozen application-code baseline (the last functional change before this handoff):
 
 ```text
 81163dcd079ad0ccbc58859832cdef571d65f314
