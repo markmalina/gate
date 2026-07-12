@@ -1,8 +1,9 @@
 # Gate
 
-> **PROJECT STATUS: FROZEN / DEVELOPMENT PAUSED**  
-> Freeze recorded: **2026-07-12**  
+> **PROJECT STATUS: ACTIVE / ORDERED STABILIZATION AND MVP DELIVERY**  
+> Development resumed by Mark: **2026-07-12**  
 > Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
+> Current active scope: **PR 0 — MCP containment**, starting from `main` at `364604dc`.  
 > Do not start feature development from an old sprint branch. Read this README completely before touching code.
 
 Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
@@ -17,9 +18,9 @@ Primary bot: `@gate_m_bot`
 Repository: `markmalina/gate` (private)  
 Production stack: FastAPI, PostgreSQL, SQLAlchemy async, Alembic, Railway, GitHub Actions.
 
-## 1. Handoff authority and freeze rule
+## 1. Handoff authority and active scope
 
-This README is the current handoff and next-work authority while the project is frozen. The older documents remain useful references, but when they conflict with the status or order below, this README wins until Mark explicitly unfreezes Gate.
+This README is the current handoff and next-work authority. Mark explicitly resumed Gate development on 2026-07-12. The older documents remain useful references, but when they conflict with the status or delivery order below, this README wins.
 
 Reference documents:
 
@@ -27,7 +28,7 @@ Reference documents:
 - [Team workflow](docs/TEAM_WORKFLOW.md)
 - [Gate operator regulations](docs/GATE_OPERATOR_REGULATIONS.md)
 
-While frozen:
+During the current containment scope:
 
 - do not add Telegram features;
 - do not add MCP tools;
@@ -37,10 +38,10 @@ While frozen:
 - do not activate write/send MCP capabilities;
 - do not add autonomous AI replies;
 - do not paste or commit secrets;
-- read-only inspection and preparation of an explicitly requested refactor are allowed;
-- development resumes only after an explicit command from Mark.
+- refactor preparation and the explicitly active containment implementation are allowed;
+- work proceeds in the ordered PR sequence below, with production deployment remaining a separate Mark decision.
 
-## 2. Exact repository state at freeze
+## Active delivery strategy\n\nGate now advances on two synchronized tracks that share one application layer:\n\n1. **Safe MVP:** expose current inbound messages, draft assistance, explicit approval and send through ChatGPT as early as possible.\n2. **Target architecture:** replace the sprint-router chain, hardcoded account/project assumptions and unsafe delivery semantics incrementally without a rewrite freeze.\n\nMVP adapters must use the same scoped application services being built for the target architecture. Temporary direct ORM access, unscoped MCP reads and autonomous sending are not acceptable shortcuts.\n\n## 2. Exact repository state at freeze
 
 Frozen application-code baseline (the last functional change before this handoff):
 
