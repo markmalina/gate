@@ -5,10 +5,6 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api import routes as legacy
 from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
@@ -30,6 +26,9 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -101,15 +100,16 @@ async def sprint14_telegram_webhook(
         owner_identity_ids=owner_identity_ids,
     )
     message_direction = (
-        MessageDirection.OUTBOUND.value
-        if is_outbound
-        else MessageDirection.INBOUND.value
+        MessageDirection.OUTBOUND.value if is_outbound else MessageDirection.INBOUND.value
     )
     if normalized.event_type == "business_connection":
-        account_id = _account_id_from_configured_connection(
-            normalized.business_connection_id,
-            settings=settings,
-        ) or account_id
+        account_id = (
+            _account_id_from_configured_connection(
+                normalized.business_connection_id,
+                settings=settings,
+            )
+            or account_id
+        )
         await _upsert_business_connection(
             session=session,
             account_id=account_id,
@@ -423,9 +423,7 @@ async def _find_owner_identity_ids(
     session: AsyncSession,
     account_id: Any,
 ) -> frozenset[str]:
-    owner_result = await session.execute(
-        select(Account.owner).where(Account.id == account_id)
-    )
+    owner_result = await session.execute(select(Account.owner).where(Account.id == account_id))
     owner = owner_result.scalar_one_or_none()
     if owner is None:
         return frozenset()
@@ -446,10 +444,7 @@ async def _find_owner_identity_ids(
         )
     )
     return frozenset(
-        str(value)
-        for row in identity_result.all()
-        for value in row
-        if value is not None
+        str(value) for row in identity_result.all() for value in row if value is not None
     )
 
 
