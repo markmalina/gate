@@ -1,7 +1,6 @@
 from uuid import UUID
 
 import pytest
-
 from app.core.mcp_security import bearer_token_matches, build_mcp_read_principal
 
 
