@@ -1,5 +1,5 @@
 # ruff: noqa
-"""MCP protected resource metadata endpoints."""
+"""MCP protected-resource metadata and provider-neutral OAuth discovery."""
 
 from typing import Any
 
@@ -38,15 +38,15 @@ async def oauth_protected_resource_metadata(
     request: Request,
     settings: Settings = settings_dependency,
 ) -> JsonObject:
-    """Return OAuth protected resource metadata for Gate MCP."""
+    """Return OAuth protected-resource metadata for the Gate MCP resource."""
 
-    resource = _public_origin(request)
+    resource = _mcp_resource(request=request, settings=settings)
     return {
         "resource": resource,
-        "authorization_servers": _authorization_servers(resource),
+        "authorization_servers": _authorization_servers(settings),
         "scopes_supported": MCP_RESOURCE_SCOPES,
         "bearer_methods_supported": ["header"],
-        "resource_documentation": f"{resource}/docs",
+        "resource_documentation": f"{_resource_origin(resource)}/docs",
         "mcp": _mcp_metadata(settings=settings),
     }
 
@@ -56,12 +56,12 @@ async def oauth_protected_resource_mcp_metadata(
     request: Request,
     settings: Settings = settings_dependency,
 ) -> JsonObject:
-    """Return MCP-specific protected resource metadata."""
+    """Return the canonical metadata document used by ChatGPT OAuth discovery."""
 
-    resource = _public_origin(request)
+    resource = _mcp_resource(request=request, settings=settings)
     return {
-        "resource": f"{resource}/mcp",
-        "authorization_servers": _authorization_servers(resource),
+        "resource": resource,
+        "authorization_servers": _authorization_servers(settings),
         "scopes_supported": MCP_RESOURCE_SCOPES,
         "bearer_methods_supported": ["header"],
         "mcp": _mcp_metadata(settings=settings),
@@ -73,20 +73,23 @@ async def mcp_metadata(
     request: Request,
     settings: Settings = settings_dependency,
 ) -> JsonObject:
-    """Return a human/debug friendly MCP metadata snapshot."""
+    """Return a human/debug-friendly MCP metadata snapshot."""
 
-    resource = _public_origin(request)
+    resource = _mcp_resource(request=request, settings=settings)
     return {
         "service": "gate",
-        "resource": f"{resource}/mcp",
+        "resource": resource,
         "commit": _commit(settings),
         "auth": {
             "type": "temporary_bearer_oauth2.1_planned",
+            "mode": settings.mcp_auth_mode,
             "enabled": settings.gate_mcp_enabled,
             "enforced": settings.gate_mcp_enabled,
             "status": _auth_status(settings),
-            "protected_resource_metadata": f"{resource}/.well-known/oauth-protected-resource/mcp",
-            "authorization_servers": _authorization_servers(resource),
+            "protected_resource_metadata": (
+                f"{_resource_origin(resource)}/.well-known/oauth-protected-resource/mcp"
+            ),
+            "authorization_servers": _authorization_servers(settings),
             "scopes_supported": MCP_RESOURCE_SCOPES,
             "current_read_only_scopes": MCP_READ_ONLY_SCOPES,
         },
@@ -105,6 +108,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "protocol_version": "2025-06-18",
         "commit": _commit(settings),
         "enabled": settings.gate_mcp_enabled,
+        "auth_mode": settings.mcp_auth_mode,
         "auth_enforced": settings.gate_mcp_enabled,
         "auth_status": _auth_status(settings),
         "read_only_tools": ["gate_get_status", "gate_list_unanswered"],
@@ -114,13 +118,29 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
 
 
 def _auth_status(settings: Settings) -> str:
-    if settings.gate_mcp_enabled:
-        return "temporary_bearer_enforced"
-    return "disabled_by_default"
+    if not settings.gate_mcp_enabled:
+        return "disabled_by_default"
+    if settings.mcp_auth_mode == "oauth":
+        if settings.mcp_authorization_server and settings.mcp_public_resource_url:
+            return "oauth_discovery_configured_token_validation_pending"
+        return "oauth_configuration_incomplete"
+    return "temporary_bearer_enforced"
 
 
-def _authorization_servers(resource: str) -> list[str]:
-    return [f"{resource}/.well-known/oauth-authorization-server"]
+def _authorization_servers(settings: Settings) -> list[str]:
+    issuer = settings.mcp_authorization_server.strip().rstrip("/")
+    return [issuer] if issuer else []
+
+
+def _mcp_resource(*, request: Request, settings: Settings) -> str:
+    configured = settings.mcp_public_resource_url.strip().rstrip("/")
+    if configured:
+        return configured
+    return f"{_public_origin(request)}/mcp"
+
+
+def _resource_origin(resource: str) -> str:
+    return resource.removesuffix("/mcp")
 
 
 def _commit(settings: Settings) -> str:
