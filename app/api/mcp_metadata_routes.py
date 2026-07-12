@@ -81,8 +81,10 @@ async def mcp_metadata(
         "resource": f"{resource}/mcp",
         "commit": _commit(settings),
         "auth": {
-            "type": "oauth2.1_planned",
-            "enforced": False,
+            "type": "temporary_bearer_oauth2.1_planned",
+            "enabled": settings.gate_mcp_enabled,
+            "enforced": settings.gate_mcp_enabled,
+            "status": _auth_status(settings),
             "protected_resource_metadata": f"{resource}/.well-known/oauth-protected-resource/mcp",
             "authorization_servers": _authorization_servers(resource),
             "scopes_supported": MCP_RESOURCE_SCOPES,
@@ -102,12 +104,19 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "endpoint": "/mcp",
         "protocol_version": "2025-06-18",
         "commit": _commit(settings),
-        "auth_enforced": False,
-        "auth_status": "metadata_published_oauth_not_enforced",
+        "enabled": settings.gate_mcp_enabled,
+        "auth_enforced": settings.gate_mcp_enabled,
+        "auth_status": _auth_status(settings),
         "read_only_tools": ["gate_get_status", "gate_list_unanswered"],
         "write_tools_enabled": False,
         "send_tools_enabled": False,
     }
+
+
+def _auth_status(settings: Settings) -> str:
+    if settings.gate_mcp_enabled:
+        return "temporary_bearer_enforced"
+    return "disabled_by_default"
 
 
 def _authorization_servers(resource: str) -> list[str]:
