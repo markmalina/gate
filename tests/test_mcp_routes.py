@@ -6,14 +6,11 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from app.api import mcp_routes
-from app.api.mcp_routes import _require_mcp_principal
 from app.api.deps import get_db_session
-from app.core.config import Settings, get_settings
-from app.main import app, create_app
+from app.core.config import get_settings
+from app.main import app
 
 TOKEN = "mcp-read-token"
 ACCOUNT_ID = "22222222-2222-2222-2222-222222222222"
@@ -123,7 +120,11 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
 async def _post(payload: dict[str, Any], headers: dict[str, str] | None = None):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.post("/mcp", json=payload, headers=headers or AUTH_HEADERS)
+        return await client.post(
+            "/mcp",
+            json=payload,
+            headers=AUTH_HEADERS if headers is None else headers,
+        )
 
 
 @pytest.mark.anyio
@@ -140,33 +141,10 @@ async def test_mcp_is_disabled_by_default(
 @pytest.mark.anyio
 async def test_mcp_rejects_missing_or_wrong_bearer(mcp_context: FakeMcpSession) -> None:
     del mcp_context
-    settings = Settings(
-        GATE_MCP_ENABLED=True,
-        MCP_AUTH_MODE="temporary_bearer",
-        MCP_READ_BEARER_TOKEN=TOKEN,
-        MCP_READ_WORKSPACE_ID="mark-personal",
-        MCP_READ_ACCOUNT_IDS=ACCOUNT_ID,
-        MCP_READ_PROJECT_IDS=PROJECT_ID,
-    )
-    settings_provider = mcp_routes.settings_dependency.dependency
-    assert settings_provider is not None
-    isolated_app = create_app()
-    isolated_app.dependency_overrides[settings_provider] = lambda: settings
-    with pytest.raises(HTTPException) as direct_error:
-        await _require_mcp_principal(
-            authorization=None,
-            settings=settings,
-            required_scope="gate:status:read",
-        )
-    assert direct_error.value.status_code == 401
     payload = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
-    transport = ASGITransport(app=isolated_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        missing = await client.post("/mcp", json=payload, headers={})
-        wrong = await client.post(
-            "/mcp", json=payload, headers={"Authorization": "Bearer wrong"}
-        )
-    assert missing.status_code == 401, missing.json()
+    missing = await _post(payload, headers={})
+    wrong = await _post(payload, headers={"Authorization": "Bearer wrong"})
+    assert missing.status_code == 401
     assert missing.headers["www-authenticate"] == "Bearer"
     assert wrong.status_code == 401
 
