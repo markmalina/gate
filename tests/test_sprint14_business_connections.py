@@ -3,6 +3,8 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from fastapi import HTTPException
+
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
     _is_business_send_enabled,
@@ -12,7 +14,6 @@ from app.api.sprint14_routes import (
 )
 from app.core.config import Settings
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
-from fastapi import HTTPException
 
 
 def test_business_connection_ids_resolve_to_configured_accounts() -> None:
