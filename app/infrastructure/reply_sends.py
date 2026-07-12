@@ -118,14 +118,14 @@ class SqlTelegramReplySender:
         )
         try:
             await self._session.commit()
-        except IntegrityError:
+        except IntegrityError as exc:
             await self._session.rollback()
             concurrent = await self._load_attempt(draft.id)
             if concurrent is None:
                 raise ReplySendError(
                     code="send_reservation_failed",
                     message="Reply send reservation failed safely",
-                )
+                ) from exc
             return self._attempt_result(
                 attempt=concurrent,
                 draft=draft,
@@ -140,6 +140,8 @@ class SqlTelegramReplySender:
                 text=draft.draft_text,
                 business_connection_id=connection.business_connection_id,
             )
+            if telegram_result.get("ok") is not True:
+                raise RuntimeError("Telegram API did not confirm delivery")
         except Exception as exc:
             status, error_code = _delivery_failure(exc)
             attempt.status = status
@@ -276,7 +278,8 @@ class SqlTelegramReplySender:
                 code="draft_not_found",
                 message="Reply draft not found in the allowed scope",
             )
-        return row
+        draft, task, conversation, trigger, account = row
+        return draft, task, conversation, trigger, account
 
     async def _load_origin_connection(
         self,
@@ -325,6 +328,19 @@ class SqlTelegramReplySender:
         account_label_value: str,
         target_chat_id: str,
     ) -> None:
+        if command.expected_account != account_label_value:
+            raise ReplySendError(
+                code="account_confirmation_mismatch",
+                message=(
+                    f"Confirmed account {command.expected_account} does not match "
+                    f"actual account {account_label_value}"
+                ),
+            )
+        if command.expected_recipient_chat_id != target_chat_id:
+            raise ReplySendError(
+                code="recipient_confirmation_mismatch",
+                message="Confirmed recipient does not match the reply task",
+            )
 
     def _validate_delivery(
         self,
@@ -365,19 +381,6 @@ class SqlTelegramReplySender:
             raise ReplySendError(
                 code="connection_cannot_reply",
                 message=f"Telegram connection for {account_label_value} cannot reply",
-            )
-        if command.expected_account != account_label_value:
-            raise ReplySendError(
-                code="account_confirmation_mismatch",
-                message=(
-                    f"Confirmed account {command.expected_account} does not match "
-                    f"actual account {account_label_value}"
-                ),
-            )
-        if command.expected_recipient_chat_id != target_chat_id:
-            raise ReplySendError(
-                code="recipient_confirmation_mismatch",
-                message="Confirmed recipient does not match the reply task",
             )
 
     def _attempt_result(
