@@ -90,6 +90,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             now = datetime.now(UTC)
             task_ids: dict[str, UUID] = {}
             conversation_chat_ids: dict[str, str] = {}
+            conversation_ids: dict[str, UUID] = {}
             for account_id, project_id, label in (
                 (allowed_account, allowed_project, "allowed message"),
                 (denied_account, denied_project, "denied message"),
@@ -118,6 +119,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 )
                 session.add_all([conversation, message])
                 conversation_chat_ids[label] = conversation.chat_id
+                conversation_ids[label] = conversation.id
                 await session.flush()
                 task = ReplyTask(
                     id=uuid4(),
@@ -130,6 +132,33 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 )
                 session.add(task)
                 task_ids[label] = task.id
+
+            service_message = Message(
+                id=uuid4(),
+                bot_id=bot.id,
+                account_id=allowed_account,
+                project_id=allowed_project,
+                direction=MessageDirection.INBOUND.value,
+                source="telegram",
+                event_type="business_message",
+                chat_id=conversation_chat_ids["allowed message"],
+                sender_id="sender",
+                text="/webhook",
+                received_at=now,
+            )
+            session.add(service_message)
+            await session.flush()
+            session.add(
+                ReplyTask(
+                    id=uuid4(),
+                    account_id=allowed_account,
+                    project_id=allowed_project,
+                    conversation_id=conversation_ids["allowed message"],
+                    trigger_message_id=service_message.id,
+                    status=ReplyTaskStatus.NEEDS_REPLY.value,
+                    reason="legacy_service_message",
+                )
+            )
 
             answered_message = Message(
                 id=uuid4(),
