@@ -5,6 +5,10 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import routes as legacy
 from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
@@ -26,9 +30,6 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
