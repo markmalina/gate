@@ -361,10 +361,11 @@ async def _build_unanswered_list(
     projects = principal.access_scope.project_ids
     owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
     result = await session.execute(
-        select(ReplyTask, Conversation, Message, TelegramUpdate)
+        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
         .options(undefer(ReplyTask.account_id))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .join(Account, Message.account_id == Account.id)
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -392,12 +393,14 @@ async def _build_unanswered_list(
             conversation=conversation,
             message=message,
             telegram_update=telegram_update,
+            account=account,
         )
-        for task, conversation, message, telegram_update in result.all()
+        for task, conversation, message, telegram_update, account in result.all()
     ]
 
     answered_result = await session.execute(
-        select(Message, TelegramUpdate)
+        select(Message, TelegramUpdate, Account)
+        .join(Account, Message.account_id == Account.id)
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -419,8 +422,12 @@ async def _build_unanswered_list(
         .limit(limit)
     )
     answered_items = [
-        _serialize_answered_item(message=message, telegram_update=telegram_update)
-        for message, telegram_update in answered_result.all()
+        _serialize_answered_item(
+            message=message,
+            telegram_update=telegram_update,
+            account=account,
+        )
+        for message, telegram_update, account in answered_result.all()
     ]
     return {
         "items": items,
@@ -471,6 +478,7 @@ def _serialize_unanswered_item(
     conversation: Conversation,
     message: Message,
     telegram_update: TelegramUpdate | None,
+    account: Account,
 ) -> JsonObject:
     task_id = str(task.id)
     return {
@@ -481,6 +489,7 @@ def _serialize_unanswered_item(
         "reason": task.reason,
         "account_id": str(task.account_id),
         "project_id": str(task.project_id),
+        "account": _serialize_account(account),
         "conversation": {
             "id": str(conversation.id),
             "chat_id": conversation.chat_id,
@@ -497,16 +506,31 @@ def _serialize_unanswered_item(
 
 
 def _serialize_answered_item(
-    *, message: Message, telegram_update: TelegramUpdate | None
+    *,
+    message: Message,
+    telegram_update: TelegramUpdate | None,
+    account: Account,
 ) -> JsonObject:
     return {
         "account_id": str(message.account_id),
         "project_id": str(message.project_id),
+        "account": _serialize_account(account),
         "counterparty": _counterparty(
             message=message,
             telegram_update=telegram_update,
         ),
         "message": _serialize_message(message),
+    }
+
+
+def _serialize_account(account: Account) -> JsonObject:
+    return {
+        "id": str(account.id),
+        "alias": account.alias,
+        "label": account_label(
+            alias=account.alias,
+            country_code=account.country_code,
+        ),
     }
 
 
