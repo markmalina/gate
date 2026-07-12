@@ -439,6 +439,126 @@ async def _build_unanswered_list(
     }
 
 
+async def _get_reply_context_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_task_id = arguments.get("task_id")
+    if not isinstance(raw_task_id, str):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="task_id is required",
+        )
+    try:
+        task_id = UUID(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="task_id must be a UUID",
+        )
+    limit = _bounded_limit(arguments.get("limit"), default=10, maximum=20)
+    scope = principal.access_scope
+    task_result = await session.execute(
+        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
+        .options(undefer(ReplyTask.account_id))
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .join(Account, ReplyTask.account_id == Account.id)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
+        .where(
+            ReplyTask.id == task_id,
+            ReplyTask.account_id.in_(scope.account_ids),
+            ReplyTask.project_id.in_(scope.project_ids),
+            Conversation.account_id.in_(scope.account_ids),
+            Conversation.project_id.in_(scope.project_ids),
+            Message.account_id.in_(scope.account_ids),
+            Message.project_id.in_(scope.project_ids),
+        )
+    )
+    row = task_result.one_or_none()
+    if row is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="task_not_found",
+            message="Reply task not found in the allowed scope",
+        )
+    task, conversation, trigger, trigger_update, account = row
+    history_result = await session.execute(
+        select(Message, TelegramUpdate)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
+        .where(
+            Message.account_id == conversation.account_id,
+            Message.project_id == conversation.project_id,
+            Message.chat_id == conversation.chat_id,
+            Message.business_connection_id.is_not_distinct_from(
+                conversation.business_connection_id
+            ),
+        )
+        .order_by(
+            func.coalesce(
+                Message.sent_at,
+                Message.received_at,
+                Message.created_at,
+            ).desc(),
+            Message.id.desc(),
+        )
+        .limit(limit)
+    )
+    history_rows = list(reversed(history_result.all()))
+    content = {
+        "task_id": str(task.id),
+        "task_ref": str(task.id)[:8],
+        "status": task.status,
+        "reply_required": task.status == ReplyTaskStatus.NEEDS_REPLY.value,
+        "account": _serialize_account(account),
+        "conversation": {
+            "id": str(conversation.id),
+            "chat_id": conversation.chat_id,
+            "business_connection_id": conversation.business_connection_id,
+        },
+        "counterparty": _counterparty(
+            message=trigger,
+            telegram_update=trigger_update,
+            fallback_name=getattr(conversation, "title", None),
+        ),
+        "messages": [
+            {
+                **_serialize_message(message),
+                "counterparty": _counterparty(
+                    message=message,
+                    telegram_update=telegram_update,
+                    fallback_name=getattr(conversation, "title", None),
+                ),
+            }
+            for message, telegram_update in history_rows
+        ],
+        "count": len(history_rows),
+        "limit": limit,
+    }
+    return _tool_result(
+        content,
+        _format_reply_context_text(content),
+        request_id,
+    )
+
+
 async def _count_unanswered(
     *,
     session: AsyncSession,
