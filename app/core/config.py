@@ -1,4 +1,8 @@
-"""Runtime configuration for Gate."""
+"""Runtime configuration for Gate.
+
+Configuration is loaded from environment variables. Secrets are referenced by variable
+name only and must never be committed.
+"""
 
 from functools import lru_cache
 
