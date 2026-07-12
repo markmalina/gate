@@ -81,7 +81,7 @@ async def mcp_metadata(
         "resource": resource,
         "commit": _commit(settings),
         "auth": {
-            "type": "temporary_bearer_oauth2.1_planned",
+            "type": "temporary_bearer_or_oauth2.1",
             "mode": settings.mcp_auth_mode,
             "enabled": settings.gate_mcp_enabled,
             "enforced": settings.gate_mcp_enabled,
@@ -121,8 +121,14 @@ def _auth_status(settings: Settings) -> str:
     if not settings.gate_mcp_enabled:
         return "disabled_by_default"
     if settings.mcp_auth_mode == "oauth":
-        if settings.mcp_authorization_server and settings.mcp_public_resource_url:
-            return "oauth_discovery_configured_token_validation_pending"
+        if all(
+            (
+                settings.mcp_authorization_server,
+                settings.mcp_public_resource_url,
+                settings.mcp_oauth_jwks_url,
+            )
+        ):
+            return "oauth_token_validation_configured"
         return "oauth_configuration_incomplete"
     return "temporary_bearer_enforced"
 
