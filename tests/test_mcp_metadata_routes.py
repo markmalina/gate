@@ -34,7 +34,8 @@ async def test_oauth_protected_resource_metadata() -> None:
     assert payload["bearer_methods_supported"] == ["header"]
     assert payload["mcp"]["endpoint"] == "/mcp"
     assert payload["mcp"]["auth_enforced"] is False
-    assert payload["mcp"]["write_tools_enabled"] is False
+    assert payload["mcp"]["write_tools_enabled"] is True
+    assert payload["mcp"]["write_tools"] == ["gate_save_reply_draft"]
     assert payload["mcp"]["send_tools_enabled"] is False
 
 
@@ -83,7 +84,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate:inbox:read",
     ]
     assert payload["tools"]["read_only"] == ["gate_get_status", "gate_list_unanswered"]
-    assert payload["tools"]["write"] == []
+    assert payload["tools"]["write"] == ["gate_save_reply_draft"]
     assert payload["tools"]["send"] == []
 
 
