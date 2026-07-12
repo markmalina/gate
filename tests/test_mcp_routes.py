@@ -119,7 +119,7 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
 async def _post(payload: dict[str, Any], headers: dict[str, str] | None = None):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.post("/mcp", json=payload, headers=headers or AUTH_HEADERS)
+        return await client.post(\n            "/mcp",\n            json=payload,\n            headers=AUTH_HEADERS if headers is None else headers,\n        )
 
 
 @pytest.mark.anyio
