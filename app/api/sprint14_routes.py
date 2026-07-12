@@ -18,6 +18,7 @@ from app.models.domain import (
     DEFAULT_PROJECT_ID,
     TELEGRAM_MARK_BY_ACCOUNT_ID,
     TELEGRAM_MARK_RU_ACCOUNT_ID,
+    Account,
     AuditLog,
     ConversationStatus,
     GateEvent,
@@ -91,13 +92,13 @@ async def sprint14_telegram_webhook(
         business_connection_id=normalized.business_connection_id,
         settings=settings,
     )
-    business_connection = await _find_business_connection(
+    owner_identity_ids = await _find_owner_identity_ids(
         session=session,
-        business_connection_id=normalized.business_connection_id,
+        account_id=account_id,
     )
     is_outbound = _is_outbound_business_message(
         sender_id=normalized.sender_id,
-        connection=business_connection,
+        owner_identity_ids=owner_identity_ids,
     )
     message_direction = (
         MessageDirection.OUTBOUND.value
@@ -417,35 +418,47 @@ async def _send_business_text_reply(
     }
 
 
-async def _find_business_connection(
+async def _find_owner_identity_ids(
     *,
     session: AsyncSession,
-    business_connection_id: str | None,
-) -> TelegramBusinessConnection | None:
-    if not business_connection_id:
-        return None
-    result = await session.execute(
-        select(TelegramBusinessConnection).where(
-            TelegramBusinessConnection.business_connection_id == business_connection_id,
-            TelegramBusinessConnection.is_enabled.is_(True),
+    account_id: Any,
+) -> frozenset[str]:
+    owner_result = await session.execute(
+        select(Account.owner).where(Account.id == account_id)
+    )
+    owner = owner_result.scalar_one_or_none()
+    if owner is None:
+        return frozenset()
+
+    identity_result = await session.execute(
+        select(
+            Account.telegram_user_id,
+            TelegramBusinessConnection.telegram_user_id,
+            TelegramBusinessConnection.user_chat_id,
+        )
+        .outerjoin(
+            TelegramBusinessConnection,
+            TelegramBusinessConnection.account_id == Account.id,
+        )
+        .where(
+            Account.owner == owner,
+            Account.is_active.is_(True),
         )
     )
-    return result.scalar_one_or_none()
+    return frozenset(
+        str(value)
+        for row in identity_result.all()
+        for value in row
+        if value is not None
+    )
 
 
 def _is_outbound_business_message(
     *,
     sender_id: str,
-    connection: TelegramBusinessConnection | None,
+    owner_identity_ids: frozenset[str],
 ) -> bool:
-    if connection is None:
-        return False
-    owner_ids = {
-        str(value)
-        for value in (connection.telegram_user_id, connection.user_chat_id)
-        if value is not None
-    }
-    return str(sender_id) in owner_ids
+    return str(sender_id) in owner_identity_ids
 
 
 async def _resolve_account_id(
