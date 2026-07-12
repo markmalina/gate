@@ -64,6 +64,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                         id=allowed_account,
                         alias=f"allowed_{uuid4().hex}",
                         owner="mark",
+                        telegram_user_id=999,
                         account_type="telegram",
                     ),
                     Account(
@@ -202,7 +203,28 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 text=None,
                 sent_at=now,
             )
-            session.add_all([answered_message, system_message, empty_business_event])
+            owner_self_message = Message(
+                id=uuid4(),
+                bot_id=bot.id,
+                account_id=allowed_account,
+                project_id=allowed_project,
+                direction=MessageDirection.OUTBOUND.value,
+                source="telegram",
+                event_type="business_message",
+                chat_id="999",
+                sender_id="999",
+                recipient_id="999",
+                text="owner self note",
+                sent_at=now,
+            )
+            session.add_all(
+                [
+                    answered_message,
+                    system_message,
+                    empty_business_event,
+                    owner_self_message,
+                ]
+            )
             await session.flush()
 
             async def override_session() -> AsyncIterator[AsyncSession]:
