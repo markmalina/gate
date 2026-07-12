@@ -16,6 +16,13 @@ def clear_settings_cache() -> None:
     get_settings.cache_clear()
 
 
+ACTIVE_MCP_SCOPES = [
+    "gate:status:read",
+    "gate:inbox:read",
+    "gate:drafts:write",
+]
+
+
 @pytest.mark.anyio
 async def test_oauth_protected_resource_metadata() -> None:
     transport = ASGITransport(app=app)
@@ -29,8 +36,8 @@ async def test_oauth_protected_resource_metadata() -> None:
     payload = response.json()
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["authorization_servers"] == []
-    assert "gate:status:read" in payload["scopes_supported"]
-    assert "gate:messages:send" in payload["scopes_supported"]
+    assert payload["scopes_supported"] == ACTIVE_MCP_SCOPES
+    assert "gate:messages:send" not in payload["scopes_supported"]
     assert payload["bearer_methods_supported"] == ["header"]
     assert payload["mcp"]["endpoint"] == "/mcp"
     assert payload["mcp"]["auth_enforced"] is False
@@ -52,7 +59,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
     payload = response.json()
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["authorization_servers"] == []
-    assert "gate:inbox:read" in payload["scopes_supported"]
+    assert payload["scopes_supported"] == ACTIVE_MCP_SCOPES
     assert payload["mcp"]["read_only_tools"] == ["gate_get_status", "gate_list_unanswered"]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
@@ -79,6 +86,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["auth"]["protected_resource_metadata"] == (
         "https://gate.example/.well-known/oauth-protected-resource/mcp"
     )
+    assert payload["auth"]["scopes_supported"] == ACTIVE_MCP_SCOPES
     assert payload["auth"]["current_read_only_scopes"] == [
         "gate:status:read",
         "gate:inbox:read",

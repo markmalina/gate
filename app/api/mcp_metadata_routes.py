@@ -14,17 +14,8 @@ JsonObject = dict[str, Any]
 
 MCP_RESOURCE_SCOPES = [
     "gate:status:read",
-    "gate:accounts:read",
-    "gate:projects:read",
     "gate:inbox:read",
-    "gate:conversations:read",
-    "gate:routing:read",
-    "gate:routing:write",
-    "gate:drafts:read",
     "gate:drafts:write",
-    "gate:tasks:write",
-    "gate:imports:read",
-    "gate:messages:send",
 ]
 
 MCP_READ_ONLY_SCOPES = [
