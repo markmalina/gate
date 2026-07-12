@@ -58,13 +58,13 @@ async def authenticate_mcp_oauth(
 
 def _decode_access_token(token: str, settings: Settings) -> dict[str, Any]:
     algorithms = _allowed_algorithms(settings.mcp_oauth_allowed_algorithms)
-    signing_key = _jwks_client(settings.mcp_oauth_jwks_url).get_signing_key_from_jwt(token)
+    signing_key = _jwks_client(settings.mcp_oauth_jwks_url.strip()).get_signing_key_from_jwt(token)
     claims = jwt.decode(
         token,
         signing_key.key,
         algorithms=algorithms,
-        audience=settings.mcp_public_resource_url.rstrip("/"),
-        issuer=settings.mcp_authorization_server.rstrip("/"),
+        audience=settings.mcp_public_resource_url.strip().rstrip("/"),
+        issuer=settings.mcp_authorization_server.strip(),
         leeway=settings.mcp_oauth_clock_skew_seconds,
         options={
             "require": ["exp", "iat", "iss", "aud", "sub"],
