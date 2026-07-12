@@ -812,6 +812,28 @@ def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
 
 
+def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_get_reply_context",
+        "title": "Get Gate reply context",
+        "description": (
+            "Return the scoped RU/BY account, recipient and recent chronological "
+            "message history for one reply task."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "format": "uuid"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+            },
+            "required": ["task_id"],
+            "additionalProperties": False,
+        },
+        "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
+
+
 def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_save_reply_draft",
@@ -837,6 +859,52 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         },
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:drafts:write")
+
+
+def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_send_approved_reply",
+        "title": "Send an explicitly approved Gate reply",
+        "description": (
+            "Send the exact saved draft through its originating RU/BY Telegram "
+            "Business account. Call only after showing the account, recipient and "
+            "final text to Mark and receiving explicit confirmation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "format": "uuid"},
+                "confirmed": {"type": "boolean", "const": True},
+                "expected_account": {
+                    "type": "string",
+                    "enum": ["RU", "BY"],
+                },
+                "expected_recipient_chat_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                },
+            },
+            "required": [
+                "draft_id",
+                "confirmed",
+                "expected_account",
+                "expected_recipient_chat_id",
+            ],
+            "additionalProperties": False,
+        },
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:messages:send",
+    )
 
 
 async def _save_reply_draft_tool_result(
@@ -881,20 +949,123 @@ async def _save_reply_draft_tool_result(
         "task_id": str(saved.task_id),
         "account_id": str(saved.account_id),
         "project_id": str(saved.project_id),
+        "account": {
+            "alias": saved.account_alias,
+            "label": saved.account_label,
+        },
+        "recipient_chat_id": saved.recipient_chat_id,
         "status": saved.status,
         "text": saved.text,
         "sent": False,
         "approval_required": True,
-        "send_available": False,
+        "send_available": True,
+        "confirmation": {
+            "expected_account": saved.account_label,
+            "expected_recipient_chat_id": saved.recipient_chat_id,
+        },
     }
     return _tool_result(
         content,
         (
             f"Draft saved: {content['draft_ref']}\n"
-            "Not approved. Not sent. Sending is not available through MCP yet."
+            f"Account: {saved.account_label}\n"
+            f"Recipient chat: {saved.recipient_chat_id}\n"
+            "Not sent. Show the final text and ask Mark for explicit confirmation."
         ),
         request_id,
     )
+
+
+async def _send_approved_reply_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    telegram: TelegramClient,
+    settings: Settings,
+) -> JsonObject:
+    raw_draft_id = arguments.get("draft_id")
+    confirmed = arguments.get("confirmed")
+    expected_account = arguments.get("expected_account")
+    expected_recipient = arguments.get("expected_recipient_chat_id")
+    if (
+        not isinstance(raw_draft_id, str)
+        or not isinstance(confirmed, bool)
+        or not isinstance(expected_account, str)
+        or not isinstance(expected_recipient, str)
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message=(
+                "draft_id, confirmed, expected_account and "
+                "expected_recipient_chat_id are required"
+            ),
+        )
+    try:
+        draft_id = UUID(raw_draft_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="draft_id must be a UUID",
+        )
+
+    service = SendApprovedReplyService(
+        SqlTelegramReplySender(
+            session=session,
+            telegram=telegram,
+            settings=settings,
+        )
+    )
+    try:
+        sent = await service.execute(
+            SendApprovedReplyCommand(
+                principal=principal,
+                draft_id=draft_id,
+                confirmed=confirmed,
+                expected_account=expected_account,
+                expected_recipient_chat_id=expected_recipient,
+            )
+        )
+    except ReplySendError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+
+    content = {
+        "attempt_id": str(sent.attempt_id),
+        "attempt_ref": str(sent.attempt_id)[:8],
+        "draft_id": str(sent.draft_id),
+        "task_id": str(sent.task_id),
+        "account_id": str(sent.account_id),
+        "project_id": str(sent.project_id),
+        "account": {
+            "alias": sent.account_alias,
+            "label": sent.account_label,
+        },
+        "recipient_chat_id": sent.recipient_chat_id,
+        "status": sent.status,
+        "sent": sent.sent,
+        "idempotent_replay": sent.idempotent_replay,
+        "provider_message_id": sent.provider_message_id,
+        "error_code": sent.error_code,
+    }
+    if sent.sent:
+        text = (
+            f"Reply sent through {sent.account_label} to chat "
+            f"{sent.recipient_chat_id}. Attempt: {str(sent.attempt_id)[:8]}."
+        )
+    else:
+        text = (
+            f"Reply was not confirmed as sent. Status: {sent.status}. "
+            f"Account: {sent.account_label}. Attempt: {str(sent.attempt_id)[:8]}. "
+            "Do not retry this draft automatically."
+        )
+    return _tool_result(content, text, request_id)
 
 
 def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -> JsonObject:
