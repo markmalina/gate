@@ -9,10 +9,11 @@ from typing import Any
 from uuid import UUID
 
 import jwt
-from app.core.config import Settings
-from app.core.mcp_security import AccessScope, Principal
 from jwt import PyJWKClient
 from jwt.exceptions import InvalidTokenError, PyJWKClientError
+
+from app.core.config import Settings
+from app.core.mcp_security import AccessScope, Principal
 
 ASYMMETRIC_JWT_ALGORITHMS = frozenset(
     {"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"}
