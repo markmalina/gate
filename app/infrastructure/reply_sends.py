@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from sqlalchemy import select, update
@@ -52,22 +53,11 @@ class SqlTelegramReplySender:
         draft, task, conversation, trigger, account = await self._load_context(command)
         label = account_label(alias=account.alias, country_code=account.country_code)
         target_chat_id = trigger.sender_id
-        connection = await self._load_origin_connection(
+        self._validate_confirmation(
             command=command,
-            draft=draft,
-            conversation=conversation,
-            trigger=trigger,
-        )
-        self._validate_delivery(
-            command=command,
-            draft=draft,
-            task=task,
-            account=account,
             account_label_value=label,
             target_chat_id=target_chat_id,
-            connection=connection,
         )
-
         existing = await self._load_attempt(draft.id)
         if existing is not None:
             return self._attempt_result(
@@ -78,8 +68,23 @@ class SqlTelegramReplySender:
                 idempotent_replay=True,
             )
 
+        connection = await self._load_origin_connection(
+            command=command,
+            draft=draft,
+            conversation=conversation,
+            trigger=trigger,
+        )
+        self._validate_delivery(
+            draft=draft,
+            task=task,
+            account=account,
+            account_label_value=label,
+            connection=connection,
+        )
+
         now = datetime.now(UTC)
         attempt = SendAttempt(
+            id=uuid4(),
             reply_draft_id=draft.id,
             reply_task_id=task.id,
             conversation_id=conversation.id,
@@ -313,15 +318,21 @@ class SqlTelegramReplySender:
         )
         return result.scalar_one_or_none()
 
-    def _validate_delivery(
+    def _validate_confirmation(
         self,
         *,
         command: SendApprovedReplyCommand,
+        account_label_value: str,
+        target_chat_id: str,
+    ) -> None:
+
+    def _validate_delivery(
+        self,
+        *,
         draft: ReplyDraft,
         task: ReplyTask,
         account: Account,
         account_label_value: str,
-        target_chat_id: str,
         connection: TelegramBusinessConnection,
     ) -> None:
         if draft.status not in {
