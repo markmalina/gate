@@ -1,7 +1,5 @@
 """Sprint 14 Telegram Business connection routing tests."""
 
-from types import SimpleNamespace
-
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
     _is_business_send_enabled,
@@ -60,21 +58,22 @@ def test_business_update_detection_is_limited_to_telegram_business_shapes() -> N
     assert not _is_business_update({"message": {"text": "ping"}})
 
 
-def test_business_message_direction_uses_connection_owner_identity() -> None:
-    connection = SimpleNamespace(
-        telegram_user_id=7819816320,
-        user_chat_id=7819816320,
-    )
+def test_business_message_direction_uses_all_owner_identities() -> None:
+    owner_identity_ids = frozenset({"7819816320", "8648171437"})
 
     assert _is_outbound_business_message(
         sender_id="7819816320",
-        connection=connection,
+        owner_identity_ids=owner_identity_ids,
+    )
+    assert _is_outbound_business_message(
+        sender_id="8648171437",
+        owner_identity_ids=owner_identity_ids,
     )
     assert not _is_outbound_business_message(
         sender_id="203349059",
-        connection=connection,
+        owner_identity_ids=owner_identity_ids,
     )
     assert not _is_outbound_business_message(
         sender_id="7819816320",
-        connection=None,
+        owner_identity_ids=frozenset(),
     )
