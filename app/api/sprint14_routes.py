@@ -483,7 +483,13 @@ async def _resolve_account_id(
         existing = result.scalar_one_or_none()
         if existing is not None:
             return existing.account_id
-    return TELEGRAM_MARK_RU_ACCOUNT_ID
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Unknown Telegram Business connection. Configure its Gate account mapping "
+            "before processing messages."
+        ),
+    )
 
 
 def _account_id_from_configured_connection(
