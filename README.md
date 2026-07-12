@@ -3,7 +3,7 @@
 > **PROJECT STATUS: ACTIVE / ORDERED STABILIZATION AND MVP DELIVERY**  
 > Development resumed by Mark: **2026-07-12**  
 > Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
-> Current active scope: **PR 0 — MCP containment**, starting from `main` at `364604dc`.  
+> Current active scope: **Sprint 22 — ChatGPT OAuth discovery contract**, starting from `main` at `5741c943`.  
 > Do not start feature development from an old sprint branch. Read this README completely before touching code.
 
 Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
@@ -28,7 +28,7 @@ Reference documents:
 - [Team workflow](docs/TEAM_WORKFLOW.md)
 - [Gate operator regulations](docs/GATE_OPERATOR_REGULATIONS.md)
 
-During the current containment scope:
+During the current ChatGPT connection scope:
 
 - do not add Telegram features;
 - do not add MCP tools;
@@ -38,7 +38,7 @@ During the current containment scope:
 - do not activate write/send MCP capabilities;
 - do not add autonomous AI replies;
 - do not paste or commit secrets;
-- refactor preparation and the explicitly active containment implementation are allowed;
+- provider-neutral OAuth discovery work and the explicitly active ChatGPT connection implementation are allowed;
 - work proceeds in the ordered PR sequence below, with production deployment remaining a separate Mark decision.
 
 ## Active delivery strategy
@@ -50,7 +50,7 @@ Gate now advances on two synchronized tracks that share one application layer:
 
 MVP adapters must use the same scoped application services being built for the target architecture. Temporary direct ORM access, unscoped MCP reads and autonomous sending are not acceptable shortcuts.
 
-## 2. Exact repository state at freeze
+## Current ChatGPT connection boundary\n\nSprint 22 adds the provider-neutral OAuth discovery and tool challenge contract required for ChatGPT to scan Gate safely. It does not activate MCP in production, choose an identity provider, validate OAuth access tokens or expose write/send tools. Token verification remains the next bounded security sprint.\n\n## 2. Exact repository state at freeze
 
 Frozen application-code baseline (the last functional change before this handoff):
 
