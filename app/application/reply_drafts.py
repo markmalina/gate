@@ -52,6 +52,9 @@ class SavedReplyDraft:
     task_id: UUID
     account_id: UUID
     project_id: UUID
+    account_alias: str
+    account_label: str
+    recipient_chat_id: str
     status: str
     text: str
 

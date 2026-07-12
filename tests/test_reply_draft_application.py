@@ -25,6 +25,9 @@ class CapturingWriter:
             task_id=command.task_id,
             account_id=ACCOUNT_ID,
             project_id=PROJECT_ID,
+            account_alias="telegram_mark_ru",
+            account_label="RU",
+            recipient_chat_id="12345",
             status="generated",
             text=command.text,
         )

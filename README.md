@@ -31,11 +31,11 @@ Reference documents:
 During the current ChatGPT connection scope:
 
 - do not add Telegram features;
-- do not add MCP tools;
+- add MCP tools only when they are part of the approved, scoped MVP flow;
 - do not build Oko / Oko Vozrozhdeniya behavior;
 - do not merge old branches into `main`;
 - eligible green PRs auto-merge and Railway auto-deploy under the standing Team Workflow authorization; manual deploy, retry, rollback and production configuration changes still require Mark's direct command;
-- do not activate write/send MCP capabilities;
+- MCP draft and send capabilities must remain scope-gated, explicitly confirmed and auditable;
 - do not add autonomous AI replies;
 - do not paste or commit secrets;
 - provider-neutral OAuth token verification and the explicitly active ChatGPT connection implementation are allowed;
@@ -52,7 +52,9 @@ MVP adapters must use the same scoped application services being built for the t
 
 ## Current ChatGPT connection boundary
 
-The private Gate MCP MVP is active in production behind Auth0 OAuth. Gate preserves the exact Auth0 issuer, verifies JWT/JWKS tokens, enforces workspace/account/project claims and advertises only the three active scopes: `gate:status:read`, `gate:inbox:read` and `gate:drafts:write`. The available tools can read status, list scoped unanswered messages and save a draft. No MCP approval or send tool is exposed.
+The private Gate MCP MVP is active in production behind Auth0 OAuth. Gate preserves the exact Auth0 issuer, verifies JWT/JWKS tokens and enforces workspace/account/project claims. The active scopes are `gate:status:read`, `gate:inbox:read`, `gate:drafts:write` and `gate:messages:send`.
+
+The five MCP tools read status, list unanswered and answered messages, load recent reply context, save a draft, and send that exact saved draft only after Mark explicitly confirms the displayed account (`RU` or `BY`), recipient and final text. Every delivery is reserved in `send_attempts` before Telegram is called. Repeated calls cannot send the same draft twice; a timeout becomes `unknown` and is never retried automatically.
 
 ## 2. Exact repository state at freeze
 
@@ -113,7 +115,7 @@ All resumed work must start from the then-current `main`. If `main` has advanced
 - global and current RU/BY send switches;
 - safe Telegram error details;
 - cleanup of test/service inbox tasks without deleting data;
-- read-only MCP tools `gate_get_status` and `gate_list_unanswered`;
+- MCP tools `gate_get_status`, `gate_list_unanswered`, `gate_get_reply_context`, `gate_save_reply_draft` and `gate_send_approved_reply`;
 - MCP protected-resource metadata describing planned OAuth scopes.
 
 The current operator loop is:
@@ -133,11 +135,11 @@ No free-form outbound text may be sent without Mark explicit confirmation.
 
 ## 4. Current MCP security boundary
 
-PR #75 closed the unauthenticated MCP data-access risk: MCP is disabled by default, temporary bearer access is fail-closed, and every query requires explicit account/project grants. PR #76 added the ChatGPT OAuth discovery contract without exposing data. PRs #77–79 added provider-neutral JWT/JWKS verification, the scoped draft tool and Auth0 activation readiness. PR #80 limited OAuth metadata to the three active least-privilege scopes.
+PR #75 closed the unauthenticated MCP data-access risk: MCP is disabled by default, temporary bearer access is fail-closed, and every query requires explicit account/project grants. PR #76 added the ChatGPT OAuth discovery contract without exposing data. PRs #77–79 added provider-neutral JWT/JWKS verification, the scoped draft tool and Auth0 activation readiness. PR #80 limited OAuth metadata to the initial least-privilege scopes. Later inbox fixes established reliable inbound/outbound direction and counterparty identity before send was exposed.
 
-Production now uses Auth0 OAuth with exact issuer, audience, scope and custom grant-claim validation. The draft tool persists proposed text only and reports that nothing was sent. No MCP approval or send tool is exposed.
+Production uses Auth0 OAuth with exact issuer, audience, scope and custom grant-claim validation. Draft creation remains side-effect free outside Gate. The send tool requires the separate `gate:messages:send` scope plus exact account/recipient confirmation, uses the originating Telegram Business connection, records an idempotent send attempt before the network call and closes reply work only after confirmed Telegram success.
 
-## 5. Why a full refactor is required before further MCP
+## 5. Remaining architecture debt after the MVP
 
 The current system grew through fast production sprints and hotfix layers. Confirmed debt:
 

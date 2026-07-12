@@ -1,6 +1,6 @@
 # mypy: ignore-errors
 # ruff: noqa
-"""Contained read-only MCP endpoint for Gate."""
+"""Scoped Gate MCP endpoint for inbox, drafts and explicit reply sending."""
 
 from datetime import datetime
 from typing import Annotated, Any
@@ -12,15 +12,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
+from app.application.account_labels import account_label
 from app.application.reply_drafts import (
     ReplyDraftError,
     SaveReplyDraftCommand,
     SaveReplyDraftService,
 )
+from app.application.reply_sends import (
+    ReplySendError,
+    SendApprovedReplyCommand,
+    SendApprovedReplyService,
+)
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
 from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
+from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
     Account,
     Conversation,
@@ -32,10 +40,12 @@ from app.models.domain import (
     TelegramBusinessConnection,
     TelegramUpdate,
 )
+from app.services.telegram import TelegramClient
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
 db_session_dependency = Depends(get_db_session)
+telegram_client_dependency = Depends(get_telegram_client)
 
 JsonObject = dict[str, Any]
 JSONRPC_VERSION = "2.0"
@@ -47,14 +57,22 @@ READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "idempotentHint": True,
     "openWorldHint": False,
 }
-MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered", "gate_save_reply_draft"]
+MCP_TOOL_NAMES = [
+    "gate_get_status",
+    "gate_list_unanswered",
+    "gate_get_reply_context",
+    "gate_save_reply_draft",
+    "gate_send_approved_reply",
+]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
 ANSWERED_MESSAGE_SOURCES = ("telegram", "gate-approved-draft")
 MCP_TOOL_SCOPES = {
     "gate_get_status": "gate:status:read",
     "gate_list_unanswered": "gate:inbox:read",
+    "gate_get_reply_context": "gate:inbox:read",
     "gate_save_reply_draft": "gate:drafts:write",
+    "gate_send_approved_reply": "gate:messages:send",
 }
 
 
@@ -64,6 +82,7 @@ async def mcp_endpoint(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
+    telegram: TelegramClient = telegram_client_dependency,
 ) -> JsonObject:
     """Handle contained reads and the provider-neutral ChatGPT OAuth contract."""
 
@@ -102,7 +121,9 @@ async def mcp_endpoint(
                 "tools": [
                     _gate_status_tool(settings),
                     _gate_list_unanswered_tool(settings),
+                    _gate_get_reply_context_tool(settings),
                     _gate_save_reply_draft_tool(settings),
+                    _gate_send_approved_reply_tool(settings),
                 ]
             },
         )
@@ -148,12 +169,28 @@ async def mcp_endpoint(
                 principal=principal,
             )
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
+        if tool_name == "gate_get_reply_context":
+            return await _get_reply_context_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+            )
         if tool_name == "gate_save_reply_draft":
             return await _save_reply_draft_tool_result(
                 request_id=request_id,
                 arguments=arguments,
                 principal=principal,
                 session=session,
+            )
+        if tool_name == "gate_send_approved_reply":
+            return await _send_approved_reply_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                telegram=telegram,
+                settings=settings,
             )
     if method == "notifications/initialized":
         if not oauth_discovery:
@@ -306,7 +343,8 @@ async def _build_gate_status(
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tools": MCP_TOOL_NAMES,
             "draft_writes_enabled": True,
-            "send_enabled": False,
+            "send_enabled": settings.gate_send_enabled,
+            "send_requires_explicit_confirmation": True,
             "auth": (
                 "temporary_bearer_enforced"
                 if principal.auth_method == "bearer"
@@ -324,10 +362,11 @@ async def _build_unanswered_list(
     projects = principal.access_scope.project_ids
     owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
     result = await session.execute(
-        select(ReplyTask, Conversation, Message, TelegramUpdate)
+        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
         .options(undefer(ReplyTask.account_id))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .join(Account, Message.account_id == Account.id)
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -355,12 +394,14 @@ async def _build_unanswered_list(
             conversation=conversation,
             message=message,
             telegram_update=telegram_update,
+            account=account,
         )
-        for task, conversation, message, telegram_update in result.all()
+        for task, conversation, message, telegram_update, account in result.all()
     ]
 
     answered_result = await session.execute(
-        select(Message, TelegramUpdate)
+        select(Message, TelegramUpdate, Account)
+        .join(Account, Message.account_id == Account.id)
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -382,8 +423,12 @@ async def _build_unanswered_list(
         .limit(limit)
     )
     answered_items = [
-        _serialize_answered_item(message=message, telegram_update=telegram_update)
-        for message, telegram_update in answered_result.all()
+        _serialize_answered_item(
+            message=message,
+            telegram_update=telegram_update,
+            account=account,
+        )
+        for message, telegram_update, account in answered_result.all()
     ]
     return {
         "items": items,
@@ -393,6 +438,126 @@ async def _build_unanswered_list(
         "limit": limit,
         "next_cursor": None,
     }
+
+
+async def _get_reply_context_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_task_id = arguments.get("task_id")
+    if not isinstance(raw_task_id, str):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="task_id is required",
+        )
+    try:
+        task_id = UUID(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="task_id must be a UUID",
+        )
+    limit = _bounded_limit(arguments.get("limit"), default=10, maximum=20)
+    scope = principal.access_scope
+    task_result = await session.execute(
+        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
+        .options(undefer(ReplyTask.account_id))
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .join(Account, ReplyTask.account_id == Account.id)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
+        .where(
+            ReplyTask.id == task_id,
+            ReplyTask.account_id.in_(scope.account_ids),
+            ReplyTask.project_id.in_(scope.project_ids),
+            Conversation.account_id.in_(scope.account_ids),
+            Conversation.project_id.in_(scope.project_ids),
+            Message.account_id.in_(scope.account_ids),
+            Message.project_id.in_(scope.project_ids),
+        )
+    )
+    row = task_result.one_or_none()
+    if row is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="task_not_found",
+            message="Reply task not found in the allowed scope",
+        )
+    task, conversation, trigger, trigger_update, account = row
+    history_result = await session.execute(
+        select(Message, TelegramUpdate)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
+        .where(
+            Message.account_id == conversation.account_id,
+            Message.project_id == conversation.project_id,
+            Message.chat_id == conversation.chat_id,
+            Message.business_connection_id.is_not_distinct_from(
+                conversation.business_connection_id
+            ),
+        )
+        .order_by(
+            func.coalesce(
+                Message.sent_at,
+                Message.received_at,
+                Message.created_at,
+            ).desc(),
+            Message.id.desc(),
+        )
+        .limit(limit)
+    )
+    history_rows = list(reversed(history_result.all()))
+    content = {
+        "task_id": str(task.id),
+        "task_ref": str(task.id)[:8],
+        "status": task.status,
+        "reply_required": task.status == ReplyTaskStatus.NEEDS_REPLY.value,
+        "account": _serialize_account(account),
+        "conversation": {
+            "id": str(conversation.id),
+            "chat_id": conversation.chat_id,
+            "business_connection_id": conversation.business_connection_id,
+        },
+        "counterparty": _counterparty(
+            message=trigger,
+            telegram_update=trigger_update,
+            fallback_name=getattr(conversation, "title", None),
+        ),
+        "messages": [
+            {
+                **_serialize_message(message),
+                "counterparty": _counterparty(
+                    message=message,
+                    telegram_update=telegram_update,
+                    fallback_name=getattr(conversation, "title", None),
+                ),
+            }
+            for message, telegram_update in history_rows
+        ],
+        "count": len(history_rows),
+        "limit": limit,
+    }
+    return _tool_result(
+        content,
+        _format_reply_context_text(content),
+        request_id,
+    )
 
 
 async def _count_unanswered(
@@ -434,6 +599,7 @@ def _serialize_unanswered_item(
     conversation: Conversation,
     message: Message,
     telegram_update: TelegramUpdate | None,
+    account: Account,
 ) -> JsonObject:
     task_id = str(task.id)
     return {
@@ -444,6 +610,7 @@ def _serialize_unanswered_item(
         "reason": task.reason,
         "account_id": str(task.account_id),
         "project_id": str(task.project_id),
+        "account": _serialize_account(account),
         "conversation": {
             "id": str(conversation.id),
             "chat_id": conversation.chat_id,
@@ -460,16 +627,31 @@ def _serialize_unanswered_item(
 
 
 def _serialize_answered_item(
-    *, message: Message, telegram_update: TelegramUpdate | None
+    *,
+    message: Message,
+    telegram_update: TelegramUpdate | None,
+    account: Account,
 ) -> JsonObject:
     return {
         "account_id": str(message.account_id),
         "project_id": str(message.project_id),
+        "account": _serialize_account(account),
         "counterparty": _counterparty(
             message=message,
             telegram_update=telegram_update,
         ),
         "message": _serialize_message(message),
+    }
+
+
+def _serialize_account(account: Account) -> JsonObject:
+    return {
+        "id": str(account.id),
+        "alias": account.alias,
+        "label": account_label(
+            alias=account.alias,
+            country_code=account.country_code,
+        ),
     }
 
 
@@ -631,6 +813,28 @@ def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
 
 
+def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_get_reply_context",
+        "title": "Get Gate reply context",
+        "description": (
+            "Return the scoped RU/BY account, recipient and recent chronological "
+            "message history for one reply task."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "format": "uuid"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+            },
+            "required": ["task_id"],
+            "additionalProperties": False,
+        },
+        "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
+
+
 def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_save_reply_draft",
@@ -656,6 +860,52 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         },
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:drafts:write")
+
+
+def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_send_approved_reply",
+        "title": "Send an explicitly approved Gate reply",
+        "description": (
+            "Send the exact saved draft through its originating RU/BY Telegram "
+            "Business account. Call only after showing the account, recipient and "
+            "final text to Mark and receiving explicit confirmation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "format": "uuid"},
+                "confirmed": {"type": "boolean", "const": True},
+                "expected_account": {
+                    "type": "string",
+                    "enum": ["RU", "BY"],
+                },
+                "expected_recipient_chat_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                },
+            },
+            "required": [
+                "draft_id",
+                "confirmed",
+                "expected_account",
+                "expected_recipient_chat_id",
+            ],
+            "additionalProperties": False,
+        },
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:messages:send",
+    )
 
 
 async def _save_reply_draft_tool_result(
@@ -700,20 +950,123 @@ async def _save_reply_draft_tool_result(
         "task_id": str(saved.task_id),
         "account_id": str(saved.account_id),
         "project_id": str(saved.project_id),
+        "account": {
+            "alias": saved.account_alias,
+            "label": saved.account_label,
+        },
+        "recipient_chat_id": saved.recipient_chat_id,
         "status": saved.status,
         "text": saved.text,
         "sent": False,
         "approval_required": True,
-        "send_available": False,
+        "send_available": True,
+        "confirmation": {
+            "expected_account": saved.account_label,
+            "expected_recipient_chat_id": saved.recipient_chat_id,
+        },
     }
     return _tool_result(
         content,
         (
             f"Draft saved: {content['draft_ref']}\n"
-            "Not approved. Not sent. Sending is not available through MCP yet."
+            f"Account: {saved.account_label}\n"
+            f"Recipient chat: {saved.recipient_chat_id}\n"
+            "Not sent. Show the final text and ask Mark for explicit confirmation."
         ),
         request_id,
     )
+
+
+async def _send_approved_reply_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    telegram: TelegramClient,
+    settings: Settings,
+) -> JsonObject:
+    raw_draft_id = arguments.get("draft_id")
+    confirmed = arguments.get("confirmed")
+    expected_account = arguments.get("expected_account")
+    expected_recipient = arguments.get("expected_recipient_chat_id")
+    if (
+        not isinstance(raw_draft_id, str)
+        or not isinstance(confirmed, bool)
+        or not isinstance(expected_account, str)
+        or not isinstance(expected_recipient, str)
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message=(
+                "draft_id, confirmed, expected_account and "
+                "expected_recipient_chat_id are required"
+            ),
+        )
+    try:
+        draft_id = UUID(raw_draft_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="draft_id must be a UUID",
+        )
+
+    service = SendApprovedReplyService(
+        SqlTelegramReplySender(
+            session=session,
+            telegram=telegram,
+            settings=settings,
+        )
+    )
+    try:
+        sent = await service.execute(
+            SendApprovedReplyCommand(
+                principal=principal,
+                draft_id=draft_id,
+                confirmed=confirmed,
+                expected_account=expected_account,
+                expected_recipient_chat_id=expected_recipient,
+            )
+        )
+    except ReplySendError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+
+    content = {
+        "attempt_id": str(sent.attempt_id),
+        "attempt_ref": str(sent.attempt_id)[:8],
+        "draft_id": str(sent.draft_id),
+        "task_id": str(sent.task_id),
+        "account_id": str(sent.account_id),
+        "project_id": str(sent.project_id),
+        "account": {
+            "alias": sent.account_alias,
+            "label": sent.account_label,
+        },
+        "recipient_chat_id": sent.recipient_chat_id,
+        "status": sent.status,
+        "sent": sent.sent,
+        "idempotent_replay": sent.idempotent_replay,
+        "provider_message_id": sent.provider_message_id,
+        "error_code": sent.error_code,
+    }
+    if sent.sent:
+        text = (
+            f"Reply sent through {sent.account_label} to chat "
+            f"{sent.recipient_chat_id}. Attempt: {str(sent.attempt_id)[:8]}."
+        )
+    else:
+        text = (
+            f"Reply was not confirmed as sent. Status: {sent.status}. "
+            f"Account: {sent.account_label}. Attempt: {str(sent.attempt_id)[:8]}. "
+            "Do not retry this draft automatically."
+        )
+    return _tool_result(content, text, request_id)
 
 
 def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -> JsonObject:
@@ -806,6 +1159,27 @@ def _format_status_text(snapshot: JsonObject) -> str:
     )
 
 
+def _format_reply_context_text(context: JsonObject) -> str:
+    account = context["account"]
+    counterparty = context["counterparty"]
+    lines = [
+        f"Gate reply context — [{account['label']}] {counterparty['label']}",
+        f"task: {context['task_ref']}",
+        f"chat: {context['conversation']['chat_id']}",
+        "",
+        f"Recent messages: {context['count']}",
+    ]
+    for message in context["messages"]:
+        direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
+        lines.extend(
+            [
+                "",
+                f"[{direction}] {message['text_preview'] or '<empty>'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _format_unanswered_text(inbox: JsonObject) -> str:
     lines = [f"Unanswered inbound Gate tasks: {inbox['count']}"]
     if not inbox["items"]:
@@ -814,7 +1188,8 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
         lines.extend(
             [
                 "",
-                f"{index}. {item['counterparty']['label']}: "
+                f"{index}. [{item['account']['label']}] "
+                f"{item['counterparty']['label']}: "
                 f"{item['message']['text_preview'] or '<empty>'}",
                 f"task: {item['task_ref']}",
                 f"chat: {item['conversation']['chat_id']}",
@@ -828,7 +1203,8 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
         lines.extend(
             [
                 "",
-                f"{index}. {item['counterparty']['label']}: "
+                f"{index}. [{item['account']['label']}] "
+                f"{item['counterparty']['label']}: "
                 f"{item['message']['text_preview'] or '<empty>'}",
                 f"chat: {item['message']['chat_id']}",
             ]

@@ -80,6 +80,17 @@ class ReplyDraftStatus(StrEnum):
     APPROVED = "approved"
 
 
+class SendAttemptStatus(StrEnum):
+    """Externally visible delivery attempt states."""
+
+    RESERVED = "reserved"
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+    CANCELLED = "cancelled"
+
+
 class Bot(Base):
     """Telegram bot adapter configuration without committed token values."""
 
@@ -616,6 +627,52 @@ class ReplyDraft(Base):
     reply_task: Mapped[ReplyTask] = relationship(back_populates="reply_drafts")
     conversation: Mapped[Conversation] = relationship(back_populates="reply_drafts")
     trigger_message: Mapped[Message] = relationship()
+
+
+class SendAttempt(Base):
+    """Idempotent reservation and outcome for one explicitly approved draft send."""
+
+    __tablename__ = "send_attempts"
+    __table_args__ = (
+        UniqueConstraint("reply_draft_id", name="uq_send_attempts_reply_draft_id"),
+        Index("ix_send_attempts_status_created_at", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reply_draft_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reply_drafts.id"), nullable=False, index=True
+    )
+    reply_task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reply_tasks.id"), nullable=False, index=True
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id"), nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id"), nullable=False, index=True
+    )
+    principal_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=SendAttemptStatus.RESERVED.value
+    )
+    account_label: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    business_connection_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reserved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AuditLog(Base):

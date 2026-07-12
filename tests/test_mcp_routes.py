@@ -31,6 +31,11 @@ class FakeMcpResult:
     def all(self) -> list[Any]:
         return self._rows
 
+    def one_or_none(self) -> Any | None:
+        if len(self._rows) > 1:
+            raise AssertionError("Expected at most one row")
+        return self._rows[0] if self._rows else None
+
 
 class FakeMcpSession:
     def __init__(
@@ -150,10 +155,83 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
             }
         }
     )
+    account = SimpleNamespace(
+        id=UUID(ACCOUNT_ID),
+        alias="telegram_mark_ru",
+        country_code="RU",
+    )
     session = FakeMcpSession(
         row_result_batches=[
-            [(task, conversation, message, inbound_update)],
-            [(outbound_message, outbound_update)],
+            [(task, conversation, message, inbound_update, account)],
+            [(outbound_message, outbound_update, account)],
+        ]
+    )
+
+    async def override_session() -> AsyncIterator[FakeMcpSession]:
+        yield session
+
+    app.dependency_overrides[get_db_session] = override_session
+    yield session
+
+
+@pytest.fixture
+def reply_context() -> Iterator[FakeMcpSession]:
+    now = datetime(2026, 7, 12, 6, 30, tzinfo=UTC)
+    task = SimpleNamespace(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        status="needs_reply",
+    )
+    conversation = SimpleNamespace(
+        id=UUID("44444444-4444-4444-4444-444444444444"),
+        account_id=UUID(ACCOUNT_ID),
+        project_id=UUID(PROJECT_ID),
+        chat_id="8648171437",
+        business_connection_id="bc-origin",
+    )
+    trigger = SimpleNamespace(
+        id=UUID("55555555-5555-5555-5555-555555555555"),
+        account_id=UUID(ACCOUNT_ID),
+        project_id=UUID(PROJECT_ID),
+        direction="inbound",
+        source="telegram",
+        chat_id="8648171437",
+        sender_id="12345",
+        recipient_id=None,
+        text="Доброе, сделаю что-нибудь с этим",
+        created_at=now,
+        received_at=now,
+        sent_at=None,
+    )
+    inbound_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "from": {"id": 12345, "first_name": "Анна"},
+                "chat": {"id": 8648171437},
+            }
+        }
+    )
+    account = SimpleNamespace(
+        id=UUID(ACCOUNT_ID),
+        alias="telegram_mark_ru",
+        country_code="RU",
+    )
+    outbound = SimpleNamespace(
+        id=UUID("66666666-6666-6666-6666-666666666666"),
+        direction="outbound",
+        source="telegram",
+        chat_id="8648171437",
+        sender_id="7819816320",
+        recipient_id="8648171437",
+        text="Привет, Анна",
+        created_at=now,
+        received_at=None,
+        sent_at=now,
+    )
+    outbound_update = SimpleNamespace(payload={})
+    session = FakeMcpSession(
+        row_result_batches=[
+            [(task, conversation, trigger, inbound_update, account)],
+            [(outbound, outbound_update), (trigger, inbound_update)],
         ]
     )
 
@@ -220,15 +298,24 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     assert [tool["name"] for tool in tools] == [
         "gate_get_status",
         "gate_list_unanswered",
+        "gate_get_reply_context",
         "gate_save_reply_draft",
+        "gate_send_approved_reply",
     ]
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[1]["annotations"]["readOnlyHint"] is True
-    assert tools[2]["annotations"] == {
+    assert tools[2]["annotations"]["readOnlyHint"] is True
+    assert tools[3]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": False,
+    }
+    assert tools[4]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
     }
 
 
@@ -269,6 +356,11 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     item = result["structuredContent"]["items"][0]
     assert item["account_id"] == ACCOUNT_ID
     assert item["project_id"] == PROJECT_ID
+    assert item["account"] == {
+        "id": ACCOUNT_ID,
+        "alias": "telegram_mark_ru",
+        "label": "RU",
+    }
     assert item["message"]["direction"] == "inbound"
     assert item["message"]["text_preview"] == "Привет, хочу заниматься Око Возрождения"
     assert item["counterparty"] == {
@@ -283,6 +375,7 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     assert answered["message"]["direction"] == "outbound"
     assert answered["message"]["text_preview"] == "Анна, привет!"
     assert answered["counterparty"]["label"] == "Анна"
+    assert answered["account"]["label"] == "RU"
     unanswered_statement = str(unanswered_context.statements[0])
     answered_statement = str(unanswered_context.statements[1])
     assert "reply_tasks.account_id IN" in unanswered_statement
@@ -290,6 +383,37 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     assert "messages.direction" in unanswered_statement
     assert "messages.direction" in answered_statement
     assert "messages.source IN" in answered_statement
+
+
+@pytest.mark.anyio
+async def test_mcp_reply_context_shows_account_and_chronological_history(
+    reply_context: FakeMcpSession,
+) -> None:
+    response = await _post(
+        {
+            "jsonrpc": "2.0",
+            "id": "context-1",
+            "method": "tools/call",
+            "params": {
+                "name": "gate_get_reply_context",
+                "arguments": {
+                    "task_id": "11111111-1111-1111-1111-111111111111",
+                    "limit": 10,
+                },
+            },
+        }
+    )
+
+    result = response.json()["result"]
+    structured = result["structuredContent"]
+    assert structured["account"]["label"] == "RU"
+    assert structured["counterparty"]["label"] == "Анна"
+    assert [item["direction"] for item in structured["messages"]] == [
+        "inbound",
+        "outbound",
+    ]
+    assert "[RU]" in result["content"][0]["text"]
+    assert len(reply_context.statements) == 2
 
 
 @pytest.mark.anyio
@@ -320,6 +444,31 @@ async def test_temporary_read_bearer_cannot_save_drafts(mcp_context: FakeMcpSess
                 "arguments": {
                     "task_id": "11111111-1111-1111-1111-111111111111",
                     "text": "Привет!",
+                },
+            },
+        }
+    )
+
+    assert response.status_code == 403
+    assert mcp_context.statements == []
+
+
+@pytest.mark.anyio
+async def test_temporary_read_bearer_cannot_send_messages(
+    mcp_context: FakeMcpSession,
+) -> None:
+    response = await _post(
+        {
+            "jsonrpc": "2.0",
+            "id": "send-blocked",
+            "method": "tools/call",
+            "params": {
+                "name": "gate_send_approved_reply",
+                "arguments": {
+                    "draft_id": "44444444-4444-4444-4444-444444444444",
+                    "confirmed": True,
+                    "expected_account": "RU",
+                    "expected_recipient_chat_id": "12345",
                 },
             },
         }

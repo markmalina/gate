@@ -1,7 +1,8 @@
 # Gate MCP: Auth0 + ChatGPT activation runbook
 
-This runbook activates the already implemented OAuth resource-server boundary. It does not
-add a custom authorization server, expose secrets in Git, or enable message sending.
+This runbook activates the implemented OAuth resource-server boundary and the explicit,
+idempotent reply-send MVP. It does not add a custom authorization server, expose secrets in
+Git, or permit autonomous message sending.
 
 ## Fixed production identifiers
 
@@ -25,9 +26,11 @@ In an Auth0 tenant, create an API with:
   - `gate:status:read`
   - `gate:inbox:read`
   - `gate:drafts:write`
+  - `gate:messages:send`
 
 Enable RBAC and include permissions in access tokens. Assign only these permissions to Mark's
-user for the first private MVP.
+user for the private MVP. Existing ChatGPT connections must be reconnected after the fourth
+permission is granted so that the new access token contains it.
 
 ## 2. Add explicit Gate grants to Mark's Auth0 user
 
@@ -96,12 +99,15 @@ JWKS endpoint.
 In ChatGPT Developer Mode, create a private app pointing to the Gate MCP endpoint and choose
 OAuth with the Auth0 application credentials. Then verify, in order:
 
-1. ChatGPT discovers all three tools.
-2. Login requests only `gate:status:read`, `gate:inbox:read`, and `gate:drafts:write`.
+1. ChatGPT discovers all five tools.
+2. Login requests only `gate:status:read`, `gate:inbox:read`, `gate:drafts:write`, and `gate:messages:send`.
 3. `gate_get_status` succeeds.
-4. `gate_list_unanswered` returns only explicitly granted account/project data.
-5. `gate_save_reply_draft` saves a draft and reports `sent=false`.
-6. No send tool is present.
+4. `gate_list_unanswered` returns only explicitly granted account/project data and labels every item `RU` or `BY`.
+5. `gate_get_reply_context` returns the same account label, recipient and recent chronological history.
+6. `gate_save_reply_draft` saves a draft, reports `sent=false`, and returns the account and recipient confirmation fields.
+7. Before `gate_send_approved_reply`, ChatGPT shows Mark the final text, `RU`/`BY` account and recipient, then waits for explicit confirmation.
+8. The first confirmed send creates one `send_attempts` record and one Telegram call. Repeating the same tool call returns the existing attempt without another Telegram call.
+9. A Telegram timeout returns `status=unknown`; do not retry that draft automatically.
 
 ## Rollback
 
