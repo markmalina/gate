@@ -277,8 +277,7 @@ async def _build_gate_status(
                 Message.account_id.in_(accounts),
                 Message.project_id.in_(projects),
                 Message.direction == MessageDirection.OUTBOUND.value,
-                Message.source.in_(ANSWERED_MESSAGE_SOURCES),
-                _non_service_message_filter(),
+                _answered_message_filter(),
             ),
         ),
         "drafts": await _count(
@@ -370,8 +369,7 @@ async def _build_unanswered_list(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.OUTBOUND.value,
-            Message.source.in_(ANSWERED_MESSAGE_SOURCES),
-            _non_service_message_filter(),
+            _answered_message_filter(),
         )
         .order_by(
             func.coalesce(Message.sent_at, Message.created_at).desc(),
@@ -537,6 +535,15 @@ def _optional_text(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _answered_message_filter() -> Any:
+    return and_(
+        Message.source.in_(ANSWERED_MESSAGE_SOURCES),
+        Message.text.is_not(None),
+        func.length(func.trim(Message.text)) > 0,
+        _non_service_message_filter(),
+    )
 
 
 def _non_service_message_filter() -> Any:
