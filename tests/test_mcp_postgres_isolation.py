@@ -5,11 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.deps import get_db_session
 from app.core.config import get_settings
