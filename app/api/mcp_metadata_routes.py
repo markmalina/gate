@@ -95,7 +95,7 @@ async def mcp_metadata(
         },
         "tools": {
             "read_only": ["gate_get_status", "gate_list_unanswered"],
-            "write": [],
+            "write": ["gate_save_reply_draft"],
             "send": [],
         },
     }
@@ -112,7 +112,8 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "auth_enforced": settings.gate_mcp_enabled,
         "auth_status": _auth_status(settings),
         "read_only_tools": ["gate_get_status", "gate_list_unanswered"],
-        "write_tools_enabled": False,
+        "write_tools_enabled": True,
+        "write_tools": ["gate_save_reply_draft"],
         "send_tools_enabled": False,
     }
 

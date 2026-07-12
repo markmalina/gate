@@ -7,6 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db_session
+from app.application.reply_drafts import SavedReplyDraft
 from app.core.config import get_settings
 from app.core.mcp_security import AccessScope, Principal
 from app.main import app
@@ -29,6 +30,14 @@ class CountSession:
                 return 0
 
         return Result()
+
+
+class CommitSession:
+    def __init__(self) -> None:
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
 
 
 @pytest.fixture
@@ -70,7 +79,11 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
 
     assert initialize.status_code == 200
     tools = tools_response.json()["result"]["tools"]
-    assert [tool["name"] for tool in tools] == ["gate_get_status", "gate_list_unanswered"]
+    assert [tool["name"] for tool in tools] == [
+        "gate_get_status",
+        "gate_list_unanswered",
+        "gate_save_reply_draft",
+    ]
     assert tools[0]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]
@@ -78,6 +91,11 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
     assert tools[1]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:inbox:read"]}
     ]
+    assert tools[2]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:drafts:write"]}
+    ]
+    assert tools[2]["annotations"]["destructiveHint"] is False
+    assert "never approves or sends" in tools[2]["description"]
 
 
 @pytest.mark.anyio
@@ -142,6 +160,70 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     assert result["isError"] is False
     assert result["structuredContent"]["mcp"]["auth"] == "oauth2_enforced"
     assert session.query_count == 8
+
+
+@pytest.mark.anyio
+async def test_verified_oauth_principal_can_save_draft_without_sending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = CommitSession()
+    task_id = UUID("11111111-1111-1111-1111-111111111111")
+    account_id = UUID("22222222-2222-2222-2222-222222222222")
+    project_id = UUID("33333333-3333-3333-3333-333333333333")
+
+    async def override_session() -> AsyncIterator[CommitSession]:
+        yield session
+
+    async def authenticate(**kwargs: Any) -> Principal:
+        assert kwargs["required_scope"] == "gate:drafts:write"
+        return Principal(
+            subject="user-123",
+            auth_method="oauth2",
+            scopes=frozenset({"gate:drafts:write"}),
+            access_scope=AccessScope(
+                workspace_id="mark-personal",
+                account_ids=frozenset({account_id}),
+                project_ids=frozenset({project_id}),
+            ),
+        )
+
+    class Writer:
+        def __init__(self, _session: Any) -> None:
+            pass
+
+        async def save(self, command: Any) -> SavedReplyDraft:
+            return SavedReplyDraft(
+                draft_id=UUID("44444444-4444-4444-4444-444444444444"),
+                task_id=command.task_id,
+                account_id=account_id,
+                project_id=project_id,
+                status="generated",
+                text=command.text,
+            )
+
+    app.dependency_overrides[get_db_session] = override_session
+    monkeypatch.setattr("app.api.mcp_routes.authenticate_mcp_oauth", authenticate)
+    monkeypatch.setattr("app.api.mcp_routes.SqlReplyDraftWriter", Writer)
+    response = await _post(
+        {
+            "jsonrpc": "2.0",
+            "id": "draft-call",
+            "method": "tools/call",
+            "params": {
+                "name": "gate_save_reply_draft",
+                "arguments": {"task_id": str(task_id), "text": "  Привет!  "},
+            },
+        },
+        authorization="Bearer signed-token",
+    )
+
+    result = response.json()["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["text"] == "Привет!"
+    assert result["structuredContent"]["sent"] is False
+    assert result["structuredContent"]["approval_required"] is True
+    assert result["structuredContent"]["send_available"] is False
+    assert session.commits == 1
 
 
 @pytest.mark.anyio

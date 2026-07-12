@@ -57,6 +57,7 @@ def anyio_backend() -> str:
 @pytest.fixture(autouse=True)
 def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("GATE_MCP_ENABLED", "true")
+    monkeypatch.setenv("MCP_AUTH_MODE", "temporary_bearer")
     monkeypatch.setenv("MCP_READ_BEARER_TOKEN", TOKEN)
     monkeypatch.setenv("MCP_READ_WORKSPACE_ID", "mark-personal")
     monkeypatch.setenv("MCP_READ_ACCOUNT_IDS", ACCOUNT_ID)
@@ -169,8 +170,19 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     assert initialize.status_code == 200
     assert initialize.json()["result"]["serverInfo"]["name"] == "gate"
     tools = tools_response.json()["result"]["tools"]
-    assert [tool["name"] for tool in tools] == ["gate_get_status", "gate_list_unanswered"]
-    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
+    assert [tool["name"] for tool in tools] == [
+        "gate_get_status",
+        "gate_list_unanswered",
+        "gate_save_reply_draft",
+    ]
+    assert tools[0]["annotations"]["readOnlyHint"] is True
+    assert tools[1]["annotations"]["readOnlyHint"] is True
+    assert tools[2]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
 
 
 @pytest.mark.anyio
@@ -229,3 +241,24 @@ async def test_mcp_unknown_tool_returns_jsonrpc_error(mcp_context: FakeMcpSessio
     payload = response.json()
     assert payload["error"]["code"] == -32601
     assert payload["error"]["message"] == "Unknown tool: gate_send_draft"
+
+
+@pytest.mark.anyio
+async def test_temporary_read_bearer_cannot_save_drafts(mcp_context: FakeMcpSession) -> None:
+    response = await _post(
+        {
+            "jsonrpc": "2.0",
+            "id": "write-blocked",
+            "method": "tools/call",
+            "params": {
+                "name": "gate_save_reply_draft",
+                "arguments": {
+                    "task_id": "11111111-1111-1111-1111-111111111111",
+                    "text": "Привет!",
+                },
+            },
+        }
+    )
+
+    assert response.status_code == 403
+    assert mcp_context.statements == []
