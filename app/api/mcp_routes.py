@@ -343,7 +343,8 @@ async def _build_gate_status(
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tools": MCP_TOOL_NAMES,
             "draft_writes_enabled": True,
-            "send_enabled": False,
+            "send_enabled": settings.gate_send_enabled,
+            "send_requires_explicit_confirmation": True,
             "auth": (
                 "temporary_bearer_enforced"
                 if principal.auth_method == "bearer"
@@ -1158,6 +1159,27 @@ def _format_status_text(snapshot: JsonObject) -> str:
     )
 
 
+def _format_reply_context_text(context: JsonObject) -> str:
+    account = context["account"]
+    counterparty = context["counterparty"]
+    lines = [
+        f"Gate reply context — [{account['label']}] {counterparty['label']}",
+        f"task: {context['task_ref']}",
+        f"chat: {context['conversation']['chat_id']}",
+        "",
+        f"Recent messages: {context['count']}",
+    ]
+    for message in context["messages"]:
+        direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
+        lines.extend(
+            [
+                "",
+                f"[{direction}] {message['text_preview'] or '<empty>'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _format_unanswered_text(inbox: JsonObject) -> str:
     lines = [f"Unanswered inbound Gate tasks: {inbox['count']}"]
     if not inbox["items"]:
@@ -1166,7 +1188,8 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
         lines.extend(
             [
                 "",
-                f"{index}. {item['counterparty']['label']}: "
+                f"{index}. [{item['account']['label']}] "
+                f"{item['counterparty']['label']}: "
                 f"{item['message']['text_preview'] or '<empty>'}",
                 f"task: {item['task_ref']}",
                 f"chat: {item['conversation']['chat_id']}",
@@ -1180,7 +1203,8 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
         lines.extend(
             [
                 "",
-                f"{index}. {item['counterparty']['label']}: "
+                f"{index}. [{item['account']['label']}] "
+                f"{item['counterparty']['label']}: "
                 f"{item['message']['text_preview'] or '<empty>'}",
                 f"chat: {item['message']['chat_id']}",
             ]
