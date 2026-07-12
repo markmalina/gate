@@ -1,3 +1,4 @@
+# ruff: noqa
 import pytest
 from httpx import ASGITransport, AsyncClient
 
