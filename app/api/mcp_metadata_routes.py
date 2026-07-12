@@ -135,7 +135,7 @@ def _auth_status(settings: Settings) -> str:
 
 
 def _authorization_servers(settings: Settings) -> list[str]:
-    issuer = settings.mcp_authorization_server.strip().rstrip("/")
+    issuer = settings.mcp_authorization_server.strip()
     return [issuer] if issuer else []
 
 
