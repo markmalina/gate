@@ -2,7 +2,10 @@ from uuid import UUID
 
 import pytest
 
-from app.core.mcp_security import (\n    bearer_token_matches,\n    build_mcp_read_principal,\n)
+from app.core.mcp_security import (
+    bearer_token_matches,
+    build_mcp_read_principal,
+)
 
 
 def test_bearer_token_is_required_and_compared_safely() -> None:
