@@ -7,7 +7,10 @@ from app.main import app
 
 @pytest.mark.anyio("asyncio")
 async def test_mcp_initialize_returns_server_info(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/gate_test")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://user:pass@localhost:5432/gate_test",
+    )
     monkeypatch.setenv("DEPLOYMENT_SHA", "abc123456789deadbeef")
     get_settings.cache_clear()
 
