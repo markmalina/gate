@@ -57,7 +57,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
     ]
     assert "gate:inbox:read" in payload["scopes_supported"]
     assert payload["mcp"]["read_only_tools"] == ["gate_get_status", "gate_list_unanswered"]
-    assert payload["mcp"]["auth_status"] == "metadata_published_oauth_not_enforced"
+    assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
 
 @pytest.mark.anyio
@@ -78,7 +78,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["commit"] == "abc123456789"
     assert payload["auth"]["enforced"] is False
-    assert payload["auth"]["type"] == "oauth2.1_planned"
+    assert payload["auth"]["type"] == "temporary_bearer_oauth2.1_planned"
     assert payload["auth"]["protected_resource_metadata"] == (
         "https://gate.example/.well-known/oauth-protected-resource/mcp"
     )
@@ -89,3 +89,19 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["tools"]["read_only"] == ["gate_get_status", "gate_list_unanswered"]
     assert payload["tools"]["write"] == []
     assert payload["tools"]["send"] == []
+
+
+@pytest.mark.anyio
+async def test_mcp_metadata_reports_temporary_bearer_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GATE_MCP_ENABLED", "true")
+    get_settings.cache_clear()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://gate.example") as client:
+        response = await client.get("/mcp/metadata")
+
+    payload = response.json()
+    assert payload["auth"]["enabled"] is True
+    assert payload["auth"]["enforced"] is True
+    assert payload["auth"]["status"] == "temporary_bearer_enforced"

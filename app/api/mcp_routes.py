@@ -1,16 +1,18 @@
 # mypy: ignore-errors
 # ruff: noqa
-"""Minimal read-only MCP foundation for Gate."""
+"""Contained read-only MCP endpoint for Gate."""
 
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
+from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
 from app.models.domain import (
     Account,
     Conversation,
@@ -41,12 +43,13 @@ MCP_TOOL_NAMES = ["gate_get_status", "gate_list_unanswered"]
 @router.post("/mcp")
 async def mcp_endpoint(
     payload: JsonObject,
-    _authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
 ) -> JsonObject:
-    """Handle a minimal read-only MCP JSON-RPC request."""
+    """Handle the temporary bearer-protected, read-only MCP surface."""
 
+    principal = _require_mcp_principal(authorization=authorization, settings=settings)
     request_id = payload.get("id")
     method = payload.get("method")
     if method == "initialize":
@@ -56,9 +59,7 @@ async def mcp_endpoint(
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "serverInfo": {
                     "name": "gate",
-                    "version": settings.deployment_sha[:12]
-                    if settings.deployment_sha != "unknown"
-                    else "unknown",
+                    "version": _commit(settings),
                 },
                 "capabilities": {"tools": {}},
             },
@@ -71,45 +72,25 @@ async def mcp_endpoint(
     if method == "tools/call":
         params = payload.get("params")
         if not isinstance(params, dict):
-            return _jsonrpc_error(
-                request_id=request_id,
-                code=-32602,
-                message="Invalid params",
-            )
+            return _jsonrpc_error(request_id=request_id, code=-32602, message="Invalid params")
         tool_name = params.get("name")
         arguments = params.get("arguments")
         if not isinstance(arguments, dict):
             arguments = {}
         if tool_name == "gate_get_status":
-            status = await _build_gate_status(session=session, settings=settings)
-            return _jsonrpc_result(
-                request_id=request_id,
-                result={
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": _format_status_text(status),
-                        }
-                    ],
-                    "structuredContent": status,
-                    "isError": False,
-                },
+            snapshot = await _build_gate_status(
+                session=session,
+                settings=settings,
+                principal=principal,
             )
+            return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_list_unanswered":
-            inbox = await _build_unanswered_list(session=session, arguments=arguments)
-            return _jsonrpc_result(
-                request_id=request_id,
-                result={
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": _format_unanswered_text(inbox),
-                        }
-                    ],
-                    "structuredContent": inbox,
-                    "isError": False,
-                },
+            inbox = await _build_unanswered_list(
+                session=session,
+                arguments=arguments,
+                principal=principal,
             )
+            return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
         return _jsonrpc_error(
             request_id=request_id,
             code=-32601,
@@ -124,59 +105,122 @@ async def mcp_endpoint(
     )
 
 
-async def _build_gate_status(*, session: AsyncSession, settings: Settings) -> JsonObject:
-    accounts = await _count(session=session, model=Account)
-    business_connections = await _count(session=session, model=TelegramBusinessConnection)
-    active_business_connections = await _count(
-        session=session,
-        model=TelegramBusinessConnection,
-        where=TelegramBusinessConnection.is_enabled.is_(True),
-    )
-    conversations = await _count(session=session, model=Conversation)
-    messages = await _count(session=session, model=Message)
-    reply_tasks = await _count(session=session, model=ReplyTask)
-    unanswered = await _count(
-        session=session,
-        model=ReplyTask,
-        where=ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-    )
-    drafts = await _count(session=session, model=ReplyDraft)
+def _require_mcp_principal(*, authorization: str | None, settings: Settings) -> Principal:
+    if not settings.gate_mcp_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if not bearer_token_matches(authorization, settings.mcp_read_bearer_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MCP bearer authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        return build_mcp_read_principal(
+            workspace_id=settings.mcp_read_workspace_id,
+            account_grants=settings.mcp_read_account_ids,
+            project_grants=settings.mcp_read_project_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MCP access scope is not configured",
+        ) from exc
+
+
+async def _build_gate_status(
+    *, session: AsyncSession, settings: Settings, principal: Principal
+) -> JsonObject:
+    accounts = principal.access_scope.account_ids
+    projects = principal.access_scope.project_ids
+    counts = {
+        "accounts": await _count(session=session, model=Account, where=(Account.id.in_(accounts),)),
+        "business_connections": await _count(
+            session=session,
+            model=TelegramBusinessConnection,
+            where=(TelegramBusinessConnection.account_id.in_(accounts),),
+        ),
+        "active_business_connections": await _count(
+            session=session,
+            model=TelegramBusinessConnection,
+            where=(
+                TelegramBusinessConnection.account_id.in_(accounts),
+                TelegramBusinessConnection.is_enabled.is_(True),
+            ),
+        ),
+        "conversations": await _count(
+            session=session,
+            model=Conversation,
+            where=(Conversation.account_id.in_(accounts), Conversation.project_id.in_(projects)),
+        ),
+        "messages": await _count(
+            session=session,
+            model=Message,
+            where=(Message.account_id.in_(accounts), Message.project_id.in_(projects)),
+        ),
+        "reply_tasks": await _count(
+            session=session,
+            model=ReplyTask,
+            where=(ReplyTask.account_id.in_(accounts), ReplyTask.project_id.in_(projects)),
+        ),
+        "unanswered": await _count(
+            session=session,
+            model=ReplyTask,
+            where=(
+                ReplyTask.account_id.in_(accounts),
+                ReplyTask.project_id.in_(projects),
+                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+            ),
+        ),
+        "drafts": await _count(
+            session=session,
+            model=ReplyDraft,
+            where=(ReplyDraft.account_id.in_(accounts), ReplyDraft.project_id.in_(projects)),
+        ),
+    }
     return {
         "service": "gate",
         "environment": settings.gate_env,
-        "commit": settings.deployment_sha[:12]
-        if settings.deployment_sha != "unknown"
-        else "unknown",
+        "commit": _commit(settings),
         "bot_username": settings.telegram_bot_username,
         "default_mode": settings.gate_default_mode,
         "send_enabled": settings.gate_send_enabled,
-        "counts": {
-            "accounts": accounts,
-            "business_connections": business_connections,
-            "active_business_connections": active_business_connections,
-            "conversations": conversations,
-            "messages": messages,
-            "reply_tasks": reply_tasks,
-            "unanswered": unanswered,
-            "drafts": drafts,
+        "access": {
+            "subject": principal.subject,
+            "workspace_id": principal.access_scope.workspace_id,
+            "account_count": len(accounts),
+            "project_count": len(projects),
         },
+        "counts": counts,
         "mcp": {
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tools": MCP_TOOL_NAMES,
             "writes_enabled": False,
             "send_enabled": False,
-            "auth": "oauth_planned_not_implemented",
+            "auth": "temporary_bearer_enforced",
         },
     }
 
 
-async def _build_unanswered_list(*, session: AsyncSession, arguments: JsonObject) -> JsonObject:
+async def _build_unanswered_list(
+    *, session: AsyncSession, arguments: JsonObject, principal: Principal
+) -> JsonObject:
     limit = _bounded_limit(arguments.get("limit"), default=10, maximum=50)
+    accounts = principal.access_scope.account_ids
+    projects = principal.access_scope.project_ids
     result = await session.execute(
         select(ReplyTask, Conversation, Message)
+        .options(undefer(ReplyTask.account_id))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
-        .where(ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value)
+        .where(
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+            ReplyTask.account_id.in_(accounts),
+            ReplyTask.project_id.in_(projects),
+            Conversation.account_id.in_(accounts),
+            Conversation.project_id.in_(projects),
+            Message.account_id.in_(accounts),
+            Message.project_id.in_(projects),
+        )
         .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
         .limit(limit)
     )
@@ -184,33 +228,29 @@ async def _build_unanswered_list(*, session: AsyncSession, arguments: JsonObject
         _serialize_unanswered_item(task=task, conversation=conversation, message=message)
         for task, conversation, message in result.all()
     ]
-    return {
-        "items": items,
-        "count": len(items),
-        "limit": limit,
-        "next_cursor": None,
-    }
+    return {"items": items, "count": len(items), "limit": limit, "next_cursor": None}
 
 
-async def _count(*, session: AsyncSession, model: Any, where: Any | None = None) -> int:
-    query = select(func.count(model.id))
-    if where is not None:
-        query = query.where(where)
+async def _count(
+    *, session: AsyncSession, model: Any, where: tuple[Any, ...] = ()
+) -> int:
+    query = select(func.count(model.id)).where(*where)
     result = await session.execute(query)
     return int(result.scalar_one())
 
 
-def _serialize_unanswered_item(*, task: ReplyTask, conversation: Conversation, message: Message) -> JsonObject:
+def _serialize_unanswered_item(
+    *, task: ReplyTask, conversation: Conversation, message: Message
+) -> JsonObject:
     task_id = str(task.id)
-    message_text = message.text or ""
     return {
         "task_id": task_id,
         "task_ref": task_id[:8],
         "status": task.status,
         "priority": task.priority,
         "reason": task.reason,
-        "account_id": str(getattr(task, "account_id", None) or getattr(conversation, "account_id", None) or ""),
-        "project_id": str(getattr(task, "project_id", None) or getattr(conversation, "project_id", None) or ""),
+        "account_id": str(task.account_id),
+        "project_id": str(task.project_id),
         "conversation": {
             "id": str(conversation.id),
             "chat_id": conversation.chat_id,
@@ -220,7 +260,7 @@ def _serialize_unanswered_item(*, task: ReplyTask, conversation: Conversation, m
             "id": str(message.id),
             "chat_id": message.chat_id,
             "sender_id": message.sender_id,
-            "text_preview": _truncate_text(message_text, 240),
+            "text_preview": _truncate_text(message.text or "", 240),
             "created_at": _serialize_datetime(message.created_at),
             "received_at": _serialize_datetime(message.received_at),
         },
@@ -232,15 +272,8 @@ def _gate_status_tool() -> JsonObject:
     return {
         "name": "gate_get_status",
         "title": "Get Gate status",
-        "description": (
-            "Return a read-only Gate status snapshot with deployment metadata "
-            "and aggregate counts."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
+        "description": "Return a scoped read-only Gate status snapshot.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
 
@@ -249,16 +282,11 @@ def _gate_list_unanswered_tool() -> JsonObject:
     return {
         "name": "gate_list_unanswered",
         "title": "List unanswered Gate tasks",
-        "description": "Return read-only unanswered reply tasks with conversation and trigger message context.",
+        "description": "Return scoped unanswered tasks with trigger message context.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50,
-                    "default": 10,
-                }
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}
             },
             "additionalProperties": False,
         },
@@ -266,35 +294,39 @@ def _gate_list_unanswered_tool() -> JsonObject:
     }
 
 
-def _format_status_text(status: JsonObject) -> str:
-    counts = status["counts"]
+def _tool_result(content: JsonObject, text: str, request_id: Any) -> JsonObject:
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [{"type": "text", "text": text}],
+            "structuredContent": content,
+            "isError": False,
+        },
+    )
+
+
+def _format_status_text(snapshot: JsonObject) -> str:
+    counts = snapshot["counts"]
     return "\n".join(
         [
-            f"Gate status — {status['environment']}",
-            f"Commit: {status['commit']}",
-            f"Bot: {status['bot_username']}",
-            f"Mode: {status['default_mode']}",
-            f"Send enabled: {status['send_enabled']}",
+            f"Gate status — {snapshot['environment']}",
+            f"Commit: {snapshot['commit']}",
+            f"Bot: {snapshot['bot_username']}",
+            f"Mode: {snapshot['default_mode']}",
+            f"Send enabled: {snapshot['send_enabled']}",
+            f"Workspace: {snapshot['access']['workspace_id']}",
             "",
             "Counts:",
-            f"- accounts: {counts['accounts']}",
-            f"- business_connections: {counts['business_connections']}",
-            f"- active_business_connections: {counts['active_business_connections']}",
-            f"- conversations: {counts['conversations']}",
-            f"- messages: {counts['messages']}",
-            f"- reply_tasks: {counts['reply_tasks']}",
-            f"- unanswered: {counts['unanswered']}",
-            f"- drafts: {counts['drafts']}",
+            *[f"- {name}: {value}" for name, value in counts.items()],
         ]
     )
 
 
 def _format_unanswered_text(inbox: JsonObject) -> str:
-    items = inbox["items"]
-    if not items:
+    if not inbox["items"]:
         return "No unanswered Gate tasks."
     lines = [f"Unanswered Gate tasks: {inbox['count']}"]
-    for index, item in enumerate(items, start=1):
+    for index, item in enumerate(inbox["items"], start=1):
         lines.extend(
             [
                 "",
@@ -315,17 +347,17 @@ def _bounded_limit(value: Any, *, default: int, maximum: int) -> int:
 
 
 def _truncate_text(text: str, limit: int) -> str:
-    if len(text) <= limit:
-        return text
-    return f"{text[: limit - 1]}…"
+    return text if len(text) <= limit else f"{text[: limit - 1]}…"
 
 
 def _serialize_datetime(value: Any) -> str | None:
     if value is None:
         return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
+    return value.isoformat() if isinstance(value, datetime) else str(value)
+
+
+def _commit(settings: Settings) -> str:
+    return settings.deployment_sha[:12] if settings.deployment_sha != "unknown" else "unknown"
 
 
 def _jsonrpc_result(*, request_id: Any, result: JsonObject) -> JsonObject:
