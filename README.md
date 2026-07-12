@@ -3,7 +3,7 @@
 > **PROJECT STATUS: ACTIVE / ORDERED STABILIZATION AND MVP DELIVERY**  
 > Development resumed by Mark: **2026-07-12**  
 > Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
-> Current active scope: **Sprint 22 — ChatGPT OAuth discovery contract**, starting from `main` at `5741c943`.  
+> Current active scope: **Sprint 23 — OAuth JWT/JWKS verification**, starting from `main` at `c664e591`.  
 > Do not start feature development from an old sprint branch. Read this README completely before touching code.
 
 Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
@@ -38,7 +38,7 @@ During the current ChatGPT connection scope:
 - do not activate write/send MCP capabilities;
 - do not add autonomous AI replies;
 - do not paste or commit secrets;
-- provider-neutral OAuth discovery work and the explicitly active ChatGPT connection implementation are allowed;
+- provider-neutral OAuth token verification and the explicitly active ChatGPT connection implementation are allowed;
 - work proceeds in the ordered PR sequence below, with production deployment remaining a separate Mark decision.
 
 ## Active delivery strategy
@@ -52,7 +52,7 @@ MVP adapters must use the same scoped application services being built for the t
 
 ## Current ChatGPT connection boundary
 
-Sprint 22 adds the provider-neutral OAuth discovery and tool challenge contract required for ChatGPT to scan Gate safely. It does not activate MCP in production, choose an identity provider, validate OAuth access tokens or expose write/send tools. Token verification remains the next bounded security sprint.
+Sprint 23 validates OAuth access tokens through an established provider JWKS endpoint. Gate verifies asymmetric signatures, issuer, audience, expiry/not-before, per-tool scopes and explicit workspace/account/project grants. It does not activate MCP in production, choose or provision an identity provider, or expose write/send tools.
 
 ## 2. Exact repository state at freeze
 
@@ -456,7 +456,7 @@ This refactor does not include:
 - automated LLM routing or project moves;
 - autonomous free-form replies;
 - MCP write/send tools;
-- full OAuth beyond the auth port and required containment;
+- identity-provider provisioning or a custom authorization server;
 - Telegram Desktop import;
 - voice/media/transcription;
 - mass messaging;
