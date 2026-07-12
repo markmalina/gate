@@ -41,7 +41,16 @@ During the current containment scope:
 - refactor preparation and the explicitly active containment implementation are allowed;
 - work proceeds in the ordered PR sequence below, with production deployment remaining a separate Mark decision.
 
-## Active delivery strategy\n\nGate now advances on two synchronized tracks that share one application layer:\n\n1. **Safe MVP:** expose current inbound messages, draft assistance, explicit approval and send through ChatGPT as early as possible.\n2. **Target architecture:** replace the sprint-router chain, hardcoded account/project assumptions and unsafe delivery semantics incrementally without a rewrite freeze.\n\nMVP adapters must use the same scoped application services being built for the target architecture. Temporary direct ORM access, unscoped MCP reads and autonomous sending are not acceptable shortcuts.\n\n## 2. Exact repository state at freeze
+## Active delivery strategy
+
+Gate now advances on two synchronized tracks that share one application layer:
+
+1. **Safe MVP:** expose current inbound messages, draft assistance, explicit approval and send through ChatGPT as early as possible.
+2. **Target architecture:** replace the sprint-router chain, hardcoded account/project assumptions and unsafe delivery semantics incrementally without a rewrite freeze.
+
+MVP adapters must use the same scoped application services being built for the target architecture. Temporary direct ORM access, unscoped MCP reads and autonomous sending are not acceptable shortcuts.
+
+## 2. Exact repository state at freeze
 
 Frozen application-code baseline (the last functional change before this handoff):
 
