@@ -2,8 +2,8 @@
 
 from unittest.mock import AsyncMock, Mock
 
-import pytest
 from fastapi import HTTPException
+import pytest
 
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
