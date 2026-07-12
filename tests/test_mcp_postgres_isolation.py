@@ -135,6 +135,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
 
             app.dependency_overrides[get_db_session] = override_session
             monkeypatch.setenv("GATE_MCP_ENABLED", "true")
+            monkeypatch.setenv("MCP_AUTH_MODE", "temporary_bearer")
             monkeypatch.setenv("MCP_READ_BEARER_TOKEN", "integration-token")
             monkeypatch.setenv("MCP_READ_WORKSPACE_ID", "mark-personal")
             monkeypatch.setenv("MCP_READ_ACCOUNT_IDS", str(allowed_account))
