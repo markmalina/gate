@@ -50,7 +50,11 @@ Gate now advances on two synchronized tracks that share one application layer:
 
 MVP adapters must use the same scoped application services being built for the target architecture. Temporary direct ORM access, unscoped MCP reads and autonomous sending are not acceptable shortcuts.
 
-## Current ChatGPT connection boundary\n\nSprint 22 adds the provider-neutral OAuth discovery and tool challenge contract required for ChatGPT to scan Gate safely. It does not activate MCP in production, choose an identity provider, validate OAuth access tokens or expose write/send tools. Token verification remains the next bounded security sprint.\n\n## 2. Exact repository state at freeze
+## Current ChatGPT connection boundary
+
+Sprint 22 adds the provider-neutral OAuth discovery and tool challenge contract required for ChatGPT to scan Gate safely. It does not activate MCP in production, choose an identity provider, validate OAuth access tokens or expose write/send tools. Token verification remains the next bounded security sprint.
+
+## 2. Exact repository state at freeze
 
 Frozen application-code baseline (the last functional change before this handoff):
 
