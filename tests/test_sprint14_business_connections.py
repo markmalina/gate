@@ -1,10 +1,16 @@
 """Sprint 14 Telegram Business connection routing tests."""
 
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+from fastapi import HTTPException
+
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
     _is_business_send_enabled,
     _is_business_update,
     _is_outbound_business_message,
+    _resolve_account_id,
 )
 from app.core.config import Settings
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
@@ -76,4 +82,48 @@ def test_business_message_direction_uses_all_owner_identities() -> None:
     assert not _is_outbound_business_message(
         sender_id="7819816320",
         owner_identity_ids=frozenset(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_unknown_business_connection_fails_closed() -> None:
+    settings = Settings(
+        GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID="",
+        GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID="",
+    )
+    session = AsyncMock()
+    result = Mock()
+    result.scalar_one_or_none.return_value = None
+    session.execute.return_value = result
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _resolve_account_id(
+            session=session,
+            business_connection_id="unknown-connection",
+            settings=settings,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "Unknown Telegram Business connection" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_existing_business_connection_keeps_its_account() -> None:
+    settings = Settings(
+        GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID="",
+        GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID="",
+    )
+    session = AsyncMock()
+    result = Mock()
+    connection = Mock(account_id=TELEGRAM_MARK_BY_ACCOUNT_ID)
+    result.scalar_one_or_none.return_value = connection
+    session.execute.return_value = result
+
+    assert (
+        await _resolve_account_id(
+            session=session,
+            business_connection_id="known-connection",
+            settings=settings,
+        )
+        == TELEGRAM_MARK_BY_ACCOUNT_ID
     )
