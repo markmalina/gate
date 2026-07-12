@@ -174,7 +174,21 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 text="allowed answer",
                 sent_at=now,
             )
-            session.add(answered_message)
+            system_message = Message(
+                id=uuid4(),
+                bot_id=bot.id,
+                account_id=allowed_account,
+                project_id=allowed_project,
+                direction=MessageDirection.OUTBOUND.value,
+                source="gate",
+                event_type="telegram_business_reply",
+                chat_id=conversation_chat_ids["allowed message"],
+                sender_id="gate_m_bot",
+                recipient_id=conversation_chat_ids["allowed message"],
+                text="Gate status diagnostic",
+                sent_at=now,
+            )
+            session.add_all([answered_message, system_message])
             await session.flush()
 
             async def override_session() -> AsyncIterator[AsyncSession]:
