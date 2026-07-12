@@ -20,6 +20,7 @@ ACTIVE_MCP_SCOPES = [
     "gate:status:read",
     "gate:inbox:read",
     "gate:drafts:write",
+    "gate:messages:send",
 ]
 
 
@@ -37,13 +38,14 @@ async def test_oauth_protected_resource_metadata() -> None:
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["authorization_servers"] == []
     assert payload["scopes_supported"] == ACTIVE_MCP_SCOPES
-    assert "gate:messages:send" not in payload["scopes_supported"]
     assert payload["bearer_methods_supported"] == ["header"]
     assert payload["mcp"]["endpoint"] == "/mcp"
     assert payload["mcp"]["auth_enforced"] is False
     assert payload["mcp"]["write_tools_enabled"] is True
     assert payload["mcp"]["write_tools"] == ["gate_save_reply_draft"]
-    assert payload["mcp"]["send_tools_enabled"] is False
+    assert payload["mcp"]["send_tools_enabled"] is True
+    assert payload["mcp"]["send_tools"] == ["gate_send_approved_reply"]
+    assert payload["mcp"]["send_requires_explicit_confirmation"] is True
 
 
 @pytest.mark.anyio
@@ -60,7 +62,11 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
     assert payload["resource"] == "https://gate.example/mcp"
     assert payload["authorization_servers"] == []
     assert payload["scopes_supported"] == ACTIVE_MCP_SCOPES
-    assert payload["mcp"]["read_only_tools"] == ["gate_get_status", "gate_list_unanswered"]
+    assert payload["mcp"]["read_only_tools"] == [
+        "gate_get_status",
+        "gate_list_unanswered",
+        "gate_get_reply_context",
+    ]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
 
@@ -91,9 +97,14 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate:status:read",
         "gate:inbox:read",
     ]
-    assert payload["tools"]["read_only"] == ["gate_get_status", "gate_list_unanswered"]
+    assert payload["tools"]["read_only"] == [
+        "gate_get_status",
+        "gate_list_unanswered",
+        "gate_get_reply_context",
+    ]
     assert payload["tools"]["write"] == ["gate_save_reply_draft"]
-    assert payload["tools"]["send"] == []
+    assert payload["tools"]["send"] == ["gate_send_approved_reply"]
+    assert payload["tools"]["send_requires_explicit_confirmation"] is True
 
 
 @pytest.mark.anyio
