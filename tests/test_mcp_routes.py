@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
+from app.api import mcp_routes
 from app.api.mcp_routes import _require_mcp_principal
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
@@ -147,7 +148,9 @@ async def test_mcp_rejects_missing_or_wrong_bearer(mcp_context: FakeMcpSession) 
         MCP_READ_ACCOUNT_IDS=ACCOUNT_ID,
         MCP_READ_PROJECT_IDS=PROJECT_ID,
     )
-    app.dependency_overrides[get_settings] = lambda: settings
+    settings_provider = mcp_routes.settings_dependency.dependency
+    assert settings_provider is not None
+    app.dependency_overrides[settings_provider] = lambda: settings
     with pytest.raises(HTTPException) as direct_error:
         await _require_mcp_principal(
             authorization=None,
