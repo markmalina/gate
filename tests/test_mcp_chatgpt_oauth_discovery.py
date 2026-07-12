@@ -70,6 +70,33 @@ async def _post(payload: dict[str, Any], authorization: str | None = None):
         return await client.post("/mcp", json=payload, headers=headers)
 
 
+async def _get(path: str):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://gate.example") as client:
+        return await client.get(path)
+
+
+@pytest.mark.anyio
+async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
+    response = await _get("/.well-known/oauth-protected-resource/mcp")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scopes_supported"] == [
+        "gate:status:read",
+        "gate:inbox:read",
+        "gate:drafts:write",
+        "gate:messages:send",
+    ]
+    assert payload["mcp"]["read_only_tools"] == [
+        "gate_get_status",
+        "gate_list_unanswered",
+        "gate_get_reply_context",
+    ]
+    assert payload["mcp"]["send_tools"] == ["gate_send_approved_reply"]
+    assert payload["mcp"]["send_requires_explicit_confirmation"] is True
+
+
 @pytest.mark.anyio
 async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
     initialize = await _post({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
@@ -82,7 +109,9 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
     assert [tool["name"] for tool in tools] == [
         "gate_get_status",
         "gate_list_unanswered",
+        "gate_get_reply_context",
         "gate_save_reply_draft",
+        "gate_send_approved_reply",
     ]
     assert tools[0]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:status:read"]}
@@ -92,10 +121,18 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         {"type": "oauth2", "scopes": ["gate:inbox:read"]}
     ]
     assert tools[2]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:inbox:read"]}
+    ]
+    assert tools[3]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:drafts:write"]}
     ]
-    assert tools[2]["annotations"]["destructiveHint"] is False
-    assert "never approves or sends" in tools[2]["description"]
+    assert tools[4]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:messages:send"]}
+    ]
+    assert tools[3]["annotations"]["destructiveHint"] is False
+    assert "never approves or sends" in tools[3]["description"]
+    assert tools[4]["annotations"]["idempotentHint"] is True
+    assert tools[4]["annotations"]["openWorldHint"] is True
 
 
 @pytest.mark.anyio
@@ -197,6 +234,9 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
                 task_id=command.task_id,
                 account_id=account_id,
                 project_id=project_id,
+                account_alias="telegram_mark_ru",
+                account_label="RU",
+                recipient_chat_id="12345",
                 status="generated",
                 text=command.text,
             )
@@ -222,7 +262,13 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
     assert result["structuredContent"]["text"] == "Привет!"
     assert result["structuredContent"]["sent"] is False
     assert result["structuredContent"]["approval_required"] is True
-    assert result["structuredContent"]["send_available"] is False
+    assert result["structuredContent"]["send_available"] is True
+    assert result["structuredContent"]["account"]["label"] == "RU"
+    assert result["structuredContent"]["recipient_chat_id"] == "12345"
+    assert result["structuredContent"]["confirmation"] == {
+        "expected_account": "RU",
+        "expected_recipient_chat_id": "12345",
+    }
     assert session.commits == 1
 
 
