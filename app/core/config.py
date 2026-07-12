@@ -1,8 +1,4 @@
-"""Runtime configuration for Gate.
-
-Configuration is loaded from environment variables. Secrets are referenced by variable
-name only and must never be committed.
-"""
+"""Runtime configuration for Gate."""
 
 from functools import lru_cache
 
@@ -28,6 +24,22 @@ class Settings(BaseSettings):
     mcp_auth_mode: str = Field(default="temporary_bearer", validation_alias="MCP_AUTH_MODE")
     mcp_authorization_server: str = Field(default="", validation_alias="MCP_AUTHORIZATION_SERVER")
     mcp_public_resource_url: str = Field(default="", validation_alias="MCP_PUBLIC_RESOURCE_URL")
+    mcp_oauth_jwks_url: str = Field(default="", validation_alias="MCP_OAUTH_JWKS_URL")
+    mcp_oauth_allowed_algorithms: str = Field(
+        default="RS256", validation_alias="MCP_OAUTH_ALLOWED_ALGORITHMS"
+    )
+    mcp_oauth_clock_skew_seconds: int = Field(
+        default=30, ge=0, le=300, validation_alias="MCP_OAUTH_CLOCK_SKEW_SECONDS"
+    )
+    mcp_oauth_workspace_claim: str = Field(
+        default="gate_workspace_id", validation_alias="MCP_OAUTH_WORKSPACE_CLAIM"
+    )
+    mcp_oauth_account_ids_claim: str = Field(
+        default="gate_account_ids", validation_alias="MCP_OAUTH_ACCOUNT_IDS_CLAIM"
+    )
+    mcp_oauth_project_ids_claim: str = Field(
+        default="gate_project_ids", validation_alias="MCP_OAUTH_PROJECT_IDS_CLAIM"
+    )
     mcp_read_bearer_token: str = Field(default="", validation_alias="MCP_READ_BEARER_TOKEN")
     mcp_read_workspace_id: str = Field(default="", validation_alias="MCP_READ_WORKSPACE_ID")
     mcp_read_account_ids: str = Field(default="", validation_alias="MCP_READ_ACCOUNT_IDS")
