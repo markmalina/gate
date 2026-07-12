@@ -91,6 +91,19 @@ async def sprint14_telegram_webhook(
         business_connection_id=normalized.business_connection_id,
         settings=settings,
     )
+    business_connection = await _find_business_connection(
+        session=session,
+        business_connection_id=normalized.business_connection_id,
+    )
+    is_outbound = _is_outbound_business_message(
+        sender_id=normalized.sender_id,
+        connection=business_connection,
+    )
+    message_direction = (
+        MessageDirection.OUTBOUND.value
+        if is_outbound
+        else MessageDirection.INBOUND.value
+    )
     if normalized.event_type == "business_connection":
         account_id = _account_id_from_configured_connection(
             normalized.business_connection_id,
@@ -139,36 +152,49 @@ async def sprint14_telegram_webhook(
         title=None,
         happened_at=now,
     )
-    inbound_message = Message(
+    stored_message = Message(
         bot_id=bot.id,
         account_id=account_id,
         project_id=DEFAULT_PROJECT_ID,
         gate_event_id=gate_event.id,
-        direction=MessageDirection.INBOUND.value,
+        direction=message_direction,
         source="telegram",
         event_type=normalized.event_type,
         chat_id=normalized.chat_id,
         sender_id=normalized.sender_id,
+        recipient_id=normalized.chat_id if is_outbound else None,
         text=normalized.text,
         telegram_update_id=normalized.update_id,
         telegram_message_id=normalized.message_id,
         business_connection_id=normalized.business_connection_id,
         payload={"raw_update_ref": "telegram_updates"},
-        received_at=now,
+        received_at=None if is_outbound else now,
+        sent_at=now if is_outbound else None,
     )
-    session.add(inbound_message)
+    session.add(stored_message)
     await session.flush()
 
     admin_command = legacy._parse_admin_console_command(normalized.text)
-    if legacy._is_human_text_message(normalized) and admin_command is None:
+    if is_outbound:
+        conversation.status = ConversationStatus.REPLIED.value
+        conversation.requires_reply = False
+        conversation.last_outbound_at = now
+        conversation.last_message_at = now
+        await legacy._satisfy_reply_tasks(
+            session=session,
+            conversation_id=conversation.id,
+        )
+    elif legacy._is_human_text_message(normalized) and admin_command is None:
         conversation.status = ConversationStatus.OPEN.value
         conversation.requires_reply = True
+        conversation.last_inbound_at = now
+        conversation.last_message_at = now
         session.add(
             ReplyTask(
                 account_id=account_id,
                 project_id=DEFAULT_PROJECT_ID,
                 conversation_id=conversation.id,
-                trigger_message_id=inbound_message.id,
+                trigger_message_id=stored_message.id,
                 status=ReplyTaskStatus.NEEDS_REPLY.value,
                 reason="inbound_human_text",
             )
@@ -188,10 +214,20 @@ async def sprint14_telegram_webhook(
                 "telegram_update_id": normalized.update_id,
                 "telegram_message_id": normalized.message_id,
                 "business_connection_id": normalized.business_connection_id,
+                "direction": message_direction,
             },
         )
     )
     await session.commit()
+
+    if is_outbound:
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": None,
+            "duplicate": False,
+            "send_status": "observed_outbound",
+        }
 
     return await _maybe_send_business_reply(
         normalized=normalized,
@@ -379,6 +415,37 @@ async def _send_business_text_reply(
         "duplicate": False,
         "send_status": "sent",
     }
+
+
+async def _find_business_connection(
+    *,
+    session: AsyncSession,
+    business_connection_id: str | None,
+) -> TelegramBusinessConnection | None:
+    if not business_connection_id:
+        return None
+    result = await session.execute(
+        select(TelegramBusinessConnection).where(
+            TelegramBusinessConnection.business_connection_id == business_connection_id,
+            TelegramBusinessConnection.is_enabled.is_(True),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+def _is_outbound_business_message(
+    *,
+    sender_id: str,
+    connection: TelegramBusinessConnection | None,
+) -> bool:
+    if connection is None:
+        return False
+    owner_ids = {
+        str(value)
+        for value in (connection.telegram_user_id, connection.user_chat_id)
+        if value is not None
+    }
+    return str(sender_id) in owner_ids
 
 
 async def _resolve_account_id(
