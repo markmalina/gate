@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 ACCOUNT_ID = "22222222-2222-2222-2222-222222222222"
 PROJECT_ID = "33333333-3333-3333-3333-333333333333"
-ISSUER = "https://auth.gate.example"
+ISSUER = "https://auth.gate.example/"
 AUDIENCE = "https://gate.example/mcp"
 
 
@@ -43,7 +43,7 @@ def _settings(**overrides: Any) -> Settings:
         "MCP_AUTH_MODE": "oauth",
         "MCP_AUTHORIZATION_SERVER": ISSUER,
         "MCP_PUBLIC_RESOURCE_URL": AUDIENCE,
-        "MCP_OAUTH_JWKS_URL": f"{ISSUER}/.well-known/jwks.json",
+        "MCP_OAUTH_JWKS_URL": f"{ISSUER}.well-known/jwks.json",
     }
     values.update(overrides)
     return Settings(**values)
