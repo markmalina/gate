@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -235,6 +235,7 @@ async def _build_gate_status(
 ) -> JsonObject:
     accounts = principal.access_scope.account_ids
     projects = principal.access_scope.project_ids
+    owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
     counts = {
         "accounts": await _count(session=session, model=Account, where=(Account.id.in_(accounts),)),
         "business_connections": await _count(
@@ -277,6 +278,7 @@ async def _build_gate_status(
                 Message.account_id.in_(accounts),
                 Message.project_id.in_(projects),
                 Message.direction == MessageDirection.OUTBOUND.value,
+                Message.chat_id.not_in(select(owner_telegram_ids.c.owner_id)),
                 _answered_message_filter(),
             ),
         ),
@@ -320,6 +322,7 @@ async def _build_unanswered_list(
     limit = _bounded_limit(arguments.get("limit"), default=10, maximum=50)
     accounts = principal.access_scope.account_ids
     projects = principal.access_scope.project_ids
+    owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
     result = await session.execute(
         select(ReplyTask, Conversation, Message, TelegramUpdate)
         .options(undefer(ReplyTask.account_id))
@@ -369,6 +372,7 @@ async def _build_unanswered_list(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.OUTBOUND.value,
+            Message.chat_id.not_in(select(owner_telegram_ids.c.owner_id)),
             _answered_message_filter(),
         )
         .order_by(
@@ -535,6 +539,32 @@ def _optional_text(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _owner_telegram_ids_subquery(accounts: frozenset[UUID]) -> Any:
+    owner_names = select(Account.owner).where(Account.id.in_(accounts))
+    return union_all(
+        select(cast(Account.telegram_user_id, String).label("owner_id")).where(
+            Account.owner.in_(owner_names),
+            Account.telegram_user_id.is_not(None),
+        ),
+        select(
+            cast(TelegramBusinessConnection.telegram_user_id, String).label("owner_id")
+        )
+        .join(Account, TelegramBusinessConnection.account_id == Account.id)
+        .where(
+            Account.owner.in_(owner_names),
+            TelegramBusinessConnection.telegram_user_id.is_not(None),
+        ),
+        select(
+            cast(TelegramBusinessConnection.user_chat_id, String).label("owner_id")
+        )
+        .join(Account, TelegramBusinessConnection.account_id == Account.id)
+        .where(
+            Account.owner.in_(owner_names),
+            TelegramBusinessConnection.user_chat_id.is_not(None),
+        ),
+    ).subquery()
 
 
 def _answered_message_filter() -> Any:
