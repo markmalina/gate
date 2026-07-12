@@ -46,7 +46,7 @@ def mcp_context() -> Iterator[FakeMcpSession]:
     get_settings.cache_clear()
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.anyio
 async def test_mcp_initialize_returns_server_info(
     mcp_context: FakeMcpSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -75,7 +75,7 @@ async def test_mcp_initialize_returns_server_info(
     assert payload["result"]["capabilities"] == {"tools": {}}
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.anyio
 async def test_mcp_tools_list_exposes_read_only_status_tool(
     mcp_context: FakeMcpSession,
 ) -> None:
@@ -96,7 +96,7 @@ async def test_mcp_tools_list_exposes_read_only_status_tool(
     assert tool["annotations"]["openWorldHint"] is False
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.anyio
 async def test_mcp_status_tool_returns_structured_content(
     mcp_context: FakeMcpSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -135,7 +135,7 @@ async def test_mcp_status_tool_returns_structured_content(
     assert len(mcp_context.statements) == 8
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.anyio
 async def test_mcp_unknown_tool_returns_jsonrpc_error(
     mcp_context: FakeMcpSession,
 ) -> None:
