@@ -191,10 +191,10 @@ Current limitation: the Telegram **Bot API** supplies the other party's Telegram
 - Gate must not infer a saved contact name from message wording;
 - full address-book names require a separate authenticated Telegram **user-session** contact synchronizer.
 
-Permanent intended solution:
+Delivery status and intended continuation:
 
-1. Add a protected, idempotent contact-snapshot import boundary to Gate.
-2. Run a separate read-only Telegram user-session adapter that obtains the account's contacts.
+1. The protected, idempotent contact-snapshot boundary is implemented by PR #102.
+2. The separate one-shot read-only user-session adapter is documented in `docs/CONTACT_SYNC_ADAPTER.md`; each account still requires authorized onboarding and a real sync.
 3. Keep Telegram session material outside message payloads, logs and Git history.
 4. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
 5. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
@@ -244,6 +244,7 @@ Important locations:
 | `app/api/sprint14_routes.py` and later sprint routers | Current Telegram Business normalization and incremental behavior |
 | `app/application/` | Draft/send application contracts and services |
 | `app/infrastructure/reply_sends.py` | Explicit idempotent Telegram delivery adapter |
+| `app/contact_sync/` | Separate one-shot read-only Telegram contact synchronizer |
 | `app/core/mcp_security.py` | MCP OAuth verification and access scope |
 | `app/core/config.py` | Environment-backed settings; names only, no committed values |
 | `app/models/domain.py` | Current SQLAlchemy domain model |
@@ -264,7 +265,7 @@ The MVP works, but the target architecture is not complete.
 5. **Static RU/BY assumptions.** Workspace access is dynamic, but some labels/configuration and send schema still assume RU/BY. A third account must be addable without a code change.
 6. **Project isolation evolution.** The final model needs explicit workspace/project grants, dialog identity independent of project, and time-bounded context binding.
 7. **Legacy routing data.** Production required collision-safe and NULL-safe repair migrations. CI against an empty database did not expose every production-data shape.
-8. **Contact directory sync.** The storage seam exists; the user-session synchronizer does not.
+8. **Contact directory rollout.** The storage seam and one-shot adapter exist; RU/BY authorization, real sync and display cutover remain operational work.
 9. **Output schemas.** ChatGPT recommends explicit output schemas for tools; add them without breaking existing MCP clients.
 10. **Observability.** Add structured redacted metrics for webhook latency, queue lag, duplicate rate, DLQ, send failures/unknown, Telegram 429 and DB pool pressure.
 11. **Scale path.** The billion-message target requires partitioning, hot/cold separation, object storage for raw payload/media, read projections and measured thresholds—not a claim that one Railway database stores everything forever.
@@ -286,6 +287,7 @@ Key merged milestones:
 | #98 | Safe Telegram delivery diagnostics |
 | #99 | Dynamic Business connection synchronization and live validation |
 | #100 | Stable contact identity seam and redacted connection health |
+| #102 | Protected, bounded and idempotent contact snapshot boundary |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -295,9 +297,9 @@ Do not start several tracks in one PR.
 
 ### Immediate product continuation
 
-1. **Contact snapshot boundary.** Protected, bounded, idempotent import into existing `PersonIdentity`; audit counts only, never contact lists or session material.
-2. **User-session contact adapter.** Separate read-only component; one-time authorization per Telegram account; sanitized sync to Gate; no per-contact manual work.
-3. **Contact backfill and display cutover.** RU/BY verification, saved-name precedence in unanswered/answered/context, historical numeric-ID remediation through identity linkage.
+1. **User-session contact adapter rollout.** Authorize RU/BY independently, run sanitized sync through the one-shot read-only component, and verify aggregate import results.
+2. **Contact backfill and display cutover.** RU/BY verification, saved-name precedence in unanswered/answered/context, historical numeric-ID remediation through identity linkage.
+3. **Dedicated contact-sync authorization.** Replace temporary admin-bearer reuse before any permanent schedule/service is enabled.
 4. **MCP output schemas.** Add explicit bounded output schemas and refresh ChatGPT actions.
 5. **Account generalization acceptance test.** Add a third test account without code or Auth0 UUID edits; verify receive → inbox → draft → confirmed send.
 
@@ -311,7 +313,7 @@ Do not start several tracks in one PR.
 11. Adapter cutover: Telegram and MCP use the same application layer; remove sprint routers only after characterization parity.
 12. Scale hardening: projections, keyset pagination, partitions, hot/cold data, backup/restore, load tests and capacity thresholds.
 
-The next executor should begin with item 1 unless Mark explicitly changes priority.
+The next executor should begin with item 1 unless Mark explicitly changes priority. It requires a one-time user-side Telegram authorization and must never place session material in chat or Git.
 
 ## 14. Target architecture and invariants
 
@@ -399,6 +401,14 @@ MCP_OAUTH_WORKSPACE_CLAIM
 MCP_OAUTH_ACCOUNT_IDS_CLAIM
 MCP_OAUTH_PROJECT_IDS_CLAIM
 ADMIN_BEARER_TOKEN
+TELEGRAM_CONTACT_API_ID
+TELEGRAM_CONTACT_API_HASH
+TELEGRAM_CONTACT_PHONE
+TELEGRAM_CONTACT_SESSION_STRING
+TELEGRAM_CONTACT_SESSION_FILE
+GATE_CONTACT_SYNC_ACCOUNT_ALIAS
+GATE_CONTACT_SYNC_URL
+GATE_CONTACT_SYNC_BEARER_TOKEN
 RAILWAY_GIT_COMMIT_SHA
 RAILWAY_SERVICE_NAME
 ```
@@ -499,4 +509,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** implement the protected contact-snapshot boundary as one bounded PR, then a separate read-only Telegram user-session synchronizer. Preserve explicit send confirmation and account isolation throughout.
+**Immediate continuation:** deploy and onboard the one-shot read-only Telegram contact synchronizer for RU/BY, verify aggregate imports, then perform contact backfill/display cutover as a separate PR. Preserve explicit send confirmation and account isolation throughout.
