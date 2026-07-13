@@ -6,11 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from sqlalchemy import String, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.expression import cast as sql_cast
-
 from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
@@ -29,6 +24,10 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from sqlalchemy import String, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import cast as sql_cast
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -1358,3 +1357,4 @@ def _optional_int(value: Any) -> int | None:
 
 def _is_ping(text: str | None) -> bool:
     return text is not None and text.strip().casefold() == "ping"
+
