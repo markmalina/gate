@@ -120,3 +120,132 @@ class TelegramRetryPolicy:
             error_code=error_code,
         )
 
+
+@dataclass(frozen=True)
+class TelegramProcessingWorkItem:
+    """One exclusively claimed receipt/outbox pair ready for processing."""
+
+    receipt_id: str
+    outbox_event_id: str
+    bot_key: str
+    update_id: int
+    payload: JsonObject
+    received_at: datetime
+    attempt: int
+
+
+class TelegramUpdateProcessingError(Exception):
+    """Expected processing failure carrying only a bounded safe error code."""
+
+    def __init__(self, error_code: str) -> None:
+        self.error_code = error_code.strip()[:128] or "processing_error"
+        super().__init__(self.error_code)
+
+
+class TelegramUpdateProcessor(Protocol):
+    """Process one claimed Telegram update without owning queue state."""
+
+    async def process(self, item: TelegramProcessingWorkItem) -> None:
+        """Complete application processing or raise a safe coded failure."""
+
+
+class TelegramProcessingQueue(Protocol):
+    """Own exclusive claims and durable lifecycle transitions."""
+
+    async def claim_due(self, *, now: datetime) -> TelegramProcessingWorkItem | None:
+        """Claim at most one due item and increment its attempt exactly once."""
+
+    async def mark_processed(
+        self,
+        item: TelegramProcessingWorkItem,
+        *,
+        processed_at: datetime,
+    ) -> None:
+        """Atomically mark both receipt and outbox as completed."""
+
+    async def record_failure(
+        self,
+        item: TelegramProcessingWorkItem,
+        *,
+        failed_at: datetime,
+        plan: TelegramProcessingPlan,
+    ) -> None:
+        """Atomically schedule retry or hard dead-letter both records."""
+
+
+class TelegramWorkerDisposition(StrEnum):
+    """Observable result of one bounded worker iteration."""
+
+    IDLE = "idle"
+    PROCESSED = "processed"
+    RETRY = "retry"
+    DEAD_LETTER = "dead_letter"
+
+
+@dataclass(frozen=True)
+class TelegramWorkerResult:
+    """Redacted worker result without message content or exception detail."""
+
+    disposition: TelegramWorkerDisposition
+    receipt_id: str | None = None
+    outbox_event_id: str | None = None
+    attempt: int | None = None
+    error_code: str | None = None
+    next_attempt_at: datetime | None = None
+
+
+class ProcessTelegramOutboxService:
+    """Run one bounded claim/process/transition iteration."""
+
+    def __init__(
+        self,
+        *,
+        queue: TelegramProcessingQueue,
+        processor: TelegramUpdateProcessor,
+        retry_policy: TelegramRetryPolicy | None = None,
+    ) -> None:
+        self._queue = queue
+        self._processor = processor
+        self._retry_policy = retry_policy or TelegramRetryPolicy()
+
+    async def run_once(self, *, now: datetime) -> TelegramWorkerResult:
+        item = await self._queue.claim_due(now=now)
+        if item is None:
+            return TelegramWorkerResult(disposition=TelegramWorkerDisposition.IDLE)
+
+        try:
+            await self._processor.process(item)
+        except TelegramUpdateProcessingError as exc:
+            plan = self._retry_policy.plan_failure(
+                TelegramProcessingFailure(
+                    attempt=item.attempt,
+                    failed_at=now,
+                    error_code=exc.error_code,
+                )
+            )
+            await self._queue.record_failure(
+                item,
+                failed_at=now,
+                plan=plan,
+            )
+            disposition = (
+                TelegramWorkerDisposition.RETRY
+                if plan.disposition == TelegramProcessingDisposition.RETRY
+                else TelegramWorkerDisposition.DEAD_LETTER
+            )
+            return TelegramWorkerResult(
+                disposition=disposition,
+                receipt_id=item.receipt_id,
+                outbox_event_id=item.outbox_event_id,
+                attempt=item.attempt,
+                error_code=plan.error_code,
+                next_attempt_at=plan.next_attempt_at,
+            )
+
+        await self._queue.mark_processed(item, processed_at=now)
+        return TelegramWorkerResult(
+            disposition=TelegramWorkerDisposition.PROCESSED,
+            receipt_id=item.receipt_id,
+            outbox_event_id=item.outbox_event_id,
+            attempt=item.attempt,
+        )
