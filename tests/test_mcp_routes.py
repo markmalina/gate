@@ -7,8 +7,10 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jsonschema import Draft202012Validator, FormatChecker
 
 from app.api.deps import get_db_session
+from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.mcp_routes import _counterparty, _serialize_connection_health
 from app.core.config import get_settings
 from app.main import app
@@ -17,6 +19,12 @@ TOKEN = "mcp-read-token"
 ACCOUNT_ID = "22222222-2222-2222-2222-222222222222"
 PROJECT_ID = "33333333-3333-3333-3333-333333333333"
 AUTH_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+
+
+def _assert_valid_output(tool_name: str, payload: dict[str, Any]) -> None:
+    schema = MCP_TOOL_OUTPUT_SCHEMAS[tool_name]
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(payload)
 
 
 class FakeMcpResult:
@@ -442,6 +450,15 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_save_reply_draft",
         "gate_send_approved_reply",
     ]
+    for tool in tools:
+        assert tool["outputSchema"] == MCP_TOOL_OUTPUT_SCHEMAS[tool["name"]]
+        Draft202012Validator.check_schema(tool["outputSchema"])
+    for tool_name in (
+        "gate_get_reply_context",
+        "gate_save_reply_draft",
+        "gate_send_approved_reply",
+    ):
+        _assert_valid_output(tool_name, {"error": "invalid_arguments"})
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[1]["annotations"]["readOnlyHint"] is True
     assert tools[2]["annotations"]["readOnlyHint"] is True
@@ -471,6 +488,7 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     )
     result = response.json()["result"]
     structured = result["structuredContent"]
+    _assert_valid_output("gate_get_status", structured)
     assert structured["access"]["workspace_id"] == "mark-personal"
     assert structured["counts"]["accounts"] == 2
     assert structured["counts"]["unanswered"] == 1
@@ -495,6 +513,7 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
         }
     )
     result = response.json()["result"]
+    _assert_valid_output("gate_list_unanswered", result["structuredContent"])
     assert result["structuredContent"]["count"] == 1
     item = result["structuredContent"]["items"][0]
     assert item["account_id"] == ACCOUNT_ID
@@ -554,6 +573,7 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
 
     result = response.json()["result"]
     structured = result["structuredContent"]
+    _assert_valid_output("gate_get_reply_context", structured)
     assert structured["account"]["label"] == "RU"
     assert structured["counterparty"]["label"] == "Аня — бухгалтер"
     assert {
