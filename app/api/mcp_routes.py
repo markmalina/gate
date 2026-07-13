@@ -36,9 +36,11 @@ from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
     Account,
+    AuditLog,
     Conversation,
     Message,
     MessageDirection,
+    PersonIdentity,
     Project,
     ReplyDraft,
     ReplyTask,
@@ -429,6 +431,10 @@ async def _build_gate_status(
         _serialize_connection_health(account=account, connection=connection)
         for account, connection in latest_connections.values()
     ]
+    contact_directory = await _build_contact_directory_status(
+        session=session,
+        accounts=accounts,
+    )
     return {
         "service": "gate",
         "environment": settings.gate_env,
@@ -444,6 +450,7 @@ async def _build_gate_status(
         },
         "counts": counts,
         "connection_health": connection_health,
+        "contact_directory": contact_directory,
         "mcp": {
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tools": MCP_TOOL_NAMES,
@@ -457,6 +464,75 @@ async def _build_gate_status(
             ),
         },
     }
+
+
+async def _build_contact_directory_status(
+    *, session: AsyncSession, accounts: frozenset[UUID]
+) -> list[JsonObject]:
+    contact_counts = (
+        select(
+            PersonIdentity.account_id.label("account_id"),
+            func.count(PersonIdentity.id).label("imported_contacts"),
+        )
+        .where(
+            PersonIdentity.account_id.in_(accounts),
+            PersonIdentity.platform == "telegram",
+            PersonIdentity.metadata_["telegram_contact_name"]
+            .as_string()
+            .is_not(None),
+        )
+        .group_by(PersonIdentity.account_id)
+        .subquery()
+    )
+    ranked_imports = (
+        select(
+            AuditLog.account_id.label("account_id"),
+            AuditLog.created_at.label("created_at"),
+            AuditLog.metadata_["source"].as_string().label("source"),
+            func.row_number()
+            .over(
+                partition_by=AuditLog.account_id,
+                order_by=[AuditLog.created_at.desc(), AuditLog.id.desc()],
+            )
+            .label("rank"),
+        )
+        .where(
+            AuditLog.account_id.in_(accounts),
+            AuditLog.action == "telegram_contact_snapshot_imported",
+        )
+        .subquery()
+    )
+    result = await session.execute(
+        select(
+            Account,
+            func.coalesce(contact_counts.c.imported_contacts, 0),
+            ranked_imports.c.created_at,
+            ranked_imports.c.source,
+        )
+        .outerjoin(contact_counts, contact_counts.c.account_id == Account.id)
+        .outerjoin(
+            ranked_imports,
+            and_(
+                ranked_imports.c.account_id == Account.id,
+                ranked_imports.c.rank == 1,
+            ),
+        )
+        .where(Account.id.in_(accounts))
+        .order_by(Account.alias.asc())
+    )
+    return [
+        {
+            "account": _serialize_account(account),
+            "imported_contacts": int(imported_contacts),
+            "last_source": source,
+            "last_import_at": (
+                _serialize_datetime(last_import_at)
+                if last_import_at is not None
+                else None
+            ),
+        }
+        for account, imported_contacts, last_import_at, source in result.all()
+    ]
 
 
 async def _build_unanswered_list(
@@ -1352,6 +1428,14 @@ def _format_status_text(snapshot: JsonObject) -> str:
         lines.append(
             f"- {item['account']['label']}: {item['state']}; "
             f"can_reply={item['can_reply']}"
+        )
+    lines.extend(["", "Contact directory:"])
+    for item in snapshot["contact_directory"]:
+        source = item["last_source"] or "none"
+        last_import_at = item["last_import_at"] or "never"
+        lines.append(
+            f"- {item['account']['label']}: imported={item['imported_contacts']}; "
+            f"source={source}; last_import_at={last_import_at}"
         )
     lines.extend(["", "Counts:"])
     lines.extend(f"- {name}: {value}" for name, value in counts.items())
