@@ -7,7 +7,9 @@ import pytest
 
 from app.application.telegram_ingress_shadow import (
     BASE_WEBHOOK,
+    build_telegram_ingress_routing_context,
     classify_telegram_ingress,
+    observe_telegram_ingress_routing_shadow,
     observe_telegram_ingress_shadow,
     SPRINT10_EDIT,
     SPRINT11_CALLBACK,
@@ -19,6 +21,12 @@ from app.application.telegram_ingress_shadow import (
     SPRINT17_SEND,
     SPRINT18_DRAFT,
     SPRINT9_LEGACY_ADMIN,
+)
+from app.core.config import Settings
+from app.models.domain import (
+    DEFAULT_PROJECT_ID,
+    TELEGRAM_MARK_BY_ACCOUNT_ID,
+    TELEGRAM_MARK_RU_ACCOUNT_ID,
 )
 
 
@@ -129,3 +137,98 @@ def test_classifier_is_deterministic_and_side_effect_free() -> None:
 
     assert classify_telegram_ingress(update) == classify_telegram_ingress(update)
     assert update["message"]["text"] == "/inbox"
+
+
+def _routing_settings() -> Settings:
+    return Settings(_env_file=None).model_copy(
+        update={
+            "gate_account_ru_business_connection_id": "ru-connection",
+            "gate_account_by_business_connection_id": "by-connection",
+        }
+    )
+
+
+def test_routing_context_resolves_configured_ru_account_and_project() -> None:
+    update = _message("hello", business=True)
+    update["message"]["business_connection_id"] = "ru-connection"
+    decision = classify_telegram_ingress(update)
+
+    context = build_telegram_ingress_routing_context(
+        update,
+        decision=decision,
+        settings=_routing_settings(),
+    )
+
+    assert context.account_alias == "telegram_mark_ru"
+    assert context.account_id == str(TELEGRAM_MARK_RU_ACCOUNT_ID)
+    assert context.account_resolution == "configured_connection"
+    assert context.project_id == str(DEFAULT_PROJECT_ID)
+    assert context.text_present is True
+    assert context.direction_intent == "owner_identity_lookup_required"
+    assert context.reply_task_intent == "create_if_inbound_human_text"
+
+
+def test_routing_context_resolves_configured_by_connection_event() -> None:
+    update = {
+        "update_id": 8,
+        "business_connection": {
+            "id": "by-connection",
+            "user_chat_id": 22,
+            "user": {"id": 33},
+        },
+    }
+    decision = classify_telegram_ingress(update)
+
+    context = build_telegram_ingress_routing_context(
+        update,
+        decision=decision,
+        settings=_routing_settings(),
+    )
+
+    assert context.account_alias == "telegram_mark_by"
+    assert context.account_id == str(TELEGRAM_MARK_BY_ACCOUNT_ID)
+    assert context.project_id == str(DEFAULT_PROJECT_ID)
+    assert context.direction_intent == "not_applicable"
+    assert context.reply_task_intent == "none"
+
+
+def test_unknown_business_connection_requires_database_lookup() -> None:
+    update = _message("hello", business=True)
+    update["message"]["business_connection_id"] = "unknown-connection"
+    decision = classify_telegram_ingress(update)
+
+    context = build_telegram_ingress_routing_context(
+        update,
+        decision=decision,
+        settings=_routing_settings(),
+    )
+
+    assert context.account_alias is None
+    assert context.account_id is None
+    assert context.account_resolution == "database_lookup_required"
+    assert context.project_id is None
+
+
+def test_routing_observation_excludes_text_and_peer_identifiers(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger("test.telegram.ingress.routing.shadow")
+    secret_text = "private routing message 42"
+    update = _message(secret_text, business=True)
+    update["message"]["business_connection_id"] = "ru-connection"
+    decision = classify_telegram_ingress(update)
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        context = observe_telegram_ingress_routing_shadow(
+            update,
+            decision=decision,
+            settings=_routing_settings(),
+            logger=logger,
+        )
+
+    assert context.account_alias == "telegram_mark_ru"
+    assert "Telegram ingress routing shadow" in caplog.text
+    assert secret_text not in caplog.text
+    assert "ru-connection" not in caplog.text
+    assert "chat_id" not in caplog.text
+    assert "sender_id" not in caplog.text
