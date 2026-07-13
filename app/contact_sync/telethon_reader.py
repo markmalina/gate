@@ -40,7 +40,10 @@ class TelethonContactReader:
         try:
             if not await self._client.is_user_authorized():
                 raise TelegramContactReadError("Telegram session is not authorized")
-            await self._client.get_me()
+            current_user = await self._client.get_me()
+            owner_user_id = _integer(getattr(current_user, "id", 0))
+            if owner_user_id <= 0:
+                raise TelegramContactReadError("Telegram session account identity is unavailable")
             contacts_result = await self._client(
                 self._runtime.get_contacts_request_type(hash=0)
             )
@@ -63,6 +66,7 @@ class TelethonContactReader:
             return ContactReadResult(
                 saved_contacts=_saved_contacts(saved_result),
                 telegram_users=telegram_users,
+                source_account_telegram_user_id=str(owner_user_id),
             )
         except TelegramContactReadError:
             raise

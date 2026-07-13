@@ -31,6 +31,8 @@ class ImportContactSnapshotCommand:
     account_alias: str
     revision: str
     contacts: tuple[ContactSnapshotContact, ...]
+    source: str = "telegram_user_session"
+    source_account_telegram_user_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +69,7 @@ class ImportContactSnapshotService:
     MAX_ID_LENGTH = 255
     MAX_NAME_LENGTH = 255
     MAX_USERNAME_LENGTH = 255
+    ALLOWED_SOURCES = {"telegram_user_session", "telegram_desktop_export"}
 
     def __init__(self, writer: ContactSnapshotWriter) -> None:
         self._writer = writer
@@ -77,6 +80,12 @@ class ImportContactSnapshotService:
     ) -> ContactSnapshotResult:
         account_alias = command.account_alias.strip()
         revision = command.revision.strip()
+        source = command.source.strip()
+        source_account_user_id = (
+            command.source_account_telegram_user_id.strip()
+            if command.source_account_telegram_user_id is not None
+            else None
+        )
         if not account_alias or len(account_alias) > self.MAX_ACCOUNT_ALIAS_LENGTH:
             raise ContactSnapshotError(
                 code="invalid_account_alias",
@@ -91,6 +100,24 @@ class ImportContactSnapshotService:
             raise ContactSnapshotError(
                 code="invalid_contacts",
                 message="Contact snapshot must contain 1 to 1000 contacts",
+            )
+        if source not in self.ALLOWED_SOURCES:
+            raise ContactSnapshotError(
+                code="invalid_source",
+                message="Contact snapshot source is not supported",
+            )
+        if source_account_user_id is not None and (
+            not source_account_user_id.isdecimal()
+            or len(source_account_user_id) > self.MAX_ID_LENGTH
+        ):
+            raise ContactSnapshotError(
+                code="invalid_source_account_telegram_user_id",
+                message="Source account Telegram user id must contain decimal digits only",
+            )
+        if source == "telegram_desktop_export" and source_account_user_id is None:
+            raise ContactSnapshotError(
+                code="source_account_identity_required",
+                message="Desktop exports require a source account Telegram user id",
             )
 
         normalized: list[ContactSnapshotContact] = []
@@ -137,6 +164,8 @@ class ImportContactSnapshotService:
                 account_alias=account_alias,
                 revision=revision,
                 contacts=tuple(normalized),
+                source=source,
+                source_account_telegram_user_id=source_account_user_id,
             )
         )
 

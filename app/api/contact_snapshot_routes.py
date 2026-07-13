@@ -37,6 +37,12 @@ class ContactSnapshotRequest(BaseModel):
 
     account_alias: str = Field(min_length=1, max_length=128)
     revision: str = Field(min_length=1, max_length=128)
+    source: str = Field(default="telegram_user_session", min_length=1, max_length=64)
+    source_account_telegram_user_id: str | None = Field(
+        default=None,
+        max_length=255,
+        pattern=r"^[0-9]+$",
+    )
     contacts: list[ContactSnapshotItemRequest] = Field(min_length=1, max_length=1000)
 
 
@@ -87,6 +93,10 @@ async def import_contact_snapshot(
             ImportContactSnapshotCommand(
                 account_alias=payload.account_alias,
                 revision=payload.revision,
+                source=payload.source,
+                source_account_telegram_user_id=(
+                    payload.source_account_telegram_user_id
+                ),
                 contacts=tuple(
                     ContactSnapshotContact(
                         telegram_user_id=contact.telegram_user_id,
@@ -100,6 +110,8 @@ async def import_contact_snapshot(
     except ContactSnapshotError as exc:
         error_status = {
             "account_not_found": status.HTTP_404_NOT_FOUND,
+            "account_identity_unavailable": status.HTTP_409_CONFLICT,
+            "account_identity_mismatch": status.HTTP_409_CONFLICT,
             "revision_conflict": status.HTTP_409_CONFLICT,
         }.get(exc.code, status.HTTP_422_UNPROCESSABLE_ENTITY)
         raise HTTPException(

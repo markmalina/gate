@@ -40,6 +40,10 @@ class ContactReadResult:
 
     saved_contacts: tuple[SavedPhoneContact, ...]
     telegram_users: tuple[TelegramContactUser, ...]
+    direct_contacts: tuple[ContactSnapshotItem, ...] = ()
+    source_contacts: int | None = None
+    source: str = "telegram_user_session"
+    source_account_telegram_user_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +61,7 @@ class ContactSyncResult:
     """Privacy-bounded result that contains no contact values."""
 
     account_alias: str
+    source: str
     saved_contacts: int
     matched_contacts: int
     skipped_contacts: int
@@ -78,5 +83,7 @@ class SnapshotPublisher(Protocol):
         *,
         account_alias: str,
         revision: str,
+        source: str,
+        source_account_telegram_user_id: str | None,
         contacts: tuple[ContactSnapshotItem, ...],
     ) -> SnapshotImportCounts: ...

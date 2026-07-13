@@ -44,6 +44,17 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                     code="account_not_found",
                     message="Active Gate account not found",
                 )
+            if command.source_account_telegram_user_id is not None:
+                if account.telegram_user_id is None:
+                    raise ContactSnapshotError(
+                        code="account_identity_unavailable",
+                        message="Gate account Telegram identity is not configured",
+                    )
+                if str(account.telegram_user_id) != command.source_account_telegram_user_id:
+                    raise ContactSnapshotError(
+                        code="account_identity_mismatch",
+                        message="Export account does not match the target Gate account",
+                    )
 
             revision_sha256 = _revision_sha256(command.revision)
             snapshot_sha256 = _snapshot_sha256(command)
@@ -113,6 +124,7 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                                 revision=command.revision,
                                 display_name=contact.display_name,
                                 username=contact.username,
+                                source=command.source,
                             ),
                         )
                     )
@@ -148,6 +160,7 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                         revision=command.revision,
                         display_name=contact.display_name,
                         username=contact.username,
+                        source=command.source,
                     )
                 )
                 identity.metadata_ = metadata
@@ -175,6 +188,7 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                         "created": counts.created,
                         "updated": counts.updated,
                         "unchanged": counts.unchanged,
+                        "source": command.source,
                     },
                 )
             )
@@ -194,12 +208,13 @@ def _contact_metadata(
     revision: str,
     display_name: str,
     username: str | None,
+    source: str,
 ) -> dict[str, Any]:
     return {
         "telegram_contact_name": display_name,
         "telegram_contact_username": username,
         "telegram_contact_revision": revision,
-        "telegram_contact_source": "telegram_user_session",
+        "telegram_contact_source": source,
         "name_source": "telegram_contact",
     }
 
@@ -221,7 +236,13 @@ def _snapshot_sha256(command: ImportContactSnapshotCommand) -> str:
         )
     ]
     payload = json.dumps(
-        canonical_contacts,
+        {
+            "contacts": canonical_contacts,
+            "source": command.source,
+            "source_account_telegram_user_id": (
+                command.source_account_telegram_user_id
+            ),
+        },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

@@ -10,7 +10,12 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from app.contact_sync.desktop_export_reader import (
+    TelegramDesktopExportError,
+    TelegramDesktopExportReader,
+)
 from app.contact_sync.gate_client import GatePublishError, GateSnapshotPublisher
+from app.contact_sync.models import ContactReader
 from app.contact_sync.service import ContactSyncError, ContactSyncService
 from app.contact_sync.telethon_reader import (
     TelegramContactReadError,
@@ -31,7 +36,14 @@ class TelegramCredentials:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gate-contact-sync")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("sync", help="read contacts and publish sanitized snapshots")
+    sync = subparsers.add_parser(
+        "sync", help="read contacts and publish sanitized snapshots"
+    )
+    sync.add_argument(
+        "--desktop-export",
+        type=Path,
+        help="read an offline Telegram Desktop result.json instead of a user session",
+    )
     authorize = subparsers.add_parser(
         "authorize", help="perform one-time Telegram authorization"
     )
@@ -39,17 +51,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _run_sync() -> int:
-    credentials = _telegram_credentials()
-    session_string = _session_string()
+async def _run_sync(desktop_export: Path | None) -> int:
     account_alias = _required_env("GATE_CONTACT_SYNC_ACCOUNT_ALIAS")
     gate_url = _required_env("GATE_CONTACT_SYNC_URL")
     gate_token = _required_env("GATE_CONTACT_SYNC_BEARER_TOKEN")
-    reader = create_telethon_reader(
-        api_id=credentials.api_id,
-        api_hash=credentials.api_hash,
-        session_string=session_string,
-    )
+    reader: ContactReader
+    if desktop_export is not None:
+        reader = TelegramDesktopExportReader(desktop_export)
+    else:
+        credentials = _telegram_credentials()
+        reader = create_telethon_reader(
+            api_id=credentials.api_id,
+            api_hash=credentials.api_hash,
+            session_string=_session_string(),
+        )
     publisher = GateSnapshotPublisher(base_url=gate_url, bearer_token=gate_token)
     result = await ContactSyncService(reader, publisher).execute(
         account_alias=account_alias
@@ -106,13 +121,18 @@ async def async_main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "authorize":
         return await _run_authorize(args.session_file)
-    return await _run_sync()
+    return await _run_sync(args.desktop_export)
 
 
 def main() -> None:
     try:
         exit_code = asyncio.run(async_main())
-    except (ContactSyncError, GatePublishError, TelegramContactReadError) as exc:
+    except (
+        ContactSyncError,
+        GatePublishError,
+        TelegramContactReadError,
+        TelegramDesktopExportError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from None
     except Exception:
