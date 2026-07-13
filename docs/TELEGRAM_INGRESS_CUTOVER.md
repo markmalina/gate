@@ -135,6 +135,11 @@ Persist the receipt before acknowledgement, enqueue it transactionally, process 
 bounded worker, and add retry, dead-letter and replay controls. Prove idempotency with duplicate,
 timeout and worker-restart tests.
 
+PR #115 defines the application boundary first: one atomic receipt/outbox acceptance per
+`(bot_key, update_id)`, stable identities for duplicates, validation before persistence and a
+bounded exponential retry policy with a hard dead-letter limit. It does not add tables, a worker
+or webhook wiring; those follow only after the contract is green.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
