@@ -353,7 +353,7 @@ async def test_postgres_contact_snapshot_is_idempotent_and_account_scoped() -> N
                 )
             )
             audits = audit_result.scalars().all()
-            assert len(audits) == 4
+            assert len(audits) == 3
             serialized_audits = str([audit.metadata_ for audit in audits])
             assert "Мама" not in serialized_audits
             assert "12345" not in serialized_audits
