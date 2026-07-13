@@ -189,12 +189,12 @@ Current limitation: the Telegram **Bot API** supplies the other party's Telegram
 - current lists may still show profile names such as “Sam O. Gone” instead of Mark's saved name;
 - historical approved-draft messages created before identity snapshots can still show a numeric ID;
 - Gate must not infer a saved contact name from message wording;
-- full address-book names require a separate authenticated Telegram **user-session** contact synchronizer.
+- Telegram Desktop JSON can provide offline user ID/name pairs for exported personal chats; phone-only address-book rows still require a separate identity source for complete matching.
 
 Delivery status and intended continuation:
 
 1. The protected, idempotent contact-snapshot boundary is implemented by PR #102.
-2. The separate one-shot read-only user-session adapter is documented in `docs/CONTACT_SYNC_ADAPTER.md`; each account still requires authorized onboarding and a real sync.
+2. The one-shot adapter supports a preferred offline Telegram Desktop JSON path and an optional read-only user-session fallback, documented in `docs/CONTACT_SYNC_ADAPTER.md`.
 3. Keep Telegram session material outside message payloads, logs and Git history.
 4. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
 5. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
@@ -202,7 +202,7 @@ Delivery status and intended continuation:
 7. Make synchronized contact names authoritative over profile names in MCP output.
 8. Verify RU and BY, then document one-time onboarding for future accounts.
 
-One-time Telegram authorization is unavoidable for every Telegram user account because Telegram does not expose private contacts to a bot. It must be automated as account onboarding, not repeated per contact. No Telegram user-session secret has been added to production yet.
+Telegram authorization is not required for the Desktop export path. It remains an optional fallback when complete phone-to-user-ID matching is required, because Desktop `contacts.list` has no Telegram user IDs. No Telegram user-session secret has been added to production.
 
 ## 10. Current code architecture
 
@@ -265,7 +265,7 @@ The MVP works, but the target architecture is not complete.
 5. **Static RU/BY assumptions.** Workspace access is dynamic, but some labels/configuration and send schema still assume RU/BY. A third account must be addable without a code change.
 6. **Project isolation evolution.** The final model needs explicit workspace/project grants, dialog identity independent of project, and time-bounded context binding.
 7. **Legacy routing data.** Production required collision-safe and NULL-safe repair migrations. CI against an empty database did not expose every production-data shape.
-8. **Contact directory rollout.** The storage seam and one-shot adapter exist; RU/BY authorization, real sync and display cutover remain operational work.
+8. **Contact directory rollout.** The storage seam and one-shot adapter exist; RU/BY Desktop export sync and display cutover remain operational work. MTProto authorization is fallback-only.
 9. **Output schemas.** ChatGPT recommends explicit output schemas for tools; add them without breaking existing MCP clients.
 10. **Observability.** Add structured redacted metrics for webhook latency, queue lag, duplicate rate, DLQ, send failures/unknown, Telegram 429 and DB pool pressure.
 11. **Scale path.** The billion-message target requires partitioning, hot/cold separation, object storage for raw payload/media, read projections and measured thresholds—not a claim that one Railway database stores everything forever.
@@ -313,7 +313,7 @@ Do not start several tracks in one PR.
 11. Adapter cutover: Telegram and MCP use the same application layer; remove sprint routers only after characterization parity.
 12. Scale hardening: projections, keyset pagination, partitions, hot/cold data, backup/restore, load tests and capacity thresholds.
 
-The next executor should begin with item 1 unless Mark explicitly changes priority. It requires a one-time user-side Telegram authorization and must never place session material in chat or Git.
+The next executor should begin with item 1 unless Mark explicitly changes priority. Prefer the offline Desktop export path; if MTProto fallback is later required, never place session material in chat or Git.
 
 ## 14. Target architecture and invariants
 
@@ -509,4 +509,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** deploy and onboard the one-shot read-only Telegram contact synchronizer for RU/BY, verify aggregate imports, then perform contact backfill/display cutover as a separate PR. Preserve explicit send confirmation and account isolation throughout.
+**Immediate continuation:** import the available RU Telegram Desktop export, repeat for BY after Telegram's export delay, verify aggregate account-scoped results, then perform historical contact linkage/display cutover as a separate PR. Preserve explicit send confirmation and account isolation throughout.
