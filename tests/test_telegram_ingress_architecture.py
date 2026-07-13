@@ -13,9 +13,10 @@ from fastapi import FastAPI
 
 
 def _is_webhook_post(route: Any) -> bool:
-    return (
-        getattr(route, "path", None) == TELEGRAM_WEBHOOK_PATH
-        and "POST" in (getattr(route, "methods", None) or ())
+    endpoint = getattr(route, "endpoint", None)
+    endpoint_name = getattr(endpoint, "__name__", "")
+    return endpoint_name == "telegram_webhook" or endpoint_name.endswith(
+        "_telegram_webhook"
     )
 
 
