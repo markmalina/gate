@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import String, and_, cast, func, or_, select, union_all
+from sqlalchemy import String, and_, case, cast, func, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -584,12 +584,23 @@ async def _build_unanswered_list(
             TelegramUpdate,
             Account,
             ranked_tasks.c.pending_message_count,
+            PersonIdentity.metadata_["telegram_contact_name"]
+            .as_string()
+            .label("resolved_contact_name"),
         )
         .options(undefer(ReplyTask.account_id))
         .join(ranked_tasks, ranked_tasks.c.task_id == ReplyTask.id)
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .join(Account, Message.account_id == Account.id)
+        .outerjoin(
+            PersonIdentity,
+            and_(
+                PersonIdentity.account_id == Message.account_id,
+                PersonIdentity.platform == "telegram",
+                PersonIdentity.platform_user_id == Message.sender_id,
+            ),
+        )
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -609,6 +620,7 @@ async def _build_unanswered_list(
             telegram_update=telegram_update,
             account=account,
             pending_message_count=pending_message_count,
+            resolved_contact_name=resolved_contact_name,
         )
         for (
             task,
@@ -617,12 +629,29 @@ async def _build_unanswered_list(
             telegram_update,
             account,
             pending_message_count,
+            resolved_contact_name,
         ) in result.all()
     ]
 
     answered_result = await session.execute(
-        select(Message, TelegramUpdate, Account)
+        select(
+            Message,
+            TelegramUpdate,
+            Account,
+            PersonIdentity.metadata_["telegram_contact_name"]
+            .as_string()
+            .label("resolved_contact_name"),
+        )
         .join(Account, Message.account_id == Account.id)
+        .outerjoin(
+            PersonIdentity,
+            and_(
+                PersonIdentity.account_id == Message.account_id,
+                PersonIdentity.platform == "telegram",
+                PersonIdentity.platform_user_id
+                == func.coalesce(Message.recipient_id, Message.chat_id),
+            ),
+        )
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -648,8 +677,9 @@ async def _build_unanswered_list(
             message=message,
             telegram_update=telegram_update,
             account=account,
+            resolved_contact_name=resolved_contact_name,
         )
-        for message, telegram_update, account in answered_result.all()
+        for message, telegram_update, account, resolved_contact_name in answered_result.all()
     ]
     return {
         "items": items,
@@ -686,11 +716,28 @@ async def _get_reply_context_tool_result(
     limit = _bounded_limit(arguments.get("limit"), default=10, maximum=20)
     scope = principal.access_scope
     task_result = await session.execute(
-        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
+        select(
+            ReplyTask,
+            Conversation,
+            Message,
+            TelegramUpdate,
+            Account,
+            PersonIdentity.metadata_["telegram_contact_name"]
+            .as_string()
+            .label("resolved_contact_name"),
+        )
         .options(undefer(ReplyTask.account_id))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .join(Account, ReplyTask.account_id == Account.id)
+        .outerjoin(
+            PersonIdentity,
+            and_(
+                PersonIdentity.account_id == Message.account_id,
+                PersonIdentity.platform == "telegram",
+                PersonIdentity.platform_user_id == Message.sender_id,
+            ),
+        )
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -715,9 +762,37 @@ async def _get_reply_context_tool_result(
             code="task_not_found",
             message="Reply task not found in the allowed scope",
         )
-    task, conversation, trigger, trigger_update, account = row
+    (
+        task,
+        conversation,
+        trigger,
+        trigger_update,
+        account,
+        resolved_contact_name,
+    ) = row
+    history_counterparty_user_id = case(
+        (
+            Message.direction == MessageDirection.INBOUND.value,
+            Message.sender_id,
+        ),
+        else_=func.coalesce(Message.recipient_id, Message.chat_id),
+    )
     history_result = await session.execute(
-        select(Message, TelegramUpdate)
+        select(
+            Message,
+            TelegramUpdate,
+            PersonIdentity.metadata_["telegram_contact_name"]
+            .as_string()
+            .label("resolved_contact_name"),
+        )
+        .outerjoin(
+            PersonIdentity,
+            and_(
+                PersonIdentity.account_id == Message.account_id,
+                PersonIdentity.platform == "telegram",
+                PersonIdentity.platform_user_id == history_counterparty_user_id,
+            ),
+        )
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -758,6 +833,7 @@ async def _get_reply_context_tool_result(
         "counterparty": _counterparty(
             message=trigger,
             telegram_update=trigger_update,
+            resolved_contact_name=resolved_contact_name,
             fallback_name=getattr(conversation, "title", None),
         ),
         "messages": [
@@ -766,10 +842,11 @@ async def _get_reply_context_tool_result(
                 "counterparty": _counterparty(
                     message=message,
                     telegram_update=telegram_update,
+                    resolved_contact_name=history_contact_name,
                     fallback_name=getattr(conversation, "title", None),
                 ),
             }
-            for message, telegram_update in history_rows
+            for message, telegram_update, history_contact_name in history_rows
         ],
         "count": len(history_rows),
         "limit": limit,
@@ -828,6 +905,7 @@ def _serialize_unanswered_item(
     telegram_update: TelegramUpdate | None,
     account: Account,
     pending_message_count: int,
+    resolved_contact_name: str | None,
 ) -> JsonObject:
     task_id = str(task.id)
     return {
@@ -848,6 +926,7 @@ def _serialize_unanswered_item(
         "counterparty": _counterparty(
             message=message,
             telegram_update=telegram_update,
+            resolved_contact_name=resolved_contact_name,
             fallback_name=getattr(conversation, "title", None),
         ),
         "message": _serialize_message(message),
@@ -860,6 +939,7 @@ def _serialize_answered_item(
     message: Message,
     telegram_update: TelegramUpdate | None,
     account: Account,
+    resolved_contact_name: str | None,
 ) -> JsonObject:
     return {
         "account_id": str(message.account_id),
@@ -868,6 +948,7 @@ def _serialize_answered_item(
         "counterparty": _counterparty(
             message=message,
             telegram_update=telegram_update,
+            resolved_contact_name=resolved_contact_name,
         ),
         "message": _serialize_message(message),
     }
@@ -933,6 +1014,7 @@ def _counterparty(
     *,
     message: Message,
     telegram_update: TelegramUpdate | None,
+    resolved_contact_name: str | None = None,
     fallback_name: str | None = None,
 ) -> JsonObject:
     payload = telegram_update.payload if telegram_update is not None else {}
@@ -951,8 +1033,9 @@ def _counterparty(
         part for part in (first_name, last_name) if part
     ) or title
     snapshot = _counterparty_snapshot(message)
-    saved_name = _optional_text(snapshot.get("display_name"))
-    display_name = saved_name or profile_name or fallback_name
+    snapshot_name = _optional_text(snapshot.get("display_name"))
+    imported_name = _optional_text(resolved_contact_name)
+    display_name = snapshot_name or imported_name or profile_name or fallback_name
     platform_user_id = _optional_text(profile.get("id")) or (
         message.sender_id
         if message.direction == MessageDirection.INBOUND.value

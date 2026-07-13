@@ -263,7 +263,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                         person_id=allowed_person.id,
                         account_id=allowed_account,
                         platform="telegram",
-                        platform_user_id="allowed-private-platform-id",
+                        platform_user_id="sender",
                         display_name="private-allowed-contact",
                         is_verified=True,
                         metadata_={
@@ -275,7 +275,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                         person_id=denied_person.id,
                         account_id=denied_account,
                         platform="telegram",
-                        platform_user_id="denied-private-platform-id",
+                        platform_user_id="sender",
                         display_name="private-denied-contact",
                         is_verified=True,
                         metadata_={
@@ -348,14 +348,17 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             status_wire = status_response.text
             assert "private-allowed-contact" not in status_wire
             assert "private-denied-contact" not in status_wire
-            assert "allowed-private-platform-id" not in status_wire
-            assert "denied-private-platform-id" not in status_wire
+            assert '"platform_user_id"' not in status_wire
 
             assert response.status_code == 200
             structured = response.json()["result"]["structuredContent"]
             items = structured["items"]
             assert [item["message"]["text_preview"] for item in items] == ["allowed message"]
             assert [item["message"]["direction"] for item in items] == ["inbound"]
+            assert [item["counterparty"]["label"] for item in items] == [
+                "private-allowed-contact"
+            ]
+            assert "private-denied-contact" not in response.text
             assert [
                 item["message"]["text_preview"] for item in structured["answered_items"]
             ] == ["allowed answer"]
