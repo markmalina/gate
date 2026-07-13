@@ -4,10 +4,6 @@ from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app.api.contact_snapshot_routes import get_contact_snapshot_service
 from app.application.contact_snapshots import (
     ContactSnapshotContact,
@@ -21,6 +17,9 @@ from app.core.config import get_settings
 from app.infrastructure.contact_snapshots import SqlContactSnapshotWriter
 from app.main import app
 from app.models.domain import Account, AuditLog, Base, Person, PersonIdentity
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 class RecordingWriter:
