@@ -9,6 +9,22 @@ from typing import Any, cast
 import httpx
 
 
+class TelegramApiError(RuntimeError):
+    """Sanitized Telegram Bot API failure safe to persist and expose."""
+
+    def __init__(
+        self,
+        *,
+        error_code: int | None,
+        description: str,
+        http_status: int | None = None,
+    ) -> None:
+        super().__init__(description)
+        self.error_code = error_code
+        self.description = description
+        self.http_status = http_status
+
+
 class TelegramClient:
     """Small async Telegram Bot API client."""
 
@@ -144,11 +160,29 @@ class TelegramClient:
     ) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(url, json=payload)
-            response.raise_for_status()
-            result = response.json()
+            try:
+                result = response.json()
+            except ValueError:
+                response.raise_for_status()
+                raise RuntimeError("Telegram API returned invalid JSON") from None
 
         if not isinstance(result, dict):
             raise RuntimeError("Telegram API returned a non-object response")
+
+        if response.is_error or result.get("ok") is not True:
+            raw_code = result.get("error_code")
+            error_code = raw_code if isinstance(raw_code, int) else None
+            raw_description = result.get("description")
+            description = (
+                raw_description.strip()
+                if isinstance(raw_description, str) and raw_description.strip()
+                else "Telegram API did not confirm delivery"
+            )
+            raise TelegramApiError(
+                error_code=error_code,
+                description=description[:512],
+                http_status=response.status_code,
+            )
 
         return cast(dict[str, Any], result)
 
