@@ -48,6 +48,7 @@ class ReplySendResult:
     idempotent_replay: bool
     provider_message_id: str | None = None
     error_code: str | None = None
+    error_detail: str | None = None
 
 
 class ReplySendExecutor(Protocol):
