@@ -11,16 +11,20 @@ from app.main import create_app
 from fastapi import FastAPI
 
 
+def _original_endpoint(route: Any) -> Any:
+    dependant = getattr(route, "dependant", None)
+    return getattr(dependant, "call", None) or route.endpoint
+
+
 def _is_webhook_layer(route: Any) -> bool:
-    endpoint = getattr(route, "endpoint", None)
-    endpoint_name = getattr(endpoint, "__name__", "")
+    endpoint_name = getattr(_original_endpoint(route), "__name__", "")
     return endpoint_name == "telegram_webhook" or endpoint_name.endswith(
         "_telegram_webhook"
     )
 
 
 def _endpoint_fingerprint(route: Any) -> str:
-    endpoint = route.endpoint
+    endpoint = _original_endpoint(route)
     return f"{endpoint.__module__}:{endpoint.__name__}"
 
 
