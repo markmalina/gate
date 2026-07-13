@@ -288,7 +288,37 @@ def test_counterparty_prefers_gate_identity_snapshot_over_telegram_profile() -> 
     counterparty = _counterparty(
         message=message,
         telegram_update=telegram_update,
-        resolved_contact_name="Евгений из импорта",
+    )
+
+    assert counterparty["label"] == "Женя — зал"
+    assert counterparty["display_name"] == "Женя — зал"
+    assert counterparty["username"] == "profile_username"
+
+
+def test_counterparty_prefers_current_import_over_stale_message_snapshot() -> None:
+    message = SimpleNamespace(
+        direction="outbound",
+        sender_id="owner",
+        recipient_id="12345",
+        chat_id="12345",
+        payload={"_gate_counterparty": {"display_name": "Evgeniy Profile"}},
+    )
+    telegram_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "chat": {
+                    "id": 12345,
+                    "first_name": "Evgeniy",
+                    "username": "profile_username",
+                }
+            }
+        }
+    )
+
+    counterparty = _counterparty(
+        message=message,
+        telegram_update=telegram_update,
+        resolved_contact_name="Женя — зал",
     )
 
     assert counterparty["label"] == "Женя — зал"
