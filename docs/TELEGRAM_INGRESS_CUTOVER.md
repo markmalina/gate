@@ -142,7 +142,7 @@ or webhook wiring; those follow only after the contract is green.
 
 PR #116 adds the reversible persistence schema: a unique receipt per `(bot_key, update_id)`,
 exactly one outbox event per receipt, bounded processing metadata and due-work indexes. The tables
-are dormant until an atomic adapter is merged; the legacy webhook does not write them.
+are dormant until an atomic adapter is merged; the legacy webhook does not write them.\n\nPR #117 adds the PostgreSQL adapter that creates the receipt and outbox event in one transaction,\nreturns stable identities for duplicate deliveries and covers concurrent acceptance. It remains\ndormant: neither the legacy webhook nor a worker calls it.
 
 ### Phase 4 — staged cutover
 
