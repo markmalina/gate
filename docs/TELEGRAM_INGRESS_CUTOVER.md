@@ -112,6 +112,12 @@ it would make. Continue serving production through the legacy chain. Compare:
 
 No shadow path may send Telegram messages or mutate production workflow state.
 
+PR #112 starts this phase with a deterministic, side-effect-free handler classifier, captured
+fixture replay and one redacted observation at the frozen ingress seam. The observation contains
+only update identity/type and decision metadata; it never logs message text, writes database state
+or calls Telegram. Account, connection, project, normalized-message and reply-task parity remain
+required before staged cutover.
+
 ### Phase 3 — durable receipt and worker
 
 Persist the receipt before acknowledgement, enqueue it transactionally, process it through a
