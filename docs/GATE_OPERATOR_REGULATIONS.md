@@ -153,6 +153,6 @@ Gate replies that contain next actions should present those actions as clickable
 
 ## Current development note
 
-The protected contact-snapshot boundary is implemented. The current continuation is the separate one-shot read-only Telegram user-session adapter described in [CONTACT_SYNC_ADAPTER.md](CONTACT_SYNC_ADAPTER.md), followed by authorized RU/BY sync and display cutover.
+The protected contact-snapshot boundary is implemented. The current continuation is the one-shot offline Telegram Desktop export path described in [CONTACT_SYNC_ADAPTER.md](CONTACT_SYNC_ADAPTER.md), followed by RU/BY aggregate verification and display cutover. Read-only Telegram user-session access is fallback-only.
 
 The contact adapter must not send messages, expose session material, weaken MCP authorization or bypass explicit send confirmation. Telegram-native UX and Gate M MCP must continue to use the same account-scoped identities.
