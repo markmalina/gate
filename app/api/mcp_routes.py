@@ -1035,7 +1035,7 @@ def _counterparty(
     snapshot = _counterparty_snapshot(message)
     snapshot_name = _optional_text(snapshot.get("display_name"))
     imported_name = _optional_text(resolved_contact_name)
-    display_name = snapshot_name or imported_name or profile_name or fallback_name
+    display_name = imported_name or snapshot_name or profile_name or fallback_name
     platform_user_id = _optional_text(profile.get("id")) or (
         message.sender_id
         if message.direction == MessageDirection.INBOUND.value

@@ -199,6 +199,7 @@ Delivery status and intended continuation:
 3. RU Desktop-export contacts have been imported; BY remains pending until Telegram permits its Desktop export.
 4. `gate_get_status` reports privacy-bounded aggregate import evidence per granted account.
 5. MCP unanswered, answered and reply-context reads prefer the imported account-scoped contact name without rewriting historical message facts.
+   The current imported identity intentionally outranks an older message snapshot, because that snapshot may contain the pre-import Telegram profile name.
 6. Keep Telegram session material outside message payloads, logs and Git history.
 7. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
 8. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
@@ -295,6 +296,7 @@ Key merged milestones:
 | #104 | Verified offline Telegram Desktop export import path and RU rollout |
 | #105 | Privacy-bounded per-account contact import observability |
 | #106 | Account-scoped imported-name precedence across MCP reads |
+| #107 | Current imported names supersede stale historical message snapshots |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
