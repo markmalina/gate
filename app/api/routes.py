@@ -1,5 +1,6 @@
 """HTTP routes for Gate."""
 
+import hmac
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
