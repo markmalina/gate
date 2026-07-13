@@ -91,6 +91,25 @@ class SendAttemptStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class TelegramReceiptStatus(StrEnum):
+    """Durable Telegram receipt lifecycle states."""
+
+    RECEIVED = "received"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    DEAD_LETTER = "dead_letter"
+
+
+class TelegramOutboxStatus(StrEnum):
+    """Transactional outbox delivery states."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DELIVERED = "delivered"
+    RETRY_SCHEDULED = "retry_scheduled"
+    DEAD_LETTER = "dead_letter"
+
+
 class Bot(Base):
     """Telegram bot adapter configuration without committed token values."""
 
@@ -672,6 +691,140 @@ class SendAttempt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TelegramReceipt(Base):
+    """Durable deduplicated Telegram update receipt."""
+
+    __tablename__ = "telegram_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "bot_key",
+            "update_id",
+            name="uq_telegram_receipts_bot_update",
+        ),
+        Index(
+            "ix_telegram_receipts_status_next_attempt",
+            "status",
+            "next_attempt_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    bot_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    update_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=TelegramReceiptStatus.RECEIVED.value,
+        server_default=text("'received'"),
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class TelegramOutboxEvent(Base):
+    """One transactional processing event for a durable Telegram receipt."""
+
+    __tablename__ = "telegram_outbox_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "receipt_id",
+            name="uq_telegram_outbox_events_receipt_id",
+        ),
+        Index(
+            "ix_telegram_outbox_status_available",
+            "status",
+            "available_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("telegram_receipts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="telegram_update_received",
+        server_default=text("'telegram_update_received'"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=TelegramOutboxStatus.PENDING.value,
+        server_default=text("'pending'"),
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 

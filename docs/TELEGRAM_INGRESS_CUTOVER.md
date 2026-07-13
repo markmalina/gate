@@ -140,6 +140,10 @@ PR #115 defines the application boundary first: one atomic receipt/outbox accept
 bounded exponential retry policy with a hard dead-letter limit. It does not add tables, a worker
 or webhook wiring; those follow only after the contract is green.
 
+PR #116 adds the reversible persistence schema: a unique receipt per `(bot_key, update_id)`,
+exactly one outbox event per receipt, bounded processing metadata and due-work indexes. The tables
+are dormant until an atomic adapter is merged; the legacy webhook does not write them.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
