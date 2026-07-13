@@ -2,6 +2,10 @@
 
 from typing import Annotated
 
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
 from app.application.contact_snapshots import (
@@ -12,9 +16,6 @@ from app.application.contact_snapshots import (
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.contact_snapshots import SqlContactSnapshotWriter
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
