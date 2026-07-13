@@ -306,12 +306,29 @@ class SqlTelegramReplySender:
             )
         )
         connection = result.scalar_one_or_none()
-        if connection is None:
+        if connection is not None:
+            return connection
+
+        # Telegram may rotate a Business connection while the conversation
+        # retains its historical origin. Fall back only within the already
+        # confirmed account; the partial unique index guarantees at most one
+        # enabled connection per account.
+        active_result = await self._session.execute(
+            select(TelegramBusinessConnection).where(
+                TelegramBusinessConnection.account_id == draft.account_id,
+                TelegramBusinessConnection.account_id.in_(
+                    command.principal.access_scope.account_ids
+                ),
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+        )
+        active_connection = active_result.scalar_one_or_none()
+        if active_connection is None:
             raise ReplySendError(
                 code="origin_connection_unavailable",
                 message="The originating Telegram Business connection is not active",
             )
-        return connection
+        return active_connection
 
     async def _load_attempt(self, draft_id: Any) -> SendAttempt | None:
         result = await self._session.execute(
