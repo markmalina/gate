@@ -1,495 +1,502 @@
 # Gate
 
-> **PROJECT STATUS: ACTIVE / ORDERED STABILIZATION AND MVP DELIVERY**  
-> Development resumed by Mark: **2026-07-12**  
-> Frozen application-code baseline: `81163dcd079ad0ccbc58859832cdef571d65f314` (Sprint 21).  
-> Current active scope: **Private Gate MCP MVP live in ChatGPT Work with Auth0 OAuth and least-privilege scopes**.  
-> Do not start feature development from an old sprint branch. Read this README completely before touching code.
+> **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
+> Verified: **2026-07-13**  
+> Repository: `markmalina/gate` (private)  
+> Source of truth: GitHub `main`  
+> Verified application commit before this documentation update: `0543a34d961b11a807c06588a1c040befaff8321`  
+> Production: Railway, automatic deployment from `main`  
+> Status at handoff: ChatGPT Work MCP MVP is operational; both current Telegram Business accounts are connected and able to reply.
 
-Gate is a separate cloud-first communication gateway between Telegram accounts/bots and Mark projects such as Alpha and individual Mayaks.
+This README is the primary project handoff. A new owner or implementation agent must be able to continue from it without relying on chat history, an agent memory summary, or a stale local checkout.
 
-Gate is not Alpha, not a Mayak, not SysteM and not the business logic of a practice. Gate receives communication facts, resolves transport and project context, creates reply work, delivers only permitted confirmed replies and records audit history.
+Read next:
 
-```text
-Telegram → Gate → scoped ProjectSpace → draft → explicit approval → Telegram → audit
-```
+- [Team workflow](docs/TEAM_WORKFLOW.md) — authority, PR, CI, merge, deployment and terminology rules;
+- [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md) — target architecture and scale requirements;
+- [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md) — operational and safety rules.
 
-Primary bot: `@gate_m_bot`  
-Repository: `markmalina/gate` (private)  
-Production stack: FastAPI, PostgreSQL, SQLAlchemy async, Alembic, Railway, GitHub Actions.
+If any older document conflicts with the verified current state in this README, re-check GitHub and production first, then update the documentation in the same substantive PR.
 
-## 1. Handoff authority and active scope
+## 1. What Gate is
 
-This README is the current handoff and next-work authority. Mark explicitly resumed Gate development on 2026-07-12. The older documents remain useful references, but when they conflict with the status or delivery order below, this README wins.
+Gate is a cloud-first communication gateway between Mark's communication accounts and isolated project contexts. The first production transport is Telegram Business; the first user-facing control surface is a custom MCP integration in ChatGPT Work.
 
-Reference documents:
-
-- [Full product and engineering specification](docs/GATE_FULL_TECHNICAL_SPEC.md)
-- [Team workflow](docs/TEAM_WORKFLOW.md)
-- [Gate operator regulations](docs/GATE_OPERATOR_REGULATIONS.md)
-
-During the current ChatGPT connection scope:
-
-- do not add Telegram features;
-- add MCP tools only when they are part of the approved, scoped MVP flow;
-- do not build Oko / Oko Vozrozhdeniya behavior;
-- do not merge old branches into `main`;
-- eligible green PRs auto-merge and Railway auto-deploy under the standing Team Workflow authorization; manual deploy, retry, rollback and production configuration changes still require Mark's direct command;
-- MCP draft and send capabilities must remain scope-gated, explicitly confirmed and auditable;
-- do not add autonomous AI replies;
-- do not paste or commit secrets;
-- provider-neutral OAuth token verification and the explicitly active ChatGPT connection implementation are allowed;
-- work proceeds in the ordered PR sequence below; every eligible merge is followed by verification of the exact Railway production commit and safety smoke checks.
-
-## Active delivery strategy
-
-Gate now advances on two synchronized tracks that share one application layer:
-
-1. **Safe MVP:** expose current inbound messages, draft assistance, explicit approval and send through ChatGPT as early as possible.
-2. **Target architecture:** replace the sprint-router chain, hardcoded account/project assumptions and unsafe delivery semantics incrementally without a rewrite freeze.
-
-MVP adapters must use the same scoped application services being built for the target architecture. Temporary direct ORM access, unscoped MCP reads and autonomous sending are not acceptable shortcuts.
-
-## Current ChatGPT connection boundary
-
-The private Gate MCP MVP is active in production behind Auth0 OAuth. Gate preserves the exact Auth0 issuer, verifies JWT/JWKS tokens and enforces workspace/account/project claims. The active scopes are `gate:status:read`, `gate:inbox:read`, `gate:drafts:write` and `gate:messages:send`.
-
-The five MCP tools read status, list unanswered and answered messages, load recent reply context, save a draft, and send that exact saved draft only after Mark explicitly confirms the displayed account (`RU` or `BY`), recipient and final text. Every delivery is reserved in `send_attempts` before Telegram is called. Repeated calls cannot send the same draft twice; a timeout becomes `unknown` and is never retried automatically.
-
-## 2. Exact repository state at freeze
-
-Frozen application-code baseline (the last functional change before this handoff):
+Gate is not a generic chatbot and is not the business logic of Alpha, Mayak, Oko or another project. Its responsibilities are deliberately narrow:
 
 ```text
-81163dcd079ad0ccbc58859832cdef571d65f314
+Telegram communication fact
+→ durable Gate record
+→ correct account and project scope
+→ reply task
+→ bounded context
+→ proposed draft
+→ Mark sees account, recipient and exact text
+→ explicit approval
+→ one idempotent delivery attempt
+→ Telegram
+→ audit
 ```
 
-At freeze time:
+Current product goal: let Mark see who wrote to him, distinguish unanswered inbound conversations from messages he already sent, get GPT help with a reply, approve the exact result and send it through the correct Telegram Business account.
 
-- open pull requests: `0`;
-- GitHub CI for the latest MCP sprints: green;
-- Railway status for current `main`: success;
-- current Telegram production loop exists and has been exercised;
-- MCP has already moved from separate branches into `main`.
+## 2. Product and agent terminology
 
-Latest merged work:
+- **ChatGPT** is the product and user-interface name. Continue to call the interface, plugins/connectors and user-facing features ChatGPT.
+- **WorkGPT**, shortened to **Work**, is the workflow agent Mark uses inside the ChatGPT Work tab. Work is the normal architect, reviewer and GitHub/Railway workflow controller.
+- **Codex** is the implementation environment for larger development packages. Codex is not the source of truth and must not call a local-only commit complete.
 
-| Sprint | PR / commit | Result |
+Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identifies the working agent, not the product.
+
+## 3. Verified production snapshot
+
+Verified through GitHub and the live Gate M connector on 2026-07-13:
+
+| Item | Verified state |
+|---|---|
+| GitHub default branch | `main` |
+| Open pull requests before this handoff | none |
+| Application commit | `0543a34d961b11a807c06588a1c040befaff8321` |
+| Environment | `production` |
+| Railway service URL | `https://gate-production-bab1.up.railway.app` |
+| Bot username | `gate_m_bot` |
+| Operating mode | `manual` |
+| MCP authorization | OAuth 2.0 enforced |
+| Workspace | `mark-personal` |
+| Active account contexts | 2: `telegram_mark_ru` / RU and `telegram_mark_by` / BY |
+| Telegram Business health | RU `ready`, BY `ready`, both `can_reply=true` |
+| MCP tools | 5, listed below |
+| Automatic/free-form sending | disabled by product rules |
+| Explicit confirmed sending | enabled and exercised successfully |
+
+Live counters are operational snapshots, not invariants. At verification they were approximately: 21 conversations, 520 messages, 105 reply-task records, 3 currently unanswered conversations, 39 answered/outbound messages and 27 saved drafts. Re-query production instead of copying these numbers into logic or tests.
+
+Public verification endpoints:
+
+- `GET /health` — lightweight service health;
+- `GET /deployment/fingerprint` — Railway commit and non-secret deployment metadata;
+- `GET /.well-known/oauth-protected-resource/mcp` — MCP protected-resource metadata;
+- `POST /mcp` — MCP transport, protected per tool by OAuth.
+
+After every merge, verify the exact new Railway commit. A healthy old release is not proof that the new release deployed.
+
+## 4. Current ChatGPT Work MVP
+
+The installed connector is named **Gate M**. It uses the production MCP endpoint:
+
+```text
+https://gate-production-bab1.up.railway.app/mcp
+```
+
+Active OAuth scopes:
+
+```text
+gate:status:read
+gate:inbox:read
+gate:drafts:write
+gate:messages:send
+```
+
+Active tools:
+
+| Tool | Scope | Behavior |
 |---|---|---|
-| Sprint 18b | PRs #67–69 | Telegram draft replies show one clean `Действия` section with clickable `/send_...`, `/drafts_...`, `/done_...`, `/dismiss_...`, `/snooze_...` commands |
-| Sprint 19 | PR #70 / `6619d1fc` | Minimal read-only `/mcp`, `gate_get_status` |
-| Sprint 20 | PR #71 / `cbeca147` | Read-only `gate_list_unanswered` |
-| Sprint 21 | PR #72 / `81163dcd` | OAuth protected-resource metadata endpoints and declared future scopes; authentication is explicitly not enforced |
+| `gate_get_status` | `gate:status:read` | Scoped status, counts and redacted per-account Business connection health |
+| `gate_list_unanswered` | `gate:inbox:read` | One current unanswered item per conversation plus a separate answered/outbound list |
+| `gate_get_reply_context` | `gate:inbox:read` | Bounded chronological context for one scoped reply task |
+| `gate_save_reply_draft` | `gate:drafts:write` | Saves proposed text; never approves or sends |
+| `gate_send_approved_reply` | `gate:messages:send` | Sends the exact saved draft only after explicit confirmation of account, recipient and final text |
 
-Sprint 21 added:
+Important UI behavior:
+
+- refresh connector actions after MCP schemas/descriptors change;
+- reconnect only when OAuth scopes, grants or authorization metadata change;
+- an orange permission banner means the token did not receive every tool scope requested by the connector; compare ChatGPT action scopes with Auth0 API permissions and User-Delegated Access;
+- do not solve a missing-scope warning by weakening Gate authorization.
+
+## 5. Message and inbox semantics
+
+Gate must distinguish direction, not guess from text.
+
+- **Unanswered** means a current inbound human message exists after the last outbound reply in that conversation.
+- Consecutive inbound messages are grouped into one actionable conversation; `pending_message_count` shows how many are pending.
+- **Answered/outbound** means Mark sent the message. A message such as “Привет, Стефан” is answered/outbound even if it looks like a greeting that could have been received.
+- Owner self-chats and service/command messages are excluded from the answered-people list.
+- Every result must show the originating account explicitly as RU or BY.
+- Unknown or ambiguous account routing fails closed; it must never silently fall back to RU.
+
+Account ownership repairs were performed for legacy data. Do not reintroduce hard-coded per-contact corrections. New account resolution is workspace- and connection-driven.
+
+## 6. Safe send contract
+
+Sending is the highest-risk currently active path. These invariants are non-negotiable:
+
+1. Load a reply task within the caller's workspace/account/project scope.
+2. Show Mark the exact account (`RU` or `BY`), recipient and final text.
+3. Receive explicit confirmation.
+4. Save/use the exact draft; do not regenerate after approval.
+5. Validate the expected account and expected recipient against the stored task.
+6. Resolve and live-validate a Business connection within that same account.
+7. Reserve a unique `SendAttempt` and commit before calling Telegram.
+8. Call Telegram once.
+9. Persist `sent`, `failed` or `unknown`.
+10. Close the reply task only after Telegram confirms delivery.
+
+Repeated calls for the same draft are idempotent. A timeout or crash ambiguity becomes `unknown` and is never retried automatically. Never fall back across RU/BY boundaries. Never send merely because a draft exists.
+
+The confirmed production send to the BY account succeeded after Business connection reconciliation. This proves the path, not permission for future automatic sends.
+
+## 7. OAuth and account authorization model
+
+Auth0 verifies the user and issues access tokens for the Gate MCP resource. Gate verifies signature/JWKS, issuer, audience, subject and tool scope.
+
+The durable authorization design is workspace-first:
+
+- the token asserts the trusted workspace identity;
+- Gate resolves active readable accounts owned by that workspace from its own database;
+- Gate derives project access from those account records;
+- explicit account/project claims remain a backward-compatible fallback, not the normal way to add each account;
+- an empty or unknown workspace fails closed.
+
+This was introduced so a new Gate account does not require manually hard-coding every account UUID into Auth0 metadata. Auth0 User-Delegated Access must still permit every requested API scope for the ChatGPT application.
+
+Never commit or document real client secrets, bearer tokens, JWTs, session strings, webhook secrets, Telegram bot tokens or authorization codes.
+
+## 8. Telegram Business connection lifecycle
+
+Telegram can rotate, disable or replace Business connection identifiers. A connection that once worked can later become invalid.
+
+Current behavior:
+
+- new Business connection updates are resolved dynamically from the Telegram business owner identity;
+- enabling a replacement retires the previous active connection for that account;
+- nested rights, including `can_reply`, are stored correctly;
+- connection updates are state, not ordinary chat messages;
+- confirmed sends live-validate candidates with Telegram before use;
+- only an enabled, reply-capable connection in the already-confirmed account may be selected;
+- invalid or temporarily unverifiable connections fail closed;
+- safe bounded Telegram error codes/details are recorded without tokens or message contents;
+- `gate_get_status` exposes only redacted health (`ready`, `degraded`, `cannot_reply`, `inactive`, `missing`), never connection identifiers.
+
+The database may retain historical connection rows. `business_connections` can therefore be larger than `active_business_connections`; this is not by itself an error.
+
+## 9. Contact identity and names
+
+PR #100 added account-scoped `Person` / `PersonIdentity` persistence and resolved-name snapshots. Gate now has the correct internal seam for stable names and prevents future approved-draft sends from degrading to a raw numeric recipient when a resolved identity is known.
+
+Current limitation: the Telegram **Bot API** supplies the other party's Telegram profile/chat name, not the private label Mark saved in his personal Telegram address book. Therefore:
+
+- current lists may still show profile names such as “Sam O. Gone” instead of Mark's saved name;
+- historical approved-draft messages created before identity snapshots can still show a numeric ID;
+- Gate must not infer a saved contact name from message wording;
+- full address-book names require a separate authenticated Telegram **user-session** contact synchronizer.
+
+Permanent intended solution:
+
+1. Add a protected, idempotent contact-snapshot import boundary to Gate.
+2. Run a separate read-only Telegram user-session adapter that obtains the account's contacts.
+3. Keep Telegram session material outside message payloads, logs and Git history.
+4. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
+5. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
+6. Backfill existing `PersonIdentity`, conversation and message linkage without rewriting communication facts.
+7. Make synchronized contact names authoritative over profile names in MCP output.
+8. Verify RU and BY, then document one-time onboarding for future accounts.
+
+One-time Telegram authorization is unavoidable for every Telegram user account because Telegram does not expose private contacts to a bot. It must be automated as account onboarding, not repeated per contact. No Telegram user-session secret has been added to production yet.
+
+## 10. Current code architecture
+
+Technology:
+
+- Python 3.12;
+- FastAPI / Uvicorn;
+- PostgreSQL;
+- SQLAlchemy async + asyncpg;
+- Alembic;
+- httpx Telegram adapter;
+- Auth0 OAuth/JWT/JWKS;
+- GitHub Actions;
+- Railway.
+
+Current runtime flow:
 
 ```text
-GET /.well-known/oauth-protected-resource
-GET /.well-known/oauth-protected-resource/mcp
-GET /mcp/metadata
-```
-
-It publishes future scopes such as `gate:status:read`, `gate:inbox:read`, `gate:drafts:write` and `gate:messages:send`, but no OAuth validation, write tool or send tool is implemented.
-
-Do not continue development in:
-
-- `agent/sprint19-mcp-readonly-foundation`;
-- `agent/sprint20-mcp-list-unanswered`;
-- any other already merged sprint/hotfix branch;
-- `gate/mayaki-inbound-forwarder` — old closed/unmerged work, far behind `main`, reference only.
-
-All resumed work must start from the then-current `main`. If `main` has advanced beyond `81163dcd`, inspect and document the new commits before coding.
-
-## 3. What currently works
-
-- Railway-deployed FastAPI service;
-- PostgreSQL persistence and Alembic migrations;
-- Telegram webhook reconciliation and diagnostics;
-- RU and BY Telegram Business connections;
-- account-scoped Telegram admin context;
-- durable Telegram updates, Gate events, Messages and AuditLog records;
-- Conversations and unanswered ReplyTasks;
-- `/inbox`, draft creation/history/editing and task actions;
-- explicit `/send_<draft>` / `/approve_<draft>` send path;
-- send through the origin Business connection;
-- global and current RU/BY send switches;
-- safe Telegram error details;
-- cleanup of test/service inbox tasks without deleting data;
-- MCP tools `gate_get_status`, `gate_list_unanswered`, `gate_get_reply_context`, `gate_save_reply_draft` and `gate_send_approved_reply`;
-- MCP protected-resource metadata describing planned OAuth scopes.
-
-The current operator loop is:
-
-```text
-Telegram inbound
-→ Gate
-→ /inbox
-→ tap /draft_...
-→ tap /send_...
-→ Telegram outbound through origin connection
-→ task closed
+Telegram Bot API webhook
+→ FastAPI router chain
+→ raw TelegramUpdate receipt
+→ normalized GateEvent / Message
+→ connection and account resolution
+→ Conversation
+→ ReplyTask
+→ MCP read/draft/send services
+→ SendAttempt reservation
+→ Telegram API
 → outbound Message + AuditLog
 ```
 
-No free-form outbound text may be sent without Mark explicit confirmation.
+Important locations:
 
-## 4. Current MCP security boundary
-
-PR #75 closed the unauthenticated MCP data-access risk: MCP is disabled by default, temporary bearer access is fail-closed, and every query requires explicit account/project grants. PR #76 added the ChatGPT OAuth discovery contract without exposing data. PRs #77–79 added provider-neutral JWT/JWKS verification, the scoped draft tool and Auth0 activation readiness. PR #80 limited OAuth metadata to the initial least-privilege scopes. Later inbox fixes established reliable inbound/outbound direction and counterparty identity before send was exposed.
-
-Production uses Auth0 OAuth with exact issuer, audience, scope and custom grant-claim validation. Draft creation remains side-effect free outside Gate. The send tool requires the separate `gate:messages:send` scope plus exact account/recipient confirmation, uses the originating Telegram Business connection, records an idempotent send attempt before the network call and closes reply work only after confirmed Telegram success.
-
-## 5. Remaining architecture debt after the MVP
-
-The current system grew through fast production sprints and hotfix layers. Confirmed debt:
-
-- several routers register the same `POST /telegram/webhook`;
-- newer sprint routers call older sprint routers directly;
-- behavior depends on `include_router` order;
-- one SQLAlchemy engine/pool is created per request;
-- one `httpx.AsyncClient` is created per Telegram API call;
-- RU/BY UUIDs and per-country switches are hardcoded;
-- an unknown Business connection can fall back into the RU context;
-- `Account.linked_project_id` assumes one project per transport account;
-- Conversation identity includes `project_id`, although one Telegram dialog can change context;
-- raw payloads are duplicated across JSONB records;
-- an update may be marked processed before all effects complete;
-- the global webhook error handler may answer HTTP 200 after an internal failure, causing silent loss;
-- send status conflates approval and actual delivery;
-- concurrent confirmation can race and cause duplicate sending;
-- Telegram timeout is not represented as `unknown`;
-- short references are found with `CAST + LIKE` UUID prefix scans;
-- current MCP performs direct ORM/SQL queries;
-- `gate_get_status` runs sequential exact counts over large tables;
-- `gate_list_unanswered` has no real cursor and no principal/project isolation;
-- critical modules use blanket `mypy: ignore-errors` and `ruff: noqa`;
-- TelegramClient can create a callback send button although the reliable callback handler was not merged;
-- draft editor links need a dedicated expiring signing key instead of fallback reuse of other secrets.
-
-## 6. Non-negotiable product model
-
-The next architecture must separate:
-
-1. `Workspace` — ownership and hard data boundary.
-2. `ChannelAccount` — one Telegram account; transport, not project.
-3. `ChannelConnection` — bot installation / Business connection and rights.
-4. `ProjectSpace` — isolated logical context: personal Alpha, each individual Mayak, unclassified or system.
-5. `AgentProfile` — Alpha or the agent of a specific Mayak, operating only through an explicit AccessScope.
-
-One Telegram account must support many projects at the same time:
-
-```text
-telegram_mark_by
-├── alpha_personal
-├── mayak_a
-├── mayak_b
-├── mayak_c
-├── ...
-└── mayak_j
-```
-
-Alpha may be a responder in multiple authorized ProjectSpaces, but receives only bounded context for the selected project. A Mayak must never receive personal Alpha data or data from another Mayak.
-
-Every Mayak must have an independent scoped inbox, routing policy, AgentProfile, drafts, audit history, memory/adapter reference, MCP grants and kill switch, even when several Mayaks share the same Telegram account.
-
-## 7. Target architecture
-
-Use a strict modular monolith, not premature microservices:
-
-```text
-app/domain/          # entities, states, invariants, policies
-app/application/     # commands, queries, services, ports, AccessScope, UoW
-app/infrastructure/  # SQL repositories, outbox, queue, Telegram, auth, telemetry
-app/adapters/        # canonical Telegram, admin HTTP, MCP
-app/workers/         # normalize, route, deliver, retry/DLQ
-app/bootstrap/       # lifespan and dependency composition
-```
-
-Dependency rules:
-
-- domain imports no FastAPI, SQLAlchemy, Telegram or MCP;
-- application depends only on domain and ports;
-- adapters contain protocol mapping, not business rules;
-- Telegram and MCP use the same application services;
-- MCP imports no ORM models and executes no SQL;
-- exactly one canonical `/telegram/webhook` is registered;
-- engine/sessionmaker and HTTP clients live for the application lifespan;
-- API instances are stateless and horizontally scalable;
-- architecture tests prevent reverse dependencies.
-
-## 8. Target domain and storage model
-
-Required entities:
-
-| Entity | Responsibility |
+| Path | Responsibility |
 |---|---|
-| `Workspace` | Owner/security/data boundary |
-| `Principal`, `RoleBinding`, `ProjectGrant` | Read/draft/send authorization |
-| `ChannelAccount` | Provider account as transport |
-| `ChannelConnection` | External connection, capabilities and lifecycle |
-| `ProjectSpace` | Personal or individual Mayak context |
-| `AgentProfile`, `ProjectAgentBinding` | Responder identity/policy reference |
-| `AccountProjectBinding` | Many-to-many accounts ↔ projects |
-| `Dialog` | Transport dialog independent of project |
-| `ContextBinding` | Time-bounded project segment of a dialog |
-| `MessageContextAssignment` | One primary project per message |
-| `RoutingDecision` | Versioned auditable routing fact |
-| `InboundEnvelope` | Single durable raw update receipt |
-| `Message` | Immutable normalized communication fact |
-| `ReplyTask`, `ReplyTaskTrigger` | One active scoped reply work item with its triggers |
-| `DraftRevision`, `Approval` | Versioned text and explicit approval fact |
-| `SendAttempt` | Reserved/sending/sent/failed/unknown/cancelled delivery |
-| `OutboxEvent` | Reliable internal delivery |
-| `AuditLog` | Append-only actor/action/causation history |
+| `app/main.py` | App composition, router registration, startup webhook reconciliation |
+| `app/api/mcp_routes.py` | Current MCP protocol and tool adapter |
+| `app/api/mcp_metadata_routes.py` | OAuth protected-resource and MCP metadata |
+| `app/api/sprint14_routes.py` and later sprint routers | Current Telegram Business normalization and incremental behavior |
+| `app/application/` | Draft/send application contracts and services |
+| `app/infrastructure/reply_sends.py` | Explicit idempotent Telegram delivery adapter |
+| `app/core/mcp_security.py` | MCP OAuth verification and access scope |
+| `app/core/config.py` | Environment-backed settings; names only, no committed values |
+| `app/models/domain.py` | Current SQLAlchemy domain model |
+| `alembic/versions/` | Ordered database migrations |
+| `tests/` | Unit, contract and PostgreSQL integration coverage |
+| `docs/TEAM_WORKFLOW.md` | Collaboration and deployment authority |
+
+Core persisted concepts currently include `Account`, `Project`, `TelegramBusinessConnection`, `TelegramUpdate`, `GateEvent`, `Person`, `PersonIdentity`, `Conversation`, `Message`, `ReplyTask`, `ReplyDraft`, `SendAttempt` and `AuditLog`.
+
+## 11. Known architecture debt and risks
+
+The MVP works, but the target architecture is not complete.
+
+1. **Sprint router chain.** Multiple incremental Telegram routers remain registered. Replace them with one canonical ingress/application pipeline only after parity tests.
+2. **Webhook durability.** The target is durable receipt + transactional outbox + worker before acknowledging. Current flow still contains synchronous domain work.
+3. **MCP direct ORM access.** Move MCP reads behind scoped query services/read models.
+4. **Operational exact counts.** Current status performs exact counts; this does not scale to very large history.
+5. **Static RU/BY assumptions.** Workspace access is dynamic, but some labels/configuration and send schema still assume RU/BY. A third account must be addable without a code change.
+6. **Project isolation evolution.** The final model needs explicit workspace/project grants, dialog identity independent of project, and time-bounded context binding.
+7. **Legacy routing data.** Production required collision-safe and NULL-safe repair migrations. CI against an empty database did not expose every production-data shape.
+8. **Contact directory sync.** The storage seam exists; the user-session synchronizer does not.
+9. **Output schemas.** ChatGPT recommends explicit output schemas for tools; add them without breaking existing MCP clients.
+10. **Observability.** Add structured redacted metrics for webhook latency, queue lag, duplicate rate, DLQ, send failures/unknown, Telegram 429 and DB pool pressure.
+11. **Scale path.** The billion-message target requires partitioning, hot/cold separation, object storage for raw payload/media, read projections and measured thresholds—not a claim that one Railway database stores everything forever.
+
+Never fix this with a big-bang rewrite. Use expand → backfill → shadow/dual path → compare → cutover → later cleanup.
+
+## 12. Recent delivery history
+
+Key merged milestones:
+
+| PRs | Result |
+|---|---|
+| #75–#80 | Auth0/ChatGPT connector integration and OAuth setup iterations |
+| #87 | Complete safe MVP send path: context, draft, explicit confirmation, idempotent send |
+| #88–#93 | Fail-closed RU/BY routing repair, production-safe collision/NULL migrations, confirmed data corrections |
+| #94–#95 | Dynamic workspace-based OAuth grants and normalized account ownership |
+| #96 | One unanswered item per conversation with pending message count |
+| #97 | Same-account active Business connection fallback for confirmed sends |
+| #98 | Safe Telegram delivery diagnostics |
+| #99 | Dynamic Business connection synchronization and live validation |
+| #100 | Stable contact identity seam and redacted connection health |
+
+Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
+
+## 13. Ordered next development plan
+
+Do not start several tracks in one PR.
+
+### Immediate product continuation
+
+1. **Contact snapshot boundary.** Protected, bounded, idempotent import into existing `PersonIdentity`; audit counts only, never contact lists or session material.
+2. **User-session contact adapter.** Separate read-only component; one-time authorization per Telegram account; sanitized sync to Gate; no per-contact manual work.
+3. **Contact backfill and display cutover.** RU/BY verification, saved-name precedence in unanswered/answered/context, historical numeric-ID remediation through identity linkage.
+4. **MCP output schemas.** Add explicit bounded output schemas and refresh ChatGPT actions.
+5. **Account generalization acceptance test.** Add a third test account without code or Auth0 UUID edits; verify receive → inbox → draft → confirmed send.
+
+### Target architecture continuation
+
+6. Runtime foundation: singleton DB engine, bounded pooled HTTP clients, Unit of Work, liveness/readiness, telemetry.
+7. Canonical ingress: one webhook, durable receipt, outbox, worker, retry/DLQ, safe replay and shadow comparison.
+8. Dynamic account/channel model: remove remaining hard-coded RU/BY paths while preserving human-readable labels.
+9. Workspace/project isolation: explicit grants, account-project bindings, dialog independent of project, time-bounded context segments.
+10. Application services: inbox, routing, context, draft revisions, approvals, sends and audit behind ports.
+11. Adapter cutover: Telegram and MCP use the same application layer; remove sprint routers only after characterization parity.
+12. Scale hardening: projections, keyset pagination, partitions, hot/cold data, backup/restore, load tests and capacity thresholds.
+
+The next executor should begin with item 1 unless Mark explicitly changes priority.
+
+## 14. Target architecture and invariants
+
+The durable target separates transport identity, project context and delivery state:
+
+```text
+Workspace
+├── ChannelAccount(s)
+│   ├── ChannelConnection history
+│   └── PersonIdentity / contact projection
+├── ProjectSpace(s)
+│   └── scoped ProjectContact projection
+└── Dialog(s)
+    ├── ContextBinding segments
+    ├── Message facts
+    └── ReplyTask → DraftRevision → Approval → SendAttempt
+```
 
 Required invariants:
 
-- no hidden global default RU account;
-- unknown connection goes to quarantine, never to RU/BY by fallback;
-- ChannelAccount is many-to-many with ProjectSpace;
-- Dialog natural identity excludes project;
-- a dialog changes project by ContextBinding, not duplicate Dialog rows;
-- every Message has one confirmed primary project or explicit unclassified state;
-- manual routing overrides preserve history;
-- external projects receive a scoped `ProjectContact` projection, not global Person notes;
-- new high-volume records use time-sortable IDs such as UUIDv7;
-- existing UUIDs are not rewritten in one destructive migration;
-- Telegram commands use indexed unique `public_ref`, not prefix scans.
+- unknown connection/account/project is quarantined or rejected, never defaulted silently;
+- account and project are separate dimensions;
+- a dialog does not duplicate merely because its project context changes;
+- each message has one confirmed primary project or an explicit unclassified state;
+- personal/global notes are never leaked into another project's contact projection;
+- inbound processing is at-least-once with idempotent effects;
+- concurrent copies of one update create one durable/domain result;
+- concurrent sends for one approved revision produce at most one external call;
+- timeout/unknown is never blindly retried;
+- audit and logs are bounded and redact message text and secrets where operationally unnecessary;
+- future high-volume IDs may become time-sortable, but existing UUIDs are not destructively rewritten.
 
-All schema changes use:
+## 15. CI, PR and deployment workflow
 
-```text
-expand → checkpointed backfill → dual write/shadow read
-→ comparison → cutover → contract cleanup in a later release
-```
+GitHub is the source of truth. Read [TEAM_WORKFLOW](docs/TEAM_WORKFLOW.md) before acting.
 
-## 9. Durable inbound pipeline
+Normal flow:
 
 ```text
-Telegram webhook
-→ validate secret, size and schema
-→ INSERT unique InboundEnvelope
-→ INSERT OutboxEvent in the same transaction
-→ commit
-→ HTTP 200
-→ normalize worker
-→ resolve connection/account/dialog/person
-→ persist routing decision and message context
-→ create Message
-→ create/update scoped ReplyTask
-→ emit scoped project event
+Mark intent
+→ inspect current GitHub main/open PRs/CI/production
+→ one bounded branch and PR
+→ review exact diff
+→ GitHub Actions on exact head SHA
+→ fix small clear failures in the same PR
+→ auto-merge only when every Team Workflow condition is satisfied
+→ Railway automatic deployment from main
+→ verify exact merge commit and smoke tests
 ```
 
-Rules:
+Required CI gates:
 
-- acknowledge only after durable receipt;
-- return retryable failure when durable storage is unavailable;
-- store poison updates in DLQ and support safe replay;
-- process one Dialog sequentially and different Dialogs concurrently;
-- use at-least-once delivery with idempotent domain effects;
-- do not claim impossible end-to-end exactly-once;
-- enforce unique source/update/message/task/delivery keys.
-
-## 10. Safe send lifecycle
-
-```text
-explicit approval
-→ validate Principal, AccessScope, revision, account, project and connection
-→ reserve unique SendAttempt and commit
-→ call Telegram outside a long DB transaction
-→ persist sent / failed / unknown
-→ close ReplyTask only after sent
-```
-
-Rules:
-
-- concurrent approval produces at most one external call;
-- timeout becomes `unknown`; never blind auto-retry;
-- failed/unknown leaves ReplyTask open;
-- global env kill switch remains break-glass;
-- account/project switches are dynamic DB policy;
-- handle Telegram `429 retry_after` and rate limits per bot/account/connection/chat;
-- keep audit bounded and redacted;
-- preserve current clickable command flow;
-- do not reintroduce callback send until a separate tested sprint.
-
-## 11. MCP compatibility during refactor
-
-Preserve the existing read-only contracts:
-
-- `/mcp`;
-- `initialize`, `tools/list`, `tools/call`, `notifications/initialized`;
-- `gate_get_status`;
-- `gate_list_unanswered`;
-- protected-resource metadata endpoints from Sprint 21.
-
-Move implementations behind `StatusQueryService` and `InboxQueryService`. Every query requires Principal and AccessScope. Add real opaque keyset cursors. Replace operational exact counts with counters/read models. Remove blanket lint/type suppression.
-
-Do not add new MCP tools, writes, send tools or autonomous behavior during this refactor.
-
-## 12. Billion-message scaling target
-
-The goal is not to claim that one Railway/PostgreSQL instance holds a billion messages. The goal is a domain/application architecture that can scale beyond one billion stored messages without rewriting the business core.
-
-Required path:
-
-- stateless API replicas;
-- ports for EventBus, repositories, ObjectStore and TelegramGateway;
-- PostgreSQL outbox/worker is allowed first; broker can later be replaced by Kafka/Redpanda/SQS adapter after measured thresholds;
-- partition large append-only tables by time and tenant/account shard key;
-- keep hot state separate from cold history;
-- store compressed raw payload/media in object storage with hash/ref in PostgreSQL;
-- use keyset pagination, never OFFSET for core lists;
-- no runtime exact counts on billion-row tables;
-- maintain an InboxProjection/read model;
-- use BRIN/time indexes for history and composite B-tree indexes for hot queries;
-- add read replicas/search/sharding only at documented capacity thresholds;
-- define retention, archive, PITR and restore plans;
-- structured logs contain no message text or secrets;
-- metrics include ingress latency, queue lag, duplicate rate, DLQ, send failed/unknown, Telegram 429 and DB pool saturation.
-
-## 13. Required delivery order after unfreeze
-
-Do not implement as one mega-PR.
-
-1. **PR 0 — MCP containment.** Close the current unauthenticated data-access risk.
-2. **PR 1 — Characterization and ADR.** Golden tests for Sprint 13–21 and ADRs for ownership, account/project mapping, dialog identity, delivery semantics, storage and MCP security.
-3. **PR 2 — Runtime foundation.** Singleton database engine, pooled HTTP client, UoW, live/ready health and telemetry.
-4. **PR 3 — Canonical ingress.** One webhook, durable receipt, outbox, worker, retry/DLQ and shadow comparison.
-5. **PR 4 — Generalized accounts.** Dynamic accounts/connections; RU/BY backfill; add a third account without code/env changes.
-6. **PR 5 — Project isolation.** Workspace, ProjectSpace, AgentProfile, grants, account-project bindings, Dialog and context segments.
-7. **PR 6 — Application services.** Inbox, tasks, draft revisions, approvals, send attempts, audit and routing.
-8. **PR 7 — Adapter cutover.** Telegram/admin use application services; remove the sprint router chain after parity.
-9. **PR 8 — MCP compatibility/security.** Move Sprint 19–21 to scoped query services, real auth boundary and cursors; no new tools.
-10. **PR 9 — Scale hardening.** Partitions, hot/cold data, projections, load tests, backup/restore and runbooks.
-
-Every PR must include scope, current head SHA, changed files, migrations, tests, CI result, manual plan, rollback plan, known limitations and next risk. Do not mix workflow-policy rewrites into a functional PR.
-
-## 14. Required acceptance scenarios
-
-### Multiple accounts
-
-- RU, BY and a third test account complete receive → inbox → draft → send;
-- the third account is added through DB/configuration without a code change;
-- equal Telegram IDs in different accounts stay separate.
-
-### One account, Alpha and ten Mayaks
-
-- one ChannelAccount binds to `alpha_personal` and ten `mayak_*` ProjectSpaces;
-- every ProjectSpace has an isolated inbox;
-- one Dialog can change context by segment without duplication;
-- Alpha receives only bounded current-project context;
-- cross-Mayak and personal leakage tests return no data.
-
-### Idempotency and concurrency
-
-- 100 concurrent copies of one update create one durable/domain effect;
-- no duplicate Message or active ReplyTask;
-- out-of-order updates do not corrupt dialog/task state;
-- 100 concurrent sends of one draft produce at most one external Telegram call;
-- `sent` closes the task; `failed/unknown` does not;
-- `unknown` is not retried automatically.
-
-### MCP
-
-- unauthenticated access returns no data;
-- one project token cannot read another project;
-- Sprint 19–21 contract tests remain green;
-- MCP adapter imports no ORM and performs no direct SQL;
-- pagination is real and bounded;
-- no unbounded lists or exact operational counts.
-
-### Quality
-
-- no blanket `ignore-errors/noqa` in production critical paths;
 - `ruff check .`;
 - `mypy app tests`;
-- unit and real PostgreSQL integration tests;
-- Alembic upgrade/downgrade;
-- Docker build;
-- architecture and isolation tests;
-- migration test against a production-like snapshot.
+- `pytest`;
+- `alembic upgrade head`;
+- `alembic downgrade base`;
+- `docker build -t gate:ci .`.
 
-## 15. Performance evidence
+CI reporting uses: 🟢 success, 🟡 pending, 🔴 failed, ⚪ unknown.
 
-On a dedicated performance environment:
+Eligible Work-managed PRs auto-merge under the standing authorization in Team Workflow. This authorizes only Railway's automatic deployment caused by that merge. Manual deploy, retry, rollback and production configuration changes require Mark's direct command.
 
-- 1,000 synthetic durable webhook receipts/sec for 15 minutes;
-- 5,000/sec burst for 60 seconds;
-- p95 durable ACK below 250 ms;
-- zero lost domain effects;
-- backlog drains completely;
-- database and HTTP pools remain bounded.
+## 16. Runtime configuration and secret policy
 
-On 10–100 million metadata rows:
-
-- first inbox page p95 below 300 ms;
-- conversation page p95 below 500 ms;
-- partition pruning and critical `EXPLAIN ANALYZE` plans are recorded;
-- no sequential scan in critical operational queries;
-- capacity thresholds and archive/sharding plan to 1B are documented.
-
-If the baseline does not meet a target, report measured bottlenecks and propose a justified revised target. Never replace measurements with the word “scalable”.
-
-## 16. Explicit non-goals
-
-This refactor does not include:
-
-- Oko / Oko Vozrozhdeniya business logic;
-- Mayak CRM/LMS, prompts or billing;
-- automated LLM routing or project moves;
-- autonomous free-form replies;
-- MCP write/send tools;
-- identity-provider provisioning or a custom authorization server;
-- Telegram Desktop import;
-- voice/media/transcription;
-- mass messaging;
-- callback-send UX;
-- a new user UI;
-- mandatory Kafka, Kubernetes or microservices without benchmark evidence.
-
-## 17. Final Definition of Done
+Configuration is supplied through environment variables. Safe variable names include:
 
 ```text
-Telegram update
-→ durable receipt
-→ idempotent processing
-→ correct ChannelAccount
-→ correct isolated ProjectSpace
-→ ReplyTask
-→ DraftRevision
-→ explicit Approval
-→ one SendAttempt
-→ origin ChannelConnection
-→ outbound Message
-→ append-only AuditLog
+DATABASE_URL
+TELEGRAM_BOT_TOKEN
+TELEGRAM_BOT_USERNAME
+TELEGRAM_WEBHOOK_SECRET
+GATE_ENV
+GATE_DEFAULT_MODE
+GATE_SEND_ENABLED
+GATE_ACCOUNT_RU_SEND_ENABLED
+GATE_ACCOUNT_BY_SEND_ENABLED
+GATE_MCP_ENABLED
+MCP_AUTH_MODE
+MCP_AUTHORIZATION_SERVER
+MCP_PUBLIC_RESOURCE_URL
+MCP_OAUTH_JWKS_URL
+MCP_OAUTH_ALLOWED_ALGORITHMS
+MCP_OAUTH_WORKSPACE_CLAIM
+MCP_OAUTH_ACCOUNT_IDS_CLAIM
+MCP_OAUTH_PROJECT_IDS_CLAIM
+ADMIN_BEARER_TOKEN
+RAILWAY_GIT_COMMIT_SHA
+RAILWAY_SERVICE_NAME
 ```
 
-The refactor is complete only when:
+Some legacy Business connection configuration names still exist in `app/core/config.py`; dynamic database/Telegram state is the intended authority.
 
-- current Telegram-first behavior has no regression;
-- one account serves personal Alpha and many isolated Mayaks;
-- account count is not limited to RU/BY;
-- unknown data cannot fall into personal context;
-- MCP is protected and uses the shared application layer;
-- there is one webhook and no sprint router chain;
-- events are not silently lost and messages are not sent twice;
-- the billion-message path is supported by measurements and capacity plans;
-- migrations are reversible during expand/cutover;
-- CI is green and architecture review is complete;
-- every eligible green PR auto-merges, Railway auto-deploys the exact merge commit and Work verifies fingerprint plus smoke checks; manual deploy, retry, rollback and configuration changes require Mark's direct command.
+Rules:
 
-## 18. Instructions for the next executor
+- commit variable names and safe defaults only;
+- real values belong in Railway/GitHub/Auth0/appropriate secret storage;
+- never paste secrets into issues, PR bodies, logs, screenshots, tests or chat;
+- future Telegram user-session strings are high-privilege secrets and must not be stored in normal Gate tables or emitted in logs;
+- do not expose raw Business connection identifiers in MCP status output.
 
-When Mark unfreezes Gate and sends the repository link:
+## 17. Operational runbook
 
-1. Read [TEAM_WORKFLOW](docs/TEAM_WORKFLOW.md) first.
-2. Re-fetch `main`, open PRs, latest CI and deployment status.
-3. Compare current `main` with the frozen baseline `81163dcd`.
-4. Do not reuse an old sprint/MCP/Mayaki branch.
-5. Start with PR 0, MCP containment.
-6. Keep the PR draft until its exact head CI and diff are reviewed.
-7. Do not merge or deploy unless the repository workflow and Mark authorization permit it.
-8. Do not call a local commit “done”; GitHub PR and CI are the source of truth.
+### Start of a new work session
 
-The project is intentionally frozen at this handoff. The next action is not another feature. The next action, after explicit unfreeze, is the ordered stabilization/refactor above.
+1. Read `docs/TEAM_WORKFLOW.md` and this README.
+2. Fetch current `main`, open PRs, recent merged PRs and exact CI state.
+3. Query production fingerprint and Gate status.
+4. Compare production commit to `main`.
+5. Check connection health for every granted account.
+6. Continue the first incomplete ordered next step; do not reuse an old sprint branch.
+
+### After an MCP-only descriptor change
+
+1. Verify deployment fingerprint.
+2. Refresh Gate M actions in ChatGPT.
+3. Confirm tool names/scopes/output schemas.
+4. Reconnect only if authorization scopes or grants changed.
+
+### Before any message send
+
+1. Load fresh task/context; yesterday's context may no longer be current.
+2. Confirm the correct RU/BY account.
+3. Show recipient and exact final text.
+4. Ask for explicit confirmation.
+5. Send once through the saved draft.
+6. Verify result and idempotent replay behavior; do not retry `unknown` automatically.
+
+### If a Business connection fails
+
+1. Read the safe Telegram error classification and connection health.
+2. Wait for/process Telegram Business connection updates.
+3. Reconnect the Telegram Business bot connection when Mark directly performs/authorizes that account-side action.
+4. Do not copy an old connection ID into code or silently switch accounts.
+
+### If Railway deployment fails
+
+Inspect build/pre-deploy logs and the exact migration. Do not manually retry, force, roll back or modify production variables without Mark's direct command. Fix a small clear code issue in the active PR/next hotfix, validate CI and let the normal automatic deployment path run.
+
+## 18. Acceptance scenarios
+
+Before declaring the architecture mature, prove:
+
+- RU, BY and a third test account complete receive → inbox → draft → explicit send;
+- equal Telegram user/chat IDs remain isolated by account;
+- unanswered grouping is conversation-level and directionally correct;
+- saved Telegram contact labels override profile names per account after authorized sync;
+- one project token cannot read another project's data;
+- unknown connection/account/project fails closed;
+- 100 concurrent copies of one update create one effect;
+- 100 concurrent sends of one approved revision produce at most one Telegram call;
+- `sent` closes work; `failed`/`unknown` does not;
+- no secret or message text appears in operational logs unintentionally;
+- production-like migration fixtures cover duplicates, empty conversations and partial legacy ownership;
+- critical inbox/history queries use bounded keyset pagination and indexed plans;
+- backup/restore and retention are tested, not merely documented.
+
+## 19. Definition of done for the next executor
+
+A task is not done because an agent says so or because a local patch exists. It is done when:
+
+1. the intended GitHub PR exists and has the exact changes;
+2. the PR head SHA is known;
+3. exact-head CI is 🟢;
+4. the diff, security boundary and architecture are reviewed;
+5. the PR is merged only under Team Workflow authorization;
+6. Railway production reports the exact merge commit;
+7. relevant health, OAuth/MCP and safety smoke checks pass;
+8. known limitations and the next risk are recorded.
+
+For send behavior, also require an explicit human-confirmed test; never manufacture a production message for a smoke test.
+
+## 20. Handoff privacy boundary
+
+This repository handoff contains project knowledge only. It intentionally excludes:
+
+- Mark's unrelated personal memory and other projects;
+- message contents not required for a reproducible test;
+- personal email addresses, OAuth subjects, Telegram numeric identities and contact lists;
+- Auth0 client IDs/grant IDs when not needed by source code;
+- Business connection identifiers;
+- tokens, API hashes, session strings, authorization codes and all other secrets.
+
+If operational recovery requires a sensitive value, retrieve it from the approved secret store. Do not reconstruct it from chat history or commit it to make handoff easier.
+
+---
+
+**Immediate continuation:** implement the protected contact-snapshot boundary as one bounded PR, then a separate read-only Telegram user-session synchronizer. Preserve explicit send confirmation and account isolation throughout.
