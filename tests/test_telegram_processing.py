@@ -7,11 +7,16 @@ import pytest
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
+    ProcessTelegramOutboxService,
     TelegramProcessingDisposition,
     TelegramProcessingFailure,
+    TelegramProcessingPlan,
+    TelegramProcessingWorkItem,
     TelegramReceiptAcceptance,
     TelegramReceiptError,
     TelegramRetryPolicy,
+    TelegramUpdateProcessingError,
+    TelegramWorkerDisposition,
 )
 
 
@@ -147,3 +152,118 @@ def test_retry_policy_rejects_non_positive_attempt() -> None:
             )
         )
 
+
+class InMemoryProcessingQueue:
+    def __init__(self, item: TelegramProcessingWorkItem | None) -> None:
+        self.item = item
+        self.claimed_at: datetime | None = None
+        self.processed_at: datetime | None = None
+        self.failure: tuple[datetime, TelegramProcessingPlan] | None = None
+
+    async def claim_due(self, *, now: datetime) -> TelegramProcessingWorkItem | None:
+        self.claimed_at = now
+        return self.item
+
+    async def mark_processed(
+        self,
+        item: TelegramProcessingWorkItem,
+        *,
+        processed_at: datetime,
+    ) -> None:
+        assert item == self.item
+        self.processed_at = processed_at
+
+    async def record_failure(
+        self,
+        item: TelegramProcessingWorkItem,
+        *,
+        failed_at: datetime,
+        plan: TelegramProcessingPlan,
+    ) -> None:
+        assert item == self.item
+        self.failure = (failed_at, plan)
+
+
+class StubProcessor:
+    def __init__(self, error_code: str | None = None) -> None:
+        self.error_code = error_code
+        self.items: list[TelegramProcessingWorkItem] = []
+
+    async def process(self, item: TelegramProcessingWorkItem) -> None:
+        self.items.append(item)
+        if self.error_code is not None:
+            raise TelegramUpdateProcessingError(self.error_code)
+
+
+def _work_item(*, attempt: int = 1) -> TelegramProcessingWorkItem:
+    return TelegramProcessingWorkItem(
+        receipt_id="receipt-1",
+        outbox_event_id="outbox-1",
+        bot_key="gate_m_bot",
+        update_id=42,
+        payload={"update_id": 42},
+        received_at=datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
+        attempt=attempt,
+    )
+
+
+def test_worker_returns_idle_without_processing() -> None:
+    queue = InMemoryProcessingQueue(None)
+    processor = StubProcessor()
+
+    result = asyncio.run(
+        ProcessTelegramOutboxService(queue=queue, processor=processor).run_once(
+            now=datetime(2026, 7, 13, 12, 1, tzinfo=UTC)
+        )
+    )
+
+    assert result.disposition == TelegramWorkerDisposition.IDLE
+    assert processor.items == []
+
+
+def test_worker_marks_successful_item_processed() -> None:
+    item = _work_item()
+    queue = InMemoryProcessingQueue(item)
+    processor = StubProcessor()
+    now = datetime(2026, 7, 13, 12, 1, tzinfo=UTC)
+
+    result = asyncio.run(
+        ProcessTelegramOutboxService(queue=queue, processor=processor).run_once(now=now)
+    )
+
+    assert result.disposition == TelegramWorkerDisposition.PROCESSED
+    assert result.receipt_id == item.receipt_id
+    assert queue.processed_at == now
+    assert queue.failure is None
+
+
+def test_worker_schedules_redacted_retry() -> None:
+    item = _work_item(attempt=2)
+    queue = InMemoryProcessingQueue(item)
+    processor = StubProcessor(" timeout ")
+    now = datetime(2026, 7, 13, 12, 1, tzinfo=UTC)
+
+    result = asyncio.run(
+        ProcessTelegramOutboxService(queue=queue, processor=processor).run_once(now=now)
+    )
+
+    assert result.disposition == TelegramWorkerDisposition.RETRY
+    assert result.error_code == "timeout"
+    assert result.next_attempt_at == now + timedelta(seconds=10)
+    assert queue.failure is not None
+    assert queue.processed_at is None
+
+
+def test_worker_dead_letters_at_hard_limit() -> None:
+    item = _work_item(attempt=5)
+    queue = InMemoryProcessingQueue(item)
+    processor = StubProcessor("poison_update")
+    now = datetime(2026, 7, 13, 12, 1, tzinfo=UTC)
+
+    result = asyncio.run(
+        ProcessTelegramOutboxService(queue=queue, processor=processor).run_once(now=now)
+    )
+
+    assert result.disposition == TelegramWorkerDisposition.DEAD_LETTER
+    assert result.next_attempt_at is None
+    assert queue.failure is not None
