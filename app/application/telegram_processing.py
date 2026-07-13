@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
 
-
 JsonObject = dict[str, Any]
 
 
@@ -120,3 +119,4 @@ class TelegramRetryPolicy:
             attempt=failure.attempt,
             error_code=error_code,
         )
+
