@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -296,39 +296,87 @@ class SqlTelegramReplySender:
                 message="The originating Telegram Business connection is missing",
             )
         result = await self._session.execute(
-            select(TelegramBusinessConnection).where(
-                TelegramBusinessConnection.business_connection_id == origin_id,
+            select(TelegramBusinessConnection)
+            .where(
                 TelegramBusinessConnection.account_id == draft.account_id,
                 TelegramBusinessConnection.account_id.in_(
                     command.principal.access_scope.account_ids
                 ),
-                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+            .order_by(
+                case(
+                    (
+                        TelegramBusinessConnection.business_connection_id == origin_id,
+                        0,
+                    ),
+                    else_=1,
+                ),
+                TelegramBusinessConnection.is_enabled.desc(),
+                TelegramBusinessConnection.last_update_at.desc(),
             )
         )
-        connection = result.scalar_one_or_none()
-        if connection is not None:
+        candidates = result.scalars().all()
+        validation_unavailable = False
+        for connection in candidates:
+            try:
+                live_response = await self._telegram.get_business_connection(
+                    business_connection_id=connection.business_connection_id
+                )
+            except TelegramApiError as exc:
+                connection.last_error = exc.description[:512]
+                connection.last_update_at = datetime.now(UTC)
+                if "BUSINESS_CONNECTION_INVALID" in exc.description.upper():
+                    connection.is_enabled = False
+                else:
+                    validation_unavailable = True
+                continue
+            except httpx.HTTPError:
+                validation_unavailable = True
+                continue
+
+            live = live_response.get("result")
+            if not isinstance(live, dict) or live.get("is_enabled") is not True:
+                connection.is_enabled = False
+                connection.last_error = "telegram_business_connection_disabled"
+                connection.last_update_at = datetime.now(UTC)
+                continue
+
+            raw_rights = live.get("rights")
+            rights = raw_rights if isinstance(raw_rights, dict) else {}
+            if rights.get("can_reply") is not True:
+                connection.is_enabled = True
+                connection.rights = rights
+                connection.last_error = "telegram_business_connection_cannot_reply"
+                connection.last_update_at = datetime.now(UTC)
+                continue
+
+            await self._session.execute(
+                update(TelegramBusinessConnection)
+                .where(
+                    TelegramBusinessConnection.account_id == draft.account_id,
+                    TelegramBusinessConnection.id != connection.id,
+                    TelegramBusinessConnection.is_enabled.is_(True),
+                )
+                .values(is_enabled=False)
+            )
+            connection.is_enabled = True
+            connection.rights = rights
+            connection.last_error = None
+            connection.last_update_at = datetime.now(UTC)
             return connection
 
-        # Telegram may rotate a Business connection while the conversation
-        # retains its historical origin. Fall back only within the already
-        # confirmed account; the partial unique index guarantees at most one
-        # enabled connection per account.
-        active_result = await self._session.execute(
-            select(TelegramBusinessConnection).where(
-                TelegramBusinessConnection.account_id == draft.account_id,
-                TelegramBusinessConnection.account_id.in_(
-                    command.principal.access_scope.account_ids
-                ),
-                TelegramBusinessConnection.is_enabled.is_(True),
-            )
-        )
-        active_connection = active_result.scalar_one_or_none()
-        if active_connection is None:
+        if validation_unavailable:
             raise ReplySendError(
-                code="origin_connection_unavailable",
-                message="The originating Telegram Business connection is not active",
+                code="business_connection_validation_unavailable",
+                message="Telegram Business connection validation is temporarily unavailable",
             )
-        return active_connection
+        raise ReplySendError(
+            code="business_connection_unavailable",
+            message=(
+                "No live Telegram Business connection with reply permission is "
+                "available for the confirmed account"
+            ),
+        )
 
     async def _load_attempt(self, draft_id: Any) -> SendAttempt | None:
         result = await self._session.execute(
@@ -394,7 +442,7 @@ class SqlTelegramReplySender:
                 code="runtime_send_disabled",
                 message=f"Runtime sending is disabled for account {account_label_value}",
             )
-        if connection.rights.get("can_reply") is False:
+        if connection.rights.get("can_reply") is not True:
             raise ReplySendError(
                 code="connection_cannot_reply",
                 message=f"Telegram connection for {account_label_value} cannot reply",

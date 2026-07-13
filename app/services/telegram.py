@@ -155,6 +155,22 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/answerCallbackQuery"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, Any]:
+        """Return Telegram's current view of one Business connection."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+
+        url = f"{self._api_base_url}/bot{self._credential}/getBusinessConnection"
+        return await self._post_telegram_json(
+            url=url,
+            payload={"business_connection_id": business_connection_id},
+        )
+
     async def _post_telegram_json(
         self, *, url: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
