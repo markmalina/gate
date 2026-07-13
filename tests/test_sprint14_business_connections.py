@@ -8,6 +8,7 @@ from app.api.sprint14_routes import (
     _is_business_update,
     _is_outbound_business_message,
     _resolve_account_id,
+    _resolve_business_connection_account_id,
 )
 from app.core.config import Settings
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
@@ -98,9 +99,49 @@ class _Session:
         return _Result(self._value)
 
 
+class _SequenceSession:
+    def __init__(self, values: list[object | None]) -> None:
+        self._values = iter(values)
+
+    async def execute(self, _statement: object) -> _Result:
+        return _Result(next(self._values))
+
+
 class _Connection:
     def __init__(self, account_id: object) -> None:
         self.account_id = account_id
+
+
+class _Account:
+    def __init__(self, account_id: object) -> None:
+        self.id = account_id
+
+
+def test_new_business_connection_resolves_from_telegram_owner() -> None:
+    settings = Settings(
+        GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID="",
+        GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID="",
+    )
+
+    resolved = asyncio.run(
+        _resolve_business_connection_account_id(
+            session=_SequenceSession(  # type: ignore[arg-type]
+                [None, _Account(TELEGRAM_MARK_BY_ACCOUNT_ID)]
+            ),
+            update={
+                "business_connection": {
+                    "id": "new-by-connection",
+                    "user": {"id": 8648171437},
+                    "is_enabled": True,
+                    "rights": {"can_reply": True},
+                }
+            },
+            business_connection_id="new-by-connection",
+            settings=settings,
+        )
+    )
+
+    assert resolved == TELEGRAM_MARK_BY_ACCOUNT_ID
 
 
 def test_unknown_business_connection_fails_closed() -> None:
