@@ -299,6 +299,21 @@ async def test_postgres_contact_snapshot_is_idempotent_and_account_scoped() -> N
             )
             assert ru_update.counts.updated == 1
 
+            stale_replay = await service.execute(
+                ImportContactSnapshotCommand(
+                    account_alias=ru_alias,
+                    revision="snapshot-1",
+                    contacts=(
+                        ContactSnapshotContact(
+                            telegram_user_id="12345",
+                            display_name="Мама RU",
+                            username="mama_ru",
+                        ),
+                    ),
+                )
+            )
+            assert stale_replay.counts.unchanged == 1
+
             identities_result = await session.execute(
                 select(PersonIdentity, Person, Account)
                 .join(Person, PersonIdentity.person_id == Person.id)
