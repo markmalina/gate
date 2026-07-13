@@ -4,7 +4,6 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
@@ -147,3 +146,4 @@ def test_retry_policy_rejects_non_positive_attempt() -> None:
                 error_code="timeout",
             )
         )
+
