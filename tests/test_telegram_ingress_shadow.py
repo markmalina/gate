@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 """Fixture replay for the side-effect-free Telegram ingress shadow classifier."""
 
 import logging
