@@ -43,11 +43,15 @@ class GateSnapshotPublisher:
         *,
         account_alias: str,
         revision: str,
+        source: str,
+        source_account_telegram_user_id: str | None,
         contacts: tuple[ContactSnapshotItem, ...],
     ) -> SnapshotImportCounts:
         payload = {
             "account_alias": account_alias,
             "revision": revision,
+            "source": source,
+            "source_account_telegram_user_id": source_account_telegram_user_id,
             "contacts": [
                 {
                     "telegram_user_id": contact.telegram_user_id,
