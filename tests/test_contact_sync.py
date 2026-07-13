@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from app.contact_sync.desktop_export_reader import (
+    TelegramDesktopExportError,
+    TelegramDesktopExportReader,
+)
 from app.contact_sync.gate_client import GatePublishError, GateSnapshotPublisher
 from app.contact_sync.models import (
     ContactReadResult,
@@ -44,6 +50,8 @@ class RecordingPublisher:
         *,
         account_alias: str,
         revision: str,
+        source: str,
+        source_account_telegram_user_id: str | None,
         contacts: tuple[ContactSnapshotItem, ...],
     ) -> SnapshotImportCounts:
         self.requests.append((account_alias, revision, contacts))
@@ -159,6 +167,8 @@ async def test_gate_publisher_sends_protected_snapshot_and_parses_counts() -> No
     counts = await publisher.publish(
         account_alias="telegram_mark_ru",
         revision="revision-1",
+        source="telegram_desktop_export",
+        source_account_telegram_user_id="1",
         contacts=(ContactSnapshotItem("42", "Private label", "person"),),
     )
 
@@ -166,6 +176,7 @@ async def test_gate_publisher_sends_protected_snapshot_and_parses_counts() -> No
     assert captured is not None
     assert captured.url.path == "/admin/contact-snapshots"
     assert captured.headers["Authorization"] == "Bearer secret-token"
+    assert b"telegram_desktop_export" in captured.content
     assert b"Private label" in captured.content
 
 
@@ -185,6 +196,8 @@ async def test_gate_publisher_error_never_echoes_response_contact_data() -> None
         await publisher.publish(
             account_alias="telegram_mark_ru",
             revision="revision-1",
+            source="telegram_desktop_export",
+            source_account_telegram_user_id="1",
             contacts=(ContactSnapshotItem("42", private_value),),
         )
 
@@ -276,3 +289,70 @@ async def test_telethon_adapter_only_uses_contact_reads() -> None:
     }
     assert result.saved_contacts[0].first_name == "Saved"
     assert result.telegram_users[0].telegram_user_id == "42"
+    assert result.source_account_telegram_user_id == "1"
+
+
+@pytest.mark.anyio
+async def test_desktop_export_extracts_only_bounded_identity_pairs(
+    tmp_path: Path,
+) -> None:
+    export_file = tmp_path / "result.json"
+    export_file.write_text(
+        json.dumps(
+            {
+                "personal_information": {"user_id": 777},
+                "contacts": {"list": [{"first_name": "Address book only"}] * 4},
+                "frequent_contacts": {
+                    "list": [
+                        {"type": "user", "id": 42, "name": "Frequent name"},
+                        {"type": "group", "id": 99, "name": "Ignored group"},
+                    ]
+                },
+                "chats": {
+                    "list": [
+                        {
+                            "type": "personal_chat",
+                            "id": 42,
+                            "name": "Saved chat label",
+                            "messages": [{"text": "must never be published"}],
+                        },
+                        {"type": "personal_chat", "id": 43, "name": "Second"},
+                        {"type": "private_group", "id": 44, "name": "Ignored"},
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = await TelegramDesktopExportReader(export_file).read_contacts()
+
+    assert result.source == "telegram_desktop_export"
+    assert result.source_account_telegram_user_id == "777"
+    assert result.source_contacts == 4
+    assert result.direct_contacts == (
+        ContactSnapshotItem("42", "Saved chat label"),
+        ContactSnapshotItem("43", "Second"),
+    )
+    assert "must never be published" not in repr(result)
+
+
+@pytest.mark.anyio
+async def test_desktop_export_requires_account_identity(tmp_path: Path) -> None:
+    export_file = tmp_path / "result.json"
+    export_file.write_text(
+        json.dumps(
+            {
+                "personal_information": {},
+                "chats": {
+                    "list": [
+                        {"type": "personal_chat", "id": 42, "name": "Private"}
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TelegramDesktopExportError, match="account user id"):
+        await TelegramDesktopExportReader(export_file).read_contacts()
