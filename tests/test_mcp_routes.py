@@ -43,7 +43,7 @@ class FakeMcpSession:
         scalar_results: list[int] | None = None,
         row_result_batches: list[list[Any]] | None = None,
     ) -> None:
-        self.scalar_results = scalar_results or [0] * 9
+        self.scalar_results = scalar_results or [0] * 10
         self.row_result_batches = row_result_batches or []
         self.statements: list[Any] = []
 
@@ -75,7 +75,7 @@ def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.fixture
 def mcp_context() -> Iterator[FakeMcpSession]:
-    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7])
+    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7, 0])
 
     async def override_session() -> AsyncIterator[FakeMcpSession]:
         yield session
@@ -160,10 +160,19 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
         alias="telegram_mark_ru",
         country_code="RU",
     )
+    identity = SimpleNamespace(
+        display_name="Анна",
+        metadata_={
+            "name_source": "telegram_contact",
+            "telegram_contact_name": "Аня — бухгалтер",
+            "telegram_profile_name": "Анна",
+        },
+    )
+    person = SimpleNamespace(display_name="Аня — бухгалтер")
     session = FakeMcpSession(
         row_result_batches=[
-            [(task, conversation, message, inbound_update, account, 1)],
-            [(outbound_message, outbound_update, account)],
+            [(task, conversation, message, inbound_update, account, identity, person)],
+            [(outbound_message, outbound_update, account, identity, person)],
         ]
     )
 
@@ -215,6 +224,14 @@ def reply_context() -> Iterator[FakeMcpSession]:
         alias="telegram_mark_ru",
         country_code="RU",
     )
+    identity = SimpleNamespace(
+        display_name="Анна",
+        metadata_={
+            "name_source": "telegram_contact",
+            "telegram_contact_name": "Аня — бухгалтер",
+        },
+    )
+    person = SimpleNamespace(display_name="Аня — бухгалтер")
     outbound = SimpleNamespace(
         id=UUID("66666666-6666-6666-6666-666666666666"),
         direction="outbound",
@@ -230,8 +247,11 @@ def reply_context() -> Iterator[FakeMcpSession]:
     outbound_update = SimpleNamespace(payload={})
     session = FakeMcpSession(
         row_result_batches=[
-            [(task, conversation, trigger, inbound_update, account)],
-            [(outbound, outbound_update), (trigger, inbound_update)],
+            [(task, conversation, trigger, inbound_update, account, identity, person)],
+            [
+                (outbound, outbound_update, identity, person),
+                (trigger, inbound_update, identity, person),
+            ],
         ]
     )
 
@@ -336,7 +356,8 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert structured["counts"]["unanswered"] == 1
     assert structured["mcp"]["auth"] == "temporary_bearer_enforced"
     assert structured["counts"]["answered_messages"] == 2
-    assert len(mcp_context.statements) == 9
+    assert structured["connection_health"] == []
+    assert len(mcp_context.statements) == 10
 
 
 @pytest.mark.anyio
@@ -362,27 +383,26 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
         "label": "RU",
     }
     assert item["message"]["direction"] == "inbound"
-    assert item["pending_message_count"] == 1
     assert item["message"]["text_preview"] == "Привет, хочу заниматься Око Возрождения"
     assert item["counterparty"] == {
         "platform": "telegram",
         "platform_user_id": "12345",
-        "display_name": "Анна",
+        "display_name": "Аня — бухгалтер",
         "username": "anna_example",
-        "label": "Анна",
+        "label": "Аня — бухгалтер",
+        "name_source": "telegram_contact",
     }
     assert result["structuredContent"]["answered_count"] == 1
     answered = result["structuredContent"]["answered_items"][0]
     assert answered["message"]["direction"] == "outbound"
     assert answered["message"]["text_preview"] == "Анна, привет!"
-    assert answered["counterparty"]["label"] == "Анна"
+    assert answered["counterparty"]["label"] == "Аня — бухгалтер"
+    assert answered["counterparty"]["name_source"] == "telegram_contact"
     assert answered["account"]["label"] == "RU"
     unanswered_statement = str(unanswered_context.statements[0])
     answered_statement = str(unanswered_context.statements[1])
     assert "reply_tasks.account_id IN" in unanswered_statement
     assert "reply_tasks.project_id IN" in unanswered_statement
-    assert "row_number()" in unanswered_statement
-    assert "conversations.last_outbound_at" in unanswered_statement
     assert "messages.direction" in unanswered_statement
     assert "messages.direction" in answered_statement
     assert "messages.source IN" in answered_statement
@@ -410,7 +430,8 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
     result = response.json()["result"]
     structured = result["structuredContent"]
     assert structured["account"]["label"] == "RU"
-    assert structured["counterparty"]["label"] == "Анна"
+    assert structured["counterparty"]["label"] == "Аня — бухгалтер"
+    assert structured["counterparty"]["name_source"] == "telegram_contact"
     assert [item["direction"] for item in structured["messages"]] == [
         "inbound",
         "outbound",
