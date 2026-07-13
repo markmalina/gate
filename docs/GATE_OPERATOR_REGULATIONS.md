@@ -4,9 +4,12 @@ This document defines the operating rules for ChatGPT-assisted Gate development 
 
 ## Current product context
 
-Gate is currently a Telegram Business gateway, not an MCP server.
+Gate is currently a Telegram Business gateway with two active operator surfaces:
 
-Current operator loop:
+1. the Telegram-native admin flow;
+2. the production Gate M MCP integration in ChatGPT Work.
+
+Telegram-native operator loop:
 
 ```text
 Telegram inbound
@@ -18,15 +21,20 @@ Telegram inbound
 → task closed
 ```
 
-MCP may become a later integration layer:
+Current ChatGPT Work loop:
 
 ```text
-ChatGPT / Claude / Codex
-→ MCP
-→ Gate / SysteM / Memory / Telegram
+Telegram inbound
+→ Gate
+→ scoped MCP inbox/context
+→ saved draft
+→ Mark confirms account, recipient and exact text
+→ one idempotent send
+→ Telegram outbound
+→ audit
 ```
 
-But MCP is not the current implementation target unless explicitly selected as the sprint scope.
+MCP is an active production interface. It must remain OAuth-protected, account/project-scoped and explicitly confirmed for every send.
 
 ## Telegram-first operator guidance
 
@@ -143,6 +151,8 @@ at the top whenever feasible, especially for:
 
 Gate replies that contain next actions should present those actions as clickable Telegram commands with real IDs already filled in.
 
-## Sprint planning note
+## Current development note
 
-Do not pivot to MCP unless the sprint is explicitly declared as MCP scope. The active stream is Telegram-native Gate operator UX and reliable message handling.
+The current ordered continuation is the protected contact-snapshot boundary described in [CONTACT_SNAPSHOT_BOUNDARY.md](CONTACT_SNAPSHOT_BOUNDARY.md), followed by a separate read-only Telegram user-session contact adapter.
+
+The contact adapter must not send messages, expose session material, weaken MCP authorization or bypass explicit send confirmation. Telegram-native UX and Gate M MCP must continue to use the same account-scoped identities.
