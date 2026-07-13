@@ -102,6 +102,42 @@ async def sprint14_telegram_webhook(
             update=update,
             received_at=received_at,
         )
+        gate_event = GateEvent(
+            bot_id=bot.id,
+            account_id=account_id,
+            project_id=DEFAULT_PROJECT_ID,
+            chat_id=normalized.chat_id,
+            sender_id=normalized.sender_id,
+            event_type=normalized.event_type,
+            text=normalized.text,
+            payload=update,
+            telegram_update_id=normalized.update_id,
+            telegram_message_id=normalized.message_id,
+            business_connection_id=normalized.business_connection_id,
+        )
+        session.add(gate_event)
+        await session.flush()
+        session.add(
+            Message(
+                bot_id=bot.id,
+                account_id=account_id,
+                project_id=DEFAULT_PROJECT_ID,
+                gate_event_id=gate_event.id,
+                direction=MessageDirection.INBOUND.value,
+                source="telegram",
+                event_type=normalized.event_type,
+                chat_id=normalized.chat_id,
+                sender_id=normalized.sender_id,
+                recipient_id=None,
+                text=normalized.text,
+                telegram_update_id=normalized.update_id,
+                telegram_message_id=normalized.message_id,
+                business_connection_id=normalized.business_connection_id,
+                payload={"raw_update_ref": "telegram_updates"},
+                received_at=received_at,
+                sent_at=None,
+            )
+        )
         session.add(
             TelegramUpdate(
                 bot_id=bot.id,
@@ -118,6 +154,7 @@ async def sprint14_telegram_webhook(
                 bot_id=bot.id,
                 account_id=account_id,
                 project_id=DEFAULT_PROJECT_ID,
+                gate_event_id=gate_event.id,
                 metadata_={
                     "telegram_update_id": normalized.update_id,
                     "business_connection_id": normalized.business_connection_id,
