@@ -3,7 +3,13 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from jsonschema import Draft202012Validator, FormatChecker
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.api.deps import get_db_session
+from app.api.mcp_schemas import GATE_DRAFT_OUTPUT_SCHEMA, GATE_SEND_OUTPUT_SCHEMA
 from app.api.routes import get_telegram_client
 from app.core.config import get_settings
 from app.core.mcp_security import AccessScope, Principal
@@ -27,9 +33,6 @@ from app.models.domain import (
     SendAttemptStatus,
     TelegramBusinessConnection,
 )
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture
@@ -452,10 +455,18 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     },
                 )
 
+            denied_payload = denied.json()["result"]["structuredContent"]
+            allowed_payload = allowed.json()["result"]["structuredContent"]
+            draft_validator = Draft202012Validator(
+                GATE_DRAFT_OUTPUT_SCHEMA,
+                format_checker=FormatChecker(),
+            )
+            draft_validator.validate(denied_payload)
+            draft_validator.validate(allowed_payload)
             assert denied.json()["result"]["isError"] is True
-            assert denied.json()["result"]["structuredContent"]["error"] == "task_not_found"
+            assert denied_payload["error"] == "task_not_found"
             assert allowed.json()["result"]["isError"] is False
-            assert allowed.json()["result"]["structuredContent"]["sent"] is False
+            assert allowed_payload["sent"] is False
             assert allowed.json()["result"]["structuredContent"]["account"]["label"] == "RU"
             allowed_draft_id = allowed.json()["result"]["structuredContent"]["draft_id"]
 
@@ -485,11 +496,19 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     json=send_payload,
                 )
 
-            assert sent.json()["result"]["structuredContent"]["sent"] is True
-            assert sent.json()["result"]["structuredContent"]["account"]["label"] == "RU"
-            assert sent.json()["result"]["structuredContent"]["recipient_chat_id"] == "sender"
-            assert replayed.json()["result"]["structuredContent"]["sent"] is True
-            assert replayed.json()["result"]["structuredContent"]["idempotent_replay"] is True
+            sent_payload = sent.json()["result"]["structuredContent"]
+            replayed_payload = replayed.json()["result"]["structuredContent"]
+            send_validator = Draft202012Validator(
+                GATE_SEND_OUTPUT_SCHEMA,
+                format_checker=FormatChecker(),
+            )
+            send_validator.validate(sent_payload)
+            send_validator.validate(replayed_payload)
+            assert sent_payload["sent"] is True
+            assert sent_payload["account"]["label"] == "RU"
+            assert sent_payload["recipient_chat_id"] == "sender"
+            assert replayed_payload["sent"] is True
+            assert replayed_payload["idempotent_replay"] is True
             assert len(telegram.calls) == 1
             assert telegram.calls[0] == {
                 "chat_id": "sender",
