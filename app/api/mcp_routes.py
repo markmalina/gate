@@ -26,7 +26,12 @@ from app.application.reply_sends import (
 )
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
-from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
+from app.core.mcp_security import (
+    AccessScope,
+    Principal,
+    bearer_token_matches,
+    build_mcp_read_principal,
+)
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
@@ -34,6 +39,7 @@ from app.models.domain import (
     Conversation,
     Message,
     MessageDirection,
+    Project,
     ReplyDraft,
     ReplyTask,
     ReplyTaskStatus,
@@ -146,6 +152,7 @@ async def mcp_endpoint(
                 authorization=authorization,
                 settings=settings,
                 required_scope=MCP_TOOL_SCOPES[tool_name],
+                session=session,
             )
         except McpOAuthError as exc:
             return _oauth_required_tool_result(
@@ -232,13 +239,26 @@ def _require_mcp_ready(settings: Settings) -> None:
 
 
 async def _require_mcp_principal(
-    *, authorization: str | None, settings: Settings, required_scope: str
+    *,
+    authorization: str | None,
+    settings: Settings,
+    required_scope: str,
+    session: AsyncSession | None = None,
 ) -> Principal:
     if settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH:
-        return await authenticate_mcp_oauth(
+        principal = await authenticate_mcp_oauth(
             authorization=authorization,
             settings=settings,
             required_scope=required_scope,
+        )
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="MCP workspace access resolver requires a database session",
+            )
+        return await _resolve_workspace_principal(
+            session=session,
+            principal=principal,
         )
     if settings.mcp_auth_mode != MCP_AUTH_MODE_TEMPORARY_BEARER:
         raise HTTPException(status_code=503, detail="Unsupported MCP authentication mode")
@@ -265,6 +285,68 @@ async def _require_mcp_principal(
             detail="MCP bearer token does not grant the required scope",
         )
     return principal
+
+
+async def _resolve_workspace_principal(
+    *,
+    session: AsyncSession,
+    principal: Principal,
+) -> Principal:
+    """Resolve current Gate grants from workspace-owned database records."""
+
+    workspace_id = principal.access_scope.workspace_id
+    account_result = await session.execute(
+        select(Account.id).where(
+            Account.owner == workspace_id,
+            Account.is_active.is_(True),
+            Account.read_enabled.is_(True),
+        )
+    )
+    account_ids = frozenset(account_result.scalars())
+    if not account_ids:
+        raise McpOAuthError(
+            error="insufficient_scope",
+            description="The Gate workspace has no active readable accounts",
+        )
+
+    project_grants = union_all(
+        select(Account.linked_project_id.label("project_id")).where(
+            Account.id.in_(account_ids),
+            Account.linked_project_id.is_not(None),
+        ),
+        select(Message.project_id.label("project_id")).where(
+            Message.account_id.in_(account_ids),
+        ),
+        select(ReplyTask.project_id.label("project_id")).where(
+            ReplyTask.account_id.in_(account_ids),
+        ),
+        select(ReplyDraft.project_id.label("project_id")).where(
+            ReplyDraft.account_id.in_(account_ids),
+        ),
+    ).subquery()
+    project_result = await session.execute(
+        select(Project.id).where(
+            Project.id.in_(select(project_grants.c.project_id)),
+            Project.is_active.is_(True),
+        )
+    )
+    project_ids = frozenset(project_result.scalars())
+    if not project_ids:
+        raise McpOAuthError(
+            error="insufficient_scope",
+            description="The Gate workspace has no active projects",
+        )
+
+    return Principal(
+        subject=principal.subject,
+        auth_method=principal.auth_method,
+        scopes=principal.scopes,
+        access_scope=AccessScope(
+            workspace_id=workspace_id,
+            account_ids=account_ids,
+            project_ids=project_ids,
+        ),
+    )
 
 
 async def _build_gate_status(
