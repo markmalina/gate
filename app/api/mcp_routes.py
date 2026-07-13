@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
+from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.routes import get_telegram_client
 from app.application.account_labels import account_label
 from app.application.reply_drafts import (
@@ -1140,6 +1141,7 @@ def _gate_status_tool(settings: Settings) -> JsonObject:
         "title": "Get Gate status",
         "description": "Return a scoped read-only Gate status snapshot.",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_get_status"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:status:read")
@@ -1160,6 +1162,7 @@ def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
             },
             "additionalProperties": False,
         },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_list_unanswered"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
@@ -1182,6 +1185,7 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
             "required": ["task_id"],
             "additionalProperties": False,
         },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:inbox:read")
@@ -1204,6 +1208,7 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
             "required": ["task_id", "text"],
             "additionalProperties": False,
         },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_save_reply_draft"],
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -1246,6 +1251,7 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
             ],
             "additionalProperties": False,
         },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_send_approved_reply"],
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
