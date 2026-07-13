@@ -137,7 +137,7 @@ async def test_missing_tool_scope_returns_insufficient_scope(signing_key: Any) -
     "claim_overrides",
     [
         {"gate_workspace_id": ""},
-        {"gate_account_ids": []},
+        {"gate_account_ids": ["not-a-uuid"]},
         {"gate_project_ids": ["not-a-uuid"]},
     ],
 )
@@ -159,6 +159,24 @@ async def test_incomplete_access_grants_fail_closed(
         )
 
     assert exc_info.value.error == "invalid_token"
+
+
+@pytest.mark.anyio
+async def test_workspace_only_token_defers_grants_to_gate_database(signing_key: Any) -> None:
+    claims = _claims()
+    claims.pop("gate_account_ids")
+    claims.pop("gate_project_ids")
+    token = jwt.encode(claims, signing_key, algorithm="RS256", headers={"kid": "test"})
+
+    principal = await authenticate_mcp_oauth(
+        authorization=f"Bearer {token}",
+        settings=_settings(),
+        required_scope="gate:inbox:read",
+    )
+
+    assert principal.access_scope.workspace_id == "mark-personal"
+    assert principal.access_scope.account_ids == frozenset()
+    assert principal.access_scope.project_ids == frozenset()
 
 
 @pytest.mark.anyio
