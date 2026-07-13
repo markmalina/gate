@@ -445,9 +445,51 @@ async def _build_unanswered_list(
     accounts = principal.access_scope.account_ids
     projects = principal.access_scope.project_ids
     owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
+    ranked_tasks = (
+        select(
+            ReplyTask.id.label("task_id"),
+            func.row_number()
+            .over(
+                partition_by=ReplyTask.conversation_id,
+                order_by=(ReplyTask.created_at.desc(), ReplyTask.id.desc()),
+            )
+            .label("conversation_rank"),
+            func.count(ReplyTask.id)
+            .over(partition_by=ReplyTask.conversation_id)
+            .label("pending_message_count"),
+        )
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .where(
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+            ReplyTask.account_id.in_(accounts),
+            ReplyTask.project_id.in_(projects),
+            Conversation.account_id.in_(accounts),
+            Conversation.project_id.in_(projects),
+            Conversation.requires_reply.is_(True),
+            Message.account_id.in_(accounts),
+            Message.project_id.in_(projects),
+            Message.direction == MessageDirection.INBOUND.value,
+            or_(
+                Conversation.last_outbound_at.is_(None),
+                func.coalesce(Message.received_at, Message.created_at)
+                > Conversation.last_outbound_at,
+            ),
+            _non_service_message_filter(),
+        )
+        .subquery()
+    )
     result = await session.execute(
-        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
+        select(
+            ReplyTask,
+            Conversation,
+            Message,
+            TelegramUpdate,
+            Account,
+            ranked_tasks.c.pending_message_count,
+        )
         .options(undefer(ReplyTask.account_id))
+        .join(ranked_tasks, ranked_tasks.c.task_id == ReplyTask.id)
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .join(Account, Message.account_id == Account.id)
@@ -458,17 +500,7 @@ async def _build_unanswered_list(
                 TelegramUpdate.update_id == Message.telegram_update_id,
             ),
         )
-        .where(
-            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-            ReplyTask.account_id.in_(accounts),
-            ReplyTask.project_id.in_(projects),
-            Conversation.account_id.in_(accounts),
-            Conversation.project_id.in_(projects),
-            Message.account_id.in_(accounts),
-            Message.project_id.in_(projects),
-            Message.direction == MessageDirection.INBOUND.value,
-            _non_service_message_filter(),
-        )
+        .where(ranked_tasks.c.conversation_rank == 1)
         .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
         .limit(limit)
     )
@@ -479,8 +511,16 @@ async def _build_unanswered_list(
             message=message,
             telegram_update=telegram_update,
             account=account,
+            pending_message_count=pending_message_count,
         )
-        for task, conversation, message, telegram_update, account in result.all()
+        for (
+            task,
+            conversation,
+            message,
+            telegram_update,
+            account,
+            pending_message_count,
+        ) in result.all()
     ]
 
     answered_result = await session.execute(
@@ -651,7 +691,7 @@ async def _count_unanswered(
     projects: frozenset[UUID],
 ) -> int:
     result = await session.execute(
-        select(func.count(ReplyTask.id))
+        select(func.count(func.distinct(ReplyTask.conversation_id)))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .where(
@@ -660,9 +700,15 @@ async def _count_unanswered(
             ReplyTask.project_id.in_(projects),
             Conversation.account_id.in_(accounts),
             Conversation.project_id.in_(projects),
+            Conversation.requires_reply.is_(True),
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.INBOUND.value,
+            or_(
+                Conversation.last_outbound_at.is_(None),
+                func.coalesce(Message.received_at, Message.created_at)
+                > Conversation.last_outbound_at,
+            ),
             _non_service_message_filter(),
         )
     )
@@ -684,6 +730,7 @@ def _serialize_unanswered_item(
     message: Message,
     telegram_update: TelegramUpdate | None,
     account: Account,
+    pending_message_count: int,
 ) -> JsonObject:
     task_id = str(task.id)
     return {
@@ -692,6 +739,7 @@ def _serialize_unanswered_item(
         "status": task.status,
         "priority": task.priority,
         "reason": task.reason,
+        "pending_message_count": int(pending_message_count),
         "account_id": str(task.account_id),
         "project_id": str(task.project_id),
         "account": _serialize_account(account),
@@ -1265,7 +1313,7 @@ def _format_reply_context_text(context: JsonObject) -> str:
 
 
 def _format_unanswered_text(inbox: JsonObject) -> str:
-    lines = [f"Unanswered inbound Gate tasks: {inbox['count']}"]
+    lines = [f"Unanswered Gate conversations: {inbox['count']}"]
     if not inbox["items"]:
         lines.append("No unanswered inbound messages.")
     for index, item in enumerate(inbox["items"], start=1):
@@ -1275,6 +1323,7 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
                 f"{index}. [{item['account']['label']}] "
                 f"{item['counterparty']['label']}: "
                 f"{item['message']['text_preview'] or '<empty>'}",
+                f"pending messages: {item['pending_message_count']}",
                 f"task: {item['task_ref']}",
                 f"chat: {item['conversation']['chat_id']}",
             ]
