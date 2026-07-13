@@ -14,8 +14,8 @@ from app.application.telegram_ingress_shadow import (
     SPRINT16_INBOX,
     SPRINT16_RAW,
     SPRINT17_SEND,
-    SPRINT18_DRAFT,
     SPRINT9_LEGACY_ADMIN,
+    SPRINT18_DRAFT,
     classify_telegram_ingress,
     observe_telegram_ingress_shadow,
 )
@@ -108,7 +108,9 @@ def test_command_priority_matches_the_frozen_legacy_chain() -> None:
     assert decision.reason == "draft_command"
 
 
-def test_shadow_observation_logs_only_redacted_decision_fields(caplog: pytest.LogCaptureFixture) -> None:
+def test_shadow_observation_logs_only_redacted_decision_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     logger = logging.getLogger("test.telegram.ingress.shadow")
     secret_text = "private message body 42"
 
