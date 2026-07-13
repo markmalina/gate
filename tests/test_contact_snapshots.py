@@ -115,6 +115,24 @@ async def test_contact_snapshot_rejects_duplicate_ids_before_persistence() -> No
 
 
 @pytest.mark.anyio
+async def test_desktop_snapshot_requires_source_account_identity() -> None:
+    writer = RecordingWriter()
+    service = ImportContactSnapshotService(writer)
+
+    with pytest.raises(ContactSnapshotError, match="require"):
+        await service.execute(
+            ImportContactSnapshotCommand(
+                account_alias="telegram_mark_ru",
+                revision="snapshot-1",
+                source="telegram_desktop_export",
+                contacts=(ContactSnapshotContact("12345", "Private"),),
+            )
+        )
+
+    assert writer.command is None
+
+
+@pytest.mark.anyio
 async def test_contact_snapshot_requires_admin_bearer(
     contact_api: RecordingWriter,
 ) -> None:
@@ -169,6 +187,8 @@ async def test_contact_snapshot_returns_counts_without_contact_data(
             json={
                 "account_alias": " telegram_mark_ru ",
                 "revision": " snapshot-1 ",
+                "source": "telegram_desktop_export",
+                "source_account_telegram_user_id": "777",
                 "contacts": [
                     {
                         "telegram_user_id": "12345",
@@ -195,6 +215,8 @@ async def test_contact_snapshot_returns_counts_without_contact_data(
     assert "12345" not in response.text
     assert contact_api.command is not None
     assert contact_api.command.contacts[0].username == "mama"
+    assert contact_api.command.source == "telegram_desktop_export"
+    assert contact_api.command.source_account_telegram_user_id == "777"
 
 
 @pytest.mark.anyio
@@ -226,12 +248,14 @@ async def test_postgres_contact_snapshot_is_idempotent_and_account_scoped() -> N
                         alias=ru_alias,
                         owner="mark",
                         country_code="RU",
+                        telegram_user_id=111,
                         account_type="telegram",
                     ),
                     Account(
                         alias=by_alias,
                         owner="mark",
                         country_code="BY",
+                        telegram_user_id=222,
                         account_type="telegram",
                     ),
                 ]
@@ -239,6 +263,17 @@ async def test_postgres_contact_snapshot_is_idempotent_and_account_scoped() -> N
             await session.commit()
 
             service = ImportContactSnapshotService(SqlContactSnapshotWriter(session))
+            with pytest.raises(ContactSnapshotError, match="does not match"):
+                await service.execute(
+                    ImportContactSnapshotCommand(
+                        account_alias=ru_alias,
+                        revision="desktop-mismatch",
+                        source="telegram_desktop_export",
+                        source_account_telegram_user_id="222",
+                        contacts=(ContactSnapshotContact("12345", "Wrong account"),),
+                    )
+                )
+
             ru_first = await service.execute(
                 ImportContactSnapshotCommand(
                     account_alias=ru_alias,
