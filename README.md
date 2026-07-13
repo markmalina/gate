@@ -308,7 +308,7 @@ Key merged milestones:
 | #113 | Configured account/project routing context and reply-task candidate parity in redacted ingress shadow |
 | #114 | Select-only identity snapshot boundary for database-backed connection, direction and reply-task parity |
 | #115 | Idempotent Telegram receipt/outbox application contract and bounded retry/dead-letter policy |
-| #116 | Durable Telegram receipt and transactional outbox schema with reversible migration |
+| #116 | Durable Telegram receipt and transactional outbox schema with reversible migration |\n| #117 | Atomic PostgreSQL receipt/outbox acceptance with concurrent idempotency coverage |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -319,7 +319,7 @@ Do not start several tracks in one PR.
 ### Immediate infrastructure priority
 
 1. **Canonical ingress identity replay.** Exercise the PR #114 select-only identity model against production-like fixtures and compare it with legacy decisions before wiring it to live ingress.
-2. **Durable processing persistence.** Implement the PR #115 contract over the PR #116 schema with an atomic SQL adapter, still without webhook cutover.
+2. **Durable processing worker.** Build bounded claiming, retry and dead-letter transitions over the PR #117 atomic adapter, still without webhook cutover.
 3. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
 4. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
 
