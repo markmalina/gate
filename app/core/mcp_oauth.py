@@ -119,17 +119,15 @@ def _principal_from_claims(
 
     access_scope = AccessScope(
         workspace_id=workspace_id.strip(),
-        account_ids=_uuid_claim(
+        account_ids=_optional_uuid_claim(
             claims.get(settings.mcp_oauth_account_ids_claim),
             claim_name=settings.mcp_oauth_account_ids_claim,
         ),
-        project_ids=_uuid_claim(
+        project_ids=_optional_uuid_claim(
             claims.get(settings.mcp_oauth_project_ids_claim),
             claim_name=settings.mcp_oauth_project_ids_claim,
         ),
     )
-    if not access_scope.is_explicit:
-        raise ValueError("OAuth access requires explicit workspace, account, and project grants")
     return Principal(
         subject=subject.strip(),
         auth_method="oauth2",
@@ -147,6 +145,12 @@ def _claim_scopes(claims: dict[str, Any]) -> frozenset[str]:
         elif isinstance(claim, list) and all(isinstance(item, str) for item in claim):
             values.extend(claim)
     return frozenset(values)
+
+
+def _optional_uuid_claim(value: Any, *, claim_name: str) -> frozenset[UUID]:
+    if value is None:
+        return frozenset()
+    return _uuid_claim(value, claim_name=claim_name)
 
 
 def _uuid_claim(value: Any, *, claim_name: str) -> frozenset[UUID]:
