@@ -220,6 +220,9 @@ account_id
 
 - session material хранится только в выделенном secret storage и не попадает в Gate API, БД, логи или Git;
 - адаптер читает только контакты и не отправляет сообщения;
+- сохранённые phone-book labels читаются через contact-only takeout (`contacts.getSaved`) и сопоставляются с Telegram user ID только в памяти;
+- phone numbers не передаются в Gate, а ненадёжно сопоставленные контакты пропускаются;
+- первый rollout выполняется one-shot CLI по каждому аккаунту, без постоянного MTProto worker;
 - в Gate передаётся только очищенный account-scoped snapshot через защищённую идемпотентную границу;
 - один Telegram user ID может иметь разные сохранённые имена в разных аккаунтах;
 - основной Bot API webhook и подтверждаемая отправка не зависят от user-session адаптера.

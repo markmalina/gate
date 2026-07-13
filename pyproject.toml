@@ -15,12 +15,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+contact-sync = [
+  "Telethon==1.44.0",
+]
 dev = [
   "anyio>=4.4.0",
   "mypy>=1.11.0",
   "pytest>=8.3.0",
   "ruff>=0.6.0",
 ]
+
+[project.scripts]
+gate-contact-sync = "app.contact_sync.cli:main"
 
 [tool.ruff]
 target-version = "py312"
