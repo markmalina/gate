@@ -5,6 +5,11 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy import update as sql_update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import routes as legacy
 from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
@@ -28,10 +33,6 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy import update as sql_update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -250,7 +251,10 @@ async def sprint14_telegram_webhook(
         telegram_update_id=normalized.update_id,
         telegram_message_id=normalized.message_id,
         business_connection_id=normalized.business_connection_id,
-        payload={"raw_update_ref": "telegram_updates"},
+        payload={
+            "raw_update_ref": "telegram_updates",
+            "_gate_counterparty": {"display_name": counterparty_name},
+        },
         received_at=None if is_outbound else now,
         sent_at=now if is_outbound else None,
     )
@@ -471,7 +475,10 @@ async def _send_business_text_reply(
             recipient_id=normalized.chat_id,
             text=text,
             business_connection_id=normalized.business_connection_id,
-            payload=send_result,
+            payload={
+                **send_result,
+                "_gate_counterparty": {"display_name": conversation.title},
+            },
             sent_at=outbound_at,
         )
     )
