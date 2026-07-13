@@ -2,8 +2,9 @@
 
 import hmac
 
-from app.core.config import Settings
 from fastapi import HTTPException, status
+
+from app.core.config import Settings
 
 
 def require_admin_bearer(*, authorization: str | None, settings: Settings) -> None:
@@ -26,4 +27,3 @@ def require_admin_bearer(*, authorization: str | None, settings: Settings) -> No
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid admin bearer token",
         )
-
