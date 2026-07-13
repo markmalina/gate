@@ -321,6 +321,18 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     self.calls.append(kwargs)
                     return {"ok": True, "result": {"message_id": 321}}
 
+                async def get_business_connection(
+                    self, *, business_connection_id: str
+                ) -> dict[str, object]:
+                    return {
+                        "ok": True,
+                        "result": {
+                            "id": business_connection_id,
+                            "is_enabled": True,
+                            "rights": {"can_reply": True},
+                        },
+                    }
+
             telegram = RecordingTelegram()
 
             def override_telegram() -> RecordingTelegram:
