@@ -6,6 +6,7 @@ from typing import Any
 from app.api.telegram_ingress import (
     LEGACY_TELEGRAM_INGRESS_ROUTERS,
     LEGACY_TELEGRAM_WEBHOOK_CHAIN,
+    TELEGRAM_WEBHOOK_PATH,
     include_legacy_telegram_ingress,
 )
 from app.main import create_app
@@ -28,8 +29,13 @@ def _original_endpoint(route: Any) -> Any:
 
 def _is_webhook_layer(route: Any) -> bool:
     endpoint_name = getattr(_original_endpoint(route), "__name__", "")
-    return endpoint_name == "telegram_webhook" or endpoint_name.endswith(
+    has_webhook_name = endpoint_name == "telegram_webhook" or endpoint_name.endswith(
         "_telegram_webhook"
+    )
+    return (
+        has_webhook_name
+        and route.path == TELEGRAM_WEBHOOK_PATH
+        and "POST" in route.methods
     )
 
 
