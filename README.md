@@ -101,7 +101,7 @@ Active tools:
 
 | Tool | Scope | Behavior |
 |---|---|---|
-| `gate_get_status` | `gate:status:read` | Scoped status, counts and redacted per-account Business connection health |
+| `gate_get_status` | `gate:status:read` | Scoped counts plus redacted per-account Business connection and contact-import health |
 | `gate_list_unanswered` | `gate:inbox:read` | One current unanswered item per conversation plus a separate answered/outbound list |
 | `gate_get_reply_context` | `gate:inbox:read` | Bounded chronological context for one scoped reply task |
 | `gate_save_reply_draft` | `gate:drafts:write` | Saves proposed text; never approves or sends |
@@ -177,6 +177,7 @@ Current behavior:
 - invalid or temporarily unverifiable connections fail closed;
 - safe bounded Telegram error codes/details are recorded without tokens or message contents;
 - `gate_get_status` exposes only redacted health (`ready`, `degraded`, `cannot_reply`, `inactive`, `missing`), never connection identifiers.
+- contact-directory status is also aggregate-only: imported count, source and last import time per granted account; it never exposes names, phones or Telegram user IDs.
 
 The database may retain historical connection rows. `business_connections` can therefore be larger than `active_business_connections`; this is not by itself an error.
 
@@ -194,13 +195,15 @@ Current limitation: the Telegram **Bot API** supplies the other party's Telegram
 Delivery status and intended continuation:
 
 1. The protected, idempotent contact-snapshot boundary is implemented by PR #102.
-2. The one-shot adapter supports a preferred offline Telegram Desktop JSON path and an optional read-only user-session fallback, documented in `docs/CONTACT_SYNC_ADAPTER.md`.
-3. Keep Telegram session material outside message payloads, logs and Git history.
-4. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
-5. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
-6. Backfill existing `PersonIdentity`, conversation and message linkage without rewriting communication facts.
-7. Make synchronized contact names authoritative over profile names in MCP output.
-8. Verify RU and BY, then document one-time onboarding for future accounts.
+2. PR #104 added the preferred offline Telegram Desktop JSON reader, source-account ownership verification and a one-shot PowerShell-compatible import path.
+3. RU Desktop-export contacts have been imported; BY remains pending until Telegram permits its Desktop export.
+4. `gate_get_status` reports privacy-bounded aggregate import evidence per granted account.
+5. Keep Telegram session material outside message payloads, logs and Git history.
+6. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
+7. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
+8. Backfill existing `PersonIdentity`, conversation and message linkage without rewriting communication facts.
+9. Make synchronized contact names authoritative over profile names in MCP output.
+10. Import and verify BY after its export becomes available, then document one-time onboarding for future accounts.
 
 Telegram authorization is not required for the Desktop export path. It remains an optional fallback when complete phone-to-user-ID matching is required, because Desktop `contacts.list` has no Telegram user IDs. No Telegram user-session secret has been added to production.
 
@@ -265,7 +268,7 @@ The MVP works, but the target architecture is not complete.
 5. **Static RU/BY assumptions.** Workspace access is dynamic, but some labels/configuration and send schema still assume RU/BY. A third account must be addable without a code change.
 6. **Project isolation evolution.** The final model needs explicit workspace/project grants, dialog identity independent of project, and time-bounded context binding.
 7. **Legacy routing data.** Production required collision-safe and NULL-safe repair migrations. CI against an empty database did not expose every production-data shape.
-8. **Contact directory rollout.** The storage seam and one-shot adapter exist; RU/BY Desktop export sync and display cutover remain operational work. MTProto authorization is fallback-only.
+8. **Contact directory rollout.** RU Desktop-export sync is complete; BY sync and the full historical display cutover remain operational work. MTProto authorization is fallback-only.
 9. **Output schemas.** ChatGPT recommends explicit output schemas for tools; add them without breaking existing MCP clients.
 10. **Observability.** Add structured redacted metrics for webhook latency, queue lag, duplicate rate, DLQ, send failures/unknown, Telegram 429 and DB pool pressure.
 11. **Scale path.** The billion-message target requires partitioning, hot/cold separation, object storage for raw payload/media, read projections and measured thresholds—not a claim that one Railway database stores everything forever.
@@ -288,6 +291,7 @@ Key merged milestones:
 | #99 | Dynamic Business connection synchronization and live validation |
 | #100 | Stable contact identity seam and redacted connection health |
 | #102 | Protected, bounded and idempotent contact snapshot boundary |
+| #104 | Verified offline Telegram Desktop export import path and RU rollout |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -297,8 +301,8 @@ Do not start several tracks in one PR.
 
 ### Immediate product continuation
 
-1. **User-session contact adapter rollout.** Authorize RU/BY independently, run sanitized sync through the one-shot read-only component, and verify aggregate import results.
-2. **Contact backfill and display cutover.** RU/BY verification, saved-name precedence in unanswered/answered/context, historical numeric-ID remediation through identity linkage.
+1. **Complete BY Desktop-export rollout.** Export after Telegram's availability delay, run the same verified one-shot import and confirm aggregate evidence in Gate status.
+2. **Contact backfill and display cutover.** Preserve saved-name precedence in unanswered/answered/context and remediate historical numeric IDs through identity linkage.
 3. **Dedicated contact-sync authorization.** Replace temporary admin-bearer reuse before any permanent schedule/service is enabled.
 4. **MCP output schemas.** Add explicit bounded output schemas and refresh ChatGPT actions.
 5. **Account generalization acceptance test.** Add a third test account without code or Auth0 UUID edits; verify receive → inbox → draft → confirmed send.
