@@ -259,17 +259,34 @@ def upgrade() -> None:
         )
         UPDATE conversations AS conversation
         SET
-            last_inbound_at = activity.last_inbound_at,
-            last_outbound_at = activity.last_outbound_at,
-            last_message_at = activity.last_message_at,
-            requires_reply = (
-                activity.last_inbound_at IS NOT NULL
-                AND (
-                    activity.last_outbound_at IS NULL
-                    OR activity.last_inbound_at > activity.last_outbound_at
-                )
+            last_inbound_at = CASE
+                WHEN activity.last_message_at IS NULL
+                THEN conversation.last_inbound_at
+                ELSE activity.last_inbound_at
+            END,
+            last_outbound_at = CASE
+                WHEN activity.last_message_at IS NULL
+                THEN conversation.last_outbound_at
+                ELSE activity.last_outbound_at
+            END,
+            last_message_at = COALESCE(
+                activity.last_message_at,
+                conversation.last_message_at
             ),
+            requires_reply = CASE
+                WHEN activity.last_message_at IS NULL
+                THEN conversation.requires_reply
+                ELSE (
+                    activity.last_inbound_at IS NOT NULL
+                    AND (
+                        activity.last_outbound_at IS NULL
+                        OR activity.last_inbound_at > activity.last_outbound_at
+                    )
+                )
+            END,
             status = CASE
+                WHEN activity.last_message_at IS NULL
+                THEN conversation.status
                 WHEN activity.last_inbound_at IS NOT NULL
                  AND (
                     activity.last_outbound_at IS NULL
