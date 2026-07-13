@@ -9,7 +9,8 @@ from app.application.reply_sends import (
     SendApprovedReplyService,
 )
 from app.core.mcp_security import AccessScope, Principal
-from app.infrastructure.reply_sends import _delivery_failure
+from app.infrastructure.reply_sends import _delivery_failure, _safe_error_detail
+from app.services.telegram import TelegramApiError
 
 DRAFT_ID = UUID("11111111-1111-1111-1111-111111111111")
 TASK_ID = UUID("22222222-2222-2222-2222-222222222222")
@@ -134,3 +135,14 @@ def test_delivery_timeout_is_unknown_and_other_errors_are_failed() -> None:
         "failed",
         "telegram_error",
     )
+
+
+def test_telegram_api_error_preserves_sanitized_diagnostics() -> None:
+    error = TelegramApiError(
+        error_code=400,
+        description="Bad Request: business connection not found",
+        http_status=400,
+    )
+
+    assert _delivery_failure(error) == ("failed", "telegram_api_400")
+    assert _safe_error_detail(error) == "Bad Request: business connection not found"
