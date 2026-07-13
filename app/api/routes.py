@@ -1,6 +1,5 @@
 """HTTP routes for Gate."""
 
-import hmac
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,6 +10,7 @@ from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import cast as sql_cast
 
+from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
 from app.models.domain import (
@@ -106,7 +106,7 @@ async def admin_recent_events(
 ) -> dict[str, list[JsonObject]]:
     """Return recent Gate events for operational inspection."""
 
-    _require_admin_bearer(authorization=authorization, settings=settings)
+    require_admin_bearer(authorization=authorization, settings=settings)
 
     result = await session.execute(
         select(GateEvent).order_by(GateEvent.received_at.desc(), GateEvent.id.desc()).limit(limit)
@@ -124,7 +124,7 @@ async def admin_recent_audit_logs(
 ) -> dict[str, list[JsonObject]]:
     """Return recent audit records for operational inspection."""
 
-    _require_admin_bearer(authorization=authorization, settings=settings)
+    require_admin_bearer(authorization=authorization, settings=settings)
 
     result = await session.execute(
         select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
@@ -141,7 +141,7 @@ async def admin_status(
 ) -> JsonObject:
     """Return a compact read-only operational status snapshot for Gate."""
 
-    _require_admin_bearer(authorization=authorization, settings=settings)
+    require_admin_bearer(authorization=authorization, settings=settings)
     return await _build_admin_status_payload(session=session, settings=settings)
 
 
@@ -154,7 +154,7 @@ async def admin_unanswered_inbox(
 ) -> dict[str, list[JsonObject]]:
     """Return active reply tasks with sanitized conversation and message context."""
 
-    _require_admin_bearer(authorization=authorization, settings=settings)
+    require_admin_bearer(authorization=authorization, settings=settings)
     return {"reply_tasks": await _load_unanswered_reply_tasks(session=session, limit=limit)}
 
 
@@ -1145,27 +1145,6 @@ async def _find_telegram_update(
     )
     return result.scalar_one_or_none()
 
-
-def _require_admin_bearer(*, authorization: str | None, settings: Settings) -> None:
-    """Require the configured admin bearer token for read-only admin routes."""
-
-    if not settings.admin_bearer_token:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Admin bearer token is not configured",
-        )
-
-    scheme, _, token = (authorization or "").partition(" ")
-    invalid_token = (
-        scheme.casefold() != "bearer"
-        or not token
-        or not hmac.compare_digest(token, settings.admin_bearer_token)
-    )
-    if invalid_token:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid admin bearer token",
-        )
 
 
 def _serialize_reply_task(
