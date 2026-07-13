@@ -409,6 +409,26 @@ async def _build_gate_status(
             where=(ReplyDraft.account_id.in_(accounts), ReplyDraft.project_id.in_(projects)),
         ),
     }
+    connection_result = await session.execute(
+        select(Account, TelegramBusinessConnection)
+        .outerjoin(
+            TelegramBusinessConnection,
+            TelegramBusinessConnection.account_id == Account.id,
+        )
+        .where(Account.id.in_(accounts))
+        .order_by(
+            Account.alias.asc(),
+            TelegramBusinessConnection.is_enabled.desc(),
+            TelegramBusinessConnection.last_update_at.desc(),
+        )
+    )
+    latest_connections: dict[UUID, tuple[Account, TelegramBusinessConnection | None]] = {}
+    for account, connection in connection_result.all():
+        latest_connections.setdefault(account.id, (account, connection))
+    connection_health = [
+        _serialize_connection_health(account=account, connection=connection)
+        for account, connection in latest_connections.values()
+    ]
     return {
         "service": "gate",
         "environment": settings.gate_env,
@@ -423,6 +443,7 @@ async def _build_gate_status(
             "project_count": len(projects),
         },
         "counts": counts,
+        "connection_health": connection_health,
         "mcp": {
             "protocol_version": MCP_PROTOCOL_VERSION,
             "tools": MCP_TOOL_NAMES,
@@ -787,6 +808,36 @@ def _serialize_account(account: Account) -> JsonObject:
     }
 
 
+def _serialize_connection_health(
+    *,
+    account: Account,
+    connection: TelegramBusinessConnection | None,
+) -> JsonObject:
+    if connection is None:
+        state = "missing"
+        can_reply = False
+    else:
+        can_reply = connection.rights.get("can_reply") is True
+        if not connection.is_enabled:
+            state = "inactive"
+        elif not can_reply:
+            state = "cannot_reply"
+        elif connection.last_error:
+            state = "degraded"
+        else:
+            state = "ready"
+    return {
+        "account": _serialize_account(account),
+        "state": state,
+        "connected": connection is not None and connection.is_enabled,
+        "can_reply": can_reply,
+        "last_checked_at": (
+            _serialize_datetime(connection.last_update_at) if connection is not None else None
+        ),
+        "last_error": connection.last_error if connection is not None else None,
+    }
+
+
 def _serialize_message(message: Message) -> JsonObject:
     return {
         "id": str(message.id),
@@ -815,15 +866,18 @@ def _counterparty(
         if message.direction == MessageDirection.INBOUND.value
         else telegram_message.get("chat")
     )
-    person = raw_person if isinstance(raw_person, dict) else {}
-    first_name = _optional_text(person.get("first_name"))
-    last_name = _optional_text(person.get("last_name"))
-    title = _optional_text(person.get("title"))
-    username = _optional_text(person.get("username"))
-    display_name = " ".join(
+    profile = raw_person if isinstance(raw_person, dict) else {}
+    first_name = _optional_text(profile.get("first_name"))
+    last_name = _optional_text(profile.get("last_name"))
+    title = _optional_text(profile.get("title"))
+    username = _optional_text(profile.get("username"))
+    profile_name = " ".join(
         part for part in (first_name, last_name) if part
-    ) or title or fallback_name
-    platform_user_id = _optional_text(person.get("id")) or (
+    ) or title
+    snapshot = _counterparty_snapshot(message)
+    saved_name = _optional_text(snapshot.get("display_name"))
+    display_name = saved_name or profile_name or fallback_name
+    platform_user_id = _optional_text(profile.get("id")) or (
         message.sender_id
         if message.direction == MessageDirection.INBOUND.value
         else message.recipient_id or message.chat_id
@@ -837,6 +891,13 @@ def _counterparty(
         "label": label,
     }
 
+
+def _counterparty_snapshot(message: Message) -> JsonObject:
+    payload = getattr(message, "payload", {})
+    if not isinstance(payload, dict):
+        return {}
+    value = payload.get("_gate_counterparty")
+    return value if isinstance(value, dict) else {}
 
 def _telegram_message_payload(payload: Any) -> JsonObject:
     if not isinstance(payload, dict):
@@ -1277,20 +1338,24 @@ def _tool_error_result(*, request_id: Any, code: str, message: str) -> JsonObjec
 
 def _format_status_text(snapshot: JsonObject) -> str:
     counts = snapshot["counts"]
-    return "\n".join(
-        [
-            f"Gate status — {snapshot['environment']}",
-            f"Commit: {snapshot['commit']}",
-            f"Bot: {snapshot['bot_username']}",
-            f"Mode: {snapshot['default_mode']}",
-            f"Send enabled: {snapshot['send_enabled']}",
-            f"Workspace: {snapshot['access']['workspace_id']}",
-            "",
-            "Counts:",
-            *[f"- {name}: {value}" for name, value in counts.items()],
-        ]
-    )
-
+    lines = [
+        f"Gate status — {snapshot['environment']}",
+        f"Commit: {snapshot['commit']}",
+        f"Bot: {snapshot['bot_username']}",
+        f"Mode: {snapshot['default_mode']}",
+        f"Send enabled: {snapshot['send_enabled']}",
+        f"Workspace: {snapshot['access']['workspace_id']}",
+        "",
+        "Telegram Business connections:",
+    ]
+    for item in snapshot["connection_health"]:
+        lines.append(
+            f"- {item['account']['label']}: {item['state']}; "
+            f"can_reply={item['can_reply']}"
+        )
+    lines.extend(["", "Counts:"])
+    lines.extend(f"- {name}: {value}" for name, value in counts.items())
+    return "\n".join(lines)
 
 def _format_reply_context_text(context: JsonObject) -> str:
     account = context["account"]

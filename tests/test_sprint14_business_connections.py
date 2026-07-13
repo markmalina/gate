@@ -9,6 +9,7 @@ from app.api.sprint14_routes import (
     _is_outbound_business_message,
     _resolve_account_id,
     _resolve_business_connection_account_id,
+    _upsert_telegram_counterparty,
 )
 from app.core.config import Settings
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
@@ -90,6 +91,9 @@ class _Result:
     def scalar_one_or_none(self) -> object | None:
         return self._value
 
+    def one_or_none(self) -> object | None:
+        return self._value
+
 
 class _Session:
     def __init__(self, value: object | None) -> None:
@@ -115,6 +119,53 @@ class _Connection:
 class _Account:
     def __init__(self, account_id: object) -> None:
         self.id = account_id
+
+
+class _Identity:
+    def __init__(self) -> None:
+        self.username = "old_username"
+        self.display_name = "Profile name"
+        self.metadata_ = {
+            "name_source": "telegram_contact",
+            "telegram_contact_name": "Женя — зал",
+        }
+
+
+class _Person:
+    def __init__(self) -> None:
+        self.id = "person-id"
+        self.display_name = "Женя — зал"
+
+
+def test_profile_updates_do_not_overwrite_saved_telegram_contact_name() -> None:
+    identity = _Identity()
+    person = _Person()
+
+    person_id, display_name = asyncio.run(
+        _upsert_telegram_counterparty(
+            session=_Session((identity, person)),  # type: ignore[arg-type]
+            account_id=TELEGRAM_MARK_BY_ACCOUNT_ID,
+            update={
+                "business_message": {
+                    "from": {
+                        "id": 12345,
+                        "first_name": "Evgeniy",
+                        "username": "new_username",
+                    }
+                }
+            },
+            is_outbound=False,
+            fallback_user_id="12345",
+        )
+    )
+
+    assert person_id == "person-id"
+    assert display_name == "Женя — зал"
+    assert person.display_name == "Женя — зал"
+    assert identity.display_name == "Evgeniy"
+    assert identity.username == "new_username"
+    assert identity.metadata_["telegram_profile_name"] == "Evgeniy"
+    assert identity.metadata_["name_source"] == "telegram_contact"
 
 
 def test_new_business_connection_resolves_from_telegram_owner() -> None:

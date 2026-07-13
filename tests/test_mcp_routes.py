@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db_session
+from app.api.mcp_routes import _counterparty, _serialize_connection_health
 from app.core.config import get_settings
 from app.main import app
 
@@ -43,7 +44,7 @@ class FakeMcpSession:
         scalar_results: list[int] | None = None,
         row_result_batches: list[list[Any]] | None = None,
     ) -> None:
-        self.scalar_results = scalar_results or [0] * 9
+        self.scalar_results = scalar_results or [0] * 10
         self.row_result_batches = row_result_batches or []
         self.statements: list[Any] = []
 
@@ -75,7 +76,7 @@ def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.fixture
 def mcp_context() -> Iterator[FakeMcpSession]:
-    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7])
+    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7, 0])
 
     async def override_session() -> AsyncIterator[FakeMcpSession]:
         yield session
@@ -242,6 +243,61 @@ def reply_context() -> Iterator[FakeMcpSession]:
     yield session
 
 
+def test_counterparty_prefers_gate_identity_snapshot_over_telegram_profile() -> None:
+    message = SimpleNamespace(
+        direction="outbound",
+        sender_id="owner",
+        recipient_id="12345",
+        chat_id="12345",
+        payload={"_gate_counterparty": {"display_name": "Женя — зал"}},
+    )
+    telegram_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "chat": {
+                    "id": 12345,
+                    "first_name": "Evgeniy",
+                    "username": "profile_username",
+                }
+            }
+        }
+    )
+
+    counterparty = _counterparty(
+        message=message,
+        telegram_update=telegram_update,
+    )
+
+    assert counterparty["label"] == "Женя — зал"
+    assert counterparty["display_name"] == "Женя — зал"
+    assert counterparty["username"] == "profile_username"
+
+
+def test_connection_health_reports_ready_account_without_exposing_connection_id() -> None:
+    now = datetime(2026, 7, 13, 9, 0, tzinfo=UTC)
+    account = SimpleNamespace(
+        id=UUID(ACCOUNT_ID),
+        alias="telegram_mark_ru",
+        country_code="RU",
+    )
+    connection = SimpleNamespace(
+        is_enabled=True,
+        rights={"can_reply": True},
+        last_update_at=now,
+        last_error=None,
+        business_connection_id="must-not-leak",
+    )
+
+    health = _serialize_connection_health(
+        account=account,
+        connection=connection,
+    )
+
+    assert health["state"] == "ready"
+    assert health["can_reply"] is True
+    assert "business_connection_id" not in health
+
+
 async def _post(payload: dict[str, Any], headers: dict[str, str] | None = None):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -336,7 +392,8 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert structured["counts"]["unanswered"] == 1
     assert structured["mcp"]["auth"] == "temporary_bearer_enforced"
     assert structured["counts"]["answered_messages"] == 2
-    assert len(mcp_context.statements) == 9
+    assert structured["connection_health"] == []
+    assert len(mcp_context.statements) == 10
 
 
 @pytest.mark.anyio

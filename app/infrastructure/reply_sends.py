@@ -205,6 +205,7 @@ class SqlTelegramReplySender:
                 gate_event_id=None,
                 account_id=draft.account_id,
                 project_id=draft.project_id,
+                person_id=trigger.person_id,
                 direction=MessageDirection.OUTBOUND.value,
                 source="gate-approved-draft",
                 event_type="telegram_business_reply",
@@ -217,7 +218,13 @@ class SqlTelegramReplySender:
                 recipient_id=target_chat_id,
                 text=draft.draft_text,
                 business_connection_id=connection.business_connection_id,
-                payload=telegram_result,
+                payload={
+                    **telegram_result,
+                    "_gate_counterparty": _counterparty_snapshot(
+                        trigger=trigger,
+                        conversation=conversation,
+                    ),
+                },
                 sent_at=finished_at,
             )
         )
@@ -473,6 +480,20 @@ class SqlTelegramReplySender:
             error_code=attempt.error_code,
             error_detail=attempt.error_detail,
         )
+
+
+def _counterparty_snapshot(
+    *,
+    trigger: Message,
+    conversation: Conversation,
+) -> dict[str, str | None]:
+    payload = trigger.payload if isinstance(trigger.payload, dict) else {}
+    raw_snapshot = payload.get("_gate_counterparty")
+    snapshot = raw_snapshot if isinstance(raw_snapshot, dict) else {}
+    display_name = snapshot.get("display_name")
+    if not isinstance(display_name, str) or not display_name.strip():
+        display_name = conversation.title
+    return {"display_name": display_name}
 
 
 def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bool:
