@@ -15,7 +15,10 @@ from app.api import sprint17_send_draft_routes as sprint17
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.api.scoped_admin import build_scoped_telegram_admin_reply, resolve_telegram_admin_context
-from app.application.telegram_ingress_shadow import observe_telegram_ingress_shadow
+from app.application.telegram_ingress_shadow import (
+    observe_telegram_ingress_routing_shadow,
+    observe_telegram_ingress_shadow,
+)
 from app.core.config import Settings, get_settings
 from app.models.domain import AuditLog, TelegramUpdate
 from app.services.telegram import TelegramClient
@@ -43,7 +46,13 @@ async def sprint18b_telegram_webhook(
     """Handle /draft with clearer tap-first action copy."""
 
     update = await sprint14._read_update(request)
-    observe_telegram_ingress_shadow(update, logger=logger)
+    decision = observe_telegram_ingress_shadow(update, logger=logger)
+    observe_telegram_ingress_routing_shadow(
+        update,
+        decision=decision,
+        settings=settings,
+        logger=logger,
+    )
     normalized = legacy._extract_update_event(update)
     command = legacy._parse_admin_console_command(normalized.text if normalized else None)
     if normalized is None or command is None or command.name != "draft":
