@@ -1186,6 +1186,7 @@ async def _send_approved_reply_tool_result(
         "idempotent_replay": sent.idempotent_replay,
         "provider_message_id": sent.provider_message_id,
         "error_code": sent.error_code,
+        "error_detail": sent.error_detail,
     }
     if sent.sent:
         text = (
