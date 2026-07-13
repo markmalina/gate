@@ -2,19 +2,21 @@
 # ruff: noqa
 """Scoped Gate MCP endpoint for inbox, drafts and explicit reply sending."""
 
-from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import String, and_, case, cast, func, or_, select, union_all
+from sqlalchemy import select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import undefer
 
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.routes import get_telegram_client
-from app.application.account_labels import account_label
+from app.application.mcp_inbox import (
+    build_unanswered_list,
+    counterparty as _counterparty,
+    get_reply_context,
+)
 from app.application.mcp_status import (
     build_gate_status,
     serialize_connection_health as _serialize_connection_health,
@@ -41,17 +43,11 @@ from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
     Account,
-    AuditLog,
-    Conversation,
     Message,
     MessageDirection,
-    PersonIdentity,
     Project,
     ReplyDraft,
     ReplyTask,
-    ReplyTaskStatus,
-    TelegramBusinessConnection,
-    TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
 
@@ -79,7 +75,6 @@ MCP_TOOL_NAMES = [
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
-ANSWERED_MESSAGE_SOURCES = ("telegram", "gate-approved-draft")
 MCP_TOOL_SCOPES = {
     "gate_get_status": "gate:status:read",
     "gate_list_unanswered": "gate:inbox:read",
@@ -179,10 +174,10 @@ async def mcp_endpoint(
             )
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_list_unanswered":
-            inbox = await _build_unanswered_list(
+            inbox = await build_unanswered_list(
                 session=session,
-                arguments=arguments,
-                principal=principal,
+                scope=principal.access_scope,
+                limit=_bounded_limit(arguments.get("limit"), default=10, maximum=50),
             )
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
         if tool_name == "gate_get_reply_context":
@@ -360,162 +355,6 @@ async def _resolve_workspace_principal(
     )
 
 
-async def _build_unanswered_list(
-    *, session: AsyncSession, arguments: JsonObject, principal: Principal
-) -> JsonObject:
-    limit = _bounded_limit(arguments.get("limit"), default=10, maximum=50)
-    accounts = principal.access_scope.account_ids
-    projects = principal.access_scope.project_ids
-    owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
-    ranked_tasks = (
-        select(
-            ReplyTask.id.label("task_id"),
-            func.row_number()
-            .over(
-                partition_by=ReplyTask.conversation_id,
-                order_by=(ReplyTask.created_at.desc(), ReplyTask.id.desc()),
-            )
-            .label("conversation_rank"),
-            func.count(ReplyTask.id)
-            .over(partition_by=ReplyTask.conversation_id)
-            .label("pending_message_count"),
-        )
-        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
-        .join(Message, ReplyTask.trigger_message_id == Message.id)
-        .where(
-            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-            ReplyTask.account_id.in_(accounts),
-            ReplyTask.project_id.in_(projects),
-            Conversation.account_id.in_(accounts),
-            Conversation.project_id.in_(projects),
-            Conversation.requires_reply.is_(True),
-            Message.account_id.in_(accounts),
-            Message.project_id.in_(projects),
-            Message.direction == MessageDirection.INBOUND.value,
-            or_(
-                Conversation.last_outbound_at.is_(None),
-                func.coalesce(Message.received_at, Message.created_at)
-                > Conversation.last_outbound_at,
-            ),
-            _non_service_message_filter(),
-        )
-        .subquery()
-    )
-    result = await session.execute(
-        select(
-            ReplyTask,
-            Conversation,
-            Message,
-            TelegramUpdate,
-            Account,
-            ranked_tasks.c.pending_message_count,
-            PersonIdentity.metadata_["telegram_contact_name"]
-            .as_string()
-            .label("resolved_contact_name"),
-        )
-        .options(undefer(ReplyTask.account_id))
-        .join(ranked_tasks, ranked_tasks.c.task_id == ReplyTask.id)
-        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
-        .join(Message, ReplyTask.trigger_message_id == Message.id)
-        .join(Account, Message.account_id == Account.id)
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id == Message.sender_id,
-            ),
-        )
-        .outerjoin(
-            TelegramUpdate,
-            and_(
-                TelegramUpdate.bot_id == Message.bot_id,
-                TelegramUpdate.update_id == Message.telegram_update_id,
-            ),
-        )
-        .where(ranked_tasks.c.conversation_rank == 1)
-        .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
-        .limit(limit)
-    )
-    items = [
-        _serialize_unanswered_item(
-            task=task,
-            conversation=conversation,
-            message=message,
-            telegram_update=telegram_update,
-            account=account,
-            pending_message_count=pending_message_count,
-            resolved_contact_name=resolved_contact_name,
-        )
-        for (
-            task,
-            conversation,
-            message,
-            telegram_update,
-            account,
-            pending_message_count,
-            resolved_contact_name,
-        ) in result.all()
-    ]
-
-    answered_result = await session.execute(
-        select(
-            Message,
-            TelegramUpdate,
-            Account,
-            PersonIdentity.metadata_["telegram_contact_name"]
-            .as_string()
-            .label("resolved_contact_name"),
-        )
-        .join(Account, Message.account_id == Account.id)
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id
-                == func.coalesce(Message.recipient_id, Message.chat_id),
-            ),
-        )
-        .outerjoin(
-            TelegramUpdate,
-            and_(
-                TelegramUpdate.bot_id == Message.bot_id,
-                TelegramUpdate.update_id == Message.telegram_update_id,
-            ),
-        )
-        .where(
-            Message.account_id.in_(accounts),
-            Message.project_id.in_(projects),
-            Message.direction == MessageDirection.OUTBOUND.value,
-            Message.chat_id.not_in(select(owner_telegram_ids.c.owner_id)),
-            _answered_message_filter(),
-        )
-        .order_by(
-            func.coalesce(Message.sent_at, Message.created_at).desc(),
-            Message.id.desc(),
-        )
-        .limit(limit)
-    )
-    answered_items = [
-        _serialize_answered_item(
-            message=message,
-            telegram_update=telegram_update,
-            account=account,
-            resolved_contact_name=resolved_contact_name,
-        )
-        for message, telegram_update, account, resolved_contact_name in answered_result.all()
-    ]
-    return {
-        "items": items,
-        "count": len(items),
-        "answered_items": answered_items,
-        "answered_count": len(answered_items),
-        "limit": limit,
-        "next_cursor": None,
-    }
-
-
 async def _get_reply_context_tool_result(
     *,
     request_id: Any,
@@ -538,355 +377,23 @@ async def _get_reply_context_tool_result(
             code="invalid_arguments",
             message="task_id must be a UUID",
         )
-    limit = _bounded_limit(arguments.get("limit"), default=10, maximum=20)
-    scope = principal.access_scope
-    task_result = await session.execute(
-        select(
-            ReplyTask,
-            Conversation,
-            Message,
-            TelegramUpdate,
-            Account,
-            PersonIdentity.metadata_["telegram_contact_name"]
-            .as_string()
-            .label("resolved_contact_name"),
-        )
-        .options(undefer(ReplyTask.account_id))
-        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
-        .join(Message, ReplyTask.trigger_message_id == Message.id)
-        .join(Account, ReplyTask.account_id == Account.id)
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id == Message.sender_id,
-            ),
-        )
-        .outerjoin(
-            TelegramUpdate,
-            and_(
-                TelegramUpdate.bot_id == Message.bot_id,
-                TelegramUpdate.update_id == Message.telegram_update_id,
-            ),
-        )
-        .where(
-            ReplyTask.id == task_id,
-            ReplyTask.account_id.in_(scope.account_ids),
-            ReplyTask.project_id.in_(scope.project_ids),
-            Conversation.account_id.in_(scope.account_ids),
-            Conversation.project_id.in_(scope.project_ids),
-            Message.account_id.in_(scope.account_ids),
-            Message.project_id.in_(scope.project_ids),
-        )
+
+    context = await get_reply_context(
+        session=session,
+        scope=principal.access_scope,
+        task_id=task_id,
+        limit=_bounded_limit(arguments.get("limit"), default=10, maximum=20),
     )
-    row = task_result.one_or_none()
-    if row is None:
+    if context is None:
         return _tool_error_result(
             request_id=request_id,
             code="task_not_found",
             message="Reply task not found in the allowed scope",
         )
-    (
-        task,
-        conversation,
-        trigger,
-        trigger_update,
-        account,
-        resolved_contact_name,
-    ) = row
-    history_counterparty_user_id = case(
-        (
-            Message.direction == MessageDirection.INBOUND.value,
-            Message.sender_id,
-        ),
-        else_=func.coalesce(Message.recipient_id, Message.chat_id),
-    )
-    history_result = await session.execute(
-        select(
-            Message,
-            TelegramUpdate,
-            PersonIdentity.metadata_["telegram_contact_name"]
-            .as_string()
-            .label("resolved_contact_name"),
-        )
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id == history_counterparty_user_id,
-            ),
-        )
-        .outerjoin(
-            TelegramUpdate,
-            and_(
-                TelegramUpdate.bot_id == Message.bot_id,
-                TelegramUpdate.update_id == Message.telegram_update_id,
-            ),
-        )
-        .where(
-            Message.account_id == conversation.account_id,
-            Message.project_id == conversation.project_id,
-            Message.chat_id == conversation.chat_id,
-            Message.business_connection_id.is_not_distinct_from(
-                conversation.business_connection_id
-            ),
-        )
-        .order_by(
-            func.coalesce(
-                Message.sent_at,
-                Message.received_at,
-                Message.created_at,
-            ).desc(),
-            Message.id.desc(),
-        )
-        .limit(limit)
-    )
-    history_rows = list(reversed(history_result.all()))
-    content = {
-        "task_id": str(task.id),
-        "task_ref": str(task.id)[:8],
-        "status": task.status,
-        "reply_required": task.status == ReplyTaskStatus.NEEDS_REPLY.value,
-        "account": _serialize_account(account),
-        "conversation": {
-            "id": str(conversation.id),
-            "chat_id": conversation.chat_id,
-            "business_connection_id": conversation.business_connection_id,
-        },
-        "counterparty": _counterparty(
-            message=trigger,
-            telegram_update=trigger_update,
-            resolved_contact_name=resolved_contact_name,
-            fallback_name=getattr(conversation, "title", None),
-        ),
-        "messages": [
-            {
-                **_serialize_message(message),
-                "counterparty": _counterparty(
-                    message=message,
-                    telegram_update=telegram_update,
-                    resolved_contact_name=history_contact_name,
-                    fallback_name=getattr(conversation, "title", None),
-                ),
-            }
-            for message, telegram_update, history_contact_name in history_rows
-        ],
-        "count": len(history_rows),
-        "limit": limit,
-    }
     return _tool_result(
-        content,
-        _format_reply_context_text(content),
+        context,
+        _format_reply_context_text(context),
         request_id,
-    )
-
-
-def _serialize_unanswered_item(
-    *,
-    task: ReplyTask,
-    conversation: Conversation,
-    message: Message,
-    telegram_update: TelegramUpdate | None,
-    account: Account,
-    pending_message_count: int,
-    resolved_contact_name: str | None,
-) -> JsonObject:
-    task_id = str(task.id)
-    return {
-        "task_id": task_id,
-        "task_ref": task_id[:8],
-        "status": task.status,
-        "priority": task.priority,
-        "reason": task.reason,
-        "pending_message_count": int(pending_message_count),
-        "account_id": str(task.account_id),
-        "project_id": str(task.project_id),
-        "account": _serialize_account(account),
-        "conversation": {
-            "id": str(conversation.id),
-            "chat_id": conversation.chat_id,
-            "business_connection_id": conversation.business_connection_id,
-        },
-        "counterparty": _counterparty(
-            message=message,
-            telegram_update=telegram_update,
-            resolved_contact_name=resolved_contact_name,
-            fallback_name=getattr(conversation, "title", None),
-        ),
-        "message": _serialize_message(message),
-        "created_at": _serialize_datetime(task.created_at),
-    }
-
-
-def _serialize_answered_item(
-    *,
-    message: Message,
-    telegram_update: TelegramUpdate | None,
-    account: Account,
-    resolved_contact_name: str | None,
-) -> JsonObject:
-    return {
-        "account_id": str(message.account_id),
-        "project_id": str(message.project_id),
-        "account": _serialize_account(account),
-        "counterparty": _counterparty(
-            message=message,
-            telegram_update=telegram_update,
-            resolved_contact_name=resolved_contact_name,
-        ),
-        "message": _serialize_message(message),
-    }
-
-
-def _serialize_account(account: Account) -> JsonObject:
-    return {
-        "id": str(account.id),
-        "alias": account.alias,
-        "label": account_label(
-            alias=account.alias,
-            country_code=account.country_code,
-        ),
-    }
-
-
-def _serialize_message(message: Message) -> JsonObject:
-    return {
-        "id": str(message.id),
-        "direction": message.direction,
-        "source": message.source,
-        "chat_id": message.chat_id,
-        "sender_id": message.sender_id,
-        "recipient_id": message.recipient_id,
-        "text_preview": _truncate_text(message.text or "", 240),
-        "created_at": _serialize_datetime(message.created_at),
-        "received_at": _serialize_datetime(message.received_at),
-        "sent_at": _serialize_datetime(message.sent_at),
-    }
-
-
-def _counterparty(
-    *,
-    message: Message,
-    telegram_update: TelegramUpdate | None,
-    resolved_contact_name: str | None = None,
-    fallback_name: str | None = None,
-) -> JsonObject:
-    payload = telegram_update.payload if telegram_update is not None else {}
-    telegram_message = _telegram_message_payload(payload)
-    raw_person = (
-        telegram_message.get("from")
-        if message.direction == MessageDirection.INBOUND.value
-        else telegram_message.get("chat")
-    )
-    profile = raw_person if isinstance(raw_person, dict) else {}
-    first_name = _optional_text(profile.get("first_name"))
-    last_name = _optional_text(profile.get("last_name"))
-    title = _optional_text(profile.get("title"))
-    username = _optional_text(profile.get("username"))
-    profile_name = " ".join(
-        part for part in (first_name, last_name) if part
-    ) or title
-    snapshot = _counterparty_snapshot(message)
-    snapshot_name = _optional_text(snapshot.get("display_name"))
-    imported_name = _optional_text(resolved_contact_name)
-    display_name = imported_name or snapshot_name or profile_name or fallback_name
-    platform_user_id = _optional_text(profile.get("id")) or (
-        message.sender_id
-        if message.direction == MessageDirection.INBOUND.value
-        else message.recipient_id or message.chat_id
-    )
-    label = display_name or (f"@{username}" if username else None) or platform_user_id
-    return {
-        "platform": "telegram",
-        "platform_user_id": platform_user_id,
-        "display_name": display_name,
-        "username": username,
-        "label": label,
-    }
-
-
-def _counterparty_snapshot(message: Message) -> JsonObject:
-    payload = getattr(message, "payload", {})
-    if not isinstance(payload, dict):
-        return {}
-    value = payload.get("_gate_counterparty")
-    return value if isinstance(value, dict) else {}
-
-def _telegram_message_payload(payload: Any) -> JsonObject:
-    if not isinstance(payload, dict):
-        return {}
-    for key in ("business_message", "edited_business_message", "message"):
-        value = payload.get(key)
-        if isinstance(value, dict):
-            return value
-    return {}
-
-
-def _optional_text(value: Any) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
-
-
-def _owner_telegram_ids_subquery(accounts: frozenset[UUID]) -> Any:
-    owner_names = select(Account.owner).where(Account.id.in_(accounts))
-    return union_all(
-        select(cast(Account.telegram_user_id, String).label("owner_id")).where(
-            Account.owner.in_(owner_names),
-            Account.telegram_user_id.is_not(None),
-        ),
-        select(
-            cast(TelegramBusinessConnection.telegram_user_id, String).label("owner_id")
-        )
-        .join(Account, TelegramBusinessConnection.account_id == Account.id)
-        .where(
-            Account.owner.in_(owner_names),
-            TelegramBusinessConnection.telegram_user_id.is_not(None),
-        ),
-        select(
-            cast(TelegramBusinessConnection.user_chat_id, String).label("owner_id")
-        )
-        .join(Account, TelegramBusinessConnection.account_id == Account.id)
-        .where(
-            Account.owner.in_(owner_names),
-            TelegramBusinessConnection.user_chat_id.is_not(None),
-        ),
-    ).subquery()
-
-
-def _answered_message_filter() -> Any:
-    return and_(
-        Message.source.in_(ANSWERED_MESSAGE_SOURCES),
-        Message.text.is_not(None),
-        func.length(func.trim(Message.text)) > 0,
-        _non_service_message_filter(),
-    )
-
-
-def _non_service_message_filter() -> Any:
-    return or_(
-        Message.text.is_(None),
-        and_(
-            Message.text.notilike("/start bizChat%"),
-            Message.text.notilike("/webhook%"),
-            Message.text.notilike("/events%"),
-            Message.text.notilike("/messages%"),
-            Message.text.notilike("/raw%"),
-            Message.text.notilike("/status%"),
-            Message.text.notilike("/inbox%"),
-            Message.text.notilike("/draft%"),
-            Message.text.notilike("/drafts%"),
-            Message.text.notilike("/done%"),
-            Message.text.notilike("/dismiss%"),
-            Message.text.notilike("/snooze%"),
-            Message.text.notilike("/reopen%"),
-            Message.text.notilike("/business%"),
-            Message.text.notilike("Commit:%"),
-            Message.text.notilike("TEST-%"),
-        ),
     )
 
 
@@ -1345,16 +852,6 @@ def _bounded_limit(value: Any, *, default: int, maximum: int) -> int:
     if value < 1:
         return 1
     return min(value, maximum)
-
-
-def _truncate_text(text: str, limit: int) -> str:
-    return text if len(text) <= limit else f"{text[: limit - 1]}…"
-
-
-def _serialize_datetime(value: Any) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat() if isinstance(value, datetime) else str(value)
 
 
 def _commit(settings: Settings) -> str:
