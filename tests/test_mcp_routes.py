@@ -162,7 +162,7 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
     )
     session = FakeMcpSession(
         row_result_batches=[
-            [(task, conversation, message, inbound_update, account)],
+            [(task, conversation, message, inbound_update, account, 1)],
             [(outbound_message, outbound_update, account)],
         ]
     )
@@ -362,6 +362,7 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
         "label": "RU",
     }
     assert item["message"]["direction"] == "inbound"
+    assert item["pending_message_count"] == 1
     assert item["message"]["text_preview"] == "Привет, хочу заниматься Око Возрождения"
     assert item["counterparty"] == {
         "platform": "telegram",
@@ -380,6 +381,8 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     answered_statement = str(unanswered_context.statements[1])
     assert "reply_tasks.account_id IN" in unanswered_statement
     assert "reply_tasks.project_id IN" in unanswered_statement
+    assert "row_number()" in unanswered_statement
+    assert "conversations.last_outbound_at" in unanswered_statement
     assert "messages.direction" in unanswered_statement
     assert "messages.direction" in answered_statement
     assert "messages.source IN" in answered_statement
