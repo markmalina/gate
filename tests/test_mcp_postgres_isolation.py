@@ -3,11 +3,6 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-from jsonschema import Draft202012Validator, FormatChecker
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import GATE_DRAFT_OUTPUT_SCHEMA, GATE_SEND_OUTPUT_SCHEMA
 from app.api.routes import get_telegram_client
@@ -33,6 +28,10 @@ from app.models.domain import (
     SendAttemptStatus,
     TelegramBusinessConnection,
 )
+from httpx import ASGITransport, AsyncClient
+from jsonschema import Draft202012Validator, FormatChecker
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture
