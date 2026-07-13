@@ -251,6 +251,8 @@ async def _require_mcp_principal(
             settings=settings,
             required_scope=required_scope,
         )
+        if principal.access_scope.is_explicit:
+            return principal
         if session is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
