@@ -10,11 +10,14 @@ from app.core.mcp_security import AccessScope, Principal
 from app.main import app
 from app.models.domain import (
     Account,
+    AuditLog,
     Base,
     Bot,
     Conversation,
     Message,
     MessageDirection,
+    Person,
+    PersonIdentity,
     Project,
     ReplyDraft,
     ReplyDraftStatus,
@@ -250,6 +253,53 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 ]
             )
             await session.flush()
+            allowed_person = Person(display_name="private-allowed-contact")
+            denied_person = Person(display_name="private-denied-contact")
+            session.add_all([allowed_person, denied_person])
+            await session.flush()
+            session.add_all(
+                [
+                    PersonIdentity(
+                        person_id=allowed_person.id,
+                        account_id=allowed_account,
+                        platform="telegram",
+                        platform_user_id="allowed-private-platform-id",
+                        display_name="private-allowed-contact",
+                        is_verified=True,
+                        metadata_={
+                            "name_source": "telegram_contact",
+                            "telegram_contact_name": "private-allowed-contact",
+                        },
+                    ),
+                    PersonIdentity(
+                        person_id=denied_person.id,
+                        account_id=denied_account,
+                        platform="telegram",
+                        platform_user_id="denied-private-platform-id",
+                        display_name="private-denied-contact",
+                        is_verified=True,
+                        metadata_={
+                            "name_source": "telegram_contact",
+                            "telegram_contact_name": "private-denied-contact",
+                        },
+                    ),
+                    AuditLog(
+                        actor="gate-contact-sync",
+                        action="telegram_contact_snapshot_imported",
+                        account_id=allowed_account,
+                        metadata_={"source": "telegram_desktop_export"},
+                        created_at=now,
+                    ),
+                    AuditLog(
+                        actor="gate-contact-sync",
+                        action="telegram_contact_snapshot_imported",
+                        account_id=denied_account,
+                        metadata_={"source": "telegram_desktop_export"},
+                        created_at=now,
+                    ),
+                ]
+            )
+            await session.flush()
 
             async def override_session() -> AsyncIterator[AsyncSession]:
                 yield session
@@ -265,6 +315,16 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
+                status_response = await client.post(
+                    "/mcp",
+                    headers={"Authorization": "Bearer integration-token"},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "status-isolation",
+                        "method": "tools/call",
+                        "params": {"name": "gate_get_status", "arguments": {}},
+                    },
+                )
                 response = await client.post(
                     "/mcp",
                     headers={"Authorization": "Bearer integration-token"},
@@ -275,6 +335,21 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                         "params": {"name": "gate_list_unanswered", "arguments": {}},
                     },
                 )
+
+            assert status_response.status_code == 200
+            status_payload = status_response.json()["result"]["structuredContent"]
+            contact_directory = status_payload["contact_directory"]
+            assert len(contact_directory) == 1
+            assert contact_directory[0]["account"]["id"] == str(allowed_account)
+            assert contact_directory[0]["account"]["label"] == "RU"
+            assert contact_directory[0]["imported_contacts"] == 1
+            assert contact_directory[0]["last_source"] == "telegram_desktop_export"
+            assert contact_directory[0]["last_import_at"] == now.isoformat()
+            status_wire = status_response.text
+            assert "private-allowed-contact" not in status_wire
+            assert "private-denied-contact" not in status_wire
+            assert "allowed-private-platform-id" not in status_wire
+            assert "denied-private-platform-id" not in status_wire
 
             assert response.status_code == 200
             structured = response.json()["result"]["structuredContent"]
