@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db_session
+from app.api.mcp_routes import _counterparty, _serialize_connection_health
 from app.core.config import get_settings
 from app.main import app
 
@@ -240,6 +241,61 @@ def reply_context() -> Iterator[FakeMcpSession]:
 
     app.dependency_overrides[get_db_session] = override_session
     yield session
+
+
+def test_counterparty_prefers_gate_identity_snapshot_over_telegram_profile() -> None:
+    message = SimpleNamespace(
+        direction="outbound",
+        sender_id="owner",
+        recipient_id="12345",
+        chat_id="12345",
+        payload={"_gate_counterparty": {"display_name": "Женя — зал"}},
+    )
+    telegram_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "chat": {
+                    "id": 12345,
+                    "first_name": "Evgeniy",
+                    "username": "profile_username",
+                }
+            }
+        }
+    )
+
+    counterparty = _counterparty(
+        message=message,
+        telegram_update=telegram_update,
+    )
+
+    assert counterparty["label"] == "Женя — зал"
+    assert counterparty["display_name"] == "Женя — зал"
+    assert counterparty["username"] == "profile_username"
+
+
+def test_connection_health_reports_ready_account_without_exposing_connection_id() -> None:
+    now = datetime(2026, 7, 13, 9, 0, tzinfo=UTC)
+    account = SimpleNamespace(
+        id=UUID(ACCOUNT_ID),
+        alias="telegram_mark_ru",
+        country_code="RU",
+    )
+    connection = SimpleNamespace(
+        is_enabled=True,
+        rights={"can_reply": True},
+        last_update_at=now,
+        last_error=None,
+        business_connection_id="must-not-leak",
+    )
+
+    health = _serialize_connection_health(
+        account=account,
+        connection=connection,
+    )
+
+    assert health["state"] == "ready"
+    assert health["can_reply"] is True
+    assert "business_connection_id" not in health
 
 
 async def _post(payload: dict[str, Any], headers: dict[str, str] | None = None):
