@@ -36,7 +36,10 @@ class ContactSyncService:
             raise ContactSyncError("Account alias must contain 1 to 128 characters")
 
         source = await self._reader.read_contacts()
-        contacts = build_snapshot(source.saved_contacts, source.telegram_users)
+        contacts = _merge_contacts(
+            build_snapshot(source.saved_contacts, source.telegram_users),
+            source.direct_contacts,
+        )
         chunks = tuple(_chunked(contacts, self.MAX_CHUNK_SIZE))
         totals = SnapshotImportCounts(received=0, created=0, updated=0, unchanged=0)
 
@@ -46,7 +49,16 @@ class ContactSyncService:
             for chunk_index, chunk in enumerate(chunks, start=1):
                 counts = await self._publisher.publish(
                     account_alias=normalized_alias,
-                    revision=_chunk_revision(snapshot_digest, chunk_index, chunk_total),
+                    revision=_chunk_revision(
+                        snapshot_digest,
+                        chunk_index,
+                        chunk_total,
+                        source.source,
+                    ),
+                    source=source.source,
+                    source_account_telegram_user_id=(
+                        source.source_account_telegram_user_id
+                    ),
                     contacts=chunk,
                 )
                 if counts.received != len(chunk):
@@ -58,10 +70,15 @@ class ContactSyncService:
                     unchanged=totals.unchanged + counts.unchanged,
                 )
 
-        saved_count = len(source.saved_contacts)
+        saved_count = (
+            source.source_contacts
+            if source.source_contacts is not None
+            else len(source.saved_contacts)
+        )
         matched_count = len(contacts)
         return ContactSyncResult(
             account_alias=normalized_alias,
+            source=source.source,
             saved_contacts=saved_count,
             matched_contacts=matched_count,
             skipped_contacts=max(saved_count - matched_count, 0),
@@ -143,8 +160,30 @@ def _snapshot_digest(contacts: tuple[ContactSnapshotItem, ...]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def _chunk_revision(digest: str, index: int, total: int) -> str:
-    return f"telegram-contact-v1-{digest[:32]}-{index:04d}-{total:04d}"
+def _chunk_revision(digest: str, index: int, total: int, source: str) -> str:
+    source_tag = {
+        "telegram_desktop_export": "telegram-desktop-v1",
+        "telegram_user_session": "telegram-contact-v1",
+    }.get(source, "telegram-contact-v1")
+    return f"{source_tag}-{digest[:32]}-{index:04d}-{total:04d}"
+
+
+def _merge_contacts(
+    matched_contacts: tuple[ContactSnapshotItem, ...],
+    direct_contacts: tuple[ContactSnapshotItem, ...],
+) -> tuple[ContactSnapshotItem, ...]:
+    by_user_id = {contact.telegram_user_id: contact for contact in matched_contacts}
+    for contact in direct_contacts:
+        user_id = contact.telegram_user_id.strip()
+        display_name = _display_name(contact.display_name, "")
+        if not user_id.isdecimal() or not display_name:
+            continue
+        by_user_id[user_id] = ContactSnapshotItem(
+            telegram_user_id=user_id,
+            display_name=display_name,
+            username=_normalize_username(contact.username),
+        )
+    return tuple(sorted(by_user_id.values(), key=lambda contact: int(contact.telegram_user_id)))
 
 
 def _chunked(
