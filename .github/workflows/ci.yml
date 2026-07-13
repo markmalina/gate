@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && python -m pip install ".[dev]"
+        run: python -m pip install --upgrade pip && python -m pip install ".[dev,contact-sync]"
       - name: Ruff
         run: ruff check .
       - name: Mypy
@@ -46,3 +46,5 @@ jobs:
         run: alembic downgrade base
       - name: Docker build
         run: docker build -t gate:ci .
+      - name: Contact sync Docker build
+        run: docker build -f Dockerfile.contact-sync -t gate-contact-sync:ci .
