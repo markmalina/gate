@@ -6,6 +6,13 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.core.config import Settings
+from app.models.domain import (
+    DEFAULT_PROJECT_ID,
+    TELEGRAM_MARK_BY_ACCOUNT_ID,
+    TELEGRAM_MARK_RU_ACCOUNT_ID,
+)
+
 JsonObject = dict[str, Any]
 
 SPRINT18_DRAFT = "app.api.sprint18b_draft_ux_routes:sprint18b_telegram_webhook"
@@ -123,6 +130,134 @@ def observe_telegram_ingress_shadow(
     decision = classify_telegram_ingress(update)
     logger.info("Telegram ingress shadow decision: %s", decision.log_fields())
     return decision
+
+
+
+@dataclass(frozen=True)
+class TelegramIngressRoutingContext:
+    """Redacted routing context derived without database access or side effects."""
+
+    account_alias: str | None
+    account_id: str | None
+    account_resolution: str
+    project_id: str | None
+    event_type: str | None
+    message_id: int | None
+    chat_present: bool
+    sender_present: bool
+    text_present: bool
+    direction_intent: str
+    reply_task_intent: str
+
+    def log_fields(self) -> JsonObject:
+        """Return stable fields that exclude text and Telegram peer identifiers."""
+
+        return asdict(self)
+
+
+def build_telegram_ingress_routing_context(
+    update: JsonObject,
+    *,
+    decision: TelegramIngressDecision,
+    settings: Settings,
+) -> TelegramIngressRoutingContext:
+    """Resolve configured account/project intent without database access."""
+
+    message = _telegram_message(update)
+    business_connection_id = _business_connection_id(update, message=message)
+    account_alias, account_id, account_resolution = _configured_account(
+        business_connection_id,
+        settings=settings,
+        handler=decision.handler,
+    )
+    event_type = decision.event_type
+    text_present = isinstance(message.get("text"), str) and bool(message["text"])
+    is_business_message = (
+        decision.handler == SPRINT14_BUSINESS
+        and event_type in {"message", "business_message"}
+    )
+    if is_business_message:
+        direction_intent = "owner_identity_lookup_required"
+        reply_task_intent = (
+            "create_if_inbound_human_text" if text_present else "none"
+        )
+    else:
+        direction_intent = "not_applicable"
+        reply_task_intent = "none"
+
+    return TelegramIngressRoutingContext(
+        account_alias=account_alias,
+        account_id=str(account_id) if account_id is not None else None,
+        account_resolution=account_resolution,
+        project_id=(
+            str(DEFAULT_PROJECT_ID)
+            if account_id is not None and decision.handler == SPRINT14_BUSINESS
+            else None
+        ),
+        event_type=event_type,
+        message_id=_optional_int(message.get("message_id")),
+        chat_present=isinstance(message.get("chat"), dict),
+        sender_present=isinstance(message.get("from"), dict),
+        text_present=text_present,
+        direction_intent=direction_intent,
+        reply_task_intent=reply_task_intent,
+    )
+
+
+def observe_telegram_ingress_routing_shadow(
+    update: JsonObject,
+    *,
+    decision: TelegramIngressDecision,
+    settings: Settings,
+    logger: logging.Logger,
+) -> TelegramIngressRoutingContext:
+    """Log configured routing parity fields without reads, writes or sends."""
+
+    context = build_telegram_ingress_routing_context(
+        update,
+        decision=decision,
+        settings=settings,
+    )
+    logger.info("Telegram ingress routing shadow: %s", context.log_fields())
+    return context
+
+
+def _telegram_message(update: JsonObject) -> JsonObject:
+    for key in ("business_message", "message"):
+        value = update.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _business_connection_id(
+    update: JsonObject,
+    *,
+    message: JsonObject,
+) -> str | None:
+    value = message.get("business_connection_id")
+    if value is not None:
+        return str(value)
+    connection = update.get("business_connection")
+    if not isinstance(connection, dict):
+        return None
+    value = connection.get("id")
+    return str(value) if value is not None else None
+
+
+def _configured_account(
+    business_connection_id: str | None,
+    *,
+    settings: Settings,
+    handler: str,
+) -> tuple[str | None, Any | None, str]:
+    if not business_connection_id or handler != SPRINT14_BUSINESS:
+        return None, None, "not_applicable"
+    if business_connection_id == settings.gate_account_ru_business_connection_id:
+        return "telegram_mark_ru", TELEGRAM_MARK_RU_ACCOUNT_ID, "configured_connection"
+    if business_connection_id == settings.gate_account_by_business_connection_id:
+        return "telegram_mark_by", TELEGRAM_MARK_BY_ACCOUNT_ID, "configured_connection"
+    return None, None, "database_lookup_required"
 
 
 def _decision(
