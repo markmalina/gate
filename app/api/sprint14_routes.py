@@ -5,11 +5,6 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy import update as sql_update
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api import routes as legacy
 from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
@@ -25,12 +20,18 @@ from app.models.domain import (
     GateEvent,
     Message,
     MessageDirection,
+    Person,
+    PersonIdentity,
     ReplyTask,
     ReplyTaskStatus,
     TelegramBusinessConnection,
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy import update as sql_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -186,6 +187,13 @@ async def sprint14_telegram_webhook(
     message_direction = (
         MessageDirection.OUTBOUND.value if is_outbound else MessageDirection.INBOUND.value
     )
+    counterparty_person_id, counterparty_name = await _upsert_telegram_counterparty(
+        session=session,
+        account_id=account_id,
+        update=update,
+        is_outbound=is_outbound,
+        fallback_user_id=(normalized.chat_id if is_outbound else normalized.sender_id),
+    )
     gate_event = GateEvent(
         bot_id=bot.id,
         account_id=account_id,
@@ -219,13 +227,18 @@ async def sprint14_telegram_webhook(
         project_id=DEFAULT_PROJECT_ID,
         chat_id=normalized.chat_id,
         business_connection_id=normalized.business_connection_id,
-        title=None,
+        title=counterparty_name,
         happened_at=now,
     )
+    if counterparty_person_id is not None:
+        conversation.person_id = counterparty_person_id
+    if counterparty_name is not None:
+        conversation.title = counterparty_name
     stored_message = Message(
         bot_id=bot.id,
         account_id=account_id,
         project_id=DEFAULT_PROJECT_ID,
+        person_id=counterparty_person_id,
         gate_event_id=gate_event.id,
         direction=message_direction,
         source="telegram",
@@ -448,6 +461,7 @@ async def _send_business_text_reply(
             bot_id=bot_id,
             account_id=account_id,
             project_id=DEFAULT_PROJECT_ID,
+            person_id=conversation.person_id,
             gate_event_id=gate_event_id,
             direction=MessageDirection.OUTBOUND.value,
             source="gate",
@@ -523,6 +537,97 @@ def _is_outbound_business_message(
     owner_identity_ids: frozenset[str],
 ) -> bool:
     return str(sender_id) in owner_identity_ids
+
+
+async def _upsert_telegram_counterparty(
+    *,
+    session: AsyncSession,
+    account_id: Any,
+    update: JsonObject,
+    is_outbound: bool,
+    fallback_user_id: str,
+) -> tuple[Any | None, str | None]:
+    """Persist an account-scoped Telegram identity without overwriting saved names."""
+
+    telegram_message = _telegram_message_payload(update)
+    raw_person = telegram_message.get("chat" if is_outbound else "from")
+    person_data = cast(JsonObject, raw_person) if isinstance(raw_person, dict) else {}
+    platform_user_id = _optional_text(person_data.get("id")) or _optional_text(
+        fallback_user_id
+    )
+    if platform_user_id is None:
+        return None, None
+
+    first_name = _optional_text(person_data.get("first_name"))
+    last_name = _optional_text(person_data.get("last_name"))
+    title = _optional_text(person_data.get("title"))
+    username = _optional_text(person_data.get("username"))
+    profile_name = " ".join(part for part in (first_name, last_name) if part) or title
+
+    result = await session.execute(
+        select(PersonIdentity, Person)
+        .join(Person, PersonIdentity.person_id == Person.id)
+        .where(
+            PersonIdentity.account_id == account_id,
+            PersonIdentity.platform == "telegram",
+            PersonIdentity.platform_user_id == platform_user_id,
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        fallback_name = profile_name or (f"@{username}" if username else platform_user_id)
+        person = Person(display_name=fallback_name)
+        session.add(person)
+        await session.flush()
+        identity = PersonIdentity(
+            person_id=person.id,
+            account_id=account_id,
+            platform="telegram",
+            platform_user_id=platform_user_id,
+            username=username,
+            display_name=profile_name,
+            is_verified=True,
+            metadata_={
+                "name_source": "telegram_profile",
+                "telegram_profile_name": profile_name,
+            },
+        )
+        session.add(identity)
+        return person.id, fallback_name
+
+    identity, person = row
+    metadata = dict(identity.metadata_ or {})
+    saved_name = _optional_text(metadata.get("telegram_contact_name"))
+    manual_name = _optional_text(metadata.get("manual_name"))
+    identity.username = username
+    identity.display_name = profile_name
+    metadata["telegram_profile_name"] = profile_name
+    if saved_name is not None:
+        metadata["name_source"] = "telegram_contact"
+        person.display_name = saved_name
+    elif manual_name is not None:
+        metadata["name_source"] = "manual"
+        person.display_name = manual_name
+    elif profile_name is not None:
+        metadata["name_source"] = "telegram_profile"
+        person.display_name = profile_name
+    identity.metadata_ = metadata
+    return person.id, person.display_name
+
+
+def _telegram_message_payload(update: JsonObject) -> JsonObject:
+    for key in ("business_message", "edited_business_message", "message"):
+        value = update.get(key)
+        if isinstance(value, dict):
+            return cast(JsonObject, value)
+    return {}
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 async def _resolve_account_id(
