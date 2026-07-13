@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import String, and_, case, cast, func, or_, select, union_all
+from sqlalchemy import String, and_, cast, func, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -26,7 +26,12 @@ from app.application.reply_sends import (
 )
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
-from app.core.mcp_security import Principal, bearer_token_matches, build_mcp_read_principal
+from app.core.mcp_security import (
+    AccessScope,
+    Principal,
+    bearer_token_matches,
+    build_mcp_read_principal,
+)
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
@@ -34,8 +39,7 @@ from app.models.domain import (
     Conversation,
     Message,
     MessageDirection,
-    Person,
-    PersonIdentity,
+    Project,
     ReplyDraft,
     ReplyTask,
     ReplyTaskStatus,
@@ -148,6 +152,7 @@ async def mcp_endpoint(
                 authorization=authorization,
                 settings=settings,
                 required_scope=MCP_TOOL_SCOPES[tool_name],
+                session=session,
             )
         except McpOAuthError as exc:
             return _oauth_required_tool_result(
@@ -234,13 +239,28 @@ def _require_mcp_ready(settings: Settings) -> None:
 
 
 async def _require_mcp_principal(
-    *, authorization: str | None, settings: Settings, required_scope: str
+    *,
+    authorization: str | None,
+    settings: Settings,
+    required_scope: str,
+    session: AsyncSession | None = None,
 ) -> Principal:
     if settings.mcp_auth_mode == MCP_AUTH_MODE_OAUTH:
-        return await authenticate_mcp_oauth(
+        principal = await authenticate_mcp_oauth(
             authorization=authorization,
             settings=settings,
             required_scope=required_scope,
+        )
+        if principal.access_scope.is_explicit:
+            return principal
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="MCP workspace access resolver requires a database session",
+            )
+        return await _resolve_workspace_principal(
+            session=session,
+            principal=principal,
         )
     if settings.mcp_auth_mode != MCP_AUTH_MODE_TEMPORARY_BEARER:
         raise HTTPException(status_code=503, detail="Unsupported MCP authentication mode")
@@ -267,6 +287,68 @@ async def _require_mcp_principal(
             detail="MCP bearer token does not grant the required scope",
         )
     return principal
+
+
+async def _resolve_workspace_principal(
+    *,
+    session: AsyncSession,
+    principal: Principal,
+) -> Principal:
+    """Resolve current Gate grants from workspace-owned database records."""
+
+    workspace_id = principal.access_scope.workspace_id
+    account_result = await session.execute(
+        select(Account.id).where(
+            Account.owner == workspace_id,
+            Account.is_active.is_(True),
+            Account.read_enabled.is_(True),
+        )
+    )
+    account_ids = frozenset(account_result.scalars())
+    if not account_ids:
+        raise McpOAuthError(
+            error="insufficient_scope",
+            description="The Gate workspace has no active readable accounts",
+        )
+
+    project_grants = union_all(
+        select(Account.linked_project_id.label("project_id")).where(
+            Account.id.in_(account_ids),
+            Account.linked_project_id.is_not(None),
+        ),
+        select(Message.project_id.label("project_id")).where(
+            Message.account_id.in_(account_ids),
+        ),
+        select(ReplyTask.project_id.label("project_id")).where(
+            ReplyTask.account_id.in_(account_ids),
+        ),
+        select(ReplyDraft.project_id.label("project_id")).where(
+            ReplyDraft.account_id.in_(account_ids),
+        ),
+    ).subquery()
+    project_result = await session.execute(
+        select(Project.id).where(
+            Project.id.in_(select(project_grants.c.project_id)),
+            Project.is_active.is_(True),
+        )
+    )
+    project_ids = frozenset(project_result.scalars())
+    if not project_ids:
+        raise McpOAuthError(
+            error="insufficient_scope",
+            description="The Gate workspace has no active projects",
+        )
+
+    return Principal(
+        subject=principal.subject,
+        auth_method=principal.auth_method,
+        scopes=principal.scopes,
+        access_scope=AccessScope(
+            workspace_id=workspace_id,
+            account_ids=account_ids,
+            project_ids=project_ids,
+        ),
+    )
 
 
 async def _build_gate_status(
@@ -384,6 +466,40 @@ async def _build_unanswered_list(
     accounts = principal.access_scope.account_ids
     projects = principal.access_scope.project_ids
     owner_telegram_ids = _owner_telegram_ids_subquery(accounts)
+    ranked_tasks = (
+        select(
+            ReplyTask.id.label("task_id"),
+            func.row_number()
+            .over(
+                partition_by=ReplyTask.conversation_id,
+                order_by=(ReplyTask.created_at.desc(), ReplyTask.id.desc()),
+            )
+            .label("conversation_rank"),
+            func.count(ReplyTask.id)
+            .over(partition_by=ReplyTask.conversation_id)
+            .label("pending_message_count"),
+        )
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .join(Message, ReplyTask.trigger_message_id == Message.id)
+        .where(
+            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+            ReplyTask.account_id.in_(accounts),
+            ReplyTask.project_id.in_(projects),
+            Conversation.account_id.in_(accounts),
+            Conversation.project_id.in_(projects),
+            Conversation.requires_reply.is_(True),
+            Message.account_id.in_(accounts),
+            Message.project_id.in_(projects),
+            Message.direction == MessageDirection.INBOUND.value,
+            or_(
+                Conversation.last_outbound_at.is_(None),
+                func.coalesce(Message.received_at, Message.created_at)
+                > Conversation.last_outbound_at,
+            ),
+            _non_service_message_filter(),
+        )
+        .subquery()
+    )
     result = await session.execute(
         select(
             ReplyTask,
@@ -391,10 +507,10 @@ async def _build_unanswered_list(
             Message,
             TelegramUpdate,
             Account,
-            PersonIdentity,
-            Person,
+            ranked_tasks.c.pending_message_count,
         )
         .options(undefer(ReplyTask.account_id))
+        .join(ranked_tasks, ranked_tasks.c.task_id == ReplyTask.id)
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .join(Account, Message.account_id == Account.id)
@@ -405,26 +521,7 @@ async def _build_unanswered_list(
                 TelegramUpdate.update_id == Message.telegram_update_id,
             ),
         )
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id == Message.sender_id,
-            ),
-        )
-        .outerjoin(Person, Person.id == PersonIdentity.person_id)
-        .where(
-            ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-            ReplyTask.account_id.in_(accounts),
-            ReplyTask.project_id.in_(projects),
-            Conversation.account_id.in_(accounts),
-            Conversation.project_id.in_(projects),
-            Message.account_id.in_(accounts),
-            Message.project_id.in_(projects),
-            Message.direction == MessageDirection.INBOUND.value,
-            _non_service_message_filter(),
-        )
+        .where(ranked_tasks.c.conversation_rank == 1)
         .order_by(ReplyTask.priority.asc(), ReplyTask.created_at.desc(), ReplyTask.id.desc())
         .limit(limit)
     )
@@ -435,8 +532,7 @@ async def _build_unanswered_list(
             message=message,
             telegram_update=telegram_update,
             account=account,
-            identity=identity,
-            person=person,
+            pending_message_count=pending_message_count,
         )
         for (
             task,
@@ -444,13 +540,12 @@ async def _build_unanswered_list(
             message,
             telegram_update,
             account,
-            identity,
-            person,
+            pending_message_count,
         ) in result.all()
     ]
 
     answered_result = await session.execute(
-        select(Message, TelegramUpdate, Account, PersonIdentity, Person)
+        select(Message, TelegramUpdate, Account)
         .join(Account, Message.account_id == Account.id)
         .outerjoin(
             TelegramUpdate,
@@ -459,16 +554,6 @@ async def _build_unanswered_list(
                 TelegramUpdate.update_id == Message.telegram_update_id,
             ),
         )
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id
-                == func.coalesce(Message.recipient_id, Message.chat_id),
-            ),
-        )
-        .outerjoin(Person, Person.id == PersonIdentity.person_id)
         .where(
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
@@ -487,10 +572,8 @@ async def _build_unanswered_list(
             message=message,
             telegram_update=telegram_update,
             account=account,
-            identity=identity,
-            person=person,
         )
-        for message, telegram_update, account, identity, person in answered_result.all()
+        for message, telegram_update, account in answered_result.all()
     ]
     return {
         "items": items,
@@ -527,15 +610,7 @@ async def _get_reply_context_tool_result(
     limit = _bounded_limit(arguments.get("limit"), default=10, maximum=20)
     scope = principal.access_scope
     task_result = await session.execute(
-        select(
-            ReplyTask,
-            Conversation,
-            Message,
-            TelegramUpdate,
-            Account,
-            PersonIdentity,
-            Person,
-        )
+        select(ReplyTask, Conversation, Message, TelegramUpdate, Account)
         .options(undefer(ReplyTask.account_id))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
@@ -547,15 +622,6 @@ async def _get_reply_context_tool_result(
                 TelegramUpdate.update_id == Message.telegram_update_id,
             ),
         )
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id == Message.sender_id,
-            ),
-        )
-        .outerjoin(Person, Person.id == PersonIdentity.person_id)
         .where(
             ReplyTask.id == task_id,
             ReplyTask.account_id.in_(scope.account_ids),
@@ -573,9 +639,9 @@ async def _get_reply_context_tool_result(
             code="task_not_found",
             message="Reply task not found in the allowed scope",
         )
-    task, conversation, trigger, trigger_update, account, identity, person = row
+    task, conversation, trigger, trigger_update, account = row
     history_result = await session.execute(
-        select(Message, TelegramUpdate, PersonIdentity, Person)
+        select(Message, TelegramUpdate)
         .outerjoin(
             TelegramUpdate,
             and_(
@@ -583,22 +649,6 @@ async def _get_reply_context_tool_result(
                 TelegramUpdate.update_id == Message.telegram_update_id,
             ),
         )
-        .outerjoin(
-            PersonIdentity,
-            and_(
-                PersonIdentity.account_id == Message.account_id,
-                PersonIdentity.platform == "telegram",
-                PersonIdentity.platform_user_id
-                == case(
-                    (
-                        Message.direction == MessageDirection.INBOUND.value,
-                        Message.sender_id,
-                    ),
-                    else_=func.coalesce(Message.recipient_id, Message.chat_id),
-                ),
-            ),
-        )
-        .outerjoin(Person, Person.id == PersonIdentity.person_id)
         .where(
             Message.account_id == conversation.account_id,
             Message.project_id == conversation.project_id,
@@ -633,8 +683,6 @@ async def _get_reply_context_tool_result(
             message=trigger,
             telegram_update=trigger_update,
             fallback_name=getattr(conversation, "title", None),
-            identity=identity,
-            person=person,
         ),
         "messages": [
             {
@@ -643,11 +691,9 @@ async def _get_reply_context_tool_result(
                     message=message,
                     telegram_update=telegram_update,
                     fallback_name=getattr(conversation, "title", None),
-                    identity=message_identity,
-                    person=message_person,
                 ),
             }
-            for message, telegram_update, message_identity, message_person in history_rows
+            for message, telegram_update in history_rows
         ],
         "count": len(history_rows),
         "limit": limit,
@@ -666,7 +712,7 @@ async def _count_unanswered(
     projects: frozenset[UUID],
 ) -> int:
     result = await session.execute(
-        select(func.count(ReplyTask.id))
+        select(func.count(func.distinct(ReplyTask.conversation_id)))
         .join(Conversation, ReplyTask.conversation_id == Conversation.id)
         .join(Message, ReplyTask.trigger_message_id == Message.id)
         .where(
@@ -675,9 +721,15 @@ async def _count_unanswered(
             ReplyTask.project_id.in_(projects),
             Conversation.account_id.in_(accounts),
             Conversation.project_id.in_(projects),
+            Conversation.requires_reply.is_(True),
             Message.account_id.in_(accounts),
             Message.project_id.in_(projects),
             Message.direction == MessageDirection.INBOUND.value,
+            or_(
+                Conversation.last_outbound_at.is_(None),
+                func.coalesce(Message.received_at, Message.created_at)
+                > Conversation.last_outbound_at,
+            ),
             _non_service_message_filter(),
         )
     )
@@ -699,8 +751,7 @@ def _serialize_unanswered_item(
     message: Message,
     telegram_update: TelegramUpdate | None,
     account: Account,
-    identity: PersonIdentity | None,
-    person: Person | None,
+    pending_message_count: int,
 ) -> JsonObject:
     task_id = str(task.id)
     return {
@@ -709,6 +760,7 @@ def _serialize_unanswered_item(
         "status": task.status,
         "priority": task.priority,
         "reason": task.reason,
+        "pending_message_count": int(pending_message_count),
         "account_id": str(task.account_id),
         "project_id": str(task.project_id),
         "account": _serialize_account(account),
@@ -721,8 +773,6 @@ def _serialize_unanswered_item(
             message=message,
             telegram_update=telegram_update,
             fallback_name=getattr(conversation, "title", None),
-            identity=identity,
-            person=person,
         ),
         "message": _serialize_message(message),
         "created_at": _serialize_datetime(task.created_at),
@@ -734,8 +784,6 @@ def _serialize_answered_item(
     message: Message,
     telegram_update: TelegramUpdate | None,
     account: Account,
-    identity: PersonIdentity | None,
-    person: Person | None,
 ) -> JsonObject:
     return {
         "account_id": str(message.account_id),
@@ -744,8 +792,6 @@ def _serialize_answered_item(
         "counterparty": _counterparty(
             message=message,
             telegram_update=telegram_update,
-            identity=identity,
-            person=person,
         ),
         "message": _serialize_message(message),
     }
@@ -812,8 +858,6 @@ def _counterparty(
     message: Message,
     telegram_update: TelegramUpdate | None,
     fallback_name: str | None = None,
-    identity: PersonIdentity | None = None,
-    person: Person | None = None,
 ) -> JsonObject:
     payload = telegram_update.payload if telegram_update is not None else {}
     telegram_message = _telegram_message_payload(payload)
@@ -830,25 +874,9 @@ def _counterparty(
     profile_name = " ".join(
         part for part in (first_name, last_name) if part
     ) or title
-    identity_metadata = identity.metadata_ if identity is not None else {}
-    contact_name = _optional_text(identity_metadata.get("telegram_contact_name"))
-    manual_name = _optional_text(identity_metadata.get("manual_name"))
-    gate_name = (
-        _optional_text(person.display_name) if person is not None else None
-    ) or (_optional_text(identity.display_name) if identity is not None else None)
-    display_name = contact_name or manual_name or gate_name or profile_name or fallback_name
-    if contact_name is not None:
-        name_source = "telegram_contact"
-    elif manual_name is not None:
-        name_source = "manual"
-    elif gate_name is not None:
-        name_source = _optional_text(identity_metadata.get("name_source")) or "gate_identity"
-    elif profile_name is not None:
-        name_source = "telegram_profile"
-    elif fallback_name is not None:
-        name_source = "conversation"
-    else:
-        name_source = "platform_id"
+    snapshot = _counterparty_snapshot(message)
+    saved_name = _optional_text(snapshot.get("display_name"))
+    display_name = saved_name or profile_name or fallback_name
     platform_user_id = _optional_text(profile.get("id")) or (
         message.sender_id
         if message.direction == MessageDirection.INBOUND.value
@@ -861,9 +889,15 @@ def _counterparty(
         "display_name": display_name,
         "username": username,
         "label": label,
-        "name_source": name_source,
     }
 
+
+def _counterparty_snapshot(message: Message) -> JsonObject:
+    payload = getattr(message, "payload", {})
+    if not isinstance(payload, dict):
+        return {}
+    value = payload.get("_gate_counterparty")
+    return value if isinstance(value, dict) else {}
 
 def _telegram_message_payload(payload: Any) -> JsonObject:
     if not isinstance(payload, dict):
@@ -1323,7 +1357,6 @@ def _format_status_text(snapshot: JsonObject) -> str:
     lines.extend(f"- {name}: {value}" for name, value in counts.items())
     return "\n".join(lines)
 
-
 def _format_reply_context_text(context: JsonObject) -> str:
     account = context["account"]
     counterparty = context["counterparty"]
@@ -1346,7 +1379,7 @@ def _format_reply_context_text(context: JsonObject) -> str:
 
 
 def _format_unanswered_text(inbox: JsonObject) -> str:
-    lines = [f"Unanswered inbound Gate tasks: {inbox['count']}"]
+    lines = [f"Unanswered Gate conversations: {inbox['count']}"]
     if not inbox["items"]:
         lines.append("No unanswered inbound messages.")
     for index, item in enumerate(inbox["items"], start=1):
@@ -1356,6 +1389,7 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
                 f"{index}. [{item['account']['label']}] "
                 f"{item['counterparty']['label']}: "
                 f"{item['message']['text_preview'] or '<empty>'}",
+                f"pending messages: {item['pending_message_count']}",
                 f"task: {item['task_ref']}",
                 f"chat: {item['conversation']['chat_id']}",
             ]
