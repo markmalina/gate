@@ -306,6 +306,7 @@ Key merged milestones:
 | #111 | Scoped MCP inbox and reply-context queries extracted from the transport route |
 | #112 | Side-effect-free canonical Telegram ingress classifier, fixture replay and redacted production shadow observations |
 | #113 | Configured account/project routing context and reply-task candidate parity in redacted ingress shadow |
+| #114 | Select-only identity snapshot boundary for database-backed connection, direction and reply-task parity |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -315,7 +316,7 @@ Do not start several tracks in one PR.
 
 ### Immediate infrastructure priority
 
-1. **Canonical ingress shadow identity parity.** After PR #113, resolve database-backed connections and owner/inbound direction in an isolated read model before any cutover.
+1. **Canonical ingress identity replay.** Exercise the PR #114 select-only identity model against production-like fixtures and compare it with legacy decisions before wiring it to live ingress.
 2. **Durable processing.** Persist receipt before acknowledgement, add transactional outbox, worker, bounded retry, DLQ and safe replay.
 3. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
 4. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
