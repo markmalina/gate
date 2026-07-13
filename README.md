@@ -299,6 +299,7 @@ Key merged milestones:
 | #105 | Privacy-bounded per-account contact import observability |
 | #106 | Account-scoped imported-name precedence across MCP reads |
 | #107 | Current imported names supersede stale historical message snapshots |
+| #108 | Explicit bounded output schemas for all five MCP tools, validated against runtime payloads |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
