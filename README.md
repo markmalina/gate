@@ -302,6 +302,7 @@ Key merged milestones:
 | #107 | Current imported names supersede stale historical message snapshots |
 | #108 | Explicit bounded output schemas for all five MCP tools, validated against runtime payloads |
 | #109 | Frozen Telegram ingress registration boundary, characterization guard and canonical cutover plan |
+| #110 | Scoped MCP status application query extracted from the transport route |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -311,12 +312,11 @@ Do not start several tracks in one PR.
 
 ### Immediate infrastructure priority
 
-1. **Freeze the legacy ingress boundary.** Centralize registration, characterize the exact production order and block accidental sprint-router growth (PR #109).
-2. **Shared scoped query services.** Move MCP status, inbox and context reads out of route-local ORM code without changing the published tool contracts.
-3. **Canonical ingress shadow.** Build one dispatcher, replay captured fixtures and compare routing decisions without production writes or sends.
-4. **Durable processing.** Persist receipt before acknowledgement, add transactional outbox, worker, bounded retry, DLQ and safe replay.
-5. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
-6. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
+1. **Shared scoped query services.** Continue with inbox and reply-context reads after the status slice in PR #110, without changing the published tool contracts.
+2. **Canonical ingress shadow.** Build one dispatcher, replay captured fixtures and compare routing decisions without production writes or sends.
+3. **Durable processing.** Persist receipt before acknowledgement, add transactional outbox, worker, bounded retry, DLQ and safe replay.
+4. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
+5. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
 
 ### Mark Oko continuation
 
