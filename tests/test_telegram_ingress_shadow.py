@@ -6,6 +6,8 @@ import pytest
 
 from app.application.telegram_ingress_shadow import (
     BASE_WEBHOOK,
+    classify_telegram_ingress,
+    observe_telegram_ingress_shadow,
     SPRINT10_EDIT,
     SPRINT11_CALLBACK,
     SPRINT14_BUSINESS,
@@ -14,10 +16,8 @@ from app.application.telegram_ingress_shadow import (
     SPRINT16_INBOX,
     SPRINT16_RAW,
     SPRINT17_SEND,
-    SPRINT9_LEGACY_ADMIN,
     SPRINT18_DRAFT,
-    classify_telegram_ingress,
-    observe_telegram_ingress_shadow,
+    SPRINT9_LEGACY_ADMIN,
 )
 
 
