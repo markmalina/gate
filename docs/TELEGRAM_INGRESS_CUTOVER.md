@@ -122,8 +122,12 @@ message-presence fields and a reply-task candidate decision. Unknown connection 
 a future isolated database lookup; owner/inbound direction remains explicitly unresolved rather
 than guessed. Neither shadow stage reads or writes the database.
 
-Database-backed connection, owner-direction and final reply-task parity remain required before
-staged cutover.
+PR #114 adds the isolated SELECT-only identity snapshot boundary. It resolves enabled
+database-backed connections, the account owner identity set, inbound/outbound direction and final
+reply-task intent through an injected reader. It has no webhook integration and no transaction or
+write methods; production-like replay must prove parity before it is attached to live ingress.
+
+Live shadow wiring and stable parity evidence remain required before staged cutover.
 
 ### Phase 3 — durable receipt and worker
 
