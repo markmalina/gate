@@ -308,6 +308,7 @@ def upgrade() -> None:
             SET account_id = conversation.account_id
             FROM conversations AS conversation
             WHERE item.conversation_id = conversation.id
+              AND conversation.account_id IS NOT NULL
               AND item.account_id IS DISTINCT FROM conversation.account_id
             """
         )
