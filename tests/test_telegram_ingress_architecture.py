@@ -1,8 +1,5 @@
 """Characterization guard for the transitional Telegram webhook architecture."""
 
-from fastapi import FastAPI
-from fastapi.routing import APIRoute
-
 from app.api.telegram_ingress import (
     LEGACY_TELEGRAM_INGRESS_ROUTERS,
     LEGACY_TELEGRAM_WEBHOOK_CHAIN,
@@ -10,6 +7,8 @@ from app.api.telegram_ingress import (
     include_legacy_telegram_ingress,
 )
 from app.main import create_app
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
 
 
 def _endpoint_fingerprint(route: APIRoute) -> str:
