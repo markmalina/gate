@@ -205,6 +205,7 @@ class SqlTelegramReplySender:
                 gate_event_id=None,
                 account_id=draft.account_id,
                 project_id=draft.project_id,
+                person_id=trigger.person_id,
                 direction=MessageDirection.OUTBOUND.value,
                 source="gate-approved-draft",
                 event_type="telegram_business_reply",
