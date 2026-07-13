@@ -16,17 +16,8 @@ from app.api.contact_snapshot_routes import router as contact_snapshot_router
 from app.api.mcp_metadata_routes import router as mcp_metadata_router
 from app.api.mcp_routes import router as mcp_router
 from app.api.routes import router
-from app.api.sprint9_routes import router as sprint9_router
-from app.api.sprint10_routes import router as sprint10_router
-from app.api.sprint11b_routes import router as sprint11b_router
 from app.api.sprint12_routes import router as sprint12_router
-from app.api.sprint14_routes import router as sprint14_router
-from app.api.sprint14b_routes import router as sprint14b_router
-from app.api.sprint15b_routes import router as sprint15b_router
-from app.api.sprint16_raw_routes import router as sprint16_raw_router
-from app.api.sprint16d_clean_inbox_routes import router as sprint16d_clean_inbox_router
-from app.api.sprint17_send_draft_routes import router as sprint17_send_draft_router
-from app.api.sprint18b_draft_ux_routes import router as sprint18b_draft_ux_router
+from app.api.telegram_ingress import include_legacy_telegram_ingress
 from app.core.config import get_settings
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 
@@ -149,17 +140,8 @@ def create_app() -> FastAPI:
     app.include_router(contact_snapshot_router)
     app.include_router(mcp_metadata_router)
     app.include_router(mcp_router)
-    app.include_router(sprint18b_draft_ux_router)
-    app.include_router(sprint17_send_draft_router)
-    app.include_router(sprint16d_clean_inbox_router)
-    app.include_router(sprint16_raw_router)
-    app.include_router(sprint15b_router)
-    app.include_router(sprint14b_router)
-    app.include_router(sprint14_router)
+    include_legacy_telegram_ingress(app)
     app.include_router(sprint12_router)
-    app.include_router(sprint11b_router)
-    app.include_router(sprint10_router)
-    app.include_router(sprint9_router)
     app.include_router(router)
     return app
 

@@ -14,6 +14,7 @@ Read next:
 
 - [Team workflow](docs/TEAM_WORKFLOW.md) — authority, PR, CI, merge, deployment and terminology rules;
 - [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md) — target architecture and scale requirements;
+- [Telegram ingress cutover](docs/TELEGRAM_INGRESS_CUTOVER.md) — frozen legacy chain, invariants and canonical migration phases;
 - [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md) — operational and safety rules.
 
 If any older document conflicts with the verified current state in this README, re-check GitHub and production first, then update the documentation in the same substantive PR.
@@ -265,7 +266,7 @@ Core persisted concepts currently include `Account`, `Project`, `TelegramBusines
 
 The MVP works, but the target architecture is not complete.
 
-1. **Sprint router chain.** Multiple incremental Telegram routers remain registered. Replace them with one canonical ingress/application pipeline only after parity tests.
+1. **Sprint router chain.** Registration is centralized and frozen by characterization tests, but the incremental handlers still delegate directly. Replace them with one canonical ingress/application pipeline only after shadow parity.
 2. **Webhook durability.** The target is durable receipt + transactional outbox + worker before acknowledging. Current flow still contains synchronous domain work.
 3. **MCP direct ORM access.** Move MCP reads behind scoped query services/read models.
 4. **Operational exact counts.** Current status performs exact counts; this does not scale to very large history.
@@ -300,6 +301,7 @@ Key merged milestones:
 | #106 | Account-scoped imported-name precedence across MCP reads |
 | #107 | Current imported names supersede stale historical message snapshots |
 | #108 | Explicit bounded output schemas for all five MCP tools, validated against runtime payloads |
+| #109 | Frozen Telegram ingress registration boundary, characterization guard and canonical cutover plan |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -307,25 +309,30 @@ Migration lesson from #88–#92: green CI on a clean database is necessary but i
 
 Do not start several tracks in one PR.
 
-### Immediate product continuation
+### Immediate infrastructure priority
 
-1. **Complete BY Desktop-export rollout.** Export after Telegram's availability delay, run the same verified one-shot import and confirm aggregate evidence in Gate status.
-2. **Measure remaining unmatched identities.** After RU/BY imports, quantify profile-name/numeric fallbacks and use MTProto only if phone-only matching is materially required.
-3. **Dedicated contact-sync authorization.** Replace temporary admin-bearer reuse before any permanent schedule/service is enabled.
-4. **MCP schema compatibility.** Keep descriptor and runtime-output validation in CI, and refresh ChatGPT actions after intentional contract changes.
-5. **Account generalization acceptance test.** Add a third test account without code or Auth0 UUID edits; verify receive → inbox → draft → confirmed send.
+1. **Freeze the legacy ingress boundary.** Centralize registration, characterize the exact production order and block accidental sprint-router growth (PR #109).
+2. **Shared scoped query services.** Move MCP status, inbox and context reads out of route-local ORM code without changing the published tool contracts.
+3. **Canonical ingress shadow.** Build one dispatcher, replay captured fixtures and compare routing decisions without production writes or sends.
+4. **Durable processing.** Persist receipt before acknowledgement, add transactional outbox, worker, bounded retry, DLQ and safe replay.
+5. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
+6. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
 
-### Target architecture continuation
+### Mark Oko continuation
 
-6. Runtime foundation: singleton DB engine, bounded pooled HTTP clients, Unit of Work, liveness/readiness, telemetry.
-7. Canonical ingress: one webhook, durable receipt, outbox, worker, retry/DLQ, safe replay and shadow comparison.
-8. Dynamic account/channel model: remove remaining hard-coded RU/BY paths while preserving human-readable labels.
-9. Workspace/project isolation: explicit grants, account-project bindings, dialog independent of project, time-bounded context segments.
-10. Application services: inbox, routing, context, draft revisions, approvals, sends and audit behind ports.
-11. Adapter cutover: Telegram and MCP use the same application layer; remove sprint routers only after characterization parity.
-12. Scale hardening: projections, keyset pagination, partitions, hot/cold data, backup/restore, load tests and capacity thresholds.
+7. Load a versioned Oko instruction contract from the approved repository boundary.
+8. Activate a new Oko session only when a new person's first human message begins with the approved `Око возрождения` keyword.
+9. Keep agent-managed Oko messages out of Mark's normal unanswered inbox; create a separate task only for explicit human handoff.
+10. Validate the agent in shadow mode before introducing a separate, narrow autonomous-reply permission with rate limits, audit and kill switch.
 
-The next executor should begin with item 1 when the BY export becomes available; until then continue with the next independent code-only item. Prefer the offline Desktop export path; if MTProto fallback is later required, never place session material in chat or Git.
+### Explicitly deferred
+
+- BY Desktop-export/contact rollout and remaining phone-only identity work;
+- permanent contact-sync scheduling/authorization while no recurring sync is enabled;
+- third-account acceptance/generalization;
+- voice/media processing and long-horizon scale hardening.
+
+Preserve OAuth, account/project isolation, explicit confirmation for every human-managed send and backward-compatible MCP schemas throughout.
 
 ## 14. Target architecture and invariants
 
@@ -521,4 +528,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** import and verify BY when Telegram enables its Desktop export, measure remaining unmatched identities, and add dedicated contact-sync authorization before any recurring schedule. Preserve explicit send confirmation and account isolation throughout.
+**Immediate continuation:** complete PR #109, then extract shared scoped query services before building the canonical ingress shadow. BY contact work and third-account support remain explicitly deferred.
