@@ -54,6 +54,9 @@ class FakeScalarResult:
     def scalar_one_or_none(self) -> object | None:
         return self._row
 
+    def one_or_none(self) -> object | None:
+        return self._rows[0] if self._rows else None
+
     def scalar_one(self) -> Any:
         return self._scalar
 
