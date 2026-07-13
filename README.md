@@ -107,6 +107,8 @@ Active tools:
 | `gate_save_reply_draft` | `gate:drafts:write` | Saves proposed text; never approves or sends |
 | `gate_send_approved_reply` | `gate:messages:send` | Sends the exact saved draft only after explicit confirmation of account, recipient and final text |
 
+Every tool advertises a strict JSON `outputSchema`; CI validates the descriptors and representative success/error `structuredContent` against those schemas.
+
 Important UI behavior:
 
 - refresh connector actions after MCP schemas/descriptors change;
@@ -271,7 +273,7 @@ The MVP works, but the target architecture is not complete.
 6. **Project isolation evolution.** The final model needs explicit workspace/project grants, dialog identity independent of project, and time-bounded context binding.
 7. **Legacy routing data.** Production required collision-safe and NULL-safe repair migrations. CI against an empty database did not expose every production-data shape.
 8. **Contact directory rollout.** RU Desktop-export sync and MCP read-time name cutover are complete; BY sync and unmatched phone-only identities remain operational work. MTProto authorization is fallback-only.
-9. **Output schemas.** ChatGPT recommends explicit output schemas for tools; add them without breaking existing MCP clients.
+9. **Schema evolution.** Explicit output schemas are enforced in CI; future response changes must remain backward-compatible or be intentionally versioned.
 10. **Observability.** Add structured redacted metrics for webhook latency, queue lag, duplicate rate, DLQ, send failures/unknown, Telegram 429 and DB pool pressure.
 11. **Scale path.** The billion-message target requires partitioning, hot/cold separation, object storage for raw payload/media, read projections and measured thresholds—not a claim that one Railway database stores everything forever.
 
@@ -309,7 +311,7 @@ Do not start several tracks in one PR.
 1. **Complete BY Desktop-export rollout.** Export after Telegram's availability delay, run the same verified one-shot import and confirm aggregate evidence in Gate status.
 2. **Measure remaining unmatched identities.** After RU/BY imports, quantify profile-name/numeric fallbacks and use MTProto only if phone-only matching is materially required.
 3. **Dedicated contact-sync authorization.** Replace temporary admin-bearer reuse before any permanent schedule/service is enabled.
-4. **MCP output schemas.** Add explicit bounded output schemas and refresh ChatGPT actions.
+4. **MCP schema compatibility.** Keep descriptor and runtime-output validation in CI, and refresh ChatGPT actions after intentional contract changes.
 5. **Account generalization acceptance test.** Add a third test account without code or Auth0 UUID edits; verify receive → inbox → draft → confirmed send.
 
 ### Target architecture continuation
