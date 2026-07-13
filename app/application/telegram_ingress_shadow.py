@@ -249,7 +249,10 @@ def _has_ref(
     prefixes: tuple[str, ...],
     words: tuple[str, ...],
 ) -> bool:
-    if any(text.startswith(prefix) and bool(text.removeprefix(prefix).strip()) for prefix in prefixes):
+    if any(
+        text.startswith(prefix) and bool(text.removeprefix(prefix).strip())
+        for prefix in prefixes
+    ):
         return True
     parts = text.split(maxsplit=1)
     return len(parts) == 2 and parts[0] in words and bool(parts[1].strip())
