@@ -5,10 +5,6 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api import routes as legacy
 from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
@@ -30,6 +26,10 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy import update as sql_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -87,6 +87,51 @@ async def sprint14_telegram_webhook(
             "send_status": "duplicate",
         }
 
+    if normalized.event_type == "business_connection":
+        account_id = await _resolve_business_connection_account_id(
+            session=session,
+            update=update,
+            business_connection_id=normalized.business_connection_id,
+            settings=settings,
+        )
+        received_at = datetime.now(UTC)
+        await _upsert_business_connection(
+            session=session,
+            account_id=account_id,
+            update=update,
+            received_at=received_at,
+        )
+        session.add(
+            TelegramUpdate(
+                bot_id=bot.id,
+                update_id=normalized.update_id,
+                payload=update,
+                processing_status="processed",
+                processed_at=received_at,
+            )
+        )
+        session.add(
+            AuditLog(
+                actor="telegram",
+                action="telegram_business_connection_synchronized",
+                bot_id=bot.id,
+                account_id=account_id,
+                project_id=DEFAULT_PROJECT_ID,
+                metadata_={
+                    "telegram_update_id": normalized.update_id,
+                    "business_connection_id": normalized.business_connection_id,
+                },
+            )
+        )
+        await session.commit()
+        return {
+            "ok": True,
+            "event_type": normalized.event_type,
+            "auto_reply": None,
+            "duplicate": False,
+            "send_status": "connection_synchronized",
+        }
+
     account_id = await _resolve_account_id(
         session=session,
         business_connection_id=normalized.business_connection_id,
@@ -103,21 +148,6 @@ async def sprint14_telegram_webhook(
     message_direction = (
         MessageDirection.OUTBOUND.value if is_outbound else MessageDirection.INBOUND.value
     )
-    if normalized.event_type == "business_connection":
-        account_id = (
-            _account_id_from_configured_connection(
-                normalized.business_connection_id,
-                settings=settings,
-            )
-            or account_id
-        )
-        await _upsert_business_connection(
-            session=session,
-            account_id=account_id,
-            update=update,
-            received_at=datetime.now(UTC),
-        )
-
     gate_event = GateEvent(
         bot_id=bot.id,
         account_id=account_id,
@@ -472,7 +502,8 @@ async def _resolve_account_id(
     if business_connection_id:
         result = await session.execute(
             select(TelegramBusinessConnection).where(
-                TelegramBusinessConnection.business_connection_id == business_connection_id,
+                TelegramBusinessConnection.business_connection_id
+                == business_connection_id,
                 TelegramBusinessConnection.is_enabled.is_(True),
             )
         )
@@ -488,6 +519,51 @@ async def _resolve_account_id(
     )
 
 
+async def _resolve_business_connection_account_id(
+    *,
+    session: AsyncSession,
+    update: JsonObject,
+    business_connection_id: str | None,
+    settings: Settings,
+) -> Any:
+    configured = _account_id_from_configured_connection(
+        business_connection_id,
+        settings=settings,
+    )
+    if configured is not None:
+        return configured
+
+    if business_connection_id:
+        existing_result = await session.execute(
+            select(TelegramBusinessConnection).where(
+                TelegramBusinessConnection.business_connection_id
+                == business_connection_id
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return existing.account_id
+
+    connection = update.get("business_connection")
+    connection_data = cast(JsonObject, connection) if isinstance(connection, dict) else {}
+    user = connection_data.get("user")
+    user_data = cast(JsonObject, user) if isinstance(user, dict) else {}
+    telegram_user_id = legacy._optional_int(user_data.get("id"))
+    if telegram_user_id is not None:
+        account_result = await session.execute(
+            select(Account).where(Account.telegram_user_id == telegram_user_id)
+        )
+        account = account_result.scalar_one_or_none()
+        if account is not None:
+            return account.id
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Unknown Telegram Business owner. Link the Telegram user to a Gate "
+            "account before accepting this connection."
+        ),
+    )
 def _account_id_from_configured_connection(
     business_connection_id: str | None,
     *,
@@ -522,12 +598,24 @@ async def _upsert_business_connection(
     row = result.scalar_one_or_none()
     user = business_connection.get("user")
     user_data = cast(JsonObject, user) if isinstance(user, dict) else {}
-    rights = {
-        key: value
-        for key, value in business_connection.items()
-        if key.startswith("can_") or key.endswith("_right")
-    }
+    raw_rights = business_connection.get("rights")
+    rights = cast(JsonObject, raw_rights) if isinstance(raw_rights, dict) else {}
     is_enabled = bool(business_connection.get("is_enabled", True))
+    if is_enabled:
+        await session.execute(
+            sql_update(TelegramBusinessConnection)
+            .where(
+                TelegramBusinessConnection.account_id == account_id,
+                TelegramBusinessConnection.business_connection_id
+                != business_connection_id,
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+            .values(
+                is_enabled=False,
+                last_error="replaced_by_new_business_connection",
+                last_update_at=received_at,
+            )
+        )
     if row is None:
         row = TelegramBusinessConnection(
             account_id=account_id,
