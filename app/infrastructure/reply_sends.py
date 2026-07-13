@@ -32,7 +32,7 @@ from app.models.domain import (
     SendAttemptStatus,
     TelegramBusinessConnection,
 )
-from app.services.telegram import TelegramClient
+from app.services.telegram import TelegramApiError, TelegramClient
 
 
 class SqlTelegramReplySender:
@@ -423,6 +423,7 @@ class SqlTelegramReplySender:
             idempotent_replay=idempotent_replay,
             provider_message_id=attempt.provider_message_id,
             error_code=attempt.error_code,
+            error_detail=attempt.error_detail,
         )
 
 
@@ -439,10 +440,14 @@ def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bo
 def _delivery_failure(exc: Exception) -> tuple[str, str]:
     if isinstance(exc, httpx.TimeoutException):
         return SendAttemptStatus.UNKNOWN.value, "telegram_timeout"
+    if isinstance(exc, TelegramApiError) and exc.error_code is not None:
+        return SendAttemptStatus.FAILED.value, f"telegram_api_{exc.error_code}"
     return SendAttemptStatus.FAILED.value, "telegram_error"
 
 
 def _safe_error_detail(exc: Exception) -> str:
+    if isinstance(exc, TelegramApiError):
+        return exc.description[:512]
     if isinstance(exc, httpx.HTTPStatusError):
         return f"telegram_http_{exc.response.status_code}"
     if isinstance(exc, httpx.TimeoutException):
