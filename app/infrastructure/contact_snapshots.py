@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any
 
 from sqlalchemy import select
@@ -42,6 +43,42 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                 raise ContactSnapshotError(
                     code="account_not_found",
                     message="Active Gate account not found",
+                )
+
+            revision_sha256 = _revision_sha256(command.revision)
+            snapshot_sha256 = _snapshot_sha256(command)
+            existing_import_result = await self._session.execute(
+                select(AuditLog).where(
+                    AuditLog.account_id == account.id,
+                    AuditLog.action == "telegram_contact_snapshot_imported",
+                    AuditLog.metadata_["revision_sha256"].as_string()
+                    == revision_sha256,
+                )
+            )
+            existing_import = existing_import_result.scalar_one_or_none()
+            if existing_import is not None:
+                existing_snapshot_sha256 = _optional_text(
+                    existing_import.metadata_.get("snapshot_sha256")
+                )
+                if existing_snapshot_sha256 != snapshot_sha256:
+                    raise ContactSnapshotError(
+                        code="revision_conflict",
+                        message=(
+                            "The same contact snapshot revision cannot contain "
+                            "different contact data"
+                        ),
+                    )
+                account_alias = account.alias
+                await self._session.rollback()
+                return ContactSnapshotResult(
+                    account_alias=account_alias,
+                    revision_sha256=revision_sha256,
+                    counts=ContactSnapshotCounts(
+                        received=len(command.contacts),
+                        created=0,
+                        updated=0,
+                        unchanged=len(command.contacts),
+                    ),
                 )
 
             created = 0
@@ -120,7 +157,6 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                 person.display_name = contact.display_name
                 updated += 1
 
-            revision_sha256 = _revision_sha256(command.revision)
             counts = ContactSnapshotCounts(
                 received=len(command.contacts),
                 created=created,
@@ -134,6 +170,7 @@ class SqlContactSnapshotWriter(ContactSnapshotWriter):
                     account_id=account.id,
                     metadata_={
                         "revision_sha256": revision_sha256,
+                        "snapshot_sha256": snapshot_sha256,
                         "received": counts.received,
                         "created": counts.created,
                         "updated": counts.updated,
@@ -169,6 +206,27 @@ def _contact_metadata(
 
 def _revision_sha256(revision: str) -> str:
     return hashlib.sha256(revision.encode("utf-8")).hexdigest()
+
+
+def _snapshot_sha256(command: ImportContactSnapshotCommand) -> str:
+    canonical_contacts = [
+        {
+            "telegram_user_id": contact.telegram_user_id,
+            "display_name": contact.display_name,
+            "username": contact.username,
+        }
+        for contact in sorted(
+            command.contacts,
+            key=lambda item: item.telegram_user_id,
+        )
+    ]
+    payload = json.dumps(
+        canonical_contacts,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _optional_text(value: object) -> str | None:
