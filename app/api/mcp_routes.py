@@ -40,6 +40,7 @@ from app.models.domain import (
     Conversation,
     Message,
     MessageDirection,
+    PersonIdentity,
     Project,
     ReplyDraft,
     ReplyTask,
