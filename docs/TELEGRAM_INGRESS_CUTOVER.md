@@ -152,6 +152,10 @@ PR #118 defines one bounded worker iteration: claim at most one item, process it
 transition it to processed, scheduled retry or hard dead-letter. Only a bounded error code crosses
 the application boundary; no exception detail or message content is exposed.
 
+PR #119 implements the queue boundary with PostgreSQL row locks and `SKIP LOCKED`, exact attempt
+guards and atomic paired receipt/outbox transitions. It has no scheduler or runtime entry point, so
+the durable queue remains inactive until worker composition is explicitly enabled.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
