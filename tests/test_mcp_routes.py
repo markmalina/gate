@@ -163,8 +163,18 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
     )
     session = FakeMcpSession(
         row_result_batches=[
-            [(task, conversation, message, inbound_update, account, 1)],
-            [(outbound_message, outbound_update, account)],
+            [
+                (
+                    task,
+                    conversation,
+                    message,
+                    inbound_update,
+                    account,
+                    1,
+                    "Аня — бухгалтер",
+                )
+            ],
+            [(outbound_message, outbound_update, account, "Аня — бухгалтер")],
         ]
     )
 
@@ -231,8 +241,20 @@ def reply_context() -> Iterator[FakeMcpSession]:
     outbound_update = SimpleNamespace(payload={})
     session = FakeMcpSession(
         row_result_batches=[
-            [(task, conversation, trigger, inbound_update, account)],
-            [(outbound, outbound_update), (trigger, inbound_update)],
+            [
+                (
+                    task,
+                    conversation,
+                    trigger,
+                    inbound_update,
+                    account,
+                    "Аня — бухгалтер",
+                )
+            ],
+            [
+                (outbound, outbound_update, "Аня — бухгалтер"),
+                (trigger, inbound_update, "Аня — бухгалтер"),
+            ],
         ]
     )
 
@@ -266,10 +288,42 @@ def test_counterparty_prefers_gate_identity_snapshot_over_telegram_profile() -> 
     counterparty = _counterparty(
         message=message,
         telegram_update=telegram_update,
+        resolved_contact_name="Евгений из импорта",
     )
 
     assert counterparty["label"] == "Женя — зал"
     assert counterparty["display_name"] == "Женя — зал"
+    assert counterparty["username"] == "profile_username"
+
+
+def test_counterparty_prefers_imported_contact_name_over_telegram_profile() -> None:
+    message = SimpleNamespace(
+        direction="inbound",
+        sender_id="12345",
+        recipient_id=None,
+        chat_id="12345",
+        payload={},
+    )
+    telegram_update = SimpleNamespace(
+        payload={
+            "business_message": {
+                "from": {
+                    "id": 12345,
+                    "first_name": "Anna Profile",
+                    "username": "profile_username",
+                }
+            }
+        }
+    )
+
+    counterparty = _counterparty(
+        message=message,
+        telegram_update=telegram_update,
+        resolved_contact_name="Аня — бухгалтер",
+    )
+
+    assert counterparty["label"] == "Аня — бухгалтер"
+    assert counterparty["display_name"] == "Аня — бухгалтер"
     assert counterparty["username"] == "profile_username"
 
 
@@ -426,15 +480,15 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     assert item["counterparty"] == {
         "platform": "telegram",
         "platform_user_id": "12345",
-        "display_name": "Анна",
+        "display_name": "Аня — бухгалтер",
         "username": "anna_example",
-        "label": "Анна",
+        "label": "Аня — бухгалтер",
     }
     assert result["structuredContent"]["answered_count"] == 1
     answered = result["structuredContent"]["answered_items"][0]
     assert answered["message"]["direction"] == "outbound"
     assert answered["message"]["text_preview"] == "Анна, привет!"
-    assert answered["counterparty"]["label"] == "Анна"
+    assert answered["counterparty"]["label"] == "Аня — бухгалтер"
     assert answered["account"]["label"] == "RU"
     unanswered_statement = str(unanswered_context.statements[0])
     answered_statement = str(unanswered_context.statements[1])
@@ -445,6 +499,8 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     assert "messages.direction" in unanswered_statement
     assert "messages.direction" in answered_statement
     assert "messages.source IN" in answered_statement
+    assert "person_identities.account_id = messages.account_id" in unanswered_statement
+    assert "person_identities.account_id = messages.account_id" in answered_statement
 
 
 @pytest.mark.anyio
@@ -469,7 +525,10 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
     result = response.json()["result"]
     structured = result["structuredContent"]
     assert structured["account"]["label"] == "RU"
-    assert structured["counterparty"]["label"] == "Анна"
+    assert structured["counterparty"]["label"] == "Аня — бухгалтер"
+    assert {
+        item["counterparty"]["label"] for item in structured["messages"]
+    } == {"Аня — бухгалтер"}
     assert [item["direction"] for item in structured["messages"]] == [
         "inbound",
         "outbound",
