@@ -1,5 +1,6 @@
 """Characterization guard for the transitional Telegram webhook architecture."""
 
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from app.api.telegram_ingress import (
@@ -9,6 +10,15 @@ from app.api.telegram_ingress import (
 )
 from app.main import create_app
 from fastapi import FastAPI
+
+
+def _flatten_routes(routes: Iterable[Any]) -> Iterator[Any]:
+    for route in routes:
+        original_router = getattr(route, "original_router", None)
+        if original_router is not None:
+            yield from _flatten_routes(original_router.routes)
+        else:
+            yield route
 
 
 def _original_endpoint(route: Any) -> Any:
@@ -31,7 +41,7 @@ def _endpoint_fingerprint(route: Any) -> str:
 def _registered_webhook_chain(app: FastAPI) -> tuple[str, ...]:
     return tuple(
         _endpoint_fingerprint(route)
-        for route in app.routes
+        for route in _flatten_routes(app.routes)
         if _is_webhook_layer(route)
     )
 
