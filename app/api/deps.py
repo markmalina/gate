@@ -2,8 +2,9 @@
 
 from collections.abc import AsyncIterator
 
-from app.core.config import Settings, get_settings
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.core.config import Settings, get_settings
 
 
 def get_database_url(settings: Settings | None = None) -> str:
@@ -28,4 +29,3 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
     sessionmaker = build_sessionmaker(get_database_url())
     async with sessionmaker() as session:
         yield session
-
