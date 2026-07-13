@@ -5,14 +5,13 @@ from typing import Any
 from app.api.telegram_ingress import (
     LEGACY_TELEGRAM_INGRESS_ROUTERS,
     LEGACY_TELEGRAM_WEBHOOK_CHAIN,
-    TELEGRAM_WEBHOOK_PATH,
     include_legacy_telegram_ingress,
 )
 from app.main import create_app
 from fastapi import FastAPI
 
 
-def _is_webhook_post(route: Any) -> bool:
+def _is_webhook_layer(route: Any) -> bool:
     endpoint = getattr(route, "endpoint", None)
     endpoint_name = getattr(endpoint, "__name__", "")
     return endpoint_name == "telegram_webhook" or endpoint_name.endswith(
@@ -29,7 +28,7 @@ def _registered_webhook_chain(app: FastAPI) -> tuple[str, ...]:
     return tuple(
         _endpoint_fingerprint(route)
         for route in app.routes
-        if _is_webhook_post(route)
+        if _is_webhook_layer(route)
     )
 
 
@@ -40,7 +39,7 @@ def test_production_webhook_chain_matches_the_frozen_characterization() -> None:
 def test_every_transitional_router_owns_exactly_one_webhook_layer() -> None:
     fingerprints = []
     for router in LEGACY_TELEGRAM_INGRESS_ROUTERS:
-        webhook_routes = [route for route in router.routes if _is_webhook_post(route)]
+        webhook_routes = [route for route in router.routes if _is_webhook_layer(route)]
         assert len(webhook_routes) == 1
         fingerprints.append(_endpoint_fingerprint(webhook_routes[0]))
 
