@@ -18,7 +18,7 @@ def anyio_backend() -> str:
 
 
 def test_application_registers_liveness_and_readiness_routes() -> None:
-    paths = {getattr(route, "path", None) for route in main_module.create_app().routes}
+    paths = set(main_module.create_app().openapi()["paths"])
 
     assert {"/health", "/live", "/ready"} <= paths
 
