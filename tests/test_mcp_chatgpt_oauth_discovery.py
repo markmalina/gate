@@ -14,7 +14,6 @@ from app.core.mcp_security import AccessScope, Principal
 from app.main import app
 
 
-
 class UnexpectedTelegramClient:
     """Fail if a read-only MCP test reaches the Telegram provider."""
 

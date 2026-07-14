@@ -28,7 +28,6 @@ def _assert_valid_output(tool_name: str, payload: dict[str, Any]) -> None:
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(payload)
 
 
-
 class UnexpectedTelegramClient:
     """Fail if a read-only MCP test reaches the Telegram provider."""
 
