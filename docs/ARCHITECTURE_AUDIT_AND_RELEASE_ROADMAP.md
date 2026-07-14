@@ -626,7 +626,8 @@ Definition of done:
 
 ## 12. First implementation order
 
-The first code PR after this roadmap is the lifespan-owned database engine/session factory and
-readiness contract. It is small, production-relevant and independent of the future agent model.
-Then Sprint 1 proceeds in the order listed above. No agent runtime or new Telegram credential is
-activated before the canonical durability and ownership gates are green.
+The first code PR after this roadmap is the lifespan-owned database engine/session factory. The
+next adds liveness plus database/migration readiness and makes readiness the Railway deployment
+gate. Splitting resource ownership from health semantics keeps both changes small and independently
+reversible. Then Sprint 1 proceeds in the order listed above. No agent runtime or new Telegram
+credential is activated before the canonical durability and ownership gates are green.
