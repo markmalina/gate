@@ -522,6 +522,8 @@ async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() ->
             )
             for draft_id in draft_ids
         ]
+        outcomes: list[ReplySendResult | BaseException] = []
+        pending_after_release: set[asyncio.Task[ReplySendResult]] = set()
 
         try:
             await asyncio.wait_for(telegram.all_probes_started.wait(), timeout=5)
@@ -549,8 +551,17 @@ async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() ->
         finally:
             telegram.release_probes.set()
             telegram.release_send.set()
+            _completed_after_release, pending_after_release = await asyncio.wait(
+                sends,
+                timeout=5,
+            )
+            for pending_send in pending_after_release:
+                pending_send.cancel()
+            outcomes = await asyncio.gather(*sends, return_exceptions=True)
 
-        outcomes = await asyncio.gather(*sends, return_exceptions=True)
+        assert not pending_after_release, (
+            "concurrent reply sends did not stop after provider gates were released"
+        )
         successes = [outcome for outcome in outcomes if isinstance(outcome, ReplySendResult)]
         failures = [outcome for outcome in outcomes if isinstance(outcome, ReplySendError)]
 
@@ -705,15 +716,20 @@ async def test_reservation_replay_does_not_wait_on_outcome_attempt_lock() -> Non
                 )
                 assert outcome_session.in_transaction() is True
 
-                # Outcome's attempt -> context order can now complete as well.
-                await outcome_session.execute(
-                    select(ReplyDraft.id)
-                    .where(ReplyDraft.id == seed.draft_ids[0])
-                    .with_for_update()
-                )
+                # Outcome's shared suffix is conversation -> tasks -> draft.
+                # Reservation never locks the attempt, so attempt -> conversation
+                # cannot form a cycle with a replay waiting at the conversation fence.
                 await outcome_session.execute(
                     select(Conversation.id)
                     .where(Conversation.id == seed.conversation_id)
+                    .with_for_update()
+                )
+                await outcome_session.execute(
+                    select(ReplyTask.id).where(ReplyTask.id == seed.task_id).with_for_update()
+                )
+                await outcome_session.execute(
+                    select(ReplyDraft.id)
+                    .where(ReplyDraft.id == seed.draft_ids[0])
                     .with_for_update()
                 )
                 locked_attempt.status = SendAttemptStatus.SENT.value
@@ -1189,16 +1205,16 @@ async def _dismiss_task_and_close_conversation(
 ) -> None:
     async with sessions() as session:
         await session.execute(text("SET LOCAL lock_timeout = '750ms'"))
-        task = (
-            await session.execute(
-                select(ReplyTask).where(ReplyTask.id == seed.task_id).with_for_update()
-            )
-        ).scalar_one()
         conversation = (
             await session.execute(
                 select(Conversation)
                 .where(Conversation.id == seed.conversation_id)
                 .with_for_update()
+            )
+        ).scalar_one()
+        task = (
+            await session.execute(
+                select(ReplyTask).where(ReplyTask.id == seed.task_id).with_for_update()
             )
         ).scalar_one()
         task.status = ReplyTaskStatus.DISMISSED.value

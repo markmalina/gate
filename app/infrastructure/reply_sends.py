@@ -79,10 +79,7 @@ class _SendContextSnapshot:
 
     @property
     def origin_connection_id(self) -> str | None:
-        return (
-            self.conversation_business_connection_id
-            or self.trigger_business_connection_id
-        )
+        return self.conversation_business_connection_id or self.trigger_business_connection_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,9 +176,7 @@ class SqlTelegramReplySender:
             if telegram_result.get("ok") is not True:
                 raise RuntimeError("Telegram API did not confirm delivery")
             if _provider_message_id(telegram_result) is None:
-                raise RuntimeError(
-                    "Telegram API did not return a confirmed message id"
-                )
+                raise RuntimeError("Telegram API did not return a confirmed message id")
         except Exception as exc:
             status, error_code = _delivery_failure(exc)
             return await self._finalize_failure(
@@ -232,9 +227,7 @@ class SqlTelegramReplySender:
                 if not origin_id:
                     raise ReplySendError(
                         code="origin_connection_missing",
-                        message=(
-                            "The originating Telegram Business connection is missing"
-                        ),
+                        message=("The originating Telegram Business connection is missing"),
                     )
                 candidates = await self._load_connection_candidates(
                     command=command,
@@ -316,9 +309,7 @@ class SqlTelegramReplySender:
         if validation_unavailable:
             raise ReplySendError(
                 code="business_connection_validation_unavailable",
-                message=(
-                    "Telegram Business connection validation is temporarily unavailable"
-                ),
+                message=("Telegram Business connection validation is temporarily unavailable"),
             )
         raise ReplySendError(
             code="business_connection_unavailable",
@@ -341,16 +332,24 @@ class SqlTelegramReplySender:
         replay: ReplySendResult | None = None
         try:
             async with self._session.begin():
-                current = await self._load_context_snapshot(command, for_update=True)
-                self._validate_confirmation(
+                await self._lock_reservation_conversation(
                     command=command,
-                    account_label_value=current.account_label,
-                    target_chat_id=current.target_chat_id,
+                    conversation_id=intent.context.conversation_id,
                 )
-                existing = await self._load_attempt_model(
-                    draft_id=current.draft_id
-                )
+                existing = await self._load_attempt_model(draft_id=intent.context.draft_id)
                 if existing is not None:
+                    # Outcome owns the global attempt -> context lock order.  Once an
+                    # attempt exists, keep this replay path read-only below the
+                    # conversation fence so it cannot invert that order.
+                    current = await self._load_context_snapshot(
+                        command,
+                        for_update=False,
+                    )
+                    self._validate_confirmation(
+                        command=command,
+                        account_label_value=current.account_label,
+                        target_chat_id=current.target_chat_id,
+                    )
                     self._validate_attempt_binding(existing, current)
                     replay = self._attempt_result(
                         attempt=_snapshot_attempt(existing),
@@ -359,9 +358,21 @@ class SqlTelegramReplySender:
                     )
                 else:
                     await self._raise_if_task_send_blocked(
-                        conversation_id=current.conversation_id,
-                        task_id=current.task_id,
-                        draft_id=current.draft_id,
+                        conversation_id=intent.context.conversation_id,
+                        task_id=intent.context.task_id,
+                        draft_id=intent.context.draft_id,
+                    )
+                    # No active attempt exists in the conversation.  It is now safe
+                    # to lock the remaining context rows while retaining the
+                    # conversation-first reservation order.
+                    current = await self._load_context_snapshot(
+                        command,
+                        for_update=True,
+                    )
+                    self._validate_confirmation(
+                        command=command,
+                        account_label_value=current.account_label,
+                        target_chat_id=current.target_chat_id,
                     )
                     if _send_fingerprint(current) != _send_fingerprint(intent.context):
                         raise ReplySendError(
@@ -414,8 +425,7 @@ class SqlTelegramReplySender:
             raise ReplySendError(
                 code="send_context_changed",
                 message=(
-                    "Telegram connection state changed during validation; "
-                    "review and confirm again"
+                    "Telegram connection state changed during validation; review and confirm again"
                 ),
             )
         if (
@@ -441,8 +451,7 @@ class SqlTelegramReplySender:
             raise ReplySendError(
                 code="send_context_changed",
                 message=(
-                    "Unanswered tasks changed during validation; "
-                    "review and confirm the draft again"
+                    "Unanswered tasks changed during validation; review and confirm the draft again"
                 ),
             )
         if current.task_id not in covered_task_ids:
@@ -479,9 +488,7 @@ class SqlTelegramReplySender:
                     "attempt_id": str(attempt.id),
                     "draft_id": str(current.draft_id),
                     "task_id": str(current.task_id),
-                    "covered_task_ids": [
-                        str(task_id) for task_id in covered_task_ids
-                    ],
+                    "covered_task_ids": [str(task_id) for task_id in covered_task_ids],
                     "account_label": current.account_label,
                     "target_chat_id": current.target_chat_id,
                     "business_connection_id": probe.business_connection_id,
@@ -502,10 +509,13 @@ class SqlTelegramReplySender:
         cause: IntegrityError,
     ) -> ReplySendResult:
         async with self._session.begin():
-            context = await self._load_context_snapshot(command, for_update=True)
-            concurrent = await self._load_attempt_model(
-                draft_id=context.draft_id
+            context = await self._load_context_snapshot(command, for_update=False)
+            await self._lock_reservation_conversation(
+                command=command,
+                conversation_id=context.conversation_id,
             )
+            context = await self._load_context_snapshot(command, for_update=False)
+            concurrent = await self._load_attempt_model(draft_id=context.draft_id)
             if concurrent is None:
                 raise ReplySendError(
                     code="send_reservation_failed",
@@ -559,9 +569,7 @@ class SqlTelegramReplySender:
                         "task_id": str(reservation.context.task_id),
                         "account_label": reservation.context.account_label,
                         "target_chat_id": reservation.context.target_chat_id,
-                        "business_connection_id": (
-                            reservation.business_connection_id
-                        ),
+                        "business_connection_id": (reservation.business_connection_id),
                         "error_code": error_code,
                     },
                 )
@@ -594,18 +602,30 @@ class SqlTelegramReplySender:
                     idempotent_replay=True,
                 )
 
-            draft_result = await self._session.execute(
-                select(ReplyDraft)
-                .where(ReplyDraft.id == reservation.context.draft_id)
-                .with_for_update()
-            )
-            draft = draft_result.scalar_one_or_none()
             conversation_result = await self._session.execute(
                 select(Conversation)
                 .where(Conversation.id == reservation.context.conversation_id)
                 .with_for_update()
             )
             conversation = conversation_result.scalar_one_or_none()
+            if conversation is not None:
+                await self._session.execute(
+                    select(ReplyTask.id)
+                    .where(
+                        ReplyTask.id.in_(reservation.covered_task_ids),
+                        ReplyTask.conversation_id == reservation.context.conversation_id,
+                        ReplyTask.account_id == reservation.context.account_id,
+                        ReplyTask.project_id == reservation.context.project_id,
+                    )
+                    .order_by(ReplyTask.id)
+                    .with_for_update()
+                )
+            draft_result = await self._session.execute(
+                select(ReplyDraft)
+                .where(ReplyDraft.id == reservation.context.draft_id)
+                .with_for_update()
+            )
+            draft = draft_result.scalar_one_or_none()
             if draft is None or conversation is None:
                 raise RuntimeError("Reply send context disappeared after delivery")
 
@@ -627,8 +647,7 @@ class SqlTelegramReplySender:
                 update(ReplyTask)
                 .where(
                     ReplyTask.id.in_(reservation.covered_task_ids),
-                    ReplyTask.conversation_id
-                    == reservation.context.conversation_id,
+                    ReplyTask.conversation_id == reservation.context.conversation_id,
                     ReplyTask.account_id == reservation.context.account_id,
                     ReplyTask.project_id == reservation.context.project_id,
                     ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
@@ -642,8 +661,7 @@ class SqlTelegramReplySender:
             remaining_result = await self._session.execute(
                 select(ReplyTask.id)
                 .where(
-                    ReplyTask.conversation_id
-                    == reservation.context.conversation_id,
+                    ReplyTask.conversation_id == reservation.context.conversation_id,
                     ReplyTask.account_id == reservation.context.account_id,
                     ReplyTask.project_id == reservation.context.project_id,
                     ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
@@ -652,9 +670,7 @@ class SqlTelegramReplySender:
             )
             has_newer_unanswered = remaining_result.scalar_one_or_none() is not None
             conversation_status_before_outcome = conversation.status
-            conversation_requires_reply_before_outcome = (
-                conversation.requires_reply
-            )
+            conversation_requires_reply_before_outcome = conversation.requires_reply
             conversation_terminal_state_preserved = conversation.status in {
                 ConversationStatus.CLOSED.value,
                 ConversationStatus.MUTED.value,
@@ -666,15 +682,9 @@ class SqlTelegramReplySender:
                     else ConversationStatus.REPLIED.value
                 )
                 conversation.requires_reply = has_newer_unanswered
-            if (
-                conversation.last_outbound_at is None
-                or conversation.last_outbound_at < finished_at
-            ):
+            if conversation.last_outbound_at is None or conversation.last_outbound_at < finished_at:
                 conversation.last_outbound_at = finished_at
-            if (
-                conversation.last_message_at is None
-                or conversation.last_message_at < finished_at
-            ):
+            if conversation.last_message_at is None or conversation.last_message_at < finished_at:
                 conversation.last_message_at = finished_at
 
             self._session.add(
@@ -699,9 +709,7 @@ class SqlTelegramReplySender:
                     payload={
                         **telegram_result,
                         "_gate_counterparty": {
-                            "display_name": (
-                                reservation.context.counterparty_display_name
-                            )
+                            "display_name": (reservation.context.counterparty_display_name)
                         },
                     },
                     sent_at=finished_at,
@@ -719,27 +727,20 @@ class SqlTelegramReplySender:
                         "draft_id": str(reservation.context.draft_id),
                         "task_id": str(reservation.context.task_id),
                         "covered_task_ids": [
-                            str(task_id)
-                            for task_id in reservation.covered_task_ids
+                            str(task_id) for task_id in reservation.covered_task_ids
                         ],
                         "newer_unanswered_preserved": has_newer_unanswered,
                         "conversation_terminal_state_preserved": (
                             conversation_terminal_state_preserved
                         ),
-                        "conversation_status_before_outcome": (
-                            conversation_status_before_outcome
-                        ),
+                        "conversation_status_before_outcome": (conversation_status_before_outcome),
                         "conversation_requires_reply_before_outcome": (
                             conversation_requires_reply_before_outcome
                         ),
-                        "draft_changed_after_reservation": (
-                            draft_changed_after_reservation
-                        ),
+                        "draft_changed_after_reservation": (draft_changed_after_reservation),
                         "account_label": reservation.context.account_label,
                         "target_chat_id": reservation.context.target_chat_id,
-                        "business_connection_id": (
-                            reservation.business_connection_id
-                        ),
+                        "business_connection_id": (reservation.business_connection_id),
                         "provider_message_id": provider_message_id,
                     },
                 )
@@ -775,9 +776,7 @@ class SqlTelegramReplySender:
             task_id=task.id,
             task_status=task.status,
             conversation_id=conversation.id,
-            conversation_business_connection_id=(
-                conversation.business_connection_id
-            ),
+            conversation_business_connection_id=(conversation.business_connection_id),
             conversation_last_inbound_at=conversation.last_inbound_at,
             trigger_message_id=trigger.id,
             trigger_business_connection_id=trigger.business_connection_id,
@@ -821,7 +820,7 @@ class SqlTelegramReplySender:
             )
         )
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update(of=(ReplyDraft, ReplyTask, Message, Account))
         result = await self._session.execute(statement)
         row = result.one_or_none()
         if row is None:
@@ -831,6 +830,30 @@ class SqlTelegramReplySender:
             )
         draft, task, conversation, trigger, account = row
         return draft, task, conversation, trigger, account
+
+    async def _lock_reservation_conversation(
+        self,
+        *,
+        command: SendApprovedReplyCommand,
+        conversation_id: UUID,
+    ) -> None:
+        """Serialize reservations before any task or draft row can be locked."""
+
+        scope = command.principal.access_scope
+        locked_id = await self._session.scalar(
+            select(Conversation.id)
+            .where(
+                Conversation.id == conversation_id,
+                Conversation.account_id.in_(scope.account_ids),
+                Conversation.project_id.in_(scope.project_ids),
+            )
+            .with_for_update()
+        )
+        if locked_id is None:
+            raise ReplySendError(
+                code="draft_not_found",
+                message="Reply draft not found in the allowed scope",
+            )
 
     async def _load_connection_candidates(
         self,
@@ -851,8 +874,7 @@ class SqlTelegramReplySender:
             .order_by(
                 case(
                     (
-                        TelegramBusinessConnection.business_connection_id
-                        == origin_id,
+                        TelegramBusinessConnection.business_connection_id == origin_id,
                         0,
                     ),
                     else_=1,
@@ -898,9 +920,7 @@ class SqlTelegramReplySender:
         unique draft constraint remains the final idempotency guard.
         """
 
-        statement = select(SendAttempt).where(
-            SendAttempt.reply_draft_id == draft_id
-        )
+        statement = select(SendAttempt).where(SendAttempt.reply_draft_id == draft_id)
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
@@ -939,9 +959,7 @@ class SqlTelegramReplySender:
                 or_(
                     and_(
                         SendAttempt.conversation_id == conversation_id,
-                        SendAttempt.status.in_(
-                            _ACTIVE_CONVERSATION_ATTEMPT_STATUSES
-                        ),
+                        SendAttempt.status.in_(_ACTIVE_CONVERSATION_ATTEMPT_STATUSES),
                     ),
                     and_(
                         SendAttempt.reply_task_id == task_id,
@@ -1006,8 +1024,7 @@ class SqlTelegramReplySender:
             .where(
                 TelegramBusinessConnection.account_id == account_id,
                 TelegramBusinessConnection.id == probe.connection_id,
-                TelegramBusinessConnection.business_connection_id
-                == probe.business_connection_id,
+                TelegramBusinessConnection.business_connection_id == probe.business_connection_id,
             )
             .values(
                 is_enabled=True,
@@ -1052,9 +1069,7 @@ class SqlTelegramReplySender:
         if not context.account_is_active or not context.account_send_enabled:
             raise ReplySendError(
                 code="account_send_disabled",
-                message=(
-                    f"Sending is disabled for account {context.account_label}"
-                ),
+                message=(f"Sending is disabled for account {context.account_label}"),
             )
         if not _runtime_send_enabled(
             settings=self._settings,
@@ -1062,10 +1077,7 @@ class SqlTelegramReplySender:
         ):
             raise ReplySendError(
                 code="runtime_send_disabled",
-                message=(
-                    f"Runtime sending is disabled for account "
-                    f"{context.account_label}"
-                ),
+                message=(f"Runtime sending is disabled for account {context.account_label}"),
             )
 
     def _validate_attempt_binding(
@@ -1084,9 +1096,7 @@ class SqlTelegramReplySender:
         ):
             raise ReplySendError(
                 code="send_attempt_binding_mismatch",
-                message=(
-                    "Stored send attempt does not match the confirmed scoped context"
-                ),
+                message=("Stored send attempt does not match the confirmed scoped context"),
             )
 
     def _require_provider_outside_transaction(self) -> None:
@@ -1160,10 +1170,7 @@ def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
 def _candidate_keys(
     candidates: tuple[_ConnectionCandidate, ...],
 ) -> tuple[tuple[UUID, str], ...]:
-    return tuple(
-        (candidate.id, candidate.business_connection_id)
-        for candidate in candidates
-    )
+    return tuple((candidate.id, candidate.business_connection_id) for candidate in candidates)
 
 
 def _canonical_json_fingerprint(value: Any) -> str:
