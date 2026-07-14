@@ -1,10 +1,10 @@
 # Gate
 
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
-> Verified: **2026-07-13**  
+> Verified: **2026-07-14**  
 > Repository: `markmalina/gate` (private)  
 > Source of truth: GitHub `main`  
-> Verified application commit before this documentation update: `0543a34d961b11a807c06588a1c040befaff8321`  
+> Verified application commit before this documentation update: `e103bc577308a1a341de1d12d3ff37d2601933ee`  
 > Production: Railway, automatic deployment from `main`  
 > Status at handoff: ChatGPT Work MCP MVP is operational; both current Telegram Business accounts are connected and able to reply.
 
@@ -13,6 +13,7 @@ This README is the primary project handoff. A new owner or implementation agent 
 Read next:
 
 - [Team workflow](docs/TEAM_WORKFLOW.md) — authority, PR, CI, merge, deployment and terminology rules;
+- [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) — current technical findings, target boundaries and six sequential product releases;
 - [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md) — target architecture and scale requirements;
 - [Telegram ingress cutover](docs/TELEGRAM_INGRESS_CUTOVER.md) — frozen legacy chain, invariants and canonical migration phases;
 - [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md) — operational and safety rules.
@@ -41,6 +42,8 @@ Telegram communication fact
 
 Current product goal: let Mark see who wrote to him, distinguish unanswered inbound conversations from messages he already sent, get GPT help with a reply, approve the exact result and send it through the correct Telegram Business account.
 
+The next product program preserves that human-controlled path while adding two separately scoped agents: an Alpha bot for explicitly approved Telegram groups and an Oko assistant for eligible RU Telegram Business dialogs. Their release sequence and safety boundaries are defined in the [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md).
+
 ## 2. Product and agent terminology
 
 - **ChatGPT** is the product and user-interface name. Continue to call the interface, plugins/connectors and user-facing features ChatGPT.
@@ -51,13 +54,13 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub and the live Gate M connector on 2026-07-13:
+Verified through GitHub and the live Gate M connector on 2026-07-14:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
 | Open pull requests before this handoff | none |
-| Application commit | `0543a34d961b11a807c06588a1c040befaff8321` |
+| Application commit | `e103bc577308a1a341de1d12d3ff37d2601933ee` |
 | Environment | `production` |
 | Railway service URL | `https://gate-production-bab1.up.railway.app` |
 | Bot username | `gate_m_bot` |
@@ -543,4 +546,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** complete PR #109, then extract shared scoped query services before building the canonical ingress shadow. BY contact work and third-account support remain explicitly deferred.
+**Immediate continuation:** execute Sprint 1 of the [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md), starting with a lifespan-owned database engine/session factory and an honest readiness contract. BY contact work and a third personal account remain deferred. Preserve explicit send confirmation and account isolation throughout.
