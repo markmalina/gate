@@ -72,6 +72,22 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_TELEGRAM_WORKER_ENABLED",
     )
+    gate_reply_send_recovery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_REPLY_SEND_RECOVERY_ENABLED",
+    )
+    gate_reply_send_recovery_stale_seconds: int = Field(
+        default=900,
+        ge=900,
+        le=86_400,
+        validation_alias="GATE_REPLY_SEND_RECOVERY_STALE_SECONDS",
+    )
+    gate_reply_send_recovery_limit: int = Field(
+        default=100,
+        ge=1,
+        le=100,
+        validation_alias="GATE_REPLY_SEND_RECOVERY_LIMIT",
+    )
 
     @property
     def telegram_connectors(self) -> TelegramConnectorRegistry:
