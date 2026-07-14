@@ -268,6 +268,38 @@ CI validates schema, allowed capabilities, size, secret patterns, prompt-injecti
 handoff fixtures and deployment/revision linkage. Activation and rollback always name an immutable
 revision.
 
+The current `markmalina/oko/prompts/gate/oko-intake-v0.md` is draft and requires human approval for
+every outbound intent. It remains valid only for fixtures and approval-bound shadow evaluation. It
+must not be reinterpreted as permission for autonomous delivery. Sprint 5 requires a new separately
+reviewed Oko revision that explicitly emits bounded response intents governed by Gate
+`DeliveryGrant`; the source repository and this deployment must pin the same commit and digest.
+
+### 5.4 Model data boundary
+
+No real personal message may be sent to a model merely because execution is called “shadow”.
+Before real-data evaluation, the selected provider/model profile must be owner-approved and
+allowlisted, with documented no-training use, retention/deletion terms, data location/transfer
+constraints and an egress allowlist. Provider logs and Gate telemetry contain IDs, reason codes,
+latency and token counts, never message text or full prompts.
+
+The runtime receives only a minimized, project/person/session-scoped context projection; it cannot
+query arbitrary history. Context items carry source, sensitivity and retention classes. Deletion
+must remove provider-bound cached material and derived memory according to the same policy.
+Until these controls and user disclosure/consent are released, agent evaluation uses only synthetic
+or explicitly approved anonymized fixtures.
+
+### 5.5 Owner control plane and external release gates
+
+Group approval, instruction promotion, deployment activation, pause, resume and revoke require an
+owner-authenticated Gate principal scoped to the workspace, initially a dedicated
+`gate:agents:manage` control surface. Telegram usernames, group-admin status and commands inside a
+group never grant control-plane authority.
+
+Creating a bot in BotFather, adding it to a real group, provisioning model credentials and changing
+production configuration are external owner actions. Code and tests may be prepared in advance, but
+none of those actions is implied by a merge or automatic Railway deployment; each requires Mark's
+separate direct authorization at the release gate.
+
 ## 6. Product 1 — Alpha group agent
 
 MVP rules:
@@ -275,7 +307,7 @@ MVP rules:
 - separate Telegram bot and token;
 - group/supergroup only, Telegram Privacy Mode retained;
 - unknown group creates at most a `pending_approval` installation and never calls a model;
-- Mark approves the group, agent and exact instruction revision;
+- an owner-authenticated Gate principal approves the group, agent and exact instruction revision;
 - invoke only by command/mention or reply to the bot;
 - text-only, one inbound invocation to at most one reply;
 - no browsing, arbitrary tools, proactive messages, member administration or Gate inbox access;
@@ -306,7 +338,10 @@ Activation requires all conditions:
 - an existing personal history with Mark requires review rather than silently taking ownership.
 
 `/start oko21_*` attribution from PR #122 remains an independent dormant acquisition signal; it is
-not equivalent to the Business-message activation rule.
+not equivalent to the Business-message activation rule. The historical CTA text “Привет, Марк.
+Хочу заниматься Око Возрождения.” and broader variants recognized by the draft Oko prompt also do
+not activate this Business flow. The exact Gate enrollment contract must be published as a new
+versioned Oko instruction revision before release.
 
 Session states:
 
@@ -314,6 +349,12 @@ Session states:
 absent → consent_pending → active → paused/completed
                            └→ handoff_required → human_managed
 ```
+
+The exact enrollment phrase is the user's opt-in request. It creates `consent_pending` and permits
+only one fixed reviewed disclosure. A confirmed delivery of that disclosure moves the session to
+`active`; failed or unknown delivery does not. No second confirmation is required for the MVP.
+Stop, human/Mark and pause commands are deterministic transport policies evaluated before any model
+call in every non-closed state.
 
 The first reply discloses a digital assistant and offers a simple stop/human path. In `active`,
 messages remain Gate facts but do not create human reply tasks. Handoff atomically revokes agent
@@ -351,7 +392,14 @@ tests and shown to the operator.
 
 Per inbound, the two independent budgets are at most one model generation and at most one Telegram
 `sendMessage` attempt. Connection/permission checks may make read-only provider calls, but cannot
-deliver text and do not relax either budget.
+deliver text and do not relax either budget. Model jobs and delivery attempts have independent
+terminal/error state machines; an ambiguous model outcome never grants delivery, and an ambiguous
+Telegram outcome remains terminal `unknown`.
+
+Before the first agent pilot, every legacy direct-send path is either moved behind the common
+delivery ledger or proven unreachable from agent and untrusted input. Physical deletion of
+unreachable legacy code may remain in Sprint 6, but it is never a prerequisite deferred past an
+agent security boundary.
 
 ## 8. Six sequential release sprints
 
@@ -368,8 +416,9 @@ Engineering:
 - finish production-like identity fixture replay for the PR #114 boundary;
 - introduce `Workspace`, connector-neutral `Dialog` identity and explicit `WorkOwnership` contracts;
 - dual-write durable receipt/outbox behind a disabled/canary switch;
-- tighten CI: lock-based installs, schema drift, production-shaped migrations and progressive removal
-  of file-wide mypy/Ruff exemptions;
+- tighten CI: lock-based installs, schema drift, production-shaped migrations, a non-root web
+  image, dependency/secret/container scanning and progressive removal of file-wide mypy/Ruff
+  exemptions;
 - define redacted transport metrics and controlled queue alert composition.
 
 Product increment: Gate can classify a group/private/Business update and produce a durable ownership
@@ -392,7 +441,12 @@ Engineering:
 - add `AgentDefinition`, `InstructionRevision`, `AgentDeployment`, `AgentSession` and `AgentTurn`;
 - add validated deployed instruction bundles and CI evaluations;
 - define `AgentRuntimePort` and structured `reply | handoff | no_reply` output;
-- run agent proposals only in shadow, with no delivery grants.
+- put every agent-reachable outbound path behind the common delivery ledger and prove legacy direct
+  sends unreachable from agent/untrusted input;
+- define retention/deletion classes and provider-egress policy before any real message reaches a
+  model;
+- run agent proposals only on synthetic or explicitly approved anonymized fixtures, with no delivery
+  grants, until the model data gate is approved.
 
 Product increment: an approved Git instruction revision can generate a traceable proposal for a
 fixture or permitted shadow turn, but it cannot send.
@@ -414,7 +468,10 @@ Engineering/product:
 - add installation-scoped context and rate/token budgets;
 - add policy evaluation, one-time `DeliveryGrant` and durable `AgentSendAttempt`;
 - canary one approved instruction revision in one allowlisted test group;
-- expose pause/revoke/status to Mark without giving group users MCP access.
+- expose approval/pause/revoke/status only through the owner-authenticated control plane, without
+  giving group users MCP access;
+- stop at the external release gate before BotFather creation, group installation, model credential
+  provisioning or production activation.
 
 Product increment: Mark can add a separate bot to an approved group and let another person use one
 versioned Alpha agent safely.
@@ -436,8 +493,10 @@ Engineering/product:
 - create one atomic agent handoff task, increment the ownership fence and prevent agent sends while
   handoff is open;
 - serialize turns per dialog and make observed human outbound an immediate human takeover;
-- connect a pinned snapshot of the approved `markmalina/oko` instruction contract;
-- run dynamic proposals in shadow; allow only a fixed reviewed onboarding disclosure initially.
+- connect only a new approved `markmalina/oko` revision that defines the exact enrollment phrase;
+  keep the current approval-bound v0 revision fixture/shadow-only;
+- run dynamic proposals only after the model data gate; allow only a fixed reviewed onboarding
+  disclosure initially.
 
 Product increment: a real eligible person can enter the Oko contour, receive the disclosed first
 step and reach Mark through a reliable handoff without polluting the personal inbox.
@@ -453,6 +512,8 @@ Definition of done:
 
 Engineering/product:
 
+- activate a new separately approved Oko instruction revision whose response intents are explicitly
+  governed by one-time `DeliveryGrant`; never reinterpret the current draft v0;
 - enable bounded structured Oko responses for approved low-risk states;
 - add project/person/session-scoped structured memory with retention metadata;
 - validate current Business connection, target and 24-hour reply window before every reservation;
@@ -478,7 +539,7 @@ Definition of done:
 
 Engineering/product:
 
-- finish removal of unreachable sprint routers and direct Telegram send calls;
+- physically remove sprint routers and direct Telegram send calls already made unreachable before pilot;
 - add SLO dashboards for webhook acceptance, queue lag/DLQ, turns, handoffs, sends/unknown, 429 and
   DB pool pressure;
 - exercise DB restart, duplicate flood, model outage, Telegram timeout and rollback drills;
@@ -500,8 +561,10 @@ Definition of done:
 
 ## 9. Cross-sprint engineering rules
 
-- No application module imports FastAPI or SQLAlchemy.
-- No interface/webhook calls Telegram or a model directly.
+- New canonical application modules import neither FastAPI nor SQLAlchemy; legacy exemptions shrink
+  until Sprint 6 removes them from every active path.
+- New canonical interfaces/webhooks call neither Telegram nor a model directly; legacy calls are
+  first made unreachable from agent/untrusted input and then removed.
 - No new direct call to `TelegramClient.send_message` outside the delivery adapter.
 - No agent can supply its connector, account, dialog or recipient target.
 - Every external write has a durable idempotency key and terminal `unknown` behavior.
@@ -546,7 +609,22 @@ Definition of done:
 - backup/restore and failure drills;
 - redacted audit includes connector, ownership, revision, policy and outcome references.
 
-## 11. First implementation order
+## 11. Audit closure matrix
+
+| Finding | Release gate | Required evidence |
+|---|---|---|
+| Per-request engines and false health | Sprint 1 | one lifespan pool, dispose test, DB/migration readiness |
+| Lost update and legacy router chain | Sprint 1 shadow; Sprint 2 cutover; Sprint 6 deletion | durable acknowledgement, parity, DLQ and one public handler |
+| Missing ownership/tenancy/dialog seam | Sprint 1 contracts; Sprint 2 active path | workspace-scoped writes, dialog identity and versioned ownership |
+| Multiple outbound authorization paths | Sprint 2 before any pilot; Sprint 6 cleanup | common ledger, unreachable direct paths, later physical deletion |
+| Singleton transport configuration | Sprint 1 config; Sprint 3 connector | bot-specific secret/credential isolation |
+| Model data, raw payload and memory retention | Sprint 2 before real-data shadow; Sprint 6 drill | provider gate, minimization, deletion tests and retention drill |
+| Group control-plane authority | Sprint 3 before installation | owner OAuth scope, approval/pause/revoke audit |
+| Opaque MCP references and ORM read separation | Sprint 6 before external control-surface expansion | compatible refs, typed query ports and isolation tests |
+| Non-root image, dependency and CI gaps | Sprint 1 baseline; Sprint 6 enforcement | reproducible image, scans, schema drift and strict active-path typing |
+| Operational evidence and restore | Sprint 1 basic signals; Sprint 6 release gate | readiness/metrics plus dated restore, rollback and incident drills |
+
+## 12. First implementation order
 
 The first code PR after this roadmap is the lifespan-owned database engine/session factory and
 readiness contract. It is small, production-relevant and independent of the future agent model.
