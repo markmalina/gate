@@ -164,6 +164,10 @@ PR #121 adds payload-free queue health aggregates and bounded abandoned-claim re
 claims below the attempt ceiling return to scheduled retry; exhausted or inconsistent claims move
 to hard dead-letter. Neither adapter is mounted in an endpoint, scheduler or worker loop.
 
+PR #123 evaluates those aggregates with stable healthy/warning/critical reason codes and writes one
+payload-free audit record for every bounded recovery transaction. Alert delivery and operator
+acknowledgement remain intentionally uncomposed.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
