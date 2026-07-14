@@ -160,6 +160,10 @@ PR #120 adds a one-shot command that is disabled unless `GATE_TELEGRAM_WORKER_EN
 When explicitly invoked it claims at most one item and runs only the side-effect-free shadow
 classifier; it is not mounted in the web process and has no loop, scheduler or Telegram client.
 
+PR #121 adds payload-free queue health aggregates and bounded abandoned-claim recovery. Stale
+claims below the attempt ceiling return to scheduled retry; exhausted or inconsistent claims move
+to hard dead-letter. Neither adapter is mounted in an endpoint, scheduler or worker loop.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
