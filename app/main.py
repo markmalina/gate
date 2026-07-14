@@ -19,6 +19,7 @@ from app.api.routes import router
 from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_legacy_telegram_ingress
 from app.core.config import get_settings
+from app.infrastructure.database import database_runtime_lifespan
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 
 logger = logging.getLogger(__name__)
@@ -26,18 +27,26 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Run non-blocking production startup reconciliation."""
+    """Own process-scoped resources and reconcile the Telegram webhook."""
 
-    reconciliation_task = asyncio.create_task(
-        reconcile_telegram_webhook_with_retries(get_settings())
-    )
-    try:
-        yield
-    finally:
-        if not reconciliation_task.done():
-            reconciliation_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await reconciliation_task
+    settings = get_settings()
+    async with database_runtime_lifespan(settings.database_url) as database_runtime:
+        _app.state.database_runtime = database_runtime
+        reconciliation_task: asyncio.Task[None] | None = None
+        try:
+            reconciliation_task = asyncio.create_task(
+                reconcile_telegram_webhook_with_retries(settings)
+            )
+            yield
+        finally:
+            try:
+                if reconciliation_task is not None:
+                    if not reconciliation_task.done():
+                        reconciliation_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await reconciliation_task
+            finally:
+                delattr(_app.state, "database_runtime")
 
 
 async def telegram_http_exception_handler(
