@@ -2,15 +2,16 @@
 
 from typing import Literal
 
+from fastapi import APIRouter, Request, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
+
 from app.application.readiness import (
     CheckReadinessService,
     ReadinessComponentStatus,
     ReadinessFailureCode,
     ReadinessResult,
 )
-from fastapi import APIRouter, Request, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
 
 router = APIRouter()
 
