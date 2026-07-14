@@ -1,0 +1,1295 @@
+"""PostgreSQL concurrency guards for explicitly approved reply delivery."""
+
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID, uuid4
+
+import httpx
+import pytest
+from app.application.reply_sends import (
+    ReplySendError,
+    ReplySendResult,
+    SendApprovedReplyCommand,
+)
+from app.core.config import Settings
+from app.core.mcp_security import AccessScope, Principal
+from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.models.domain import (
+    Account,
+    Base,
+    Bot,
+    Conversation,
+    ConversationStatus,
+    Message,
+    MessageDirection,
+    Project,
+    ReplyDraft,
+    ReplyDraftStatus,
+    ReplyTask,
+    ReplyTaskStatus,
+    SendAttempt,
+    SendAttemptStatus,
+    TelegramBusinessConnection,
+)
+from app.services.telegram import TelegramApiError
+from sqlalchemy import event, func, select, text, update
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@dataclass(frozen=True, slots=True)
+class _SeededReply:
+    bot_id: UUID
+    account_id: UUID
+    project_id: UUID
+    conversation_id: UUID
+    trigger_message_id: UUID
+    task_id: UUID
+    draft_ids: tuple[UUID, ...]
+    business_connection_id: str
+    recipient_chat_id: str
+
+
+@asynccontextmanager
+async def _postgres_sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    database_url = Settings(_env_file=None).database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for PostgreSQL reply-send tests")
+
+    schema = f"reply_send_test_{uuid4().hex}"
+    admin_engine = create_async_engine(database_url)
+    async with admin_engine.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+
+    engine = create_async_engine(
+        database_url,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+        async with admin_engine.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        await admin_engine.dispose()
+
+
+async def _seed_reply(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    draft_count: int = 1,
+) -> _SeededReply:
+    now = datetime.now(UTC)
+    bot_id = uuid4()
+    project_id = uuid4()
+    account_id = uuid4()
+    conversation_id = uuid4()
+    trigger_message_id = uuid4()
+    task_id = uuid4()
+    draft_ids = tuple(uuid4() for _ in range(draft_count))
+    connection_id = f"bc-{uuid4().hex}"
+    recipient = "12345"
+
+    async with sessions() as session:
+        session.add_all(
+            [
+                Project(
+                    id=project_id,
+                    alias=f"project-{project_id.hex}",
+                    name=f"Project {project_id.hex}",
+                    adapter_type="telegram",
+                    is_active=True,
+                ),
+                Bot(
+                    id=bot_id,
+                    username=f"gate_test_{bot_id.hex}",
+                    is_active=True,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add(
+            Account(
+                id=account_id,
+                alias=f"telegram_ru_{account_id.hex}",
+                owner="mark-personal",
+                country_code="RU",
+                telegram_user_id=999,
+                account_type="personal",
+                linked_project_id=project_id,
+                permissions={},
+                read_enabled=True,
+                send_enabled=True,
+                is_active=True,
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                Conversation(
+                    id=conversation_id,
+                    bot_id=bot_id,
+                    account_id=account_id,
+                    project_id=project_id,
+                    chat_id=recipient,
+                    business_connection_id=connection_id,
+                    status=ConversationStatus.OPEN.value,
+                    requires_reply=True,
+                    last_message_at=now,
+                    last_inbound_at=now,
+                ),
+                Message(
+                    id=trigger_message_id,
+                    bot_id=bot_id,
+                    account_id=account_id,
+                    project_id=project_id,
+                    direction=MessageDirection.INBOUND.value,
+                    source="telegram",
+                    event_type="business_message",
+                    chat_id=recipient,
+                    sender_id=recipient,
+                    text="Initial inbound message",
+                    business_connection_id=connection_id,
+                    payload={},
+                    received_at=now,
+                ),
+                TelegramBusinessConnection(
+                    id=uuid4(),
+                    account_id=account_id,
+                    business_connection_id=connection_id,
+                    telegram_user_id=999,
+                    user_chat_id=999,
+                    rights={"can_reply": True},
+                    is_enabled=True,
+                    received_at=now,
+                    last_update_at=now,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add(
+            ReplyTask(
+                id=task_id,
+                account_id=account_id,
+                project_id=project_id,
+                conversation_id=conversation_id,
+                trigger_message_id=trigger_message_id,
+                status=ReplyTaskStatus.NEEDS_REPLY.value,
+                priority=100,
+                reason="reply_send_concurrency_test",
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                ReplyDraft(
+                    id=draft_id,
+                    account_id=account_id,
+                    project_id=project_id,
+                    reply_task_id=task_id,
+                    conversation_id=conversation_id,
+                    trigger_message_id=trigger_message_id,
+                    status=ReplyDraftStatus.GENERATED.value,
+                    source="reply_send_concurrency_test",
+                    draft_text=f"Approved draft {index}",
+                    prompt_context={},
+                )
+                for index, draft_id in enumerate(draft_ids, start=1)
+            ]
+        )
+        await session.commit()
+
+    return _SeededReply(
+        bot_id=bot_id,
+        account_id=account_id,
+        project_id=project_id,
+        conversation_id=conversation_id,
+        trigger_message_id=trigger_message_id,
+        task_id=task_id,
+        draft_ids=draft_ids,
+        business_connection_id=connection_id,
+        recipient_chat_id=recipient,
+    )
+
+
+def _command(seed: _SeededReply, draft_id: UUID) -> SendApprovedReplyCommand:
+    return SendApprovedReplyCommand(
+        principal=Principal(
+            subject="reply-send-postgres-test",
+            auth_method="oauth2",
+            scopes=frozenset({"gate:messages:send"}),
+            access_scope=AccessScope(
+                workspace_id="mark-personal",
+                account_ids=frozenset({seed.account_id}),
+                project_ids=frozenset({seed.project_id}),
+            ),
+        ),
+        draft_id=draft_id,
+        confirmed=True,
+        expected_account="RU",
+        expected_recipient_chat_id=seed.recipient_chat_id,
+    )
+
+
+def _settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        GATE_SEND_ENABLED=True,
+        GATE_ACCOUNT_RU_SEND_ENABLED=True,
+    )
+
+
+def _live_connection(business_connection_id: str) -> dict[str, object]:
+    return {
+        "ok": True,
+        "result": {
+            "id": business_connection_id,
+            "is_enabled": True,
+            "rights": {"can_reply": True},
+        },
+    }
+
+
+async def _send_once(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    seed: _SeededReply,
+    draft_id: UUID,
+    telegram: Any,
+) -> ReplySendResult:
+    async with sessions() as session:
+        return await SqlTelegramReplySender(
+            session=session,
+            telegram=telegram,
+            settings=_settings(),
+        ).send(_command(seed, draft_id))
+
+
+class _LockObservingTelegram:
+    def __init__(
+        self,
+        *,
+        sender_session: AsyncSession,
+        sessions: async_sessionmaker[AsyncSession],
+        draft_id: UUID,
+    ) -> None:
+        self._sender_session = sender_session
+        self._sessions = sessions
+        self._draft_id = draft_id
+        self.transaction_states: list[bool] = []
+        self.committed_attempt_ids: list[UUID] = []
+        self.probe_calls = 0
+        self.send_calls = 0
+
+    async def _take_independent_draft_lock(self) -> None:
+        self.transaction_states.append(self._sender_session.in_transaction())
+        async with self._sessions() as observer:
+            await observer.execute(text("SET LOCAL lock_timeout = '750ms'"))
+            await observer.execute(
+                select(ReplyDraft.id).where(ReplyDraft.id == self._draft_id).with_for_update()
+            )
+            await observer.rollback()
+
+    async def _observe_committed_reservation(self) -> None:
+        async with self._sessions() as observer:
+            attempt = (
+                await observer.execute(
+                    select(SendAttempt).where(SendAttempt.reply_draft_id == self._draft_id)
+                )
+            ).scalar_one()
+        assert attempt.status == SendAttemptStatus.SENDING.value
+        self.committed_attempt_ids.append(attempt.id)
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probe_calls += 1
+        await self._take_independent_draft_lock()
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        await self._observe_committed_reservation()
+        await self._take_independent_draft_lock()
+        return {"ok": True, "result": {"message_id": 701}}
+
+
+@pytest.mark.anyio
+async def test_provider_io_runs_without_sender_transaction_or_reply_locks() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        async with sessions() as sender_session:
+            telegram = _LockObservingTelegram(
+                sender_session=sender_session,
+                sessions=sessions,
+                draft_id=seed.draft_ids[0],
+            )
+
+            result = await SqlTelegramReplySender(
+                session=sender_session,
+                telegram=telegram,
+                settings=_settings(),
+            ).send(_command(seed, seed.draft_ids[0]))
+
+        assert result.sent is True
+        assert telegram.probe_calls == 1
+        assert telegram.send_calls == 1
+        assert telegram.transaction_states == [False, False]
+        assert telegram.committed_attempt_ids == [result.attempt_id]
+
+
+class _ConcurrentTelegram:
+    def __init__(self) -> None:
+        self.probe_calls = 0
+        self.send_calls = 0
+        self.all_probes_started = asyncio.Event()
+        self.release_probes = asyncio.Event()
+        self.send_started = asyncio.Event()
+        self.release_send = asyncio.Event()
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probe_calls += 1
+        if self.probe_calls == 2:
+            self.all_probes_started.set()
+        await self.release_probes.wait()
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        self.send_started.set()
+        await self.release_send.wait()
+        return {"ok": True, "result": {"message_id": 702}}
+
+
+@pytest.mark.anyio
+async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_count=2)
+        telegram = _ConcurrentTelegram()
+        sends = [
+            asyncio.create_task(
+                _send_once(
+                    sessions,
+                    seed=seed,
+                    draft_id=draft_id,
+                    telegram=telegram,
+                )
+            )
+            for draft_id in seed.draft_ids
+        ]
+
+        try:
+            await asyncio.wait_for(telegram.all_probes_started.wait(), timeout=5)
+            telegram.release_probes.set()
+            await asyncio.wait_for(telegram.send_started.wait(), timeout=5)
+
+            completed, _pending = await asyncio.wait(
+                sends,
+                timeout=5,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            assert len(completed) == 1
+            blocked_error = next(iter(completed)).exception()
+            assert isinstance(blocked_error, ReplySendError)
+            assert blocked_error.code == "task_send_blocked"
+        finally:
+            telegram.release_probes.set()
+            telegram.release_send.set()
+
+        outcomes = await asyncio.gather(*sends, return_exceptions=True)
+        successes = [outcome for outcome in outcomes if isinstance(outcome, ReplySendResult)]
+        failures = [outcome for outcome in outcomes if isinstance(outcome, ReplySendError)]
+
+        assert len(successes) == 1
+        assert successes[0].sent is True
+        assert successes[0].idempotent_replay is False
+        assert len(failures) == 1
+        assert failures[0].code == "task_send_blocked"
+        assert telegram.probe_calls == 2
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            attempt_count = await session.scalar(select(func.count()).select_from(SendAttempt))
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert attempt_count == 1
+        assert outbound_count == 1
+
+
+class _BlockingProbeTelegram:
+    def __init__(self) -> None:
+        self.probe_started = asyncio.Event()
+        self.release_probe = asyncio.Event()
+        self.send_calls = 0
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probe_started.set()
+        await self.release_probe.wait()
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        return {"ok": True, "result": {"message_id": 703}}
+
+
+@pytest.mark.anyio
+async def test_draft_edit_during_probe_fails_closed_before_reservation() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingProbeTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+
+        try:
+            await asyncio.wait_for(telegram.probe_started.wait(), timeout=5)
+
+            async def edit_draft() -> None:
+                async with sessions() as session:
+                    await session.execute(
+                        update(ReplyDraft)
+                        .where(ReplyDraft.id == seed.draft_ids[0])
+                        .values(
+                            draft_text="Changed while Telegram validation was pending",
+                            status=ReplyDraftStatus.EDITED.value,
+                        )
+                    )
+                    await session.commit()
+
+            await asyncio.wait_for(edit_draft(), timeout=5)
+            telegram.release_probe.set()
+            with pytest.raises(ReplySendError) as exc_info:
+                await asyncio.wait_for(send, timeout=5)
+            assert exc_info.value.code == "send_context_changed"
+        finally:
+            telegram.release_probe.set()
+            if not send.done():
+                send.cancel()
+                with suppress(asyncio.CancelledError, ReplySendError):
+                    await send
+
+        assert telegram.send_calls == 0
+        async with sessions() as session:
+            attempt_count = await session.scalar(select(func.count()).select_from(SendAttempt))
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert attempt_count == 0
+        assert outbound_count == 0
+
+
+class _ReplacementConnectionTelegram:
+    def __init__(self, *, origin_id: str, replacement_id: str) -> None:
+        self._origin_id = origin_id
+        self._replacement_id = replacement_id
+        self.probed_connection_ids: list[str] = []
+        self.sent_business_connection_id: object | None = None
+        self.send_calls = 0
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probed_connection_ids.append(business_connection_id)
+        if business_connection_id == self._origin_id:
+            raise TelegramApiError(
+                error_code=400,
+                description="BUSINESS_CONNECTION_INVALID",
+                http_status=400,
+            )
+        assert business_connection_id == self._replacement_id
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        self.sent_business_connection_id = kwargs.get("business_connection_id")
+        return {"ok": True, "result": {"message_id": 706}}
+
+
+@pytest.mark.anyio
+async def test_stable_same_account_replacement_connection_can_deliver() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        replacement_id = f"bc-replacement-{uuid4().hex}"
+        replacement_row_id = uuid4()
+        now = datetime.now(UTC)
+        async with sessions() as session:
+            session.add(
+                TelegramBusinessConnection(
+                    id=replacement_row_id,
+                    account_id=seed.account_id,
+                    business_connection_id=replacement_id,
+                    telegram_user_id=999,
+                    user_chat_id=999,
+                    rights={"can_reply": True},
+                    is_enabled=False,
+                    received_at=now,
+                    last_update_at=now,
+                )
+            )
+            await session.commit()
+
+        telegram = _ReplacementConnectionTelegram(
+            origin_id=seed.business_connection_id,
+            replacement_id=replacement_id,
+        )
+        result = await asyncio.wait_for(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            ),
+            timeout=5,
+        )
+
+        assert result.sent is True
+        assert result.idempotent_replay is False
+        assert telegram.probed_connection_ids == [
+            seed.business_connection_id,
+            replacement_id,
+        ]
+        assert telegram.send_calls == 1
+        assert telegram.sent_business_connection_id == replacement_id
+
+        async with sessions() as session:
+            connections = (
+                await session.execute(
+                    select(TelegramBusinessConnection).where(
+                        TelegramBusinessConnection.account_id == seed.account_id
+                    )
+                )
+            ).scalars()
+            by_connection_id = {
+                connection.business_connection_id: connection for connection in connections.all()
+            }
+            attempt = (await session.execute(select(SendAttempt))).scalar_one()
+
+        assert by_connection_id[seed.business_connection_id].is_enabled is False
+        assert by_connection_id[replacement_id].is_enabled is True
+        assert attempt.status == SendAttemptStatus.SENT.value
+        assert attempt.business_connection_id == replacement_id
+
+
+async def _rotate_business_connection(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    seed: _SeededReply,
+    replacement_row_id: UUID,
+    replacement_id: str,
+    rotated_at: datetime,
+) -> None:
+    async with sessions() as session:
+        await session.execute(text("SET LOCAL lock_timeout = '750ms'"))
+        original = (
+            await session.execute(
+                select(TelegramBusinessConnection)
+                .where(
+                    TelegramBusinessConnection.account_id == seed.account_id,
+                    TelegramBusinessConnection.business_connection_id
+                    == seed.business_connection_id,
+                )
+                .with_for_update()
+            )
+        ).scalar_one()
+        original.is_enabled = False
+        original.rights = {"can_reply": False, "can_read_messages": True}
+        original.last_error = "rotated_by_operator"
+        original.last_update_at = rotated_at
+        await session.flush()
+        session.add(
+            TelegramBusinessConnection(
+                id=replacement_row_id,
+                account_id=seed.account_id,
+                business_connection_id=replacement_id,
+                telegram_user_id=999,
+                user_chat_id=999,
+                rights={"can_reply": True, "can_read_messages": True},
+                is_enabled=True,
+                received_at=rotated_at,
+                last_update_at=rotated_at,
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_connection_rotation_during_probe_fails_closed_without_overwrite() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingProbeTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+        replacement_row_id = uuid4()
+        replacement_id = f"bc-rotated-{uuid4().hex}"
+        rotated_at = datetime.now(UTC) + timedelta(seconds=1)
+
+        try:
+            await asyncio.wait_for(telegram.probe_started.wait(), timeout=5)
+            await asyncio.wait_for(
+                _rotate_business_connection(
+                    sessions,
+                    seed=seed,
+                    replacement_row_id=replacement_row_id,
+                    replacement_id=replacement_id,
+                    rotated_at=rotated_at,
+                ),
+                timeout=5,
+            )
+            telegram.release_probe.set()
+            with pytest.raises(ReplySendError) as exc_info:
+                await asyncio.wait_for(send, timeout=5)
+            assert exc_info.value.code == "send_context_changed"
+        finally:
+            telegram.release_probe.set()
+            if not send.done():
+                send.cancel()
+                with suppress(asyncio.CancelledError, ReplySendError):
+                    await send
+
+        assert telegram.send_calls == 0
+        async with sessions() as session:
+            original = (
+                await session.execute(
+                    select(TelegramBusinessConnection).where(
+                        TelegramBusinessConnection.business_connection_id
+                        == seed.business_connection_id
+                    )
+                )
+            ).scalar_one()
+            replacement = await session.get(
+                TelegramBusinessConnection,
+                replacement_row_id,
+            )
+            attempt_count = await session.scalar(select(func.count()).select_from(SendAttempt))
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert attempt_count == 0
+        assert outbound_count == 0
+        assert original.is_enabled is False
+        assert original.rights == {
+            "can_reply": False,
+            "can_read_messages": True,
+        }
+        assert original.last_error == "rotated_by_operator"
+        assert original.last_update_at == rotated_at
+        assert replacement is not None
+        assert replacement.is_enabled is True
+        assert replacement.rights == {
+            "can_reply": True,
+            "can_read_messages": True,
+        }
+        assert replacement.last_update_at == rotated_at
+
+
+class _BlockingSendTelegram:
+    def __init__(self) -> None:
+        self.send_started = asyncio.Event()
+        self.release_send = asyncio.Event()
+        self.probe_calls = 0
+        self.send_calls = 0
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probe_calls += 1
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        self.send_started.set()
+        await self.release_send.wait()
+        return {"ok": True, "result": {"message_id": 704}}
+
+
+async def _insert_new_inbound(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    seed: _SeededReply,
+    message_id: UUID,
+    task_id: UUID,
+    received_at: datetime,
+) -> None:
+    async with sessions() as session:
+        await session.execute(text("SET LOCAL lock_timeout = '750ms'"))
+        conversation = (
+            await session.execute(
+                select(Conversation)
+                .where(Conversation.id == seed.conversation_id)
+                .with_for_update()
+            )
+        ).scalar_one()
+        session.add_all(
+            [
+                Message(
+                    id=message_id,
+                    bot_id=seed.bot_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    direction=MessageDirection.INBOUND.value,
+                    source="telegram",
+                    event_type="business_message",
+                    chat_id=seed.recipient_chat_id,
+                    sender_id=seed.recipient_chat_id,
+                    text="A newer inbound message",
+                    business_connection_id=seed.business_connection_id,
+                    payload={},
+                    received_at=received_at,
+                ),
+                ReplyTask(
+                    id=task_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    conversation_id=seed.conversation_id,
+                    trigger_message_id=message_id,
+                    status=ReplyTaskStatus.NEEDS_REPLY.value,
+                    priority=100,
+                    reason="new_inbound_while_send_pending",
+                ),
+            ]
+        )
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = True
+        conversation.last_inbound_at = received_at
+        conversation.last_message_at = received_at
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_new_inbound_during_probe_changes_context_before_reservation() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingProbeTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+        new_message_id = uuid4()
+        new_task_id = uuid4()
+        new_inbound_at = datetime.now(UTC) + timedelta(seconds=1)
+
+        try:
+            await asyncio.wait_for(telegram.probe_started.wait(), timeout=5)
+            await asyncio.wait_for(
+                _insert_new_inbound(
+                    sessions,
+                    seed=seed,
+                    message_id=new_message_id,
+                    task_id=new_task_id,
+                    received_at=new_inbound_at,
+                ),
+                timeout=5,
+            )
+            telegram.release_probe.set()
+            with pytest.raises(ReplySendError) as exc_info:
+                await asyncio.wait_for(send, timeout=5)
+            assert exc_info.value.code == "send_context_changed"
+        finally:
+            telegram.release_probe.set()
+            if not send.done():
+                send.cancel()
+                with suppress(asyncio.CancelledError, ReplySendError):
+                    await send
+
+        assert telegram.send_calls == 0
+        async with sessions() as session:
+            attempt_count = await session.scalar(select(func.count()).select_from(SendAttempt))
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+            remaining_count = await session.scalar(
+                select(func.count())
+                .select_from(ReplyTask)
+                .where(
+                    ReplyTask.conversation_id == seed.conversation_id,
+                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                )
+            )
+            new_task = await session.get(ReplyTask, new_task_id)
+            conversation = await session.get(Conversation, seed.conversation_id)
+
+        assert attempt_count == 0
+        assert outbound_count == 0
+        assert remaining_count == 2
+        assert new_task is not None
+        assert new_task.status == ReplyTaskStatus.NEEDS_REPLY.value
+        assert conversation is not None
+        assert conversation.status == ConversationStatus.OPEN.value
+        assert conversation.requires_reply is True
+        assert conversation.last_inbound_at == new_inbound_at
+        assert conversation.last_message_at == new_inbound_at
+
+
+@pytest.mark.anyio
+async def test_new_inbound_during_blocked_send_remains_unanswered() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingSendTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+        new_message_id = uuid4()
+        new_task_id = uuid4()
+
+        try:
+            await asyncio.wait_for(telegram.send_started.wait(), timeout=5)
+            new_inbound_at = datetime.now(UTC) + timedelta(seconds=1)
+            await asyncio.wait_for(
+                _insert_new_inbound(
+                    sessions,
+                    seed=seed,
+                    message_id=new_message_id,
+                    task_id=new_task_id,
+                    received_at=new_inbound_at,
+                ),
+                timeout=5,
+            )
+
+            telegram.release_send.set()
+            result = await asyncio.wait_for(send, timeout=5)
+        finally:
+            telegram.release_send.set()
+            if not send.done():
+                send.cancel()
+                with suppress(asyncio.CancelledError):
+                    await send
+
+        assert result.sent is True
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            original_task = await session.get(ReplyTask, seed.task_id)
+            new_task = await session.get(ReplyTask, new_task_id)
+            conversation = await session.get(Conversation, seed.conversation_id)
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+            remaining_count = await session.scalar(
+                select(func.count())
+                .select_from(ReplyTask)
+                .where(
+                    ReplyTask.conversation_id == seed.conversation_id,
+                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                )
+            )
+
+        assert original_task is not None
+        assert original_task.status == ReplyTaskStatus.REPLIED.value
+        assert new_task is not None
+        assert new_task.status == ReplyTaskStatus.NEEDS_REPLY.value
+        assert conversation is not None
+        assert conversation.status == ConversationStatus.OPEN.value
+        assert conversation.requires_reply is True
+        assert conversation.last_inbound_at == new_inbound_at
+        assert conversation.last_message_at >= new_inbound_at
+        assert remaining_count == 1
+        assert outbound_count == 1
+
+
+async def _dismiss_task_and_close_conversation(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    seed: _SeededReply,
+    conversation_status: str,
+) -> None:
+    async with sessions() as session:
+        await session.execute(text("SET LOCAL lock_timeout = '750ms'"))
+        task = (
+            await session.execute(
+                select(ReplyTask).where(ReplyTask.id == seed.task_id).with_for_update()
+            )
+        ).scalar_one()
+        conversation = (
+            await session.execute(
+                select(Conversation)
+                .where(Conversation.id == seed.conversation_id)
+                .with_for_update()
+            )
+        ).scalar_one()
+        task.status = ReplyTaskStatus.DISMISSED.value
+        conversation.status = conversation_status
+        conversation.requires_reply = False
+        await session.commit()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "terminal_status",
+    [ConversationStatus.CLOSED.value, ConversationStatus.MUTED.value],
+)
+async def test_human_terminal_state_during_blocked_send_is_preserved(
+    terminal_status: str,
+) -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingSendTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+
+        try:
+            await asyncio.wait_for(telegram.send_started.wait(), timeout=5)
+            await asyncio.wait_for(
+                _dismiss_task_and_close_conversation(
+                    sessions,
+                    seed=seed,
+                    conversation_status=terminal_status,
+                ),
+                timeout=5,
+            )
+            telegram.release_send.set()
+            result = await asyncio.wait_for(send, timeout=5)
+        finally:
+            telegram.release_send.set()
+            if not send.done():
+                send.cancel()
+                with suppress(asyncio.CancelledError):
+                    await send
+
+        assert result.sent is True
+        assert result.status == SendAttemptStatus.SENT.value
+        assert result.idempotent_replay is False
+        assert telegram.probe_calls == 1
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            attempts = (await session.execute(select(SendAttempt))).scalars().all()
+            task = await session.get(ReplyTask, seed.task_id)
+            conversation = await session.get(Conversation, seed.conversation_id)
+            outbound_messages = (
+                (
+                    await session.execute(
+                        select(Message).where(Message.source == "gate-approved-draft")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        assert len(attempts) == 1
+        assert attempts[0].id == result.attempt_id
+        assert attempts[0].status == SendAttemptStatus.SENT.value
+        assert attempts[0].provider_message_id == "704"
+        assert attempts[0].finished_at is not None
+        assert task is not None
+        assert task.status == ReplyTaskStatus.DISMISSED.value
+        assert conversation is not None
+        assert conversation.status == terminal_status
+        assert conversation.requires_reply is False
+        assert conversation.last_outbound_at is not None
+        assert conversation.last_message_at >= conversation.last_outbound_at
+        assert len(outbound_messages) == 1
+        assert outbound_messages[0].sent_at == attempts[0].finished_at
+        assert outbound_messages[0].sent_at == conversation.last_outbound_at
+
+
+class _TimeoutTelegram:
+    def __init__(self) -> None:
+        self.probe_calls = 0
+        self.send_calls = 0
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probe_calls += 1
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        request = httpx.Request("POST", "https://api.telegram.org/sendMessage")
+        raise httpx.ReadTimeout("delivery outcome unknown", request=request)
+
+
+@pytest.mark.anyio
+async def test_timeout_is_unknown_and_exact_retry_replays_without_provider_io() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _TimeoutTelegram()
+
+        first = await _send_once(
+            sessions,
+            seed=seed,
+            draft_id=seed.draft_ids[0],
+            telegram=telegram,
+        )
+        replay = await _send_once(
+            sessions,
+            seed=seed,
+            draft_id=seed.draft_ids[0],
+            telegram=telegram,
+        )
+
+        assert first.status == SendAttemptStatus.UNKNOWN.value
+        assert first.sent is False
+        assert first.idempotent_replay is False
+        assert first.error_code == "telegram_timeout"
+        assert replay.idempotent_replay is True
+        assert replace(replay, idempotent_replay=False) == first
+        assert telegram.probe_calls == 1
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            attempts = (await session.execute(select(SendAttempt))).scalars().all()
+            task = await session.get(ReplyTask, seed.task_id)
+            draft = await session.get(ReplyDraft, seed.draft_ids[0])
+            conversation = await session.get(Conversation, seed.conversation_id)
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert len(attempts) == 1
+        assert attempts[0].id == first.attempt_id
+        assert attempts[0].status == SendAttemptStatus.UNKNOWN.value
+        assert task is not None
+        assert task.status == ReplyTaskStatus.NEEDS_REPLY.value
+        assert draft is not None
+        assert draft.status == ReplyDraftStatus.GENERATED.value
+        assert conversation is not None
+        assert conversation.status == ConversationStatus.OPEN.value
+        assert conversation.requires_reply is True
+        assert outbound_count == 0
+
+
+class _ImmediateTelegram:
+    def __init__(self) -> None:
+        self.probe_calls = 0
+        self.send_calls = 0
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        self.probe_calls += 1
+        return _live_connection(business_connection_id)
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        self.send_calls += 1
+        return {"ok": True, "result": {"message_id": 705}}
+
+
+@pytest.mark.anyio
+async def test_outcome_flush_failure_rolls_back_around_committed_sending_fence() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _ImmediateTelegram()
+
+        def fail_outbound_flush(
+            sync_session: Any,
+            _flush_context: Any,
+            _instances: Any,
+        ) -> None:
+            if any(
+                isinstance(instance, Message) and instance.source == "gate-approved-draft"
+                for instance in sync_session.new
+            ):
+                raise RuntimeError("injected reply outcome flush failure")
+
+        async with sessions() as sender_session:
+            event.listen(sender_session.sync_session, "before_flush", fail_outbound_flush)
+            try:
+                with pytest.raises(
+                    RuntimeError,
+                    match="injected reply outcome flush failure",
+                ):
+                    await SqlTelegramReplySender(
+                        session=sender_session,
+                        telegram=telegram,
+                        settings=_settings(),
+                    ).send(_command(seed, seed.draft_ids[0]))
+            finally:
+                event.remove(
+                    sender_session.sync_session,
+                    "before_flush",
+                    fail_outbound_flush,
+                )
+                await sender_session.rollback()
+
+        async with sessions() as session:
+            committed = (
+                await session.execute(
+                    select(SendAttempt).where(SendAttempt.reply_draft_id == seed.draft_ids[0])
+                )
+            ).scalar_one()
+            committed_attempt_id = committed.id
+            assert committed.status == SendAttemptStatus.SENDING.value
+
+        replay = await _send_once(
+            sessions,
+            seed=seed,
+            draft_id=seed.draft_ids[0],
+            telegram=telegram,
+        )
+
+        assert replay.attempt_id == committed_attempt_id
+        assert replay.status == SendAttemptStatus.SENDING.value
+        assert replay.sent is False
+        assert replay.idempotent_replay is True
+        assert telegram.probe_calls == 1
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            attempts = (await session.execute(select(SendAttempt))).scalars().all()
+            task = await session.get(ReplyTask, seed.task_id)
+            draft = await session.get(ReplyDraft, seed.draft_ids[0])
+            conversation = await session.get(Conversation, seed.conversation_id)
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert len(attempts) == 1
+        assert attempts[0].id == committed_attempt_id
+        assert attempts[0].status == SendAttemptStatus.SENDING.value
+        assert task is not None
+        assert task.status == ReplyTaskStatus.NEEDS_REPLY.value
+        assert draft is not None
+        assert draft.status == ReplyDraftStatus.GENERATED.value
+        assert conversation is not None
+        assert conversation.status == ConversationStatus.OPEN.value
+        assert conversation.requires_reply is True
+        assert outbound_count == 0
+
+
+@pytest.mark.anyio
+async def test_cancelled_post_leaves_committed_sending_fence_for_exact_retry() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingSendTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+
+        await asyncio.wait_for(telegram.send_started.wait(), timeout=5)
+        async with sessions() as observer:
+            committed = (
+                await observer.execute(
+                    select(SendAttempt).where(SendAttempt.reply_draft_id == seed.draft_ids[0])
+                )
+            ).scalar_one()
+            committed_attempt_id = committed.id
+            assert committed.status == SendAttemptStatus.SENDING.value
+
+        send.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await send
+        telegram.release_send.set()
+
+        replay = await asyncio.wait_for(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            ),
+            timeout=5,
+        )
+
+        assert replay.attempt_id == committed_attempt_id
+        assert replay.status == SendAttemptStatus.SENDING.value
+        assert replay.sent is False
+        assert replay.idempotent_replay is True
+        assert replay.provider_message_id is None
+        assert replay.error_code is None
+        assert telegram.probe_calls == 1
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            attempts = (await session.execute(select(SendAttempt))).scalars().all()
+            task = await session.get(ReplyTask, seed.task_id)
+            draft = await session.get(ReplyDraft, seed.draft_ids[0])
+            conversation = await session.get(Conversation, seed.conversation_id)
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert len(attempts) == 1
+        assert attempts[0].id == committed_attempt_id
+        assert attempts[0].status == SendAttemptStatus.SENDING.value
+        assert task is not None
+        assert task.status == ReplyTaskStatus.NEEDS_REPLY.value
+        assert draft is not None
+        assert draft.status == ReplyDraftStatus.GENERATED.value
+        assert conversation is not None
+        assert conversation.status == ConversationStatus.OPEN.value
+        assert conversation.requires_reply is True
+        assert outbound_count == 0

@@ -126,14 +126,14 @@ async def test_send_normalizes_confirmation_before_delivery() -> None:
     assert executor.commands[0].expected_recipient_chat_id == "12345"
 
 
-def test_delivery_timeout_is_unknown_and_other_errors_are_failed() -> None:
+def test_ambiguous_delivery_failures_are_unknown() -> None:
     request = httpx.Request("POST", "https://api.telegram.org/sendMessage")
     timeout = httpx.ReadTimeout("timed out", request=request)
 
     assert _delivery_failure(timeout) == ("unknown", "telegram_timeout")
     assert _delivery_failure(RuntimeError("telegram failed")) == (
-        "failed",
-        "telegram_error",
+        "unknown",
+        "telegram_unconfirmed",
     )
 
 
@@ -146,3 +146,43 @@ def test_telegram_api_error_preserves_sanitized_diagnostics() -> None:
 
     assert _delivery_failure(error) == ("failed", "telegram_api_400")
     assert _safe_error_detail(error) == "Bad Request: business connection not found"
+
+
+def test_telegram_server_error_is_unknown() -> None:
+    error = TelegramApiError(
+        error_code=500,
+        description="Internal Server Error",
+        http_status=500,
+    )
+
+    assert _delivery_failure(error) == ("unknown", "telegram_http_500")
+
+
+def test_ambiguous_http_and_transport_failures_are_unknown() -> None:
+    request = httpx.Request("POST", "https://api.telegram.org/sendMessage")
+    response = httpx.Response(503, request=request)
+    http_error = httpx.HTTPStatusError(
+        "service unavailable",
+        request=request,
+        response=response,
+    )
+    protocol_error = httpx.RemoteProtocolError(
+        "connection closed before a response",
+        request=request,
+    )
+
+    assert _delivery_failure(http_error) == ("unknown", "telegram_http_5xx")
+    assert _delivery_failure(protocol_error) == (
+        "unknown",
+        "telegram_transport_unknown",
+    )
+
+
+def test_authoritative_telegram_rate_limit_is_failed() -> None:
+    error = TelegramApiError(
+        error_code=429,
+        description="Too Many Requests",
+        http_status=429,
+    )
+
+    assert _delivery_failure(error) == ("failed", "telegram_api_429")

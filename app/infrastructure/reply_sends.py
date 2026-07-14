@@ -1,8 +1,11 @@
 """SQLAlchemy and Telegram adapter for explicit idempotent reply delivery."""
 
+import hashlib
+import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import case, select, update
@@ -34,6 +37,110 @@ from app.models.domain import (
 )
 from app.services.telegram import TelegramApiError, TelegramClient
 
+_SENDABLE_DRAFT_STATUSES = frozenset(
+    {
+        ReplyDraftStatus.GENERATED.value,
+        ReplyDraftStatus.EDITED.value,
+    }
+)
+_BLOCKING_TASK_ATTEMPT_STATUSES = (
+    SendAttemptStatus.RESERVED.value,
+    SendAttemptStatus.SENDING.value,
+    SendAttemptStatus.SENT.value,
+    SendAttemptStatus.UNKNOWN.value,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _SendContextSnapshot:
+    """Immutable send intent copied before any provider I/O."""
+
+    draft_id: UUID
+    draft_text: str
+    draft_status: str
+    draft_updated_at: datetime
+    task_id: UUID
+    task_status: str
+    conversation_id: UUID
+    conversation_business_connection_id: str | None
+    conversation_last_inbound_at: datetime | None
+    trigger_message_id: UUID
+    trigger_business_connection_id: str | None
+    target_chat_id: str
+    account_id: UUID
+    project_id: UUID
+    account_alias: str
+    account_label: str
+    account_is_active: bool
+    account_send_enabled: bool
+    bot_id: UUID
+    person_id: UUID | None
+    account_telegram_user_id: int | None
+    counterparty_display_name: str | None
+
+    @property
+    def origin_connection_id(self) -> str | None:
+        return (
+            self.conversation_business_connection_id
+            or self.trigger_business_connection_id
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _ConnectionCandidate:
+    id: UUID
+    account_id: UUID
+    business_connection_id: str
+    telegram_user_id: int | None
+    user_chat_id: int | None
+    rights_fingerprint: str
+    is_enabled: bool
+    received_at: datetime
+    last_update_at: datetime
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _SendIntent:
+    context: _SendContextSnapshot
+    candidates: tuple[_ConnectionCandidate, ...]
+    covered_task_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ConnectionProbe:
+    connection_id: UUID
+    business_connection_id: str
+    rights: tuple[tuple[str, bool], ...]
+
+    def rights_dict(self) -> dict[str, bool]:
+        return dict(self.rights)
+
+
+@dataclass(frozen=True, slots=True)
+class _AttemptSnapshot:
+    id: UUID
+    draft_id: UUID
+    task_id: UUID
+    account_id: UUID
+    project_id: UUID
+    account_label: str
+    target_chat_id: str
+    status: str
+    provider_message_id: str | None
+    error_code: str | None
+    error_detail: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _Reservation:
+    context: _SendContextSnapshot
+    attempt: _AttemptSnapshot
+    business_connection_id: str
+    covered_task_ids: tuple[UUID, ...]
+
 
 class SqlTelegramReplySender:
     """Reserve before Telegram, then persist a bounded delivery outcome."""
@@ -50,51 +157,318 @@ class SqlTelegramReplySender:
         self._settings = settings
 
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
-        draft, task, conversation, trigger, account = await self._load_context(command)
-        label = account_label(alias=account.alias, country_code=account.country_code)
-        target_chat_id = trigger.sender_id
-        self._validate_confirmation(
+        preflight = await self._preflight(command)
+        if isinstance(preflight, ReplySendResult):
+            return preflight
+
+        probe = await self._probe_connection(preflight)
+        reservation = await self._reserve(
             command=command,
-            account_label_value=label,
-            target_chat_id=target_chat_id,
+            intent=preflight,
+            probe=probe,
         )
-        existing = await self._load_attempt(draft.id)
-        if existing is not None:
-            return self._attempt_result(
-                attempt=existing,
-                draft=draft,
-                task=task,
-                account=account,
-                idempotent_replay=True,
+        if isinstance(reservation, ReplySendResult):
+            return reservation
+
+        self._require_provider_outside_transaction()
+        try:
+            telegram_result = await self._telegram.send_message(
+                chat_id=reservation.context.target_chat_id,
+                text=reservation.context.draft_text,
+                business_connection_id=reservation.business_connection_id,
+            )
+            if telegram_result.get("ok") is not True:
+                raise RuntimeError("Telegram API did not confirm delivery")
+            if _provider_message_id(telegram_result) is None:
+                raise RuntimeError(
+                    "Telegram API did not return a confirmed message id"
+                )
+        except Exception as exc:
+            status, error_code = _delivery_failure(exc)
+            return await self._finalize_failure(
+                command=command,
+                reservation=reservation,
+                status=status,
+                error_code=error_code,
+                error_detail=_safe_error_detail(exc),
             )
 
-        connection = await self._load_origin_connection(
+        return await self._finalize_success(
             command=command,
-            draft=draft,
-            conversation=conversation,
-            trigger=trigger,
+            reservation=reservation,
+            telegram_result=telegram_result,
         )
-        self._validate_delivery(
-            draft=draft,
-            task=task,
-            account=account,
-            account_label_value=label,
-            connection=connection,
+
+    async def _preflight(
+        self,
+        command: SendApprovedReplyCommand,
+    ) -> _SendIntent | ReplySendResult:
+        """Read and copy send intent, then end the implicit read transaction."""
+
+        intent: _SendIntent | None = None
+        replay: ReplySendResult | None = None
+        try:
+            context = await self._load_context_snapshot(command, for_update=False)
+            self._validate_confirmation(
+                command=command,
+                account_label_value=context.account_label,
+                target_chat_id=context.target_chat_id,
+            )
+            existing = await self._load_attempt_model(
+                draft_id=context.draft_id,
+                for_update=False,
+            )
+            if existing is not None:
+                self._validate_attempt_binding(existing, context)
+                replay = self._attempt_result(
+                    attempt=_snapshot_attempt(existing),
+                    context=context,
+                    idempotent_replay=True,
+                )
+            else:
+                await self._raise_if_task_send_blocked(
+                    task_id=context.task_id,
+                    draft_id=context.draft_id,
+                    for_update=False,
+                )
+                self._validate_context_delivery(context)
+                origin_id = context.origin_connection_id
+                if not origin_id:
+                    raise ReplySendError(
+                        code="origin_connection_missing",
+                        message=(
+                            "The originating Telegram Business connection is missing"
+                        ),
+                    )
+                candidates = await self._load_connection_candidates(
+                    command=command,
+                    account_id=context.account_id,
+                    origin_id=origin_id,
+                    for_update=False,
+                )
+                covered_task_ids = await self._load_covered_task_ids(
+                    conversation_id=context.conversation_id,
+                    account_id=context.account_id,
+                    project_id=context.project_id,
+                    for_update=False,
+                )
+                intent = _SendIntent(
+                    context=context,
+                    candidates=candidates,
+                    covered_task_ids=covered_task_ids,
+                )
+        finally:
+            if self._session.in_transaction():
+                await self._session.rollback()
+
+        if replay is not None:
+            return replay
+        if intent is None:
+            raise RuntimeError("Reply send preflight did not produce an intent")
+        return intent
+
+    async def _probe_connection(self, intent: _SendIntent) -> _ConnectionProbe:
+        """Validate Telegram connection rights without any database transaction."""
+
+        validation_unavailable = False
+        for candidate in intent.candidates:
+            self._require_provider_outside_transaction()
+            try:
+                live_response = await self._telegram.get_business_connection(
+                    business_connection_id=candidate.business_connection_id
+                )
+            except TelegramApiError as exc:
+                if "BUSINESS_CONNECTION_INVALID" not in exc.description.upper():
+                    validation_unavailable = True
+                continue
+            except (httpx.HTTPError, RuntimeError):
+                validation_unavailable = True
+                continue
+
+            if not isinstance(live_response, dict):
+                validation_unavailable = True
+                continue
+            live = live_response.get("result")
+            if live_response.get("ok") is not True or not isinstance(live, dict):
+                validation_unavailable = True
+                continue
+            if live.get("id") != candidate.business_connection_id:
+                validation_unavailable = True
+                continue
+            if live.get("is_enabled") is not True:
+                continue
+            raw_rights = live.get("rights")
+            if not isinstance(raw_rights, dict):
+                validation_unavailable = True
+                continue
+            rights = raw_rights
+            if rights.get("can_reply") is not True:
+                continue
+            frozen_rights = tuple(
+                sorted(
+                    (key, value)
+                    for key, value in rights.items()
+                    if isinstance(key, str) and isinstance(value, bool)
+                )
+            )
+            return _ConnectionProbe(
+                connection_id=candidate.id,
+                business_connection_id=candidate.business_connection_id,
+                rights=frozen_rights,
+            )
+
+        if validation_unavailable:
+            raise ReplySendError(
+                code="business_connection_validation_unavailable",
+                message=(
+                    "Telegram Business connection validation is temporarily unavailable"
+                ),
+            )
+        raise ReplySendError(
+            code="business_connection_unavailable",
+            message=(
+                "No live Telegram Business connection with reply permission is "
+                "available for the confirmed account"
+            ),
         )
+
+    async def _reserve(
+        self,
+        *,
+        command: SendApprovedReplyCommand,
+        intent: _SendIntent,
+        probe: _ConnectionProbe,
+    ) -> _Reservation | ReplySendResult:
+        """Recheck under short locks and durably reserve before sending."""
+
+        reservation: _Reservation | None = None
+        replay: ReplySendResult | None = None
+        try:
+            async with self._session.begin():
+                current = await self._load_context_snapshot(command, for_update=True)
+                self._validate_confirmation(
+                    command=command,
+                    account_label_value=current.account_label,
+                    target_chat_id=current.target_chat_id,
+                )
+                existing = await self._load_attempt_model(
+                    draft_id=current.draft_id,
+                    for_update=True,
+                )
+                if existing is not None:
+                    self._validate_attempt_binding(existing, current)
+                    replay = self._attempt_result(
+                        attempt=_snapshot_attempt(existing),
+                        context=current,
+                        idempotent_replay=True,
+                    )
+                else:
+                    await self._raise_if_task_send_blocked(
+                        task_id=current.task_id,
+                        draft_id=current.draft_id,
+                        for_update=True,
+                    )
+                    if _send_fingerprint(current) != _send_fingerprint(intent.context):
+                        raise ReplySendError(
+                            code="send_context_changed",
+                            message=(
+                                "Reply send context changed during validation; "
+                                "review and confirm the draft again"
+                            ),
+                        )
+                    reservation = await self._create_reservation(
+                        command=command,
+                        intent=intent,
+                        current=current,
+                        probe=probe,
+                    )
+        except IntegrityError as exc:
+            await self._session.rollback()
+            return await self._load_concurrent_replay(command, cause=exc)
+
+        if replay is not None:
+            return replay
+        if reservation is None:
+            raise RuntimeError("Reply send reservation did not produce an outcome")
+        return reservation
+
+    async def _create_reservation(
+        self,
+        *,
+        command: SendApprovedReplyCommand,
+        intent: _SendIntent,
+        current: _SendContextSnapshot,
+        probe: _ConnectionProbe,
+    ) -> _Reservation:
+        """Create one durable SENDING attempt inside the active short transaction."""
+
+        self._validate_context_delivery(current)
+        origin_id = current.origin_connection_id
+        if not origin_id:
+            raise ReplySendError(
+                code="origin_connection_missing",
+                message="The originating Telegram Business connection is missing",
+            )
+        current_candidates = await self._load_connection_candidates(
+            command=command,
+            account_id=current.account_id,
+            origin_id=origin_id,
+            for_update=True,
+        )
+        if current_candidates != intent.candidates:
+            raise ReplySendError(
+                code="send_context_changed",
+                message=(
+                    "Telegram connection state changed during validation; "
+                    "review and confirm again"
+                ),
+            )
+        if (
+            probe.connection_id,
+            probe.business_connection_id,
+        ) not in _candidate_keys(current_candidates):
+            raise ReplySendError(
+                code="send_context_changed",
+                message="Validated Telegram connection is no longer available",
+            )
+
+        await self._apply_connection_probe(
+            account_id=current.account_id,
+            probe=probe,
+        )
+        covered_task_ids = await self._load_covered_task_ids(
+            conversation_id=current.conversation_id,
+            account_id=current.account_id,
+            project_id=current.project_id,
+            for_update=True,
+        )
+        if covered_task_ids != intent.covered_task_ids:
+            raise ReplySendError(
+                code="send_context_changed",
+                message=(
+                    "Unanswered tasks changed during validation; "
+                    "review and confirm the draft again"
+                ),
+            )
+        if current.task_id not in covered_task_ids:
+            raise ReplySendError(
+                code="task_closed",
+                message="Reply task no longer needs a reply",
+            )
 
         now = datetime.now(UTC)
         attempt = SendAttempt(
             id=uuid4(),
-            reply_draft_id=draft.id,
-            reply_task_id=task.id,
-            conversation_id=conversation.id,
-            account_id=draft.account_id,
-            project_id=draft.project_id,
+            reply_draft_id=current.draft_id,
+            reply_task_id=current.task_id,
+            conversation_id=current.conversation_id,
+            account_id=current.account_id,
+            project_id=current.project_id,
             principal_subject=command.principal.subject[:255],
             status=SendAttemptStatus.SENDING.value,
-            account_label=label,
-            target_chat_id=target_chat_id,
-            business_connection_id=connection.business_connection_id,
+            account_label=current.account_label,
+            target_chat_id=current.target_chat_id,
+            business_connection_id=probe.business_connection_id,
             reserved_at=now,
             started_at=now,
         )
@@ -103,163 +477,337 @@ class SqlTelegramReplySender:
             AuditLog(
                 actor=f"mcp:{command.principal.subject}"[:255],
                 action="reply_send_reserved_from_mcp",
-                bot_id=conversation.bot_id,
-                account_id=draft.account_id,
-                project_id=draft.project_id,
+                bot_id=current.bot_id,
+                account_id=current.account_id,
+                project_id=current.project_id,
                 metadata_={
                     "attempt_id": str(attempt.id),
-                    "draft_id": str(draft.id),
-                    "task_id": str(task.id),
-                    "account_label": label,
-                    "target_chat_id": target_chat_id,
-                    "business_connection_id": connection.business_connection_id,
+                    "draft_id": str(current.draft_id),
+                    "task_id": str(current.task_id),
+                    "covered_task_ids": [
+                        str(task_id) for task_id in covered_task_ids
+                    ],
+                    "account_label": current.account_label,
+                    "target_chat_id": current.target_chat_id,
+                    "business_connection_id": probe.business_connection_id,
                 },
             )
         )
-        try:
-            await self._session.commit()
-        except IntegrityError as exc:
-            await self._session.rollback()
-            concurrent = await self._load_attempt(draft.id)
+        return _Reservation(
+            context=current,
+            attempt=_snapshot_attempt(attempt),
+            business_connection_id=probe.business_connection_id,
+            covered_task_ids=covered_task_ids,
+        )
+
+    async def _load_concurrent_replay(
+        self,
+        command: SendApprovedReplyCommand,
+        *,
+        cause: IntegrityError,
+    ) -> ReplySendResult:
+        async with self._session.begin():
+            context = await self._load_context_snapshot(command, for_update=True)
+            concurrent = await self._load_attempt_model(
+                draft_id=context.draft_id,
+                for_update=True,
+            )
             if concurrent is None:
                 raise ReplySendError(
                     code="send_reservation_failed",
                     message="Reply send reservation failed safely",
-                ) from exc
+                ) from cause
+            self._validate_attempt_binding(concurrent, context)
             return self._attempt_result(
-                attempt=concurrent,
-                draft=draft,
-                task=task,
-                account=account,
+                attempt=_snapshot_attempt(concurrent),
+                context=context,
                 idempotent_replay=True,
             )
 
-        try:
-            telegram_result = await self._telegram.send_message(
-                chat_id=target_chat_id,
-                text=draft.draft_text,
-                business_connection_id=connection.business_connection_id,
+    async def _finalize_failure(
+        self,
+        *,
+        command: SendApprovedReplyCommand,
+        reservation: _Reservation,
+        status: str,
+        error_code: str,
+        error_detail: str,
+    ) -> ReplySendResult:
+        async with self._session.begin():
+            attempt = await self._load_attempt_by_id(
+                attempt_id=reservation.attempt.id,
+                for_update=True,
             )
-            if telegram_result.get("ok") is not True:
-                raise RuntimeError("Telegram API did not confirm delivery")
-        except Exception as exc:
-            status, error_code = _delivery_failure(exc)
+            if attempt is None:
+                raise RuntimeError("Durable reply send reservation disappeared")
+            self._validate_attempt_binding(attempt, reservation.context)
+            if attempt.status != SendAttemptStatus.SENDING.value:
+                return self._attempt_result(
+                    attempt=_snapshot_attempt(attempt),
+                    context=reservation.context,
+                    idempotent_replay=True,
+                )
+
             attempt.status = status
             attempt.error_code = error_code
-            attempt.error_detail = _safe_error_detail(exc)
+            attempt.error_detail = error_detail
             attempt.finished_at = datetime.now(UTC)
             self._session.add(
                 AuditLog(
                     actor=f"mcp:{command.principal.subject}"[:255],
                     action=f"reply_send_{status}_from_mcp",
-                    bot_id=conversation.bot_id,
-                    account_id=draft.account_id,
-                    project_id=draft.project_id,
+                    bot_id=reservation.context.bot_id,
+                    account_id=reservation.context.account_id,
+                    project_id=reservation.context.project_id,
                     metadata_={
                         "attempt_id": str(attempt.id),
-                        "draft_id": str(draft.id),
-                        "task_id": str(task.id),
-                        "account_label": label,
-                        "target_chat_id": target_chat_id,
-                        "business_connection_id": connection.business_connection_id,
+                        "draft_id": str(reservation.context.draft_id),
+                        "task_id": str(reservation.context.task_id),
+                        "account_label": reservation.context.account_label,
+                        "target_chat_id": reservation.context.target_chat_id,
+                        "business_connection_id": (
+                            reservation.business_connection_id
+                        ),
                         "error_code": error_code,
                     },
                 )
             )
-            await self._session.commit()
             return self._attempt_result(
-                attempt=attempt,
-                draft=draft,
-                task=task,
-                account=account,
+                attempt=_snapshot_attempt(attempt),
+                context=reservation.context,
             )
 
+    async def _finalize_success(
+        self,
+        *,
+        command: SendApprovedReplyCommand,
+        reservation: _Reservation,
+        telegram_result: dict[str, Any],
+    ) -> ReplySendResult:
         finished_at = datetime.now(UTC)
-        attempt.status = SendAttemptStatus.SENT.value
-        attempt.provider_message_id = _provider_message_id(telegram_result)
-        attempt.error_code = None
-        attempt.error_detail = None
-        attempt.finished_at = finished_at
-        draft.status = ReplyDraftStatus.APPROVED.value
-        task.status = ReplyTaskStatus.REPLIED.value
-        task.due_at = None
-        conversation.status = ConversationStatus.REPLIED.value
-        conversation.requires_reply = False
-        conversation.last_outbound_at = finished_at
-        conversation.last_message_at = finished_at
-        await self._session.execute(
-            update(ReplyTask)
-            .where(
-                ReplyTask.conversation_id == conversation.id,
-                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+        async with self._session.begin():
+            attempt = await self._load_attempt_by_id(
+                attempt_id=reservation.attempt.id,
+                for_update=True,
             )
-            .values(
-                status=ReplyTaskStatus.REPLIED.value,
-                due_at=None,
-                updated_at=finished_at,
-            )
-        )
-        self._session.add(
-            Message(
-                bot_id=conversation.bot_id,
-                gate_event_id=None,
-                account_id=draft.account_id,
-                project_id=draft.project_id,
-                person_id=trigger.person_id,
-                direction=MessageDirection.OUTBOUND.value,
-                source="gate-approved-draft",
-                event_type="telegram_business_reply",
-                chat_id=target_chat_id,
-                sender_id=(
-                    str(account.telegram_user_id)
-                    if account.telegram_user_id is not None
-                    else "gate"
-                ),
-                recipient_id=target_chat_id,
-                text=draft.draft_text,
-                business_connection_id=connection.business_connection_id,
-                payload={
-                    **telegram_result,
-                    "_gate_counterparty": _counterparty_snapshot(
-                        trigger=trigger,
-                        conversation=conversation,
-                    ),
-                },
-                sent_at=finished_at,
-            )
-        )
-        self._session.add(
-            AuditLog(
-                actor=f"mcp:{command.principal.subject}"[:255],
-                action="reply_send_sent_from_mcp",
-                bot_id=conversation.bot_id,
-                account_id=draft.account_id,
-                project_id=draft.project_id,
-                metadata_={
-                    "attempt_id": str(attempt.id),
-                    "draft_id": str(draft.id),
-                    "task_id": str(task.id),
-                    "account_label": label,
-                    "target_chat_id": target_chat_id,
-                    "business_connection_id": connection.business_connection_id,
-                    "provider_message_id": attempt.provider_message_id,
-                },
-            )
-        )
-        await self._session.commit()
-        return self._attempt_result(
-            attempt=attempt,
-            draft=draft,
-            task=task,
-            account=account,
-        )
+            if attempt is None:
+                raise RuntimeError("Durable reply send reservation disappeared")
+            self._validate_attempt_binding(attempt, reservation.context)
+            if attempt.status != SendAttemptStatus.SENDING.value:
+                return self._attempt_result(
+                    attempt=_snapshot_attempt(attempt),
+                    context=reservation.context,
+                    idempotent_replay=True,
+                )
 
-    async def _load_context(
+            draft_result = await self._session.execute(
+                select(ReplyDraft)
+                .where(ReplyDraft.id == reservation.context.draft_id)
+                .with_for_update()
+            )
+            draft = draft_result.scalar_one_or_none()
+            conversation_result = await self._session.execute(
+                select(Conversation)
+                .where(Conversation.id == reservation.context.conversation_id)
+                .with_for_update()
+            )
+            conversation = conversation_result.scalar_one_or_none()
+            if draft is None or conversation is None:
+                raise RuntimeError("Reply send context disappeared after delivery")
+
+            provider_message_id = _provider_message_id(telegram_result)
+            attempt.status = SendAttemptStatus.SENT.value
+            attempt.provider_message_id = provider_message_id
+            attempt.error_code = None
+            attempt.error_detail = None
+            attempt.finished_at = finished_at
+
+            draft_changed_after_reservation = (
+                draft.draft_text != reservation.context.draft_text
+                or draft.status != reservation.context.draft_status
+            )
+            if not draft_changed_after_reservation:
+                draft.status = ReplyDraftStatus.APPROVED.value
+
+            await self._session.execute(
+                update(ReplyTask)
+                .where(
+                    ReplyTask.id.in_(reservation.covered_task_ids),
+                    ReplyTask.conversation_id
+                    == reservation.context.conversation_id,
+                    ReplyTask.account_id == reservation.context.account_id,
+                    ReplyTask.project_id == reservation.context.project_id,
+                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                )
+                .values(
+                    status=ReplyTaskStatus.REPLIED.value,
+                    due_at=None,
+                    updated_at=finished_at,
+                )
+            )
+            remaining_result = await self._session.execute(
+                select(ReplyTask.id)
+                .where(
+                    ReplyTask.conversation_id
+                    == reservation.context.conversation_id,
+                    ReplyTask.account_id == reservation.context.account_id,
+                    ReplyTask.project_id == reservation.context.project_id,
+                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                )
+                .limit(1)
+            )
+            has_newer_unanswered = remaining_result.scalar_one_or_none() is not None
+            conversation_status_before_outcome = conversation.status
+            conversation_requires_reply_before_outcome = (
+                conversation.requires_reply
+            )
+            conversation_terminal_state_preserved = conversation.status in {
+                ConversationStatus.CLOSED.value,
+                ConversationStatus.MUTED.value,
+            }
+            if not conversation_terminal_state_preserved:
+                conversation.status = (
+                    ConversationStatus.OPEN.value
+                    if has_newer_unanswered
+                    else ConversationStatus.REPLIED.value
+                )
+                conversation.requires_reply = has_newer_unanswered
+            if (
+                conversation.last_outbound_at is None
+                or conversation.last_outbound_at < finished_at
+            ):
+                conversation.last_outbound_at = finished_at
+            if (
+                conversation.last_message_at is None
+                or conversation.last_message_at < finished_at
+            ):
+                conversation.last_message_at = finished_at
+
+            self._session.add(
+                Message(
+                    bot_id=reservation.context.bot_id,
+                    gate_event_id=None,
+                    account_id=reservation.context.account_id,
+                    project_id=reservation.context.project_id,
+                    person_id=reservation.context.person_id,
+                    direction=MessageDirection.OUTBOUND.value,
+                    source="gate-approved-draft",
+                    event_type="telegram_business_reply",
+                    chat_id=reservation.context.target_chat_id,
+                    sender_id=(
+                        str(reservation.context.account_telegram_user_id)
+                        if reservation.context.account_telegram_user_id is not None
+                        else "gate"
+                    ),
+                    recipient_id=reservation.context.target_chat_id,
+                    text=reservation.context.draft_text,
+                    business_connection_id=reservation.business_connection_id,
+                    payload={
+                        **telegram_result,
+                        "_gate_counterparty": {
+                            "display_name": (
+                                reservation.context.counterparty_display_name
+                            )
+                        },
+                    },
+                    sent_at=finished_at,
+                )
+            )
+            self._session.add(
+                AuditLog(
+                    actor=f"mcp:{command.principal.subject}"[:255],
+                    action="reply_send_sent_from_mcp",
+                    bot_id=reservation.context.bot_id,
+                    account_id=reservation.context.account_id,
+                    project_id=reservation.context.project_id,
+                    metadata_={
+                        "attempt_id": str(attempt.id),
+                        "draft_id": str(reservation.context.draft_id),
+                        "task_id": str(reservation.context.task_id),
+                        "covered_task_ids": [
+                            str(task_id)
+                            for task_id in reservation.covered_task_ids
+                        ],
+                        "newer_unanswered_preserved": has_newer_unanswered,
+                        "conversation_terminal_state_preserved": (
+                            conversation_terminal_state_preserved
+                        ),
+                        "conversation_status_before_outcome": (
+                            conversation_status_before_outcome
+                        ),
+                        "conversation_requires_reply_before_outcome": (
+                            conversation_requires_reply_before_outcome
+                        ),
+                        "draft_changed_after_reservation": (
+                            draft_changed_after_reservation
+                        ),
+                        "account_label": reservation.context.account_label,
+                        "target_chat_id": reservation.context.target_chat_id,
+                        "business_connection_id": (
+                            reservation.business_connection_id
+                        ),
+                        "provider_message_id": provider_message_id,
+                    },
+                )
+            )
+            return self._attempt_result(
+                attempt=_snapshot_attempt(attempt),
+                context=reservation.context,
+            )
+
+    async def _load_context_snapshot(
         self,
         command: SendApprovedReplyCommand,
+        *,
+        for_update: bool,
+    ) -> _SendContextSnapshot:
+        draft, task, conversation, trigger, account = await self._load_context_models(
+            command,
+            for_update=for_update,
+        )
+        label = account_label(alias=account.alias, country_code=account.country_code)
+        payload = trigger.payload if isinstance(trigger.payload, dict) else {}
+        raw_snapshot = payload.get("_gate_counterparty")
+        counterparty = raw_snapshot if isinstance(raw_snapshot, dict) else {}
+        display_name = counterparty.get("display_name")
+        if not isinstance(display_name, str) or not display_name.strip():
+            display_name = conversation.title
+
+        return _SendContextSnapshot(
+            draft_id=draft.id,
+            draft_text=draft.draft_text,
+            draft_status=draft.status,
+            draft_updated_at=draft.updated_at,
+            task_id=task.id,
+            task_status=task.status,
+            conversation_id=conversation.id,
+            conversation_business_connection_id=(
+                conversation.business_connection_id
+            ),
+            conversation_last_inbound_at=conversation.last_inbound_at,
+            trigger_message_id=trigger.id,
+            trigger_business_connection_id=trigger.business_connection_id,
+            target_chat_id=trigger.sender_id,
+            account_id=draft.account_id,
+            project_id=draft.project_id,
+            account_alias=account.alias,
+            account_label=label,
+            account_is_active=account.is_active,
+            account_send_enabled=account.send_enabled,
+            bot_id=conversation.bot_id,
+            person_id=trigger.person_id,
+            account_telegram_user_id=account.telegram_user_id,
+            counterparty_display_name=display_name,
+        )
+
+    async def _load_context_models(
+        self,
+        command: SendApprovedReplyCommand,
+        *,
+        for_update: bool,
     ) -> tuple[ReplyDraft, ReplyTask, Conversation, Message, Account]:
         scope = command.principal.access_scope
-        result = await self._session.execute(
+        statement = (
             select(ReplyDraft, ReplyTask, Conversation, Message, Account)
             .join(ReplyTask, ReplyDraft.reply_task_id == ReplyTask.id)
             .join(Conversation, ReplyDraft.conversation_id == Conversation.id)
@@ -277,8 +825,10 @@ class SqlTelegramReplySender:
                 Message.account_id.in_(scope.account_ids),
                 Message.project_id.in_(scope.project_ids),
             )
-            .with_for_update()
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
         row = result.one_or_none()
         if row is None:
             raise ReplySendError(
@@ -288,24 +838,18 @@ class SqlTelegramReplySender:
         draft, task, conversation, trigger, account = row
         return draft, task, conversation, trigger, account
 
-    async def _load_origin_connection(
+    async def _load_connection_candidates(
         self,
         *,
         command: SendApprovedReplyCommand,
-        draft: ReplyDraft,
-        conversation: Conversation,
-        trigger: Message,
-    ) -> TelegramBusinessConnection:
-        origin_id = conversation.business_connection_id or trigger.business_connection_id
-        if not origin_id:
-            raise ReplySendError(
-                code="origin_connection_missing",
-                message="The originating Telegram Business connection is missing",
-            )
-        result = await self._session.execute(
+        account_id: UUID,
+        origin_id: str,
+        for_update: bool,
+    ) -> tuple[_ConnectionCandidate, ...]:
+        statement = (
             select(TelegramBusinessConnection)
             .where(
-                TelegramBusinessConnection.account_id == draft.account_id,
+                TelegramBusinessConnection.account_id == account_id,
                 TelegramBusinessConnection.account_id.in_(
                     command.principal.access_scope.account_ids
                 ),
@@ -313,85 +857,147 @@ class SqlTelegramReplySender:
             .order_by(
                 case(
                     (
-                        TelegramBusinessConnection.business_connection_id == origin_id,
+                        TelegramBusinessConnection.business_connection_id
+                        == origin_id,
                         0,
                     ),
                     else_=1,
                 ),
                 TelegramBusinessConnection.is_enabled.desc(),
                 TelegramBusinessConnection.last_update_at.desc(),
+                TelegramBusinessConnection.id,
             )
         )
-        candidates = result.scalars().all()
-        validation_unavailable = False
-        for connection in candidates:
-            try:
-                live_response = await self._telegram.get_business_connection(
-                    business_connection_id=connection.business_connection_id
-                )
-            except TelegramApiError as exc:
-                connection.last_error = exc.description[:512]
-                connection.last_update_at = datetime.now(UTC)
-                if "BUSINESS_CONNECTION_INVALID" in exc.description.upper():
-                    connection.is_enabled = False
-                else:
-                    validation_unavailable = True
-                continue
-            except httpx.HTTPError:
-                validation_unavailable = True
-                continue
-
-            live = live_response.get("result")
-            if not isinstance(live, dict) or live.get("is_enabled") is not True:
-                connection.is_enabled = False
-                connection.last_error = "telegram_business_connection_disabled"
-                connection.last_update_at = datetime.now(UTC)
-                continue
-
-            raw_rights = live.get("rights")
-            rights = raw_rights if isinstance(raw_rights, dict) else {}
-            if rights.get("can_reply") is not True:
-                connection.is_enabled = True
-                connection.rights = rights
-                connection.last_error = "telegram_business_connection_cannot_reply"
-                connection.last_update_at = datetime.now(UTC)
-                continue
-
-            await self._session.execute(
-                update(TelegramBusinessConnection)
-                .where(
-                    TelegramBusinessConnection.account_id == draft.account_id,
-                    TelegramBusinessConnection.id != connection.id,
-                    TelegramBusinessConnection.is_enabled.is_(True),
-                )
-                .values(is_enabled=False)
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
+        return tuple(
+            _ConnectionCandidate(
+                id=connection.id,
+                account_id=connection.account_id,
+                business_connection_id=connection.business_connection_id,
+                telegram_user_id=connection.telegram_user_id,
+                user_chat_id=connection.user_chat_id,
+                rights_fingerprint=_canonical_json_fingerprint(connection.rights),
+                is_enabled=connection.is_enabled,
+                received_at=connection.received_at,
+                last_update_at=connection.last_update_at,
+                last_error=connection.last_error,
+                created_at=connection.created_at,
+                updated_at=connection.updated_at,
             )
-            connection.is_enabled = True
-            connection.rights = rights
-            connection.last_error = None
-            connection.last_update_at = datetime.now(UTC)
-            return connection
-
-        if validation_unavailable:
-            raise ReplySendError(
-                code="business_connection_validation_unavailable",
-                message="Telegram Business connection validation is temporarily unavailable",
-            )
-        raise ReplySendError(
-            code="business_connection_unavailable",
-            message=(
-                "No live Telegram Business connection with reply permission is "
-                "available for the confirmed account"
-            ),
+            for connection in result.scalars().all()
         )
 
-    async def _load_attempt(self, draft_id: Any) -> SendAttempt | None:
-        result = await self._session.execute(
-            select(SendAttempt)
-            .where(SendAttempt.reply_draft_id == draft_id)
-            .with_for_update()
+    async def _load_attempt_model(
+        self,
+        *,
+        draft_id: UUID,
+        for_update: bool,
+    ) -> SendAttempt | None:
+        statement = select(SendAttempt).where(
+            SendAttempt.reply_draft_id == draft_id
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def _load_attempt_by_id(
+        self,
+        *,
+        attempt_id: UUID,
+        for_update: bool,
+    ) -> SendAttempt | None:
+        statement = select(SendAttempt).where(SendAttempt.id == attempt_id)
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def _raise_if_task_send_blocked(
+        self,
+        *,
+        task_id: UUID,
+        draft_id: UUID,
+        for_update: bool,
+    ) -> None:
+        statement = (
+            select(SendAttempt.id)
+            .where(
+                SendAttempt.reply_task_id == task_id,
+                SendAttempt.reply_draft_id != draft_id,
+                SendAttempt.status.in_(_BLOCKING_TASK_ATTEMPT_STATUSES),
+            )
+            .order_by(SendAttempt.created_at, SendAttempt.id)
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
+        if result.scalar_one_or_none() is not None:
+            raise ReplySendError(
+                code="task_send_blocked",
+                message=(
+                    "Another send attempt already blocks this reply task; "
+                    "do not send a second draft"
+                ),
+            )
+
+    async def _load_covered_task_ids(
+        self,
+        *,
+        conversation_id: UUID,
+        account_id: UUID,
+        project_id: UUID,
+        for_update: bool,
+    ) -> tuple[UUID, ...]:
+        statement = (
+            select(ReplyTask.id)
+            .where(
+                ReplyTask.conversation_id == conversation_id,
+                ReplyTask.account_id == account_id,
+                ReplyTask.project_id == project_id,
+                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+            )
+            .order_by(ReplyTask.created_at, ReplyTask.id)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self._session.execute(statement)
+        return tuple(result.scalars().all())
+
+    async def _apply_connection_probe(
+        self,
+        *,
+        account_id: UUID,
+        probe: _ConnectionProbe,
+    ) -> None:
+        now = datetime.now(UTC)
+        await self._session.execute(
+            update(TelegramBusinessConnection)
+            .where(
+                TelegramBusinessConnection.account_id == account_id,
+                TelegramBusinessConnection.id != probe.connection_id,
+                TelegramBusinessConnection.is_enabled.is_(True),
+            )
+            .values(is_enabled=False)
+        )
+        await self._session.execute(
+            update(TelegramBusinessConnection)
+            .where(
+                TelegramBusinessConnection.account_id == account_id,
+                TelegramBusinessConnection.id == probe.connection_id,
+                TelegramBusinessConnection.business_connection_id
+                == probe.business_connection_id,
+            )
+            .values(
+                is_enabled=True,
+                rights=probe.rights_dict(),
+                last_error=None,
+                last_update_at=now,
+            )
+        )
 
     def _validate_confirmation(
         self,
@@ -414,63 +1020,75 @@ class SqlTelegramReplySender:
                 message="Confirmed recipient does not match the reply task",
             )
 
-    def _validate_delivery(
-        self,
-        *,
-        draft: ReplyDraft,
-        task: ReplyTask,
-        account: Account,
-        account_label_value: str,
-        connection: TelegramBusinessConnection,
-    ) -> None:
-        if draft.status not in {
-            ReplyDraftStatus.GENERATED.value,
-            ReplyDraftStatus.EDITED.value,
-        }:
+    def _validate_context_delivery(self, context: _SendContextSnapshot) -> None:
+        if context.draft_status not in _SENDABLE_DRAFT_STATUSES:
             raise ReplySendError(
                 code="draft_closed",
                 message="Reply draft is not available for sending",
             )
-        if task.status != ReplyTaskStatus.NEEDS_REPLY.value:
+        if context.task_status != ReplyTaskStatus.NEEDS_REPLY.value:
             raise ReplySendError(
                 code="task_closed",
                 message="Reply task no longer needs a reply",
             )
-        if not account.is_active or not account.send_enabled:
+        if not context.account_is_active or not context.account_send_enabled:
             raise ReplySendError(
                 code="account_send_disabled",
-                message=f"Sending is disabled for account {account_label_value}",
+                message=(
+                    f"Sending is disabled for account {context.account_label}"
+                ),
             )
         if not _runtime_send_enabled(
             settings=self._settings,
-            account_label_value=account_label_value,
+            account_label_value=context.account_label,
         ):
             raise ReplySendError(
                 code="runtime_send_disabled",
-                message=f"Runtime sending is disabled for account {account_label_value}",
+                message=(
+                    f"Runtime sending is disabled for account "
+                    f"{context.account_label}"
+                ),
             )
-        if connection.rights.get("can_reply") is not True:
+
+    def _validate_attempt_binding(
+        self,
+        attempt: SendAttempt,
+        context: _SendContextSnapshot,
+    ) -> None:
+        if (
+            attempt.reply_draft_id != context.draft_id
+            or attempt.reply_task_id != context.task_id
+            or attempt.conversation_id != context.conversation_id
+            or attempt.account_id != context.account_id
+            or attempt.project_id != context.project_id
+            or attempt.account_label != context.account_label
+            or attempt.target_chat_id != context.target_chat_id
+        ):
             raise ReplySendError(
-                code="connection_cannot_reply",
-                message=f"Telegram connection for {account_label_value} cannot reply",
+                code="send_attempt_binding_mismatch",
+                message=(
+                    "Stored send attempt does not match the confirmed scoped context"
+                ),
             )
+
+    def _require_provider_outside_transaction(self) -> None:
+        if self._session.in_transaction():
+            raise RuntimeError("Telegram provider I/O inside database transaction")
 
     def _attempt_result(
         self,
         *,
-        attempt: SendAttempt,
-        draft: ReplyDraft,
-        task: ReplyTask,
-        account: Account,
+        attempt: _AttemptSnapshot,
+        context: _SendContextSnapshot,
         idempotent_replay: bool = False,
     ) -> ReplySendResult:
         return ReplySendResult(
             attempt_id=attempt.id,
-            draft_id=draft.id,
-            task_id=task.id,
-            account_id=draft.account_id,
-            project_id=draft.project_id,
-            account_alias=account.alias,
+            draft_id=attempt.draft_id,
+            task_id=attempt.task_id,
+            account_id=attempt.account_id,
+            project_id=attempt.project_id,
+            account_alias=context.account_alias,
             account_label=attempt.account_label,
             recipient_chat_id=attempt.target_chat_id,
             status=attempt.status,
@@ -482,18 +1100,63 @@ class SqlTelegramReplySender:
         )
 
 
-def _counterparty_snapshot(
-    *,
-    trigger: Message,
-    conversation: Conversation,
-) -> dict[str, str | None]:
-    payload = trigger.payload if isinstance(trigger.payload, dict) else {}
-    raw_snapshot = payload.get("_gate_counterparty")
-    snapshot = raw_snapshot if isinstance(raw_snapshot, dict) else {}
-    display_name = snapshot.get("display_name")
-    if not isinstance(display_name, str) or not display_name.strip():
-        display_name = conversation.title
-    return {"display_name": display_name}
+def _snapshot_attempt(attempt: SendAttempt) -> _AttemptSnapshot:
+    return _AttemptSnapshot(
+        id=attempt.id,
+        draft_id=attempt.reply_draft_id,
+        task_id=attempt.reply_task_id,
+        account_id=attempt.account_id,
+        project_id=attempt.project_id,
+        account_label=attempt.account_label,
+        target_chat_id=attempt.target_chat_id,
+        status=attempt.status,
+        provider_message_id=attempt.provider_message_id,
+        error_code=attempt.error_code,
+        error_detail=attempt.error_detail,
+    )
+
+
+def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
+    return (
+        context.draft_id,
+        context.draft_text,
+        context.draft_status,
+        context.draft_updated_at,
+        context.task_id,
+        context.task_status,
+        context.conversation_id,
+        context.conversation_business_connection_id,
+        context.conversation_last_inbound_at,
+        context.trigger_message_id,
+        context.trigger_business_connection_id,
+        context.target_chat_id,
+        context.account_id,
+        context.project_id,
+        context.account_alias,
+        context.account_label,
+        context.account_is_active,
+        context.account_send_enabled,
+    )
+
+
+def _candidate_keys(
+    candidates: tuple[_ConnectionCandidate, ...],
+) -> tuple[tuple[UUID, str], ...]:
+    return tuple(
+        (candidate.id, candidate.business_connection_id)
+        for candidate in candidates
+    )
+
+
+def _canonical_json_fingerprint(value: Any) -> str:
+    canonical = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bool:
@@ -507,11 +1170,20 @@ def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bo
 
 
 def _delivery_failure(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, TelegramApiError):
+        status_code = exc.http_status or exc.error_code
+        if status_code is not None and status_code >= 500:
+            return SendAttemptStatus.UNKNOWN.value, f"telegram_http_{status_code}"
+        if exc.error_code is not None:
+            return SendAttemptStatus.FAILED.value, f"telegram_api_{exc.error_code}"
+        return SendAttemptStatus.FAILED.value, "telegram_api_error"
     if isinstance(exc, httpx.TimeoutException):
         return SendAttemptStatus.UNKNOWN.value, "telegram_timeout"
-    if isinstance(exc, TelegramApiError) and exc.error_code is not None:
-        return SendAttemptStatus.FAILED.value, f"telegram_api_{exc.error_code}"
-    return SendAttemptStatus.FAILED.value, "telegram_error"
+    if isinstance(exc, httpx.TransportError):
+        return SendAttemptStatus.UNKNOWN.value, "telegram_transport_unknown"
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500:
+        return SendAttemptStatus.UNKNOWN.value, "telegram_http_5xx"
+    return SendAttemptStatus.UNKNOWN.value, "telegram_unconfirmed"
 
 
 def _safe_error_detail(exc: Exception) -> str:
@@ -521,6 +1193,8 @@ def _safe_error_detail(exc: Exception) -> str:
         return f"telegram_http_{exc.response.status_code}"
     if isinstance(exc, httpx.TimeoutException):
         return "telegram_timeout"
+    if isinstance(exc, httpx.TransportError):
+        return "telegram_transport_error"
     return exc.__class__.__name__[:128]
 
 
