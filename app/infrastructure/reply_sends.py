@@ -913,11 +913,12 @@ class SqlTelegramReplySender:
         """Read an attempt without reversing the global outcome lock order.
 
         Authoritative reservation and concurrent-replay callers already hold the
-        draft/task/conversation context lock; preflight uses this only as an advisory
-        early read. Outcome processing deliberately locks attempt first and context
-        second, so taking an attempt row lock here would create a context -> attempt
-        inversion. The conversation lock serializes reservation decisions and the
-        unique draft constraint remains the final idempotency guard.
+        conversation fence; preflight uses this only as an advisory early read. A new
+        reservation takes child context locks only after it proves no active attempt
+        exists, while replay deliberately keeps those child reads unlocked. Outcome
+        processing locks attempt first and conversation second, so taking an attempt
+        row lock here would create the inverse order. The unique draft constraint
+        remains the final idempotency guard.
         """
 
         statement = select(SendAttempt).where(SendAttempt.reply_draft_id == draft_id)
