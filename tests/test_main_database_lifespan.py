@@ -5,11 +5,12 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
 from app import main as main_module
 from app.infrastructure import database as database_module
 from app.infrastructure.database import DatabaseRuntime
-from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture
