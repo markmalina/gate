@@ -285,7 +285,8 @@ MVP rules:
 
 Release acceptance:
 
-- duplicate Telegram updates create one turn and at most one external call;
+- duplicate Telegram updates create one turn, at most one model generation and at most one Telegram
+  `sendMessage` attempt;
 - the group credential cannot technically send through Telegram Business;
 - an unapproved group receives no generated response;
 - instruction rollback affects new turns only and preserves the revision of in-flight turns;
@@ -299,7 +300,9 @@ Activation requires all conditions:
 - exact permitted connector with current `can_reply=true`;
 - sender is not Mark, a bot or service identity;
 - no conflicting Oko enrollment/session;
-- normalized first eligible message exactly matches `Око возрождения`;
+- NFKC normalization, case-folding, trimming and whitespace collapsing of the first eligible
+  enrollment message produce exactly `Око возрождения`; prefixes, suffixes and punctuation do not
+  activate;
 - an existing personal history with Mark requires review rather than silently taking ownership.
 
 `/start oko21_*` attribution from PR #122 remains an independent dormant acquisition signal; it is
@@ -322,6 +325,33 @@ text hash, policy and Telegram reply-window expiry. BY never falls back. `unknow
 Mandatory handoff includes medical/safety, legal/financial, complaint/refund, explicit request for
 Mark, aggression, low confidence, invalid model output, prompt injection, limit exhaustion, repeated
 provider failure or unavailable Business permission/window.
+
+### 7.1 Dialog ordering, fencing and human takeover
+
+Agent work is serialized per dialog/session. Canonical acceptance assigns a monotonic dialog
+sequence; at most one turn for that session may be running or eligible for delivery. A newer inbound
+message supersedes a response proposal that has not yet received a grant, so stale context cannot
+produce a late answer.
+
+`WorkOwnership` and `AgentSession` carry monotonic versions. Every turn, response intent and
+delivery grant records the expected versions and trigger sequence. The worker re-reads them before
+model execution, before reserving delivery and immediately before changing an attempt to
+`sending`. A mismatch terminates the artifact as `superseded`; model output can never restore a
+capability.
+
+Handoff, stop, pause, removal, a kill switch, or an observed human outbound from Mark atomically
+increments the relevant ownership/session version and invalidates all not-yet-sending intents and
+grants. Human takeover moves the dialog to `human_managed`; resuming the agent is a separate
+explicit action. No autonomous Telegram call may start after that takeover transaction commits.
+
+A Telegram call that was already atomically marked `sending` before takeover cannot be recalled.
+The takeover records `delivery_in_flight`; the eventual outcome is audited as sent, failed or
+unknown and is never retried automatically. This unavoidable boundary is exercised in concurrency
+tests and shown to the operator.
+
+Per inbound, the two independent budgets are at most one model generation and at most one Telegram
+`sendMessage` attempt. Connection/permission checks may make read-only provider calls, but cannot
+deliver text and do not relax either budget.
 
 ## 8. Six sequential release sprints
 
@@ -403,7 +433,9 @@ Engineering/product:
 - implement RU-only exact first-message eligibility and conflict review;
 - add Oko session/ownership states and consent/stop behavior;
 - keep active Oko turns out of normal unanswered by construction, not text filtering;
-- create one atomic agent handoff task and prevent agent sends while handoff is open;
+- create one atomic agent handoff task, increment the ownership fence and prevent agent sends while
+  handoff is open;
+- serialize turns per dialog and make observed human outbound an immediate human takeover;
 - connect a pinned snapshot of the approved `markmalina/oko` instruction contract;
 - run dynamic proposals in shadow; allow only a fixed reviewed onboarding disclosure initially.
 
@@ -434,10 +466,13 @@ Mark whenever the scenario or safety policy requires it.
 
 Definition of done:
 
-- one inbound produces at most one external call;
+- one inbound produces at most one model generation and at most one Telegram `sendMessage`
+  attempt; permission/connection validation calls cannot deliver text;
 - target cannot come from model output;
 - prompt injection, provider failure, Telegram 429 and unavailable reply window fail closed;
-- stop, handoff, pause and revision rollback work in production canary.
+- stop, handoff, pause, human takeover and revision rollback work in production canary;
+- concurrency tests prove that a stale proposal cannot receive a grant after an ownership-version
+  change and that an already-sending attempt is surfaced without retry.
 
 ### Sprint 6 — Operational release and reusable agent platform
 
@@ -490,7 +525,7 @@ Definition of done:
 
 - approved group/revision only;
 - Privacy Mode command/reply invocation only;
-- one update → one turn → at most one send;
+- one update → one turn → at most one model generation and one Telegram `sendMessage` attempt;
 - no cross-group context;
 - pause/revoke/kill switch and revision rollback proven.
 
