@@ -312,7 +312,8 @@ Key merged milestones:
 | #117 | Atomic PostgreSQL receipt/outbox acceptance with concurrent idempotency coverage |
 | #118 | Bounded one-item worker contract for success, retry and hard dead-letter outcomes |
 | #119 | Exclusive PostgreSQL queue claims and atomic processed/retry/dead-letter transitions |
-| #120 | Disabled-by-default one-shot Telegram shadow worker runtime with redacted classification |\n| #121 | Redacted queue health aggregates and bounded stale-claim retry/dead-letter recovery |
+| #120 | Disabled-by-default one-shot Telegram shadow worker runtime with redacted classification |
+| #121 | Redacted queue health aggregates and bounded stale-claim retry/dead-letter recovery |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
