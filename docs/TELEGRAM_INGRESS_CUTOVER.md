@@ -168,6 +168,10 @@ PR #123 evaluates those aggregates with stable healthy/warning/critical reason c
 payload-free audit record for every bounded recovery transaction. Alert delivery and operator
 acknowledgement remain intentionally uncomposed.
 
+PR #124 defines the application lifecycle for durable payload-free alert incidents, delivery gating
+and explicit operator acknowledgement. Delivery remains disabled unless a notifier and channel are
+deliberately composed; no table, notification adapter, scheduler or runtime wiring is added.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
