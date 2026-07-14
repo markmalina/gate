@@ -2,9 +2,10 @@
 
 from collections.abc import AsyncIterator
 
-from app.infrastructure.database import DatabaseRuntime
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.infrastructure.database import DatabaseRuntime
 
 
 def get_database_runtime(request: Request) -> DatabaseRuntime:
