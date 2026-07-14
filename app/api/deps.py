@@ -2,30 +2,24 @@
 
 from collections.abc import AsyncIterator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings, get_settings
-
-
-def get_database_url(settings: Settings | None = None) -> str:
-    """Return the configured database URL or raise a deployment-safe error."""
-
-    resolved = settings or get_settings()
-    if not resolved.database_url:
-        raise RuntimeError("DATABASE_URL is required")
-    return resolved.database_url
+from app.infrastructure.database import DatabaseRuntime
 
 
-def build_sessionmaker(database_url: str) -> async_sessionmaker[AsyncSession]:
-    """Build an async SQLAlchemy session factory."""
+def get_database_runtime(request: Request) -> DatabaseRuntime:
+    """Return the runtime installed by the application lifespan."""
 
-    engine = create_async_engine(database_url, pool_pre_ping=True)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    runtime = getattr(request.app.state, "database_runtime", None)
+    if not isinstance(runtime, DatabaseRuntime):
+        raise RuntimeError("Database runtime is not initialized")
+    return runtime
 
 
-async def get_db_session() -> AsyncIterator[AsyncSession]:
-    """Yield an async database session."""
+async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """Yield a session from the process-scoped factory."""
 
-    sessionmaker = build_sessionmaker(get_database_url())
-    async with sessionmaker() as session:
+    runtime = get_database_runtime(request)
+    async with runtime.session_factory() as session:
         yield session
