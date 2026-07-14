@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from app.api.contact_snapshot_routes import router as contact_snapshot_router
+from app.api.health_routes import router as health_router
 from app.api.mcp_metadata_routes import router as mcp_metadata_router
 from app.api.mcp_routes import router as mcp_router
 from app.api.routes import router
@@ -20,6 +21,7 @@ from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_legacy_telegram_ingress
 from app.core.config import get_settings
 from app.infrastructure.database import database_runtime_lifespan
+from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         _app.state.database_runtime = database_runtime
         reconciliation_task: asyncio.Task[None] | None = None
         try:
+            _app.state.readiness_service = build_readiness_service(database_runtime.engine)
             reconciliation_task = asyncio.create_task(
                 reconcile_telegram_webhook_with_retries(settings)
             )
@@ -46,6 +49,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     with suppress(asyncio.CancelledError):
                         await reconciliation_task
             finally:
+                if hasattr(_app.state, "readiness_service"):
+                    delattr(_app.state, "readiness_service")
                 delattr(_app.state, "database_runtime")
 
 
@@ -146,6 +151,7 @@ def create_app() -> FastAPI:
     )
     app.add_exception_handler(StarletteHTTPException, telegram_http_exception_handler)
     app.add_exception_handler(Exception, telegram_unhandled_exception_handler)
+    app.include_router(health_router)
     app.include_router(contact_snapshot_router)
     app.include_router(mcp_metadata_router)
     app.include_router(mcp_router)
