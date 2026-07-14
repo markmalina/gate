@@ -308,7 +308,11 @@ Key merged milestones:
 | #113 | Configured account/project routing context and reply-task candidate parity in redacted ingress shadow |
 | #114 | Select-only identity snapshot boundary for database-backed connection, direction and reply-task parity |
 | #115 | Idempotent Telegram receipt/outbox application contract and bounded retry/dead-letter policy |
-| #116 | Durable Telegram receipt and transactional outbox schema with reversible migration |\n| #117 | Atomic PostgreSQL receipt/outbox acceptance with concurrent idempotency coverage |\n| #118 | Bounded one-item worker contract for success, retry and hard dead-letter outcomes |\n| #119 | Exclusive PostgreSQL queue claims and atomic processed/retry/dead-letter transitions |
+| #116 | Durable Telegram receipt and transactional outbox schema with reversible migration |
+| #117 | Atomic PostgreSQL receipt/outbox acceptance with concurrent idempotency coverage |
+| #118 | Bounded one-item worker contract for success, retry and hard dead-letter outcomes |
+| #119 | Exclusive PostgreSQL queue claims and atomic processed/retry/dead-letter transitions |
+| #120 | Disabled-by-default one-shot Telegram shadow worker runtime with redacted classification |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -319,7 +323,7 @@ Do not start several tracks in one PR.
 ### Immediate infrastructure priority
 
 1. **Canonical ingress identity replay.** Exercise the PR #114 select-only identity model against production-like fixtures and compare it with legacy decisions before wiring it to live ingress.
-2. **Durable worker composition.** Attach a side-effect-free processor to the PR #119 queue behind an explicit disabled-by-default runtime entry point, still without webhook cutover.
+2. **Worker shadow validation.** Exercise the PR #120 one-shot runtime only in controlled fixtures, then add redacted queue metrics and stale-claim recovery before any recurring process or webhook cutover.
 3. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
 4. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
 

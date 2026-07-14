@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     gate_account_by_send_enabled: bool = Field(
         default=True, validation_alias="GATE_ACCOUNT_BY_SEND_ENABLED"
     )
+    gate_telegram_worker_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_TELEGRAM_WORKER_ENABLED",
+    )
 
 
 @lru_cache

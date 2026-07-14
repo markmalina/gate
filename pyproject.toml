@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 gate-contact-sync = "app.contact_sync.cli:main"
+gate-telegram-worker = "app.worker.telegram_processing:main"
 
 [tool.ruff]
 target-version = "py312"
