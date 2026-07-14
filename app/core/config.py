@@ -9,6 +9,11 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.telegram_connectors import (
+    TelegramConnectorRegistry,
+    build_telegram_connector_registry,
+)
+
 
 class Settings(BaseSettings):
     """Application settings sourced from environment variables."""
@@ -67,6 +72,14 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_TELEGRAM_WORKER_ENABLED",
     )
+
+    @property
+    def telegram_connectors(self) -> TelegramConnectorRegistry:
+        """Return the trusted release-pinned Telegram connector registry."""
+
+        return build_telegram_connector_registry(
+            business_bot_username=self.telegram_bot_username,
+        )
 
 
 @lru_cache

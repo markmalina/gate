@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Mapping
-from enum import StrEnum
 from typing import Any, Protocol, cast
 
 from app.application.work_ownership import (
@@ -15,18 +14,11 @@ from app.application.work_ownership import (
     WorkOwnershipFacts,
     evaluate_shadow_work_ownership,
 )
+from app.core.telegram_connectors import TelegramConnectorRole
 
 JsonObject = dict[str, Any]
 OKO_ENROLLMENT_PHRASE = "Око возрождения"
 ALPHA_GROUP_COMMANDS = frozenset({"/alpha", "/ask"})
-
-
-class TelegramConnectorRole(StrEnum):
-    """Explicit connector capability used by the shadow projection."""
-
-    BUSINESS = "business"
-    ALPHA_GROUP = "alpha_group"
-    UNKNOWN = "unknown"
 
 
 class TelegramIngressDecisionView(Protocol):

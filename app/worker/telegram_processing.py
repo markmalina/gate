@@ -21,11 +21,11 @@ from app.application.telegram_processing import (
     TelegramUpdateProcessor,
 )
 from app.application.telegram_work_ownership_shadow import (
-    TelegramConnectorRole,
     evaluate_telegram_work_ownership_shadow,
 )
 from app.application.work_ownership import DirectionEvidence
 from app.core.config import Settings, get_settings
+from app.core.telegram_connectors import TelegramConnectorResolutionError
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 
 logger = logging.getLogger(__name__)
@@ -46,11 +46,16 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
 
     def __init__(self, *, settings: Settings, runtime_logger: logging.Logger) -> None:
         self._settings = settings
+        self._connectors = settings.telegram_connectors
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
         if item.payload.get("update_id") != item.update_id:
             raise TelegramUpdateProcessingError("worker_update_id_mismatch")
+        try:
+            connector = self._connectors.require_worker_connector(item.bot_key)
+        except TelegramConnectorResolutionError as exc:
+            raise TelegramUpdateProcessingError(exc.code) from None
         try:
             decision = classify_telegram_ingress(item.payload)
             routing = build_telegram_ingress_routing_context(
@@ -62,8 +67,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 item.payload,
                 decision=decision,
                 routing=routing,
-                connector_role=TelegramConnectorRole.BUSINESS,
-                bot_username=self._settings.telegram_bot_username,
+                connector_role=connector.role,
+                bot_username=connector.bot_identity or "",
                 direction_evidence=DirectionEvidence.UNKNOWN,
             )
         except Exception as exc:
