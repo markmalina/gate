@@ -317,6 +317,7 @@ Key merged milestones:
 | #122 | Disabled Oko Telegram-start attribution parser and fail-closed HTTP adapter |
 | #123 | Deterministic queue alert severity and payload-free recovery audit records |
 | #124 | Application contract for durable queue alert incidents, delivery gating and operator acknowledgement |
+| #125 | Dormant Telegram queue incident schema and serialized PostgreSQL lifecycle adapter |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -327,7 +328,7 @@ Do not start several tracks in one PR.
 ### Immediate infrastructure priority
 
 1. **Canonical ingress identity replay.** Exercise the PR #114 select-only identity model against production-like fixtures and compare it with legacy decisions before wiring it to live ingress.
-2. **Alert incident persistence.** Implement the PR #124 incident/delivery/acknowledgement contract with a dormant schema and SQL adapter before composing any notification channel.
+2. **Alert delivery adapter.** Select a narrow operator channel and implement the PR #124/#125 notifier contract behind disabled configuration before any scheduler or runtime composition.
 3. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
 4. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
 
