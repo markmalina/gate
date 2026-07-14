@@ -13,6 +13,7 @@ from app.application.telegram_queue_maintenance import (
     TelegramStaleClaimRecovery,
 )
 from app.models.domain import (
+    AuditLog,
     TelegramOutboxEvent,
     TelegramOutboxStatus,
     TelegramReceipt,
@@ -134,12 +135,26 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     receipt.next_attempt_at = command.recovered_at
                     retried += 1
 
-            await self._session.commit()
-            return TelegramStaleClaimRecovery(
+            recovery = TelegramStaleClaimRecovery(
                 recovered=len(rows),
                 retry_scheduled=retried,
                 dead_lettered=dead_lettered,
             )
+            self._session.add(
+                AuditLog(
+                    actor="gate-telegram-worker",
+                    action="telegram_queue_stale_claims_recovered",
+                    metadata_={
+                        "recovered": recovery.recovered,
+                        "retry_scheduled": recovery.retry_scheduled,
+                        "dead_lettered": recovery.dead_lettered,
+                        "max_attempts": command.max_attempts,
+                        "limit": command.limit,
+                    },
+                )
+            )
+            await self._session.commit()
+            return recovery
         except Exception:
             await self._session.rollback()
             raise
