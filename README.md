@@ -456,6 +456,11 @@ RAILWAY_SERVICE_NAME
 
 Some legacy Business connection configuration names still exist in `app/core/config.py`; dynamic database/Telegram state is the intended authority.
 
+The typed connector registry names `TELEGRAM_ALPHA_BOT_TOKEN`,
+`TELEGRAM_ALPHA_BOT_USERNAME` and `TELEGRAM_ALPHA_WEBHOOK_SECRET` only as future Alpha connector
+references. `Settings` deliberately ignores them: they cannot activate a connector and must not be
+added to production until the separate Alpha webhook and delivery boundary are implemented.
+
 Rules:
 
 - commit variable names and safe defaults only;

@@ -5,8 +5,12 @@ import logging
 from datetime import UTC, datetime
 
 import pytest
-from app.application.telegram_processing import TelegramProcessingWorkItem
+from app.application.telegram_processing import (
+    TelegramProcessingWorkItem,
+    TelegramUpdateProcessingError,
+)
 from app.core.config import Settings
+from app.worker import telegram_processing as worker_module
 from app.worker.telegram_processing import (
     ShadowClassifyingTelegramProcessor,
     run_telegram_worker_once,
@@ -49,11 +53,11 @@ class EmptyQueue:
         raise AssertionError("empty queue cannot record failure")
 
 
-def _work_item() -> TelegramProcessingWorkItem:
+def _work_item(*, bot_key: str = "gate_m_bot") -> TelegramProcessingWorkItem:
     return TelegramProcessingWorkItem(
         receipt_id="receipt-1",
         outbox_event_id="outbox-1",
-        bot_key="gate_m_bot",
+        bot_key=bot_key,
         update_id=42,
         payload={
             "update_id": 42,
@@ -119,3 +123,50 @@ def test_shadow_processor_logs_only_redacted_classification(
     assert "private-chat" not in wire
     assert "private-sender" not in wire
     assert "update_id=42" not in wire
+
+
+@pytest.mark.parametrize(
+    ("bot_key", "error_code"),
+    [
+        ("unknown_bot", "unknown_telegram_connector"),
+        ("telegram_alpha_group", "telegram_connector_disabled"),
+    ],
+)
+def test_shadow_processor_fails_closed_before_classification_for_untrusted_connector(
+    bot_key: str,
+    error_code: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_classification(_payload: object) -> None:
+        raise AssertionError("untrusted connector reached payload classification")
+
+    monkeypatch.setattr(worker_module, "classify_telegram_ingress", fail_classification)
+    runtime_logger = logging.getLogger("gate.worker.connector-test")
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=Settings(_env_file=None),
+        runtime_logger=runtime_logger,
+    )
+
+    with pytest.raises(TelegramUpdateProcessingError) as captured:
+        asyncio.run(processor.process(_work_item(bot_key=bot_key)))
+
+    assert captured.value.error_code == error_code
+
+
+def test_payload_cannot_override_trusted_business_connector_role(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    item = _work_item()
+    item.payload["connector_role"] = "alpha_group"
+    item.payload["bot_key"] = "telegram_alpha_group"
+    runtime_logger = logging.getLogger("gate.worker.payload-role-test")
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=Settings(_env_file=None),
+        runtime_logger=runtime_logger,
+    )
+
+    with caplog.at_level(logging.INFO, logger=runtime_logger.name):
+        asyncio.run(processor.process(item))
+
+    assert "ownership_candidate=none" in caplog.text
+    assert "ownership_signal=none" in caplog.text
