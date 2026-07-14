@@ -4,15 +4,17 @@
 **Версия:** 1.0  
 **Дата:** 2026-07-11  
 **Репозиторий:** `markmalina/gate`  
-**Текущий baseline:** после Sprint 12  
-**Следующий спринт:** Sprint 13
+**Исторический baseline:** после Sprint 12  
+**Действующая программа:** [Architecture audit and agent release roadmap](ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md)
 
 > Актуальное состояние production и порядок ближайшей разработки определяются README. Текущий
 > аудит, границы будущих агентов и последовательность релизов определены в
 > [Architecture audit and agent release roadmap](ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md).
 > Этот документ остаётся обязательным baseline для human-controlled inbox/draft/explicit-send;
 > его прежнее исключение автономных собеседников не отменяет узкие отдельные agent capabilities,
-> описанные в новом roadmap. При конфликте сначала перепроверить GitHub и production.
+> описанные в новом roadmap. Процесс PR, merge и автоматического deployment регулирует
+> [Team workflow](TEAM_WORKFLOW.md); его действующие правила имеют приоритет над историческими
+> процедурными формулировками ниже. При конфликте сначала перепроверить GitHub и production.
 
 ---
 
