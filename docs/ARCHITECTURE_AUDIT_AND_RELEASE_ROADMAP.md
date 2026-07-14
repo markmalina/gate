@@ -332,8 +332,9 @@ Activation requires all conditions:
 - exact permitted connector with current `can_reply=true`;
 - sender is not Mark, a bot or service identity;
 - no conflicting Oko enrollment/session;
-- NFKC normalization, case-folding, trimming and whitespace collapsing of the first eligible
-  enrollment message produce exactly `Око возрождения`; prefixes, suffixes and punctuation do not
+- apply NFKC, trim/collapse whitespace and Unicode case-folding to both the first eligible
+  enrollment message and the canonical phrase `Око возрождения`, then require exact equality
+  (canonical normalized value `око возрождения`); prefixes, suffixes and punctuation do not
   activate;
 - an existing personal history with Mark requires review rather than silently taking ownership.
 
@@ -352,9 +353,10 @@ absent → consent_pending → active → paused/completed
 
 The exact enrollment phrase is the user's opt-in request. It creates `consent_pending` and permits
 only one fixed reviewed disclosure. A confirmed delivery of that disclosure moves the session to
-`active`; failed or unknown delivery does not. No second confirmation is required for the MVP.
-Stop, human/Mark and pause commands are deterministic transport policies evaluated before any model
-call in every non-closed state.
+`active`; no second confirmation is required for the MVP. A failed or unknown disclosure delivery
+atomically moves to `handoff_required`, creates exactly one human task and is never automatically
+resent. Stop, human/Mark and pause commands are deterministic transport policies evaluated before
+any model call in every non-closed state.
 
 The first reply discloses a digital assistant and offers a simple stop/human path. In `active`,
 messages remain Gate facts but do not create human reply tasks. Handoff atomically revokes agent
