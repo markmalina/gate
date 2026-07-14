@@ -13,6 +13,7 @@ from app.infrastructure.telegram_queue_maintenance import (
     SqlTelegramQueueMaintenance,
 )
 from app.models.domain import (
+    AuditLog,
     Base,
     TelegramOutboxEvent,
     TelegramOutboxStatus,
@@ -106,6 +107,14 @@ async def test_health_and_recovery_are_bounded_and_redacted() -> None:
                     select(TelegramOutboxEvent).order_by(TelegramOutboxEvent.attempt_count)
                 )
             ).scalars().all()
+            audit = (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action
+                        == "telegram_queue_stale_claims_recovered"
+                    )
+                )
+            ).scalar_one()
         assert [receipt.status for receipt in receipts] == [
             TelegramReceiptStatus.RECEIVED.value,
             TelegramReceiptStatus.DEAD_LETTER.value,
@@ -117,6 +126,17 @@ async def test_health_and_recovery_are_bounded_and_redacted() -> None:
         assert events[0].available_at == now
         assert events[0].locked_at is None
         assert receipts[1].last_error_code == "worker_lease_expired"
+        assert audit.actor == "gate-telegram-worker"
+        assert audit.account_id is None
+        assert audit.project_id is None
+        assert audit.metadata_ == {
+            "recovered": 2,
+            "retry_scheduled": 1,
+            "dead_lettered": 1,
+            "max_attempts": 5,
+            "limit": 100,
+        }
+        assert "payload" not in audit.metadata_
     finally:
         await engine.dispose()
         async with admin_engine.begin() as connection:
