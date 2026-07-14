@@ -1,0 +1,255 @@
+{
+  "schema_version": "telegram-ingress-identity-replay-v1",
+  "policy_version": "work-ownership-shadow-v1",
+  "cases": [
+    {
+      "name": "ru_inbound_human_text_uses_database_snapshot",
+      "connector_role": "business",
+      "identity_snapshot": {
+        "account_id": "synthetic-account-ru",
+        "account_alias": "telegram_mark_ru",
+        "project_id": "synthetic-project",
+        "owner_identity_ids": ["900000001"]
+      },
+      "update": {
+        "update_id": 201,
+        "business_message": {
+          "message_id": 31,
+          "business_connection_id": "synthetic-ru-connection",
+          "chat": {"id": "synthetic-private-chat-ru", "type": "private"},
+          "from": {"id": 800000001, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "database_snapshot",
+        "identity_direction": "inbound",
+        "reply_task_intent": "create_inbound_human_text",
+        "direction_evidence": "human_inbound",
+        "ownership_state": "human_managed",
+        "ownership_candidate": "oko",
+        "ownership_reason": "oko_exact_enrollment_candidate"
+      }
+    },
+    {
+      "name": "by_inbound_human_text_remains_deferred",
+      "connector_role": "business",
+      "identity_snapshot": {
+        "account_id": "synthetic-account-by",
+        "account_alias": "telegram_mark_by",
+        "project_id": "synthetic-project",
+        "owner_identity_ids": ["900000001"]
+      },
+      "update": {
+        "update_id": 202,
+        "business_message": {
+          "message_id": 32,
+          "business_connection_id": "synthetic-by-connection",
+          "chat": {"id": "synthetic-private-chat-by", "type": "private"},
+          "from": {"id": 800000002, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "database_snapshot",
+        "identity_direction": "inbound",
+        "reply_task_intent": "create_inbound_human_text",
+        "direction_evidence": "human_inbound",
+        "ownership_state": "human_managed",
+        "ownership_candidate": null,
+        "ownership_reason": "by_deferred"
+      }
+    },
+    {
+      "name": "owner_outbound_satisfies_existing_reply_work",
+      "connector_role": "business",
+      "identity_snapshot": {
+        "account_id": "synthetic-account-ru",
+        "account_alias": "telegram_mark_ru",
+        "project_id": "synthetic-project",
+        "owner_identity_ids": ["900000001"]
+      },
+      "update": {
+        "update_id": 203,
+        "business_message": {
+          "message_id": 33,
+          "business_connection_id": "synthetic-ru-connection",
+          "chat": {"id": "synthetic-private-chat-owner", "type": "private"},
+          "from": {"id": 900000001, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "database_snapshot",
+        "identity_direction": "outbound",
+        "reply_task_intent": "satisfy_existing",
+        "direction_evidence": "owner_outbound",
+        "ownership_state": "human_managed",
+        "ownership_candidate": null,
+        "ownership_reason": "default_human"
+      }
+    },
+    {
+      "name": "unknown_connection_is_fail_closed",
+      "connector_role": "business",
+      "identity_snapshot": null,
+      "update": {
+        "update_id": 204,
+        "business_message": {
+          "message_id": 34,
+          "business_connection_id": "synthetic-unknown-connection",
+          "chat": {"id": "synthetic-private-chat-unknown", "type": "private"},
+          "from": {"id": 800000003, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "connection_not_found",
+        "identity_direction": "unresolved",
+        "reply_task_intent": "unresolved",
+        "direction_evidence": "unknown",
+        "ownership_state": "quarantined",
+        "ownership_candidate": null,
+        "ownership_reason": "unresolved_context"
+      }
+    },
+    {
+      "name": "disabled_connection_is_indistinguishable_and_fail_closed",
+      "connector_role": "business",
+      "identity_snapshot": null,
+      "update": {
+        "update_id": 205,
+        "business_message": {
+          "message_id": 35,
+          "business_connection_id": "synthetic-disabled-connection",
+          "chat": {"id": "synthetic-private-chat-disabled", "type": "private"},
+          "from": {"id": 800000004, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "connection_not_found",
+        "identity_direction": "unresolved",
+        "reply_task_intent": "unresolved",
+        "direction_evidence": "unknown",
+        "ownership_state": "quarantined",
+        "ownership_candidate": null,
+        "ownership_reason": "unresolved_context"
+      }
+    },
+    {
+      "name": "service_sender_never_creates_reply_work",
+      "connector_role": "business",
+      "identity_snapshot": {
+        "account_id": "synthetic-account-ru",
+        "account_alias": "telegram_mark_ru",
+        "project_id": "synthetic-project",
+        "owner_identity_ids": ["900000001"]
+      },
+      "update": {
+        "update_id": 206,
+        "business_message": {
+          "message_id": 36,
+          "business_connection_id": "synthetic-ru-connection",
+          "chat": {"id": "synthetic-private-chat-service", "type": "private"},
+          "from": {"id": 800000005, "is_bot": true},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "database_snapshot",
+        "identity_direction": "bot_or_service",
+        "reply_task_intent": "none",
+        "direction_evidence": "bot_or_service",
+        "ownership_state": "human_managed",
+        "ownership_candidate": null,
+        "ownership_reason": "default_human"
+      }
+    },
+    {
+      "name": "legacy_private_business_message_uses_database_snapshot",
+      "connector_role": "business",
+      "identity_snapshot": {
+        "account_id": "synthetic-account-ru",
+        "account_alias": "telegram_mark_ru",
+        "project_id": "synthetic-project",
+        "owner_identity_ids": ["900000001"]
+      },
+      "update": {
+        "update_id": 208,
+        "message": {
+          "message_id": 38,
+          "business_connection_id": "synthetic-legacy-connection",
+          "chat": {"id": "synthetic-legacy-private-chat", "type": "private"},
+          "from": {"id": 800000007, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "database_snapshot",
+        "identity_direction": "inbound",
+        "reply_task_intent": "create_inbound_human_text",
+        "direction_evidence": "human_inbound",
+        "ownership_state": "human_managed",
+        "ownership_candidate": null,
+        "ownership_reason": "default_human"
+      }
+    },
+    {
+      "name": "unknown_legacy_private_business_message_is_quarantined",
+      "connector_role": "business",
+      "identity_snapshot": null,
+      "update": {
+        "update_id": 209,
+        "message": {
+          "message_id": 39,
+          "business_connection_id": "synthetic-legacy-unknown-connection",
+          "chat": {"id": "synthetic-legacy-private-chat", "type": "private"},
+          "from": {"id": 800000008, "is_bot": false},
+          "text": "обычное сообщение"
+        }
+      },
+      "expected": {
+        "reader_calls": 1,
+        "identity_resolution": "connection_not_found",
+        "identity_direction": "unresolved",
+        "reply_task_intent": "unresolved",
+        "direction_evidence": "unknown",
+        "ownership_state": "quarantined",
+        "ownership_candidate": null,
+        "ownership_reason": "unresolved_context"
+      }
+    },
+    {
+      "name": "group_invocation_uses_sender_shape_without_identity_read",
+      "connector_role": "alpha_group",
+      "bot_username": "synthetic_alpha_bot",
+      "update": {
+        "update_id": 207,
+        "message": {
+          "message_id": 37,
+          "chat": {"id": "synthetic-group-chat", "type": "supergroup"},
+          "from": {"id": 800000006, "is_bot": false},
+          "text": "/ask@synthetic_alpha_bot вопрос"
+        }
+      },
+      "expected": {
+        "reader_calls": 0,
+        "identity_resolution": "not_applicable",
+        "identity_direction": "not_applicable",
+        "reply_task_intent": "not_applicable",
+        "direction_evidence": "human_inbound",
+        "ownership_state": "human_managed",
+        "ownership_candidate": "alpha_group",
+        "ownership_reason": "alpha_group_invocation_candidate"
+      }
+    }
+  ]
+}
