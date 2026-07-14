@@ -20,7 +20,6 @@ contact-sync = [
 ]
 dev = [
   "anyio>=4.4.0",
-  "jsonschema>=4.23.0",
   "mypy>=1.11.0",
   "pytest>=8.3.0",
   "ruff>=0.6.0",
@@ -28,6 +27,7 @@ dev = [
 
 [project.scripts]
 gate-contact-sync = "app.contact_sync.cli:main"
+gate-telegram-worker = "app.worker.telegram_processing:main"
 
 [tool.ruff]
 target-version = "py312"
