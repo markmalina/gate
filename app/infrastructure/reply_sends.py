@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import case, select, update
+from sqlalchemy import and_, case, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -43,10 +43,9 @@ _SENDABLE_DRAFT_STATUSES = frozenset(
         ReplyDraftStatus.EDITED.value,
     }
 )
-_BLOCKING_TASK_ATTEMPT_STATUSES = (
+_ACTIVE_CONVERSATION_ATTEMPT_STATUSES = (
     SendAttemptStatus.RESERVED.value,
     SendAttemptStatus.SENDING.value,
-    SendAttemptStatus.SENT.value,
     SendAttemptStatus.UNKNOWN.value,
 )
 
@@ -214,10 +213,7 @@ class SqlTelegramReplySender:
                 account_label_value=context.account_label,
                 target_chat_id=context.target_chat_id,
             )
-            existing = await self._load_attempt_model(
-                draft_id=context.draft_id,
-                for_update=False,
-            )
+            existing = await self._load_attempt_model(draft_id=context.draft_id)
             if existing is not None:
                 self._validate_attempt_binding(existing, context)
                 replay = self._attempt_result(
@@ -227,9 +223,9 @@ class SqlTelegramReplySender:
                 )
             else:
                 await self._raise_if_task_send_blocked(
+                    conversation_id=context.conversation_id,
                     task_id=context.task_id,
                     draft_id=context.draft_id,
-                    for_update=False,
                 )
                 self._validate_context_delivery(context)
                 origin_id = context.origin_connection_id
@@ -352,8 +348,7 @@ class SqlTelegramReplySender:
                     target_chat_id=current.target_chat_id,
                 )
                 existing = await self._load_attempt_model(
-                    draft_id=current.draft_id,
-                    for_update=True,
+                    draft_id=current.draft_id
                 )
                 if existing is not None:
                     self._validate_attempt_binding(existing, current)
@@ -364,9 +359,9 @@ class SqlTelegramReplySender:
                     )
                 else:
                     await self._raise_if_task_send_blocked(
+                        conversation_id=current.conversation_id,
                         task_id=current.task_id,
                         draft_id=current.draft_id,
-                        for_update=True,
                     )
                     if _send_fingerprint(current) != _send_fingerprint(intent.context):
                         raise ReplySendError(
@@ -509,8 +504,7 @@ class SqlTelegramReplySender:
         async with self._session.begin():
             context = await self._load_context_snapshot(command, for_update=True)
             concurrent = await self._load_attempt_model(
-                draft_id=context.draft_id,
-                for_update=True,
+                draft_id=context.draft_id
             )
             if concurrent is None:
                 raise ReplySendError(
@@ -893,13 +887,20 @@ class SqlTelegramReplySender:
         self,
         *,
         draft_id: UUID,
-        for_update: bool,
     ) -> SendAttempt | None:
+        """Read an attempt without reversing the global outcome lock order.
+
+        Authoritative reservation and concurrent-replay callers already hold the
+        draft/task/conversation context lock; preflight uses this only as an advisory
+        early read. Outcome processing deliberately locks attempt first and context
+        second, so taking an attempt row lock here would create a context -> attempt
+        inversion. The conversation lock serializes reservation decisions and the
+        unique draft constraint remains the final idempotency guard.
+        """
+
         statement = select(SendAttempt).where(
             SendAttempt.reply_draft_id == draft_id
         )
-        if for_update:
-            statement = statement.with_for_update()
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
@@ -918,29 +919,46 @@ class SqlTelegramReplySender:
     async def _raise_if_task_send_blocked(
         self,
         *,
+        conversation_id: UUID,
         task_id: UUID,
         draft_id: UUID,
-        for_update: bool,
     ) -> None:
+        """Fence overlapping sends without locking attempt rows.
+
+        The authoritative call runs after the joined context query has locked the
+        conversation.  Active or ambiguous attempts fence the whole conversation;
+        a completed send fences only its original task so a later inbound task in the
+        same conversation can still be answered.  This remains a non-locking MVCC read
+        to avoid context -> attempt lock inversion with outcome processing.
+        """
+
         statement = (
             select(SendAttempt.id)
             .where(
-                SendAttempt.reply_task_id == task_id,
                 SendAttempt.reply_draft_id != draft_id,
-                SendAttempt.status.in_(_BLOCKING_TASK_ATTEMPT_STATUSES),
+                or_(
+                    and_(
+                        SendAttempt.conversation_id == conversation_id,
+                        SendAttempt.status.in_(
+                            _ACTIVE_CONVERSATION_ATTEMPT_STATUSES
+                        ),
+                    ),
+                    and_(
+                        SendAttempt.reply_task_id == task_id,
+                        SendAttempt.status == SendAttemptStatus.SENT.value,
+                    ),
+                ),
             )
             .order_by(SendAttempt.created_at, SendAttempt.id)
             .limit(1)
         )
-        if for_update:
-            statement = statement.with_for_update()
         result = await self._session.execute(statement)
         if result.scalar_one_or_none() is not None:
             raise ReplySendError(
                 code="task_send_blocked",
                 message=(
-                    "Another send attempt already blocks this reply task; "
-                    "do not send a second draft"
+                    "Another send attempt already blocks this reply task or "
+                    "conversation; do not send a second draft"
                 ),
             )
 
@@ -1171,9 +1189,16 @@ def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bo
 
 def _delivery_failure(exc: Exception) -> tuple[str, str]:
     if isinstance(exc, TelegramApiError):
-        status_code = exc.http_status or exc.error_code
-        if status_code is not None and status_code >= 500:
-            return SendAttemptStatus.UNKNOWN.value, f"telegram_http_{status_code}"
+        server_code = next(
+            (
+                code
+                for code in (exc.http_status, exc.error_code)
+                if code is not None and code >= 500
+            ),
+            None,
+        )
+        if server_code is not None:
+            return SendAttemptStatus.UNKNOWN.value, f"telegram_http_{server_code}"
         if exc.error_code is not None:
             return SendAttemptStatus.FAILED.value, f"telegram_api_{exc.error_code}"
         return SendAttemptStatus.FAILED.value, "telegram_api_error"

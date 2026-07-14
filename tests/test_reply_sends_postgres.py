@@ -226,6 +226,67 @@ async def _seed_reply(
     )
 
 
+async def _add_reply_task_in_same_conversation(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    seed: _SeededReply,
+) -> tuple[UUID, UUID]:
+    message_id = uuid4()
+    task_id = uuid4()
+    draft_id = uuid4()
+    received_at = datetime.now(UTC) + timedelta(seconds=1)
+    async with sessions() as session:
+        conversation = await session.get(Conversation, seed.conversation_id)
+        assert conversation is not None
+        session.add_all(
+            [
+                Message(
+                    id=message_id,
+                    bot_id=seed.bot_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    direction=MessageDirection.INBOUND.value,
+                    source="telegram",
+                    event_type="business_message",
+                    chat_id=seed.recipient_chat_id,
+                    sender_id=seed.recipient_chat_id,
+                    text="A second pending reply task",
+                    business_connection_id=seed.business_connection_id,
+                    payload={},
+                    received_at=received_at,
+                ),
+                ReplyTask(
+                    id=task_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    conversation_id=seed.conversation_id,
+                    trigger_message_id=message_id,
+                    status=ReplyTaskStatus.NEEDS_REPLY.value,
+                    priority=100,
+                    reason="second_concurrent_reply_task",
+                ),
+                ReplyDraft(
+                    id=draft_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    reply_task_id=task_id,
+                    conversation_id=seed.conversation_id,
+                    trigger_message_id=message_id,
+                    status=ReplyDraftStatus.GENERATED.value,
+                    source="second_concurrent_reply_task",
+                    draft_text="Approved draft for the second task",
+                    prompt_context={},
+                ),
+            ]
+        )
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = True
+        conversation.last_inbound_at = received_at
+        conversation.last_message_at = received_at
+        await session.commit()
+    return task_id, draft_id
+
+
 def _command(seed: _SeededReply, draft_id: UUID) -> SendApprovedReplyCommand:
     return SendApprovedReplyCommand(
         principal=Principal(
@@ -440,6 +501,79 @@ async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
         assert outbound_count == 1
 
 
+@pytest.mark.anyio
+async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        second_task_id, second_draft_id = await _add_reply_task_in_same_conversation(
+            sessions,
+            seed=seed,
+        )
+        telegram = _ConcurrentTelegram()
+        draft_ids = (seed.draft_ids[0], second_draft_id)
+        sends = [
+            asyncio.create_task(
+                _send_once(
+                    sessions,
+                    seed=seed,
+                    draft_id=draft_id,
+                    telegram=telegram,
+                )
+            )
+            for draft_id in draft_ids
+        ]
+
+        try:
+            await asyncio.wait_for(telegram.all_probes_started.wait(), timeout=5)
+            telegram.release_probes.set()
+            await asyncio.wait_for(telegram.send_started.wait(), timeout=5)
+
+            async with sessions() as observer:
+                reserved_attempts = (await observer.execute(select(SendAttempt))).scalars().all()
+            assert len(reserved_attempts) == 1
+            assert reserved_attempts[0].status == SendAttemptStatus.SENDING.value
+            assert reserved_attempts[0].reply_task_id in {
+                seed.task_id,
+                second_task_id,
+            }
+
+            completed, _pending = await asyncio.wait(
+                sends,
+                timeout=5,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            assert len(completed) == 1
+            blocked_error = next(iter(completed)).exception()
+            assert isinstance(blocked_error, ReplySendError)
+            assert blocked_error.code == "task_send_blocked"
+        finally:
+            telegram.release_probes.set()
+            telegram.release_send.set()
+
+        outcomes = await asyncio.gather(*sends, return_exceptions=True)
+        successes = [outcome for outcome in outcomes if isinstance(outcome, ReplySendResult)]
+        failures = [outcome for outcome in outcomes if isinstance(outcome, ReplySendError)]
+
+        assert len(successes) == 1
+        assert successes[0].sent is True
+        assert successes[0].idempotent_replay is False
+        assert len(failures) == 1
+        assert failures[0].code == "task_send_blocked"
+        assert telegram.probe_calls == 2
+        assert telegram.send_calls == 1
+
+        async with sessions() as session:
+            attempt_count = await session.scalar(select(func.count()).select_from(SendAttempt))
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert attempt_count == 1
+        assert outbound_count == 1
+
+
 class _BlockingProbeTelegram:
     def __init__(self) -> None:
         self.probe_started = asyncio.Event()
@@ -511,6 +645,105 @@ async def test_draft_edit_during_probe_fails_closed_before_reservation() -> None
             )
 
         assert attempt_count == 0
+        assert outbound_count == 0
+
+
+@pytest.mark.anyio
+async def test_reservation_replay_does_not_wait_on_outcome_attempt_lock() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        telegram = _BlockingProbeTelegram()
+        send = asyncio.create_task(
+            _send_once(
+                sessions,
+                seed=seed,
+                draft_id=seed.draft_ids[0],
+                telegram=telegram,
+            )
+        )
+        attempt_id = uuid4()
+
+        try:
+            # Reaching the probe proves preflight observed no attempt. The sender
+            # must therefore enter the authoritative reservation/context-lock path
+            # after the independently committed attempt appears below.
+            await asyncio.wait_for(telegram.probe_started.wait(), timeout=5)
+            now = datetime.now(UTC)
+            async with sessions() as session:
+                session.add(
+                    SendAttempt(
+                        id=attempt_id,
+                        reply_draft_id=seed.draft_ids[0],
+                        reply_task_id=seed.task_id,
+                        conversation_id=seed.conversation_id,
+                        account_id=seed.account_id,
+                        project_id=seed.project_id,
+                        principal_subject="concurrent-outcome",
+                        status=SendAttemptStatus.SENDING.value,
+                        account_label="RU",
+                        target_chat_id=seed.recipient_chat_id,
+                        business_connection_id=seed.business_connection_id,
+                        reserved_at=now,
+                        started_at=now,
+                    )
+                )
+                await session.commit()
+
+            async with sessions() as outcome_session:
+                await outcome_session.execute(text("SET LOCAL lock_timeout = '750ms'"))
+                locked_attempt = (
+                    await outcome_session.execute(
+                        select(SendAttempt).where(SendAttempt.id == attempt_id).with_for_update()
+                    )
+                ).scalar_one()
+                telegram.release_probe.set()
+                # This must finish while outcome_session still holds the attempt
+                # row lock. A context -> attempt FOR UPDATE inversion times out here.
+                replay = await asyncio.wait_for(
+                    asyncio.shield(send),
+                    timeout=5,
+                )
+                assert outcome_session.in_transaction() is True
+
+                # Outcome's attempt -> context order can now complete as well.
+                await outcome_session.execute(
+                    select(ReplyDraft.id)
+                    .where(ReplyDraft.id == seed.draft_ids[0])
+                    .with_for_update()
+                )
+                await outcome_session.execute(
+                    select(Conversation.id)
+                    .where(Conversation.id == seed.conversation_id)
+                    .with_for_update()
+                )
+                locked_attempt.status = SendAttemptStatus.SENT.value
+                locked_attempt.provider_message_id = "lock-order-outcome"
+                locked_attempt.finished_at = datetime.now(UTC)
+                await outcome_session.commit()
+        finally:
+            telegram.release_probe.set()
+            if not send.done():
+                send.cancel()
+                with suppress(asyncio.CancelledError, ReplySendError):
+                    await send
+
+        assert replay.attempt_id == attempt_id
+        assert replay.status == SendAttemptStatus.SENDING.value
+        assert replay.sent is False
+        assert replay.idempotent_replay is True
+        assert telegram.send_calls == 0
+
+        async with sessions() as session:
+            persisted_attempt = await session.get(SendAttempt, attempt_id)
+            outbound_count = await session.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert persisted_attempt is not None
+        assert persisted_attempt.status == SendAttemptStatus.SENT.value
+        assert persisted_attempt.provider_message_id == "lock-order-outcome"
         assert outbound_count == 0
 
 

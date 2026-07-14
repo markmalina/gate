@@ -46,9 +46,7 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _principal(
-    *, scopes: frozenset[str], explicit: bool = True
-) -> Principal:
+def _principal(*, scopes: frozenset[str], explicit: bool = True) -> Principal:
     return Principal(
         subject="user-123",
         auth_method="oauth2",
@@ -97,16 +95,12 @@ async def test_send_requires_scope_and_explicit_confirmation() -> None:
     ("account", "recipient"),
     [("", "12345"), ("DE", "12345"), ("RU", ""), ("BY", "   ")],
 )
-async def test_send_rejects_invalid_account_or_recipient(
-    account: str, recipient: str
-) -> None:
+async def test_send_rejects_invalid_account_or_recipient(account: str, recipient: str) -> None:
     executor = CapturingExecutor()
     service = SendApprovedReplyService(executor)
 
     with pytest.raises(ReplySendError) as exc_info:
-        await service.execute(
-            _command(expected_account=account, recipient=recipient)
-        )
+        await service.execute(_command(expected_account=account, recipient=recipient))
 
     assert exc_info.value.code == "invalid_confirmation"
     assert executor.commands == []
@@ -117,9 +111,7 @@ async def test_send_normalizes_confirmation_before_delivery() -> None:
     executor = CapturingExecutor()
     service = SendApprovedReplyService(executor)
 
-    result = await service.execute(
-        _command(expected_account="  ru  ", recipient=" 12345 ")
-    )
+    result = await service.execute(_command(expected_account="  ru  ", recipient=" 12345 "))
 
     assert result.sent is True
     assert executor.commands[0].expected_account == "RU"
@@ -153,6 +145,16 @@ def test_telegram_server_error_is_unknown() -> None:
         error_code=500,
         description="Internal Server Error",
         http_status=500,
+    )
+
+    assert _delivery_failure(error) == ("unknown", "telegram_http_500")
+
+
+def test_telegram_server_error_code_is_unknown_even_with_http_200() -> None:
+    error = TelegramApiError(
+        error_code=500,
+        description="Internal Server Error in a nominal HTTP response",
+        http_status=200,
     )
 
     assert _delivery_failure(error) == ("unknown", "telegram_http_500")
