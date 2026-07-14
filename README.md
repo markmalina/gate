@@ -15,6 +15,7 @@ Read next:
 - [Team workflow](docs/TEAM_WORKFLOW.md) — authority, PR, CI, merge, deployment and terminology rules;
 - [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) — current technical findings, target boundaries and six sequential product releases;
 - [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md) — target architecture and scale requirements;
+- [Telegram ingress cutover](docs/TELEGRAM_INGRESS_CUTOVER.md) — frozen legacy chain, invariants and canonical migration phases;
 - [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md) — operational and safety rules.
 
 If any older document conflicts with the verified current state in this README, re-check GitHub and production first, then update the documentation in the same substantive PR.
@@ -41,10 +42,7 @@ Telegram communication fact
 
 Current product goal: let Mark see who wrote to him, distinguish unanswered inbound conversations from messages he already sent, get GPT help with a reply, approve the exact result and send it through the correct Telegram Business account.
 
-The next product program preserves that human-controlled path while adding two separately scoped
-agents: an Alpha bot for explicitly approved Telegram groups and an Oko assistant for eligible RU
-Telegram Business dialogs. Their release sequence and safety boundaries are defined in the
-[architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md).
+The next product program preserves that human-controlled path while adding two separately scoped agents: an Alpha bot for explicitly approved Telegram groups and an Oko assistant for eligible RU Telegram Business dialogs. Their release sequence and safety boundaries are defined in the [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md).
 
 ## 2. Product and agent terminology
 
@@ -79,12 +77,20 @@ Live counters are operational snapshots, not invariants. At verification they we
 
 Public verification endpoints:
 
-- `GET /health` — lightweight service health;
+- `GET /health` — backward-compatible lightweight service health;
+- `GET /live` — process liveness only; it does not claim that dependencies are ready;
+- `GET /ready` — redacted database connectivity and exact Alembic-head readiness;
 - `GET /deployment/fingerprint` — Railway commit and non-secret deployment metadata;
 - `GET /.well-known/oauth-protected-resource/mcp` — MCP protected-resource metadata;
 - `POST /mcp` — MCP transport, protected per tool by OAuth.
 
 After every merge, verify the exact new Railway commit. A healthy old release is not proof that the new release deployed.
+
+Railway runs `alembic upgrade head` before probing `/ready`. CI deliberately keeps a single
+Alembic head, while the runtime check uses the plural Alembic APIs and requires exact equality
+between every code head and database head. Migrations must therefore follow backward-compatible
+expand/contract rules. After a schema migration, rollback is a forward fix or a coordinated database
+rollback; an application-only rollback must not be assumed safe.
 
 ## 4. Current ChatGPT Work MVP
 
@@ -112,6 +118,8 @@ Active tools:
 | `gate_get_reply_context` | `gate:inbox:read` | Bounded chronological context for one scoped reply task |
 | `gate_save_reply_draft` | `gate:drafts:write` | Saves proposed text; never approves or sends |
 | `gate_send_approved_reply` | `gate:messages:send` | Sends the exact saved draft only after explicit confirmation of account, recipient and final text |
+
+Every tool advertises a strict JSON `outputSchema`; CI validates the descriptors and representative success/error `structuredContent` against those schemas.
 
 Important UI behavior:
 
@@ -193,8 +201,8 @@ PR #100 added account-scoped `Person` / `PersonIdentity` persistence and resolve
 
 Current limitation: the Telegram **Bot API** supplies the other party's Telegram profile/chat name, not the private label Mark saved in his personal Telegram address book. Therefore:
 
-- current lists may still show profile names such as “Sam O. Gone” instead of Mark's saved name;
-- historical approved-draft messages created before identity snapshots can still show a numeric ID;
+- MCP lists and reply context resolve imported account-scoped names at read time, including messages created before identity snapshots;
+- contacts absent from the imported user-ID/name pairs can still show a Telegram profile name or numeric ID;
 - Gate must not infer a saved contact name from message wording;
 - Telegram Desktop JSON can provide offline user ID/name pairs for exported personal chats; phone-only address-book rows still require a separate identity source for complete matching.
 
@@ -204,12 +212,14 @@ Delivery status and intended continuation:
 2. PR #104 added the preferred offline Telegram Desktop JSON reader, source-account ownership verification and a one-shot PowerShell-compatible import path.
 3. RU Desktop-export contacts have been imported; BY remains pending until Telegram permits its Desktop export.
 4. `gate_get_status` reports privacy-bounded aggregate import evidence per granted account.
-5. Keep Telegram session material outside message payloads, logs and Git history.
-6. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
-7. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
-8. Backfill existing `PersonIdentity`, conversation and message linkage without rewriting communication facts.
-9. Make synchronized contact names authoritative over profile names in MCP output.
-10. Import and verify BY after its export becomes available, then document one-time onboarding for future accounts.
+5. MCP unanswered, answered and reply-context reads prefer the imported account-scoped contact name without rewriting historical message facts.
+   The current imported identity intentionally outranks an older message snapshot, because that snapshot may contain the pre-import Telegram profile name.
+6. Keep Telegram session material outside message payloads, logs and Git history.
+7. Send only sanitized `(account, Telegram user ID, saved display name, optional username, revision)` snapshots to Gate.
+8. Upsert names account-scoped; the same Telegram user may have different saved names in RU and BY.
+9. Backfill existing `PersonIdentity`, conversation and message linkage without rewriting communication facts.
+10. Make synchronized contact names authoritative over profile names in MCP output.
+11. Import and verify BY after its export becomes available, then document one-time onboarding for future accounts.
 
 Telegram authorization is not required for the Desktop export path. It remains an optional fallback when complete phone-to-user-ID matching is required, because Desktop `contacts.list` has no Telegram user IDs. No Telegram user-session secret has been added to production.
 
@@ -267,15 +277,15 @@ Core persisted concepts currently include `Account`, `Project`, `TelegramBusines
 
 The MVP works, but the target architecture is not complete.
 
-1. **Sprint router chain.** Multiple incremental Telegram routers remain registered. Replace them with one canonical ingress/application pipeline only after parity tests.
+1. **Sprint router chain.** Registration is centralized and frozen by characterization tests, but the incremental handlers still delegate directly. Replace them with one canonical ingress/application pipeline only after shadow parity.
 2. **Webhook durability.** The target is durable receipt + transactional outbox + worker before acknowledging. Current flow still contains synchronous domain work.
 3. **MCP direct ORM access.** Move MCP reads behind scoped query services/read models.
 4. **Operational exact counts.** Current status performs exact counts; this does not scale to very large history.
 5. **Static RU/BY assumptions.** Workspace access is dynamic, but some labels/configuration and send schema still assume RU/BY. A third account must be addable without a code change.
 6. **Project isolation evolution.** The final model needs explicit workspace/project grants, dialog identity independent of project, and time-bounded context binding.
 7. **Legacy routing data.** Production required collision-safe and NULL-safe repair migrations. CI against an empty database did not expose every production-data shape.
-8. **Contact directory rollout.** RU Desktop-export sync is complete; BY sync and the full historical display cutover remain operational work. MTProto authorization is fallback-only.
-9. **Output schemas.** ChatGPT recommends explicit output schemas for tools; add them without breaking existing MCP clients.
+8. **Contact directory rollout.** RU Desktop-export sync and MCP read-time name cutover are complete; BY sync and unmatched phone-only identities remain operational work. MTProto authorization is fallback-only.
+9. **Schema evolution.** Explicit output schemas are enforced in CI; future response changes must remain backward-compatible or be intentionally versioned.
 10. **Observability.** Add structured redacted metrics for webhook latency, queue lag, duplicate rate, DLQ, send failures/unknown, Telegram 429 and DB pool pressure.
 11. **Scale path.** The billion-message target requires partitioning, hot/cold separation, object storage for raw payload/media, read projections and measured thresholds—not a claim that one Railway database stores everything forever.
 
@@ -298,32 +308,53 @@ Key merged milestones:
 | #100 | Stable contact identity seam and redacted connection health |
 | #102 | Protected, bounded and idempotent contact snapshot boundary |
 | #104 | Verified offline Telegram Desktop export import path and RU rollout |
+| #105 | Privacy-bounded per-account contact import observability |
+| #106 | Account-scoped imported-name precedence across MCP reads |
+| #107 | Current imported names supersede stale historical message snapshots |
+| #108 | Explicit bounded output schemas for all five MCP tools, validated against runtime payloads |
+| #109 | Frozen Telegram ingress registration boundary, characterization guard and canonical cutover plan |
+| #110 | Scoped MCP status application query extracted from the transport route |
+| #111 | Scoped MCP inbox and reply-context queries extracted from the transport route |
+| #112 | Side-effect-free canonical Telegram ingress classifier, fixture replay and redacted production shadow observations |
+| #113 | Configured account/project routing context and reply-task candidate parity in redacted ingress shadow |
+| #114 | Select-only identity snapshot boundary for database-backed connection, direction and reply-task parity |
+| #115 | Idempotent Telegram receipt/outbox application contract and bounded retry/dead-letter policy |
+| #116 | Durable Telegram receipt and transactional outbox schema with reversible migration |
+| #117 | Atomic PostgreSQL receipt/outbox acceptance with concurrent idempotency coverage |
+| #118 | Bounded one-item worker contract for success, retry and hard dead-letter outcomes |
+| #119 | Exclusive PostgreSQL queue claims and atomic processed/retry/dead-letter transitions |
+| #120 | Disabled-by-default one-shot Telegram shadow worker runtime with redacted classification |
+| #121 | Redacted queue health aggregates and bounded stale-claim retry/dead-letter recovery |
+| #122 | Disabled Oko Telegram-start attribution parser and fail-closed HTTP adapter |
+| #123 | Deterministic queue alert severity and payload-free recovery audit records |
+| #124 | Application contract for durable queue alert incidents, delivery gating and operator acknowledgement |
+| #125 | Dormant Telegram queue incident schema and serialized PostgreSQL lifecycle adapter |
+| #126 | Dormant authenticated HTTPS queue alert notifier with incident-key idempotency |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
 ## 13. Ordered next development plan
 
-Do not start several tracks in one PR.
+The [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) is the
+single authority for implementation order. Do not run several tracks in one PR.
 
-### Immediate product continuation
+1. **Reliable transport foundation:** process-owned DB/runtime resources, honest readiness, replay
+   evidence, ownership contracts and dormant durable acceptance.
+2. **Canonical ingress and Agent Kernel:** worker cutover by update class plus versioned,
+   shadow-only agent proposals.
+3. **Alpha group bot:** one separate credential, approved installation and command/reply-only pilot.
+4. **Oko ownership and handoff:** exact RU enrollment phrase, consent, inbox separation and a fixed
+   reviewed first response.
+5. **Controlled Oko pilot:** bounded dynamic responses, memory, delivery grants and mandatory
+   handoff.
+6. **Operational release:** remove unreachable legacy paths, prove isolation, restore/rollback and
+   reusable multi-installation operation.
 
-1. **Complete BY Desktop-export rollout.** Export after Telegram's availability delay, run the same verified one-shot import and confirm aggregate evidence in Gate status.
-2. **Contact backfill and display cutover.** Preserve saved-name precedence in unanswered/answered/context and remediate historical numeric IDs through identity linkage.
-3. **Dedicated contact-sync authorization.** Replace temporary admin-bearer reuse before any permanent schedule/service is enabled.
-4. **MCP output schemas.** Add explicit bounded output schemas and refresh ChatGPT actions.
-5. **Account generalization acceptance test.** Add a third test account without code or Auth0 UUID edits; verify receive → inbox → draft → confirmed send.
+BY Desktop-export/contact rollout, recurring contact sync, a third personal account and voice/media
+remain explicitly deferred throughout this program.
 
-### Target architecture continuation
-
-6. Runtime foundation: singleton DB engine, bounded pooled HTTP clients, Unit of Work, liveness/readiness, telemetry.
-7. Canonical ingress: one webhook, durable receipt, outbox, worker, retry/DLQ, safe replay and shadow comparison.
-8. Dynamic account/channel model: remove remaining hard-coded RU/BY paths while preserving human-readable labels.
-9. Workspace/project isolation: explicit grants, account-project bindings, dialog independent of project, time-bounded context segments.
-10. Application services: inbox, routing, context, draft revisions, approvals, sends and audit behind ports.
-11. Adapter cutover: Telegram and MCP use the same application layer; remove sprint routers only after characterization parity.
-12. Scale hardening: projections, keyset pagination, partitions, hot/cold data, backup/restore, load tests and capacity thresholds.
-
-The next executor should begin with item 1 unless Mark explicitly changes priority. Prefer the offline Desktop export path; if MTProto fallback is later required, never place session material in chat or Git.
+Preserve OAuth, account/project isolation, explicit confirmation for every human-managed send and
+backward-compatible MCP schemas throughout.
 
 ## 14. Target architecture and invariants
 
@@ -524,8 +555,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** execute Sprint 1 of the
-[architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md), starting
-with a lifespan-owned database engine/session factory and an honest readiness contract. BY contact
-work and a third personal account remain deferred. Preserve explicit send confirmation and account
-isolation throughout.
+**Immediate continuation:** execute Sprint 1 of the [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md), starting with a lifespan-owned database engine/session factory and an honest readiness contract. BY contact work and a third personal account remain deferred. Preserve explicit send confirmation and account isolation throughout.
