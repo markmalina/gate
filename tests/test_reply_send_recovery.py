@@ -281,7 +281,7 @@ def test_runtime_has_no_loop_or_scheduler_and_exposes_one_shot_script() -> None:
     assert not any(isinstance(node, (ast.For, ast.AsyncFor, ast.While)) for node in ast.walk(tree))
 
     pyproject = tomllib.loads(
-        (source_path.parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
     )
     assert pyproject["project"]["scripts"]["gate-reply-send-recovery"] == (
         "app.worker.reply_send_recovery:main"
