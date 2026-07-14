@@ -181,6 +181,21 @@ PR #126 adds a dormant authenticated HTTPS notifier. It sends only the redacted 
 uses the incident id as the channel idempotency key and requires an explicit bearer credential.
 No endpoint value, secret, environment setting, scheduler or runtime composition is added.
 
+PR #137 adds one public durable-acceptance seam before every frozen legacy webhook layer. Its typed
+`GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE` accepts only `disabled` or `shadow` and defaults to
+`disabled`; a normal deploy therefore preserves the legacy request path and performs no receipt
+write. In `shadow`, Gate authenticates with the typed `TELEGRAM_WEBHOOK_SECRET`, validates a signed
+BIGINT Telegram update id, commits the existing receipt/outbox pair under the stable
+`telegram_business` connector key, and only then delegates to the unchanged legacy chain.
+
+An acceptance failure in `shadow` returns `503` so Telegram may retry; it is never converted to the
+legacy poison-update `200`. A downstream legacy failure may keep its current acknowledgement only
+because the raw update is already committed durably. Receipt and outbox identifiers are not added
+to the response or logs. The merge does not activate `shadow`, run a worker, change a production
+variable or call Telegram. Canary activation remains a separate owner-controlled release action.
+Rollback is `disabled`; already accepted receipts are retained and are never deleted or blindly
+replayed during rollback.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
