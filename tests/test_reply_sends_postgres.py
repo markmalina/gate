@@ -10,6 +10,11 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from app.application.reply_drafts import (
+    ReplyTaskClosedError,
+    SaveReplyDraftCommand,
+    SaveReplyDraftService,
+)
 from app.application.reply_sends import (
     ReplySendError,
     ReplySendResult,
@@ -17,9 +22,11 @@ from app.application.reply_sends import (
 )
 from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
+from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import (
     Account,
+    AuditLog,
     Base,
     Bot,
     Conversation,
@@ -306,6 +313,42 @@ def _command(seed: _SeededReply, draft_id: UUID) -> SendApprovedReplyCommand:
     )
 
 
+def _save_draft_command(seed: _SeededReply, text_value: str) -> SaveReplyDraftCommand:
+    return SaveReplyDraftCommand(
+        principal=Principal(
+            subject="reply-draft-postgres-test",
+            auth_method="oauth2",
+            scopes=frozenset({"gate:drafts:write"}),
+            access_scope=AccessScope(
+                workspace_id="mark-personal",
+                account_ids=frozenset({seed.account_id}),
+                project_ids=frozenset({seed.project_id}),
+            ),
+        ),
+        task_id=seed.task_id,
+        text=text_value,
+    )
+
+
+async def _wait_for_backend_lock(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    backend_pid: int,
+) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 5
+    while loop.time() < deadline:
+        async with sessions() as observer:
+            wait_event_type = await observer.scalar(
+                text("SELECT wait_event_type FROM pg_stat_activity WHERE pid = :backend_pid"),
+                {"backend_pid": backend_pid},
+            )
+        if wait_event_type == "Lock":
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("database backend did not reach the expected lock wait")
+
+
 def _settings() -> Settings:
     return Settings(
         _env_file=None,
@@ -338,6 +381,230 @@ async def _send_once(
             telegram=telegram,
             settings=_settings(),
         ).send(_command(seed, draft_id))
+
+
+@pytest.mark.anyio
+async def test_draft_writer_waits_on_conversation_before_locking_context() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        writer_task: asyncio.Task[Any] | None = None
+
+        async with sessions() as holder, sessions() as writer_session:
+            await holder.execute(text("SET LOCAL lock_timeout = '750ms'"))
+            await holder.execute(
+                select(Conversation.id)
+                .where(Conversation.id == seed.conversation_id)
+                .with_for_update()
+            )
+            backend_pid = await writer_session.scalar(text("SELECT pg_backend_pid()"))
+            assert isinstance(backend_pid, int)
+            writer_task = asyncio.create_task(
+                SaveReplyDraftService(SqlReplyDraftWriter(writer_session)).execute(
+                    _save_draft_command(seed, "A new explicitly saved draft")
+                )
+            )
+
+            try:
+                await _wait_for_backend_lock(
+                    sessions,
+                    backend_pid=backend_pid,
+                )
+
+                # A writer waiting for the conversation must not hold any child
+                # context row needed by a reservation or outcome transaction.
+                await holder.execute(
+                    select(ReplyTask.id).where(ReplyTask.id == seed.task_id).with_for_update()
+                )
+                await holder.execute(
+                    select(Message.id)
+                    .where(Message.id == seed.trigger_message_id)
+                    .with_for_update()
+                )
+                await holder.execute(
+                    select(Account.id).where(Account.id == seed.account_id).with_for_update()
+                )
+                await holder.commit()
+
+                saved = await asyncio.wait_for(
+                    asyncio.shield(writer_task),
+                    timeout=5,
+                )
+                await writer_session.commit()
+            finally:
+                if holder.in_transaction():
+                    await holder.rollback()
+                if writer_task is not None and not writer_task.done():
+                    writer_task.cancel()
+                if writer_task is not None:
+                    await asyncio.gather(writer_task, return_exceptions=True)
+                if writer_session.in_transaction():
+                    await writer_session.rollback()
+
+        assert saved.task_id == seed.task_id
+        assert saved.account_id == seed.account_id
+        assert saved.project_id == seed.project_id
+        assert saved.account_label == "RU"
+        assert saved.recipient_chat_id == seed.recipient_chat_id
+        assert saved.status == ReplyDraftStatus.GENERATED.value
+        assert saved.text == "A new explicitly saved draft"
+
+        async with sessions() as observer:
+            draft_count = await observer.scalar(
+                select(func.count())
+                .select_from(ReplyDraft)
+                .where(ReplyDraft.reply_task_id == seed.task_id)
+            )
+            audits = (
+                (
+                    await observer.execute(
+                        select(AuditLog).where(AuditLog.action == "reply_draft_saved_from_mcp")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            outbound_count = await observer.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert draft_count == 2
+        assert len(audits) == 1
+        assert audits[0].metadata_["draft_id"] == str(saved.draft_id)
+        assert audits[0].metadata_["task_id"] == str(seed.task_id)
+        assert audits[0].metadata_["sent"] is False
+        assert outbound_count == 0
+
+
+@pytest.mark.anyio
+async def test_draft_writer_cannot_deadlock_or_reopen_completed_outcome() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        now = datetime.now(UTC)
+        attempt_id = uuid4()
+        async with sessions() as session:
+            session.add(
+                SendAttempt(
+                    id=attempt_id,
+                    reply_draft_id=seed.draft_ids[0],
+                    reply_task_id=seed.task_id,
+                    conversation_id=seed.conversation_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    principal_subject="reply-draft-lock-order-test",
+                    status=SendAttemptStatus.SENDING.value,
+                    account_label="RU",
+                    target_chat_id=seed.recipient_chat_id,
+                    business_connection_id=seed.business_connection_id,
+                    reserved_at=now,
+                    started_at=now,
+                )
+            )
+            await session.commit()
+
+        writer_task: asyncio.Task[Any] | None = None
+        async with sessions() as outcome, sessions() as writer_session:
+            await outcome.execute(text("SET LOCAL lock_timeout = '750ms'"))
+            locked_attempt = (
+                await outcome.execute(
+                    select(SendAttempt).where(SendAttempt.id == attempt_id).with_for_update()
+                )
+            ).scalar_one()
+            locked_conversation = (
+                await outcome.execute(
+                    select(Conversation)
+                    .where(Conversation.id == seed.conversation_id)
+                    .with_for_update()
+                )
+            ).scalar_one()
+
+            backend_pid = await writer_session.scalar(text("SELECT pg_backend_pid()"))
+            assert isinstance(backend_pid, int)
+            writer_task = asyncio.create_task(
+                SaveReplyDraftService(SqlReplyDraftWriter(writer_session)).execute(
+                    _save_draft_command(seed, "This draft must not be persisted")
+                )
+            )
+
+            try:
+                await _wait_for_backend_lock(
+                    sessions,
+                    backend_pid=backend_pid,
+                )
+                locked_task = (
+                    await outcome.execute(
+                        select(ReplyTask).where(ReplyTask.id == seed.task_id).with_for_update()
+                    )
+                ).scalar_one()
+                locked_draft = (
+                    await outcome.execute(
+                        select(ReplyDraft)
+                        .where(ReplyDraft.id == seed.draft_ids[0])
+                        .with_for_update()
+                    )
+                ).scalar_one()
+
+                locked_attempt.status = SendAttemptStatus.SENT.value
+                locked_attempt.provider_message_id = "lock-order-confirmed"
+                locked_attempt.finished_at = now
+                locked_task.status = ReplyTaskStatus.REPLIED.value
+                locked_task.due_at = None
+                locked_draft.status = ReplyDraftStatus.APPROVED.value
+                locked_conversation.status = ConversationStatus.REPLIED.value
+                locked_conversation.requires_reply = False
+                await outcome.commit()
+
+                with pytest.raises(ReplyTaskClosedError):
+                    await asyncio.wait_for(
+                        asyncio.shield(writer_task),
+                        timeout=5,
+                    )
+                await writer_session.rollback()
+            finally:
+                if outcome.in_transaction():
+                    await outcome.rollback()
+                if writer_task is not None and not writer_task.done():
+                    writer_task.cancel()
+                if writer_task is not None:
+                    await asyncio.gather(writer_task, return_exceptions=True)
+                if writer_session.in_transaction():
+                    await writer_session.rollback()
+
+        async with sessions() as observer:
+            attempt = await observer.get(SendAttempt, attempt_id)
+            task = await observer.get(ReplyTask, seed.task_id)
+            draft = await observer.get(ReplyDraft, seed.draft_ids[0])
+            conversation = await observer.get(Conversation, seed.conversation_id)
+            draft_count = await observer.scalar(
+                select(func.count())
+                .select_from(ReplyDraft)
+                .where(ReplyDraft.reply_task_id == seed.task_id)
+            )
+            audit_count = await observer.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(AuditLog.action == "reply_draft_saved_from_mcp")
+            )
+            outbound_count = await observer.scalar(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.source == "gate-approved-draft")
+            )
+
+        assert attempt is not None
+        assert attempt.status == SendAttemptStatus.SENT.value
+        assert attempt.provider_message_id == "lock-order-confirmed"
+        assert task is not None
+        assert task.status == ReplyTaskStatus.REPLIED.value
+        assert draft is not None
+        assert draft.status == ReplyDraftStatus.APPROVED.value
+        assert conversation is not None
+        assert conversation.status == ConversationStatus.REPLIED.value
+        assert conversation.requires_reply is False
+        assert draft_count == 1
+        assert audit_count == 0
+        assert outbound_count == 0
 
 
 class _LockObservingTelegram:

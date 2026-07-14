@@ -31,10 +31,9 @@ class SqlReplyDraftWriter:
 
     async def save(self, command: SaveReplyDraftCommand) -> SavedReplyDraft:
         scope = command.principal.access_scope
-        result = await self._session.execute(
-            select(ReplyTask, Conversation, Message, Account)
-            .options(undefer(ReplyTask.account_id))
-            .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        locked_conversation_id = await self._session.scalar(
+            select(Conversation.id)
+            .join(ReplyTask, ReplyTask.conversation_id == Conversation.id)
             .join(Message, ReplyTask.trigger_message_id == Message.id)
             .join(Account, ReplyTask.account_id == Account.id)
             .where(
@@ -46,7 +45,29 @@ class SqlReplyDraftWriter:
                 Message.account_id.in_(scope.account_ids),
                 Message.project_id.in_(scope.project_ids),
             )
-            .with_for_update()
+            .with_for_update(of=Conversation)
+        )
+        if locked_conversation_id is None:
+            raise ReplyTaskNotFoundError()
+
+        result = await self._session.execute(
+            select(ReplyTask, Conversation, Message, Account)
+            .options(undefer(ReplyTask.account_id))
+            .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+            .join(Message, ReplyTask.trigger_message_id == Message.id)
+            .join(Account, ReplyTask.account_id == Account.id)
+            .where(
+                ReplyTask.id == command.task_id,
+                ReplyTask.conversation_id == locked_conversation_id,
+                Conversation.id == locked_conversation_id,
+                ReplyTask.account_id.in_(scope.account_ids),
+                ReplyTask.project_id.in_(scope.project_ids),
+                Conversation.account_id.in_(scope.account_ids),
+                Conversation.project_id.in_(scope.project_ids),
+                Message.account_id.in_(scope.account_ids),
+                Message.project_id.in_(scope.project_ids),
+            )
+            .with_for_update(of=(ReplyTask, Message, Account))
         )
         row = result.one_or_none()
         if row is None:
