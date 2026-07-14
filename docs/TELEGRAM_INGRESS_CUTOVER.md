@@ -156,6 +156,10 @@ PR #119 implements the queue boundary with PostgreSQL row locks and `SKIP LOCKED
 guards and atomic paired receipt/outbox transitions. It has no scheduler or runtime entry point, so
 the durable queue remains inactive until worker composition is explicitly enabled.
 
+PR #120 adds a one-shot command that is disabled unless `GATE_TELEGRAM_WORKER_ENABLED=true`.
+When explicitly invoked it claims at most one item and runs only the side-effect-free shadow
+classifier; it is not mounted in the web process and has no loop, scheduler or Telegram client.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
