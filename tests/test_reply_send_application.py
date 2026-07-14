@@ -46,9 +46,7 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _principal(
-    *, scopes: frozenset[str], explicit: bool = True
-) -> Principal:
+def _principal(*, scopes: frozenset[str], explicit: bool = True) -> Principal:
     return Principal(
         subject="user-123",
         auth_method="oauth2",
@@ -97,16 +95,12 @@ async def test_send_requires_scope_and_explicit_confirmation() -> None:
     ("account", "recipient"),
     [("", "12345"), ("DE", "12345"), ("RU", ""), ("BY", "   ")],
 )
-async def test_send_rejects_invalid_account_or_recipient(
-    account: str, recipient: str
-) -> None:
+async def test_send_rejects_invalid_account_or_recipient(account: str, recipient: str) -> None:
     executor = CapturingExecutor()
     service = SendApprovedReplyService(executor)
 
     with pytest.raises(ReplySendError) as exc_info:
-        await service.execute(
-            _command(expected_account=account, recipient=recipient)
-        )
+        await service.execute(_command(expected_account=account, recipient=recipient))
 
     assert exc_info.value.code == "invalid_confirmation"
     assert executor.commands == []
@@ -117,23 +111,21 @@ async def test_send_normalizes_confirmation_before_delivery() -> None:
     executor = CapturingExecutor()
     service = SendApprovedReplyService(executor)
 
-    result = await service.execute(
-        _command(expected_account="  ru  ", recipient=" 12345 ")
-    )
+    result = await service.execute(_command(expected_account="  ru  ", recipient=" 12345 "))
 
     assert result.sent is True
     assert executor.commands[0].expected_account == "RU"
     assert executor.commands[0].expected_recipient_chat_id == "12345"
 
 
-def test_delivery_timeout_is_unknown_and_other_errors_are_failed() -> None:
+def test_ambiguous_delivery_failures_are_unknown() -> None:
     request = httpx.Request("POST", "https://api.telegram.org/sendMessage")
     timeout = httpx.ReadTimeout("timed out", request=request)
 
     assert _delivery_failure(timeout) == ("unknown", "telegram_timeout")
     assert _delivery_failure(RuntimeError("telegram failed")) == (
-        "failed",
-        "telegram_error",
+        "unknown",
+        "telegram_unconfirmed",
     )
 
 
@@ -146,3 +138,53 @@ def test_telegram_api_error_preserves_sanitized_diagnostics() -> None:
 
     assert _delivery_failure(error) == ("failed", "telegram_api_400")
     assert _safe_error_detail(error) == "Bad Request: business connection not found"
+
+
+def test_telegram_server_error_is_unknown() -> None:
+    error = TelegramApiError(
+        error_code=500,
+        description="Internal Server Error",
+        http_status=500,
+    )
+
+    assert _delivery_failure(error) == ("unknown", "telegram_http_500")
+
+
+def test_telegram_server_error_code_is_unknown_even_with_http_200() -> None:
+    error = TelegramApiError(
+        error_code=500,
+        description="Internal Server Error in a nominal HTTP response",
+        http_status=200,
+    )
+
+    assert _delivery_failure(error) == ("unknown", "telegram_http_500")
+
+
+def test_ambiguous_http_and_transport_failures_are_unknown() -> None:
+    request = httpx.Request("POST", "https://api.telegram.org/sendMessage")
+    response = httpx.Response(503, request=request)
+    http_error = httpx.HTTPStatusError(
+        "service unavailable",
+        request=request,
+        response=response,
+    )
+    protocol_error = httpx.RemoteProtocolError(
+        "connection closed before a response",
+        request=request,
+    )
+
+    assert _delivery_failure(http_error) == ("unknown", "telegram_http_5xx")
+    assert _delivery_failure(protocol_error) == (
+        "unknown",
+        "telegram_transport_unknown",
+    )
+
+
+def test_authoritative_telegram_rate_limit_is_failed() -> None:
+    error = TelegramApiError(
+        error_code=429,
+        description="Too Many Requests",
+        http_status=429,
+    )
+
+    assert _delivery_failure(error) == ("failed", "telegram_api_429")
