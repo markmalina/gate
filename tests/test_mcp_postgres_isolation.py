@@ -34,6 +34,17 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
+
+class UnexpectedTelegramClient:
+    """Fail if a read-only MCP test reaches the Telegram provider."""
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("read-only MCP test attempted Telegram send")
+
+    async def get_business_connection(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("read-only MCP test queried Telegram")
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
@@ -307,6 +318,9 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 yield session
 
             app.dependency_overrides[get_db_session] = override_session
+            app.dependency_overrides[get_telegram_client] = (
+                lambda: UnexpectedTelegramClient()
+            )
             monkeypatch.setenv("GATE_MCP_ENABLED", "true")
             monkeypatch.setenv("MCP_AUTH_MODE", "temporary_bearer")
             monkeypatch.setenv("MCP_READ_BEARER_TOKEN", "integration-token")

@@ -7,10 +7,22 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
 from app.application.reply_drafts import SavedReplyDraft
 from app.core.config import get_settings
 from app.core.mcp_security import AccessScope, Principal
 from app.main import app
+
+
+
+class UnexpectedTelegramClient:
+    """Fail if a read-only MCP test reaches the Telegram provider."""
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("read-only MCP test attempted Telegram send")
+
+    async def get_business_connection(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("read-only MCP test queried Telegram")
 
 
 class NoQuerySession:
@@ -61,6 +73,7 @@ def oauth_discovery_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         yield NoQuerySession()
 
     app.dependency_overrides[get_db_session] = override_session
+    app.dependency_overrides[get_telegram_client] = lambda: UnexpectedTelegramClient()
     yield
     app.dependency_overrides.clear()
     get_settings.cache_clear()

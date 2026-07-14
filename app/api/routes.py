@@ -61,11 +61,16 @@ class TelegramAdminCommand:
     task_ref: str | None = None
 
 
-def get_telegram_client(settings: Settings = settings_dependency) -> TelegramClient:
-    """Build a Telegram API client from runtime configuration."""
+def get_telegram_client(request: Request) -> TelegramClient:
+    """Return the process-owned Telegram client installed by application lifespan."""
 
-    api_base_url = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org")
-    return TelegramClient(credential=settings.telegram_bot_token, api_base_url=api_base_url)
+    telegram = getattr(request.app.state, "telegram_client", None)
+    if not isinstance(telegram, TelegramClient):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram client runtime is not initialized",
+        )
+    return telegram
 
 
 telegram_client_dependency = Depends(get_telegram_client)
