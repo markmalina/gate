@@ -327,30 +327,26 @@ Migration lesson from #88–#92: green CI on a clean database is necessary but i
 
 ## 13. Ordered next development plan
 
-Do not start several tracks in one PR.
+The [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) is the
+single authority for implementation order. Do not run several tracks in one PR.
 
-### Immediate infrastructure priority
+1. **Reliable transport foundation:** process-owned DB/runtime resources, honest readiness, replay
+   evidence, ownership contracts and dormant durable acceptance.
+2. **Canonical ingress and Agent Kernel:** worker cutover by update class plus versioned,
+   shadow-only agent proposals.
+3. **Alpha group bot:** one separate credential, approved installation and command/reply-only pilot.
+4. **Oko ownership and handoff:** exact RU enrollment phrase, consent, inbox separation and a fixed
+   reviewed first response.
+5. **Controlled Oko pilot:** bounded dynamic responses, memory, delivery grants and mandatory
+   handoff.
+6. **Operational release:** remove unreachable legacy paths, prove isolation, restore/rollback and
+   reusable multi-installation operation.
 
-1. **Canonical ingress identity replay.** Exercise the PR #114 select-only identity model against production-like fixtures and compare it with legacy decisions before wiring it to live ingress.
-2. **Controlled alert composition.** Add disabled-by-default configuration and one-shot operator validation for the PR #124–#126 incident path before considering any recurring scheduler.
-3. **Operational hardening.** Add redacted webhook/queue/send/429/DB-pool metrics, readiness, alerts, runbook and verified backup/restore.
-4. **Oko routing boundary.** Add explicit human-managed, agent-managed, handoff-required and paused ownership before attaching the Mark Oko prompt/agent.
+BY Desktop-export/contact rollout, recurring contact sync, a third personal account and voice/media
+remain explicitly deferred throughout this program.
 
-### Mark Oko continuation
-
-7. Load a versioned Oko instruction contract from the approved repository boundary.
-8. Activate a new Oko session only when a new person's first human message begins with the approved `Око возрождения` keyword.
-9. Keep agent-managed Oko messages out of Mark's normal unanswered inbox; create a separate task only for explicit human handoff.
-10. Validate the agent in shadow mode before introducing a separate, narrow autonomous-reply permission with rate limits, audit and kill switch.
-
-### Explicitly deferred
-
-- BY Desktop-export/contact rollout and remaining phone-only identity work;
-- permanent contact-sync scheduling/authorization while no recurring sync is enabled;
-- third-account acceptance/generalization;
-- voice/media processing and long-horizon scale hardening.
-
-Preserve OAuth, account/project isolation, explicit confirmation for every human-managed send and backward-compatible MCP schemas throughout.
+Preserve OAuth, account/project isolation, explicit confirmation for every human-managed send and
+backward-compatible MCP schemas throughout.
 
 ## 14. Target architecture and invariants
 
