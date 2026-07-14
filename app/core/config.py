@@ -4,15 +4,23 @@ Configuration is loaded from environment variables. Secrets are referenced by va
 name only and must never be committed.
 """
 
+from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.telegram_connectors import (
     TelegramConnectorRegistry,
     build_telegram_connector_registry,
 )
+
+
+class TelegramDurableAcceptanceMode(StrEnum):
+    """Release-pinned modes for public Telegram receipt composition."""
+
+    DISABLED = "disabled"
+    SHADOW = "shadow"
 
 
 class Settings(BaseSettings):
@@ -24,6 +32,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field(default="", validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_bot_username: str = Field(
         default="gate_m_bot", validation_alias="TELEGRAM_BOT_USERNAME"
+    )
+    telegram_webhook_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="TELEGRAM_WEBHOOK_SECRET",
     )
     gate_env: str = Field(default="development", validation_alias="GATE_ENV")
     gate_default_mode: str = Field(default="manual", validation_alias="GATE_DEFAULT_MODE")
@@ -71,6 +83,10 @@ class Settings(BaseSettings):
     gate_telegram_worker_enabled: bool = Field(
         default=False,
         validation_alias="GATE_TELEGRAM_WORKER_ENABLED",
+    )
+    gate_telegram_durable_acceptance_mode: TelegramDurableAcceptanceMode = Field(
+        default=TelegramDurableAcceptanceMode.DISABLED,
+        validation_alias="GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE",
     )
     gate_reply_send_recovery_enabled: bool = Field(
         default=False,
