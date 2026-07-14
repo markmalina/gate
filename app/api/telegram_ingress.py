@@ -11,6 +11,9 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import sprint18b_draft_ux_routes as sprint18b
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
@@ -37,8 +40,6 @@ from app.core.config import (
 from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
 from app.services.telegram import TelegramClient
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 TELEGRAM_WEBHOOK_PATH = "/telegram/webhook"
 TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
