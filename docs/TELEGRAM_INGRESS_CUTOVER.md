@@ -204,8 +204,9 @@ The future Mark Oko agent must be added after the canonical routing boundary exi
 belongs after normalization and identity resolution, never in a new webhook router.
 
 A qualifying first eligible enrollment message will eventually create an Oko project binding and
-agent session only when NFKC normalization, case-folding, trimming and whitespace collapsing produce
-exactly `Око возрождения`. Prefixes, suffixes and punctuation do not qualify. The dormant
+agent session only after applying NFKC, trim/collapse whitespace and Unicode case-folding to both
+input and canonical phrase `Око возрождения`, then requiring equality with normalized
+`око возрождения`. Prefixes, suffixes and punctuation do not qualify. The dormant
 `/start oko21_*` attribution path is separate and never activates the Business agent.
 Agent-managed conversations must be excluded from the normal personal unanswered inbox; only
 explicit human-handoff tasks should return to Mark.
