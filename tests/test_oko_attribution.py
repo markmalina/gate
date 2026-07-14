@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 """Safety and contract tests for the disabled Oko attribution boundary."""
 
 import asyncio
