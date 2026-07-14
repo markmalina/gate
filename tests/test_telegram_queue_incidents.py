@@ -256,6 +256,27 @@ def test_fingerprint_is_stable_and_reason_order_independent() -> None:
 
 
 @pytest.mark.parametrize(
+    ("active_incident", "should_notify", "resolved_count", "message"),
+    [
+        (None, True, 0, "an active incident is required"),
+        (None, False, -1, "resolved_count must be non-negative"),
+    ],
+)
+def test_invalid_reconciliation_is_rejected(
+    active_incident: TelegramQueueIncident | None,
+    should_notify: bool,
+    resolved_count: int,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        TelegramQueueIncidentReconciliation(
+            active_incident=active_incident,
+            should_notify=should_notify,
+            resolved_count=resolved_count,
+        )
+
+
+@pytest.mark.parametrize(
     ("notifier", "channel", "message"),
     [
         (None, "operator", "notifier is required"),
