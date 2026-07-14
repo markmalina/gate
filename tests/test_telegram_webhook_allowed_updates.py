@@ -47,10 +47,6 @@ async def test_reconcile_updates_webhook_when_business_updates_missing(
 ) -> None:
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://gate.example")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "secret")
-    monkeypatch.setattr(
-        "app.services.telegram_webhook.httpx.AsyncClient",
-        _FakeAsyncClient,
-    )
     _FakeAsyncClient.calls = []
     _FakeAsyncClient.get_webhook_payload = {
         "ok": True,
@@ -60,7 +56,10 @@ async def test_reconcile_updates_webhook_when_business_updates_missing(
         },
     }
 
-    result = await reconcile_telegram_webhook(Settings(TELEGRAM_BOT_TOKEN="token"))
+    result = await reconcile_telegram_webhook(
+        Settings(TELEGRAM_BOT_TOKEN="token"),
+        http_client=_FakeAsyncClient(),
+    )
 
     assert result == "updated"
     assert _FakeAsyncClient.calls[-1]["url"].endswith("/setWebhook")
@@ -76,10 +75,6 @@ async def test_reconcile_skips_when_webhook_and_allowed_updates_current(
 ) -> None:
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://gate.example")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "secret")
-    monkeypatch.setattr(
-        "app.services.telegram_webhook.httpx.AsyncClient",
-        _FakeAsyncClient,
-    )
     _FakeAsyncClient.calls = []
     _FakeAsyncClient.get_webhook_payload = {
         "ok": True,
@@ -89,7 +84,10 @@ async def test_reconcile_skips_when_webhook_and_allowed_updates_current(
         },
     }
 
-    result = await reconcile_telegram_webhook(Settings(TELEGRAM_BOT_TOKEN="token"))
+    result = await reconcile_telegram_webhook(
+        Settings(TELEGRAM_BOT_TOKEN="token"),
+        http_client=_FakeAsyncClient(),
+    )
 
     assert result == "already_current"
     assert len(_FakeAsyncClient.calls) == 1

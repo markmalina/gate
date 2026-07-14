@@ -9,6 +9,26 @@ from typing import Any, cast
 import httpx
 
 
+def build_telegram_http_client() -> httpx.AsyncClient:
+    """Build the bounded process-owned HTTP transport for Telegram API calls."""
+
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=5.0,
+            read=10.0,
+            write=5.0,
+            pool=2.0,
+        ),
+        limits=httpx.Limits(
+            max_connections=10,
+            max_keepalive_connections=5,
+            keepalive_expiry=30.0,
+        ),
+        follow_redirects=False,
+        trust_env=False,
+    )
+
+
 class TelegramApiError(RuntimeError):
     """Sanitized Telegram Bot API failure safe to persist and expose."""
 
@@ -32,8 +52,11 @@ class TelegramClient:
         self,
         credential: str,
         api_base_url: str = "https://api.telegram.org",
+        *,
+        http_client: httpx.AsyncClient,
     ) -> None:
         self._credential = credential
+        self._http_client = http_client
         self._api_base_url = api_base_url.rstrip("/")
 
     async def send_message(
@@ -174,13 +197,12 @@ class TelegramClient:
     async def _post_telegram_json(
         self, *, url: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(url, json=payload)
-            try:
-                result = response.json()
-            except ValueError:
-                response.raise_for_status()
-                raise RuntimeError("Telegram API returned invalid JSON") from None
+        response = await self._http_client.post(url, json=payload)
+        try:
+            result = response.json()
+        except ValueError:
+            response.raise_for_status()
+            raise RuntimeError("Telegram API returned invalid JSON") from None
 
         if not isinstance(result, dict):
             raise RuntimeError("Telegram API returned a non-object response")

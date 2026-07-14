@@ -15,7 +15,7 @@ class DummyTelegramClient(TelegramClient):
     """Unused Telegram client for unsupported-update tests."""
 
     def __init__(self) -> None:
-        super().__init__(credential="")
+        pass
 
 
 @pytest.fixture

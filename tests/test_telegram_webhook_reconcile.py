@@ -1,9 +1,13 @@
 """Telegram webhook reconciliation helper tests."""
 
+import httpx
 import pytest
+from app.core.config import Settings
 from app.services.telegram_webhook import (
+    TELEGRAM_ALLOWED_UPDATES,
     _require_telegram_ok,
     build_public_webhook_url,
+    reconcile_telegram_webhook,
 )
 
 
@@ -41,3 +45,35 @@ def test_require_telegram_ok_rejects_failed_or_non_object_response() -> None:
         _require_telegram_ok({"ok": False})
     with pytest.raises(RuntimeError):
         _require_telegram_ok([])
+
+
+@pytest.mark.anyio
+async def test_reconciliation_uses_injected_process_http_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "ok": True,
+                "result": {
+                    "url": "https://gate.example/telegram/webhook",
+                    "allowed_updates": TELEGRAM_ALLOWED_UPDATES,
+                },
+            },
+        )
+
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://gate.example")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "webhook-secret")
+    settings = Settings(TELEGRAM_BOT_TOKEN="secret-token")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        result = await reconcile_telegram_webhook(settings, http_client)
+
+        assert result == "already_current"
+        assert len(requests) == 1
+        assert not http_client.is_closed

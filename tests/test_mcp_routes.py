@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator, FormatChecker
 
 from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.mcp_routes import _counterparty, _serialize_connection_health
 from app.core.config import get_settings
@@ -25,6 +26,16 @@ def _assert_valid_output(tool_name: str, payload: dict[str, Any]) -> None:
     schema = MCP_TOOL_OUTPUT_SCHEMAS[tool_name]
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(payload)
+
+
+class UnexpectedTelegramClient:
+    """Fail if a read-only MCP test reaches the Telegram provider."""
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("read-only MCP test attempted Telegram send")
+
+    async def get_business_connection(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("read-only MCP test queried Telegram")
 
 
 class FakeMcpResult:
@@ -77,6 +88,7 @@ def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("MCP_READ_ACCOUNT_IDS", ACCOUNT_ID)
     monkeypatch.setenv("MCP_READ_PROJECT_IDS", PROJECT_ID)
     get_settings.cache_clear()
+    app.dependency_overrides[get_telegram_client] = lambda: UnexpectedTelegramClient()
     yield
     app.dependency_overrides.clear()
     get_settings.cache_clear()

@@ -138,6 +138,9 @@ class FakeTelegramClient(TelegramClient):
 class FailingTelegramClient(TelegramClient):
     """Telegram client fake that always fails sending."""
 
+    def __init__(self) -> None:
+        pass
+
     async def send_message(
         self,
         *,
@@ -385,7 +388,7 @@ async def test_inbound_message_is_saved_when_auto_reply_send_fails(
         yield session
 
     def override_telegram_client() -> TelegramClient:
-        return FailingTelegramClient("token")
+        return FailingTelegramClient()
 
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_telegram_client] = override_telegram_client

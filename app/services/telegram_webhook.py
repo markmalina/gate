@@ -39,7 +39,10 @@ def build_public_webhook_url(environ: Mapping[str, str]) -> str | None:
     return f"{base_url.rstrip('/')}/telegram/webhook"
 
 
-async def reconcile_telegram_webhook(settings: Settings) -> str:
+async def reconcile_telegram_webhook(
+    settings: Settings,
+    http_client: httpx.AsyncClient,
+) -> str:
     """Ensure Telegram sends updates to the current public Gate endpoint."""
 
     webhook_url = build_public_webhook_url(os.environ)
@@ -54,44 +57,46 @@ async def reconcile_telegram_webhook(settings: Settings) -> str:
     api_base = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org").rstrip("/")
     bot_api_base = f"{api_base}/bot{settings.telegram_bot_token}"
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        info_response = await client.post(f"{bot_api_base}/getWebhookInfo", json={})
-        info_response.raise_for_status()
-        info_payload = _require_telegram_ok(info_response.json())
-        result = info_payload.get("result")
-        current_url = result.get("url") if isinstance(result, dict) else None
-        last_error = result.get("last_error_message") if isinstance(result, dict) else None
-        current_allowed_updates = _normalize_allowed_updates(result)
+    info_response = await http_client.post(f"{bot_api_base}/getWebhookInfo", json={})
+    info_response.raise_for_status()
+    info_payload = _require_telegram_ok(info_response.json())
+    result = info_payload.get("result")
+    current_url = result.get("url") if isinstance(result, dict) else None
+    last_error = result.get("last_error_message") if isinstance(result, dict) else None
+    current_allowed_updates = _normalize_allowed_updates(result)
 
-        if (
-            current_url == webhook_url
-            and not last_error
-            and current_allowed_updates == _normalized_expected_allowed_updates()
-        ):
-            return "already_current"
+    if (
+        current_url == webhook_url
+        and not last_error
+        and current_allowed_updates == _normalized_expected_allowed_updates()
+    ):
+        return "already_current"
 
-        set_response = await client.post(
-            f"{bot_api_base}/setWebhook",
-            json={
-                "url": webhook_url,
-                "secret_token": webhook_secret,
-                "drop_pending_updates": False,
-                "allowed_updates": TELEGRAM_ALLOWED_UPDATES,
-            },
-        )
-        set_response.raise_for_status()
-        _require_telegram_ok(set_response.json())
-        return "updated"
+    set_response = await http_client.post(
+        f"{bot_api_base}/setWebhook",
+        json={
+            "url": webhook_url,
+            "secret_token": webhook_secret,
+            "drop_pending_updates": False,
+            "allowed_updates": TELEGRAM_ALLOWED_UPDATES,
+        },
+    )
+    set_response.raise_for_status()
+    _require_telegram_ok(set_response.json())
+    return "updated"
 
 
-async def reconcile_telegram_webhook_with_retries(settings: Settings) -> None:
+async def reconcile_telegram_webhook_with_retries(
+    settings: Settings,
+    http_client: httpx.AsyncClient,
+) -> None:
     """Retry webhook reconciliation without preventing the application from starting."""
 
     for attempt, delay_seconds in enumerate((0, 3, 10), start=1):
         if delay_seconds:
             await asyncio.sleep(delay_seconds)
         try:
-            result = await reconcile_telegram_webhook(settings)
+            result = await reconcile_telegram_webhook(settings, http_client)
         except Exception as exc:
             logger.warning(
                 "Telegram webhook reconciliation failed on attempt %s: %s",

@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+import httpx
 import pytest
 from starlette.requests import Request
 
@@ -14,8 +15,12 @@ from app.services.telegram import TelegramClient, _build_internal_reply_markup
 class CapturingTelegramClient(TelegramClient):
     """Telegram client fake that records low-level payloads."""
 
-    def __init__(self) -> None:
-        super().__init__(credential="test-token", api_base_url="https://telegram.test")
+    def __init__(self, *, http_client: httpx.AsyncClient) -> None:
+        super().__init__(
+            credential="test-token",
+            api_base_url="https://telegram.test",
+            http_client=http_client,
+        )
         self.requests: list[dict[str, Any]] = []
 
     async def _post_telegram_json(
@@ -103,13 +108,14 @@ def test_edit_link_message_gets_open_editor_button() -> None:
 
 @pytest.mark.anyio
 async def test_explicit_empty_reply_markup_is_not_replaced_by_auto_buttons() -> None:
-    telegram = CapturingTelegramClient()
+    async with httpx.AsyncClient() as http_client:
+        telegram = CapturingTelegramClient(http_client=http_client)
 
-    await telegram.send_message(
-        chat_id="222",
-        text="Draft created: abcd1234",
-        reply_markup={"inline_keyboard": []},
-    )
+        await telegram.send_message(
+            chat_id="222",
+            text="Draft created: abcd1234",
+            reply_markup={"inline_keyboard": []},
+        )
 
     assert telegram.requests == [
         {
@@ -125,9 +131,10 @@ async def test_explicit_empty_reply_markup_is_not_replaced_by_auto_buttons() -> 
 
 @pytest.mark.anyio
 async def test_edit_message_reply_markup_clears_keyboard_by_default() -> None:
-    telegram = CapturingTelegramClient()
+    async with httpx.AsyncClient() as http_client:
+        telegram = CapturingTelegramClient(http_client=http_client)
 
-    await telegram.edit_message_reply_markup(chat_id="222", message_id=333)
+        await telegram.edit_message_reply_markup(chat_id="222", message_id=333)
 
     assert telegram.requests == [
         {

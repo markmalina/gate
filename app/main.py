@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
@@ -22,6 +23,7 @@ from app.api.telegram_ingress import include_legacy_telegram_ingress
 from app.core.config import get_settings
 from app.infrastructure.database import database_runtime_lifespan
 from app.infrastructure.readiness import build_readiness_service
+from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 
 logger = logging.getLogger(__name__)
@@ -34,24 +36,40 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
-        reconciliation_task: asyncio.Task[None] | None = None
         try:
-            _app.state.readiness_service = build_readiness_service(database_runtime.engine)
-            reconciliation_task = asyncio.create_task(
-                reconcile_telegram_webhook_with_retries(settings)
-            )
-            yield
+            async with build_telegram_http_client() as http_client:
+                reconciliation_task: asyncio.Task[None] | None = None
+                try:
+                    api_base_url = os.getenv(
+                        "TELEGRAM_API_BASE_URL",
+                        "https://api.telegram.org",
+                    )
+                    _app.state.telegram_client = TelegramClient(
+                        credential=settings.telegram_bot_token,
+                        api_base_url=api_base_url,
+                        http_client=http_client,
+                    )
+                    _app.state.readiness_service = build_readiness_service(
+                        database_runtime.engine
+                    )
+                    reconciliation_task = asyncio.create_task(
+                        reconcile_telegram_webhook_with_retries(settings, http_client)
+                    )
+                    yield
+                finally:
+                    try:
+                        if reconciliation_task is not None:
+                            if not reconciliation_task.done():
+                                reconciliation_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await reconciliation_task
+                    finally:
+                        if hasattr(_app.state, "readiness_service"):
+                            delattr(_app.state, "readiness_service")
+                        if hasattr(_app.state, "telegram_client"):
+                            delattr(_app.state, "telegram_client")
         finally:
-            try:
-                if reconciliation_task is not None:
-                    if not reconciliation_task.done():
-                        reconciliation_task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await reconciliation_task
-            finally:
-                if hasattr(_app.state, "readiness_service"):
-                    delattr(_app.state, "readiness_service")
-                delattr(_app.state, "database_runtime")
+            delattr(_app.state, "database_runtime")
 
 
 async def telegram_http_exception_handler(
