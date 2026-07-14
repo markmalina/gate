@@ -172,6 +172,11 @@ PR #124 defines the application lifecycle for durable payload-free alert inciden
 and explicit operator acknowledgement. Delivery remains disabled unless a notifier and channel are
 deliberately composed; no table, notification adapter, scheduler or runtime wiring is added.
 
+PR #125 adds the dormant incident table and a serialized PostgreSQL adapter for open, notified,
+acknowledged and resolved transitions. It stores only severity, bounded reason codes and operator
+delivery metadata; no queue payload, account, project or Telegram peer identity is persisted.
+No notifier, scheduler, endpoint or runtime composition is added.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity

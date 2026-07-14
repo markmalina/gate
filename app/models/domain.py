@@ -828,6 +828,79 @@ class TelegramOutboxEvent(Base):
     )
 
 
+class TelegramQueueIncidentRecord(Base):
+    """Durable payload-free aggregate Telegram queue alert incident."""
+
+    __tablename__ = "telegram_queue_incidents"
+    __table_args__ = (
+        Index(
+            "ix_telegram_queue_incidents_status_observed",
+            "status",
+            "last_observed_at",
+        ),
+        Index(
+            "uq_telegram_queue_incidents_single_active",
+            text("(1)"),
+            unique=True,
+            postgresql_where=text(
+                "status IN ('open', 'notified', 'acknowledged')"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="open",
+        server_default=text("'open'"),
+    )
+    first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    last_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    notification_channel: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    acknowledged_by: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class AuditLog(Base):
     """Audit trail for routing, approval, and future send decisions."""
 
