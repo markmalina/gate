@@ -177,6 +177,10 @@ acknowledged and resolved transitions. It stores only severity, bounded reason c
 delivery metadata; no queue payload, account, project or Telegram peer identity is persisted.
 No notifier, scheduler, endpoint or runtime composition is added.
 
+PR #126 adds a dormant authenticated HTTPS notifier. It sends only the redacted incident envelope,
+uses the incident id as the channel idempotency key and requires an explicit bearer credential.
+No endpoint value, secret, environment setting, scheduler or runtime composition is added.
+
 ### Phase 4 — staged cutover
 
 Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
