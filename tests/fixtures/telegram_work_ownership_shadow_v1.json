@@ -1,0 +1,530 @@
+{
+  "policy_version": "work-ownership-shadow-v1",
+  "cases": [
+    {
+      "name": "ru_exact_oko_phrase_is_candidate_only_with_inbound_evidence",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 101,
+        "business_message": {
+          "message_id": 11,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 201, "type": "private"},
+          "from": {"id": 301, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": "oko",
+        "reason": "oko_exact_enrollment_candidate",
+        "observed_signal": "oko_exact_enrollment",
+        "unresolved_requirements": [
+          "workspace",
+          "connector_role",
+          "dialog",
+          "installation",
+          "deployment",
+          "session",
+          "history_review",
+          "reply_capability"
+        ]
+      }
+    },
+    {
+      "name": "ru_oko_phrase_uses_nfkc_whitespace_and_casefold",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 102,
+        "business_message": {
+          "message_id": 12,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 202, "type": "private"},
+          "from": {"id": 302, "is_bot": false},
+          "text": "  ОКО \nВОЗРОЖДЕНИЯ  "
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": "oko",
+        "reason": "oko_exact_enrollment_candidate",
+        "observed_signal": "oko_exact_enrollment",
+        "unresolved_requirements": [
+          "workspace",
+          "connector_role",
+          "dialog",
+          "installation",
+          "deployment",
+          "session",
+          "history_review",
+          "reply_capability"
+        ]
+      }
+    },
+    {
+      "name": "ru_oko_phrase_without_direction_evidence_stays_human",
+      "update": {
+        "update_id": 103,
+        "business_message": {
+          "message_id": 13,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 203, "type": "private"},
+          "from": {"id": 303, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "unresolved_context",
+        "observed_signal": "oko_exact_enrollment",
+        "unresolved_requirements": ["direction"]
+      }
+    },
+    {
+      "name": "owner_outbound_oko_phrase_stays_human",
+      "direction_evidence": "owner_outbound",
+      "update": {
+        "update_id": 104,
+        "business_message": {
+          "message_id": 14,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 204, "type": "private"},
+          "from": {"id": 304, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "observed_signal": "oko_exact_enrollment",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "sender_without_explicit_human_shape_cannot_trigger_oko",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 105,
+        "business_message": {
+          "message_id": 15,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 205, "type": "private"},
+          "from": {"id": 305},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "oko_phrase_with_punctuation_is_not_candidate",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 106,
+        "business_message": {
+          "message_id": 16,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 206, "type": "private"},
+          "from": {"id": 306, "is_bot": false},
+          "text": "Око возрождения!"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "oko_phrase_with_prefix_is_not_candidate",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 107,
+        "business_message": {
+          "message_id": 17,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 207, "type": "private"},
+          "from": {"id": 307, "is_bot": false},
+          "text": "Старт: Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "by_exact_oko_phrase_remains_deferred",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 108,
+        "business_message": {
+          "message_id": 18,
+          "business_connection_id": "by-connection-fixture",
+          "chat": {"id": 208, "type": "private"},
+          "from": {"id": 308, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "by_deferred",
+        "observed_signal": "oko_exact_enrollment",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "unknown_business_connection_is_quarantined",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 109,
+        "business_message": {
+          "message_id": 19,
+          "business_connection_id": "unknown-connection-fixture",
+          "chat": {"id": 209, "type": "private"},
+          "from": {"id": 309, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "quarantined",
+        "candidate_agent": null,
+        "reason": "unresolved_context",
+        "observed_signal": "oko_exact_enrollment",
+        "unresolved_requirements": ["workspace", "connector_role", "dialog"]
+      }
+    },
+    {
+      "name": "business_shaped_plain_message_cannot_enroll_oko",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 110,
+        "message": {
+          "message_id": 20,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 210, "type": "private"},
+          "from": {"id": 310, "is_bot": false},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "current_business_bot_group_command_cannot_trigger_alpha",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 111,
+        "message": {
+          "message_id": 21,
+          "chat": {"id": -211, "type": "group"},
+          "from": {"id": 311, "is_bot": false},
+          "text": "/ask@gate_m_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "alpha_group_command_is_candidate_only",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 112,
+        "message": {
+          "message_id": 22,
+          "chat": {"id": -212, "type": "group"},
+          "from": {"id": 312, "is_bot": false},
+          "text": "/ask@alpha_group_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": "alpha_group",
+        "reason": "alpha_group_invocation_candidate",
+        "observed_signal": "alpha_group_invocation",
+        "unresolved_requirements": [
+          "workspace",
+          "connector_role",
+          "dialog",
+          "installation",
+          "deployment"
+        ]
+      }
+    },
+    {
+      "name": "alpha_group_mention_is_candidate_only",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 113,
+        "message": {
+          "message_id": 23,
+          "chat": {"id": -213, "type": "group"},
+          "from": {"id": 313, "is_bot": false},
+          "text": "@alpha_group_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": "alpha_group",
+        "reason": "alpha_group_invocation_candidate",
+        "observed_signal": "alpha_group_invocation",
+        "unresolved_requirements": [
+          "workspace",
+          "connector_role",
+          "dialog",
+          "installation",
+          "deployment"
+        ]
+      }
+    },
+    {
+      "name": "reply_to_alpha_group_bot_is_candidate_only",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 114,
+        "message": {
+          "message_id": 24,
+          "chat": {"id": -214, "type": "supergroup"},
+          "from": {"id": 314, "is_bot": false},
+          "text": "продолжай",
+          "reply_to_message": {
+            "message_id": 23,
+            "from": {"id": 999, "is_bot": true, "username": "Alpha_Group_Bot"}
+          }
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": "alpha_group",
+        "reason": "alpha_group_invocation_candidate",
+        "observed_signal": "alpha_group_invocation",
+        "unresolved_requirements": [
+          "workspace",
+          "connector_role",
+          "dialog",
+          "installation",
+          "deployment"
+        ]
+      }
+    },
+    {
+      "name": "alpha_start_command_is_not_an_invocation",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 115,
+        "message": {
+          "message_id": 25,
+          "chat": {"id": -215, "type": "group"},
+          "from": {"id": 315, "is_bot": false},
+          "text": "/start@alpha_group_bot"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "wrong_alpha_username_is_not_an_invocation",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 116,
+        "message": {
+          "message_id": 26,
+          "chat": {"id": -216, "type": "group"},
+          "from": {"id": 316, "is_bot": false},
+          "text": "/ask@other_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "bot_sender_cannot_trigger_alpha",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "bot_or_service",
+      "update": {
+        "update_id": 117,
+        "message": {
+          "message_id": 27,
+          "chat": {"id": -217, "type": "group"},
+          "from": {"id": 317, "is_bot": true},
+          "text": "/ask@alpha_group_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "anonymous_sender_chat_cannot_trigger_alpha",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 118,
+        "message": {
+          "message_id": 28,
+          "chat": {"id": -218, "type": "supergroup"},
+          "from": {"id": 318, "is_bot": false},
+          "sender_chat": {"id": -218, "type": "supergroup"},
+          "text": "@alpha_group_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "alpha_private_command_has_no_candidate",
+      "connector_role": "alpha_group",
+      "bot_username": "alpha_group_bot",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 119,
+        "message": {
+          "message_id": 29,
+          "chat": {"id": 219, "type": "private"},
+          "from": {"id": 319, "is_bot": false},
+          "text": "/ask@alpha_group_bot вопрос"
+        }
+      },
+      "expected": {
+        "proposed_state": "human_managed",
+        "candidate_agent": null,
+        "reason": "default_human",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "ambiguous_message_shapes_are_quarantined",
+      "direction_evidence": "human_inbound",
+      "update": {
+        "update_id": 120,
+        "message": {
+          "message_id": 30,
+          "chat": {"id": 220, "type": "private"},
+          "from": {"id": 320},
+          "text": "обычное сообщение"
+        },
+        "business_message": {
+          "message_id": 31,
+          "business_connection_id": "ru-connection-fixture",
+          "chat": {"id": 221, "type": "private"},
+          "from": {"id": 321},
+          "text": "Око возрождения"
+        }
+      },
+      "expected": {
+        "proposed_state": "quarantined",
+        "candidate_agent": null,
+        "reason": "unresolved_context",
+        "unresolved_requirements": ["workspace", "connector_role", "dialog"]
+      }
+    },
+    {
+      "name": "admin_command_is_control_traffic",
+      "update": {
+        "update_id": 121,
+        "message": {
+          "message_id": 32,
+          "chat": {"id": 222, "type": "private"},
+          "from": {"id": 322},
+          "text": "/status"
+        }
+      },
+      "expected": {
+        "proposed_state": "ignored",
+        "candidate_agent": null,
+        "reason": "control_traffic",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "business_connection_update_is_control_traffic",
+      "update": {
+        "update_id": 122,
+        "business_connection": {
+          "id": "ru-connection-fixture",
+          "user_chat_id": 223,
+          "user": {"id": 323}
+        }
+      },
+      "expected": {
+        "proposed_state": "ignored",
+        "candidate_agent": null,
+        "reason": "control_traffic",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "unsupported_update_is_ignored",
+      "update": {"update_id": 123, "edited_business_message": {}},
+      "expected": {
+        "proposed_state": "ignored",
+        "candidate_agent": null,
+        "reason": "unsupported_update",
+        "unresolved_requirements": []
+      }
+    },
+    {
+      "name": "gate_callback_is_control_traffic",
+      "update": {
+        "update_id": 124,
+        "callback_query": {
+          "id": "callback-fixture",
+          "data": "gate:send:deadbeef",
+          "from": {"id": 324},
+          "message": {"message_id": 34, "chat": {"id": 224, "type": "private"}}
+        }
+      },
+      "expected": {
+        "proposed_state": "ignored",
+        "candidate_agent": null,
+        "reason": "control_traffic",
+        "unresolved_requirements": []
+      }
+    }
+  ]
+}

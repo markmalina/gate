@@ -20,6 +20,11 @@ from app.application.telegram_processing import (
     TelegramUpdateProcessingError,
     TelegramUpdateProcessor,
 )
+from app.application.telegram_work_ownership_shadow import (
+    TelegramConnectorRole,
+    evaluate_telegram_work_ownership_shadow,
+)
+from app.application.work_ownership import DirectionEvidence
 from app.core.config import Settings, get_settings
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 
@@ -53,19 +58,35 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 decision=decision,
                 settings=self._settings,
             )
+            ownership = evaluate_telegram_work_ownership_shadow(
+                item.payload,
+                decision=decision,
+                routing=routing,
+                connector_role=TelegramConnectorRole.BUSINESS,
+                bot_username=self._settings.telegram_bot_username,
+                direction_evidence=DirectionEvidence.UNKNOWN,
+            )
         except Exception as exc:
             raise TelegramUpdateProcessingError("shadow_classification_failed") from exc
 
         self._logger.info(
-            "Telegram worker shadow classification: update_id=%s handler=%s "
-            "reason=%s account_resolution=%s direction_intent=%s "
-            "reply_task_intent=%s",
-            item.update_id,
+            "Telegram worker shadow classification: handler=%s reason=%s "
+            "account_resolution=%s direction_intent=%s reply_task_intent=%s "
+            "ownership_proposed_state=%s ownership_candidate=%s "
+            "ownership_reason=%s ownership_signal=%s ownership_requirements=%s "
+            "ownership_policy=%s ownership_authoritative=%s",
             decision.handler,
             decision.reason,
             routing.account_resolution,
             routing.direction_intent,
             routing.reply_task_intent,
+            ownership.proposed_state.value,
+            ownership.candidate_agent.value if ownership.candidate_agent is not None else "none",
+            ownership.reason.value,
+            ownership.observed_signal.value,
+            ",".join(item.value for item in ownership.unresolved_requirements) or "none",
+            ownership.policy_version,
+            ownership.authoritative,
         )
 
 

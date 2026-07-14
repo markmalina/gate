@@ -108,7 +108,14 @@ def test_shadow_processor_logs_only_redacted_classification(
     wire = caplog.text
     assert "business_update" in wire
     assert "database_lookup_required" in wire
+    assert "ownership_proposed_state=quarantined" in wire
+    assert "ownership_candidate=none" in wire
+    assert "ownership_reason=unresolved_context" in wire
+    assert "ownership_signal=none" in wire
+    assert "ownership_policy=work-ownership-shadow-v1" in wire
+    assert "ownership_authoritative=False" in wire
     assert "private-message-text" not in wire
     assert "private-connection" not in wire
     assert "private-chat" not in wire
     assert "private-sender" not in wire
+    assert "update_id=42" not in wire
