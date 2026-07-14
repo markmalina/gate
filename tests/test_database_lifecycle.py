@@ -6,6 +6,9 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import FastAPI, Request
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
 from app.api.deps import get_db_session
 from app.infrastructure import database as database_module
 from app.infrastructure.database import (
@@ -13,8 +16,6 @@ from app.infrastructure.database import (
     build_database_runtime,
     database_runtime_lifespan,
 )
-from fastapi import FastAPI, Request
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 @pytest.fixture
