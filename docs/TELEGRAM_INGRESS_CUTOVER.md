@@ -203,9 +203,13 @@ The final application must register exactly one `POST /telegram/webhook` route.
 The future Mark Oko agent must be added after the canonical routing boundary exists. Its activation
 belongs after normalization and identity resolution, never in a new webhook router.
 
-A qualifying first message beginning with the approved `Око возрождения` keyword will eventually
-create an Oko project binding and agent session. Agent-managed conversations must be excluded from
-the normal personal unanswered inbox; only explicit human-handoff tasks should return to Mark.
+A qualifying first eligible enrollment message will eventually create an Oko project binding and
+agent session only after applying NFKC, trim/collapse whitespace and Unicode case-folding to both
+input and canonical phrase `Око возрождения`, then requiring equality with normalized
+`око возрождения`. Prefixes, suffixes and punctuation do not qualify. The dormant
+`/start oko21_*` attribution path is separate and never activates the Business agent.
+Agent-managed conversations must be excluded from the normal personal unanswered inbox; only
+explicit human-handoff tasks should return to Mark.
 
 Autonomous Oko replies require a separate, narrow permission, audit trail, rate limit and kill
 switch. They must not weaken the existing explicit-confirmation rule for human-managed replies.
