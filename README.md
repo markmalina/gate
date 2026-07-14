@@ -77,12 +77,20 @@ Live counters are operational snapshots, not invariants. At verification they we
 
 Public verification endpoints:
 
-- `GET /health` — lightweight service health;
+- `GET /health` — backward-compatible lightweight service health;
+- `GET /live` — process liveness only; it does not claim that dependencies are ready;
+- `GET /ready` — redacted database connectivity and exact Alembic-head readiness;
 - `GET /deployment/fingerprint` — Railway commit and non-secret deployment metadata;
 - `GET /.well-known/oauth-protected-resource/mcp` — MCP protected-resource metadata;
 - `POST /mcp` — MCP transport, protected per tool by OAuth.
 
 After every merge, verify the exact new Railway commit. A healthy old release is not proof that the new release deployed.
+
+Railway runs `alembic upgrade head` before probing `/ready`. CI deliberately keeps a single
+Alembic head, while the runtime check uses the plural Alembic APIs and requires exact equality
+between every code head and database head. Migrations must therefore follow backward-compatible
+expand/contract rules. After a schema migration, rollback is a forward fix or a coordinated database
+rollback; an application-only rollback must not be assumed safe.
 
 ## 4. Current ChatGPT Work MVP
 
