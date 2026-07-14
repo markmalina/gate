@@ -136,10 +136,18 @@ def _routing_resolved(
     if message_kind == "business_message":
         return (
             connector_role is TelegramConnectorRole.BUSINESS
-            and account_resolution == "configured_connection"
+            and account_resolution in {"configured_connection", "database_snapshot"}
             and _chat_type(message) == "private"
         )
     if message_kind == "message":
+        if (
+            connector_role is TelegramConnectorRole.BUSINESS
+            and message.get("business_connection_id") is not None
+        ):
+            return (
+                account_resolution in {"configured_connection", "database_snapshot"}
+                and _chat_type(message) == "private"
+            )
         return _chat_type(message) in {"private", "group", "supergroup", "channel"}
     return True
 

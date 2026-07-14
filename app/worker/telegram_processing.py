@@ -9,6 +9,15 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.application.telegram_ingress_identity import (
+    ResolveTelegramIngressIdentityService,
+    TelegramIngressIdentityReader,
+    TelegramIngressIdentityResolution,
+    build_telegram_business_identity_command,
+    direction_evidence_from_identity,
+    direction_evidence_from_telegram_message,
+    not_applicable_identity_resolution,
+)
 from app.application.telegram_ingress_shadow import (
     build_telegram_ingress_routing_context,
     classify_telegram_ingress,
@@ -21,11 +30,17 @@ from app.application.telegram_processing import (
     TelegramUpdateProcessor,
 )
 from app.application.telegram_work_ownership_shadow import (
+    TelegramIngressRoutingView,
     evaluate_telegram_work_ownership_shadow,
 )
-from app.application.work_ownership import DirectionEvidence
 from app.core.config import Settings, get_settings
-from app.core.telegram_connectors import TelegramConnectorResolutionError
+from app.core.telegram_connectors import (
+    TelegramConnectorResolutionError,
+    TelegramConnectorRole,
+)
+from app.infrastructure.telegram_ingress_identity import (
+    SessionFactoryTelegramIngressIdentityReader,
+)
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 
 logger = logging.getLogger(__name__)
@@ -41,12 +56,27 @@ class TelegramWorkerRuntimeResult:
     error_code: str | None = None
 
 
-class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
-    """Classify one payload without Telegram, database or workflow side effects."""
+@dataclass(frozen=True, slots=True)
+class _IdentityOwnershipRouting:
+    """Minimal DB-authoritative routing view for ownership shadowing."""
 
-    def __init__(self, *, settings: Settings, runtime_logger: logging.Logger) -> None:
+    account_alias: str | None
+    account_resolution: str
+
+
+class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
+    """Classify one payload with SELECT-only identity reads and no external effects."""
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        identity_reader: TelegramIngressIdentityReader,
+        runtime_logger: logging.Logger,
+    ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
+        self._identity_reader = identity_reader
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
@@ -63,28 +93,64 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 decision=decision,
                 settings=self._settings,
             )
+        except Exception as exc:
+            raise TelegramUpdateProcessingError("shadow_classification_failed") from exc
+
+        identity = not_applicable_identity_resolution()
+        identity_reader_used = False
+        direction_evidence = direction_evidence_from_telegram_message(item.payload)
+        ownership_routing: TelegramIngressRoutingView = routing
+        identity_command = (
+            build_telegram_business_identity_command(item.payload)
+            if connector.role is TelegramConnectorRole.BUSINESS
+            and decision.reason == "business_update"
+            and decision.command is None
+            else None
+        )
+        if identity_command is not None:
+            identity_reader_used = True
+            try:
+                identity = await ResolveTelegramIngressIdentityService(
+                    self._identity_reader
+                ).execute(identity_command)
+            except Exception:
+                raise TelegramUpdateProcessingError("identity_snapshot_failed") from None
+            direction_evidence = direction_evidence_from_identity(identity)
+            ownership_routing = _identity_ownership_routing(identity)
+        elif connector.role is TelegramConnectorRole.BUSINESS:
+            ownership_routing = _IdentityOwnershipRouting(
+                account_alias=None,
+                account_resolution="identity_not_applicable",
+            )
+
+        try:
             ownership = evaluate_telegram_work_ownership_shadow(
                 item.payload,
                 decision=decision,
-                routing=routing,
+                routing=ownership_routing,
                 connector_role=connector.role,
                 bot_username=connector.bot_identity or "",
-                direction_evidence=DirectionEvidence.UNKNOWN,
+                direction_evidence=direction_evidence,
             )
         except Exception as exc:
             raise TelegramUpdateProcessingError("shadow_classification_failed") from exc
 
         self._logger.info(
             "Telegram worker shadow classification: handler=%s reason=%s "
-            "account_resolution=%s direction_intent=%s reply_task_intent=%s "
+            "configured_account_resolution=%s identity_resolution=%s "
+            "identity_reader_used=%s identity_direction=%s "
+            "direction_evidence=%s reply_task_intent=%s "
             "ownership_proposed_state=%s ownership_candidate=%s "
             "ownership_reason=%s ownership_signal=%s ownership_requirements=%s "
             "ownership_policy=%s ownership_authoritative=%s",
             decision.handler,
             decision.reason,
             routing.account_resolution,
-            routing.direction_intent,
-            routing.reply_task_intent,
+            identity.resolution.value,
+            identity_reader_used,
+            identity.direction.value,
+            direction_evidence.value,
+            identity.reply_task_intent.value,
             ownership.proposed_state.value,
             ownership.candidate_agent.value if ownership.candidate_agent is not None else "none",
             ownership.reason.value,
@@ -101,6 +167,7 @@ async def run_telegram_worker_once(
     session: AsyncSession | None = None,
     queue: TelegramProcessingQueue | None = None,
     processor: TelegramUpdateProcessor | None = None,
+    identity_reader: TelegramIngressIdentityReader | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -112,13 +179,19 @@ async def run_telegram_worker_once(
         if session is None:
             raise RuntimeError("An enabled Telegram worker requires a database session")
         queue = SqlTelegramProcessingQueue(session)
-    resolved_processor = processor or ShadowClassifyingTelegramProcessor(
-        settings=settings,
-        runtime_logger=runtime_logger,
-    )
+    if processor is None:
+        if identity_reader is None:
+            raise RuntimeError(
+                "An enabled default Telegram worker requires an identity reader"
+            )
+        processor = ShadowClassifyingTelegramProcessor(
+            settings=settings,
+            identity_reader=identity_reader,
+            runtime_logger=runtime_logger,
+        )
     result = await ProcessTelegramOutboxService(
         queue=queue,
-        processor=resolved_processor,
+        processor=processor,
     ).run_once(now=now or datetime.now(UTC))
     return TelegramWorkerRuntimeResult(
         enabled=True,
@@ -136,9 +209,14 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
     try:
         async with sessions() as session:
-            return await run_telegram_worker_once(settings=settings, session=session)
+            return await run_telegram_worker_once(
+                settings=settings,
+                session=session,
+                identity_reader=identity_reader,
+            )
     finally:
         await engine.dispose()
 
@@ -155,4 +233,15 @@ def main() -> None:
         result.disposition,
         result.attempt,
         result.error_code,
+    )
+
+
+def _identity_ownership_routing(
+    identity: TelegramIngressIdentityResolution,
+) -> _IdentityOwnershipRouting:
+    return _IdentityOwnershipRouting(
+        account_alias=identity.account_alias if identity.resolved else None,
+        account_resolution=(
+            "database_snapshot" if identity.resolved else identity.resolution.value
+        ),
     )

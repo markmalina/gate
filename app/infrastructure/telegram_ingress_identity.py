@@ -1,8 +1,8 @@
-# mypy: ignore-errors
 """SQL read adapter for Telegram ingress identity shadow parity."""
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.application.telegram_ingress_identity import TelegramIngressIdentitySnapshot
 from app.models.domain import (
@@ -23,45 +23,77 @@ class SqlTelegramIngressIdentityReader:
         *,
         business_connection_id: str,
     ) -> TelegramIngressIdentitySnapshot | None:
-        connection_result = await self._session.execute(
-            select(TelegramBusinessConnection, Account)
-            .join(Account, TelegramBusinessConnection.account_id == Account.id)
-            .where(
-                TelegramBusinessConnection.business_connection_id
-                == business_connection_id,
-                TelegramBusinessConnection.is_enabled.is_(True),
-                Account.is_active.is_(True),
-            )
+        target_connection = aliased(
+            TelegramBusinessConnection,
+            name="target_connection",
         )
-        row = connection_result.one_or_none()
-        if row is None:
-            return None
-        connection, account = row
-
-        identities_result = await self._session.execute(
+        target_account = aliased(Account, name="target_account")
+        owner_account = aliased(Account, name="owner_account")
+        owner_connection = aliased(
+            TelegramBusinessConnection,
+            name="owner_connection",
+        )
+        result = await self._session.execute(
             select(
-                Account.telegram_user_id,
-                TelegramBusinessConnection.telegram_user_id,
-                TelegramBusinessConnection.user_chat_id,
+                target_account.id,
+                target_account.alias,
+                owner_account.telegram_user_id,
+                owner_connection.telegram_user_id,
+                owner_connection.user_chat_id,
+            )
+            .select_from(target_connection)
+            .join(target_account, target_connection.account_id == target_account.id)
+            .join(
+                owner_account,
+                and_(
+                    owner_account.owner == target_account.owner,
+                    owner_account.is_active.is_(True),
+                ),
             )
             .outerjoin(
-                TelegramBusinessConnection,
-                TelegramBusinessConnection.account_id == Account.id,
+                owner_connection,
+                owner_connection.account_id == owner_account.id,
             )
             .where(
-                Account.owner == account.owner,
-                Account.is_active.is_(True),
+                target_connection.business_connection_id == business_connection_id,
+                target_connection.is_enabled.is_(True),
+                target_account.is_active.is_(True),
+                target_account.owner.op("~")(r"\S"),
             )
         )
+        rows = result.all()
+        if not rows:
+            return None
+        account_id, account_alias, _, _, _ = rows[0]
         owner_identity_ids = frozenset(
             str(value)
-            for identity_row in identities_result.all()
-            for value in identity_row
+            for row in rows
+            for value in row[2:]
             if value is not None
         )
         return TelegramIngressIdentitySnapshot(
-            account_id=str(account.id),
-            account_alias=account.alias,
+            account_id=str(account_id),
+            account_alias=account_alias,
             project_id=str(DEFAULT_PROJECT_ID),
             owner_identity_ids=owner_identity_ids,
         )
+
+
+class SessionFactoryTelegramIngressIdentityReader:
+    """Own one short identity session and release it before queue completion."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+    ) -> None:
+        self._sessions = sessions
+
+    async def read(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> TelegramIngressIdentitySnapshot | None:
+        async with self._sessions() as session:
+            return await SqlTelegramIngressIdentityReader(session).read(
+                business_connection_id=business_connection_id,
+            )
