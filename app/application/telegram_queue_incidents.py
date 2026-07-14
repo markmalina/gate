@@ -49,6 +49,12 @@ class TelegramQueueIncidentReconciliation:
     should_notify: bool
     resolved_count: int = 0
 
+    def __post_init__(self) -> None:
+        if self.resolved_count < 0:
+            raise ValueError("resolved_count must be non-negative")
+        if self.should_notify and self.active_incident is None:
+            raise ValueError("an active incident is required for notification")
+
 
 @dataclass(frozen=True)
 class TelegramQueueAlertDeliveryResult:
@@ -102,7 +108,7 @@ class TelegramQueueAlertNotifier(Protocol):
     """Deliver only the redacted incident envelope to an operator channel."""
 
     async def notify(self, incident: TelegramQueueIncident) -> None:
-        """Return only after the channel accepts the notification."""
+        """Deliver idempotently by incident_id and return after channel acceptance."""
 
 
 class ObserveTelegramQueueAlertService:
