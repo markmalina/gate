@@ -184,7 +184,8 @@ not yet connected to webhook reconciliation and remains unreachable in productio
 - webhook reconciliation requests only `message` and `my_chat_member` for the separate Alpha bot;
 - ingress rejects mixed or unapproved shapes before storage;
 - connector, shadow, canary and delivery kill switches all default to false;
-- one hidden provider group id is allowlisted and never returned by canary status;
+- the first verified membership webhook pins one group in the database without manual ID entry;
+- any later discovery for another group fails closed;
 - membership discovery/removal reconciles pending or revoked installation state;
 - grant issuance re-proves the active installation, deployment and validated exact revision;
 - every delivered candidate receives the fixed Alpha disclosure prefix;
@@ -212,7 +213,6 @@ GATE_TELEGRAM_WORKER_ENABLED
 GATE_ALPHA_SHADOW_WORKER_ENABLED
 GATE_ALPHA_CANARY_ENABLED
 GATE_ALPHA_DELIVERY_ENABLED
-GATE_ALPHA_CANARY_GROUP_ID
 GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 ```
 
@@ -264,8 +264,7 @@ Never put values in documentation. Important names:
 - Alpha: `TELEGRAM_ALPHA_BOT_TOKEN`, `TELEGRAM_ALPHA_BOT_USERNAME`,
   `TELEGRAM_ALPHA_WEBHOOK_SECRET`, `GATE_ALPHA_CONNECTOR_ENABLED`,
   `GATE_ALPHA_SHADOW_WORKER_ENABLED`, `GATE_ALPHA_CANARY_ENABLED`,
-  `GATE_ALPHA_DELIVERY_ENABLED`, `GATE_ALPHA_CANARY_GROUP_ID`,
-  `GATE_ALPHA_PRIVACY_MODE_CONFIRMED`;
+  `GATE_ALPHA_DELIVERY_ENABLED`, `GATE_ALPHA_PRIVACY_MODE_CONFIRMED`;
 - MCP/Auth0: see `app/core/config.py` and `docs/MCP_CHATGPT_AUTH0_RUNBOOK.md`;
 - safe human sending: `GATE_SEND_ENABLED`, `GATE_ACCOUNT_RU_SEND_ENABLED`,
   `GATE_ACCOUNT_BY_SEND_ENABLED`.

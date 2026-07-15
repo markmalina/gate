@@ -52,7 +52,6 @@ class ProcessAlphaCanaryUpdateCommand:
     workspace_key: str
     update: JsonObject = field(repr=False)
     bot_username: str = field(repr=False)
-    allowlisted_group_id: str = field(repr=False)
     now: datetime
     canonical_message_id: str | None = field(default=None, repr=False)
     connector_enabled: bool = False
@@ -119,6 +118,14 @@ class AlphaCanaryStore(Protocol):
         self, command: IssueAlphaDeliveryGrantCommand
     ) -> AlphaGrantResult: ...
 
+    async def is_active_group(
+        self,
+        *,
+        workspace_key: str,
+        connector_key: str,
+        provider_dialog_id: str,
+    ) -> bool: ...
+
 
 class AlphaCanaryShadowPort(Protocol):
     async def execute(
@@ -160,10 +167,14 @@ class ProcessAlphaCanaryUpdateService:
 
         kind, payload = _closed_update(command.update)
         dialog_id, dialog_kind, dialog_label = _group(payload)
-        if dialog_id != command.allowlisted_group_id:
+        if kind == "message" and not await self._store.is_active_group(
+            workspace_key=command.workspace_key,
+            connector_key=self._connector_key,
+            provider_dialog_id=dialog_id,
+        ):
             return AlphaCanaryResult(
                 AlphaCanaryDisposition.BLOCKED,
-                "alpha_canary_group_not_allowlisted",
+                "alpha_canary_group_not_active",
             )
 
         if kind == "my_chat_member":
@@ -258,7 +269,7 @@ def _readiness_code(command: ProcessAlphaCanaryUpdateCommand) -> str | None:
         return "alpha_privacy_mode_not_confirmed"
     if not command.credentials_ready:
         return "alpha_canary_credentials_incomplete"
-    if not command.bot_username or not command.allowlisted_group_id:
+    if not command.bot_username:
         return "alpha_canary_scope_incomplete"
     return None
 

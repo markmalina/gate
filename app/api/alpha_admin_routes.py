@@ -20,6 +20,7 @@ from app.core.config import Settings, get_settings
 from app.infrastructure.alpha_canary import (
     alpha_canary_audit_counts,
     alpha_canary_binding_count,
+    alpha_canary_installation_count,
 )
 from app.infrastructure.alpha_lifecycle import SqlAlphaLifecycleRepository
 
@@ -51,29 +52,17 @@ async def get_alpha_canary_status(
     """Return a redacted activation checklist; never reveal credentials or group id."""
 
     require_admin_bearer(authorization=authorization, settings=settings)
-    allowlisted_group_id = settings.gate_alpha_canary_group_id.get_secret_value()
-    exact_binding_count = (
-        await alpha_canary_binding_count(
-            session,
-            workspace_key=workspace_key,
-            provider_dialog_id=allowlisted_group_id,
-        )
-        if allowlisted_group_id
-        else 0
+    installation_count = await alpha_canary_installation_count(
+        session,
+        workspace_key=workspace_key,
     )
-    audit_counts = (
-        await alpha_canary_audit_counts(
-            session,
-            workspace_key=workspace_key,
-            provider_dialog_id=allowlisted_group_id,
-        )
-        if allowlisted_group_id
-        else {
-            "canonical_messages": 0,
-            "agent_turns": 0,
-            "delivery_grants": 0,
-            "send_attempts": 0,
-        }
+    exact_binding_count = await alpha_canary_binding_count(
+        session,
+        workspace_key=workspace_key,
+    )
+    audit_counts = await alpha_canary_audit_counts(
+        session,
+        workspace_key=workspace_key,
     )
     checks = {
         "telegram_worker_enabled": settings.gate_telegram_worker_enabled,
@@ -89,9 +78,7 @@ async def get_alpha_canary_status(
         "webhook_secret_configured": bool(
             settings.telegram_alpha_webhook_secret.get_secret_value()
         ),
-        "one_group_allowlisted": bool(
-            settings.gate_alpha_canary_group_id.get_secret_value()
-        ),
+        "one_group_discovered": installation_count == 1,
         "one_active_exact_revision": exact_binding_count == 1,
     }
     return {
