@@ -73,6 +73,12 @@ async def run_alpha_model_preflight(
         return _serialize(existing, replay=True)
 
     binding = await _exact_binding(session, workspace_key=workspace_key)
+    runtime, command = _runtime_and_command(
+        settings=settings,
+        http_client=http_client,
+        workspace_key=workspace_key,
+        binding=binding,
+    )
     await session.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
         {"lock_key": f"{workspace_key}:{PREFLIGHT_KEY}"},
@@ -98,12 +104,6 @@ async def run_alpha_model_preflight(
     session.add(row)
     await session.commit()
 
-    runtime, command = _runtime_and_command(
-        settings=settings,
-        http_client=http_client,
-        workspace_key=workspace_key,
-        binding=binding,
-    )
     try:
         result = await runtime.propose(command)
     except OpenAIAgentRuntimeError as exc:
