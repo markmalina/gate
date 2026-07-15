@@ -303,6 +303,11 @@ class SqlAlphaLifecycleRepository:
         if usage is None:
             raise AlphaLifecycleError("alpha_usage_not_found", "Usage reservation was not found")
         expected = (command.input_tokens, command.output_tokens)
+        if command.input_tokens + command.output_tokens > usage.reserved_tokens:
+            raise AlphaLifecycleError(
+                "alpha_usage_exceeds_reservation",
+                "Recorded token usage exceeds the approved reservation",
+            )
         if usage.state == "recorded":
             if (usage.input_tokens, usage.output_tokens) != expected:
                 raise AlphaLifecycleError(
