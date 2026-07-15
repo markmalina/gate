@@ -1,0 +1,6 @@
+{
+  "allowed_capabilities": [
+    "reply",
+    "no_reply"
+  ]
+}

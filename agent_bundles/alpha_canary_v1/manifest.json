@@ -1,0 +1,9 @@
+{
+  "schema_version": "agent-bundle-v1",
+  "agent_key": "alpha_group",
+  "revision_key": "alpha-canary-v1",
+  "source_repository": "markmalina/Gate",
+  "source_path": "agent_bundles/alpha_canary_v1",
+  "source_commit_sha": "c1ddf414566c7b844f36851922242aac7c5ad8f0",
+  "content_sha256": "8a40570ed64fe29ba56b50975113a89bee5a59c22c4bf9cc56cf0abf75eba578"
+}
