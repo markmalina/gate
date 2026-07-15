@@ -34,6 +34,19 @@ from app.application.instruction_bundles import (
 )
 
 _ALPHA_COMMAND = "alpha"
+ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD = 50_000_000
+ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN = 6
+_MODEL_RUNTIME_PROFILES = frozenset({"openai-responses-v1"})
+_FIXTURE_RUNTIME_PROFILES = frozenset(
+    {"fixture", "fixture-only-v1", "evaluation-fixture-v1"}
+)
+
+
+class AlphaProposalDeliveryMode(StrEnum):
+    """Whether a proposal may cross the separate Telegram delivery boundary."""
+
+    SHADOW_ONLY = "shadow_only"
+    CANARY = "canary"
 
 
 class AlphaShadowDisposition(StrEnum):
@@ -122,6 +135,7 @@ class AlphaShadowWorkerResult:
     turn_key: str | None = None
     result_kind: AgentResultKind | None = None
     candidate_sha256: str | None = field(default=None, repr=False)
+    delivery_mode: AlphaProposalDeliveryMode = AlphaProposalDeliveryMode.SHADOW_ONLY
 
 
 class AlphaShadowTurnPort(Protocol):
@@ -178,7 +192,7 @@ class AlphaRuntimeFactory(Protocol):
 class FixtureOnlyAlphaRuntimeFactory:
     """The only approved PR-B runtime is the network-free evaluation fixture."""
 
-    _PROFILES = frozenset({"fixture", "fixture-only-v1", "evaluation-fixture-v1"})
+    _PROFILES = _FIXTURE_RUNTIME_PROFILES
 
     def build(
         self,
@@ -209,6 +223,7 @@ class ProcessAlphaShadowMessageService:
         self, command: ProcessAlphaShadowMessageCommand
     ) -> AlphaShadowWorkerResult:
         prepared = await self._port.prepare(command)
+        delivery_mode = alpha_proposal_delivery_mode(prepared.deployment)
         invocation_kind = recognize_alpha_invocation(
             prepared.user_text,
             bot_username=command.bot_username,
@@ -244,6 +259,7 @@ class ProcessAlphaShadowMessageService:
             turn,
             workspace_key=command.workspace_key,
             usage_key=usage.usage_key,
+            delivery_mode=delivery_mode,
         )
         if replay is not None:
             return replay
@@ -276,6 +292,7 @@ class ProcessAlphaShadowMessageService:
                 current,
                 workspace_key=command.workspace_key,
                 usage_key=usage.usage_key,
+                delivery_mode=delivery_mode,
             )
             if replay is not None:
                 return replay
@@ -334,6 +351,7 @@ class ProcessAlphaShadowMessageService:
             turn_key=completed.turn_key,
             result_kind=completed.result_kind,
             candidate_sha256=completed.candidate_sha256,
+            delivery_mode=delivery_mode,
         )
 
     async def _replay_if_terminal(
@@ -342,6 +360,7 @@ class ProcessAlphaShadowMessageService:
         *,
         workspace_key: str,
         usage_key: str,
+        delivery_mode: AlphaProposalDeliveryMode,
     ) -> AlphaShadowWorkerResult | None:
         if turn.status is AlphaTurnStatus.PROPOSED:
             return AlphaShadowWorkerResult(
@@ -350,6 +369,7 @@ class ProcessAlphaShadowMessageService:
                 turn_key=turn.turn_key,
                 result_kind=turn.result_kind,
                 candidate_sha256=turn.candidate_sha256,
+                delivery_mode=delivery_mode,
             )
         if turn.status is AlphaTurnStatus.FAILED:
             return _failed_result(turn, replayed=True)
@@ -362,6 +382,32 @@ class ProcessAlphaShadowMessageService:
             )
             return _failed_result(failed)
         return None
+
+
+def alpha_proposal_delivery_mode(
+    deployment: AgentDeployment,
+) -> AlphaProposalDeliveryMode:
+    """Keep every model-backed proposal shadow-only until a reviewed code release."""
+
+    if (
+        deployment.runtime_profile in _FIXTURE_RUNTIME_PROFILES
+        and deployment.model_profile in {"none", "no-network"}
+    ):
+        return AlphaProposalDeliveryMode.CANARY
+    return AlphaProposalDeliveryMode.SHADOW_ONLY
+
+
+def alpha_model_usage_budget(
+    deployment: AgentDeployment,
+) -> tuple[int, int] | None:
+    """Return the hard UTC-month budget and conservative unit cost for model runtimes."""
+
+    if deployment.runtime_profile not in _MODEL_RUNTIME_PROFILES:
+        return None
+    return (
+        ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
+        ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN,
+    )
 
 
 def recognize_alpha_invocation(

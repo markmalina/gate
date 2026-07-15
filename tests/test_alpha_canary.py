@@ -18,6 +18,7 @@ from app.application.alpha_canary import (
 from app.application.alpha_delivery import AlphaDeliveryResult
 from app.application.alpha_group import AgentSendAttemptState
 from app.application.alpha_shadow_worker import (
+    AlphaProposalDeliveryMode,
     AlphaShadowDisposition,
     AlphaShadowWorkerResult,
 )
@@ -186,6 +187,7 @@ def test_proposal_stays_delivery_free_until_separate_kill_switch() -> None:
         turn_key="turn-1",
         result_kind=AgentResultKind.REPLY,
         candidate_sha256="a" * 64,
+        delivery_mode=AlphaProposalDeliveryMode.CANARY,
     )
     service, store, shadow, delivery = _service(proposed)
 
@@ -205,6 +207,7 @@ def test_enabled_delivery_issues_exact_disclosed_grant_then_uses_opaque_key() ->
         turn_key="turn-1",
         result_kind=AgentResultKind.REPLY,
         candidate_sha256="a" * 64,
+        delivery_mode=AlphaProposalDeliveryMode.CANARY,
     )
     service, store, _shadow, delivery = _service(proposed)
 
@@ -216,3 +219,22 @@ def test_enabled_delivery_issues_exact_disclosed_grant_then_uses_opaque_key() ->
     assert store.grants[0].disclosure_prefix == ALPHA_DISCLOSURE_PREFIX
     assert delivery.commands[0].grant_key == "grant-1"
     assert "-1007001" not in repr(delivery.commands[0])
+
+
+def test_model_shadow_cannot_issue_grant_even_when_delivery_switch_is_on() -> None:
+    proposed = AlphaShadowWorkerResult(
+        AlphaShadowDisposition.PROPOSED,
+        "alpha_answer",
+        turn_key="turn-model-1",
+        result_kind=AgentResultKind.REPLY,
+        candidate_sha256="b" * 64,
+        delivery_mode=AlphaProposalDeliveryMode.SHADOW_ONLY,
+    )
+    service, store, _shadow, delivery = _service(proposed)
+
+    result = asyncio.run(service.execute(_command(delivery_enabled=True)))
+
+    assert result.disposition is AlphaCanaryDisposition.PROPOSED
+    assert result.code == "alpha_model_shadow_delivery_blocked"
+    assert store.grants == []
+    assert delivery.commands == []

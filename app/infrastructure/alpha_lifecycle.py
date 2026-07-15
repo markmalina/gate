@@ -257,6 +257,37 @@ class SqlAlphaLifecycleRepository:
                 idempotent_replay=True,
             )
 
+        if command.monthly_budget_microusd is not None:
+            # Serialize the workspace-wide budget check across all approved Alpha groups.
+            await self._session.execute(
+                select(Workspace.id)
+                .where(Workspace.id == workspace_id)
+                .with_for_update()
+            )
+            month_start = command.now.astimezone(UTC).replace(
+                day=1,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            reserved_month_tokens = await self._session.scalar(
+                select(func.coalesce(func.sum(AlphaUsageRecordModel.reserved_tokens), 0))
+                .where(
+                    AlphaUsageRecordModel.workspace_id == workspace_id,
+                    AlphaUsageRecordModel.state != "released",
+                    AlphaUsageRecordModel.created_at >= month_start,
+                )
+            )
+            projected_cost = (
+                int(reserved_month_tokens or 0) + command.reserved_tokens
+            ) * command.max_cost_microusd_per_token
+            if projected_cost > command.monthly_budget_microusd:
+                return AlphaUsageReservation(
+                    False,
+                    AlphaAccessReason.MONTHLY_BUDGET_EXCEEDED,
+                )
+
         cutoff = command.now - timedelta(seconds=installation.rate_window_seconds)
         turns_in_window = await self._session.scalar(
             select(func.count())
