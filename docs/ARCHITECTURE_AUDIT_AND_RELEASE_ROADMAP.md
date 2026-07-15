@@ -6,12 +6,13 @@ Verified application baseline before the handoff documentation PR: `3a4ba31d41ac
 Audit date: 2026-07-14  
 Execution status verified: 2026-07-15
 
-> Current execution status: Sprints 1 and 2 are delivered. Sprint 3 foundations and the
-> transactional owner-admin lifecycle, delivery-free shadow worker and exact-target delivery
-> adapter are delivered through PR #152, but Alpha is not released: its connector and worker remain
-> disabled, and webhook reconciliation plus the one-group canary are still required.
-> BY contact enrichment, the third Business account and Oko remain deferred. For the exact handoff and next PR order, start with
-> [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
+> Current execution status: Sprints 1 and 2 are delivered. Sprint 3's fixed one-group Alpha
+> canary is active and its owner-run happy path is verified through PR #161: disclosure, one
+> exact-revision Agent proposal, one grant and one send attempt. The runtime is still network-free.
+> Non-command silence and pause/revoke need dated live evidence, and any dynamic model runtime must
+> remain behind a new immutable deployment plus independent model-runtime and provider-data gates.
+> BY contact enrichment, the third Business account and Oko remain deferred. For the exact handoff
+> and next PR order, start with [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
 
 ## 1. Outcome
 
@@ -637,12 +638,16 @@ Definition of done:
 
 ## 12. Current implementation order
 
-The original first implementation order has been completed through the durable canonical pipeline
-and Agent Kernel foundations. Continue Sprint 3 in the following independently reversible PRs:
+The durable canonical pipeline, Agent Kernel and fixed one-group Alpha canary are delivered through
+PR #161. Continue Sprint 3 in independently reversible PRs:
 
-1. add webhook reconciliation, kill-switch operations and a single approved-group canary over the
-   exact-target delivery adapter delivered by PR #152.
+1. add the dormant structured model runtime behind separate default-off runtime and provider-data
+   gates;
+2. add a new reviewed Alpha instruction bundle and staged model deployment without mutating the
+   fixed canary revision;
+3. finish non-command silence and pause/revoke evidence, then run one-group model shadow/canary only
+   after explicit owner data-egress approval and credential provisioning.
 
-Do not activate `AlphaViaBot`, add secret values, change production flags, start BY/third-account
-work or begin Oko until these gates pass. The operational commands, owner-input boundary and
-definition of done are maintained in [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
+Do not expose secret values, broaden beyond the pinned group, start BY/third-account work or weaken
+the human-send confirmation path. The operational commands, owner-input boundary and definition of
+done are maintained in [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
