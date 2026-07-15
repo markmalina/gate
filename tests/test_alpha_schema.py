@@ -61,3 +61,27 @@ def test_alpha_lifecycle_migration_is_reversible_and_follows_delivery_schema() -
     assert module.down_revision == "0018_alpha_delivery"
     assert callable(module.upgrade)
     assert callable(module.downgrade)
+
+
+def test_alpha_canary_release_requires_every_owner_flag_and_exact_artifact() -> None:
+    path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0020_alpha_canary_release.py"
+    )
+    spec = importlib.util.spec_from_file_location("alpha_canary_release_migration", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0020_alpha_canary_release"
+    assert module.down_revision == "0019_alpha_lifecycle"
+    assert len(module._REQUIRED_OWNER_FLAGS) == 6
+    assert all(module._enabled(value) for value in ("1", "true", "YES", " on "))
+    assert not any(module._enabled(value) for value in (None, "", "0", "false"))
+    assert module._REVISION_KEY == "alpha-canary-v1"
+    assert module._SOURCE_COMMIT_SHA == "0b5295606694c537c2b59915d0c91e789f1cbb51"
+    assert module._CONTENT_SHA256 == (
+        "8a40570ed64fe29ba56b50975113a89bee5a59c22c4bf9cc56cf0abf75eba578"
+    )
