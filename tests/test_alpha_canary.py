@@ -4,7 +4,6 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application.agent_kernel import AgentResultKind
 from app.application.alpha_canary import (
     ALPHA_DISCLOSURE_PREFIX,
