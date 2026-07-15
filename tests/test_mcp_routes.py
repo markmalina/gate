@@ -73,6 +73,10 @@ class FakeMcpSession:
             return FakeMcpResult(rows=self.row_result_batches.pop(0))
         return FakeMcpResult(scalar=self.scalar_results.pop(0))
 
+    async def scalar(self, statement: object) -> int:
+        self.statements.append(statement)
+        return self.scalar_results.pop(0)
+
 
 @pytest.fixture
 def anyio_backend() -> str:
@@ -96,7 +100,7 @@ def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @pytest.fixture
 def mcp_context() -> Iterator[FakeMcpSession]:
-    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7, 0, 0])
+    session = FakeMcpSession([2, 3, 2, 4, 5, 6, 1, 2, 7, 0, 0, 1, 0])
 
     async def override_session() -> AsyncIterator[FakeMcpSession]:
         yield session
@@ -508,6 +512,9 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert structured["counts"]["answered_messages"] == 2
     assert structured["connection_health"] == []
     assert structured["contact_directory"] == []
+    assert structured["alpha_canary"]["one_group_discovered"] is True
+    assert structured["alpha_canary"]["one_active_exact_revision"] is False
+    assert structured["alpha_canary"]["delivery_enabled"] is False
     assert "Contact directory:" in result["content"][0]["text"]
     assert len(mcp_context.statements) == 11
 
