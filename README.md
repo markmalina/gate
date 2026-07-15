@@ -541,4 +541,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** continue Sprint 3 with PR C from the [current project handoff](docs/PROJECT_HANDOFF.md): add the separate Alpha delivery adapter over the delivery-free shadow worker delivered by PR #151. Do not enable Alpha, add secrets, reconcile the webhook, begin Oko, or start BY/third-account work. Preserve explicit human-send confirmation and account isolation throughout.
+**Immediate continuation:** continue Sprint 3 with PR D from the [current project handoff](docs/PROJECT_HANDOFF.md): add Alpha webhook reconciliation, kill-switch operations and the one-group canary checklist over the exact-target delivery adapter delivered by PR #152. Keep all production Alpha flags disabled until the owner supplies canary secrets and explicitly authorizes activation. Do not begin Oko or start BY/third-account work. Preserve explicit human-send confirmation and account isolation throughout.
