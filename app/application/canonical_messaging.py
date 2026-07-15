@@ -86,6 +86,7 @@ class CanonicalMessageEnvelope:
 
     workspace_id: str
     connector_key: str
+    source_receipt_id: str = field(repr=False)
     provider_dialog_id: str = field(repr=False)
     provider_message_id: str = field(repr=False)
     provider_sender_id: str | None = field(default=None, repr=False)
@@ -96,6 +97,11 @@ class CanonicalMessageEnvelope:
     def __post_init__(self) -> None:
         _require_token(self.workspace_id, field_name="workspace_id", maximum=128)
         _require_token(self.connector_key, field_name="connector_key", maximum=128)
+        _require_token(
+            self.source_receipt_id,
+            field_name="source_receipt_id",
+            maximum=128,
+        )
         _require_token(
             self.provider_dialog_id,
             field_name="provider_dialog_id",
