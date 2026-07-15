@@ -118,6 +118,34 @@ class Settings(BaseSettings):
         max_length=512,
         validation_alias="GATE_AGENT_BUNDLE_ROOT",
     )
+    openai_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="OPENAI_API_KEY",
+    )
+    openai_api_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        validation_alias="OPENAI_API_BASE_URL",
+    )
+    gate_alpha_model_runtime_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_ALPHA_MODEL_RUNTIME_ENABLED",
+    )
+    gate_alpha_model_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_ALPHA_MODEL_DATA_GATE_APPROVED",
+    )
+    gate_alpha_model_max_output_tokens: int = Field(
+        default=512,
+        ge=64,
+        le=4096,
+        validation_alias="GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS",
+    )
+    gate_alpha_model_timeout_seconds: float = Field(
+        default=30,
+        ge=1,
+        le=120,
+        validation_alias="GATE_ALPHA_MODEL_TIMEOUT_SECONDS",
+    )
     gate_workspace_id: str = Field(
         default="mark-personal",
         min_length=1,
