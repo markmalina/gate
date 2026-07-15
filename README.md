@@ -3,7 +3,7 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-15**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Verified production canary commit before this documentation update: `88736b9f7dc868686ffaa5232ac5f6a134d69ee0`  
+> Verified production commit before this staged-release update: `7c2781602448ac140e1e31ea27cb93414e3333d2`  
 > Production: Railway automatic deployment from `main`
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
@@ -56,12 +56,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub, Gate M and the owner-run Telegram canary on 2026-07-15 after PR #161:
+Verified through GitHub and Gate M on 2026-07-15 after PR #163:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `88736b9f7dc868686ffaa5232ac5f6a134d69ee0` / `88736b9f7dc8` |
+| Application / Railway commit | `7c2781602448ac140e1e31ea27cb93414e3333d2` / `7c2781602448` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -69,7 +69,7 @@ Verified through GitHub, Gate M and the owner-run Telegram canary on 2026-07-15 
 | Contact import | RU 90 from Desktop export; BY deferred |
 | MCP | OAuth 2.0 enforced, five tools |
 | Human sending | exact saved draft + explicit confirmation only |
-| Alpha group bot | one pinned test group active; fixed `/alpha` canary delivered once; model runtime not active |
+| Alpha group bot | one pinned test group active on the fixed canary; reviewed model artifact packaged and deployment staged only; model runtime not active |
 
 Snapshot counters were 29 conversations, 684 messages, 181 reply-task rows, 5 unanswered and 28
 drafts. Alpha evidence was 4 accepted canonical messages, 2 Agent turns, 1 delivery grant and 1
