@@ -32,6 +32,7 @@ from app.application.alpha_shadow_worker import (
     AlphaTurnSnapshot,
     AlphaTurnStatus,
     ProcessAlphaShadowMessageCommand,
+    alpha_model_usage_budget,
 )
 from app.application.canonical_messaging import DialogKind
 from app.application.work_ownership import AgentKey
@@ -225,6 +226,7 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
         *,
         now: datetime,
     ) -> AlphaUsageReservation:
+        budget = alpha_model_usage_budget(prepared.deployment)
         async with self._sessions.begin() as session:
             return await SqlAlphaLifecycleRepository(session).reserve_usage(
                 ReserveAlphaUsageCommand(
@@ -233,6 +235,8 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                     trigger_message_id=prepared.trigger_message_id,
                     reserved_tokens=prepared.max_tokens_per_turn,
                     now=now,
+                    monthly_budget_microusd=(budget[0] if budget is not None else None),
+                    max_cost_microusd_per_token=(budget[1] if budget is not None else 0),
                 )
             )
 
