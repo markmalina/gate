@@ -12,6 +12,7 @@ class AlphaModelReadinessState(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"
     AWAITING_PROVIDER_PREFLIGHT = "awaiting_provider_preflight"
     PROVIDER_PREFLIGHT_FAILED = "provider_preflight_failed"
+    PROVIDER_PREFLIGHT_VERIFIED = "provider_preflight_verified"
     SHADOW_OBSERVED = "shadow_observed"
 
 
@@ -26,6 +27,8 @@ class AlphaModelReadinessFacts:
     model_turns: int
     proposed_turns: int
     failed_turns: int
+    provider_preflight_successes: int = 0
+    provider_preflight_failures: int = 0
     telegram_delivery_blocked: bool = True
 
 
@@ -64,12 +67,16 @@ def evaluate_alpha_model_readiness(
         state = AlphaModelReadinessState.BUDGET_EXHAUSTED
     elif facts.proposed_turns > 0:
         state = AlphaModelReadinessState.SHADOW_OBSERVED
-    elif facts.failed_turns > 0:
+    elif facts.provider_preflight_successes > 0:
+        state = AlphaModelReadinessState.PROVIDER_PREFLIGHT_VERIFIED
+    elif facts.failed_turns > 0 or facts.provider_preflight_failures > 0:
         state = AlphaModelReadinessState.PROVIDER_PREFLIGHT_FAILED
     else:
         state = AlphaModelReadinessState.AWAITING_PROVIDER_PREFLIGHT
 
-    provider_preflight_verified = facts.proposed_turns > 0
+    provider_preflight_verified = (
+        facts.proposed_turns > 0 or facts.provider_preflight_successes > 0
+    )
     return AlphaModelReadiness(
         state=state,
         prerequisites_ready=prerequisites_ready,
@@ -103,6 +110,8 @@ def alpha_model_readiness_payload(
         "model_turns": facts.model_turns,
         "proposed_turns": facts.proposed_turns,
         "failed_turns": facts.failed_turns,
+        "provider_preflight_successes": facts.provider_preflight_successes,
+        "provider_preflight_failures": facts.provider_preflight_failures,
         "budget": {
             "monthly_microusd": facts.monthly_budget_microusd,
             "reserved_microusd": facts.reserved_microusd,
