@@ -265,11 +265,14 @@ def _parse_result(
     if not isinstance(value, dict):
         raise OpenAIAgentRuntimeError("openai_response_contract_invalid")
     try:
-        kind = AgentResultKind(value.get("kind"))
+        kind_value = value.get("kind")
         result_code = value.get("result_code")
         candidate_text = value.get("candidate_text")
+        if not isinstance(kind_value, str):
+            raise ValueError("kind")
         if not isinstance(result_code, str):
             raise ValueError("result_code")
+        kind = AgentResultKind(kind_value)
         result = AgentRuntimeResult(
             kind=kind,
             result_code=result_code,
