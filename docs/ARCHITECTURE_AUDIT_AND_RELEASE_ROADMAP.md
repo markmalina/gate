@@ -1,8 +1,16 @@
 # Gate architecture audit and agent release roadmap
 
-Status: approved implementation baseline  
-Baseline commit: `e103bc577308a1a341de1d12d3ff37d2601933ee`  
-Audit date: 2026-07-14
+Status: active implementation roadmap  
+Audit baseline: `e103bc577308a1a341de1d12d3ff37d2601933ee`  
+Verified application baseline before the handoff documentation PR: `3a4ba31d41ac11e6cf5ecf43ac0a23e77f34405f`  
+Audit date: 2026-07-14  
+Execution status verified: 2026-07-15
+
+> Current execution status: Sprints 1 and 2 are delivered. Sprint 3 foundations are delivered
+> through PR #148, but Alpha is not released: its connector remains disabled and the repository,
+> worker, delivery-adapter and canary work is still required. BY contact enrichment, the third
+> Business account and Oko remain deferred. For the exact handoff and next PR order, start with
+> [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
 
 ## 1. Outcome
 
@@ -626,10 +634,17 @@ Definition of done:
 | Non-root image, dependency and CI gaps | Sprint 1 baseline; Sprint 6 enforcement | reproducible image, scans, schema drift and strict active-path typing |
 | Operational evidence and restore | Sprint 1 basic signals; Sprint 6 release gate | readiness/metrics plus dated restore, rollback and incident drills |
 
-## 12. First implementation order
+## 12. Current implementation order
 
-The first code PR after this roadmap is the lifespan-owned database engine/session factory. The
-next adds liveness plus database/migration readiness and makes readiness the Railway deployment
-gate. Splitting resource ownership from health semantics keeps both changes small and independently
-reversible. Then Sprint 1 proceeds in the order listed above. No agent runtime or new Telegram
-credential is activated before the canonical durability and ownership gates are green.
+The original first implementation order has been completed through the durable canonical pipeline
+and Agent Kernel foundations. Continue Sprint 3 in the following independently reversible PRs:
+
+1. implement transactional Alpha repositories and owner-admin lifecycle over the schema delivered
+   in PR #148;
+2. compose the default-disabled Alpha worker in shadow mode;
+3. add the separate Alpha delivery adapter with grant consumption and terminal unknown handling;
+4. add webhook reconciliation, kill-switch operations and a single approved-group canary.
+
+Do not activate `AlphaViaBot`, add secret values, change production flags, start BY/third-account
+work or begin Oko until these gates pass. The operational commands, owner-input boundary and
+definition of done are maintained in [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
