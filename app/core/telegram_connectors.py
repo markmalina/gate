@@ -287,7 +287,7 @@ def build_telegram_connector_registry(
                 if alpha_enabled
                 else TelegramConnectorActivation.DORMANT
             ),
-            bot_identity=alpha_bot_username or None,
+            bot_identity=(alpha_bot_username or None) if alpha_enabled else None,
             bot_identity_ref="TELEGRAM_ALPHA_BOT_USERNAME",
             bot_token_secret_ref="TELEGRAM_ALPHA_BOT_TOKEN",
             webhook_secret_ref="TELEGRAM_ALPHA_WEBHOOK_SECRET",
