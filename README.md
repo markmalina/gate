@@ -423,7 +423,6 @@ GATE_ALPHA_CONNECTOR_ENABLED
 GATE_ALPHA_SHADOW_WORKER_ENABLED
 GATE_ALPHA_CANARY_ENABLED
 GATE_ALPHA_DELIVERY_ENABLED
-GATE_ALPHA_CANARY_GROUP_ID
 GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 GATE_SEND_ENABLED
 GATE_ACCOUNT_RU_SEND_ENABLED
@@ -454,8 +453,9 @@ Some legacy Business connection configuration names still exist in `app/core/con
 
 The isolated Alpha connector uses `TELEGRAM_ALPHA_BOT_TOKEN`,
 `TELEGRAM_ALPHA_BOT_USERNAME` and `TELEGRAM_ALPHA_WEBHOOK_SECRET`. Every Alpha runtime and delivery
-flag defaults to false; production values may be added only for the owner-authorized one-group
-canary described in `docs/PROJECT_HANDOFF.md`.
+flag defaults to false; the first discovered group is pinned in the database and production values
+may be added only for the owner-authorized one-group canary described in
+`docs/PROJECT_HANDOFF.md`.
 
 Rules:
 
