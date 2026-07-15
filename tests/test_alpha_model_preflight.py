@@ -53,7 +53,11 @@ async def test_preflight_calls_provider_once_and_never_persists_candidate_text(
         return existing_results.pop(0)
 
     async def binding(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {"workspace": SimpleNamespace(id=uuid.uuid4())}
+        return {
+            "workspace": SimpleNamespace(id=uuid.uuid4()),
+            "deployment": SimpleNamespace(id=uuid.uuid4()),
+            "revision": SimpleNamespace(id=uuid.uuid4()),
+        }
 
     async def budget(*_args: Any, **_kwargs: Any) -> None:
         return None
@@ -148,7 +152,11 @@ async def test_provider_failure_is_bounded_and_not_retried(
         return existing_results.pop(0)
 
     async def binding(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {"workspace": SimpleNamespace(id=uuid.uuid4())}
+        return {
+            "workspace": SimpleNamespace(id=uuid.uuid4()),
+            "deployment": SimpleNamespace(id=uuid.uuid4()),
+            "revision": SimpleNamespace(id=uuid.uuid4()),
+        }
 
     async def noop(*_args: Any, **_kwargs: Any) -> None:
         return None
