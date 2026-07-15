@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from pydantic import SecretStr
 from app.application.agent_kernel import AgentResultKind, AgentRuntimeResult
 from app.core.config import Settings
 from app.infrastructure import alpha_model_preflight as preflight
 from app.infrastructure.openai_agent_runtime import OpenAIAgentRuntimeError
 from app.models.alpha_preflight import AlphaModelPreflightModel
+from pydantic import SecretStr
 
 
 class FakeSession:
@@ -99,7 +99,7 @@ async def test_preflight_calls_provider_once_and_never_persists_candidate_text(
     assert result["provider_attempts"] == 1
     assert result["telegram_delivery_blocked"] is True
     assert result["candidate_sha256"] == hashlib.sha256(
-        "готово".encode("utf-8")
+        "готово".encode()
     ).hexdigest()
     assert "candidate_text" not in result
     assert session.row is not None
