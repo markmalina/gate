@@ -16,7 +16,11 @@ from app.application.agent_kernel import (
     InstructionRevision,
 )
 from app.application.agent_shadow import AgentShadowProposal
-from app.application.alpha_group import AlphaInstallation, AlphaInstallationState, AlphaInvocationKind
+from app.application.alpha_group import (
+    AlphaInstallation,
+    AlphaInstallationState,
+    AlphaInvocationKind,
+)
 from app.application.alpha_lifecycle import (
     AlphaAccessReason,
     AlphaUsageReservation,
