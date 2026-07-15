@@ -192,3 +192,25 @@ def test_deployed_alpha_canary_bundle_is_valid_and_packaged() -> None:
     assert "COPY agent_bundles ./agent_bundles" in (
         repository_root / "Dockerfile"
     ).read_text(encoding="utf-8")
+
+
+def test_deployed_alpha_model_bundle_is_valid_and_review_bounded() -> None:
+    repository_root = Path(__file__).parents[1]
+    bundle = DeployedInstructionBundleLoader(
+        repository_root / "agent_bundles"
+    ).load("alpha_model_v1")
+
+    assert bundle.agent_key is AgentKey.ALPHA_GROUP
+    assert bundle.revision.revision_key == "alpha-model-v1"
+    assert bundle.revision.source_path == "alpha_model_v1"
+    assert bundle.allowed_capabilities == frozenset(
+        {"reply", "handoff", "no_reply"}
+    )
+    assert len(bundle.evaluations) == 8
+    assert {fixture.result.kind for fixture in bundle.evaluations} == {
+        AgentResultKind.REPLY,
+        AgentResultKind.HANDOFF,
+        AgentResultKind.NO_REPLY,
+    }
+    assert "одной явно утверждённой Telegram-группе" in bundle.system_instructions
+    assert "нет доступа к интернету" in bundle.system_instructions
