@@ -103,9 +103,7 @@ class TelegramConnectorDefinition:
             raise ValueError("connector identity and secret references are required")
         if not self.webhook_path.startswith("/"):
             raise ValueError("connector webhook path must be absolute")
-        if not self.allowed_updates or len(set(self.allowed_updates)) != len(
-            self.allowed_updates
-        ):
+        if not self.allowed_updates or len(set(self.allowed_updates)) != len(self.allowed_updates):
             raise ValueError("connector allowed updates must be non-empty and unique")
         if self.activation is TelegramConnectorActivation.ACTIVE and not _bot_identity(
             self.bot_identity
@@ -124,8 +122,6 @@ class TelegramConnectorDefinition:
         elif self.key is TelegramConnectorKey.ALPHA_GROUP:
             if self.role is not TelegramConnectorRole.ALPHA_GROUP:
                 raise ValueError("the Alpha connector requires the Alpha group role")
-            if self.activation is not TelegramConnectorActivation.DORMANT:
-                raise ValueError("the Alpha connector is not activatable in this release")
             if self.allowed_updates != ALPHA_GROUP_ALLOWED_UPDATES:
                 raise ValueError("the Alpha connector update allowlist is release-pinned")
             if self.declared_capabilities != frozenset(
@@ -251,8 +247,10 @@ class TelegramConnectorRegistry:
 def build_telegram_connector_registry(
     *,
     business_bot_username: str,
+    alpha_enabled: bool = False,
+    alpha_bot_username: str = "",
 ) -> TelegramConnectorRegistry:
-    """Build the release-pinned registry without reading future Alpha secrets."""
+    """Build isolated Business and explicitly enabled Alpha definitions."""
 
     return TelegramConnectorRegistry(
         business=TelegramConnectorDefinition(
@@ -284,18 +282,20 @@ def build_telegram_connector_registry(
         alpha_group=TelegramConnectorDefinition(
             key=TelegramConnectorKey.ALPHA_GROUP,
             role=TelegramConnectorRole.ALPHA_GROUP,
-            activation=TelegramConnectorActivation.DORMANT,
-            bot_identity=None,
+            activation=(
+                TelegramConnectorActivation.ACTIVE
+                if alpha_enabled
+                else TelegramConnectorActivation.DORMANT
+            ),
+            bot_identity=alpha_bot_username or None,
             bot_identity_ref="TELEGRAM_ALPHA_BOT_USERNAME",
             bot_token_secret_ref="TELEGRAM_ALPHA_BOT_TOKEN",
             webhook_secret_ref="TELEGRAM_ALPHA_WEBHOOK_SECRET",
             webhook_path="/telegram/alpha/webhook",
             allowed_updates=ALPHA_GROUP_ALLOWED_UPDATES,
-            declared_capabilities=frozenset(
-                {TelegramConnectorCapability.GROUP_MESSAGES}
-            ),
+            declared_capabilities=frozenset({TelegramConnectorCapability.GROUP_MESSAGES}),
             send_authorizations=frozenset(),
-            worker_enabled=False,
+            worker_enabled=alpha_enabled,
         ),
     )
 
