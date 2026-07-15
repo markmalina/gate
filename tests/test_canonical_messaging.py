@@ -34,6 +34,7 @@ def test_message_repr_excludes_provider_identities() -> None:
     message = CanonicalMessageEnvelope(
         workspace_id="mark-personal",
         connector_key="telegram_business",
+        source_receipt_id="private-receipt",
         provider_dialog_id="private-dialog",
         provider_message_id="private-message",
         provider_sender_id="private-sender",
