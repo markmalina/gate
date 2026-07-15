@@ -96,6 +96,16 @@ class Settings(BaseSettings):
     gate_alpha_connector_enabled: bool = Field(
         default=False, validation_alias="GATE_ALPHA_CONNECTOR_ENABLED"
     )
+    gate_alpha_shadow_worker_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_ALPHA_SHADOW_WORKER_ENABLED",
+    )
+    gate_agent_bundle_root: str = Field(
+        default="agent_bundles",
+        min_length=1,
+        max_length=512,
+        validation_alias="GATE_AGENT_BUNDLE_ROOT",
+    )
     gate_workspace_id: str = Field(
         default="mark-personal",
         min_length=1,
