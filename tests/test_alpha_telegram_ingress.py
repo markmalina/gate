@@ -3,10 +3,9 @@
 import asyncio
 from datetime import UTC, datetime
 
-from fastapi import HTTPException
 import pytest
 
-from app.api.alpha_telegram_ingress import accept_alpha_telegram_receipt
+from app.api import alpha_telegram_ingress as alpha_ingress
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     TelegramReceiptAcceptance,
@@ -52,7 +51,7 @@ def _update(chat_type: str = "supergroup") -> dict[str, object]:
 
 def _accept(settings: Settings, store: CapturingStore, update: dict[str, object]) -> object:
     return asyncio.run(
-        accept_alpha_telegram_receipt(
+        alpha_ingress.accept_alpha_telegram_receipt(
             update=update,
             provided_secret="alpha-secret",
             settings=settings,
@@ -65,7 +64,7 @@ def _accept(settings: Settings, store: CapturingStore, update: dict[str, object]
 def test_disabled_connector_touches_no_storage() -> None:
     store = CapturingStore()
 
-    with pytest.raises(HTTPException) as captured:
+    with pytest.raises(alpha_ingress.HTTPException) as captured:
         _accept(_settings(GATE_ALPHA_CONNECTOR_ENABLED=False), store, _update())
 
     assert captured.value.status_code == 503
@@ -84,13 +83,13 @@ def test_alpha_secret_is_independent_and_group_receipt_uses_alpha_key() -> None:
 
 def test_private_chat_and_wrong_secret_fail_before_storage() -> None:
     store = CapturingStore()
-    with pytest.raises(HTTPException) as private_error:
+    with pytest.raises(alpha_ingress.HTTPException) as private_error:
         _accept(_settings(), store, _update("private"))
     assert private_error.value.status_code == 400
 
-    with pytest.raises(HTTPException) as secret_error:
+    with pytest.raises(alpha_ingress.HTTPException) as secret_error:
         asyncio.run(
-            accept_alpha_telegram_receipt(
+            alpha_ingress.accept_alpha_telegram_receipt(
                 update=_update(),
                 provided_secret="business-secret",
                 settings=_settings(),
