@@ -101,7 +101,30 @@ def mcp_security_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 @pytest.fixture
 def mcp_context() -> Iterator[FakeMcpSession]:
     session = FakeMcpSession(
-        [2, 3, 2, 4, 5, 6, 1, 2, 7, 0, 0, 1, 0, 1, 0, 0, 0]
+        [
+            2,
+            3,
+            2,
+            4,
+            5,
+            6,
+            1,
+            2,
+            7,
+            0,
+            0,
+            1,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+        ]
     )
 
     async def override_session() -> AsyncIterator[FakeMcpSession]:
@@ -523,9 +546,21 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
         "delivery_grants": 0,
         "send_attempts": 0,
     }
+    model_shadow = structured["alpha_canary"]["model_shadow"]
+    assert model_shadow["state"] == "configuration_incomplete"
+    assert model_shadow["staged_deployments"] == 1
+    assert model_shadow["provider_preflight_verified"] is False
+    assert model_shadow["telegram_delivery_blocked"] is True
+    assert model_shadow["budget"] == {
+        "monthly_microusd": 50_000_000,
+        "reserved_microusd": 0,
+        "remaining_microusd": 50_000_000,
+    }
     assert "Contact directory:" in result["content"][0]["text"]
     assert "accepted_messages: 1" in result["content"][0]["text"]
-    assert len(mcp_context.statements) == 17
+    assert "Alpha model shadow:" in result["content"][0]["text"]
+    assert "budget_remaining: $50.000000" in result["content"][0]["text"]
+    assert len(mcp_context.statements) == 22
 
 
 @pytest.mark.anyio
