@@ -70,6 +70,12 @@ Dated live silence evidence (2026-07-15): the owner sent an ordinary group messa
 4 accepted Alpha messages, 2 Agent turns, 1 delivery grant and 1 send attempt. Privacy Mode therefore
 kept the message outside Alpha ingress; no turn, grant or delivery was created.
 
+The current release step is a bounded pause drill. Migration
+`0024_pause_alpha_canary_drill` changes only the unique exact fixed-canary installation from
+`active` to `paused`, revokes unused grants and leaves the connector, deployment and revision
+unchanged. Its downgrade restores only that same exact paused binding. After the paused deploy,
+the owner sends `/alpha pause-test`; no new turn, grant or send attempt may appear.
+
 ## 4. Delivered release history
 
 ### Sprint 1 — canonical transport and ownership foundation: complete
@@ -164,8 +170,9 @@ staged deployment is not installed in the group and both model release gates rem
 
 Continue in this order:
 
-1. Run a bounded pause/revoke live drill against the fixed canary, then restore the exact fixed
-   revision. Ordinary non-command silence was proven on 2026-07-15.
+1. Complete the in-progress pause drill: verify the paused production binding, have the owner send
+   `/alpha pause-test`, prove no turn/grant/send delta, then merge a separate exact-binding resume
+   migration. Ordinary non-command silence was proven on 2026-07-15.
 2. Keep the reviewed fixtures as the network-free regression baseline. Do not interpret fixture
    success as permission to send group text to a model provider.
 3. Only after Mark explicitly approves bounded same-group provider egress and provisions
