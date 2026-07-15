@@ -72,7 +72,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     reconciliation_task = asyncio.create_task(
                         _reconcile_all_telegram_webhooks(settings, http_client)
                     )
-                    worker_task = asyncio.create_task(run_telegram_worker_loop(settings))
+                    if getattr(settings, "gate_telegram_worker_enabled", False):
+                        worker_task = asyncio.create_task(
+                            run_telegram_worker_loop(settings)
+                        )
                     yield
                 finally:
                     try:
