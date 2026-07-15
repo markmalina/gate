@@ -37,6 +37,15 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias="TELEGRAM_WEBHOOK_SECRET",
     )
+    telegram_alpha_bot_token: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_ALPHA_BOT_TOKEN"
+    )
+    telegram_alpha_bot_username: str = Field(
+        default="", validation_alias="TELEGRAM_ALPHA_BOT_USERNAME"
+    )
+    telegram_alpha_webhook_secret: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_ALPHA_WEBHOOK_SECRET"
+    )
     gate_env: str = Field(default="development", validation_alias="GATE_ENV")
     gate_default_mode: str = Field(default="manual", validation_alias="GATE_DEFAULT_MODE")
     action_bearer_token: str = Field(default="", validation_alias="ACTION_BEARER_TOKEN")
@@ -84,6 +93,9 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_TELEGRAM_WORKER_ENABLED",
     )
+    gate_alpha_connector_enabled: bool = Field(
+        default=False, validation_alias="GATE_ALPHA_CONNECTOR_ENABLED"
+    )
     gate_workspace_id: str = Field(
         default="mark-personal",
         min_length=1,
@@ -117,6 +129,8 @@ class Settings(BaseSettings):
 
         return build_telegram_connector_registry(
             business_bot_username=self.telegram_bot_username,
+            alpha_enabled=self.gate_alpha_connector_enabled,
+            alpha_bot_username=self.telegram_alpha_bot_username,
         )
 
 
