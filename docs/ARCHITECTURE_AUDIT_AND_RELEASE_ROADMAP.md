@@ -645,8 +645,9 @@ active and both provider release gates remain false.
 
 Finish Sprint 3 in independently reversible steps:
 
-1. run a bounded pause/revoke drill against the fixed canary, then restore its exact revision;
-   ordinary non-command silence was proven live on 2026-07-15 with unchanged turn/grant/send counts;
+1. complete the bounded pause drill now staged by migration `0024`: verify the paused binding, prove
+   `/alpha pause-test` creates no turn/grant/send, then restore the exact fixed binding in a separate
+   release; ordinary non-command silence was already proven live on 2026-07-15;
 2. preserve the reviewed bundle fixtures as the network-free regression baseline;
 3. after explicit owner approval of bounded same-group provider egress and credential provisioning,
    run one-group model shadow with delivery disabled and prove that ineligible or duplicate traffic
