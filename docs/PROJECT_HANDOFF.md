@@ -96,7 +96,7 @@ shadow result.
 
 ### Sprint 3 — Alpha group bot: canary code delivered, activation evidence pending
 
-PRs #146–#152 and PR D delivered the current disabled canary boundary:
+PRs #146–#152 and PR #153 delivered the current disabled canary boundary:
 
 - `discovered → pending_approval → active/paused/revoked` installation contract;
 - transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
@@ -179,7 +179,7 @@ markup, tool call or model-supplied target. Outcomes are durable `sent | failed 
 a replay of `sending` becomes terminal `unknown` and never calls Telegram again. The adapter is
 not yet connected to webhook reconciliation and remains unreachable in production.
 
-### PR D — webhook reconciliation, kill switch and one-group canary: delivered in code
+### PR D — webhook reconciliation, kill switch and one-group canary: delivered by PR #153
 
 - webhook reconciliation requests only `message` and `my_chat_member` for the separate Alpha bot;
 - ingress rejects mixed or unapproved shapes before storage;
