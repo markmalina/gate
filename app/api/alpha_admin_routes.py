@@ -9,9 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
 from app.application.alpha_canary import ALPHA_DISCLOSURE_PREFIX
-from app.application.alpha_shadow_worker import (
-    ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
-)
 from app.application.alpha_lifecycle import (
     AlphaInstallationActionCommand,
     AlphaInstallationView,
@@ -19,6 +16,7 @@ from app.application.alpha_lifecycle import (
     AlphaLifecycleService,
     ApproveAlphaInstallationCommand,
 )
+from app.application.alpha_shadow_worker import ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD
 from app.core.config import Settings, get_settings
 from app.infrastructure.alpha_canary import (
     alpha_canary_audit_counts,
