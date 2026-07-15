@@ -96,9 +96,11 @@ shadow result.
 
 ### Sprint 3 — Alpha group bot: foundation delivered, release not complete
 
-PRs #146–#148 delivered:
+PRs #146–#150 delivered the current disabled foundation:
 
 - `discovered → pending_approval → active/paused/revoked` installation contract;
+- transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
+- idempotent per-trigger rate reservation and bounded token accounting behind owner-admin control;
 - group/supergroup-only explicit command/mention/reply invocation policy;
 - human-sender, active-installation and rate gates;
 - five-minute, exact-target, exact-trigger, exact-candidate, one-use `DeliveryGrant` contract;
@@ -133,20 +135,16 @@ webhook exist.
 
 ## 6. Exact next development order
 
-Continue Sprint 3 with small PRs in this order. Each PR must pass exact-head CI, squash merge and
-exact Railway SHA verification before the next one.
+Continue Sprint 3 with the remaining small PRs in this order. Each PR must pass exact-head CI,
+squash merge and exact Railway SHA verification before the next one.
 
-### PR A — transactional Alpha repositories and operator lifecycle
+### PR A — transactional Alpha repositories and operator lifecycle: delivered by PR #150
 
-Implement workspace-scoped repositories/services for:
-
-- idempotent discovery from `my_chat_member`;
-- explicit Mark approval of group + deployment + immutable instruction revision;
-- pause, revoke and read-only status;
-- rate/token usage accounting;
-- no model call and no grant for unknown/pending/paused/revoked groups.
-
-Expose lifecycle actions only through an owner/admin boundary. Group members receive no MCP access.
+The lifecycle repository now persists idempotent pending discovery, binds owner-approved active
+deployments and validated immutable revisions, blocks inactive/disabled installations, revokes
+unused grants on pause/revoke and accounts for one bounded usage reservation per trigger. Its
+control surface is protected by the existing owner-admin bearer boundary and is not exposed to
+group members or MCP.
 
 ### PR B — Alpha worker orchestration in shadow
 

@@ -541,4 +541,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** execute Sprint 1 of the [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md), starting with a lifespan-owned database engine/session factory and an honest readiness contract. BY contact work and a third personal account remain deferred. Preserve explicit send confirmation and account isolation throughout.
+**Immediate continuation:** continue Sprint 3 with PR B from the [current project handoff](docs/PROJECT_HANDOFF.md): compose the default-disabled Alpha worker in shadow over the transactional lifecycle delivered by PR #150. Do not create a delivery grant, enable Alpha, add secrets, begin Oko, or start BY/third-account work. Preserve explicit human-send confirmation and account isolation throughout.

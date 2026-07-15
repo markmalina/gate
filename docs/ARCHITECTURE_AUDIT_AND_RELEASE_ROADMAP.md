@@ -6,10 +6,10 @@ Verified application baseline before the handoff documentation PR: `3a4ba31d41ac
 Audit date: 2026-07-14  
 Execution status verified: 2026-07-15
 
-> Current execution status: Sprints 1 and 2 are delivered. Sprint 3 foundations are delivered
-> through PR #148, but Alpha is not released: its connector remains disabled and the repository,
-> worker, delivery-adapter and canary work is still required. BY contact enrichment, the third
-> Business account and Oko remain deferred. For the exact handoff and next PR order, start with
+> Current execution status: Sprints 1 and 2 are delivered. Sprint 3 foundations and the
+> transactional owner-admin lifecycle are delivered through PR #150, but Alpha is not released:
+> its connector remains disabled and the worker, delivery-adapter and canary work is still required.
+> BY contact enrichment, the third Business account and Oko remain deferred. For the exact handoff and next PR order, start with
 > [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
 
 ## 1. Outcome
@@ -639,11 +639,10 @@ Definition of done:
 The original first implementation order has been completed through the durable canonical pipeline
 and Agent Kernel foundations. Continue Sprint 3 in the following independently reversible PRs:
 
-1. implement transactional Alpha repositories and owner-admin lifecycle over the schema delivered
-   in PR #148;
-2. compose the default-disabled Alpha worker in shadow mode;
-3. add the separate Alpha delivery adapter with grant consumption and terminal unknown handling;
-4. add webhook reconciliation, kill-switch operations and a single approved-group canary.
+1. compose the default-disabled Alpha worker in shadow mode over the transactional lifecycle
+   delivered by PR #150;
+2. add the separate Alpha delivery adapter with grant consumption and terminal unknown handling;
+3. add webhook reconciliation, kill-switch operations and a single approved-group canary.
 
 Do not activate `AlphaViaBot`, add secret values, change production flags, start BY/third-account
 work or begin Oko until these gates pass. The operational commands, owner-input boundary and

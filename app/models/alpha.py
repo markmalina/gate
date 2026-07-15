@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -59,7 +60,13 @@ class AgentInstallationModel(Base):
             "state IN ('discovered', 'pending_approval', 'active', 'paused', 'revoked')",
             name="ck_agent_installations_state",
         ),
+        CheckConstraint(
+            "state NOT IN ('active', 'paused') OR "
+            "(deployment_id IS NOT NULL AND instruction_revision_id IS NOT NULL)",
+            name="ck_agent_installations_active_binding",
+        ),
         CheckConstraint("max_turns_per_window > 0", name="ck_agent_installations_turn_budget"),
+        CheckConstraint("rate_window_seconds > 0", name="ck_agent_installations_rate_window"),
         CheckConstraint("max_tokens_per_turn > 0", name="ck_agent_installations_token_budget"),
     )
 
@@ -67,18 +74,79 @@ class AgentInstallationModel(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     connector_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     dialog_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    deployment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    instruction_revision_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    deployment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    instruction_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     installation_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    dialog_label: Mapped[str] = mapped_column(String(255), nullable=False)
     state: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'discovered'")
     )
     max_turns_per_window: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("5")
     )
+    rate_window_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("60")
+    )
     max_tokens_per_turn: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("2048")
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AlphaUsageRecordModel(Base):
+    """Idempotent per-trigger turn reservation and token accounting."""
+
+    __tablename__ = "alpha_usage_records"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["installation_id", "workspace_id"],
+            ["agent_installations.id", "agent_installations.workspace_id"],
+            name="fk_alpha_usage_installation_workspace",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["trigger_message_id", "workspace_id"],
+            ["canonical_messages.id", "canonical_messages.workspace_id"],
+            name="fk_alpha_usage_trigger_workspace",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("workspace_id", "usage_key", name="uq_alpha_usage_key"),
+        UniqueConstraint(
+            "installation_id", "trigger_message_id", name="uq_alpha_usage_trigger"
+        ),
+        UniqueConstraint("id", "workspace_id", name="uq_alpha_usage_id_workspace"),
+        CheckConstraint(
+            "state IN ('reserved', 'recorded', 'released')",
+            name="ck_alpha_usage_state",
+        ),
+        CheckConstraint("reserved_tokens > 0", name="ck_alpha_usage_reserved_tokens"),
+        CheckConstraint(
+            "input_tokens IS NULL OR input_tokens >= 0", name="ck_alpha_usage_input_tokens"
+        ),
+        CheckConstraint(
+            "output_tokens IS NULL OR output_tokens >= 0", name="ck_alpha_usage_output_tokens"
+        ),
+        Index("ix_alpha_usage_installation_created", "installation_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    installation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    trigger_message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    usage_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'reserved'")
+    )
+    reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
