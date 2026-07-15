@@ -210,9 +210,6 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                             update=item.payload,
                             canonical_message_id=canonical_message_id,
                             bot_username=self._settings.telegram_alpha_bot_username,
-                            allowlisted_group_id=(
-                                self._settings.gate_alpha_canary_group_id.get_secret_value()
-                            ),
                             connector_enabled=self._settings.gate_alpha_connector_enabled,
                             shadow_worker_enabled=self._settings.gate_alpha_shadow_worker_enabled,
                             canary_enabled=self._settings.gate_alpha_canary_enabled,
