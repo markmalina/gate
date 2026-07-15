@@ -167,24 +167,28 @@ approval/install lifecycle rather than an automatic resume.
 
 ## 6. Exact next development order
 
-The fixed one-group canary remains the production rollback baseline. The data-gated Responses runtime,
-reviewed `alpha-model-v1` bundle and staged `alpha-model-v1-openai` deployment are delivered. The
-staged deployment is not installed in the group and both model release gates remain false.
+The fixed one-group fixture canary remains the production rollback baseline. The data-gated
+Responses runtime, reviewed `alpha-model-v1` bundle and exact staged
+`alpha-model-v1-openai` deployment are delivered. Model-backed Telegram delivery remains blocked
+in code.
+
+The standing owner authorization recorded on 2026-07-15 covers bounded OpenAI shadow testing and
+subsequent reviewed Alpha releases inside approved installations. Provider billing is the remaining
+external blocker; no provider attempt should be made merely to check whether payment has started.
 
 Continue in this order:
 
-1. Keep the restored fixed canary and the reviewed fixtures as the network-free regression
-   baseline. The 2026-07-15 silence and pause evidence completes the reversible live kill-switch
-   drill without requiring repeated owner messages.
-2. Only after Mark explicitly approves bounded same-group provider egress and provisions
-   `OPENAI_API_KEY` in Railway, run a separate one-group model-shadow release with delivery disabled.
-   That release must rebind only the pinned installation to the exact staged deployment and enable
-   both model gates; unknown groups, inactive installations, ordinary Privacy Mode traffic and
-   duplicate triggers must produce no provider call.
-3. Review the redacted shadow evidence. Enable Alpha delivery for one bounded model canary only in a
-   separate owner-authorized configuration step, with the fixed revision retained as rollback.
-4. After the bounded Alpha model canary is stable, resume Sprint 4 Oko RU. BY and a third Business
-   account remain out of scope.
+1. Keep the fixed canary and reviewed fixtures as the network-free regression baseline.
+2. After billing is confirmed ready, invoke the protected `POST /admin/alpha/model-preflight`
+   exactly once with `confirmed=true`. It sends only a synthetic request, reserves budget first,
+   has no Telegram dependency and cannot retry the release key.
+3. Require redacted state `provider_preflight_verified` before rebinding only the pinned approved
+   installation to the exact staged deployment for delivery-disabled same-group shadow.
+4. Review real shadow evidence: one explicit invocation, same-group isolation, no delivery grant,
+   no Telegram send attempt, bounded usage and no critical error.
+5. Promote to a limited model canary only through another reviewed code release after the automated
+   gates pass. Keep the fixture revision as rollback. After Alpha is stable, resume Sprint 4 Oko RU;
+   BY and a third Business account remain out of scope.
 
 ## 7. Owner inputs required only at the canary boundary
 

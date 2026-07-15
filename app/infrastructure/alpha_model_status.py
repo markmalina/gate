@@ -20,6 +20,7 @@ from app.models.agent import (
     InstructionRevisionModel,
 )
 from app.models.alpha import AlphaUsageRecordModel
+from app.models.alpha_preflight import AlphaModelPreflightModel
 from app.models.canonical import Workspace
 
 _OPENAI_RUNTIME_PROFILE = "openai-responses-v1"
@@ -35,6 +36,8 @@ class AlphaModelOperationalStatus:
     reserved_tokens: int
     reserved_microusd: int
     remaining_microusd: int
+    provider_preflight_successes: int
+    provider_preflight_failures: int
     monthly_budget_microusd: int = ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD
 
 
@@ -103,7 +106,41 @@ async def alpha_model_operational_status(
             AlphaUsageRecordModel.created_at >= month_start,
         )
     )
-    token_count = int(reserved_tokens or 0)
+    preflight_reserved_tokens = await session.scalar(
+        select(
+            func.coalesce(
+                func.sum(AlphaModelPreflightModel.reserved_tokens),
+                0,
+            )
+        )
+        .join(Workspace, Workspace.id == AlphaModelPreflightModel.workspace_id)
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.created_at >= month_start,
+        )
+    )
+    provider_preflight_successes = await session.scalar(
+        select(func.count())
+        .select_from(AlphaModelPreflightModel)
+        .join(Workspace, Workspace.id == AlphaModelPreflightModel.workspace_id)
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.state == "succeeded",
+        )
+    )
+    provider_preflight_failures = await session.scalar(
+        select(func.count())
+        .select_from(AlphaModelPreflightModel)
+        .join(Workspace, Workspace.id == AlphaModelPreflightModel.workspace_id)
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.state == "failed",
+        )
+    )
+    token_count = int(reserved_tokens or 0) + int(preflight_reserved_tokens or 0)
     reserved_microusd = token_count * ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN
     return AlphaModelOperationalStatus(
         staged_deployments=int(staged or 0),
@@ -116,6 +153,8 @@ async def alpha_model_operational_status(
             0,
             ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD - reserved_microusd,
         ),
+        provider_preflight_successes=int(provider_preflight_successes or 0),
+        provider_preflight_failures=int(provider_preflight_failures or 0),
     )
 
 

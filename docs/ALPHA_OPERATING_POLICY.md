@@ -87,3 +87,16 @@ and conservative reserved and remaining monthly budget.
 unavailable. Provider verification and shadow observation require a separately
 controlled model turn; neither status inspection nor deployment performs that call.
 Telegram delivery remains blocked for every model-backed proposal.
+
+
+## One-shot provider preflight
+
+Provider billing is verified through one protected, idempotent preflight release key. The preflight
+uses the exact staged deployment and reviewed instruction bundle but sends only a synthetic request;
+it never reads group content, constructs a recipient, creates a delivery grant or calls Telegram.
+
+Gate reserves conservative monthly budget before the provider boundary under a workspace-scoped
+database lock. A succeeded, failed or ambiguously reserved release key is terminal and is never
+retried automatically. Only content-free evidence and a candidate SHA-256 digest are persisted.
+The preflight endpoint may be deployed while billing is unavailable, but it must not be invoked
+until billing readiness is confirmed.

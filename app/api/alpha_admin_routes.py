@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,10 @@ from app.infrastructure.alpha_canary import (
     alpha_canary_installation_count,
 )
 from app.infrastructure.alpha_lifecycle import SqlAlphaLifecycleRepository
+from app.infrastructure.alpha_model_preflight import (
+    AlphaModelPreflightError,
+    run_alpha_model_preflight,
+)
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
 
 router = APIRouter(prefix="/admin/alpha", tags=["alpha-admin"])
@@ -45,6 +50,11 @@ class AlphaApprovalRequest(BaseModel):
 
 class AlphaActionRequest(BaseModel):
     workspace_key: str = Field(min_length=1, max_length=128)
+
+
+class AlphaModelPreflightRequest(BaseModel):
+    workspace_key: str = Field(default="mark-personal", min_length=1, max_length=128)
+    confirmed: bool = False
 
 
 @router.get("/canary-status")
@@ -84,6 +94,8 @@ async def get_alpha_canary_status(
             model_turns=model.model_turns,
             proposed_turns=model.proposed_turns,
             failed_turns=model.failed_turns,
+            provider_preflight_successes=model.provider_preflight_successes,
+            provider_preflight_failures=model.provider_preflight_failures,
         )
     )
     checks = {
@@ -113,6 +125,41 @@ async def get_alpha_canary_status(
         "audit_evidence": audit_counts,
         "model_shadow": model_shadow,
     }
+
+
+@router.post("/model-preflight")
+async def run_model_preflight(
+    request: AlphaModelPreflightRequest,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = session_dependency,
+) -> dict[str, Any]:
+    """Run one idempotent provider attempt without group data or Telegram delivery."""
+
+    require_admin_bearer(authorization=authorization, settings=settings)
+    if not request.confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "alpha_provider_preflight_confirmation_required",
+                "message": "confirmed=true is required",
+            },
+        )
+    try:
+        async with httpx.AsyncClient() as http_client:
+            preflight = await run_alpha_model_preflight(
+                session,
+                settings=settings,
+                http_client=http_client,
+                workspace_key=request.workspace_key,
+            )
+    except AlphaModelPreflightError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": exc.code},
+        ) from exc
+    return {"preflight": preflight}
 
 
 @router.get("/installations")

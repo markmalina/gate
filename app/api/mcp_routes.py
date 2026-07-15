@@ -872,6 +872,8 @@ async def _build_alpha_canary_status(
             model_turns=model.model_turns,
             proposed_turns=model.proposed_turns,
             failed_turns=model.failed_turns,
+            provider_preflight_successes=model.provider_preflight_successes,
+            provider_preflight_failures=model.provider_preflight_failures,
         )
     )
     return {
