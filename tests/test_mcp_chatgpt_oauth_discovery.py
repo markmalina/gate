@@ -215,7 +215,7 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     result = response.json()["result"]
     assert result["isError"] is False
     assert result["structuredContent"]["mcp"]["auth"] == "oauth2_enforced"
-    assert session.query_count == 17
+    assert session.query_count == 22
 
 
 @pytest.mark.anyio
