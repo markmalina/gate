@@ -60,7 +60,7 @@ class FakeMcpResult:
 class FakeMcpSession:
     def __init__(
         self,
-        scalar_results: list[int] | None = None,
+        scalar_results: list[Any] | None = None,
         row_result_batches: list[list[Any]] | None = None,
     ) -> None:
         self.scalar_results = scalar_results or [0] * 11
@@ -126,6 +126,11 @@ def mcp_context() -> Iterator[FakeMcpSession]:
             0,
             0,
             0,
+            0,
+            0,
+            0,
+            0,
+            None,
             0,
         ]
     )
@@ -556,6 +561,11 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert model_shadow["provider_preflight_successes"] == 0
     assert model_shadow["provider_preflight_failures"] == 0
     assert model_shadow["telegram_delivery_blocked"] is True
+    assert model_shadow["model_delivery_grants"] == 0
+    assert model_shadow["stuck_provider_preflights"] == 0
+    assert model_shadow["last_provider_error_category"] == "none"
+    assert model_shadow["promotion_dry_run"]["execution_mode"] == "dry_run"
+    assert model_shadow["promotion_dry_run"]["mutation_allowed"] is False
     assert model_shadow["budget"] == {
         "monthly_microusd": 50_000_000,
         "reserved_microusd": 0,
@@ -565,7 +575,8 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert "accepted_messages: 1" in result["content"][0]["text"]
     assert "Alpha model shadow:" in result["content"][0]["text"]
     assert "budget_remaining: $50.000000" in result["content"][0]["text"]
-    assert len(mcp_context.statements) == 25
+    assert "promotion_next: provider_preflight" in result["content"][0]["text"]
+    assert len(mcp_context.statements) == 30
 
 
 @pytest.mark.anyio
