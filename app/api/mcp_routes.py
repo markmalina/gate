@@ -41,6 +41,10 @@ from app.core.mcp_security import (
 )
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.infrastructure.alpha_canary import (
+    alpha_canary_binding_count,
+    alpha_canary_installation_count,
+)
 from app.models.domain import (
     Account,
     Message,
@@ -171,6 +175,11 @@ async def mcp_endpoint(
                 principal=principal,
                 protocol_version=MCP_PROTOCOL_VERSION,
                 tool_names=MCP_TOOL_NAMES,
+            )
+            snapshot["alpha_canary"] = await _build_alpha_canary_status(
+                session=session,
+                settings=settings,
+                workspace_key=principal.access_scope.workspace_id,
             )
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_list_unanswered":
@@ -790,7 +799,52 @@ def _format_status_text(snapshot: JsonObject) -> str:
         )
     lines.extend(["", "Counts:"])
     lines.extend(f"- {name}: {value}" for name, value in counts.items())
+    alpha = snapshot["alpha_canary"]
+    lines.extend(
+        [
+            "",
+            "Alpha canary:",
+            f"- connector_enabled: {alpha['connector_enabled']}",
+            f"- webhook_credentials_configured: "
+            f"{alpha['webhook_credentials_configured']}",
+            f"- one_group_discovered: {alpha['one_group_discovered']}",
+            f"- one_active_exact_revision: "
+            f"{alpha['one_active_exact_revision']}",
+            f"- delivery_enabled: {alpha['delivery_enabled']}",
+        ]
+    )
     return "\n".join(lines)
+
+
+async def _build_alpha_canary_status(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+    workspace_key: str,
+) -> JsonObject:
+    installation_count = await alpha_canary_installation_count(
+        session,
+        workspace_key=workspace_key,
+    )
+    active_binding_count = await alpha_canary_binding_count(
+        session,
+        workspace_key=workspace_key,
+    )
+    return {
+        "telegram_worker_enabled": settings.gate_telegram_worker_enabled,
+        "connector_enabled": settings.gate_alpha_connector_enabled,
+        "shadow_worker_enabled": settings.gate_alpha_shadow_worker_enabled,
+        "canary_enabled": settings.gate_alpha_canary_enabled,
+        "delivery_enabled": settings.gate_alpha_delivery_enabled,
+        "privacy_mode_confirmed": settings.gate_alpha_privacy_mode_confirmed,
+        "webhook_credentials_configured": bool(
+            settings.telegram_alpha_bot_token.get_secret_value()
+            and settings.telegram_alpha_bot_username
+            and settings.telegram_alpha_webhook_secret.get_secret_value()
+        ),
+        "one_group_discovered": installation_count == 1,
+        "one_active_exact_revision": active_binding_count == 1,
+    }
 
 def _format_reply_context_text(context: JsonObject) -> str:
     account = context["account"]
