@@ -1,23 +1,40 @@
-"""Release guards for the reversible fixed-canary pause drill."""
+"""Release guards for the exact reversible fixed-canary pause/resume drill."""
 
 import importlib.util
 from pathlib import Path
 
+import pytest
 
-def test_alpha_pause_drill_is_exact_and_reversible() -> None:
-    path = (
-        Path(__file__).parents[1]
-        / "alembic"
-        / "versions"
-        / "0024_pause_alpha_canary_drill.py"
-    )
-    spec = importlib.util.spec_from_file_location("alpha_pause_drill_migration", path)
+_MIGRATIONS = (
+    (
+        "0024_pause_alpha_canary_drill.py",
+        "0024_pause_alpha_canary_drill",
+        "0023_alpha_model_release",
+    ),
+    (
+        "0025_resume_alpha_canary_drill.py",
+        "0025_resume_alpha_canary_drill",
+        "0024_pause_alpha_canary_drill",
+    ),
+)
+
+
+@pytest.mark.parametrize(("filename", "revision", "down_revision"), _MIGRATIONS)
+def test_alpha_pause_resume_drill_is_exact_and_reversible(
+    filename: str,
+    revision: str,
+    down_revision: str,
+) -> None:
+    path = Path(__file__).parents[1] / "alembic" / "versions" / filename
+    spec = importlib.util.spec_from_file_location(revision, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.revision == "0024_pause_alpha_canary_drill"
-    assert module.down_revision == "0023_alpha_model_release"
+    assert module.revision == revision
+    assert module.down_revision == down_revision
+    assert module._WORKSPACE_KEY == "mark-personal"
+    assert module._CONNECTOR_KEY == "telegram_alpha_group"
     assert module._DEPLOYMENT_KEY == "alpha-canary-v1-fixture"
     assert module._REVISION_KEY == "alpha-canary-v1"
     assert module._SOURCE_COMMIT_SHA == (

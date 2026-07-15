@@ -2,7 +2,7 @@
 
 > Canonical continuation guide for a new developer or implementation agent.  
 > Verified against GitHub `main` and Railway production on 2026-07-15.  
-> Verified production commit before this release PR: `7c2781602448ac140e1e31ea27cb93414e3333d2`.
+> Verified paused production commit before this resume release: `302c0de37acbbb6236093f4cd3f24f7af98fd099`.
 
 ## 1. Start here
 
@@ -38,12 +38,12 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through Gate M after PR #163 deployed:
+Verified through Gate M after PR #166 deployed and the owner sent the pause probe:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `7c2781602448` |
+| Railway production commit | `302c0de37acb` (paused drill baseline) |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
@@ -53,8 +53,8 @@ Verified through Gate M after PR #163 deployed:
 | BY Telegram Business | `ready`, `can_reply=true` |
 | RU contacts | 90, source `telegram_desktop_export` |
 | BY contacts | 0; import intentionally deferred |
-| Snapshot counts | 29 conversations, 684 messages, 181 reply tasks, 5 unanswered, 28 drafts |
-| Alpha canary audit | 4 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
+| Snapshot counts | 29 conversations, 686 messages, 181 reply tasks, 5 unanswered, 28 drafts |
+| Alpha canary audit | 5 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
 
 The five MCP tools are `gate_get_status`, `gate_list_unanswered`, `gate_get_reply_context`,
 `gate_save_reply_draft` and `gate_send_approved_reply`.
@@ -70,11 +70,13 @@ Dated live silence evidence (2026-07-15): the owner sent an ordinary group messa
 4 accepted Alpha messages, 2 Agent turns, 1 delivery grant and 1 send attempt. Privacy Mode therefore
 kept the message outside Alpha ingress; no turn, grant or delivery was created.
 
-The current release step is a bounded pause drill. Migration
-`0024_pause_alpha_canary_drill` changes only the unique exact fixed-canary installation from
-`active` to `paused`, revokes unused grants and leaves the connector, deployment and revision
-unchanged. Its downgrade restores only that same exact paused binding. After the paused deploy,
-the owner sends `/alpha pause-test`; no new turn, grant or send attempt may appear.
+Dated live pause evidence (2026-07-15): migration `0024_pause_alpha_canary_drill` changed only
+the unique exact fixed-canary installation from `active` to `paused` and revoked unused grants.
+The owner's `/alpha pause-test` was durably accepted, increasing accepted Alpha messages from
+4 to 5, while Agent turns remained 2, delivery grants 1 and send attempts 1. This isolates the
+kill-switch boundary: webhook and canonical ingress stayed live, but the paused installation
+blocked agent work and delivery. Migration `0025_resume_alpha_canary_drill` restores only that
+same exact paused binding; its downgrade returns it to the drilled paused state.
 
 ## 4. Delivered release history
 
@@ -108,7 +110,7 @@ PRs #143–#145 delivered:
 No mutable GitHub `main` read, Git credential, model network call or agent delivery exists in this
 shadow result.
 
-### Sprint 3 — Alpha group bot: fixed canary happy path verified
+### Sprint 3 — Alpha group bot: fixed canary happy path and pause drill verified
 
 PRs #146–#161 delivered and activated the owner-approved fixed one-group canary boundary:
 
@@ -128,8 +130,9 @@ PRs #146–#161 delivered and activated the owner-approved fixed one-group canar
 - durable workspace-scoped tables for installations, grants and agent send attempts.
 
 This is not yet a generally available or model-backed Telegram agent. The fixed canary is active
-only in the pinned group. Non-command silence has dated live evidence. Pause/revoke still needs a bounded live drill before
-Sprint 3 is fully complete.
+only in the pinned group. Non-command silence and the reversible pause kill switch have dated live
+evidence. Destructive revoke remains outside the canary because it intentionally requires a new
+approval/install lifecycle rather than an automatic resume.
 
 ## 5. Important code map
 
@@ -170,19 +173,17 @@ staged deployment is not installed in the group and both model release gates rem
 
 Continue in this order:
 
-1. Complete the in-progress pause drill: verify the paused production binding, have the owner send
-   `/alpha pause-test`, prove no turn/grant/send delta, then merge a separate exact-binding resume
-   migration. Ordinary non-command silence was proven on 2026-07-15.
-2. Keep the reviewed fixtures as the network-free regression baseline. Do not interpret fixture
-   success as permission to send group text to a model provider.
-3. Only after Mark explicitly approves bounded same-group provider egress and provisions
+1. Keep the restored fixed canary and the reviewed fixtures as the network-free regression
+   baseline. The 2026-07-15 silence and pause evidence completes the reversible live kill-switch
+   drill without requiring repeated owner messages.
+2. Only after Mark explicitly approves bounded same-group provider egress and provisions
    `OPENAI_API_KEY` in Railway, run a separate one-group model-shadow release with delivery disabled.
    That release must rebind only the pinned installation to the exact staged deployment and enable
    both model gates; unknown groups, inactive installations, ordinary Privacy Mode traffic and
    duplicate triggers must produce no provider call.
-4. Review the redacted shadow evidence. Enable Alpha delivery for one bounded model canary only in a
+3. Review the redacted shadow evidence. Enable Alpha delivery for one bounded model canary only in a
    separate owner-authorized configuration step, with the fixed revision retained as rollback.
-5. After the bounded Alpha model canary is stable, resume Sprint 4 Oko RU. BY and a third Business
+4. After the bounded Alpha model canary is stable, resume Sprint 4 Oko RU. BY and a third Business
    account remain out of scope.
 
 ## 7. Owner inputs required only at the canary boundary

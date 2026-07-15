@@ -7,10 +7,11 @@ Audit date: 2026-07-14
 Execution status verified: 2026-07-15
 
 > Current execution status: Sprints 1 and 2 are delivered. Sprint 3's fixed one-group Alpha
-> canary is active and its owner-run happy path is verified through PR #161: disclosure, one
-> exact-revision Agent proposal, one grant and one send attempt. The runtime is still network-free.
-> Non-command silence and pause/revoke need dated live evidence, and any dynamic model runtime must
-> remain behind a new immutable deployment plus independent model-runtime and provider-data gates.
+> canary has verified happy-path, non-command silence and reversible pause kill-switch evidence.
+> During the 2026-07-15 pause probe, durable ingress advanced while turns, grants and send attempts
+> did not. The runtime is still network-free. Destructive revoke remains a separate reinstall
+> lifecycle, and any dynamic model runtime stays behind a new immutable deployment plus independent
+> model-runtime and provider-data gates.
 > BY contact enrichment, the third Business account and Oko remain deferred. For the exact handoff
 > and next PR order, start with [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
 
@@ -645,15 +646,14 @@ active and both provider release gates remain false.
 
 Finish Sprint 3 in independently reversible steps:
 
-1. complete the bounded pause drill now staged by migration `0024`: verify the paused binding, prove
-   `/alpha pause-test` creates no turn/grant/send, then restore the exact fixed binding in a separate
-   release; ordinary non-command silence was already proven live on 2026-07-15;
-2. preserve the reviewed bundle fixtures as the network-free regression baseline;
-3. after explicit owner approval of bounded same-group provider egress and credential provisioning,
+1. keep the exact fixed binding restored by migration `0025` and preserve the reviewed bundle
+   fixtures as the network-free regression baseline; the 2026-07-15 non-command silence and
+   reversible pause drill are complete;
+2. after explicit owner approval of bounded same-group provider egress and credential provisioning,
    run one-group model shadow with delivery disabled and prove that ineligible or duplicate traffic
    makes no provider call;
-4. review redacted shadow evidence, then authorize one bounded model delivery canary separately;
-5. retain the fixed revision as rollback and only then close Sprint 3.
+3. review redacted shadow evidence, then authorize one bounded model delivery canary separately;
+4. retain the fixed revision as rollback and only then close Sprint 3.
 
 Do not expose secret values, broaden beyond the pinned group, start BY/third-account work or weaken
 the human-send confirmation path. The operational commands, owner-input boundary and definition of
