@@ -67,6 +67,16 @@ def test_failed_preflight_never_claims_shadow_readiness() -> None:
     assert readiness.ready_for_shadow_observation is False
 
 
+def test_successful_provider_preflight_precedes_shadow_observation() -> None:
+    readiness = evaluate_alpha_model_readiness(
+        _facts(provider_preflight_successes=1)
+    )
+
+    assert readiness.state is AlphaModelReadinessState.PROVIDER_PREFLIGHT_VERIFIED
+    assert readiness.provider_preflight_verified is True
+    assert readiness.ready_for_shadow_observation is True
+
+
 def test_successful_delivery_free_turn_is_required_for_shadow_observation() -> None:
     readiness = evaluate_alpha_model_readiness(
         _facts(model_turns=1, proposed_turns=1)
@@ -83,6 +93,8 @@ def test_status_payload_is_redacted_and_reports_exact_budget() -> None:
 
     assert payload["state"] == "awaiting_provider_preflight"
     assert payload["telegram_delivery_blocked"] is True
+    assert payload["provider_preflight_successes"] == 0
+    assert payload["provider_preflight_failures"] == 0
     assert payload["budget"] == {
         "monthly_microusd": 50_000_000,
         "reserved_microusd": 12_288,
