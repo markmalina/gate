@@ -142,9 +142,13 @@ class AgentRuntimeResult:
     kind: AgentResultKind
     result_code: str
     candidate_text: str | None = field(default=None, repr=False)
+    input_tokens: int = 0
+    output_tokens: int = 0
 
     def __post_init__(self) -> None:
         _require_token(self.result_code, field_name="result_code", maximum=128)
+        if self.input_tokens < 0 or self.output_tokens < 0:
+            raise ValueError("runtime token usage cannot be negative")
         if self.kind is AgentResultKind.REPLY:
             if self.candidate_text is None:
                 raise ValueError("reply result requires candidate_text")
