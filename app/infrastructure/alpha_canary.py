@@ -51,6 +51,62 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
         async with self._sessions.begin() as session:
             repository = SqlAlphaLifecycleRepository(session)
             if command.action is AlphaMembershipAction.PRESENT:
+                connector_id = await session.scalar(
+                    select(TransportConnector.id)
+                    .join(Workspace, Workspace.id == TransportConnector.workspace_id)
+                    .where(
+                        Workspace.key == command.workspace_key,
+                        Workspace.is_active.is_(True),
+                        TransportConnector.connector_key == command.connector_key,
+                        TransportConnector.connector_kind == "telegram_bot",
+                    )
+                    .with_for_update(of=TransportConnector)
+                )
+                if connector_id is None:
+                    raise AlphaCanaryError("alpha_canary_connector_unavailable")
+                pinned_dialog_ids = (
+                    await session.scalars(
+                        select(Dialog.provider_dialog_id)
+                        .join(
+                            AgentInstallationModel,
+                            (AgentInstallationModel.dialog_id == Dialog.id)
+                            & (
+                                AgentInstallationModel.workspace_id
+                                == Dialog.workspace_id
+                            ),
+                        )
+                        .join(
+                            Workspace,
+                            Workspace.id == AgentInstallationModel.workspace_id,
+                        )
+                        .join(
+                            TransportConnector,
+                            (
+                                TransportConnector.id
+                                == AgentInstallationModel.connector_id
+                            )
+                            & (
+                                TransportConnector.workspace_id
+                                == AgentInstallationModel.workspace_id
+                            ),
+                        )
+                        .where(
+                            Workspace.key == command.workspace_key,
+                            TransportConnector.id == connector_id,
+                        )
+                        .limit(2)
+                    )
+                ).all()
+                if len(pinned_dialog_ids) > 1:
+                    raise AlphaCanaryError("alpha_canary_group_state_ambiguous")
+                pinned_dialog_id = (
+                    pinned_dialog_ids[0] if pinned_dialog_ids else None
+                )
+                if (
+                    pinned_dialog_id is not None
+                    and pinned_dialog_id != command.provider_dialog_id
+                ):
+                    raise AlphaCanaryError("alpha_canary_group_already_pinned")
                 view = await repository.discover(
                     DiscoverAlphaInstallationCommand(
                         workspace_key=command.workspace_key,
@@ -273,16 +329,46 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                 idempotent_replay=True,
             )
 
+    async def is_active_group(
+        self,
+        *,
+        workspace_key: str,
+        connector_key: str,
+        provider_dialog_id: str,
+    ) -> bool:
+        async with self._sessions() as session:
+            count = await _alpha_canary_binding_count(
+                session,
+                workspace_key=workspace_key,
+                connector_key=connector_key,
+                provider_dialog_id=provider_dialog_id,
+            )
+            return count == 1
+
 
 async def alpha_canary_binding_count(
     session: AsyncSession,
     *,
     workspace_key: str,
-    provider_dialog_id: str,
 ) -> int:
     """Count exact active/validated canary bindings without returning provider ids."""
 
-    count = await session.scalar(
+    return await _alpha_canary_binding_count(
+        session,
+        workspace_key=workspace_key,
+        connector_key="telegram_alpha_group",
+        provider_dialog_id=None,
+    )
+
+
+async def _alpha_canary_binding_count(
+    session: AsyncSession,
+    *,
+    workspace_key: str,
+    connector_key: str,
+    provider_dialog_id: str | None,
+) -> int:
+    statement = (
         select(func.count())
         .select_from(AgentInstallationModel)
         .join(Workspace, Workspace.id == AgentInstallationModel.workspace_id)
@@ -313,13 +399,39 @@ async def alpha_canary_binding_count(
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
-            TransportConnector.connector_key == "telegram_alpha_group",
+            TransportConnector.connector_key == connector_key,
             TransportConnector.connector_kind == "telegram_bot",
             TransportConnector.is_enabled.is_(True),
-            Dialog.provider_dialog_id == provider_dialog_id,
             AgentInstallationModel.state == AlphaInstallationState.ACTIVE.value,
             AgentDeploymentModel.state == "active",
             InstructionRevisionModel.validation_state == "validated",
+        )
+    )
+    if provider_dialog_id is not None:
+        statement = statement.where(Dialog.provider_dialog_id == provider_dialog_id)
+    count = await session.scalar(statement)
+    return int(count or 0)
+
+
+async def alpha_canary_installation_count(
+    session: AsyncSession,
+    *,
+    workspace_key: str,
+) -> int:
+    count = await session.scalar(
+        select(func.count())
+        .select_from(AgentInstallationModel)
+        .join(Workspace, Workspace.id == AgentInstallationModel.workspace_id)
+        .join(
+            TransportConnector,
+            (TransportConnector.id == AgentInstallationModel.connector_id)
+            & (TransportConnector.workspace_id == AgentInstallationModel.workspace_id),
+        )
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            TransportConnector.connector_key == "telegram_alpha_group",
+            TransportConnector.connector_kind == "telegram_bot",
         )
     )
     return int(count or 0)
@@ -329,36 +441,39 @@ async def alpha_canary_audit_counts(
     session: AsyncSession,
     *,
     workspace_key: str,
-    provider_dialog_id: str,
 ) -> dict[str, int]:
-    """Return content-free durable evidence counts for the allowlisted group."""
+    """Return content-free durable evidence counts for the pinned group."""
 
     base = (
         select(Dialog.id)
+        .join(
+            AgentInstallationModel,
+            (AgentInstallationModel.dialog_id == Dialog.id)
+            & (AgentInstallationModel.workspace_id == Dialog.workspace_id),
+        )
         .join(Workspace, Workspace.id == Dialog.workspace_id)
         .join(
             TransportConnector,
-            (TransportConnector.id == Dialog.connector_id)
+            (TransportConnector.id == AgentInstallationModel.connector_id)
             & (TransportConnector.workspace_id == Dialog.workspace_id),
         )
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
             TransportConnector.connector_key == "telegram_alpha_group",
-            Dialog.provider_dialog_id == provider_dialog_id,
+            TransportConnector.connector_kind == "telegram_bot",
         )
     )
-    dialog_ids = base.scalar_subquery()
     messages = await session.scalar(
         select(func.count())
         .select_from(CanonicalMessage)
-        .where(CanonicalMessage.dialog_id == dialog_ids)
+        .where(CanonicalMessage.dialog_id.in_(base))
     )
     turns = await session.scalar(
         select(func.count())
         .select_from(AgentTurnModel)
         .join(AgentSessionModel, AgentSessionModel.id == AgentTurnModel.session_id)
-        .where(AgentSessionModel.dialog_id == dialog_ids)
+        .where(AgentSessionModel.dialog_id.in_(base))
     )
     grants = await session.scalar(
         select(func.count())
@@ -367,7 +482,7 @@ async def alpha_canary_audit_counts(
             AgentInstallationModel,
             AgentInstallationModel.id == DeliveryGrantModel.installation_id,
         )
-        .where(AgentInstallationModel.dialog_id == dialog_ids)
+        .where(AgentInstallationModel.dialog_id.in_(base))
     )
     attempts = await session.scalar(
         select(func.count())
@@ -377,7 +492,7 @@ async def alpha_canary_audit_counts(
             AgentInstallationModel,
             AgentInstallationModel.id == DeliveryGrantModel.installation_id,
         )
-        .where(AgentInstallationModel.dialog_id == dialog_ids)
+        .where(AgentInstallationModel.dialog_id.in_(base))
     )
     return {
         "canonical_messages": int(messages or 0),
