@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -384,7 +385,7 @@ class SqlAlphaLifecycleRepository:
                 "alpha_dialog_identity_conflict",
                 "The provider group identity conflicts with an existing dialog",
             )
-        return row.id
+        return cast(uuid.UUID, row[0])
 
     async def _installation_by_dialog(
         self, *, workspace_id: uuid.UUID, connector_id: uuid.UUID, dialog_id: uuid.UUID
@@ -433,7 +434,10 @@ class SqlAlphaLifecycleRepository:
         )
         if for_update:
             statement = statement.with_for_update()
-        return await self._session.scalar(statement)
+        return cast(
+            AgentInstallationModel | None,
+            await self._session.scalar(statement),
+        )
 
     async def _approved_binding(
         self, *, workspace_id: uuid.UUID, deployment_key: str, revision_key: str
