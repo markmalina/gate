@@ -8,7 +8,6 @@ import pytest
 
 from app.application.agent_kernel import (
     AgentContextMessage,
-    AgentDefinition,
     AgentDeployment,
     AgentDeploymentState,
     AgentResultKind,
