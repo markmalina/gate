@@ -12,6 +12,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
+import httpx
 
 from app.api.alpha_admin_routes import router as alpha_admin_router
 from app.api.contact_snapshot_routes import router as contact_snapshot_router
@@ -21,13 +22,26 @@ from app.api.mcp_routes import router as mcp_router
 from app.api.routes import router
 from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_telegram_ingress
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.infrastructure.database import database_runtime_lifespan
 from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram import TelegramClient, build_telegram_http_client
+from app.services.telegram_alpha_webhook import (
+    reconcile_alpha_telegram_webhook_with_retries,
+)
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 
 logger = logging.getLogger(__name__)
+
+
+async def _reconcile_all_telegram_webhooks(
+    settings: Settings,
+    http_client: httpx.AsyncClient,
+) -> None:
+    await asyncio.gather(
+        reconcile_telegram_webhook_with_retries(settings, http_client),
+        reconcile_alpha_telegram_webhook_with_retries(settings, http_client),
+    )
 
 
 @asynccontextmanager
@@ -54,7 +68,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         database_runtime.engine
                     )
                     reconciliation_task = asyncio.create_task(
-                        reconcile_telegram_webhook_with_retries(settings, http_client)
+                        _reconcile_all_telegram_webhooks(settings, http_client)
                     )
                     yield
                 finally:

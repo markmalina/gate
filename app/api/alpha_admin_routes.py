@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
+from app.application.alpha_canary import ALPHA_DISCLOSURE_PREFIX
 from app.application.alpha_lifecycle import (
     AlphaInstallationActionCommand,
     AlphaInstallationView,
@@ -16,6 +17,10 @@ from app.application.alpha_lifecycle import (
     ApproveAlphaInstallationCommand,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.alpha_canary import (
+    alpha_canary_audit_counts,
+    alpha_canary_binding_count,
+)
 from app.infrastructure.alpha_lifecycle import SqlAlphaLifecycleRepository
 
 router = APIRouter(prefix="/admin/alpha", tags=["alpha-admin"])
@@ -34,6 +39,70 @@ class AlphaApprovalRequest(BaseModel):
 
 class AlphaActionRequest(BaseModel):
     workspace_key: str = Field(min_length=1, max_length=128)
+
+
+@router.get("/canary-status")
+async def get_alpha_canary_status(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    workspace_key: Annotated[str, Query(min_length=1, max_length=128)] = "mark-personal",
+    settings: Settings = settings_dependency,
+    session: AsyncSession = session_dependency,
+) -> dict[str, Any]:
+    """Return a redacted activation checklist; never reveal credentials or group id."""
+
+    require_admin_bearer(authorization=authorization, settings=settings)
+    allowlisted_group_id = settings.gate_alpha_canary_group_id.get_secret_value()
+    exact_binding_count = (
+        await alpha_canary_binding_count(
+            session,
+            workspace_key=workspace_key,
+            provider_dialog_id=allowlisted_group_id,
+        )
+        if allowlisted_group_id
+        else 0
+    )
+    audit_counts = (
+        await alpha_canary_audit_counts(
+            session,
+            workspace_key=workspace_key,
+            provider_dialog_id=allowlisted_group_id,
+        )
+        if allowlisted_group_id
+        else {
+            "canonical_messages": 0,
+            "agent_turns": 0,
+            "delivery_grants": 0,
+            "send_attempts": 0,
+        }
+    )
+    checks = {
+        "telegram_worker_enabled": settings.gate_telegram_worker_enabled,
+        "connector_enabled": settings.gate_alpha_connector_enabled,
+        "shadow_worker_enabled": settings.gate_alpha_shadow_worker_enabled,
+        "canary_enabled": settings.gate_alpha_canary_enabled,
+        "delivery_enabled": settings.gate_alpha_delivery_enabled,
+        "privacy_mode_confirmed": settings.gate_alpha_privacy_mode_confirmed,
+        "bot_username_configured": bool(settings.telegram_alpha_bot_username),
+        "bot_token_configured": bool(
+            settings.telegram_alpha_bot_token.get_secret_value()
+        ),
+        "webhook_secret_configured": bool(
+            settings.telegram_alpha_webhook_secret.get_secret_value()
+        ),
+        "one_group_allowlisted": bool(
+            settings.gate_alpha_canary_group_id.get_secret_value()
+        ),
+        "one_active_exact_revision": exact_binding_count == 1,
+    }
+    return {
+        "code_ready": True,
+        "activation_ready": all(checks.values()),
+        "checks": checks,
+        "allowed_updates": ["message", "my_chat_member"],
+        "disclosure_copy": ALPHA_DISCLOSURE_PREFIX.strip(),
+        "active_installations": exact_binding_count,
+        "audit_evidence": audit_counts,
+    }
 
 
 @router.get("/installations")

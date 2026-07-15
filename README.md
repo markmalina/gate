@@ -69,7 +69,7 @@ Verified through GitHub and Gate M on 2026-07-15 after PR #148:
 | Contact import | RU 90 from Desktop export; BY deferred |
 | MCP | OAuth 2.0 enforced, five tools |
 | Human sending | exact saved draft + explicit confirmation only |
-| Alpha group bot | code foundation present; production connector disabled |
+| Alpha group bot | one-group canary code present; production activation disabled |
 
 Snapshot counters were 27 conversations, 660 messages, 170 reply-task rows, 3 unanswered and 28
 drafts. Re-query production instead of treating them as invariants.
@@ -415,6 +415,16 @@ TELEGRAM_BOT_USERNAME
 TELEGRAM_WEBHOOK_SECRET
 GATE_ENV
 GATE_DEFAULT_MODE
+TELEGRAM_ALPHA_BOT_TOKEN
+TELEGRAM_ALPHA_BOT_USERNAME
+TELEGRAM_ALPHA_WEBHOOK_SECRET
+GATE_TELEGRAM_WORKER_ENABLED
+GATE_ALPHA_CONNECTOR_ENABLED
+GATE_ALPHA_SHADOW_WORKER_ENABLED
+GATE_ALPHA_CANARY_ENABLED
+GATE_ALPHA_DELIVERY_ENABLED
+GATE_ALPHA_CANARY_GROUP_ID
+GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 GATE_SEND_ENABLED
 GATE_ACCOUNT_RU_SEND_ENABLED
 GATE_ACCOUNT_BY_SEND_ENABLED
@@ -442,10 +452,10 @@ RAILWAY_SERVICE_NAME
 
 Some legacy Business connection configuration names still exist in `app/core/config.py`; dynamic database/Telegram state is the intended authority.
 
-The typed connector registry names `TELEGRAM_ALPHA_BOT_TOKEN`,
-`TELEGRAM_ALPHA_BOT_USERNAME` and `TELEGRAM_ALPHA_WEBHOOK_SECRET` only as future Alpha connector
-references. `Settings` deliberately ignores them: they cannot activate a connector and must not be
-added to production until the separate Alpha webhook and delivery boundary are implemented.
+The isolated Alpha connector uses `TELEGRAM_ALPHA_BOT_TOKEN`,
+`TELEGRAM_ALPHA_BOT_USERNAME` and `TELEGRAM_ALPHA_WEBHOOK_SECRET`. Every Alpha runtime and delivery
+flag defaults to false; production values may be added only for the owner-authorized one-group
+canary described in `docs/PROJECT_HANDOFF.md`.
 
 Rules:
 
@@ -541,4 +551,8 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** continue Sprint 3 with PR D from the [current project handoff](docs/PROJECT_HANDOFF.md): add Alpha webhook reconciliation, kill-switch operations and the one-group canary checklist over the exact-target delivery adapter delivered by PR #152. Keep all production Alpha flags disabled until the owner supplies canary secrets and explicitly authorizes activation. Do not begin Oko or start BY/third-account work. Preserve explicit human-send confirmation and account isolation throughout.
+**Immediate continuation:** keep every production Alpha flag disabled until the owner supplies the
+dedicated bot secrets, confirms BotFather Privacy Mode, identifies the one test group and explicitly
+authorizes the canary configuration. Run and record the disclosure, duplicate, pause/revoke and
+target-binding evidence before declaring Sprint 3 complete. Then begin Sprint 4 Oko RU; do not
+start BY or third-account work. Preserve explicit human-send confirmation and account isolation.

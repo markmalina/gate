@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.application.alpha_canary import (
+    AlphaCanaryError,
+    ProcessAlphaCanaryUpdateCommand,
+    ProcessAlphaCanaryUpdateService,
+)
+from app.application.alpha_delivery import DeliverAlphaGrantService
+from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
 from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
+from app.application.instruction_bundles import DeployedInstructionBundleLoader
 from app.application.telegram_canonical_projection import (
     TelegramCanonicalProjectionError,
     project_telegram_canonical_message,
@@ -43,11 +53,20 @@ from app.core.telegram_connectors import (
     TelegramConnectorResolutionError,
     TelegramConnectorRole,
 )
+from app.infrastructure.alpha_canary import SessionFactoryAlphaCanaryStore
+from app.infrastructure.alpha_delivery import (
+    SessionFactoryAlphaDeliveryStore,
+    TelegramClientAlphaTextAdapter,
+)
+from app.infrastructure.alpha_shadow_worker import (
+    SessionFactoryAlphaShadowTurnRepository,
+)
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
 from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
+from app.services.telegram import TelegramClient, build_telegram_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +99,13 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         identity_reader: TelegramIngressIdentityReader,
         runtime_logger: logging.Logger,
         canonical_store: CanonicalIngressStore | None = None,
+        alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
         self._identity_reader = identity_reader
         self._canonical_store = canonical_store
+        self._alpha_canary = alpha_canary
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
@@ -145,6 +166,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
 
         canonical_persisted = False
         canonical_duplicate = False
+        canonical_message_id: str | None = None
         if self._canonical_store is not None:
             try:
                 projection = project_telegram_canonical_message(
@@ -174,6 +196,40 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     ) from None
                 canonical_persisted = True
                 canonical_duplicate = persisted.duplicate
+                canonical_message_id = persisted.message_id
+
+        alpha_canary_disposition = "not_applicable"
+        if connector.role is TelegramConnectorRole.ALPHA_GROUP:
+            if self._settings.gate_alpha_canary_enabled and self._alpha_canary is None:
+                raise TelegramUpdateProcessingError("alpha_canary_not_configured")
+            if self._alpha_canary is not None:
+                try:
+                    canary = await self._alpha_canary.execute(
+                        ProcessAlphaCanaryUpdateCommand(
+                            workspace_key=self._settings.gate_workspace_id,
+                            update=item.payload,
+                            canonical_message_id=canonical_message_id,
+                            bot_username=self._settings.telegram_alpha_bot_username,
+                            allowlisted_group_id=(
+                                self._settings.gate_alpha_canary_group_id.get_secret_value()
+                            ),
+                            connector_enabled=self._settings.gate_alpha_connector_enabled,
+                            shadow_worker_enabled=self._settings.gate_alpha_shadow_worker_enabled,
+                            canary_enabled=self._settings.gate_alpha_canary_enabled,
+                            delivery_enabled=self._settings.gate_alpha_delivery_enabled,
+                            privacy_mode_confirmed=self._settings.gate_alpha_privacy_mode_confirmed,
+                            credentials_ready=bool(
+                                self._settings.telegram_alpha_bot_token.get_secret_value()
+                                and self._settings.telegram_alpha_webhook_secret.get_secret_value()
+                            ),
+                            now=datetime.now(UTC),
+                        )
+                    )
+                except AlphaCanaryError as exc:
+                    raise TelegramUpdateProcessingError(exc.code) from None
+                except Exception:
+                    raise TelegramUpdateProcessingError("alpha_canary_processing_failed") from None
+                alpha_canary_disposition = canary.disposition.value
 
         self._logger.info(
             "Telegram worker shadow classification: handler=%s reason=%s "
@@ -183,7 +239,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             "ownership_proposed_state=%s ownership_candidate=%s "
             "ownership_reason=%s ownership_signal=%s ownership_requirements=%s "
             "ownership_policy=%s ownership_authoritative=%s "
-            "canonical_persisted=%s canonical_duplicate=%s",
+            "canonical_persisted=%s canonical_duplicate=%s "
+            "alpha_canary_disposition=%s",
             decision.handler,
             decision.reason,
             routing.account_resolution,
@@ -201,6 +258,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             ownership.authoritative,
             canonical_persisted,
             canonical_duplicate,
+            alpha_canary_disposition,
         )
 
 
@@ -212,6 +270,7 @@ async def run_telegram_worker_once(
     processor: TelegramUpdateProcessor | None = None,
     identity_reader: TelegramIngressIdentityReader | None = None,
     canonical_store: CanonicalIngressStore | None = None,
+    alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -230,6 +289,7 @@ async def run_telegram_worker_once(
             settings=settings,
             identity_reader=identity_reader,
             canonical_store=canonical_store,
+            alpha_canary=alpha_canary,
             runtime_logger=runtime_logger,
         )
     result = await ProcessTelegramOutboxService(
@@ -255,6 +315,36 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
     canonical_store = SessionFactoryCanonicalIngressStore(sessions)
     try:
+        if settings.gate_alpha_canary_enabled:
+            async with build_telegram_http_client() as http_client:
+                telegram = TelegramClient(
+                    credential=settings.telegram_alpha_bot_token.get_secret_value(),
+                    api_base_url=os.getenv(
+                        "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                    ),
+                    http_client=http_client,
+                )
+                alpha_canary = ProcessAlphaCanaryUpdateService(
+                    store=SessionFactoryAlphaCanaryStore(sessions),
+                    shadow=ProcessAlphaShadowMessageService(
+                        port=SessionFactoryAlphaShadowTurnRepository(sessions),
+                        bundle_loader=DeployedInstructionBundleLoader(
+                            Path(settings.gate_agent_bundle_root)
+                        ),
+                    ),
+                    delivery=DeliverAlphaGrantService(
+                        store=SessionFactoryAlphaDeliveryStore(sessions),
+                        telegram=TelegramClientAlphaTextAdapter(telegram),
+                    ),
+                )
+                async with sessions() as session:
+                    return await run_telegram_worker_once(
+                        settings=settings,
+                        session=session,
+                        identity_reader=identity_reader,
+                        canonical_store=canonical_store,
+                        alpha_canary=alpha_canary,
+                    )
         async with sessions() as session:
             return await run_telegram_worker_once(
                 settings=settings,
