@@ -45,6 +45,10 @@ class CountSession:
 
         return Result()
 
+    async def scalar(self, _statement: object) -> int:
+        self.query_count += 1
+        return 0
+
 
 class CommitSession:
     def __init__(self) -> None:
@@ -211,7 +215,7 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     result = response.json()["result"]
     assert result["isError"] is False
     assert result["structuredContent"]["mcp"]["auth"] == "oauth2_enforced"
-    assert session.query_count == 11
+    assert session.query_count == 13
 
 
 @pytest.mark.anyio

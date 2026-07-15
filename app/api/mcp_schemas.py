@@ -163,6 +163,19 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                 "type": "array",
                 "items": _ref("contact_directory"),
             },
+            "alpha_canary": _object(
+                {
+                    "telegram_worker_enabled": {"type": "boolean"},
+                    "connector_enabled": {"type": "boolean"},
+                    "shadow_worker_enabled": {"type": "boolean"},
+                    "canary_enabled": {"type": "boolean"},
+                    "delivery_enabled": {"type": "boolean"},
+                    "privacy_mode_confirmed": {"type": "boolean"},
+                    "webhook_credentials_configured": {"type": "boolean"},
+                    "one_group_discovered": {"type": "boolean"},
+                    "one_active_exact_revision": {"type": "boolean"},
+                }
+            ),
             "mcp": _object(
                 {
                     "protocol_version": {"type": "string", "minLength": 1},
