@@ -235,3 +235,103 @@ def test_unapproved_model_capability_fails_closed() -> None:
                 await runtime.propose(_command(bundle))
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_code"),
+    [
+        (400, "openai_request_rejected"),
+        (401, "openai_credentials_rejected"),
+        (403, "openai_credentials_rejected"),
+        (429, "openai_rate_limited"),
+        (500, "openai_provider_unavailable"),
+        (503, "openai_provider_unavailable"),
+    ],
+)
+def test_provider_rejection_is_redacted_terminal_and_never_retried(
+    status_code: int,
+    expected_code: str,
+) -> None:
+    bundle = _bundle()
+    provider_calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal provider_calls
+        provider_calls += 1
+        return httpx.Response(
+            status_code,
+            json={"error": {"message": "provider-private-payload"}},
+        )
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            runtime = OpenAIResponsesAgentRuntime(
+                bundle=bundle,
+                http_client=client,
+                api_key="test-key",
+                model="gpt-5.6-luna",
+                api_base_url="https://api.openai.com/v1",
+                max_output_tokens=512,
+                timeout_seconds=30,
+                data_gate_approved=True,
+            )
+            with pytest.raises(OpenAIAgentRuntimeError) as raised:
+                await runtime.propose(_command(bundle))
+            assert raised.value.code == expected_code
+            assert "provider-private-payload" not in str(raised.value)
+
+    asyncio.run(run())
+    assert provider_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected_code"),
+    [
+        (None, "openai_usage_missing"),
+        ({}, "openai_usage_invalid"),
+        ({"input_tokens": -1, "output_tokens": 3}, "openai_usage_invalid"),
+        ({"input_tokens": 3, "output_tokens": True}, "openai_usage_invalid"),
+    ],
+)
+def test_success_without_trustworthy_usage_fails_closed(
+    usage: object,
+    expected_code: str,
+) -> None:
+    bundle = _bundle()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        payload: dict[str, object] = {
+            "status": "completed",
+            "output_text": json.dumps(
+                {
+                    "kind": "reply",
+                    "result_code": "alpha_answer",
+                    "candidate_text": "Candidate only",
+                }
+            ),
+        }
+        if usage is not None:
+            payload["usage"] = usage
+        return httpx.Response(200, json=payload)
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            runtime = OpenAIResponsesAgentRuntime(
+                bundle=bundle,
+                http_client=client,
+                api_key="test-key",
+                model="gpt-5.6-luna",
+                api_base_url="https://api.openai.com/v1",
+                max_output_tokens=512,
+                timeout_seconds=30,
+                data_gate_approved=True,
+            )
+            with pytest.raises(OpenAIAgentRuntimeError) as raised:
+                await runtime.propose(_command(bundle))
+            assert raised.value.code == expected_code
+
+    asyncio.run(run())
