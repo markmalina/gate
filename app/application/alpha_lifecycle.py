@@ -28,6 +28,7 @@ class AlphaAccessReason(StrEnum):
     DIALOG_NOT_GROUP = "dialog_not_group"
     RATE_LIMITED = "rate_limited"
     TOKEN_LIMIT_EXCEEDED = "token_limit_exceeded"
+    MONTHLY_BUDGET_EXCEEDED = "monthly_budget_exceeded"
     TRIGGER_OUT_OF_SCOPE = "trigger_out_of_scope"
 
 
@@ -96,6 +97,8 @@ class ReserveAlphaUsageCommand:
     trigger_message_id: str = field(repr=False)
     reserved_tokens: int
     now: datetime
+    monthly_budget_microusd: int | None = None
+    max_cost_microusd_per_token: int = 0
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
@@ -105,6 +108,15 @@ class ReserveAlphaUsageCommand:
             raise ValueError("reserved_tokens must be positive")
         if self.now.tzinfo is None:
             raise ValueError("now must be timezone-aware")
+        if self.monthly_budget_microusd is not None:
+            if self.monthly_budget_microusd < 0:
+                raise ValueError("monthly_budget_microusd cannot be negative")
+            if self.max_cost_microusd_per_token < 1:
+                raise ValueError(
+                    "budgeted usage requires a positive max cost per token"
+                )
+        elif self.max_cost_microusd_per_token != 0:
+            raise ValueError("token cost requires a monthly budget")
 
 
 @dataclass(frozen=True, slots=True)
