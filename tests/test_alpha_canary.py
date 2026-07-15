@@ -29,6 +29,10 @@ class RecordingStore:
     def __init__(self) -> None:
         self.memberships = []
         self.grants = []
+        self.active_group = True
+
+    async def is_active_group(self, **scope):
+        return self.active_group
 
     async def reconcile_membership(self, command):
         self.memberships.append(command)
@@ -82,7 +86,6 @@ def _command(**changes) -> ProcessAlphaCanaryUpdateCommand:
         "update": _message_update(),
         "canonical_message_id": "00000000-0000-0000-0000-000000000041",
         "bot_username": "AlphaViaBot",
-        "allowlisted_group_id": "-1007001",
         "connector_enabled": True,
         "shadow_worker_enabled": True,
         "canary_enabled": True,
@@ -122,7 +125,7 @@ def test_disabled_canary_touches_nothing() -> None:
     assert delivery.commands == []
 
 
-def test_membership_discovery_requires_exact_bot_and_allowlisted_group() -> None:
+def test_membership_discovery_requires_exact_bot_and_records_group() -> None:
     service, store, shadow, delivery = _service(
         AlphaShadowWorkerResult(AlphaShadowDisposition.PROPOSED, "unused")
     )
@@ -151,14 +154,14 @@ def test_membership_discovery_requires_exact_bot_and_allowlisted_group() -> None
     assert delivery.commands == []
 
 
-def test_outside_allowlist_and_ambiguous_shapes_fail_before_runtime() -> None:
+def test_unapproved_group_and_ambiguous_shapes_fail_before_runtime() -> None:
     service, store, shadow, delivery = _service(
         AlphaShadowWorkerResult(AlphaShadowDisposition.PROPOSED, "unused")
     )
-    outside = asyncio.run(
-        service.execute(_command(update=_message_update("-1009999")))
-    )
-    assert outside.code == "alpha_canary_group_not_allowlisted"
+    store.active_group = False
+    outside = asyncio.run(service.execute(_command()))
+    assert outside.code == "alpha_canary_group_not_active"
+    store.active_group = True
 
     with pytest.raises(AlphaCanaryError, match="update_shape_invalid"):
         asyncio.run(
