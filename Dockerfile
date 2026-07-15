@@ -9,6 +9,7 @@ WORKDIR /app
 COPY pyproject.toml alembic.ini ./
 COPY app ./app
 COPY alembic ./alembic
+COPY agent_bundles ./agent_bundles
 
 RUN pip install --upgrade pip && pip install .
 
