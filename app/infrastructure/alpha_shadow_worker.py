@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any, cast
 
 from sqlalchemy import select, update
@@ -222,7 +223,7 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
         self,
         prepared: AlphaShadowPreparedTurn,
         *,
-        now: Any,
+        now: datetime,
     ) -> AlphaUsageReservation:
         async with self._sessions.begin() as session:
             return await SqlAlphaLifecycleRepository(session).reserve_usage(
@@ -534,7 +535,7 @@ async def _load_context(
                 CanonicalMessage.workspace_id == workspace_id,
                 CanonicalMessage.dialog_id == dialog.id,
                 CanonicalMessage.id != trigger.id,
-                CanonicalMessage.occurred_at <= trigger.occurred_at,
+                CanonicalMessage.occurred_at < trigger.occurred_at,
                 CanonicalMessage.direction.in_(
                     {"inbound", "outbound", "bot_or_service"}
                 ),
