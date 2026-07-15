@@ -65,6 +65,11 @@ one send attempt. The active installation still uses the network-free evaluation
 and reviewed `alpha-model-v1` artifact are packaged, while the model deployment is staged only:
 ordinary model generation and provider data egress are not active.
 
+Dated live silence evidence (2026-07-15): the owner sent an ordinary group message without
+`/alpha`, a bot mention or a reply to the bot. After more than 12 seconds, Gate M still reported
+4 accepted Alpha messages, 2 Agent turns, 1 delivery grant and 1 send attempt. Privacy Mode therefore
+kept the message outside Alpha ingress; no turn, grant or delivery was created.
+
 ## 4. Delivered release history
 
 ### Sprint 1 — canonical transport and ownership foundation: complete
@@ -117,7 +122,7 @@ PRs #146–#161 delivered and activated the owner-approved fixed one-group canar
 - durable workspace-scoped tables for installations, grants and agent send attempts.
 
 This is not yet a generally available or model-backed Telegram agent. The fixed canary is active
-only in the pinned group. Non-command silence and pause/revoke still need dated live evidence before
+only in the pinned group. Non-command silence has dated live evidence. Pause/revoke still needs a bounded live drill before
 Sprint 3 is fully complete.
 
 ## 5. Important code map
@@ -159,8 +164,8 @@ staged deployment is not installed in the group and both model release gates rem
 
 Continue in this order:
 
-1. Capture dated live evidence that ordinary non-command group traffic is silent and that
-   pause/revoke blocks the fixed canary, then restore the exact fixed revision.
+1. Run a bounded pause/revoke live drill against the fixed canary, then restore the exact fixed
+   revision. Ordinary non-command silence was proven on 2026-07-15.
 2. Keep the reviewed fixtures as the network-free regression baseline. Do not interpret fixture
    success as permission to send group text to a model provider.
 3. Only after Mark explicitly approves bounded same-group provider egress and provisions
