@@ -319,6 +319,7 @@ Key merged milestones:
 | #126 | Dormant authenticated HTTPS queue alert notifier with incident-key idempotency |
 | #137–#153 | Canonical ownership, Agent Kernel and isolated exact-target Alpha group path |
 | #154–#161 | Automatic one-group discovery, supervised worker, owner-approved canary activation, redacted evidence and packaged immutable bundle |
+| #162–#166 | Dormant Responses runtime, reviewed/staged model deployment, live Privacy Mode silence and exact reversible pause drill |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -559,10 +560,11 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** keep the successful fixed one-group Alpha canary as the production
-baseline. Add the dormant OpenAI Responses runtime behind independent default-off runtime and
-model-data gates; it must use the installation-pinned revision, structured `reply | handoff |
-no_reply`, `store=false`, no tools and no model-selected target. Do not activate it until a new
-reviewed Alpha instruction bundle/deployment and explicit owner model-data approval exist. Capture
-non-command silence plus pause/revoke evidence before declaring Sprint 3 fully complete. Preserve
-explicit human-send confirmation and account isolation; BY and third-account work remain deferred.
+**Immediate continuation:** keep the restored fixed one-group Alpha canary as the production
+baseline. The 2026-07-15 live checks proved both non-command silence and the reversible pause kill
+switch: the pause probe was durably accepted while Agent turns, delivery grants and send attempts
+did not advance. The dormant OpenAI Responses runtime, reviewed instruction bundle and staged model
+deployment remain behind independent default-off runtime and model-data gates. Do not send group
+context to a provider until Mark explicitly approves bounded provider egress and provisions the
+credential; then run one delivery-disabled model-shadow release. Preserve explicit human-send
+confirmation and account isolation; BY and third-account work remain deferred.
