@@ -100,6 +100,22 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_ALPHA_SHADOW_WORKER_ENABLED",
     )
+    gate_alpha_canary_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_ALPHA_CANARY_ENABLED",
+    )
+    gate_alpha_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_ALPHA_DELIVERY_ENABLED",
+    )
+    gate_alpha_canary_group_id: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_ALPHA_CANARY_GROUP_ID",
+    )
+    gate_alpha_privacy_mode_confirmed: bool = Field(
+        default=False,
+        validation_alias="GATE_ALPHA_PRIVACY_MODE_CONFIRMED",
+    )
     gate_agent_bundle_root: str = Field(
         default="agent_bundles",
         min_length=1,
