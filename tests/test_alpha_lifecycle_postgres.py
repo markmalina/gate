@@ -55,14 +55,17 @@ async def test_discovery_approval_gating_and_usage_are_transactional() -> None:
         revision_id = uuid4()
         deployment_id = uuid4()
         async with sessions.begin() as seed:
+            seed.add(
+                Workspace(
+                    id=workspace_id,
+                    key="mark-personal",
+                    display_name="Mark personal",
+                    is_active=True,
+                )
+            )
+            await seed.flush()
             seed.add_all(
                 [
-                    Workspace(
-                        id=workspace_id,
-                        key="mark-personal",
-                        display_name="Mark personal",
-                        is_active=True,
-                    ),
                     TransportConnector(
                         id=connector_id,
                         workspace_id=workspace_id,
@@ -76,30 +79,36 @@ async def test_discovery_approval_gating_and_usage_are_transactional() -> None:
                         agent_key="alpha_group",
                         display_name="Alpha",
                     ),
-                    InstructionRevisionModel(
-                        id=revision_id,
-                        workspace_id=workspace_id,
-                        agent_definition_id=definition_id,
-                        revision_key="alpha-revision-v1",
-                        source_repository="markmalina/alpha",
-                        source_path="prompts/gate/alpha-v1.md",
-                        source_commit_sha="a" * 40,
-                        content_sha256="b" * 64,
-                        schema_version="agent-bundle-v1",
-                        validation_state="validated",
-                    ),
-                    AgentDeploymentModel(
-                        id=deployment_id,
-                        workspace_id=workspace_id,
-                        agent_definition_id=definition_id,
-                        instruction_revision_id=revision_id,
-                        deployment_key="alpha-deployment-v1",
-                        runtime_profile="fixture",
-                        model_profile="none",
-                        policy_version="alpha-v1",
-                        state="active",
-                    ),
                 ]
+            )
+            await seed.flush()
+            seed.add(
+                InstructionRevisionModel(
+                    id=revision_id,
+                    workspace_id=workspace_id,
+                    agent_definition_id=definition_id,
+                    revision_key="alpha-revision-v1",
+                    source_repository="markmalina/alpha",
+                    source_path="prompts/gate/alpha-v1.md",
+                    source_commit_sha="a" * 40,
+                    content_sha256="b" * 64,
+                    schema_version="agent-bundle-v1",
+                    validation_state="validated",
+                )
+            )
+            await seed.flush()
+            seed.add(
+                AgentDeploymentModel(
+                    id=deployment_id,
+                    workspace_id=workspace_id,
+                    agent_definition_id=definition_id,
+                    instruction_revision_id=revision_id,
+                    deployment_key="alpha-deployment-v1",
+                    runtime_profile="fixture",
+                    model_profile="none",
+                    policy_version="alpha-v1",
+                    state="active",
+                )
             )
 
         async with sessions() as session:
