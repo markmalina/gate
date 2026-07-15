@@ -11,13 +11,11 @@ from app.application.agent_kernel import AgentResultKind
 from app.application.alpha_delivery import (
     AlphaDeliveryResult,
     DeliverAlphaGrantCommand,
-    DeliverAlphaGrantService,
 )
 from app.application.alpha_shadow_worker import (
     AlphaShadowDisposition,
     AlphaShadowWorkerResult,
     ProcessAlphaShadowMessageCommand,
-    ProcessAlphaShadowMessageService,
 )
 from app.application.canonical_messaging import DialogKind
 
@@ -122,6 +120,16 @@ class AlphaCanaryStore(Protocol):
     ) -> AlphaGrantResult: ...
 
 
+class AlphaCanaryShadowPort(Protocol):
+    async def execute(
+        self, command: ProcessAlphaShadowMessageCommand
+    ) -> AlphaShadowWorkerResult: ...
+
+
+class AlphaCanaryDeliveryPort(Protocol):
+    async def execute(self, command: DeliverAlphaGrantCommand) -> AlphaDeliveryResult: ...
+
+
 class ProcessAlphaCanaryUpdateService:
     """Connect durable ingress to shadow and delivery only behind every canary gate."""
 
@@ -129,8 +137,8 @@ class ProcessAlphaCanaryUpdateService:
         self,
         *,
         store: AlphaCanaryStore,
-        shadow: ProcessAlphaShadowMessageService,
-        delivery: DeliverAlphaGrantService,
+        shadow: AlphaCanaryShadowPort,
+        delivery: AlphaCanaryDeliveryPort,
         connector_key: str = "telegram_alpha_group",
     ) -> None:
         self._store = store
