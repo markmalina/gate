@@ -94,9 +94,9 @@ PRs #143–#145 delivered:
 No mutable GitHub `main` read, Git credential, model network call or agent delivery exists in this
 shadow result.
 
-### Sprint 3 — Alpha group bot: foundation delivered, release not complete
+### Sprint 3 — Alpha group bot: canary code delivered, activation evidence pending
 
-PRs #146–#152 delivered the current disabled foundation:
+PRs #146–#152 and PR D delivered the current disabled canary boundary:
 
 - `discovered → pending_approval → active/paused/revoked` installation contract;
 - transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
@@ -113,8 +113,8 @@ PRs #146–#152 delivered the current disabled foundation:
 - separate default-disabled `/telegram/alpha/webhook` with its own secret and connector key;
 - durable workspace-scoped tables for installations, grants and agent send attempts.
 
-This is not yet a usable Telegram agent. Do not enable the connector merely because the schema and
-webhook exist.
+This is not yet a generally available Telegram agent. The one-group canary must remain disabled
+until Mark supplies the owner-only configuration and explicitly authorizes activation.
 
 ## 5. Important code map
 
@@ -132,6 +132,9 @@ webhook exist.
 | `app/infrastructure/alpha_shadow_worker.py` | transactional binding, context and turn persistence |
 | `app/application/alpha_delivery.py` | opaque-grant-only delivery contract |
 | `app/infrastructure/alpha_delivery.py` | exact-target consumption, attempt ledger and literal Telegram adapter |
+| `app/application/alpha_canary.py` | single-group gates, disclosure and orchestration |
+| `app/infrastructure/alpha_canary.py` | membership reconciliation and exact-revision grant issuance |
+| `app/services/telegram_alpha_webhook.py` | isolated webhook reconciliation for two update types |
 | `app/worker/alpha_shadow.py` | separate default-disabled Alpha runtime boundary |
 | `app/infrastructure/canonical_messaging.py` | atomic PostgreSQL canonical ingress store |
 | `app/models/canonical.py` | workspace/connector/dialog/message/ownership ORM |
@@ -176,14 +179,21 @@ markup, tool call or model-supplied target. Outcomes are durable `sent | failed 
 a replay of `sending` becomes terminal `unknown` and never calls Telegram again. The adapter is
 not yet connected to webhook reconciliation and remains unreachable in production.
 
-### PR D — webhook reconciliation, kill switch and one-group canary
+### PR D — webhook reconciliation, kill switch and one-group canary: delivered in code
 
-- reconcile only `message` and `my_chat_member` for the separate Alpha bot;
-- retain Telegram Privacy Mode;
-- require connector kill switch, active installation and exact approved revision;
-- canary one allowlisted test group;
-- verify disclosure copy, pause/revoke, duplicate suppression, target binding and audit evidence;
-- only after the canary, mark Sprint 3 complete.
+- webhook reconciliation requests only `message` and `my_chat_member` for the separate Alpha bot;
+- ingress rejects mixed or unapproved shapes before storage;
+- connector, shadow, canary and delivery kill switches all default to false;
+- one hidden provider group id is allowlisted and never returned by canary status;
+- membership discovery/removal reconciles pending or revoked installation state;
+- grant issuance re-proves the active installation, deployment and validated exact revision;
+- every delivered candidate receives the fixed Alpha disclosure prefix;
+- duplicate triggers replay the same turn/grant/attempt and never create a second provider call;
+- owner status reports redacted activation checks and durable installation binding.
+
+Only the live canary evidence remains: Privacy Mode confirmation, disclosure, duplicate suppression,
+target binding, pause/revoke and the durable turn/grant/send-attempt audit trail. Mark Sprint 3
+complete only after that evidence is captured.
 
 After Sprint 3, proceed to Sprint 4 Oko RU ownership/consent/handoff. BY activation and a third
 Business account remain explicitly out of scope until Mark changes that priority.
@@ -198,9 +208,16 @@ TELEGRAM_ALPHA_BOT_TOKEN
 TELEGRAM_ALPHA_BOT_USERNAME=AlphaViaBot
 TELEGRAM_ALPHA_WEBHOOK_SECRET
 GATE_ALPHA_CONNECTOR_ENABLED
+GATE_TELEGRAM_WORKER_ENABLED
+GATE_ALPHA_SHADOW_WORKER_ENABLED
+GATE_ALPHA_CANARY_ENABLED
+GATE_ALPHA_DELIVERY_ENABLED
+GATE_ALPHA_CANARY_GROUP_ID
+GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 ```
 
-Keep `GATE_ALPHA_CONNECTOR_ENABLED=false` until PRs A–D are merged and the canary checklist is ready.
+Keep every `GATE_ALPHA_*_ENABLED` flag false until PRs A–D are merged and Mark explicitly
+authorizes the canary checklist.
 Mark also creates one dedicated test group, keeps BotFather Group Privacy enabled and adds the bot
 without personal-inbox or Business credentials.
 
@@ -245,7 +262,10 @@ Never put values in documentation. Important names:
 - canonical rollout: `GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE`,
   `GATE_TELEGRAM_WORKER_ENABLED`, `GATE_WORKSPACE_ID`;
 - Alpha: `TELEGRAM_ALPHA_BOT_TOKEN`, `TELEGRAM_ALPHA_BOT_USERNAME`,
-  `TELEGRAM_ALPHA_WEBHOOK_SECRET`, `GATE_ALPHA_CONNECTOR_ENABLED`;
+  `TELEGRAM_ALPHA_WEBHOOK_SECRET`, `GATE_ALPHA_CONNECTOR_ENABLED`,
+  `GATE_ALPHA_SHADOW_WORKER_ENABLED`, `GATE_ALPHA_CANARY_ENABLED`,
+  `GATE_ALPHA_DELIVERY_ENABLED`, `GATE_ALPHA_CANARY_GROUP_ID`,
+  `GATE_ALPHA_PRIVACY_MODE_CONFIRMED`;
 - MCP/Auth0: see `app/core/config.py` and `docs/MCP_CHATGPT_AUTH0_RUNBOOK.md`;
 - safe human sending: `GATE_SEND_ENABLED`, `GATE_ACCOUNT_RU_SEND_ENABLED`,
   `GATE_ACCOUNT_BY_SEND_ENABLED`.
