@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
+from app.api.alpha_admin_routes import router as alpha_admin_router
 from app.api.contact_snapshot_routes import router as contact_snapshot_router
 from app.api.health_routes import router as health_router
 from app.api.mcp_metadata_routes import router as mcp_metadata_router
@@ -163,7 +164,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Gate",
-        description="Cloud-first communication gateway backend.",
+        description="Cloud-first FastAPI communication gateway backend.",
         version="0.1.0",
         lifespan=lifespan,
     )
@@ -173,6 +174,7 @@ def create_app() -> FastAPI:
     app.include_router(contact_snapshot_router)
     app.include_router(mcp_metadata_router)
     app.include_router(mcp_router)
+    app.include_router(alpha_admin_router)
     include_telegram_ingress(app)
     app.include_router(sprint12_router)
     app.include_router(router)
