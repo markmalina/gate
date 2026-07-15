@@ -311,6 +311,14 @@ class ProcessAlphaShadowMessageService:
                 usage_key=usage.usage_key,
                 proposal=proposal,
             )
+        except AlphaShadowWorkerError as exc:
+            failed = await self._port.fail_turn(
+                workspace_key=command.workspace_key,
+                turn_key=turn.turn_key,
+                usage_key=usage.usage_key,
+                error_code=exc.code,
+            )
+            return _failed_result(failed)
         except Exception:
             failed = await self._port.fail_turn(
                 workspace_key=command.workspace_key,
@@ -393,7 +401,7 @@ def _validate_bundle(
         raise AlphaShadowWorkerError("alpha_bundle_agent_mismatch")
     if bundle.revision != deployment.instruction:
         raise AlphaShadowWorkerError("alpha_bundle_revision_mismatch")
-    if not {"reply", "handoff", "no_reply"} >= bundle.allowed_capabilities:
+    if not bundle.allowed_capabilities <= {"reply", "handoff", "no_reply"}:
         raise AlphaShadowWorkerError("alpha_bundle_capability_mismatch")
 
 
