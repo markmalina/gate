@@ -4,12 +4,12 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.application import alpha_shadow_worker as release_controls
 from app.application.agent_kernel import (
     AgentDeployment,
     AgentDeploymentState,
     InstructionRevision,
 )
-from app.application import alpha_shadow_worker as release_controls
 from app.application.alpha_lifecycle import ReserveAlphaUsageCommand
 from app.application.work_ownership import AgentKey
 
@@ -38,7 +38,10 @@ def test_model_runtime_is_shadow_only_with_fixed_fifty_dollar_budget() -> None:
         model="gpt-5.6-luna",
     )
 
-    assert release_controls.alpha_proposal_delivery_mode(deployment) is release_controls.AlphaProposalDeliveryMode.SHADOW_ONLY
+    assert (
+        release_controls.alpha_proposal_delivery_mode(deployment)
+        is release_controls.AlphaProposalDeliveryMode.SHADOW_ONLY
+    )
     assert release_controls.alpha_model_usage_budget(deployment) == (
         release_controls.ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
         release_controls.ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN,
@@ -49,7 +52,10 @@ def test_model_runtime_is_shadow_only_with_fixed_fifty_dollar_budget() -> None:
 def test_network_free_fixture_keeps_existing_canary_delivery_contract() -> None:
     deployment = _deployment(runtime="fixture", model="no-network")
 
-    assert release_controls.alpha_proposal_delivery_mode(deployment) is release_controls.AlphaProposalDeliveryMode.CANARY
+    assert (
+        release_controls.alpha_proposal_delivery_mode(deployment)
+        is release_controls.AlphaProposalDeliveryMode.CANARY
+    )
     assert release_controls.alpha_model_usage_budget(deployment) is None
 
 
