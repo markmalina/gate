@@ -1,6 +1,7 @@
 """Closed-state tests for Alpha model operational readiness."""
 
 from dataclasses import replace
+from typing import Any
 
 from app.application.alpha_model_readiness import (
     AlphaModelReadinessFacts,
@@ -10,8 +11,8 @@ from app.application.alpha_model_readiness import (
 )
 
 
-def _facts(**changes: object) -> AlphaModelReadinessFacts:
-    values = {
+def _facts(**changes: Any) -> AlphaModelReadinessFacts:
+    values: dict[str, Any] = {
         "runtime_enabled": True,
         "data_gate_approved": True,
         "api_key_configured": True,
