@@ -5,7 +5,9 @@ from typing import Any
 
 import pytest
 
-from app.infrastructure.alpha_model_status import alpha_model_operational_status
+from app.infrastructure.alpha_model_status import (
+    alpha_model_operational_status,
+)
 
 
 class FakeScalarSession:
