@@ -96,7 +96,7 @@ shadow result.
 
 ### Sprint 3 — Alpha group bot: foundation delivered, release not complete
 
-PRs #146–#151 delivered the current disabled foundation:
+PRs #146–#152 delivered the current disabled foundation:
 
 - `discovered → pending_approval → active/paused/revoked` installation contract;
 - transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
@@ -104,6 +104,8 @@ PRs #146–#151 delivered the current disabled foundation:
 - default-disabled delivery-free shadow orchestration with one durable Agent turn per trigger;
 - installation-pinned bundle verification and bounded same-group context reconstruction;
 - persisted `reply | handoff | no_reply` trace with duplicate/restart/poison isolation;
+- exact-target grant consumption and a literal bot-only Telegram delivery adapter;
+- durable `sent | failed | blocked | unknown` outcomes with terminal-unknown replay;
 - group/supergroup-only explicit command/mention/reply invocation policy;
 - human-sender, active-installation and rate gates;
 - five-minute, exact-target, exact-trigger, exact-candidate, one-use `DeliveryGrant` contract;
@@ -128,6 +130,8 @@ webhook exist.
 | `app/application/alpha_shadow_worker.py` | explicit invocation and idempotent shadow orchestration |
 | `app/application/alpha_group.py` | installation, invocation, grant and send-attempt invariants |
 | `app/infrastructure/alpha_shadow_worker.py` | transactional binding, context and turn persistence |
+| `app/application/alpha_delivery.py` | opaque-grant-only delivery contract |
+| `app/infrastructure/alpha_delivery.py` | exact-target consumption, attempt ledger and literal Telegram adapter |
 | `app/worker/alpha_shadow.py` | separate default-disabled Alpha runtime boundary |
 | `app/infrastructure/canonical_messaging.py` | atomic PostgreSQL canonical ingress store |
 | `app/models/canonical.py` | workspace/connector/dialog/message/ownership ORM |
@@ -162,12 +166,15 @@ messages and persists a delivery-free `reply | handoff | no_reply` trace. Postgr
 tests prove duplicate replay, restart-unknown, poison, cross-group and prompt-injection behavior.
 No `DeliveryGrant`, Telegram send or model network runtime is created by this step.
 
-### PR C — separate Alpha delivery adapter
+### PR C — separate Alpha delivery adapter: delivered by PR #152
 
-Add a bot-specific Telegram adapter that receives its target only from a consumed `DeliveryGrant`.
-It must not accept a Business connection, arbitrary chat target, parse mode, tool call or target from
-model output. Reserve and commit `AgentSendAttempt` before the network call. Persist `sent`, `failed`,
-`blocked` or terminal `unknown`; never auto-retry `unknown`.
+The delivery command accepts only workspace and opaque grant identity. In one locked transaction it
+derives the candidate from the matching proposed Agent turn, derives the target from the installed
+group dialog, consumes the grant and commits a `sending` attempt before Telegram I/O. The literal
+bot adapter exposes only `chat_id` and `text`: it accepts no Business connection, parse mode,
+markup, tool call or model-supplied target. Outcomes are durable `sent | failed | blocked | unknown`;
+a replay of `sending` becomes terminal `unknown` and never calls Telegram again. The adapter is
+not yet connected to webhook reconciliation and remains unreachable in production.
 
 ### PR D — webhook reconciliation, kill switch and one-group canary
 
