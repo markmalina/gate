@@ -638,15 +638,21 @@ Definition of done:
 
 ## 12. Current implementation order
 
-The durable canonical pipeline, Agent Kernel and fixed one-group Alpha canary are delivered through
-PR #161. Continue Sprint 3 in independently reversible PRs:
+The durable canonical pipeline, Agent Kernel, fixed one-group Alpha canary, dormant Responses runtime,
+reviewed `alpha-model-v1` artifact and staged `alpha-model-v1-openai` deployment are delivered.
+The active installation remains pinned to the fixed network-free canary; the model deployment is not
+active and both provider release gates remain false.
 
-1. add the dormant structured model runtime behind separate default-off runtime and provider-data
-   gates;
-2. add a new reviewed Alpha instruction bundle and staged model deployment without mutating the
-   fixed canary revision;
-3. finish non-command silence and pause/revoke evidence, then run one-group model shadow/canary only
-   after explicit owner data-egress approval and credential provisioning.
+Finish Sprint 3 in independently reversible steps:
+
+1. capture dated non-command silence and pause/revoke evidence against the fixed canary, then restore
+   its exact revision;
+2. preserve the reviewed bundle fixtures as the network-free regression baseline;
+3. after explicit owner approval of bounded same-group provider egress and credential provisioning,
+   run one-group model shadow with delivery disabled and prove that ineligible or duplicate traffic
+   makes no provider call;
+4. review redacted shadow evidence, then authorize one bounded model delivery canary separately;
+5. retain the fixed revision as rollback and only then close Sprint 3.
 
 Do not expose secret values, broaden beyond the pinned group, start BY/third-account work or weaken
 the human-send confirmation path. The operational commands, owner-input boundary and definition of
