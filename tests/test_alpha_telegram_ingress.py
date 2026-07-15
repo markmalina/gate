@@ -106,3 +106,15 @@ def test_enabled_registry_still_has_no_send_authorization() -> None:
     assert connector.worker_enabled is True
     assert connector.effective_capabilities
     assert connector.send_authorizations == frozenset()
+
+
+def test_mixed_or_unapproved_update_shape_fails_before_storage() -> None:
+    store = CapturingStore()
+    mixed = _update()
+    mixed["callback_query"] = {"id": "unexpected"}
+
+    with pytest.raises(alpha_ingress.HTTPException) as captured:
+        _accept(_settings(), store, mixed)
+
+    assert captured.value.status_code == 400
+    assert store.commands == []
