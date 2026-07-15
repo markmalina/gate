@@ -108,10 +108,6 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_ALPHA_DELIVERY_ENABLED",
     )
-    gate_alpha_canary_group_id: SecretStr = Field(
-        default=SecretStr(""),
-        validation_alias="GATE_ALPHA_CANARY_GROUP_ID",
-    )
     gate_alpha_privacy_mode_confirmed: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_PRIVACY_MODE_CONFIRMED",
