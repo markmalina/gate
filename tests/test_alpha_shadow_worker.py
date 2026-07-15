@@ -25,12 +25,14 @@ from app.application.alpha_shadow_worker import (
     AlphaShadowDisposition,
     AlphaShadowPreparedTurn,
     AlphaShadowWorkerError,
+    AlphaShadowWorkerResult,
     AlphaTurnSnapshot,
     AlphaTurnStatus,
     ProcessAlphaShadowMessageCommand,
     ProcessAlphaShadowMessageService,
     recognize_alpha_invocation,
 )
+from app.application.canonical_messaging import DialogKind
 from app.application.instruction_bundles import DeployedInstructionBundleLoader
 from app.application.work_ownership import AgentKey
 from app.core.config import Settings
@@ -111,10 +113,7 @@ def _prepared(root: Path, *, text: str) -> AlphaShadowPreparedTurn:
         installation_key="installation-1",
         workspace_id="00000000-0000-0000-0000-000000000001",
         dialog_id="00000000-0000-0000-0000-000000000002",
-        dialog_kind=__import__(
-            "app.application.canonical_messaging",
-            fromlist=["DialogKind"],
-        ).DialogKind.SUPERGROUP,
+        dialog_kind=DialogKind.SUPERGROUP,
         deployment_key=deployment.deployment_key,
         instruction_content_sha256=digest,
         state=AlphaInstallationState.ACTIVE,
@@ -374,7 +373,7 @@ def test_cross_group_or_unknown_trigger_fails_before_usage(tmp_path: Path) -> No
 class ExplodingService:
     async def execute(
         self, command: ProcessAlphaShadowMessageCommand
-    ) -> object:
+    ) -> AlphaShadowWorkerResult:
         raise AssertionError("disabled Alpha shadow worker must not access storage")
 
 
@@ -382,7 +381,7 @@ def test_runtime_is_disabled_by_default_before_any_service_call() -> None:
     result = asyncio.run(
         run_alpha_shadow_trigger(
             settings=Settings(_env_file=None),
-            service=ExplodingService(),  # type: ignore[arg-type]
+            service=ExplodingService(),
             trigger_message_id="00000000-0000-0000-0000-000000000003",
         )
     )
