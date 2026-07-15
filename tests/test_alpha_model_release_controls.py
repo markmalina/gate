@@ -1,5 +1,7 @@
 """Release-control contracts for Alpha model shadow execution."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from app.application.agent_kernel import (
@@ -16,7 +18,6 @@ from app.application.alpha_shadow_worker import (
     alpha_proposal_delivery_mode,
 )
 from app.application.work_ownership import AgentKey
-from datetime import UTC, datetime
 
 
 def _deployment(*, runtime: str, model: str) -> AgentDeployment:
