@@ -48,6 +48,8 @@ def test_expand_migration_is_reversible_and_follows_current_head() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
+    assert module.revision == "0016_canonical_foundation"
+    assert len(module.revision) <= 32
     assert module.down_revision == "0015_telegram_queue_incidents"
     assert callable(module.upgrade)
     assert callable(module.downgrade)
