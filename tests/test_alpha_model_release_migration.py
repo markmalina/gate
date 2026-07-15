@@ -9,15 +9,15 @@ def test_alpha_model_release_is_exact_reversible_and_staged_only() -> None:
         Path(__file__).parents[1]
         / "alembic"
         / "versions"
-        / "0022_alpha_model_release.py"
+        / "0023_alpha_model_release.py"
     )
     spec = importlib.util.spec_from_file_location("alpha_model_release_migration", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.revision == "0022_alpha_model_release"
-    assert module.down_revision == "0021_enable_alpha_canary"
+    assert module.revision == "0023_alpha_model_release"
+    assert module.down_revision == "0022_alpha_bundle_digest"
     assert module._REVISION_KEY == "alpha-model-v1"
     assert module._DEPLOYMENT_KEY == "alpha-model-v1-openai"
     assert module._SOURCE_COMMIT_SHA == (
