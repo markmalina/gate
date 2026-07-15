@@ -9,7 +9,6 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from app.models.domain import Base
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -26,6 +25,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.domain import Base
 
 
 class Workspace(Base):
