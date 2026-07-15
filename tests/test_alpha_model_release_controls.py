@@ -9,14 +9,8 @@ from app.application.agent_kernel import (
     AgentDeploymentState,
     InstructionRevision,
 )
+from app.application import alpha_shadow_worker as release_controls
 from app.application.alpha_lifecycle import ReserveAlphaUsageCommand
-from app.application.alpha_shadow_worker import (
-    ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
-    ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN,
-    AlphaProposalDeliveryMode,
-    alpha_model_usage_budget,
-    alpha_proposal_delivery_mode,
-)
 from app.application.work_ownership import AgentKey
 
 
@@ -44,19 +38,19 @@ def test_model_runtime_is_shadow_only_with_fixed_fifty_dollar_budget() -> None:
         model="gpt-5.6-luna",
     )
 
-    assert alpha_proposal_delivery_mode(deployment) is AlphaProposalDeliveryMode.SHADOW_ONLY
-    assert alpha_model_usage_budget(deployment) == (
-        ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
-        ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN,
+    assert release_controls.alpha_proposal_delivery_mode(deployment) is release_controls.AlphaProposalDeliveryMode.SHADOW_ONLY
+    assert release_controls.alpha_model_usage_budget(deployment) == (
+        release_controls.ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
+        release_controls.ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN,
     )
-    assert ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD == 50_000_000
+    assert release_controls.ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD == 50_000_000
 
 
 def test_network_free_fixture_keeps_existing_canary_delivery_contract() -> None:
     deployment = _deployment(runtime="fixture", model="no-network")
 
-    assert alpha_proposal_delivery_mode(deployment) is AlphaProposalDeliveryMode.CANARY
-    assert alpha_model_usage_budget(deployment) is None
+    assert release_controls.alpha_proposal_delivery_mode(deployment) is release_controls.AlphaProposalDeliveryMode.CANARY
+    assert release_controls.alpha_model_usage_budget(deployment) is None
 
 
 def test_budgeted_reservation_requires_a_positive_conservative_unit_cost() -> None:
