@@ -93,6 +93,22 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def send_plain_message(
+        self,
+        *,
+        chat_id: str,
+        text: str,
+    ) -> dict[str, Any]:
+        """Send literal bot text with no Business, parse-mode or markup options."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+        url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
+        return await self._post_telegram_json(
+            url=url,
+            payload={"chat_id": chat_id, "text": text},
+        )
+
     async def edit_message_text(
         self,
         *,
