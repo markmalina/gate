@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from pydantic import SecretStr
-
 from app.application.agent_kernel import AgentResultKind, AgentRuntimeResult
 from app.core.config import Settings
 from app.infrastructure import alpha_model_preflight as preflight
