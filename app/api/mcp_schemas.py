@@ -192,6 +192,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                     "budget_exhausted",
                                     "awaiting_provider_preflight",
                                     "provider_preflight_failed",
+                                    "provider_preflight_verified",
                                     "shadow_observed",
                                 ],
                             },
@@ -207,6 +208,14 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "model_turns": {"type": "integer", "minimum": 0},
                             "proposed_turns": {"type": "integer", "minimum": 0},
                             "failed_turns": {"type": "integer", "minimum": 0},
+                            "provider_preflight_successes": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
+                            "provider_preflight_failures": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
                             "budget": _object(
                                 {
                                     "monthly_microusd": {
