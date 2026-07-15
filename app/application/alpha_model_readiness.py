@@ -81,3 +81,34 @@ def evaluate_alpha_model_readiness(
             prerequisites_ready and provider_preflight_verified
         ),
     )
+
+
+def alpha_model_readiness_payload(
+    facts: AlphaModelReadinessFacts,
+) -> dict[str, object]:
+    """Serialize only content-free, secret-free release evidence."""
+
+    readiness = evaluate_alpha_model_readiness(facts)
+    return {
+        "state": readiness.state.value,
+        "prerequisites_ready": readiness.prerequisites_ready,
+        "provider_preflight_verified": readiness.provider_preflight_verified,
+        "ready_for_provider_preflight": readiness.ready_for_provider_preflight,
+        "ready_for_shadow_observation": readiness.ready_for_shadow_observation,
+        "runtime_enabled": facts.runtime_enabled,
+        "data_gate_approved": facts.data_gate_approved,
+        "api_key_configured": facts.api_key_configured,
+        "telegram_delivery_blocked": facts.telegram_delivery_blocked,
+        "staged_deployments": facts.staged_deployments,
+        "model_turns": facts.model_turns,
+        "proposed_turns": facts.proposed_turns,
+        "failed_turns": facts.failed_turns,
+        "budget": {
+            "monthly_microusd": facts.monthly_budget_microusd,
+            "reserved_microusd": facts.reserved_microusd,
+            "remaining_microusd": max(
+                0,
+                facts.monthly_budget_microusd - facts.reserved_microusd,
+            ),
+        },
+    }
