@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application import alpha_shadow_worker as release_controls
 from app.application.agent_kernel import (
     AgentDeployment,
