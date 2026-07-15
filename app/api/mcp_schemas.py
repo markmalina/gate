@@ -190,6 +190,8 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                     "configuration_incomplete",
                                     "deployment_not_exact",
                                     "budget_exhausted",
+                                    "safety_invariant_violated",
+                                    "provider_preflight_stuck",
                                     "awaiting_provider_preflight",
                                     "provider_preflight_failed",
                                     "provider_preflight_verified",
@@ -204,10 +206,17 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "data_gate_approved": {"type": "boolean"},
                             "api_key_configured": {"type": "boolean"},
                             "telegram_delivery_blocked": {"type": "boolean"},
+                            "fixture_binding_active": {"type": "boolean"},
                             "staged_deployments": {"type": "integer", "minimum": 0},
                             "model_turns": {"type": "integer", "minimum": 0},
+                            "queued_turns": {"type": "integer", "minimum": 0},
+                            "running_turns": {"type": "integer", "minimum": 0},
                             "proposed_turns": {"type": "integer", "minimum": 0},
                             "failed_turns": {"type": "integer", "minimum": 0},
+                            "model_delivery_grants": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
                             "provider_preflight_successes": {
                                 "type": "integer",
                                 "minimum": 0,
@@ -216,6 +225,63 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "type": "integer",
                                 "minimum": 0,
                             },
+                            "stuck_provider_preflights": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
+                            "last_provider_error_category": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "credentials",
+                                    "rate_limit",
+                                    "availability",
+                                    "request",
+                                    "contract",
+                                    "unknown",
+                                ],
+                            },
+                            "alerts": {
+                                "type": "array",
+                                "items": {"type": "string", "minLength": 1},
+                            },
+                            "promotion_dry_run": _object(
+                                {
+                                    "execution_mode": {
+                                        "type": "string",
+                                        "const": "dry_run",
+                                    },
+                                    "mutation_allowed": {
+                                        "type": "boolean",
+                                        "const": False,
+                                    },
+                                    "current_stage": {"type": "string"},
+                                    "next_stage": {"type": "string"},
+                                    "blocked_by": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "shadow_proposals_required": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                    },
+                                    "shadow_proposals_observed": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
+                                    "limited_canary_review_ready": {
+                                        "type": "boolean",
+                                    },
+                                    "rollback_target": {
+                                        "type": "string",
+                                        "const": "fixture_canary",
+                                    },
+                                    "automatic_stop_conditions": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                }
+                            ),
                             "budget": _object(
                                 {
                                     "monthly_microusd": {
