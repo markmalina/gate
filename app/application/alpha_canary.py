@@ -13,6 +13,7 @@ from app.application.alpha_delivery import (
     DeliverAlphaGrantCommand,
 )
 from app.application.alpha_shadow_worker import (
+    AlphaProposalDeliveryMode,
     AlphaShadowDisposition,
     AlphaShadowWorkerResult,
     ProcessAlphaShadowMessageCommand,
@@ -220,6 +221,12 @@ class ProcessAlphaCanaryUpdateService:
             return AlphaCanaryResult(
                 AlphaCanaryDisposition.BLOCKED,
                 shadow.code,
+                shadow=shadow,
+            )
+        if shadow.delivery_mode is AlphaProposalDeliveryMode.SHADOW_ONLY:
+            return AlphaCanaryResult(
+                AlphaCanaryDisposition.PROPOSED,
+                "alpha_model_shadow_delivery_blocked",
                 shadow=shadow,
             )
         if not command.delivery_enabled:
