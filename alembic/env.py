@@ -4,7 +4,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from app.core.config import get_settings
-from app.models import canonical  # noqa: F401
+from app.models import agent, canonical  # noqa: F401
 from app.models.domain import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
