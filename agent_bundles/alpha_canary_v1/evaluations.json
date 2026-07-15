@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "input": "/alpha",
+      "kind": "reply",
+      "result_code": "alpha_canary_ok",
+      "candidate_text": "Канарейка жива: группа привязана, версия инструкций подтверждена, безопасная доставка работает."
+    },
+    {
+      "input": "/alpha@AlphaViaBot",
+      "kind": "reply",
+      "result_code": "alpha_canary_ok",
+      "candidate_text": "Канарейка жива: группа привязана, версия инструкций подтверждена, безопасная доставка работает."
+    },
+    {
+      "input": "/alpha canary",
+      "kind": "reply",
+      "result_code": "alpha_canary_ok",
+      "candidate_text": "Канарейка жива: группа привязана, версия инструкций подтверждена, безопасная доставка работает."
+    },
+    {
+      "input": "/alpha@AlphaViaBot canary",
+      "kind": "reply",
+      "result_code": "alpha_canary_ok",
+      "candidate_text": "Канарейка жива: группа привязана, версия инструкций подтверждена, безопасная доставка работает."
+    }
+  ]
+}
