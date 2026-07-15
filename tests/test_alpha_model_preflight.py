@@ -36,9 +36,9 @@ class FakeSession:
 
 def _settings() -> Settings:
     return Settings(
-        gate_alpha_model_runtime_enabled=True,
-        gate_alpha_model_data_gate_approved=True,
-        openai_api_key="test-key",
+        GATE_ALPHA_MODEL_RUNTIME_ENABLED=True,
+        GATE_ALPHA_MODEL_DATA_GATE_APPROVED=True,
+        OPENAI_API_KEY="test-key",
     )
 
 
