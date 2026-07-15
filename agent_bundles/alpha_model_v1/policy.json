@@ -1,0 +1,7 @@
+{
+  "allowed_capabilities": [
+    "reply",
+    "handoff",
+    "no_reply"
+  ]
+}
