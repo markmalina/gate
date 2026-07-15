@@ -197,7 +197,7 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                         == AlphaInstallationState.ACTIVE.value,
                         AgentDeploymentModel.state == "active",
                         InstructionRevisionModel.validation_state == "validated",
-                        AgentTurnModel.turn_key == command.turn_key,
+                        AgentTurnModel.id == _turn_key_uuid(command.turn_key),
                         AgentTurnModel.status == "proposed",
                         AgentTurnModel.result_kind == "reply",
                     )
@@ -397,3 +397,12 @@ def _uuid_text(value: str) -> uuid.UUID:
         return uuid.UUID(value)
     except ValueError as exc:
         raise AlphaCanaryError("alpha_canary_trigger_identity_invalid") from exc
+
+
+def _turn_key_uuid(value: str) -> uuid.UUID:
+    if not value.startswith("turn-"):
+        raise AlphaCanaryError("alpha_canary_turn_identity_invalid")
+    try:
+        return uuid.UUID(value.removeprefix("turn-"))
+    except ValueError as exc:
+        raise AlphaCanaryError("alpha_canary_turn_identity_invalid") from exc
