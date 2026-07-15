@@ -7,8 +7,9 @@ Audit date: 2026-07-14
 Execution status verified: 2026-07-15
 
 > Current execution status: Sprints 1 and 2 are delivered. Sprint 3 foundations and the
-> transactional owner-admin lifecycle are delivered through PR #150, but Alpha is not released:
-> its connector remains disabled and the worker, delivery-adapter and canary work is still required.
+> transactional owner-admin lifecycle and delivery-free shadow worker are delivered through PR
+> #151, but Alpha is not released: its connector and worker remain disabled, and the delivery
+> adapter plus canary work is still required.
 > BY contact enrichment, the third Business account and Oko remain deferred. For the exact handoff and next PR order, start with
 > [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md).
 
@@ -639,10 +640,9 @@ Definition of done:
 The original first implementation order has been completed through the durable canonical pipeline
 and Agent Kernel foundations. Continue Sprint 3 in the following independently reversible PRs:
 
-1. compose the default-disabled Alpha worker in shadow mode over the transactional lifecycle
-   delivered by PR #150;
-2. add the separate Alpha delivery adapter with grant consumption and terminal unknown handling;
-3. add webhook reconciliation, kill-switch operations and a single approved-group canary.
+1. add the separate Alpha delivery adapter over the shadow worker delivered by PR #151, with grant
+   consumption and terminal unknown handling;
+2. add webhook reconciliation, kill-switch operations and a single approved-group canary.
 
 Do not activate `AlphaViaBot`, add secret values, change production flags, start BY/third-account
 work or begin Oko until these gates pass. The operational commands, owner-input boundary and

@@ -96,11 +96,14 @@ shadow result.
 
 ### Sprint 3 — Alpha group bot: foundation delivered, release not complete
 
-PRs #146–#150 delivered the current disabled foundation:
+PRs #146–#151 delivered the current disabled foundation:
 
 - `discovered → pending_approval → active/paused/revoked` installation contract;
 - transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
 - idempotent per-trigger rate reservation and bounded token accounting behind owner-admin control;
+- default-disabled delivery-free shadow orchestration with one durable Agent turn per trigger;
+- installation-pinned bundle verification and bounded same-group context reconstruction;
+- persisted `reply | handoff | no_reply` trace with duplicate/restart/poison isolation;
 - group/supergroup-only explicit command/mention/reply invocation policy;
 - human-sender, active-installation and rate gates;
 - five-minute, exact-target, exact-trigger, exact-candidate, one-use `DeliveryGrant` contract;
@@ -122,7 +125,10 @@ webhook exist.
 | `app/application/agent_kernel.py` | immutable revision/deployment/session/turn/runtime contracts |
 | `app/application/instruction_bundles.py` | deployed bundle verification and offline fixture runtime |
 | `app/application/agent_shadow.py` | traceable delivery-free shadow proposal service |
+| `app/application/alpha_shadow_worker.py` | explicit invocation and idempotent shadow orchestration |
 | `app/application/alpha_group.py` | installation, invocation, grant and send-attempt invariants |
+| `app/infrastructure/alpha_shadow_worker.py` | transactional binding, context and turn persistence |
+| `app/worker/alpha_shadow.py` | separate default-disabled Alpha runtime boundary |
 | `app/infrastructure/canonical_messaging.py` | atomic PostgreSQL canonical ingress store |
 | `app/models/canonical.py` | workspace/connector/dialog/message/ownership ORM |
 | `app/models/agent.py` | Agent Kernel ORM |
@@ -146,20 +152,15 @@ unused grants on pause/revoke and accounts for one bounded usage reservation per
 control surface is protected by the existing owner-admin bearer boundary and is not exposed to
 group members or MCP.
 
-### PR B — Alpha worker orchestration in shadow
+### PR B — Alpha worker orchestration in shadow: delivered by PR #151
 
-For a canonical Alpha group message:
-
-1. prove connector, workspace, dialog and installation;
-2. recognize command/mention/reply-to-bot only;
-3. reserve one idempotent turn per trigger message;
-4. load the installation-pinned deployed instruction bundle;
-5. build installation-scoped bounded context;
-6. run a fixture or approved runtime once;
-7. persist `reply | handoff | no_reply` and its trace metadata;
-8. create no delivery grant yet.
-
-Prove duplicate, restart, poison, cross-group and prompt-injection behavior.
+The default-disabled worker now proves the workspace, bot connector, group dialog, active
+installation, deployment and validated revision before reserving one usage record and one durable
+turn per canonical trigger. It recognizes only `/alpha`, an exact bot mention or a verified
+reply-to-bot, loads the installation-pinned deployed bundle, reconstructs at most 32 same-dialog
+messages and persists a delivery-free `reply | handoff | no_reply` trace. PostgreSQL and application
+tests prove duplicate replay, restart-unknown, poison, cross-group and prompt-injection behavior.
+No `DeliveryGrant`, Telegram send or model network runtime is created by this step.
 
 ### PR C — separate Alpha delivery adapter
 
