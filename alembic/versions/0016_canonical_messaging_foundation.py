@@ -1,6 +1,6 @@
 """Add workspace-scoped canonical messaging foundation.
 
-Revision ID: 0016_canonical_messaging_foundation
+Revision ID: 0016_canonical_foundation
 Revises: 0015_telegram_queue_incidents
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0016_canonical_messaging_foundation"
+revision: str = "0016_canonical_foundation"
 down_revision: str | None = "0015_telegram_queue_incidents"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
