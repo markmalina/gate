@@ -3,8 +3,8 @@
 import asyncio
 from datetime import UTC, datetime
 
-import pytest
 from fastapi import HTTPException
+import pytest
 
 from app.api.alpha_telegram_ingress import accept_alpha_telegram_receipt
 from app.application.telegram_processing import (
