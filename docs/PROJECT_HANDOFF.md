@@ -2,7 +2,7 @@
 
 > Canonical continuation guide for a new developer or implementation agent.  
 > Verified against GitHub `main` and Railway production on 2026-07-15.  
-> Verified production canary commit before this documentation PR: `88736b9f7dc868686ffaa5232ac5f6a134d69ee0`.
+> Verified production commit before this release PR: `7c2781602448ac140e1e31ea27cb93414e3333d2`.
 
 ## 1. Start here
 
@@ -38,12 +38,12 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through Gate M and the owner-run Telegram canary after PR #161 deployed:
+Verified through Gate M after PR #163 deployed:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `88736b9f7dc8` |
+| Railway production commit | `7c2781602448` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
@@ -61,8 +61,9 @@ The five MCP tools are `gate_get_status`, `gate_list_unanswered`, `gate_get_repl
 
 The separate `AlphaViaBot` connector is active only for the first database-pinned test group. The
 owner-run `/alpha` test delivered the reviewed fixed response with disclosure through one grant and
-one send attempt. The current runtime is still the network-free evaluation fixture: ordinary model
-generation and provider data egress are not active.
+one send attempt. The active installation still uses the network-free evaluation fixture. The dormant Responses runtime
+and reviewed `alpha-model-v1` artifact are packaged, while the model deployment is staged only:
+ordinary model generation and provider data egress are not active.
 
 ## 4. Delivered release history
 
@@ -152,22 +153,24 @@ Sprint 3 is fully complete.
 
 ## 6. Exact next development order
 
-The fixed one-group canary is the production rollback baseline. Continue in independently
-reversible PRs; each PR needs exact-head CI, squash merge and exact Railway SHA verification.
+The fixed one-group canary remains the production rollback baseline. The data-gated Responses runtime,
+reviewed `alpha-model-v1` bundle and staged `alpha-model-v1-openai` deployment are delivered. The
+staged deployment is not installed in the group and both model release gates remain false.
 
-1. Add a dormant OpenAI Responses runtime that implements the existing `AgentRuntimePort`. It must
-   be unreachable unless both `GATE_ALPHA_MODEL_RUNTIME_ENABLED` and
-   `GATE_ALPHA_MODEL_DATA_GATE_APPROVED` are true, keep `store=false`, expose no tools, send no
-   Gate/provider identifiers and return only structured `reply | handoff | no_reply`.
-2. Create a new reviewed Alpha instruction bundle and staged deployment with representative
-   evaluation fixtures. Do not reinterpret or mutate `alpha-canary-v1`.
-3. Run network-free and explicitly approved model-shadow evaluations. Unknown groups, inactive
-   installations, ordinary Privacy Mode traffic and duplicate triggers must make no model call.
-4. Capture dated non-command silence and pause/revoke live evidence for the fixed canary.
-5. Activate the new model deployment in the same one group only after Mark explicitly approves the
-   provider-data gate and provisions the model credential in Railway. One update may cause at most
-   one model generation and one exact-target Telegram send attempt.
-6. After the bounded Alpha model canary is stable, resume Sprint 4 Oko RU. BY and a third Business
+Continue in this order:
+
+1. Capture dated live evidence that ordinary non-command group traffic is silent and that
+   pause/revoke blocks the fixed canary, then restore the exact fixed revision.
+2. Keep the reviewed fixtures as the network-free regression baseline. Do not interpret fixture
+   success as permission to send group text to a model provider.
+3. Only after Mark explicitly approves bounded same-group provider egress and provisions
+   `OPENAI_API_KEY` in Railway, run a separate one-group model-shadow release with delivery disabled.
+   That release must rebind only the pinned installation to the exact staged deployment and enable
+   both model gates; unknown groups, inactive installations, ordinary Privacy Mode traffic and
+   duplicate triggers must produce no provider call.
+4. Review the redacted shadow evidence. Enable Alpha delivery for one bounded model canary only in a
+   separate owner-authorized configuration step, with the fixed revision retained as rollback.
+5. After the bounded Alpha model canary is stable, resume Sprint 4 Oko RU. BY and a third Business
    account remain out of scope.
 
 ## 7. Owner inputs required only at the canary boundary
