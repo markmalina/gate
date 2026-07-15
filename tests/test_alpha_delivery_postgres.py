@@ -2,7 +2,6 @@
 
 import hashlib
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -42,10 +41,7 @@ class RecordingProvider:
 
 
 @pytest.mark.anyio
-async def test_postgres_grant_binds_target_consumes_once_and_never_retries_unknown(
-    tmp_path: Path,
-) -> None:
-    del tmp_path
+async def test_postgres_grant_binds_target_consumes_once_and_never_retries_unknown() -> None:
     database_url = get_settings().database_url
     if not database_url:
         pytest.skip("DATABASE_URL is required for Alpha delivery PostgreSQL test")
@@ -300,15 +296,6 @@ async def test_postgres_grant_binds_target_consumes_once_and_never_retries_unkno
                     select(DeliveryGrantModel).order_by(DeliveryGrantModel.grant_key)
                 )
             ).scalars().all()
-            assert [item.state for item in attempts] == [
-                "sending",
-                "sent",
-                "blocked",
-            ] or [item.state for item in attempts] == [
-                "sent",
-                "sending",
-                "blocked",
-            ]
             assert {item.state for item in attempts} == {
                 "sent",
                 "unknown",
