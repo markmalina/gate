@@ -1,10 +1,11 @@
-"""Disabled-by-default one-shot runtime for Telegram outbox shadow processing."""
+"""Disabled-by-default runtime for durable Telegram outbox processing."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -351,6 +352,50 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
             )
     finally:
         await engine.dispose()
+
+
+async def run_telegram_worker_loop(
+    settings: Settings,
+    *,
+    stop_event: asyncio.Event | None = None,
+    run_iteration: Callable[
+        [Settings], Awaitable[TelegramWorkerRuntimeResult]
+    ] | None = None,
+    idle_delay_seconds: float = 1.0,
+    error_delay_seconds: float = 5.0,
+    runtime_logger: logging.Logger = logger,
+) -> None:
+    """Continuously drain due work while the explicit global worker gate is enabled."""
+
+    if not settings.gate_telegram_worker_enabled:
+        return
+    if idle_delay_seconds <= 0 or error_delay_seconds <= 0:
+        raise ValueError("worker loop delays must be positive")
+    stop = stop_event or asyncio.Event()
+    iteration = run_iteration or _run_from_settings
+    runtime_logger.info("Telegram worker loop started")
+    while not stop.is_set():
+        try:
+            result = await iteration(settings)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            runtime_logger.warning(
+                "Telegram worker loop iteration failed: error_type=%s",
+                exc.__class__.__name__,
+            )
+            delay = error_delay_seconds
+        else:
+            delay = idle_delay_seconds if result.disposition == "idle" else 0.0
+        if stop.is_set():
+            break
+        if delay == 0:
+            await asyncio.sleep(0)
+            continue
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=delay)
+        except TimeoutError:
+            pass
 
 
 def main() -> None:
