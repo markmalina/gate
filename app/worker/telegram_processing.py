@@ -63,6 +63,7 @@ from app.infrastructure.alpha_shadow_worker import (
     SessionFactoryAlphaShadowTurnRepository,
 )
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
+from app.infrastructure.openai_agent_runtime import ConfiguredAlphaRuntimeFactory
 from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
@@ -328,6 +329,19 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         port=SessionFactoryAlphaShadowTurnRepository(sessions),
                         bundle_loader=DeployedInstructionBundleLoader(
                             Path(settings.gate_agent_bundle_root)
+                        ),
+                        runtime_factory=ConfiguredAlphaRuntimeFactory(
+                            http_client=http_client,
+                            api_key=settings.openai_api_key.get_secret_value(),
+                            api_base_url=settings.openai_api_base_url,
+                            model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
+                            model_data_gate_approved=(
+                                settings.gate_alpha_model_data_gate_approved
+                            ),
+                            max_output_tokens=(
+                                settings.gate_alpha_model_max_output_tokens
+                            ),
+                            timeout_seconds=settings.gate_alpha_model_timeout_seconds,
                         ),
                     ),
                     delivery=DeliverAlphaGrantService(

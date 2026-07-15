@@ -3,7 +3,7 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-15**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Verified application commit before this documentation update: `3a4ba31d41ac11e6cf5ecf43ac0a23e77f34405f`  
+> Verified production canary commit before this documentation update: `88736b9f7dc868686ffaa5232ac5f6a134d69ee0`  
 > Production: Railway automatic deployment from `main`
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
@@ -56,12 +56,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub and Gate M on 2026-07-15 after PR #148:
+Verified through GitHub, Gate M and the owner-run Telegram canary on 2026-07-15 after PR #161:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `3a4ba31d41ac11e6cf5ecf43ac0a23e77f34405f` / `3a4ba31d41ac` |
+| Application / Railway commit | `88736b9f7dc868686ffaa5232ac5f6a134d69ee0` / `88736b9f7dc8` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -69,10 +69,11 @@ Verified through GitHub and Gate M on 2026-07-15 after PR #148:
 | Contact import | RU 90 from Desktop export; BY deferred |
 | MCP | OAuth 2.0 enforced, five tools |
 | Human sending | exact saved draft + explicit confirmation only |
-| Alpha group bot | one-group canary code present; production activation disabled |
+| Alpha group bot | one pinned test group active; fixed `/alpha` canary delivered once; model runtime not active |
 
-Snapshot counters were 27 conversations, 660 messages, 170 reply-task rows, 3 unanswered and 28
-drafts. Re-query production instead of treating them as invariants.
+Snapshot counters were 29 conversations, 684 messages, 181 reply-task rows, 5 unanswered and 28
+drafts. Alpha evidence was 4 accepted canonical messages, 2 Agent turns, 1 delivery grant and 1
+send attempt. Re-query production instead of treating these values as invariants.
 
 The canonical detailed status and next work are in
 [docs/PROJECT_HANDOFF.md](docs/PROJECT_HANDOFF.md). After every merge, verify the exact Railway SHA;
@@ -316,6 +317,8 @@ Key merged milestones:
 | #124 | Application contract for durable queue alert incidents, delivery gating and operator acknowledgement |
 | #125 | Dormant Telegram queue incident schema and serialized PostgreSQL lifecycle adapter |
 | #126 | Dormant authenticated HTTPS queue alert notifier with incident-key idempotency |
+| #137–#153 | Canonical ownership, Agent Kernel and isolated exact-target Alpha group path |
+| #154–#161 | Automatic one-group discovery, supervised worker, owner-approved canary activation, redacted evidence and packaged immutable bundle |
 
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
@@ -335,6 +338,11 @@ single authority for implementation order. Do not run several tracks in one PR.
    handoff.
 6. **Operational release:** remove unreachable legacy paths, prove isolation, restore/rollback and
    reusable multi-installation operation.
+
+The fixed Alpha transport canary has passed its owner-run happy path. Before any dynamic model
+reply, Gate requires a separately reviewed instruction deployment plus both the model-runtime and
+model-data release gates. The existing fixed `/alpha` behavior remains the rollback-safe production
+baseline while that dormant runtime is built and evaluated.
 
 BY Desktop-export/contact rollout, recurring contact sync, a third personal account and voice/media
 remain explicitly deferred throughout this program.
@@ -551,8 +559,10 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** keep every production Alpha flag disabled until the owner supplies the
-dedicated bot secrets, confirms BotFather Privacy Mode, identifies the one test group and explicitly
-authorizes the canary configuration. Run and record the disclosure, duplicate, pause/revoke and
-target-binding evidence before declaring Sprint 3 complete. Then begin Sprint 4 Oko RU; do not
-start BY or third-account work. Preserve explicit human-send confirmation and account isolation.
+**Immediate continuation:** keep the successful fixed one-group Alpha canary as the production
+baseline. Add the dormant OpenAI Responses runtime behind independent default-off runtime and
+model-data gates; it must use the installation-pinned revision, structured `reply | handoff |
+no_reply`, `store=false`, no tools and no model-selected target. Do not activate it until a new
+reviewed Alpha instruction bundle/deployment and explicit owner model-data approval exist. Capture
+non-command silence plus pause/revoke evidence before declaring Sprint 3 fully complete. Preserve
+explicit human-send confirmation and account isolation; BY and third-account work remain deferred.
