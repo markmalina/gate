@@ -2,7 +2,7 @@
 
 > Canonical continuation guide for a new developer or implementation agent.  
 > Verified against GitHub `main` and Railway production on 2026-07-15.  
-> Application commit before this documentation PR: `3a4ba31d41ac11e6cf5ecf43ac0a23e77f34405f`.
+> Verified production canary commit before this documentation PR: `88736b9f7dc868686ffaa5232ac5f6a134d69ee0`.
 
 ## 1. Start here
 
@@ -38,12 +38,12 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through Gate M after PR #148 deployed:
+Verified through Gate M and the owner-run Telegram canary after PR #161 deployed:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `3a4ba31d41ac` |
+| Railway production commit | `88736b9f7dc8` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
@@ -53,14 +53,16 @@ Verified through Gate M after PR #148 deployed:
 | BY Telegram Business | `ready`, `can_reply=true` |
 | RU contacts | 90, source `telegram_desktop_export` |
 | BY contacts | 0; import intentionally deferred |
-| Snapshot counts | 27 conversations, 660 messages, 170 reply tasks, 3 unanswered, 28 drafts |
+| Snapshot counts | 29 conversations, 684 messages, 181 reply tasks, 5 unanswered, 28 drafts |
+| Alpha canary audit | 4 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
 
 The five MCP tools are `gate_get_status`, `gate_list_unanswered`, `gate_get_reply_context`,
 `gate_save_reply_draft` and `gate_send_approved_reply`.
 
-The separate Alpha connector is present in code but disabled in production. No Alpha installation,
-delivery permission, token value or autonomous send has been activated. The chosen Telegram username
-is `AlphaViaBot`; treat it as reserved owner input until configuration and canary verification prove it.
+The separate `AlphaViaBot` connector is active only for the first database-pinned test group. The
+owner-run `/alpha` test delivered the reviewed fixed response with disclosure through one grant and
+one send attempt. The current runtime is still the network-free evaluation fixture: ordinary model
+generation and provider data egress are not active.
 
 ## 4. Delivered release history
 
@@ -94,9 +96,9 @@ PRs #143–#145 delivered:
 No mutable GitHub `main` read, Git credential, model network call or agent delivery exists in this
 shadow result.
 
-### Sprint 3 — Alpha group bot: canary code delivered, activation evidence pending
+### Sprint 3 — Alpha group bot: fixed canary happy path verified
 
-PRs #146–#152 and PR #153 delivered the current disabled canary boundary:
+PRs #146–#161 delivered and activated the owner-approved fixed one-group canary boundary:
 
 - `discovered → pending_approval → active/paused/revoked` installation contract;
 - transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
@@ -113,8 +115,9 @@ PRs #146–#152 and PR #153 delivered the current disabled canary boundary:
 - separate default-disabled `/telegram/alpha/webhook` with its own secret and connector key;
 - durable workspace-scoped tables for installations, grants and agent send attempts.
 
-This is not yet a generally available Telegram agent. The one-group canary must remain disabled
-until Mark supplies the owner-only configuration and explicitly authorizes activation.
+This is not yet a generally available or model-backed Telegram agent. The fixed canary is active
+only in the pinned group. Non-command silence and pause/revoke still need dated live evidence before
+Sprint 3 is fully complete.
 
 ## 5. Important code map
 
@@ -145,64 +148,32 @@ until Mark supplies the owner-only configuration and explicitly authorizes activ
 | `alembic/versions/0018_*` | Alpha delivery capabilities |
 | `app/api/mcp_routes.py` | current protected ChatGPT MCP adapter |
 | `app/infrastructure/reply_sends.py` | existing human-confirmed idempotent send path |
+| `app/infrastructure/openai_agent_runtime.py` | dormant structured Responses runtime behind both model release gates |
 
 ## 6. Exact next development order
 
-Continue Sprint 3 with the remaining small PRs in this order. Each PR must pass exact-head CI,
-squash merge and exact Railway SHA verification before the next one.
+The fixed one-group canary is the production rollback baseline. Continue in independently
+reversible PRs; each PR needs exact-head CI, squash merge and exact Railway SHA verification.
 
-### PR A — transactional Alpha repositories and operator lifecycle: delivered by PR #150
-
-The lifecycle repository now persists idempotent pending discovery, binds owner-approved active
-deployments and validated immutable revisions, blocks inactive/disabled installations, revokes
-unused grants on pause/revoke and accounts for one bounded usage reservation per trigger. Its
-control surface is protected by the existing owner-admin bearer boundary and is not exposed to
-group members or MCP.
-
-### PR B — Alpha worker orchestration in shadow: delivered by PR #151
-
-The default-disabled worker now proves the workspace, bot connector, group dialog, active
-installation, deployment and validated revision before reserving one usage record and one durable
-turn per canonical trigger. It recognizes only `/alpha`, an exact bot mention or a verified
-reply-to-bot, loads the installation-pinned deployed bundle, reconstructs at most 32 same-dialog
-messages and persists a delivery-free `reply | handoff | no_reply` trace. PostgreSQL and application
-tests prove duplicate replay, restart-unknown, poison, cross-group and prompt-injection behavior.
-No `DeliveryGrant`, Telegram send or model network runtime is created by this step.
-
-### PR C — separate Alpha delivery adapter: delivered by PR #152
-
-The delivery command accepts only workspace and opaque grant identity. In one locked transaction it
-derives the candidate from the matching proposed Agent turn, derives the target from the installed
-group dialog, consumes the grant and commits a `sending` attempt before Telegram I/O. The literal
-bot adapter exposes only `chat_id` and `text`: it accepts no Business connection, parse mode,
-markup, tool call or model-supplied target. Outcomes are durable `sent | failed | blocked | unknown`;
-a replay of `sending` becomes terminal `unknown` and never calls Telegram again. The adapter is
-not yet connected to webhook reconciliation and remains unreachable in production.
-
-### PR D — webhook reconciliation, kill switch and one-group canary: delivered by PR #153
-
-- webhook reconciliation requests only `message` and `my_chat_member` for the separate Alpha bot;
-- ingress rejects mixed or unapproved shapes before storage;
-- connector, shadow, canary and delivery kill switches all default to false;
-- the first verified membership webhook pins one group in the database without manual ID entry;
-- any later discovery for another group fails closed;
-- membership discovery/removal reconciles pending or revoked installation state;
-- grant issuance re-proves the active installation, deployment and validated exact revision;
-- every delivered candidate receives the fixed Alpha disclosure prefix;
-- duplicate triggers replay the same turn/grant/attempt and never create a second provider call;
-- owner status reports redacted activation checks and durable installation binding.
-
-Only the live canary evidence remains: Privacy Mode confirmation, disclosure, duplicate suppression,
-target binding, pause/revoke and the durable turn/grant/send-attempt audit trail. Mark Sprint 3
-complete only after that evidence is captured.
-
-After Sprint 3, proceed to Sprint 4 Oko RU ownership/consent/handoff. BY activation and a third
-Business account remain explicitly out of scope until Mark changes that priority.
+1. Add a dormant OpenAI Responses runtime that implements the existing `AgentRuntimePort`. It must
+   be unreachable unless both `GATE_ALPHA_MODEL_RUNTIME_ENABLED` and
+   `GATE_ALPHA_MODEL_DATA_GATE_APPROVED` are true, keep `store=false`, expose no tools, send no
+   Gate/provider identifiers and return only structured `reply | handoff | no_reply`.
+2. Create a new reviewed Alpha instruction bundle and staged deployment with representative
+   evaluation fixtures. Do not reinterpret or mutate `alpha-canary-v1`.
+3. Run network-free and explicitly approved model-shadow evaluations. Unknown groups, inactive
+   installations, ordinary Privacy Mode traffic and duplicate triggers must make no model call.
+4. Capture dated non-command silence and pause/revoke live evidence for the fixed canary.
+5. Activate the new model deployment in the same one group only after Mark explicitly approves the
+   provider-data gate and provisions the model credential in Railway. One update may cause at most
+   one model generation and one exact-target Telegram send attempt.
+6. After the bounded Alpha model canary is stable, resume Sprint 4 Oko RU. BY and a third Business
+   account remain out of scope.
 
 ## 7. Owner inputs required only at the canary boundary
 
-Do not request or store secret values in Git, issues, PRs, logs or chat. At the final Alpha canary,
-Mark supplies through Railway secret management:
+Do not request or store secret values in Git, issues, PRs, logs or chat. The live fixed canary
+configuration already exists in Railway; only variable names belong in repository documentation:
 
 ```text
 TELEGRAM_ALPHA_BOT_TOKEN
@@ -216,10 +187,20 @@ GATE_ALPHA_DELIVERY_ENABLED
 GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 ```
 
-Keep every `GATE_ALPHA_*_ENABLED` flag false until PRs A–D are merged and Mark explicitly
-authorizes the canary checklist.
-Mark also creates one dedicated test group, keeps BotFather Group Privacy enabled and adds the bot
-without personal-inbox or Business credentials.
+The existing transport/canary flags are owner-authorized for the one pinned test group. The model
+path remains separately disabled. Its only secret is `OPENAI_API_KEY`; safe defaults are:
+
+```text
+OPENAI_API_BASE_URL=https://api.openai.com/v1
+GATE_ALPHA_MODEL_RUNTIME_ENABLED=false
+GATE_ALPHA_MODEL_DATA_GATE_APPROVED=false
+GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS=512
+GATE_ALPHA_MODEL_TIMEOUT_SECONDS=30
+```
+
+Do not set either model gate true merely because the code or credential exists. Activation also
+requires a new reviewed immutable Alpha bundle/deployment and explicit owner approval of provider
+egress for bounded same-group context.
 
 Production configuration changes, manual deploys, retries and rollbacks require Mark's explicit
 authorization. Normal green PR merges may use the standing auto-merge rule in `TEAM_WORKFLOW.md`.
