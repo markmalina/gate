@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-
 from app.infrastructure.alpha_model_status import (
     alpha_model_operational_status,
 )
