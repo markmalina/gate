@@ -541,4 +541,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** continue Sprint 3 with PR B from the [current project handoff](docs/PROJECT_HANDOFF.md): compose the default-disabled Alpha worker in shadow over the transactional lifecycle delivered by PR #150. Do not create a delivery grant, enable Alpha, add secrets, begin Oko, or start BY/third-account work. Preserve explicit human-send confirmation and account isolation throughout.
+**Immediate continuation:** continue Sprint 3 with PR C from the [current project handoff](docs/PROJECT_HANDOFF.md): add the separate Alpha delivery adapter over the delivery-free shadow worker delivered by PR #151. Do not enable Alpha, add secrets, reconcile the webhook, begin Oko, or start BY/third-account work. Preserve explicit human-send confirmation and account isolation throughout.
