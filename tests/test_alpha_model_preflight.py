@@ -2,6 +2,7 @@
 
 import hashlib
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,12 +35,41 @@ class FakeSession:
         return None
 
 
+
+class FakeBudgetSession:
+    def __init__(self, results: list[int]) -> None:
+        self.results = results
+        self.statements: list[Any] = []
+
+    async def scalar(self, statement: Any) -> int:
+        self.statements.append(statement)
+        return self.results.pop(0)
+
+
 def _settings() -> Settings:
     return Settings(
         GATE_ALPHA_MODEL_RUNTIME_ENABLED=True,
         GATE_ALPHA_MODEL_DATA_GATE_APPROVED=True,
         OPENAI_API_KEY="test-key",
     )
+
+
+
+@pytest.mark.anyio
+async def test_budget_counts_only_openai_bound_group_usage() -> None:
+    session = FakeBudgetSession([2_048, 256])
+
+    await preflight._require_budget(
+        session,  # type: ignore[arg-type]
+        workspace_id=uuid.uuid4(),
+        observed_at=datetime(2026, 7, 15, 12, 0, tzinfo=UTC),
+    )
+
+    group_budget_query = str(session.statements[0])
+    assert "agent_installations" in group_budget_query
+    assert "agent_deployments.runtime_profile" in group_budget_query
+    assert "agent_deployments.model_profile" in group_budget_query
+    assert len(session.statements) == 2
 
 
 @pytest.mark.anyio

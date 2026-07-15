@@ -34,7 +34,7 @@ from app.models.agent import (
     AgentDeploymentModel,
     InstructionRevisionModel,
 )
-from app.models.alpha import AlphaUsageRecordModel
+from app.models.alpha import AgentInstallationModel, AlphaUsageRecordModel
 from app.models.alpha_preflight import AlphaModelPreflightModel
 from app.models.canonical import Workspace
 
@@ -217,8 +217,20 @@ async def _require_budget(
     )
     group_tokens = await session.scalar(
         select(func.coalesce(func.sum(AlphaUsageRecordModel.reserved_tokens), 0))
+        .join(
+            AgentInstallationModel,
+            (AgentInstallationModel.id == AlphaUsageRecordModel.installation_id)
+            & (AgentInstallationModel.workspace_id == AlphaUsageRecordModel.workspace_id),
+        )
+        .join(
+            AgentDeploymentModel,
+            (AgentDeploymentModel.id == AgentInstallationModel.deployment_id)
+            & (AgentDeploymentModel.workspace_id == AgentInstallationModel.workspace_id),
+        )
         .where(
             AlphaUsageRecordModel.workspace_id == workspace_id,
+            AgentDeploymentModel.runtime_profile == _RUNTIME_PROFILE,
+            AgentDeploymentModel.model_profile == _MODEL_PROFILE,
             AlphaUsageRecordModel.state != "released",
             AlphaUsageRecordModel.created_at >= month_start,
         )
