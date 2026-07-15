@@ -228,6 +228,9 @@ TELEGRAM_WEBHOOK_CHAIN: tuple[str, ...] = (
 def include_telegram_ingress(app: FastAPI) -> None:
     """Register the public durable seam before the frozen legacy stack."""
 
+    from app.api.alpha_telegram_ingress import router as alpha_router
+
+    app.include_router(alpha_router)
     app.include_router(durable_ingress_router)
     include_legacy_telegram_ingress(app)
 
