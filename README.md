@@ -3,7 +3,7 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-15**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Verified production commit before this staged-release update: `7c2781602448ac140e1e31ea27cb93414e3333d2`  
+> Verified production commit before this model-readiness update: `60b2e0d24270c8b5530bfb61cda426ca19411a49`  
 > Production: Railway automatic deployment from `main`
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
@@ -14,10 +14,12 @@ Continue in this exact order:
 1. [Team workflow](docs/TEAM_WORKFLOW.md) — authority, safety, PR/CI/merge/deploy rules.
 2. [Current project handoff](docs/PROJECT_HANDOFF.md) — verified production state, delivered PRs,
    code map, environment names and the exact next development order.
-3. [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) —
+3. [Alpha operating policy](docs/ALPHA_OPERATING_POLICY.md) — standing authorization,
+   provider scope, $50 hard budget, and fixture → shadow → canary → live gates.
+4. [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) —
    target design and Sprints 1–6.
-4. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
-5. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
+5. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
+6. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
 
 If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
 update both documents in the same substantive PR.
