@@ -255,6 +255,17 @@ async def test_discovery_approval_gating_and_usage_are_transactional() -> None:
             )
             assert inactive.reason is AlphaAccessReason.INSTALLATION_INACTIVE
 
+            unknown = await service.reserve_usage(
+                ReserveAlphaUsageCommand(
+                    workspace_key="mark-personal",
+                    installation_key="missing-installation",
+                    trigger_message_id=str(trigger_two),
+                    reserved_tokens=100,
+                    now=now + timedelta(minutes=2),
+                )
+            )
+            assert unknown.reason is AlphaAccessReason.UNKNOWN_INSTALLATION
+
             revoked = await service.revoke(
                 AlphaInstallationActionCommand(
                     workspace_key="mark-personal",
