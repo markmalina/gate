@@ -19,8 +19,8 @@ from app.models.canonical import (
     CanonicalMessage,
     Dialog,
     TransportConnector,
-    Workspace,
     WorkOwnership,
+    Workspace,
 )
 
 
