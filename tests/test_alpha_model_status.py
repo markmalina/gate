@@ -43,5 +43,8 @@ async def test_status_uses_exact_staged_deployment_and_current_month_reservation
     assert "agent_deployments.model_profile" in str(session.statements[0])
     assert "alpha_usage_records.created_at" in str(session.statements[4])
     assert "alpha_usage_records.state" in str(session.statements[4])
+    assert "agent_installations" in str(session.statements[4])
+    assert "agent_deployments.runtime_profile" in str(session.statements[4])
+    assert "agent_deployments.model_profile" in str(session.statements[4])
     assert "alpha_model_preflights.created_at" in str(session.statements[5])
     assert "alpha_model_preflights.state" in str(session.statements[6])
