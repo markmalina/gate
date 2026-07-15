@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
 from app.application.alpha_canary import ALPHA_DISCLOSURE_PREFIX
+from app.application.alpha_shadow_worker import (
+    ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
+)
 from app.application.alpha_lifecycle import (
     AlphaInstallationActionCommand,
     AlphaInstallationView,
@@ -89,6 +92,13 @@ async def get_alpha_canary_status(
         "disclosure_copy": ALPHA_DISCLOSURE_PREFIX.strip(),
         "active_installations": exact_binding_count,
         "audit_evidence": audit_counts,
+        "model_shadow": {
+            "runtime_enabled": settings.gate_alpha_model_runtime_enabled,
+            "data_gate_approved": settings.gate_alpha_model_data_gate_approved,
+            "api_key_configured": bool(settings.openai_api_key.get_secret_value()),
+            "telegram_delivery_blocked": True,
+            "monthly_budget_usd": ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD / 1_000_000,
+        },
     }
 
 
