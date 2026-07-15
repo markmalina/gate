@@ -42,6 +42,7 @@ from app.core.mcp_security import (
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.alpha_canary import (
+    alpha_canary_audit_counts,
     alpha_canary_binding_count,
     alpha_canary_installation_count,
 )
@@ -811,6 +812,10 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- one_active_exact_revision: "
             f"{alpha['one_active_exact_revision']}",
             f"- delivery_enabled: {alpha['delivery_enabled']}",
+            f"- accepted_messages: {alpha['audit']['canonical_messages']}",
+            f"- agent_turns: {alpha['audit']['agent_turns']}",
+            f"- delivery_grants: {alpha['audit']['delivery_grants']}",
+            f"- send_attempts: {alpha['audit']['send_attempts']}",
         ]
     )
     return "\n".join(lines)
@@ -830,6 +835,10 @@ async def _build_alpha_canary_status(
         session,
         workspace_key=workspace_key,
     )
+    audit_counts = await alpha_canary_audit_counts(
+        session,
+        workspace_key=workspace_key,
+    )
     return {
         "telegram_worker_enabled": settings.gate_telegram_worker_enabled,
         "connector_enabled": settings.gate_alpha_connector_enabled,
@@ -844,6 +853,7 @@ async def _build_alpha_canary_status(
         ),
         "one_group_discovered": installation_count == 1,
         "one_active_exact_revision": active_binding_count == 1,
+        "audit": audit_counts,
     }
 
 def _format_reply_context_text(context: JsonObject) -> str:
