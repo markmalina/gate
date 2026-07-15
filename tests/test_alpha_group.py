@@ -77,6 +77,29 @@ def test_unknown_group_never_skips_pending_approval() -> None:
 
 
 @pytest.mark.parametrize(
+    "state",
+    (AlphaInstallationState.PAUSED, AlphaInstallationState.REVOKED),
+)
+def test_pause_or_revoke_blocks_invocation_before_any_agent_work(
+    state: AlphaInstallationState,
+) -> None:
+    installation = replace(_installation(), state=state)
+    decision = evaluate_alpha_invocation(
+        AlphaInvocationFacts(
+            connector_enabled=True,
+            installation=installation,
+            sender_is_human=True,
+            invocation_kind=AlphaInvocationKind.COMMAND,
+            turns_in_window=0,
+            max_turns_per_window=5,
+        )
+    )
+
+    assert decision.allowed is False
+    assert decision.reason is AlphaPolicyReason.INSTALLATION_INACTIVE
+
+
+@pytest.mark.parametrize(
     ("change", "reason"),
     [
         ({"connector_enabled": False}, AlphaPolicyReason.CONNECTOR_DISABLED),
