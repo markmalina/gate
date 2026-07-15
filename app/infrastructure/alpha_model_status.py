@@ -19,7 +19,7 @@ from app.models.agent import (
     AgentTurnModel,
     InstructionRevisionModel,
 )
-from app.models.alpha import AlphaUsageRecordModel
+from app.models.alpha import AgentInstallationModel, AlphaUsageRecordModel
 from app.models.alpha_preflight import AlphaModelPreflightModel
 from app.models.canonical import Workspace
 
@@ -98,10 +98,22 @@ async def alpha_model_operational_status(
     )
     reserved_tokens = await session.scalar(
         select(func.coalesce(func.sum(AlphaUsageRecordModel.reserved_tokens), 0))
+        .join(
+            AgentInstallationModel,
+            (AgentInstallationModel.id == AlphaUsageRecordModel.installation_id)
+            & (AgentInstallationModel.workspace_id == AlphaUsageRecordModel.workspace_id),
+        )
+        .join(
+            AgentDeploymentModel,
+            (AgentDeploymentModel.id == AgentInstallationModel.deployment_id)
+            & (AgentDeploymentModel.workspace_id == AgentInstallationModel.workspace_id),
+        )
         .join(Workspace, Workspace.id == AlphaUsageRecordModel.workspace_id)
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
+            AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
+            AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
             AlphaUsageRecordModel.state != "released",
             AlphaUsageRecordModel.created_at >= month_start,
         )
