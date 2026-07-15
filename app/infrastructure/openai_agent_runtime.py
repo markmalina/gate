@@ -128,7 +128,9 @@ class OpenAIResponsesAgentRuntime(AgentRuntimePort):
         except httpx.TimeoutException as exc:
             raise OpenAIAgentRuntimeError("openai_request_timeout") from exc
         except httpx.HTTPStatusError as exc:
-            raise OpenAIAgentRuntimeError("openai_request_rejected") from exc
+            raise OpenAIAgentRuntimeError(
+                _provider_status_error(exc.response.status_code)
+            ) from exc
         except httpx.RequestError as exc:
             raise OpenAIAgentRuntimeError("openai_request_failed") from exc
 
@@ -138,16 +140,14 @@ class OpenAIResponsesAgentRuntime(AgentRuntimePort):
         if provider.get("status") != "completed":
             raise OpenAIAgentRuntimeError("openai_response_incomplete")
         result = _parse_result(_output_text(provider), self._bundle)
-        usage = provider.get("usage")
-        if isinstance(usage, Mapping):
-            result = AgentRuntimeResult(
-                kind=result.kind,
-                result_code=result.result_code,
-                candidate_text=result.candidate_text,
-                input_tokens=_non_negative_int(usage.get("input_tokens")),
-                output_tokens=_non_negative_int(usage.get("output_tokens")),
-            )
-        return result
+        input_tokens, output_tokens = _validated_usage(provider.get("usage"))
+        return AgentRuntimeResult(
+            kind=result.kind,
+            result_code=result.result_code,
+            candidate_text=result.candidate_text,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
 
 class ConfiguredAlphaRuntimeFactory:
@@ -285,5 +285,26 @@ def _parse_result(
     return result
 
 
-def _non_negative_int(value: object) -> int:
-    return value if type(value) is int and value >= 0 else 0
+def _provider_status_error(status_code: int) -> str:
+    if status_code in {401, 403}:
+        return "openai_credentials_rejected"
+    if status_code == 429:
+        return "openai_rate_limited"
+    if status_code >= 500:
+        return "openai_provider_unavailable"
+    return "openai_request_rejected"
+
+
+def _validated_usage(value: object) -> tuple[int, int]:
+    if not isinstance(value, Mapping):
+        raise OpenAIAgentRuntimeError("openai_usage_missing")
+    input_tokens = value.get("input_tokens")
+    output_tokens = value.get("output_tokens")
+    if (
+        type(input_tokens) is not int
+        or input_tokens < 0
+        or type(output_tokens) is not int
+        or output_tokens < 0
+    ):
+        raise OpenAIAgentRuntimeError("openai_usage_invalid")
+    return input_tokens, output_tokens

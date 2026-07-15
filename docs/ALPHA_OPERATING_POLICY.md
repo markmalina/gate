@@ -57,3 +57,17 @@ conversations, another AI provider, cross-group memory, proactive broadcasts,
 administrative group actions, secret disclosure, irreversible data deletion, manual
 production rollback or redeploy, or spending above USD 50 per month. Those actions
 require separate owner authorization.
+
+
+## Provider fault isolation
+
+CI must execute every reviewed model-bundle case through the Responses contract without
+network access. The required suite covers useful replies, unavailable current data,
+prompt-injection refusal, external-action and medical handoff, and an empty-request
+no-reply outcome. Removing or changing a required case blocks release evidence.
+
+The runtime makes one provider attempt per claimed turn and never retries an ambiguous
+outcome. Authentication rejection, rate limiting, provider unavailability, timeout,
+invalid output, and missing token usage become separate bounded error codes. Provider
+response bodies are never copied into Gate errors. A nominally successful response
+without trustworthy token usage fails closed so accounting cannot silently undercount.
