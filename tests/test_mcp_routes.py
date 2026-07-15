@@ -516,7 +516,7 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
     assert structured["alpha_canary"]["one_active_exact_revision"] is False
     assert structured["alpha_canary"]["delivery_enabled"] is False
     assert "Contact directory:" in result["content"][0]["text"]
-    assert len(mcp_context.statements) == 11
+    assert len(mcp_context.statements) == 13
 
 
 @pytest.mark.anyio
