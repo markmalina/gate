@@ -179,3 +179,16 @@ def test_revision_mismatch_cannot_run_an_instruction_bundle(tmp_path: Path) -> N
 
     with pytest.raises(InstructionBundleError, match="revision_mismatch"):
         asyncio.run(runtime.propose(wrong_command))
+
+def test_deployed_alpha_canary_bundle_is_valid_and_packaged() -> None:
+    repository_root = Path(__file__).parents[1]
+    bundle = DeployedInstructionBundleLoader(
+        repository_root / "agent_bundles"
+    ).load("alpha_canary_v1")
+
+    assert bundle.agent_key is AgentKey.ALPHA_GROUP
+    assert bundle.revision.revision_key == "alpha-canary-v1"
+    assert len(bundle.evaluations) == 4
+    assert "COPY agent_bundles ./agent_bundles" in (
+        repository_root / "Dockerfile"
+    ).read_text(encoding="utf-8")
