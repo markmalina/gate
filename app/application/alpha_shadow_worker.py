@@ -16,7 +16,6 @@ from app.application.agent_kernel import (
     AgentTurnCommand,
 )
 from app.application.agent_shadow import (
-    AgentShadowError,
     AgentShadowProposal,
     RunAgentShadowTurnService,
 )
@@ -26,7 +25,7 @@ from app.application.alpha_group import (
     AlphaInvocationKind,
     evaluate_alpha_invocation,
 )
-from app.application.alpha_lifecycle import AlphaAccessReason, AlphaUsageReservation
+from app.application.alpha_lifecycle import AlphaUsageReservation
 from app.application.instruction_bundles import (
     DeployedInstructionBundleLoader,
     EvaluationFixtureAgentRuntime,
