@@ -5,11 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+MIN_SHADOW_PROPOSALS_FOR_CANARY_REVIEW = 10
+
 
 class AlphaModelReadinessState(StrEnum):
     CONFIGURATION_INCOMPLETE = "configuration_incomplete"
     DEPLOYMENT_NOT_EXACT = "deployment_not_exact"
     BUDGET_EXHAUSTED = "budget_exhausted"
+    SAFETY_INVARIANT_VIOLATED = "safety_invariant_violated"
+    PROVIDER_PREFLIGHT_STUCK = "provider_preflight_stuck"
     AWAITING_PROVIDER_PREFLIGHT = "awaiting_provider_preflight"
     PROVIDER_PREFLIGHT_FAILED = "provider_preflight_failed"
     PROVIDER_PREFLIGHT_VERIFIED = "provider_preflight_verified"
@@ -29,6 +33,12 @@ class AlphaModelReadinessFacts:
     failed_turns: int
     provider_preflight_successes: int = 0
     provider_preflight_failures: int = 0
+    queued_turns: int = 0
+    running_turns: int = 0
+    model_delivery_grants: int = 0
+    stuck_provider_preflights: int = 0
+    last_provider_error_code: str | None = None
+    fixture_binding_active: bool = True
     telegram_delivery_blocked: bool = True
 
 
@@ -39,6 +49,8 @@ class AlphaModelReadiness:
     provider_preflight_verified: bool
     ready_for_provider_preflight: bool
     ready_for_shadow_observation: bool
+    alerts: tuple[str, ...]
+    provider_error_category: str
 
 
 def evaluate_alpha_model_readiness(
@@ -51,13 +63,22 @@ def evaluate_alpha_model_readiness(
         and facts.data_gate_approved
         and facts.api_key_configured
         and facts.telegram_delivery_blocked
+        and facts.fixture_binding_active
     )
     exact_deployment = facts.staged_deployments == 1
     budget_available = (
         facts.monthly_budget_microusd > 0
         and facts.reserved_microusd < facts.monthly_budget_microusd
     )
-    prerequisites_ready = configured and exact_deployment and budget_available
+    safety_invariants_hold = facts.model_delivery_grants == 0
+    preflight_not_stuck = facts.stuck_provider_preflights == 0
+    prerequisites_ready = (
+        configured
+        and exact_deployment
+        and budget_available
+        and safety_invariants_hold
+        and preflight_not_stuck
+    )
 
     if not configured:
         state = AlphaModelReadinessState.CONFIGURATION_INCOMPLETE
@@ -65,6 +86,10 @@ def evaluate_alpha_model_readiness(
         state = AlphaModelReadinessState.DEPLOYMENT_NOT_EXACT
     elif not budget_available:
         state = AlphaModelReadinessState.BUDGET_EXHAUSTED
+    elif not safety_invariants_hold:
+        state = AlphaModelReadinessState.SAFETY_INVARIANT_VIOLATED
+    elif not preflight_not_stuck:
+        state = AlphaModelReadinessState.PROVIDER_PREFLIGHT_STUCK
     elif facts.proposed_turns > 0:
         state = AlphaModelReadinessState.SHADOW_OBSERVED
     elif facts.provider_preflight_successes > 0:
@@ -87,6 +112,10 @@ def evaluate_alpha_model_readiness(
         ready_for_shadow_observation=(
             prerequisites_ready and provider_preflight_verified
         ),
+        alerts=_alerts(facts),
+        provider_error_category=_provider_error_category(
+            facts.last_provider_error_code
+        ),
     )
 
 
@@ -106,12 +135,20 @@ def alpha_model_readiness_payload(
         "data_gate_approved": facts.data_gate_approved,
         "api_key_configured": facts.api_key_configured,
         "telegram_delivery_blocked": facts.telegram_delivery_blocked,
+        "fixture_binding_active": facts.fixture_binding_active,
         "staged_deployments": facts.staged_deployments,
         "model_turns": facts.model_turns,
+        "queued_turns": facts.queued_turns,
+        "running_turns": facts.running_turns,
         "proposed_turns": facts.proposed_turns,
         "failed_turns": facts.failed_turns,
+        "model_delivery_grants": facts.model_delivery_grants,
         "provider_preflight_successes": facts.provider_preflight_successes,
         "provider_preflight_failures": facts.provider_preflight_failures,
+        "stuck_provider_preflights": facts.stuck_provider_preflights,
+        "last_provider_error_category": readiness.provider_error_category,
+        "alerts": list(readiness.alerts),
+        "promotion_dry_run": _promotion_dry_run(facts, readiness),
         "budget": {
             "monthly_microusd": facts.monthly_budget_microusd,
             "reserved_microusd": facts.reserved_microusd,
@@ -120,4 +157,89 @@ def alpha_model_readiness_payload(
                 facts.monthly_budget_microusd - facts.reserved_microusd,
             ),
         },
+    }
+
+
+def _alerts(facts: AlphaModelReadinessFacts) -> tuple[str, ...]:
+    alerts: list[str] = []
+    if facts.model_delivery_grants > 0:
+        alerts.append("critical:model_delivery_grant_detected")
+    if facts.stuck_provider_preflights > 0:
+        alerts.append("critical:provider_preflight_stuck")
+    if facts.failed_turns > 0:
+        alerts.append("warning:model_shadow_failure")
+    if facts.provider_preflight_failures > 0:
+        alerts.append(
+            "warning:provider_preflight_failure:"
+            + _provider_error_category(facts.last_provider_error_code)
+        )
+    return tuple(alerts)
+
+
+def _provider_error_category(code: str | None) -> str:
+    if code is None:
+        return "none"
+    if "credential" in code:
+        return "credentials"
+    if "rate_limit" in code:
+        return "rate_limit"
+    if any(token in code for token in ("timeout", "unavailable", "request_failed")):
+        return "availability"
+    if "request_rejected" in code:
+        return "request"
+    if any(token in code for token in ("response", "usage", "capability")):
+        return "contract"
+    return "unknown"
+
+
+def _promotion_dry_run(
+    facts: AlphaModelReadinessFacts,
+    readiness: AlphaModelReadiness,
+) -> dict[str, object]:
+    if facts.proposed_turns > 0:
+        current_stage = "model_shadow"
+    elif readiness.provider_preflight_verified:
+        current_stage = "provider_preflight_verified"
+    else:
+        current_stage = "fixture_canary"
+
+    if not readiness.provider_preflight_verified:
+        next_stage = "provider_preflight"
+    elif facts.proposed_turns < MIN_SHADOW_PROPOSALS_FOR_CANARY_REVIEW:
+        next_stage = "model_shadow"
+    else:
+        next_stage = "limited_canary_review"
+
+    blocked_by: list[str] = []
+    if not readiness.prerequisites_ready:
+        blocked_by.append(readiness.state.value)
+    if not readiness.provider_preflight_verified:
+        blocked_by.append("provider_preflight_not_verified")
+    if facts.failed_turns > 0:
+        blocked_by.append("model_shadow_failures_present")
+    if facts.proposed_turns < MIN_SHADOW_PROPOSALS_FOR_CANARY_REVIEW:
+        blocked_by.append("shadow_proposal_sample_incomplete")
+
+    return {
+        "execution_mode": "dry_run",
+        "mutation_allowed": False,
+        "current_stage": current_stage,
+        "next_stage": next_stage,
+        "blocked_by": list(dict.fromkeys(blocked_by)),
+        "shadow_proposals_required": MIN_SHADOW_PROPOSALS_FOR_CANARY_REVIEW,
+        "shadow_proposals_observed": facts.proposed_turns,
+        "limited_canary_review_ready": (
+            readiness.prerequisites_ready
+            and readiness.provider_preflight_verified
+            and facts.proposed_turns >= MIN_SHADOW_PROPOSALS_FOR_CANARY_REVIEW
+            and facts.failed_turns == 0
+        ),
+        "rollback_target": "fixture_canary",
+        "automatic_stop_conditions": [
+            "any_model_delivery_grant",
+            "any_model_shadow_failure",
+            "provider_preflight_stuck",
+            "monthly_budget_exhausted",
+            "deployment_binding_not_exact",
+        ],
     }

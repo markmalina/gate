@@ -830,6 +830,17 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"{alpha['model_shadow']['provider_preflight_verified']}",
             f"- model_turns: {alpha['model_shadow']['model_turns']}",
             f"- failed_turns: {alpha['model_shadow']['failed_turns']}",
+            f"- running_turns: {alpha['model_shadow']['running_turns']}",
+            f"- model_delivery_grants: "
+            f"{alpha['model_shadow']['model_delivery_grants']}",
+            f"- stuck_provider_preflights: "
+            f"{alpha['model_shadow']['stuck_provider_preflights']}",
+            f"- provider_error_category: "
+            f"{alpha['model_shadow']['last_provider_error_category']}",
+            f"- promotion_next: "
+            f"{alpha['model_shadow']['promotion_dry_run']['next_stage']}",
+            f"- promotion_blocked_by: "
+            f"{','.join(alpha['model_shadow']['promotion_dry_run']['blocked_by']) or 'none'}",
             f"- budget_reserved: $"
             f"{alpha['model_shadow']['budget']['reserved_microusd'] / 1_000_000:.6f}",
             f"- budget_remaining: $"
@@ -872,6 +883,12 @@ async def _build_alpha_canary_status(
             model_turns=model.model_turns,
             proposed_turns=model.proposed_turns,
             failed_turns=model.failed_turns,
+            queued_turns=model.queued_turns,
+            running_turns=model.running_turns,
+            model_delivery_grants=model.model_delivery_grants,
+            stuck_provider_preflights=model.stuck_provider_preflights,
+            last_provider_error_code=model.last_provider_error_code,
+            fixture_binding_active=active_binding_count == 1,
             provider_preflight_successes=model.provider_preflight_successes,
             provider_preflight_failures=model.provider_preflight_failures,
         )

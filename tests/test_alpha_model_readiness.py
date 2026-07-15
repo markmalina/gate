@@ -87,6 +87,75 @@ def test_successful_delivery_free_turn_is_required_for_shadow_observation() -> N
     assert readiness.ready_for_shadow_observation is True
 
 
+def test_model_delivery_grant_is_a_critical_fail_closed_invariant() -> None:
+    readiness = evaluate_alpha_model_readiness(
+        _facts(provider_preflight_successes=1, model_delivery_grants=1)
+    )
+
+    assert readiness.state is AlphaModelReadinessState.SAFETY_INVARIANT_VIOLATED
+    assert readiness.prerequisites_ready is False
+    assert readiness.ready_for_shadow_observation is False
+    assert readiness.alerts == ("critical:model_delivery_grant_detected",)
+
+
+def test_stale_reserved_preflight_blocks_progress() -> None:
+    readiness = evaluate_alpha_model_readiness(
+        _facts(stuck_provider_preflights=1)
+    )
+
+    assert readiness.state is AlphaModelReadinessState.PROVIDER_PREFLIGHT_STUCK
+    assert readiness.ready_for_provider_preflight is False
+    assert readiness.alerts == ("critical:provider_preflight_stuck",)
+
+
+def test_provider_errors_are_redacted_to_bounded_categories() -> None:
+    payload = alpha_model_readiness_payload(
+        _facts(
+            provider_preflight_failures=1,
+            last_provider_error_code="openai_credentials_rejected",
+        )
+    )
+
+    assert payload["last_provider_error_category"] == "credentials"
+    assert payload["alerts"] == [
+        "warning:provider_preflight_failure:credentials"
+    ]
+    assert "openai_credentials_rejected" not in str(payload)
+
+
+def test_promotion_plan_is_dry_run_and_never_mutates_release_state() -> None:
+    payload = alpha_model_readiness_payload(_facts())
+    plan = payload["promotion_dry_run"]
+
+    assert isinstance(plan, dict)
+    assert plan["execution_mode"] == "dry_run"
+    assert plan["mutation_allowed"] is False
+    assert plan["current_stage"] == "fixture_canary"
+    assert plan["next_stage"] == "provider_preflight"
+    assert plan["blocked_by"] == [
+        "provider_preflight_not_verified",
+        "shadow_proposal_sample_incomplete",
+    ]
+    assert plan["rollback_target"] == "fixture_canary"
+
+
+def test_limited_canary_review_needs_ten_clean_shadow_proposals() -> None:
+    incomplete = alpha_model_readiness_payload(
+        _facts(model_turns=9, proposed_turns=9)
+    )["promotion_dry_run"]
+    complete = alpha_model_readiness_payload(
+        _facts(model_turns=10, proposed_turns=10)
+    )["promotion_dry_run"]
+
+    assert isinstance(incomplete, dict)
+    assert isinstance(complete, dict)
+    assert incomplete["limited_canary_review_ready"] is False
+    assert "shadow_proposal_sample_incomplete" in incomplete["blocked_by"]
+    assert complete["limited_canary_review_ready"] is True
+    assert complete["next_stage"] == "limited_canary_review"
+    assert complete["mutation_allowed"] is False
+
+
 def test_status_payload_is_redacted_and_reports_exact_budget() -> None:
     facts = replace(_facts(), reserved_microusd=12_288)
     payload = alpha_model_readiness_payload(facts)
@@ -95,6 +164,8 @@ def test_status_payload_is_redacted_and_reports_exact_budget() -> None:
     assert payload["telegram_delivery_blocked"] is True
     assert payload["provider_preflight_successes"] == 0
     assert payload["provider_preflight_failures"] == 0
+    assert payload["model_delivery_grants"] == 0
+    assert payload["stuck_provider_preflights"] == 0
     assert payload["budget"] == {
         "monthly_microusd": 50_000_000,
         "reserved_microusd": 12_288,
