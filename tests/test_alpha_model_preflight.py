@@ -11,7 +11,6 @@ from app.core.config import Settings
 from app.infrastructure import alpha_model_preflight as preflight
 from app.infrastructure.openai_agent_runtime import OpenAIAgentRuntimeError
 from app.models.alpha_preflight import AlphaModelPreflightModel
-from pydantic import SecretStr
 
 
 class FakeSession:
@@ -39,7 +38,7 @@ def _settings() -> Settings:
     return Settings(
         gate_alpha_model_runtime_enabled=True,
         gate_alpha_model_data_gate_approved=True,
-        openai_api_key=SecretStr("test-key"),
+        openai_api_key="test-key",
     )
 
 
