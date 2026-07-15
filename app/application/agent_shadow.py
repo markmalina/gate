@@ -30,6 +30,8 @@ class AgentShadowProposal:
     result_code: str
     candidate_text: str | None = field(default=None, repr=False)
     candidate_sha256: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class RunAgentShadowTurnService:
@@ -58,4 +60,6 @@ class RunAgentShadowTurnService:
             result_code=result.result_code,
             candidate_text=result.candidate_text,
             candidate_sha256=candidate_digest,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
         )
