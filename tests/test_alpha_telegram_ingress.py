@@ -4,7 +4,6 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-
 from app.api import alpha_telegram_ingress as alpha_ingress
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
