@@ -69,7 +69,7 @@ is `AlphaViaBot`; treat it as reserved owner input until configuration and canar
 PRs #137–#142 delivered:
 
 - default-disabled durable Telegram receipt/outbox acceptance;
-- one-shot retry/dead-letter worker with bounded failures;
+- supervised, default-disabled retry/dead-letter worker with bounded failures;
 - SELECT-only Business identity resolution;
 - workspace-scoped connector-neutral `Dialog`, `CanonicalMessage` and `WorkOwnership` contracts;
 - expand-only canonical schema;

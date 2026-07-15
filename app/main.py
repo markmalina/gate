@@ -30,6 +30,7 @@ from app.services.telegram_alpha_webhook import (
     reconcile_alpha_telegram_webhook_with_retries,
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
+from app.worker.telegram_processing import run_telegram_worker_loop
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         try:
             async with build_telegram_http_client() as http_client:
                 reconciliation_task: asyncio.Task[None] | None = None
+                worker_task: asyncio.Task[None] | None = None
                 try:
                     api_base_url = os.getenv(
                         "TELEGRAM_API_BASE_URL",
@@ -70,9 +72,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     reconciliation_task = asyncio.create_task(
                         _reconcile_all_telegram_webhooks(settings, http_client)
                     )
+                    if getattr(settings, "gate_telegram_worker_enabled", False):
+                        worker_task = asyncio.create_task(
+                            run_telegram_worker_loop(settings)
+                        )
                     yield
                 finally:
                     try:
+                        if worker_task is not None:
+                            if not worker_task.done():
+                                worker_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await worker_task
                         if reconciliation_task is not None:
                             if not reconciliation_task.done():
                                 reconciliation_task.cancel()

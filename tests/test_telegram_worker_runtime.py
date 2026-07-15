@@ -16,6 +16,8 @@ from app.core.config import Settings
 from app.worker import telegram_processing as worker_module
 from app.worker.telegram_processing import (
     ShadowClassifyingTelegramProcessor,
+    TelegramWorkerRuntimeResult,
+    run_telegram_worker_loop,
     run_telegram_worker_once,
 )
 
@@ -151,6 +153,49 @@ def test_explicitly_enabled_worker_runs_at_most_one_claim() -> None:
     assert result.enabled is True
     assert result.disposition == "idle"
     assert queue.claim_count == 1
+
+
+def test_disabled_worker_loop_never_runs_an_iteration() -> None:
+    calls = 0
+
+    async def iteration(_settings: Settings) -> TelegramWorkerRuntimeResult:
+        nonlocal calls
+        calls += 1
+        return TelegramWorkerRuntimeResult(enabled=True, disposition="idle")
+
+    asyncio.run(
+        run_telegram_worker_loop(
+            Settings(_env_file=None),
+            run_iteration=iteration,
+        )
+    )
+
+    assert calls == 0
+
+
+def test_enabled_worker_loop_drains_until_stopped() -> None:
+    calls = 0
+
+    async def scenario() -> None:
+        nonlocal calls
+        stop = asyncio.Event()
+
+        async def iteration(_settings: Settings) -> TelegramWorkerRuntimeResult:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                stop.set()
+            return TelegramWorkerRuntimeResult(enabled=True, disposition="processed")
+
+        await run_telegram_worker_loop(
+            Settings(_env_file=None, GATE_TELEGRAM_WORKER_ENABLED=True),
+            stop_event=stop,
+            run_iteration=iteration,
+        )
+
+    asyncio.run(scenario())
+
+    assert calls == 2
 
 
 def test_shadow_processor_logs_only_redacted_classification(
