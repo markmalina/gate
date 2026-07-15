@@ -5,7 +5,6 @@ import json
 
 import httpx
 import pytest
-
 from app.application.agent_kernel import (
     AgentContextMessage,
     AgentDeployment,
