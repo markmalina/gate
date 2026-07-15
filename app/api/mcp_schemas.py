@@ -182,6 +182,49 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "send_attempts": {"type": "integer", "minimum": 0},
                         }
                     ),
+                    "model_shadow": _object(
+                        {
+                            "state": {
+                                "type": "string",
+                                "enum": [
+                                    "configuration_incomplete",
+                                    "deployment_not_exact",
+                                    "budget_exhausted",
+                                    "awaiting_provider_preflight",
+                                    "provider_preflight_failed",
+                                    "shadow_observed",
+                                ],
+                            },
+                            "prerequisites_ready": {"type": "boolean"},
+                            "provider_preflight_verified": {"type": "boolean"},
+                            "ready_for_provider_preflight": {"type": "boolean"},
+                            "ready_for_shadow_observation": {"type": "boolean"},
+                            "runtime_enabled": {"type": "boolean"},
+                            "data_gate_approved": {"type": "boolean"},
+                            "api_key_configured": {"type": "boolean"},
+                            "telegram_delivery_blocked": {"type": "boolean"},
+                            "staged_deployments": {"type": "integer", "minimum": 0},
+                            "model_turns": {"type": "integer", "minimum": 0},
+                            "proposed_turns": {"type": "integer", "minimum": 0},
+                            "failed_turns": {"type": "integer", "minimum": 0},
+                            "budget": _object(
+                                {
+                                    "monthly_microusd": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
+                                    "reserved_microusd": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
+                                    "remaining_microusd": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
+                                }
+                            ),
+                        }
+                    ),
                 }
             ),
             "mcp": _object(

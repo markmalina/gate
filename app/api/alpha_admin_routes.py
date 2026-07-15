@@ -16,7 +16,10 @@ from app.application.alpha_lifecycle import (
     AlphaLifecycleService,
     ApproveAlphaInstallationCommand,
 )
-from app.application.alpha_shadow_worker import ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD
+from app.application.alpha_model_readiness import (
+    AlphaModelReadinessFacts,
+    alpha_model_readiness_payload,
+)
 from app.core.config import Settings, get_settings
 from app.infrastructure.alpha_canary import (
     alpha_canary_audit_counts,
@@ -24,6 +27,7 @@ from app.infrastructure.alpha_canary import (
     alpha_canary_installation_count,
 )
 from app.infrastructure.alpha_lifecycle import SqlAlphaLifecycleRepository
+from app.infrastructure.alpha_model_status import alpha_model_operational_status
 
 router = APIRouter(prefix="/admin/alpha", tags=["alpha-admin"])
 settings_dependency = Depends(get_settings)
@@ -65,6 +69,23 @@ async def get_alpha_canary_status(
         session,
         workspace_key=workspace_key,
     )
+    model = await alpha_model_operational_status(
+        session,
+        workspace_key=workspace_key,
+    )
+    model_shadow = alpha_model_readiness_payload(
+        AlphaModelReadinessFacts(
+            runtime_enabled=settings.gate_alpha_model_runtime_enabled,
+            data_gate_approved=settings.gate_alpha_model_data_gate_approved,
+            api_key_configured=bool(settings.openai_api_key.get_secret_value()),
+            staged_deployments=model.staged_deployments,
+            monthly_budget_microusd=model.monthly_budget_microusd,
+            reserved_microusd=model.reserved_microusd,
+            model_turns=model.model_turns,
+            proposed_turns=model.proposed_turns,
+            failed_turns=model.failed_turns,
+        )
+    )
     checks = {
         "telegram_worker_enabled": settings.gate_telegram_worker_enabled,
         "connector_enabled": settings.gate_alpha_connector_enabled,
@@ -90,13 +111,7 @@ async def get_alpha_canary_status(
         "disclosure_copy": ALPHA_DISCLOSURE_PREFIX.strip(),
         "active_installations": exact_binding_count,
         "audit_evidence": audit_counts,
-        "model_shadow": {
-            "runtime_enabled": settings.gate_alpha_model_runtime_enabled,
-            "data_gate_approved": settings.gate_alpha_model_data_gate_approved,
-            "api_key_configured": bool(settings.openai_api_key.get_secret_value()),
-            "telegram_delivery_blocked": True,
-            "monthly_budget_usd": ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD / 1_000_000,
-        },
+        "model_shadow": model_shadow,
     }
 
 
