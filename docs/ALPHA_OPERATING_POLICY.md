@@ -71,3 +71,19 @@ outcome. Authentication rejection, rate limiting, provider unavailability, timeo
 invalid output, and missing token usage become separate bounded error codes. Provider
 response bodies are never copied into Gate errors. A nominally successful response
 without trustworthy token usage fails closed so accounting cannot silently undercount.
+
+## Operational readiness status
+
+Gate M and the scoped admin status derive model readiness from database evidence and
+boolean configuration checks. Reading status never contacts OpenAI or Telegram and
+never returns a credential, group identifier, or message content.
+
+The state is closed and fail-safe: configuration incomplete, deployment not exact,
+budget exhausted, awaiting provider preflight, provider preflight failed, or shadow
+observed. It also reports the exact staged-deployment count, content-free turn counts,
+and conservative reserved and remaining monthly budget.
+
+`awaiting_provider_preflight` is the expected healthy state while provider billing is
+unavailable. Provider verification and shadow observation require a separately
+controlled model turn; neither status inspection nor deployment performs that call.
+Telegram delivery remains blocked for every model-backed proposal.
