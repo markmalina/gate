@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.routes import get_telegram_client
+from app.application.alpha_model_readiness import (
+    AlphaModelReadinessFacts,
+    alpha_model_readiness_payload,
+)
 from app.application.mcp_inbox import (
     build_unanswered_list,
     counterparty as _counterparty,
@@ -39,6 +43,7 @@ from app.core.mcp_security import (
     bearer_token_matches,
     build_mcp_read_principal,
 )
+from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.alpha_canary import (
@@ -816,6 +821,19 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- agent_turns: {alpha['audit']['agent_turns']}",
             f"- delivery_grants: {alpha['audit']['delivery_grants']}",
             f"- send_attempts: {alpha['audit']['send_attempts']}",
+            "",
+            "Alpha model shadow:",
+            f"- state: {alpha['model_shadow']['state']}",
+            f"- staged_deployments: "
+            f"{alpha['model_shadow']['staged_deployments']}",
+            f"- provider_preflight_verified: "
+            f"{alpha['model_shadow']['provider_preflight_verified']}",
+            f"- model_turns: {alpha['model_shadow']['model_turns']}",
+            f"- failed_turns: {alpha['model_shadow']['failed_turns']}",
+            f"- budget_reserved: $"
+            f"{alpha['model_shadow']['budget']['reserved_microusd'] / 1_000_000:.6f}",
+            f"- budget_remaining: $"
+            f"{alpha['model_shadow']['budget']['remaining_microusd'] / 1_000_000:.6f}",
         ]
     )
     return "\n".join(lines)
@@ -839,6 +857,23 @@ async def _build_alpha_canary_status(
         session,
         workspace_key=workspace_key,
     )
+    model = await alpha_model_operational_status(
+        session,
+        workspace_key=workspace_key,
+    )
+    model_shadow = alpha_model_readiness_payload(
+        AlphaModelReadinessFacts(
+            runtime_enabled=settings.gate_alpha_model_runtime_enabled,
+            data_gate_approved=settings.gate_alpha_model_data_gate_approved,
+            api_key_configured=bool(settings.openai_api_key.get_secret_value()),
+            staged_deployments=model.staged_deployments,
+            monthly_budget_microusd=model.monthly_budget_microusd,
+            reserved_microusd=model.reserved_microusd,
+            model_turns=model.model_turns,
+            proposed_turns=model.proposed_turns,
+            failed_turns=model.failed_turns,
+        )
+    )
     return {
         "telegram_worker_enabled": settings.gate_telegram_worker_enabled,
         "connector_enabled": settings.gate_alpha_connector_enabled,
@@ -854,6 +889,7 @@ async def _build_alpha_canary_status(
         "one_group_discovered": installation_count == 1,
         "one_active_exact_revision": active_binding_count == 1,
         "audit": audit_counts,
+        "model_shadow": model_shadow,
     }
 
 def _format_reply_context_text(context: JsonObject) -> str:
