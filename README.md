@@ -1,24 +1,26 @@
 # Gate
 
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
-> Verified: **2026-07-14**  
-> Repository: `markmalina/gate` (private)  
-> Source of truth: GitHub `main`  
-> Verified application commit before this documentation update: `e103bc577308a1a341de1d12d3ff37d2601933ee`  
-> Production: Railway, automatic deployment from `main`  
-> Status at handoff: ChatGPT Work MCP MVP is operational; both current Telegram Business accounts are connected and able to reply.
+> Verified: **2026-07-15**  
+> Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
+> Verified application commit before this documentation update: `3a4ba31d41ac11e6cf5ecf43ac0a23e77f34405f`  
+> Production: Railway automatic deployment from `main`
 
-This README is the primary project handoff. A new owner or implementation agent must be able to continue from it without relying on chat history, an agent memory summary, or a stale local checkout.
+This README is the entry point for transferring Gate to another developer or implementation agent.
+Do not rely on chat history or a local workspace.
 
-Read next:
+Continue in this exact order:
 
-- [Team workflow](docs/TEAM_WORKFLOW.md) — authority, PR, CI, merge, deployment and terminology rules;
-- [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) — current technical findings, target boundaries and six sequential product releases;
-- [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md) — target architecture and scale requirements;
-- [Telegram ingress cutover](docs/TELEGRAM_INGRESS_CUTOVER.md) — frozen legacy chain, invariants and canonical migration phases;
-- [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md) — operational and safety rules.
+1. [Team workflow](docs/TEAM_WORKFLOW.md) — authority, safety, PR/CI/merge/deploy rules.
+2. [Current project handoff](docs/PROJECT_HANDOFF.md) — verified production state, delivered PRs,
+   code map, environment names and the exact next development order.
+3. [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) —
+   target design and Sprints 1–6.
+4. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
+5. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
 
-If any older document conflicts with the verified current state in this README, re-check GitHub and production first, then update the documentation in the same substantive PR.
+If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
+update both documents in the same substantive PR.
 
 ## 1. What Gate is
 
@@ -54,43 +56,27 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub and the live Gate M connector on 2026-07-14:
+Verified through GitHub and Gate M on 2026-07-15 after PR #148:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Open pull requests before this handoff | none |
-| Application commit | `e103bc577308a1a341de1d12d3ff37d2601933ee` |
-| Environment | `production` |
-| Railway service URL | `https://gate-production-bab1.up.railway.app` |
-| Bot username | `gate_m_bot` |
-| Operating mode | `manual` |
-| MCP authorization | OAuth 2.0 enforced |
+| Application / Railway commit | `3a4ba31d41ac11e6cf5ecf43ac0a23e77f34405f` / `3a4ba31d41ac` |
+| Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
-| Active account contexts | 2: `telegram_mark_ru` / RU and `telegram_mark_by` / BY |
-| Telegram Business health | RU `ready`, BY `ready`, both `can_reply=true` |
-| MCP tools | 5, listed below |
-| Automatic/free-form sending | disabled by product rules |
-| Explicit confirmed sending | enabled and exercised successfully |
+| Existing Business bot | `gate_m_bot` |
+| Telegram Business | RU and BY both `ready`, `can_reply=true` |
+| Contact import | RU 90 from Desktop export; BY deferred |
+| MCP | OAuth 2.0 enforced, five tools |
+| Human sending | exact saved draft + explicit confirmation only |
+| Alpha group bot | code foundation present; production connector disabled |
 
-Live counters are operational snapshots, not invariants. At verification they were approximately: 21 conversations, 520 messages, 105 reply-task records, 3 currently unanswered conversations, 39 answered/outbound messages and 27 saved drafts. Re-query production instead of copying these numbers into logic or tests.
+Snapshot counters were 27 conversations, 660 messages, 170 reply-task rows, 3 unanswered and 28
+drafts. Re-query production instead of treating them as invariants.
 
-Public verification endpoints:
-
-- `GET /health` — backward-compatible lightweight service health;
-- `GET /live` — process liveness only; it does not claim that dependencies are ready;
-- `GET /ready` — redacted database connectivity and exact Alembic-head readiness;
-- `GET /deployment/fingerprint` — Railway commit and non-secret deployment metadata;
-- `GET /.well-known/oauth-protected-resource/mcp` — MCP protected-resource metadata;
-- `POST /mcp` — MCP transport, protected per tool by OAuth.
-
-After every merge, verify the exact new Railway commit. A healthy old release is not proof that the new release deployed.
-
-Railway runs `alembic upgrade head` before probing `/ready`. CI deliberately keeps a single
-Alembic head, while the runtime check uses the plural Alembic APIs and requires exact equality
-between every code head and database head. Migrations must therefore follow backward-compatible
-expand/contract rules. After a schema migration, rollback is a forward fix or a coordinated database
-rollback; an application-only rollback must not be assumed safe.
+The canonical detailed status and next work are in
+[docs/PROJECT_HANDOFF.md](docs/PROJECT_HANDOFF.md). After every merge, verify the exact Railway SHA;
+a healthy previous release does not prove the new release deployed.
 
 ## 4. Current ChatGPT Work MVP
 
