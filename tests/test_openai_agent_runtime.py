@@ -14,6 +14,7 @@ from app.application.agent_kernel import (
     AgentTurnCommand,
     InstructionRevision,
 )
+from app.application.alpha_shadow_worker import AlphaShadowWorkerError
 from app.application.instruction_bundles import LoadedInstructionBundle
 from app.application.work_ownership import AgentKey
 from app.infrastructure.openai_agent_runtime import (
@@ -185,7 +186,7 @@ def test_factory_requires_both_release_gates_for_model_profile() -> None:
                 timeout_seconds=30,
             )
             with pytest.raises(
-                ValueError,
+                AlphaShadowWorkerError,
                 match="alpha_model_data_gate_not_approved",
             ):
                 factory.build(
