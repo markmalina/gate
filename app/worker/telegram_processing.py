@@ -9,6 +9,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
+from app.application.telegram_canonical_projection import (
+    TelegramCanonicalProjectionError,
+    project_telegram_canonical_message,
+)
 from app.application.telegram_ingress_identity import (
     ResolveTelegramIngressIdentityService,
     TelegramIngressIdentityReader,
@@ -38,6 +43,7 @@ from app.core.telegram_connectors import (
     TelegramConnectorResolutionError,
     TelegramConnectorRole,
 )
+from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
 from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
@@ -65,7 +71,7 @@ class _IdentityOwnershipRouting:
 
 
 class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
-    """Classify one payload with SELECT-only identity reads and no external effects."""
+    """Classify and optionally persist canonical facts without external effects."""
 
     def __init__(
         self,
@@ -73,10 +79,12 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         settings: Settings,
         identity_reader: TelegramIngressIdentityReader,
         runtime_logger: logging.Logger,
+        canonical_store: CanonicalIngressStore | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
         self._identity_reader = identity_reader
+        self._canonical_store = canonical_store
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
@@ -135,6 +143,38 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         except Exception as exc:
             raise TelegramUpdateProcessingError("shadow_classification_failed") from exc
 
+        canonical_persisted = False
+        canonical_duplicate = False
+        if self._canonical_store is not None:
+            try:
+                projection = project_telegram_canonical_message(
+                    item.payload,
+                    workspace_id=self._settings.gate_workspace_id,
+                    connector_key=connector.key.value,
+                    connector_kind=_connector_kind(connector.role),
+                    source_receipt_id=item.receipt_id,
+                    received_at=item.received_at,
+                    direction_evidence=direction_evidence,
+                    reply_task_intent=identity.reply_task_intent.value,
+                    ownership=ownership,
+                    control_traffic=decision.command is not None,
+                )
+            except TelegramCanonicalProjectionError:
+                raise TelegramUpdateProcessingError("canonical_projection_failed") from None
+            if projection is not None:
+                try:
+                    persisted = await self._canonical_store.persist(
+                        dialog=projection.dialog,
+                        message=projection.message,
+                        ownership=projection.ownership,
+                    )
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "canonical_ingress_persist_failed"
+                    ) from None
+                canonical_persisted = True
+                canonical_duplicate = persisted.duplicate
+
         self._logger.info(
             "Telegram worker shadow classification: handler=%s reason=%s "
             "configured_account_resolution=%s identity_resolution=%s "
@@ -142,7 +182,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             "direction_evidence=%s reply_task_intent=%s "
             "ownership_proposed_state=%s ownership_candidate=%s "
             "ownership_reason=%s ownership_signal=%s ownership_requirements=%s "
-            "ownership_policy=%s ownership_authoritative=%s",
+            "ownership_policy=%s ownership_authoritative=%s "
+            "canonical_persisted=%s canonical_duplicate=%s",
             decision.handler,
             decision.reason,
             routing.account_resolution,
@@ -158,6 +199,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             ",".join(item.value for item in ownership.unresolved_requirements) or "none",
             ownership.policy_version,
             ownership.authoritative,
+            canonical_persisted,
+            canonical_duplicate,
         )
 
 
@@ -168,6 +211,7 @@ async def run_telegram_worker_once(
     queue: TelegramProcessingQueue | None = None,
     processor: TelegramUpdateProcessor | None = None,
     identity_reader: TelegramIngressIdentityReader | None = None,
+    canonical_store: CanonicalIngressStore | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -181,12 +225,11 @@ async def run_telegram_worker_once(
         queue = SqlTelegramProcessingQueue(session)
     if processor is None:
         if identity_reader is None:
-            raise RuntimeError(
-                "An enabled default Telegram worker requires an identity reader"
-            )
+            raise RuntimeError("An enabled default Telegram worker requires an identity reader")
         processor = ShadowClassifyingTelegramProcessor(
             settings=settings,
             identity_reader=identity_reader,
+            canonical_store=canonical_store,
             runtime_logger=runtime_logger,
         )
     result = await ProcessTelegramOutboxService(
@@ -210,12 +253,14 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
+    canonical_store = SessionFactoryCanonicalIngressStore(sessions)
     try:
         async with sessions() as session:
             return await run_telegram_worker_once(
                 settings=settings,
                 session=session,
                 identity_reader=identity_reader,
+                canonical_store=canonical_store,
             )
     finally:
         await engine.dispose()
@@ -227,8 +272,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     result = asyncio.run(_run_from_settings(get_settings()))
     logger.info(
-        "Telegram worker iteration: enabled=%s disposition=%s attempt=%s "
-        "error_code=%s",
+        "Telegram worker iteration: enabled=%s disposition=%s attempt=%s error_code=%s",
         result.enabled,
         result.disposition,
         result.attempt,
@@ -245,3 +289,11 @@ def _identity_ownership_routing(
             "database_snapshot" if identity.resolved else identity.resolution.value
         ),
     )
+
+
+def _connector_kind(role: TelegramConnectorRole) -> ConnectorKind:
+    if role is TelegramConnectorRole.BUSINESS:
+        return ConnectorKind.TELEGRAM_BUSINESS
+    if role is TelegramConnectorRole.ALPHA_GROUP:
+        return ConnectorKind.TELEGRAM_BOT
+    raise TelegramCanonicalProjectionError("canonical_connector_role_invalid")

@@ -84,6 +84,12 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_TELEGRAM_WORKER_ENABLED",
     )
+    gate_workspace_id: str = Field(
+        default="mark-personal",
+        min_length=1,
+        max_length=128,
+        validation_alias="GATE_WORKSPACE_ID",
+    )
     gate_telegram_durable_acceptance_mode: TelegramDurableAcceptanceMode = Field(
         default=TelegramDurableAcceptanceMode.DISABLED,
         validation_alias="GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE",
