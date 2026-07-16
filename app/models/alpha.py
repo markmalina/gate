@@ -56,6 +56,12 @@ class AgentInstallationModel(Base):
             "workspace_id", "connector_id", "dialog_id", name="uq_agent_installations_dialog"
         ),
         UniqueConstraint("id", "workspace_id", name="uq_agent_installations_id_workspace"),
+        UniqueConstraint(
+            "id",
+            "dialog_id",
+            "workspace_id",
+            name="uq_agent_installations_id_dialog_workspace",
+        ),
         CheckConstraint(
             "state IN ('discovered', 'pending_approval', 'active', 'paused', 'revoked')",
             name="ck_agent_installations_state",
