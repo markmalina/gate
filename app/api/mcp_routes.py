@@ -709,9 +709,9 @@ def _gate_alpha_list_shadow_reviews_tool(settings: Settings) -> JsonObject:
 def _gate_alpha_control_installation_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_alpha_control_installation",
-        "title": "Pause or resume Alpha group",
+        "title": "Approve, pause or resume Alpha group",
         "description": (
-            "Apply one confirmed reversible pause/resume action to the exact "
+            "Apply one confirmed approve/pause/resume action to the exact "
             "installation reference returned by Gate."
         ),
         "inputSchema": {
@@ -724,11 +724,11 @@ def _gate_alpha_control_installation_tool(settings: Settings) -> JsonObject:
                 },
                 "action": {
                     "type": "string",
-                    "enum": ["pause", "resume"],
+                    "enum": ["approve", "pause", "resume"],
                 },
                 "expected_state": {
                     "type": "string",
-                    "enum": ["active", "paused"],
+                    "enum": ["pending_approval", "active", "paused"],
                 },
                 "confirmed": {"type": "boolean", "const": True},
             },

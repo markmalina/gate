@@ -60,6 +60,7 @@ class ApproveAlphaInstallationCommand:
     installation_key: str
     deployment_key: str
     revision_key: str
+    expected_state: AlphaInstallationState | None = None
     max_turns_per_window: int = 5
     rate_window_seconds: int = 60
     max_tokens_per_turn: int = 2048

@@ -481,7 +481,7 @@ ALPHA_INSTALLATION_SCHEMA = _object(
         "revision_key": _nullable("string"),
         "available_actions": {
             "type": "array",
-            "items": {"type": "string", "enum": ["pause", "resume"]},
+            "items": {"type": "string", "enum": ["approve", "pause", "resume"]},
             "uniqueItems": True,
         },
         "limits": _object(
@@ -515,7 +515,7 @@ ALPHA_INSTALLATIONS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 ALPHA_CONTROL_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     _object(
         {
-            "action": {"type": "string", "enum": ["pause", "resume"]},
+            "action": {"type": "string", "enum": ["approve", "pause", "resume"]},
             "installation": {"$ref": "#/$defs/alpha_installation"},
         }
     ),

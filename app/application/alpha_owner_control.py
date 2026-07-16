@@ -10,12 +10,18 @@ from app.application.alpha_lifecycle import (
     AlphaInstallationActionCommand,
     AlphaInstallationView,
     AlphaLifecycleService,
+    ApproveAlphaInstallationCommand,
 )
 
 
 class AlphaOwnerAction(StrEnum):
+    APPROVE = "approve"
     PAUSE = "pause"
     RESUME = "resume"
+
+
+_ALPHA_FIXTURE_DEPLOYMENT_KEY = "alpha-canary-v1-fixture"
+_ALPHA_FIXTURE_REVISION_KEY = "alpha-canary-v1"
 
 
 class AlphaOwnerControlError(RuntimeError):
@@ -55,11 +61,22 @@ async def control_alpha_installation(
     if not command.confirmed:
         raise AlphaOwnerControlError("alpha_owner_confirmation_required")
     expected_by_action = {
+        AlphaOwnerAction.APPROVE: AlphaInstallationState.PENDING_APPROVAL,
         AlphaOwnerAction.PAUSE: AlphaInstallationState.ACTIVE,
         AlphaOwnerAction.RESUME: AlphaInstallationState.PAUSED,
     }
     if expected_by_action[command.action] is not command.expected_state:
         raise AlphaOwnerControlError("alpha_owner_expected_state_invalid")
+    if command.action is AlphaOwnerAction.APPROVE:
+        return await service.approve(
+            ApproveAlphaInstallationCommand(
+                workspace_key=command.workspace_key,
+                installation_key=command.installation_ref,
+                deployment_key=_ALPHA_FIXTURE_DEPLOYMENT_KEY,
+                revision_key=_ALPHA_FIXTURE_REVISION_KEY,
+                expected_state=command.expected_state,
+            )
+        )
     lifecycle_command = AlphaInstallationActionCommand(
         workspace_key=command.workspace_key,
         installation_key=command.installation_ref,
@@ -80,7 +97,9 @@ def _installation_payload(
     installation: AlphaInstallationView,
 ) -> dict[str, object]:
     actions: list[str] = []
-    if installation.state is AlphaInstallationState.ACTIVE:
+    if installation.state is AlphaInstallationState.PENDING_APPROVAL:
+        actions.append(AlphaOwnerAction.APPROVE.value)
+    elif installation.state is AlphaInstallationState.ACTIVE:
         actions.append(AlphaOwnerAction.PAUSE.value)
     elif installation.state is AlphaInstallationState.PAUSED:
         actions.append(AlphaOwnerAction.RESUME.value)
