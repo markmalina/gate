@@ -57,6 +57,24 @@ jobs:
           name: alpha-release-evidence
           path: alpha-release-evidence.json
           if-no-files-found: error
+      - name: Alpha incident recovery rehearsal
+        run: >-
+          pytest
+          tests/test_telegram_worker_runtime.py
+          tests/test_alpha_shadow_worker.py
+          tests/test_alpha_delivery.py
+          tests/test_alpha_delivery_postgres.py
+          tests/test_alpha_model_shadow_rehearsal.py
+          tests/test_alpha_model_readiness.py
+          tests/test_alpha_incident_drills.py
+      - name: Build Alpha incident evidence
+        run: python scripts/alpha_incident_drills.py --output alpha-incident-drills.json
+      - name: Upload Alpha incident evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-incident-drills
+          path: alpha-incident-drills.json
+          if-no-files-found: error
       - name: Alembic upgrade
         run: alembic upgrade head
       - name: Alembic downgrade
