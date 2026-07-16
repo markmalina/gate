@@ -42,3 +42,60 @@ class InstagramEvent:
             "deduplication_key": self.deduplication_key,
             "source": "gate",
         }
+
+    def mayaki_gate_intake_payload(self) -> dict[str, Any]:
+        """Adapt the event to MAYAKI's authenticated Gate intake v0."""
+
+        provider_user_id = _provider_user_id(self.event_type, self.payload)
+        message_text = _message_text(self.payload)
+        if not provider_user_id:
+            raise ValueError("instagram_provider_user_id_required")
+        if not message_text:
+            raise ValueError("instagram_message_text_required")
+        return {
+            "gate_event_id": self.provider_event_id,
+            "provider": "instagram",
+            "provider_user_id": provider_user_id,
+            "channel": self.event_type.value,
+            "message_text": message_text,
+            "occurred_at": self.occurred_at.isoformat(),
+            "profile": {
+                "username": _profile_username(self.payload),
+                "preferred_language": "ru",
+            },
+            "raw": {
+                "event_type": self.event_type.value,
+                "workspace_key": self.workspace_key,
+                "account_alias": self.account_alias,
+                "deduplication_key": self.deduplication_key,
+                "payload": self.payload,
+            },
+        }
+
+
+def _provider_user_id(event_type: InstagramEventType, payload: dict[str, Any]) -> str | None:
+    key = "from" if event_type is InstagramEventType.COMMENT_RECEIVED else "sender"
+    identity = payload.get(key)
+    if not isinstance(identity, dict):
+        return None
+    value = identity.get("id")
+    return str(value) if value else None
+
+
+def _message_text(payload: dict[str, Any]) -> str | None:
+    direct = payload.get("text")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return None
+    value = message.get("text")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _profile_username(payload: dict[str, Any]) -> str | None:
+    identity = payload.get("from")
+    if not isinstance(identity, dict):
+        return None
+    value = identity.get("username")
+    return value if isinstance(value, str) and value else None
