@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -104,5 +107,9 @@ jobs:
         run: alembic downgrade base
       - name: Docker build
         run: docker build -t gate:ci .
+      - name: Assert web container runs unprivileged
+        run: docker run --rm --entrypoint sh gate:ci -c 'test "$(id -u)" -ne 0'
       - name: Contact sync Docker build
         run: docker build -f Dockerfile.contact-sync -t gate-contact-sync:ci .
+      - name: Assert contact sync container runs unprivileged
+        run: docker run --rm --entrypoint sh gate-contact-sync:ci -c 'test "$(id -u)" -ne 0'
