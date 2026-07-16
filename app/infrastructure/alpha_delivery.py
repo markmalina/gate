@@ -11,13 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.alpha_delivery import (
+    MAX_TELEGRAM_TEXT_CHARS,
     AlphaDeliveryError,
     AlphaDeliveryReservation,
     AlphaDeliveryStore,
     AlphaProviderDeliveryError,
     AlphaTelegramTextPort,
     DeliverAlphaGrantCommand,
-    MAX_TELEGRAM_TEXT_CHARS,
 )
 from app.application.alpha_group import (
     AgentSendAttemptState,
