@@ -410,7 +410,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 def __init__(self) -> None:
                     self.calls: list[dict[str, object]] = []
 
-                async def send_message(self, **kwargs: object) -> dict[str, object]:
+                async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
                     self.calls.append(kwargs)
                     return {"ok": True, "result": {"message_id": 321}}
 
