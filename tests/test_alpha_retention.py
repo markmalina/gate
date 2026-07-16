@@ -9,7 +9,6 @@ from app.application.alpha_retention import (
     build_alpha_retention_dry_run,
 )
 
-
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
 
