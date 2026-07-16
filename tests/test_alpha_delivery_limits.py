@@ -1,7 +1,6 @@
 """Boundary proof for one-attempt Telegram Alpha delivery text."""
 
 import pytest
-
 from app.application.alpha_canary import (
     ALPHA_DISCLOSURE_PREFIX,
     AlphaCanaryError,
