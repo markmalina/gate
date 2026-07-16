@@ -6,6 +6,7 @@ import hmac
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi.responses import PlainTextResponse
 
 from app.instagram.config import InstagramRuntimeConfig
 from app.instagram.sink import MayakiInstagramEventSink, MayakiInstagramSinkError
@@ -23,7 +24,7 @@ async def verify_instagram_webhook(
     mode: str | None = Query(default=None, alias="hub.mode"),
     challenge: str | None = Query(default=None, alias="hub.challenge"),
     verify_token: str | None = Query(default=None, alias="hub.verify_token"),
-) -> str:
+) -> PlainTextResponse:
     config = InstagramRuntimeConfig.from_env()
     if (
         not config.webhook_verification_ready
@@ -33,7 +34,7 @@ async def verify_instagram_webhook(
         or not hmac.compare_digest(verify_token, config.webhook_verify_token)
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return challenge
+    return PlainTextResponse(challenge)
 
 
 @router.post("")
