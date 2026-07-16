@@ -74,6 +74,7 @@ async def control_alpha_installation(
                 installation_key=command.installation_ref,
                 deployment_key=_ALPHA_FIXTURE_DEPLOYMENT_KEY,
                 revision_key=_ALPHA_FIXTURE_REVISION_KEY,
+                expected_state=command.expected_state,
             )
         )
     lifecycle_command = AlphaInstallationActionCommand(
