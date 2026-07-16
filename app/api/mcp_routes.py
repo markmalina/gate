@@ -28,6 +28,7 @@ from app.application.alpha_owner_control import (
     alpha_installations_payload,
     control_alpha_installation,
 )
+from app.application.alpha_shadow_reviews import alpha_shadow_reviews_payload
 from app.application.mcp_inbox import (
     build_unanswered_list,
     counterparty as _counterparty,
@@ -61,6 +62,7 @@ from app.infrastructure.alpha_model_preflight import (
     run_alpha_model_preflight,
 )
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
+from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.alpha_canary import (
@@ -102,6 +104,7 @@ MCP_TOOL_NAMES = [
     "gate_alpha_list_installations",
     "gate_alpha_control_installation",
     "gate_alpha_run_model_preflight",
+    "gate_alpha_list_shadow_reviews",
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -114,6 +117,7 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_list_installations": "gate:status:read",
     "gate_alpha_control_installation": "gate:agents:manage",
     "gate_alpha_run_model_preflight": "gate:agents:manage",
+    "gate_alpha_list_shadow_reviews": "gate:agents:manage",
 }
 
 
@@ -168,6 +172,7 @@ async def mcp_endpoint(
                     _gate_alpha_list_installations_tool(settings),
                     _gate_alpha_control_installation_tool(settings),
                     _gate_alpha_run_model_preflight_tool(settings),
+                    _gate_alpha_list_shadow_reviews_tool(settings),
                 ]
             },
         )
@@ -217,6 +222,13 @@ async def mcp_endpoint(
         if tool_name == "gate_alpha_list_installations":
             return await _alpha_list_installations_tool_result(
                 request_id=request_id,
+                principal=principal,
+                session=session,
+            )
+        if tool_name == "gate_alpha_list_shadow_reviews":
+            return await _alpha_list_shadow_reviews_tool_result(
+                request_id=request_id,
+                arguments=arguments,
                 principal=principal,
                 session=session,
             )
@@ -486,6 +498,42 @@ async def _alpha_list_installations_tool_result(
     return _tool_result(payload, "\n".join(lines), request_id)
 
 
+async def _alpha_list_shadow_reviews_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_limit = arguments.get("limit", 20)
+    if (
+        not isinstance(raw_limit, int)
+        or isinstance(raw_limit, bool)
+        or not 1 <= raw_limit <= 50
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="limit must be an integer between 1 and 50",
+        )
+    reviews = await list_alpha_shadow_reviews(
+        session,
+        workspace_key=principal.access_scope.workspace_id,
+        limit=raw_limit,
+    )
+    payload = alpha_shadow_reviews_payload(reviews)
+    lines = [
+        f"Alpha shadow reviews: {payload['count']}",
+        "Telegram delivery: blocked",
+    ]
+    for item in payload["items"]:
+        lines.append(
+            f"- {item['group_label']}: {item['status']}; "
+            f"outcome={item['outcome'] or 'pending'}"
+        )
+    return _tool_result(payload, "\n".join(lines), request_id)
+
+
 async def _alpha_control_installation_tool_result(
     *,
     request_id: Any,
@@ -623,6 +671,38 @@ def _gate_alpha_list_installations_tool(settings: Settings) -> JsonObject:
         tool=tool,
         settings=settings,
         scope="gate:status:read",
+    )
+
+
+def _gate_alpha_list_shadow_reviews_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_list_shadow_reviews",
+        "title": "Review Alpha shadow proposals",
+        "description": (
+            "List model-backed Alpha proposals from approved groups for owner "
+            "review. It never exposes Telegram IDs and never delivers messages."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 20,
+                }
+            },
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_list_shadow_reviews"
+        ],
+        "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:agents:manage",
     )
 
 

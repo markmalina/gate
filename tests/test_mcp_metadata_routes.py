@@ -72,6 +72,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_alpha_list_installations",
+        "gate_alpha_list_shadow_reviews",
     ]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
@@ -108,6 +109,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_alpha_list_installations",
+        "gate_alpha_list_shadow_reviews",
     ]
     assert payload["tools"]["write"] == [
         "gate_save_reply_draft",
