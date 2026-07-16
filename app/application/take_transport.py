@@ -203,6 +203,7 @@ def build_approval_command(
 class TakeTransportPort(Protocol):
     async def submit(self, command: TakeTransportCommand) -> dict[str, Any]:
         """Submit one idempotent command; implementation must not edit media."""
+        ...
 
 
 def validate_take_event(raw: dict[str, Any]) -> None:
