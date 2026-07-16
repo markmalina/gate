@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 from fastapi import FastAPI
+
 from app.instagram.automation import (
     AutomationDecision,
     AutomationFacts,
