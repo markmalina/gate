@@ -69,7 +69,10 @@ class AlphaDeliveryReservation:
             if self.target_chat_id is None or self.candidate_text is None:
                 raise ValueError("sending reservation requires DB-derived target and text")
             _require_token(self.target_chat_id, "target_chat_id", 255)
-            if not self.candidate_text.strip() or len(self.candidate_text) > MAX_TELEGRAM_TEXT_CHARS:
+            if (
+                not self.candidate_text.strip()
+                or len(self.candidate_text) > MAX_TELEGRAM_TEXT_CHARS
+            ):
                 raise ValueError("candidate_text must fit one Telegram text message")
         elif self.target_chat_id is not None or self.candidate_text is not None:
             raise ValueError("terminal delivery result cannot expose target or text")
