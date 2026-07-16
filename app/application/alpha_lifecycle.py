@@ -84,6 +84,7 @@ class ApproveAlphaInstallationCommand:
 class AlphaInstallationActionCommand:
     workspace_key: str
     installation_key: str
+    expected_state: AlphaInstallationState | None = None
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
@@ -172,6 +173,10 @@ class AlphaLifecyclePort(Protocol):
         self, command: AlphaInstallationActionCommand
     ) -> AlphaInstallationView: ...
 
+    async def resume(
+        self, command: AlphaInstallationActionCommand
+    ) -> AlphaInstallationView: ...
+
     async def revoke(
         self, command: AlphaInstallationActionCommand
     ) -> AlphaInstallationView: ...
@@ -205,6 +210,11 @@ class AlphaLifecycleService:
         self, command: AlphaInstallationActionCommand
     ) -> AlphaInstallationView:
         return await self._port.pause(command)
+
+    async def resume(
+        self, command: AlphaInstallationActionCommand
+    ) -> AlphaInstallationView:
+        return await self._port.resume(command)
 
     async def revoke(
         self, command: AlphaInstallationActionCommand
