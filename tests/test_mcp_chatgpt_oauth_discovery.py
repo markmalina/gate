@@ -112,6 +112,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_get_status",
         "gate_list_unanswered",
         "gate_get_reply_context",
+        "gate_alpha_list_installations",
     ]
     assert payload["mcp"]["send_tools"] == ["gate_send_approved_reply"]
     assert payload["mcp"]["send_requires_explicit_confirmation"] is True
