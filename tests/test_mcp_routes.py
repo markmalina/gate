@@ -498,6 +498,9 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_reply_context",
         "gate_save_reply_draft",
         "gate_send_approved_reply",
+        "gate_alpha_list_installations",
+        "gate_alpha_control_installation",
+        "gate_alpha_run_model_preflight",
     ]
     for tool in tools:
         assert tool["outputSchema"] == MCP_TOOL_OUTPUT_SCHEMAS[tool["name"]]
@@ -506,6 +509,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_reply_context",
         "gate_save_reply_draft",
         "gate_send_approved_reply",
+        "gate_alpha_control_installation",
+        "gate_alpha_run_model_preflight",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
     assert tools[0]["annotations"]["readOnlyHint"] is True
@@ -518,6 +523,19 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "openWorldHint": False,
     }
     assert tools[4]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    assert tools[5]["annotations"]["readOnlyHint"] is True
+    assert tools[6]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[7]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,

@@ -17,6 +17,7 @@ MCP_RESOURCE_SCOPES = [
     "gate:inbox:read",
     "gate:drafts:write",
     "gate:messages:send",
+    "gate:agents:manage",
 ]
 
 MCP_READ_ONLY_SCOPES = [
@@ -90,8 +91,13 @@ async def mcp_metadata(
                 "gate_get_status",
                 "gate_list_unanswered",
                 "gate_get_reply_context",
+                "gate_alpha_list_installations",
             ],
-            "write": ["gate_save_reply_draft"],
+            "write": [
+                "gate_save_reply_draft",
+                "gate_alpha_control_installation",
+                "gate_alpha_run_model_preflight",
+            ],
             "send": ["gate_send_approved_reply"],
             "send_requires_explicit_confirmation": True,
         },
@@ -112,9 +118,14 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_get_status",
             "gate_list_unanswered",
             "gate_get_reply_context",
+            "gate_alpha_list_installations",
         ],
         "write_tools_enabled": True,
-        "write_tools": ["gate_save_reply_draft"],
+        "write_tools": [
+            "gate_save_reply_draft",
+            "gate_alpha_control_installation",
+            "gate_alpha_run_model_preflight",
+        ],
         "send_tools_enabled": settings.gate_send_enabled,
         "send_tools": ["gate_send_approved_reply"],
         "send_requires_explicit_confirmation": True,

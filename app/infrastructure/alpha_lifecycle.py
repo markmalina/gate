@@ -164,6 +164,7 @@ class SqlAlphaLifecycleRepository:
         installation = await self._installation_by_key(
             workspace_id, command.installation_key, for_update=True
         )
+        self._require_expected_state(installation, command)
         if installation.state == AlphaInstallationState.PAUSED.value:
             return await self._view(command.workspace_key, installation)
         if installation.state != AlphaInstallationState.ACTIVE.value:
@@ -177,6 +178,69 @@ class SqlAlphaLifecycleRepository:
         await self._session.flush()
         return await self._view(command.workspace_key, installation)
 
+    async def resume(
+        self, command: AlphaInstallationActionCommand
+    ) -> AlphaInstallationView:
+        workspace_id = await self._workspace_id(command.workspace_key)
+        installation = await self._installation_by_key(
+            workspace_id, command.installation_key, for_update=True
+        )
+        self._require_expected_state(installation, command)
+        if installation.state == AlphaInstallationState.ACTIVE.value:
+            return await self._view(command.workspace_key, installation)
+        if installation.state != AlphaInstallationState.PAUSED.value:
+            raise AlphaLifecycleError(
+                "alpha_installation_not_paused",
+                "Only a paused installation can be resumed",
+            )
+        if (
+            installation.deployment_id is None
+            or installation.instruction_revision_id is None
+        ):
+            raise AlphaLifecycleError(
+                "alpha_installation_resume_binding_invalid",
+                "A paused installation must retain an exact deployment binding",
+            )
+        connector = await self._session.get(
+            TransportConnector,
+            installation.connector_id,
+        )
+        dialog = await self._session.get(Dialog, installation.dialog_id)
+        deployment = await self._session.get(
+            AgentDeploymentModel,
+            installation.deployment_id,
+        )
+        revision = await self._session.get(
+            InstructionRevisionModel,
+            installation.instruction_revision_id,
+        )
+        if (
+            connector is None
+            or connector.workspace_id != workspace_id
+            or not connector.is_enabled
+            or dialog is None
+            or dialog.workspace_id != workspace_id
+            or dialog.dialog_kind not in {
+                DialogKind.GROUP.value,
+                DialogKind.SUPERGROUP.value,
+            }
+            or deployment is None
+            or deployment.workspace_id != workspace_id
+            or deployment.state != "active"
+            or revision is None
+            or revision.workspace_id != workspace_id
+            or revision.validation_state != "validated"
+            or deployment.instruction_revision_id != revision.id
+        ):
+            raise AlphaLifecycleError(
+                "alpha_installation_resume_binding_invalid",
+                "The paused installation binding is no longer release-ready",
+            )
+        installation.state = AlphaInstallationState.ACTIVE.value
+        installation.updated_at = datetime.now(UTC)
+        await self._session.flush()
+        return await self._view(command.workspace_key, installation)
+
     async def revoke(
         self, command: AlphaInstallationActionCommand
     ) -> AlphaInstallationView:
@@ -184,6 +248,7 @@ class SqlAlphaLifecycleRepository:
         installation = await self._installation_by_key(
             workspace_id, command.installation_key, for_update=True
         )
+        self._require_expected_state(installation, command)
         if installation.state != AlphaInstallationState.REVOKED.value:
             installation.state = AlphaInstallationState.REVOKED.value
             installation.updated_at = datetime.now(UTC)
@@ -507,6 +572,20 @@ class SqlAlphaLifecycleRepository:
                 "The active Alpha deployment and validated revision binding was not found",
             )
         return row[0], row[1]
+
+    @staticmethod
+    def _require_expected_state(
+        installation: AgentInstallationModel,
+        command: AlphaInstallationActionCommand,
+    ) -> None:
+        if (
+            command.expected_state is not None
+            and installation.state != command.expected_state.value
+        ):
+            raise AlphaLifecycleError(
+                "alpha_installation_state_changed",
+                "The installation state changed after the owner reviewed it",
+            )
 
     async def _revoke_unused_grants(
         self, workspace_id: uuid.UUID, installation_id: uuid.UUID

@@ -315,10 +315,13 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_get_reply_context",
                                 "gate_save_reply_draft",
                                 "gate_send_approved_reply",
+                                "gate_alpha_list_installations",
+                                "gate_alpha_control_installation",
+                                "gate_alpha_run_model_preflight",
                             ],
                         },
-                        "minItems": 5,
-                        "maxItems": 5,
+                        "minItems": 8,
+                        "maxItems": 8,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -457,10 +460,108 @@ GATE_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+ALPHA_INSTALLATION_SCHEMA = _object(
+    {
+        "installation_ref": {"type": "string", "minLength": 1, "maxLength": 128},
+        "group_label": {"type": "string", "minLength": 1, "maxLength": 255},
+        "dialog_kind": {"type": "string", "enum": ["group", "supergroup"]},
+        "state": {
+            "type": "string",
+            "enum": [
+                "discovered",
+                "pending_approval",
+                "active",
+                "paused",
+                "revoked",
+            ],
+        },
+        "connector_ready": {"type": "boolean"},
+        "deployment_key": _nullable("string"),
+        "revision_key": _nullable("string"),
+        "available_actions": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["pause", "resume"]},
+            "uniqueItems": True,
+        },
+        "limits": _object(
+            {
+                "max_turns_per_window": {"type": "integer", "minimum": 1},
+                "rate_window_seconds": {"type": "integer", "minimum": 1},
+                "max_tokens_per_turn": {"type": "integer", "minimum": 1},
+            }
+        ),
+        "usage": _object(
+            {
+                "reserved_turns": {"type": "integer", "minimum": 0},
+                "recorded_tokens": {"type": "integer", "minimum": 0},
+            }
+        ),
+    }
+)
+ALPHA_INSTALLATIONS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "count": {"type": "integer", "minimum": 0},
+            "items": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/alpha_installation"},
+            },
+            "provider_dialog_ids_exposed": {"type": "boolean", "const": False},
+        }
+    ),
+    {"alpha_installation": ALPHA_INSTALLATION_SCHEMA},
+)
+ALPHA_CONTROL_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "action": {"type": "string", "enum": ["pause", "resume"]},
+            "installation": {"$ref": "#/$defs/alpha_installation"},
+        }
+    ),
+    {"alpha_installation": ALPHA_INSTALLATION_SCHEMA},
+)
+ALPHA_PREFLIGHT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "preflight": _object(
+                {
+                    "preflight_key": {"type": "string", "minLength": 1},
+                    "state": {
+                        "type": "string",
+                        "enum": ["reserved", "succeeded", "failed"],
+                    },
+                    "replay": {"type": "boolean"},
+                    "telegram_delivery_blocked": {
+                        "type": "boolean",
+                        "const": True,
+                    },
+                    "provider_attempts": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1,
+                    },
+                    "reserved_microusd": {"type": "integer", "minimum": 0},
+                    "input_tokens": _nullable("integer"),
+                    "output_tokens": _nullable("integer"),
+                    "result_kind": _nullable("string"),
+                    "result_code": _nullable("string"),
+                    "candidate_sha256": _nullable("string"),
+                    "error_code": _nullable("string"),
+                }
+            )
+        }
+    ),
+    {},
+)
+
+
 MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_get_status": GATE_STATUS_OUTPUT_SCHEMA,
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
     "gate_get_reply_context": GATE_REPLY_CONTEXT_OUTPUT_SCHEMA,
     "gate_save_reply_draft": GATE_DRAFT_OUTPUT_SCHEMA,
     "gate_send_approved_reply": GATE_SEND_OUTPUT_SCHEMA,
+    "gate_alpha_list_installations": ALPHA_INSTALLATIONS_OUTPUT_SCHEMA,
+    "gate_alpha_control_installation": ALPHA_CONTROL_OUTPUT_SCHEMA,
+    "gate_alpha_run_model_preflight": ALPHA_PREFLIGHT_OUTPUT_SCHEMA,
 }

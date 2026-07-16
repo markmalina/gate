@@ -8,6 +8,7 @@ from app.application.alpha_group import AlphaInstallationState
 from app.application.alpha_lifecycle import (
     AlphaAccessReason,
     AlphaInstallationActionCommand,
+    AlphaLifecycleError,
     AlphaLifecycleService,
     ApproveAlphaInstallationCommand,
     DiscoverAlphaInstallationCommand,
@@ -254,6 +255,27 @@ async def test_discovery_approval_gating_and_usage_are_transactional() -> None:
                 )
             )
             assert inactive.reason is AlphaAccessReason.INSTALLATION_INACTIVE
+
+            with pytest.raises(
+                AlphaLifecycleError,
+                match="state changed",
+            ):
+                await service.resume(
+                    AlphaInstallationActionCommand(
+                        workspace_key="mark-personal",
+                        installation_key=pending.installation_key,
+                        expected_state=AlphaInstallationState.ACTIVE,
+                    )
+                )
+            resumed = await service.resume(
+                AlphaInstallationActionCommand(
+                    workspace_key="mark-personal",
+                    installation_key=pending.installation_key,
+                    expected_state=AlphaInstallationState.PAUSED,
+                )
+            )
+            assert resumed.state is AlphaInstallationState.ACTIVE
+            await session.commit()
 
             unknown = await service.reserve_usage(
                 ReserveAlphaUsageCommand(

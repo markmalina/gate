@@ -3,6 +3,8 @@
 """Scoped Gate MCP endpoint for inbox, drafts and explicit reply sending."""
 
 from typing import Annotated, Any
+
+import httpx
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -12,9 +14,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.routes import get_telegram_client
+from app.application.alpha_group import AlphaInstallationState
+from app.application.alpha_lifecycle import AlphaLifecycleError, AlphaLifecycleService
 from app.application.alpha_model_readiness import (
     AlphaModelReadinessFacts,
     alpha_model_readiness_payload,
+)
+from app.application.alpha_owner_control import (
+    AlphaOwnerAction,
+    AlphaOwnerControlError,
+    ControlAlphaInstallationCommand,
+    alpha_installation_payload,
+    alpha_installations_payload,
+    control_alpha_installation,
 )
 from app.application.mcp_inbox import (
     build_unanswered_list,
@@ -42,6 +54,11 @@ from app.core.mcp_security import (
     Principal,
     bearer_token_matches,
     build_mcp_read_principal,
+)
+from app.infrastructure.alpha_lifecycle import SqlAlphaLifecycleRepository
+from app.infrastructure.alpha_model_preflight import (
+    AlphaModelPreflightError,
+    run_alpha_model_preflight,
 )
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
@@ -82,6 +99,9 @@ MCP_TOOL_NAMES = [
     "gate_get_reply_context",
     "gate_save_reply_draft",
     "gate_send_approved_reply",
+    "gate_alpha_list_installations",
+    "gate_alpha_control_installation",
+    "gate_alpha_run_model_preflight",
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -91,6 +111,9 @@ MCP_TOOL_SCOPES = {
     "gate_get_reply_context": "gate:inbox:read",
     "gate_save_reply_draft": "gate:drafts:write",
     "gate_send_approved_reply": "gate:messages:send",
+    "gate_alpha_list_installations": "gate:status:read",
+    "gate_alpha_control_installation": "gate:agents:manage",
+    "gate_alpha_run_model_preflight": "gate:agents:manage",
 }
 
 
@@ -142,6 +165,9 @@ async def mcp_endpoint(
                     _gate_get_reply_context_tool(settings),
                     _gate_save_reply_draft_tool(settings),
                     _gate_send_approved_reply_tool(settings),
+                    _gate_alpha_list_installations_tool(settings),
+                    _gate_alpha_control_installation_tool(settings),
+                    _gate_alpha_run_model_preflight_tool(settings),
                 ]
             },
         )
@@ -188,6 +214,27 @@ async def mcp_endpoint(
                 workspace_key=principal.access_scope.workspace_id,
             )
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
+        if tool_name == "gate_alpha_list_installations":
+            return await _alpha_list_installations_tool_result(
+                request_id=request_id,
+                principal=principal,
+                session=session,
+            )
+        if tool_name == "gate_alpha_control_installation":
+            return await _alpha_control_installation_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+            )
+        if tool_name == "gate_alpha_run_model_preflight":
+            return await _alpha_model_preflight_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                settings=settings,
+            )
         if tool_name == "gate_list_unanswered":
             inbox = await build_unanswered_list(
                 session=session,
@@ -412,6 +459,136 @@ async def _get_reply_context_tool_result(
     )
 
 
+async def _alpha_list_installations_tool_result(
+    *,
+    request_id: Any,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
+    try:
+        installations = await service.list_status(
+            principal.access_scope.workspace_id
+        )
+    except AlphaLifecycleError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+    payload = alpha_installations_payload(installations)
+    lines = [f"Alpha installations: {payload['count']}"]
+    for item in payload["items"]:
+        lines.append(
+            f"- {item['group_label']}: {item['state']}; "
+            f"actions={','.join(item['available_actions']) or 'none'}"
+        )
+    return _tool_result(payload, "\n".join(lines), request_id)
+
+
+async def _alpha_control_installation_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_ref = arguments.get("installation_ref")
+    raw_action = arguments.get("action")
+    raw_state = arguments.get("expected_state")
+    if (
+        not isinstance(raw_ref, str)
+        or not isinstance(raw_action, str)
+        or not isinstance(raw_state, str)
+        or arguments.get("confirmed") is not True
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message=(
+                "installation_ref, action, expected_state and confirmed=true "
+                "are required"
+            ),
+        )
+    try:
+        action = AlphaOwnerAction(raw_action)
+        expected_state = AlphaInstallationState(raw_state)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="Unsupported Alpha action or expected state",
+        )
+    service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
+    try:
+        installation = await control_alpha_installation(
+            service,
+            ControlAlphaInstallationCommand(
+                workspace_key=principal.access_scope.workspace_id,
+                installation_ref=raw_ref,
+                action=action,
+                expected_state=expected_state,
+                confirmed=True,
+            ),
+        )
+        await session.commit()
+    except (AlphaLifecycleError, AlphaOwnerControlError, ValueError) as exc:
+        await session.rollback()
+        code = getattr(exc, "code", "alpha_owner_control_failed")
+        return _tool_error_result(
+            request_id=request_id,
+            code=code,
+            message=code,
+        )
+    payload = {
+        "action": action.value,
+        "installation": alpha_installation_payload(installation),
+    }
+    return _tool_result(
+        payload,
+        f"Alpha {payload['installation']['group_label']}: "
+        f"{payload['installation']['state']}",
+        request_id,
+    )
+
+
+async def _alpha_model_preflight_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    if arguments.get("confirmed") is not True:
+        return _tool_error_result(
+            request_id=request_id,
+            code="alpha_provider_preflight_confirmation_required",
+            message="confirmed=true is required",
+        )
+    try:
+        async with httpx.AsyncClient() as http_client:
+            preflight = await run_alpha_model_preflight(
+                session,
+                settings=settings,
+                http_client=http_client,
+                workspace_key=principal.access_scope.workspace_id,
+            )
+    except AlphaModelPreflightError as exc:
+        await session.rollback()
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.code,
+        )
+    payload = {"preflight": preflight}
+    return _tool_result(
+        payload,
+        f"Alpha provider preflight: {preflight['state']}",
+        request_id,
+    )
+
+
 def _gate_status_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_get_status",
@@ -422,6 +599,115 @@ def _gate_status_tool(settings: Settings) -> JsonObject:
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:status:read")
+
+
+def _gate_alpha_list_installations_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_list_installations",
+        "title": "List Alpha groups",
+        "description": (
+            "List owner-visible Alpha installations by group label and opaque "
+            "reference; never exposes Telegram group IDs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_list_installations"
+        ],
+        "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:status:read",
+    )
+
+
+def _gate_alpha_control_installation_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_control_installation",
+        "title": "Pause or resume Alpha group",
+        "description": (
+            "Apply one confirmed reversible pause/resume action to the exact "
+            "installation reference returned by Gate."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "installation_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["pause", "resume"],
+                },
+                "expected_state": {
+                    "type": "string",
+                    "enum": ["active", "paused"],
+                },
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": [
+                "installation_ref",
+                "action",
+                "expected_state",
+                "confirmed",
+            ],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_control_installation"
+        ],
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:agents:manage",
+    )
+
+
+def _gate_alpha_run_model_preflight_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_run_model_preflight",
+        "title": "Run Alpha provider preflight",
+        "description": (
+            "Run the one-shot synthetic OpenAI preflight only after billing is "
+            "confirmed ready. It never sends group content or Telegram messages."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": ["confirmed"],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_run_model_preflight"
+        ],
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:agents:manage",
+    )
 
 
 def _gate_list_unanswered_tool(settings: Settings) -> JsonObject:
