@@ -1,0 +1,51 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from app.instagram.confirmation import issue_confirmation, verify_confirmation
+from app.instagram.contracts import InstagramContractError, ReelDraft
+
+
+VIDEO = {
+    "download_url": "https://files.example/reel.mp4",
+    "file_id": "file-1",
+    "mime_type": "video/mp4",
+    "file_name": "reel.mp4",
+}
+
+
+def test_confirmation_round_trip_binds_exact_reel() -> None:
+    draft = ReelDraft.build(
+        account_alias="main",
+        caption="Hello",
+        video=VIDEO,
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    restored = verify_confirmation(
+        issue_confirmation(draft, secret="secret"), secret="secret"
+    )
+    assert restored.account_alias == "main"
+    assert restored.caption == "Hello"
+    assert restored.video.file_id == "file-1"
+
+
+def test_confirmation_rejects_tampering() -> None:
+    draft = ReelDraft.build(
+        account_alias="main",
+        caption="Hello",
+        video=VIDEO,
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    token = issue_confirmation(draft, secret="secret")
+    with pytest.raises(InstagramContractError, match="invalid"):
+        verify_confirmation(token[:-2] + "aa", secret="secret")
+
+
+def test_reel_contract_rejects_non_video_file() -> None:
+    with pytest.raises(InstagramContractError, match="MP4"):
+        ReelDraft.build(
+            account_alias="main",
+            caption="Hello",
+            video={**VIDEO, "mime_type": "image/png"},
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
