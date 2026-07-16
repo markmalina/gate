@@ -1,4 +1,4 @@
-# Product roadmap: Gate, Alpha, Personal CRM and Mayaki
+# Product roadmap: Gate, Alpha, Relationship CRM and Mayaki
 
 ## Product thesis
 
@@ -7,9 +7,11 @@ Gate is the trusted passage for conversations. It should make delivery safe and 
 Four products build on it:
 
 1. **Alpha access** — people can work with Alpha in an approved group or approved private chat.
-2. **Personal CRM** — Mark sees people, interaction history, his own notes, real attention state and follow-ups.
+2. **Relationship CRM** — one standalone relationship system with isolated personal, commercial and Mayaki/Oko program spaces.
 3. **Mayaki application** — Oko and later other practices guide a person through a versioned program and record progress.
 4. **Billing and entitlements** — usage, costs, limits, tariffs, revenue and access rights for each product.
+
+See [Relationship CRM architecture](RELATIONSHIP_CRM_ARCHITECTURE.md) for the standalone product boundary, privacy spaces and extraction rule.
 
 ## Human product map
 
@@ -21,7 +23,7 @@ journey
       Gate safely receives it: 5: Gate
     section Product
       Alpha or Mayaki understands the request: 4: Alpha, Mayaki
-      Personal CRM preserves relationship context: 4: Personal CRM
+      Relationship CRM preserves scoped relationship context: 4: Relationship CRM
     section Action
       A controlled reply or next step is prepared: 4: Alpha, Mayaki
       Cost, entitlement and delivery are checked: 5: Billing, Gate
@@ -35,7 +37,7 @@ journey
 - Direction is not status. The owner controls who is waiting for whom.
 - AI classifications are proposals with provenance, not silent truth.
 - Every program/script is versioned and evaluated like software.
-- Gate never becomes the customer database, LMS or personal memory.
+- Gate never becomes the customer database, LMS or personal memory; Relationship CRM owns relationship data in isolated spaces.
 - Every product can export its data in a documented, stable format.
 
 ## Product releases
@@ -49,7 +51,7 @@ journey
 - Product dashboard separates operational health from people/work.
 - Audit and current release map are visible in the repository.
 
-### P1 — Personal CRM minimum useful product
+### P1 — Relationship CRM personal-space minimum useful product
 
 **Outcome:** Mark can open a person and record what matters even when no reply is being written.
 
@@ -100,7 +102,7 @@ Before billing this release operates on fixtures and synthetic audio only. Live 
 - Limited canary with immediate automatic pause conditions.
 - Gradual installation-by-installation live admission.
 
-### P5 — Personal CRM assisted workflow
+### P5 — Relationship CRM assisted workflow
 
 **Outcome:** intelligence reduces work without rewriting Mark’s decisions.
 
@@ -125,21 +127,21 @@ Before billing this release operates on fixtures and synthetic audio only. Live 
 
 Oko activation requires separate authorization because the standing Gate Alpha permission excludes autonomous Oko and personal Telegram Business behavior.
 
-### P7 — Mayaki reusable LMS and customer CRM
+### P7 — Mayaki reusable LMS and Relationship CRM integration
 
-**Outcome:** Oko’s proven mechanics become reusable modules rather than copied product code.
+**Outcome:** Oko’s proven mechanics become reusable Mayaki learning modules connected to Relationship CRM commercial/program spaces.
 
 - Program/version, competency, activity, evidence and progress read models.
-- Lead/contact/member, enrollment, route, cohort and lifecycle read models.
+- Relationship CRM owns lead/contact/member, enrollment and lifecycle projections; Mayaki owns route, cohort, competency and progress.
 - Versioned communication purposes and notification consent.
 - Practice templates and migration tooling.
-- Import Oko data without changing Gate transport identifiers.
+- Import Oko data without changing Gate transport identifiers or leaking personal-space data.
 
 ### P8 — Commercial access and portfolio billing
 
 **Outcome:** each product can be offered sustainably.
 
-- Plans/entitlements for Alpha direct, Personal CRM and Mayaki.
+- Plans/entitlements for Alpha direct, Relationship CRM spaces and Mayaki.
 - Immutable cost and revenue ledgers.
 - Workspace/product/install usage attribution.
 - Hard caps, soft alerts, grace behavior and owner overrides.
@@ -148,7 +150,7 @@ Oko activation requires separate authorization because the standing Gate Alpha p
 ## What ships before OpenAI payment
 
 - Architecture and data ownership cleanup.
-- Explicit attention and Personal CRM primitives.
+- Relationship CRM spaces, explicit attention and personal/commercial primitives.
 - Fixture-based voice extraction/transcript pipeline and policy/evals.
 - Direct Alpha installation lifecycle, owner controls and fixture responses, default-disabled for live use.
 - Attachment limits, retention, security and retry tests.
@@ -162,6 +164,6 @@ Oko activation requires separate authorization because the standing Gate Alpha p
 |---|---|---|
 | Gate | accepted-to-ready latency and delivery success | duplicate/wrong-target sends |
 | Alpha | useful resolved turns per approved install | unapproved turns, cost overruns, unsafe sends |
-| Personal CRM | follow-ups and notes reviewed/acted on | auto-closed or mislinked relationships |
+| Relationship CRM | follow-ups, relationships and deals reviewed/acted on | cross-space leaks, auto-closed or mislinked relationships |
 | Mayaki | program completion and evidence quality | unsolicited contact, stuck routes, forced automation |
 | Billing | attributed usage and sustainable margin | spend beyond hard cap or access without entitlement |
