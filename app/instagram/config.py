@@ -47,14 +47,19 @@ class InstagramRuntimeConfig:
             graph_base_url=os.getenv(
                 "GATE_INSTAGRAM_GRAPH_BASE_URL", "https://graph.instagram.com"
             ).rstrip("/"),
-            graph_version=os.getenv("GATE_INSTAGRAM_GRAPH_VERSION", "v23.0"),
+            graph_version=os.getenv("GATE_INSTAGRAM_GRAPH_VERSION", ""),
             signing_secret=os.getenv("GATE_INSTAGRAM_SIGNING_SECRET", ""),
             accounts=accounts,
         )
 
     @property
     def ready(self) -> bool:
-        return self.enabled and bool(self.signing_secret) and bool(self.accounts)
+        return (
+            self.enabled
+            and bool(self.graph_version)
+            and bool(self.signing_secret)
+            and bool(self.accounts)
+        )
 
     def account(self, alias: str) -> InstagramAccountConfig | None:
         return self.accounts.get(alias)
