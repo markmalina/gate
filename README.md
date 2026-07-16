@@ -3,7 +3,7 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-16**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> GitHub `main` after PR #199: `3f1f29b96fd1794f5bf66ad2d78107306057b3cd`  
+> GitHub `main` after PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`  
 > Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway for current deployment  
 > Production: Railway automatic deployment from `main`
 
@@ -26,6 +26,86 @@ Continue in this exact order:
 
 If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
 update both documents in the same substantive PR.
+
+## Project transfer acceptance / Приёмка проекта
+
+This repository is the complete non-secret handoff package. A new owner must be able to continue
+from GitHub and the approved production control surfaces without chat history, agent memory or a
+previous local workspace.
+
+### What is being handed over
+
+- Gate production source, migrations, tests, Docker build and GitHub Actions workflow;
+- the protected Telegram Business human-reply path and nine-tool Gate M MCP contract;
+- the delivery-blocked Alpha fixture/model release path and owner controls;
+- the standalone Relationship CRM domain, migrations, billing boundary and transfer format;
+- architecture decisions, operating policy, runbooks, known debt and the ordered next plan;
+- environment-variable **names** and secret-handling rules, never secret values.
+
+Operational credentials are a separate secret-store handoff. Their absence from Git is a pass
+condition, not missing documentation.
+
+### Read-only acceptance procedure
+
+The receiving owner performs these steps in order and records evidence:
+
+1. **Repository identity.** Confirm access to private repository `markmalina/Gate`, default branch
+   `main`, the current head SHA and all open PRs. Read this README, then
+   `docs/PROJECT_HANDOFF.md`, `docs/TEAM_WORKFLOW.md`,
+   `docs/ALPHA_OPERATING_POLICY.md` and `docs/ALPHA_OPERATOR_RUNBOOK.md`.
+2. **Exact-head CI.** Confirm the latest `main` SHA has a successful CI run. The backend job must
+   show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
+   disposable PostgreSQL backup/restore and both Docker builds as successful.
+3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
+   and `alembic upgrade head`. Current schema head is `0031_billing_ledger`. Never point this
+   acceptance run at production.
+4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
+   must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
+5. **Gate M surface.** Confirm OAuth is used and exactly nine public actions are visible: five
+   human-inbox actions plus Alpha list/control/preflight/shadow-review actions. Do not weaken scopes
+   to make an action appear.
+6. **Read-only production health.** Call only `gate_get_status`,
+   `gate_alpha_list_installations` and `gate_alpha_list_shadow_reviews`. Confirm production/manual
+   mode, RU and BY connection health, owner-scoped installation labels/opaque references and
+   Telegram delivery blocked for model proposals.
+7. **Safety state.** Confirm provider preflight remains unverified until billing is ready, the USD 50
+   monthly hard ceiling remains configured, no cross-group identifiers are exposed, and private
+   Alpha, Oko, CRM backfill and real voice transcription are not silently active.
+8. **Documentation consistency.** Compare GitHub head, Railway fingerprint and Gate M status with
+   `docs/PROJECT_HANDOFF.md`. Update snapshots in a documentation PR if they changed; never rewrite
+   history to make old counters look current.
+
+### Actions forbidden during read-only acceptance
+
+Do not send Telegram messages, save or approve drafts, run provider preflight, approve/pause/resume
+an Alpha installation, activate a private installation or Oko, change Railway variables, run a
+production migration manually, redeploy, roll back or expose a secret. Each of those is a separate
+authorized operational action, not project acceptance.
+
+### Pass criteria and acceptance record
+
+Acceptance passes only when repository, exact-head CI, disposable migration/build, Railway commit,
+Gate M action surface and read-only safety state all agree. Record the result outside Git secrets
+using this template:
+
+```text
+Gate handoff accepted at: <UTC timestamp>
+Accepted GitHub main SHA: <full SHA>
+CI run: <URL / run number> — success
+Railway production SHA: <full SHA> — matches / does not match
+Gate environment/mode: production / manual
+RU/BY connector health: <redacted aggregate>
+MCP public actions: 9 / 9
+Alpha installation review: <labels and states only; no Telegram IDs>
+Provider preflight verified: false (until separately authorized)
+Model Telegram delivery blocked: true
+Billing hard ceiling: USD 50/month
+Open blockers or deviations: <list>
+Accepted by: <name/role>
+```
+
+Any mismatch is a documented handoff blocker. It is not permission to mutate production while
+diagnosing it.
 
 ## 1. What Gate is
 
@@ -273,7 +353,10 @@ Important locations:
 | `app/core/config.py` | Environment-backed settings; names only, no committed values |
 | `app/models/domain.py` | Legacy SQLAlchemy domain model |
 | `app/application/relationship_crm.py` | Standalone CRM spaces, relationships, interactions, attention and deal contracts |
+| `app/application/relationship_crm_transfer.py` | Versioned deterministic CRM extraction/import boundary |
 | `app/models/relationship_crm.py` | Module-owned CRM persistence, independent from reply tasks and Telegram IDs |
+| `app/application/billing.py` / `app/models/billing.py` | Unified product attribution, entitlements, ledger and hard-budget reservations |
+| `app/application/alpha_access_policy.py` | Default-deny group/private discovery and addressing policy |
 | `alembic/versions/` | Ordered database migrations |
 | `tests/` | Unit, contract and PostgreSQL integration coverage |
 | `docs/TEAM_WORKFLOW.md` | Collaboration and deployment authority |
@@ -611,4 +694,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** keep the fixed approved Alpha fixture as the production baseline and keep provider/model delivery blocked while billing is unavailable. Relationship CRM now owns additive tables for personal, commercial and program spaces through migration 0030. Next: add scoped repository/application services, portable export/import, transport-to-CRM projection fixtures and owner control actions without changing the legacy inbox. In parallel, continue fixture-only voice transcription/response and private-Alpha lifecycle work. Re-query Railway before claiming PR #199 is deployed. Do not invoke provider preflight, activate Oko, send test Telegram messages or weaken the USD 50 cap.
+**Immediate continuation:** GitHub `main` contains product releases through PR #205; re-query its exact head and Railway before claiming deployment. Keep the approved Alpha fixture as the production baseline and keep provider/model Telegram delivery blocked while billing is unavailable. Relationship CRM owns personal, commercial and program persistence through migration `0030`; migration `0031` adds the unified entitlement/usage/ledger/budget tables, and `relationship_crm.transfer.v1` is the portable extraction boundary. Next: add scoped CRM repository/application services, sanitized transport-to-CRM projection plus a production-data backfill dry run, and owner read/write projections without changing the legacy inbox. Then place the voice fixture behind a dormant transcription port, wire private-Alpha discovery behind a default-disabled worker, and add transactional billing/concurrency integration. Do not invoke provider preflight, activate private Alpha or Oko, perform a live CRM backfill, send test Telegram messages or weaken the USD 50 cap.
