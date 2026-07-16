@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Mapping
 from datetime import datetime
@@ -10,6 +11,7 @@ from typing import Any, cast
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.application.agent_kernel import (
     AgentContextMessage,
@@ -44,7 +46,11 @@ from app.models.agent import (
     AgentTurnModel,
     InstructionRevisionModel,
 )
-from app.models.alpha import AgentInstallationModel
+from app.models.alpha import (
+    AgentInstallationModel,
+    AgentSendAttemptModel,
+    DeliveryGrantModel,
+)
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
 
@@ -158,6 +164,12 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 revision,
                 _definition,
             ) = row
+            if connector.connector_key.strip() == "":
+                raise AlphaShadowWorkerError("alpha_connector_identity_invalid")
+            _require_trigger_connector(
+                receipt=receipt,
+                connector_key=connector.connector_key,
+            )
             message = _verified_trigger_message(
                 receipt.payload,
                 canonical=trigger,
@@ -176,7 +188,9 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 workspace_id=workspace.id,
                 dialog=dialog,
                 trigger=trigger,
-                bot_username=command.bot_username,
+                trigger_received_at=receipt.received_at,
+                installation_id=installation.id,
+                connector_key=connector.connector_key,
             )
 
             revision_value = InstructionRevision(
@@ -205,8 +219,6 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 instruction_content_sha256=revision.content_sha256,
                 state=AlphaInstallationState(installation.state),
             )
-            if connector.connector_key.strip() == "":
-                raise AlphaShadowWorkerError("alpha_connector_identity_invalid")
             return AlphaShadowPreparedTurn(
                 workspace_key=workspace.key,
                 installation=installation_value,
@@ -529,9 +541,17 @@ async def _load_context(
     workspace_id: uuid.UUID,
     dialog: Dialog,
     trigger: CanonicalMessage,
-    bot_username: str,
+    trigger_received_at: datetime,
+    installation_id: uuid.UUID,
+    connector_key: str,
 ) -> tuple[AgentContextMessage, ...]:
-    rows = (
+    """Return verified dialog history, including only literally delivered Alpha replies.
+
+    Valid historical deployment/revision replies survive an installation upgrade. Each
+    historical session/deployment/revision chain is revalidated independently; current
+    installation bindings are intentionally not imposed on earlier sent turns.
+    """
+    inbound_rows = (
         await session.execute(
             select(CanonicalMessage, TelegramReceipt)
             .join(TelegramReceipt, TelegramReceipt.id == CanonicalMessage.receipt_id)
@@ -539,20 +559,21 @@ async def _load_context(
                 CanonicalMessage.workspace_id == workspace_id,
                 CanonicalMessage.dialog_id == dialog.id,
                 CanonicalMessage.id != trigger.id,
-                CanonicalMessage.occurred_at < trigger.occurred_at,
-                CanonicalMessage.direction.in_(
-                    {"inbound", "outbound", "bot_or_service"}
-                ),
+                CanonicalMessage.direction == "inbound",
+                TelegramReceipt.bot_key == connector_key,
+                TelegramReceipt.received_at < trigger_received_at,
             )
             .order_by(
-                CanonicalMessage.occurred_at.desc(),
+                TelegramReceipt.received_at.desc(),
                 CanonicalMessage.id.desc(),
             )
             .limit(64)
         )
     ).all()
-    newest_first: list[AgentContextMessage] = []
-    for canonical, receipt in rows:
+    events: list[tuple[datetime, int, str, AgentContextMessage]] = []
+    for canonical, receipt in inbound_rows:
+        if receipt.bot_key != connector_key:
+            continue
         try:
             message = _verified_trigger_message(
                 receipt.payload,
@@ -564,27 +585,304 @@ async def _load_context(
         text = message.get("text")
         if not isinstance(text, str) or not text.strip() or len(text) > 16_000:
             continue
-        role: str | None = None
-        if canonical.direction == "inbound" and _sender_is_human(message):
-            role = "user"
-        elif canonical.direction in {"outbound", "bot_or_service"} and _is_bot_message(
-            message,
-            bot_username=bot_username,
-        ):
-            role = "assistant"
-        if role is None:
+        if not _sender_is_human(message):
             continue
-        newest_first.append(
-            AgentContextMessage(
-                message_id=str(canonical.id),
-                role=role,
-                content=text,
+        context_message = AgentContextMessage(
+            message_id=str(canonical.id),
+            role="user",
+            content=text,
+        )
+        events.append(
+            (
+                receipt.received_at,
+                0,
+                context_message.message_id,
+                context_message,
             )
         )
-        if len(newest_first) == 32:
-            break
-    newest_first.reverse()
-    return tuple(newest_first)
+
+    # Select the bounded set before joins that may multiply one attempt by corrupt
+    # duplicate sessions/turns. Attempt->grant is one-to-one here (grant_id is unique),
+    # so each row in this subquery is one distinct send attempt by construction.
+    recent_attempt_ids = (
+        select(AgentSendAttemptModel.id.label("attempt_id"))
+        .join(
+            DeliveryGrantModel,
+            (DeliveryGrantModel.id == AgentSendAttemptModel.grant_id)
+            & (
+                DeliveryGrantModel.workspace_id
+                == AgentSendAttemptModel.workspace_id
+            ),
+        )
+        .where(
+            AgentSendAttemptModel.workspace_id == workspace_id,
+            AgentSendAttemptModel.state == "sent",
+            AgentSendAttemptModel.provider_message_id.is_not(None),
+            AgentSendAttemptModel.updated_at < trigger_received_at,
+            DeliveryGrantModel.workspace_id == workspace_id,
+            DeliveryGrantModel.installation_id == installation_id,
+            DeliveryGrantModel.used_at.is_not(None),
+            DeliveryGrantModel.revoked_at.is_(None),
+        )
+        .order_by(
+            AgentSendAttemptModel.updated_at.desc(),
+            AgentSendAttemptModel.id.desc(),
+        )
+        .limit(64)
+        .subquery("recent_alpha_sent_attempts")
+    )
+    delivered_trigger = aliased(CanonicalMessage)
+    delivered_receipt = aliased(TelegramReceipt)
+    delivered_rows = (
+        await session.execute(
+            select(
+                AgentSendAttemptModel,
+                DeliveryGrantModel,
+                AgentInstallationModel,
+                AgentSessionModel,
+                AgentTurnModel,
+                AgentDeploymentModel,
+                InstructionRevisionModel,
+                AgentDefinitionModel,
+                delivered_trigger,
+                delivered_receipt,
+            )
+            .join(
+                recent_attempt_ids,
+                recent_attempt_ids.c.attempt_id == AgentSendAttemptModel.id,
+            )
+            .join(
+                DeliveryGrantModel,
+                (DeliveryGrantModel.id == AgentSendAttemptModel.grant_id)
+                & (
+                    DeliveryGrantModel.workspace_id
+                    == AgentSendAttemptModel.workspace_id
+                ),
+            )
+            .join(
+                AgentInstallationModel,
+                (AgentInstallationModel.id == DeliveryGrantModel.installation_id)
+                & (
+                    AgentInstallationModel.workspace_id
+                    == DeliveryGrantModel.workspace_id
+                ),
+            )
+            .join(
+                AgentSessionModel,
+                (AgentSessionModel.workspace_id == AgentSendAttemptModel.workspace_id)
+                & (AgentSessionModel.dialog_id == AgentInstallationModel.dialog_id),
+            )
+            .join(
+                AgentTurnModel,
+                (AgentTurnModel.workspace_id == AgentSendAttemptModel.workspace_id)
+                & (AgentTurnModel.session_id == AgentSessionModel.id)
+                & (
+                    AgentTurnModel.trigger_message_id
+                    == DeliveryGrantModel.trigger_message_id
+                )
+                & (
+                    AgentTurnModel.instruction_revision_id
+                    == AgentSessionModel.instruction_revision_id
+                )
+                & (
+                    AgentTurnModel.candidate_sha256
+                    == DeliveryGrantModel.candidate_sha256
+                ),
+            )
+            .join(
+                AgentDeploymentModel,
+                (AgentDeploymentModel.id == AgentSessionModel.deployment_id)
+                & (
+                    AgentDeploymentModel.workspace_id
+                    == AgentSessionModel.workspace_id
+                )
+                & (
+                    AgentDeploymentModel.instruction_revision_id
+                    == AgentSessionModel.instruction_revision_id
+                ),
+            )
+            .join(
+                InstructionRevisionModel,
+                (InstructionRevisionModel.id == AgentSessionModel.instruction_revision_id)
+                & (
+                    InstructionRevisionModel.workspace_id
+                    == AgentSessionModel.workspace_id
+                )
+                & (
+                    InstructionRevisionModel.id
+                    == AgentDeploymentModel.instruction_revision_id
+                ),
+            )
+            .join(
+                AgentDefinitionModel,
+                (AgentDefinitionModel.id == AgentDeploymentModel.agent_definition_id)
+                & (
+                    AgentDefinitionModel.id
+                    == InstructionRevisionModel.agent_definition_id
+                )
+                & (
+                    AgentDefinitionModel.workspace_id
+                    == AgentSessionModel.workspace_id
+                ),
+            )
+            .join(
+                delivered_trigger,
+                (delivered_trigger.id == DeliveryGrantModel.trigger_message_id)
+                & (delivered_trigger.workspace_id == DeliveryGrantModel.workspace_id)
+                & (delivered_trigger.dialog_id == AgentInstallationModel.dialog_id),
+            )
+            .join(
+                delivered_receipt,
+                delivered_receipt.id == delivered_trigger.receipt_id,
+            )
+            .where(
+                AgentSendAttemptModel.workspace_id == workspace_id,
+                AgentSendAttemptModel.state == "sent",
+                AgentSendAttemptModel.provider_message_id.is_not(None),
+                AgentSendAttemptModel.updated_at < trigger_received_at,
+                DeliveryGrantModel.used_at.is_not(None),
+                DeliveryGrantModel.revoked_at.is_(None),
+                AgentInstallationModel.id == installation_id,
+                AgentInstallationModel.workspace_id == workspace_id,
+                AgentInstallationModel.dialog_id == dialog.id,
+                AgentSessionModel.workspace_id == workspace_id,
+                AgentSessionModel.dialog_id == dialog.id,
+                AgentDeploymentModel.workspace_id == workspace_id,
+                InstructionRevisionModel.workspace_id == workspace_id,
+                InstructionRevisionModel.validation_state == "validated",
+                AgentDefinitionModel.workspace_id == workspace_id,
+                AgentDefinitionModel.agent_key == AgentKey.ALPHA_GROUP.value,
+                AgentTurnModel.status == "proposed",
+                AgentTurnModel.result_kind == "reply",
+                delivered_trigger.direction == "inbound",
+                delivered_receipt.bot_key == connector_key,
+                delivered_receipt.received_at < trigger_received_at,
+            )
+            .order_by(
+                AgentSendAttemptModel.updated_at.desc(),
+                AgentSendAttemptModel.id.desc(),
+            )
+        )
+    ).all()
+    delivered_by_attempt: dict[str, tuple[datetime, AgentContextMessage] | None] = {}
+    for (
+        attempt,
+        context_grant,
+        context_installation,
+        context_session,
+        context_turn,
+        context_deployment,
+        context_revision,
+        context_definition,
+        source_trigger,
+        source_receipt,
+    ) in delivered_rows:
+        attempt_key = str(attempt.id)
+        if delivered_by_attempt.get(attempt_key) is None and attempt_key in delivered_by_attempt:
+            continue
+        if (
+            attempt.workspace_id != workspace_id
+            or attempt.state != "sent"
+            or not isinstance(attempt.provider_message_id, str)
+            or not attempt.provider_message_id.strip()
+            or context_grant.id != attempt.grant_id
+            or context_grant.workspace_id != workspace_id
+            or context_grant.installation_id != installation_id
+            or context_grant.used_at is None
+            or context_grant.revoked_at is not None
+            or context_installation.id != installation_id
+            or context_installation.workspace_id != workspace_id
+            or context_installation.dialog_id != dialog.id
+            or context_session.workspace_id != workspace_id
+            or context_session.dialog_id != dialog.id
+            or context_deployment.id != context_session.deployment_id
+            or context_deployment.workspace_id != workspace_id
+            or context_deployment.instruction_revision_id
+            != context_session.instruction_revision_id
+            or context_revision.id != context_session.instruction_revision_id
+            or context_revision.workspace_id != workspace_id
+            or context_revision.id != context_deployment.instruction_revision_id
+            or context_revision.validation_state != "validated"
+            or context_definition.id != context_deployment.agent_definition_id
+            or context_definition.id != context_revision.agent_definition_id
+            or context_definition.workspace_id != workspace_id
+            or context_definition.agent_key != AgentKey.ALPHA_GROUP.value
+            or context_turn.workspace_id != workspace_id
+            or context_turn.session_id != context_session.id
+            or context_turn.trigger_message_id != context_grant.trigger_message_id
+            or context_turn.instruction_revision_id
+            != context_session.instruction_revision_id
+            or context_turn.status != "proposed"
+            or context_turn.result_kind != "reply"
+            or source_trigger.id != context_grant.trigger_message_id
+            or source_trigger.workspace_id != workspace_id
+            or source_trigger.dialog_id != dialog.id
+            or source_trigger.direction != "inbound"
+            or source_receipt.id != source_trigger.receipt_id
+            or source_receipt.bot_key != connector_key
+            or attempt.updated_at >= trigger_received_at
+            or source_receipt.received_at >= trigger_received_at
+        ):
+            continue
+        try:
+            source_message = _verified_trigger_message(
+                source_receipt.payload,
+                canonical=source_trigger,
+                dialog=dialog,
+            )
+        except AlphaShadowWorkerError:
+            continue
+        if not _sender_is_human(source_message):
+            continue
+        candidate_text = context_turn.candidate_text
+        turn_candidate_sha256 = context_turn.candidate_sha256
+        grant_candidate_sha256 = context_grant.candidate_sha256
+        if (
+            not isinstance(candidate_text, str)
+            or not candidate_text.strip()
+            or len(candidate_text) > 8_000
+            or not isinstance(turn_candidate_sha256, str)
+            or turn_candidate_sha256 != grant_candidate_sha256
+            or hashlib.sha256(candidate_text.encode("utf-8")).hexdigest()
+            != grant_candidate_sha256
+        ):
+            continue
+        context_message = AgentContextMessage(
+            message_id=f"alpha-send-{attempt_key}",
+            role="assistant",
+            content=candidate_text,
+        )
+        existing = delivered_by_attempt.get(attempt_key)
+        candidate = (attempt.updated_at, context_message)
+        if existing is not None and existing != candidate:
+            delivered_by_attempt[attempt_key] = None
+            continue
+        delivered_by_attempt[attempt_key] = candidate
+
+    for delivered in delivered_by_attempt.values():
+        if delivered is None:
+            continue
+        delivered_at, context_message = delivered
+        events.append(
+            (
+                delivered_at,
+                1,
+                context_message.message_id,
+                context_message,
+            )
+        )
+
+    events.sort(key=lambda item: (item[0], item[1], item[2]))
+    return tuple(item[3] for item in events[-32:])
+
+
+def _require_trigger_connector(
+    *,
+    receipt: TelegramReceipt,
+    connector_key: str,
+) -> None:
+    if receipt.bot_key != connector_key:
+        raise AlphaShadowWorkerError("alpha_trigger_connector_mismatch")
 
 
 def _verified_trigger_message(
