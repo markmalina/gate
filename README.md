@@ -1,9 +1,10 @@
 # Gate
 
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
-> Verified: **2026-07-16**  
+> Verified: **2026-07-17**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> GitHub `main` after PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`  
+> Product-code baseline through PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`  
+> Handoff package inspected at PR #206 merge: `525910f4f54096c88df1a6a0fca8fc5e7587dd22`  
 > Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway for current deployment  
 > Production: Railway automatic deployment from `main`
 
