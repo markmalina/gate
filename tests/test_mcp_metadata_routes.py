@@ -21,6 +21,7 @@ ACTIVE_MCP_SCOPES = [
     "gate:inbox:read",
     "gate:drafts:write",
     "gate:messages:send",
+    "gate:agents:manage",
 ]
 
 
@@ -42,7 +43,11 @@ async def test_oauth_protected_resource_metadata() -> None:
     assert payload["mcp"]["endpoint"] == "/mcp"
     assert payload["mcp"]["auth_enforced"] is False
     assert payload["mcp"]["write_tools_enabled"] is True
-    assert payload["mcp"]["write_tools"] == ["gate_save_reply_draft"]
+    assert payload["mcp"]["write_tools"] == [
+        "gate_save_reply_draft",
+        "gate_alpha_control_installation",
+        "gate_alpha_run_model_preflight",
+    ]
     assert payload["mcp"]["send_tools_enabled"] is True
     assert payload["mcp"]["send_tools"] == ["gate_send_approved_reply"]
     assert payload["mcp"]["send_requires_explicit_confirmation"] is True
@@ -66,6 +71,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
         "gate_get_status",
         "gate_list_unanswered",
         "gate_get_reply_context",
+        "gate_alpha_list_installations",
     ]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
@@ -101,8 +107,13 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_get_status",
         "gate_list_unanswered",
         "gate_get_reply_context",
+        "gate_alpha_list_installations",
     ]
-    assert payload["tools"]["write"] == ["gate_save_reply_draft"]
+    assert payload["tools"]["write"] == [
+        "gate_save_reply_draft",
+        "gate_alpha_control_installation",
+        "gate_alpha_run_model_preflight",
+    ]
     assert payload["tools"]["send"] == ["gate_send_approved_reply"]
     assert payload["tools"]["send_requires_explicit_confirmation"] is True
 
