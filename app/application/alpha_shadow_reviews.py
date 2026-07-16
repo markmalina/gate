@@ -44,10 +44,14 @@ def _review_payload(review: AlphaShadowReview) -> dict[str, object]:
         "status": review.status,
         "outcome": review.outcome,
         "result_code": review.result_code,
-        "trigger_text": review.trigger_text,
-        "candidate_text": review.candidate_text,
+        "trigger_text": _bounded(review.trigger_text, 4_000),
+        "candidate_text": _bounded(review.candidate_text, 12_000),
         "candidate_sha256": review.candidate_sha256,
         "context_message_count": review.context_message_count,
         "created_at": review.created_at.isoformat(),
         "sent_to_telegram": False,
     }
+
+
+def _bounded(value: str | None, limit: int) -> str | None:
+    return value[:limit] if value is not None else None
