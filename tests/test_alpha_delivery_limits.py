@@ -6,6 +6,11 @@ from app.application.alpha_delivery import (
     MAX_TELEGRAM_TEXT_CHARS,
     AlphaDeliveryReservation,
 )
+from app.application.alpha_canary import (
+    ALPHA_DISCLOSURE_PREFIX,
+    AlphaCanaryError,
+    compose_alpha_delivery_text,
+)
 from app.application.alpha_group import AgentSendAttemptState
 
 
@@ -28,3 +33,18 @@ def test_exact_telegram_text_limit_is_accepted() -> None:
 def test_text_above_telegram_limit_is_rejected_before_provider_call() -> None:
     with pytest.raises(ValueError, match="one Telegram text message"):
         _reservation("а" * (MAX_TELEGRAM_TEXT_CHARS + 1))
+
+
+def test_disclosure_is_included_in_the_same_4096_character_limit() -> None:
+    body_length = MAX_TELEGRAM_TEXT_CHARS - len(ALPHA_DISCLOSURE_PREFIX)
+    delivered = compose_alpha_delivery_text(
+        candidate="а" * body_length,
+        disclosure_prefix=ALPHA_DISCLOSURE_PREFIX,
+    )
+
+    assert len(delivered) == MAX_TELEGRAM_TEXT_CHARS
+    with pytest.raises(AlphaCanaryError, match="alpha_canary_candidate_too_long"):
+        compose_alpha_delivery_text(
+            candidate="а" * (body_length + 1),
+            disclosure_prefix=ALPHA_DISCLOSURE_PREFIX,
+        )
