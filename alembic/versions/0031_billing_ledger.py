@@ -4,6 +4,9 @@ Revision ID: 0031_billing_ledger
 Revises: 0030_relationship_crm_commercial
 """
 
+# Migration declarations intentionally mirror database DDL and may exceed line length.
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 from collections.abc import Sequence
