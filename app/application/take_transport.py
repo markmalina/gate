@@ -16,7 +16,6 @@ from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Any, Protocol
 
-
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _FORBIDDEN = {"edit_plan", "transcript", "subtitles", "ffmpeg", "shell", "model_prompt"}
 
