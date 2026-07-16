@@ -84,6 +84,16 @@ jobs:
           if-no-files-found: error
       - name: Alpha privacy retention dry run
         run: pytest tests/test_alpha_retention.py
+      - name: Alpha shadow release admission rehearsal
+        run: pytest tests/test_alpha_shadow_release_admission.py
+      - name: Build Alpha shadow release admission evidence
+        run: python scripts/alpha_shadow_release_admission.py --output alpha-shadow-release-admission.json
+      - name: Upload Alpha shadow release admission evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: alpha-shadow-release-admission
+          path: alpha-shadow-release-admission.json
+          if-no-files-found: error
       - name: Alembic upgrade
         run: alembic upgrade head
       - name: Alembic schema drift check
