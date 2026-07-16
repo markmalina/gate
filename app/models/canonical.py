@@ -140,6 +140,12 @@ class CanonicalMessage(Base):
             name="uq_canonical_messages_receipt_id",
         ),
         UniqueConstraint("id", "workspace_id", name="uq_canonical_messages_id_workspace"),
+        UniqueConstraint(
+            "id",
+            "dialog_id",
+            "workspace_id",
+            name="uq_canonical_messages_id_dialog_workspace",
+        ),
         CheckConstraint(
             "direction IN ('inbound', 'outbound', 'bot_or_service', 'unknown')",
             name="ck_canonical_messages_direction",
