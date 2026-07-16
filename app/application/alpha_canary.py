@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from app.application.agent_kernel import AgentResultKind
 from app.application.alpha_delivery import (
+    MAX_TELEGRAM_TEXT_CHARS,
     AlphaDeliveryResult,
     DeliverAlphaGrantCommand,
 )
@@ -32,7 +33,9 @@ def compose_alpha_delivery_text(*, candidate: str, disclosure_prefix: str) -> st
     if not candidate.strip():
         raise AlphaCanaryError("alpha_canary_candidate_unavailable")
     delivered = (
-        candidate if candidate.startswith(disclosure_prefix) else disclosure_prefix + candidate
+        candidate
+        if candidate.startswith(disclosure_prefix)
+        else disclosure_prefix + candidate
     )
     if len(delivered) > MAX_TELEGRAM_TEXT_CHARS:
         raise AlphaCanaryError("alpha_canary_candidate_too_long")
