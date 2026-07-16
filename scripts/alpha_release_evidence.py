@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from app.application.alpha_model_readiness import AlphaModelReadinessFacts
 from app.application.alpha_release_evidence import alpha_release_evidence_payload
