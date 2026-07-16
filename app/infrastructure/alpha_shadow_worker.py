@@ -21,6 +21,7 @@ from app.application.agent_kernel import (
     InstructionRevision,
 )
 from app.application.agent_shadow import AgentShadowProposal
+from app.application.alpha_delivery import MAX_TELEGRAM_TEXT_CHARS
 from app.application.alpha_group import AlphaInstallation, AlphaInstallationState
 from app.application.alpha_lifecycle import (
     AlphaUsageReservation,
@@ -840,7 +841,7 @@ async def _load_context(
         if (
             not isinstance(candidate_text, str)
             or not candidate_text.strip()
-            or len(candidate_text) > 8_000
+            or len(candidate_text) > MAX_TELEGRAM_TEXT_CHARS
             or not isinstance(turn_candidate_sha256, str)
             or turn_candidate_sha256 != grant_candidate_sha256
             or hashlib.sha256(candidate_text.encode("utf-8")).hexdigest()
