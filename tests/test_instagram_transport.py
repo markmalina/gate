@@ -13,6 +13,7 @@ from app.instagram.automation import (
     FollowState,
     admit_direct_delivery,
 )
+from app.instagram.commands import FakeInstagramCommandExecutor, ProviderFollowState
 from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
@@ -214,3 +215,33 @@ async def test_meta_webhook_verification_returns_plain_challenge(
     assert response.status_code == 200
     assert response.text == "challenge-123"
     assert response.headers["content-type"].startswith("text/plain")
+
+
+def test_mayaki_private_reply_and_follow_check_commands_run_on_fake_adapter() -> None:
+    executor = FakeInstagramCommandExecutor(
+        follow_state=ProviderFollowState.FOLLOWING
+    )
+    private_reply = {
+        "type": "gate.instagram.private_reply.requested.v1",
+        "idempotency_key": "session-1:opening-dm",
+        "account_alias": "main",
+        "provider_comment_id": "comment-1",
+        "text": "Нажми «Получить».",
+        "quick_reply": {
+            "title": "Получить",
+            "payload": "ig_consent:session-1:1",
+        },
+    }
+    first = executor.execute(private_reply)
+    replay = executor.execute(private_reply)
+    follow = executor.execute(
+        {
+            "type": "gate.instagram.follow_check.requested.v1",
+            "idempotency_key": "session-1:follow-check:3",
+            "account_alias": "main",
+            "instagram_user_id": "ig-user-1",
+        }
+    )
+    assert first["external_delivery"] is False
+    assert replay["idempotent_replay"] is True
+    assert follow["follow_state"] == "following"
