@@ -65,6 +65,11 @@ from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.instagram.mcp import (
+    INSTAGRAM_MCP_TOOL_SCOPES,
+    handle_instagram_mcp_tool,
+    instagram_mcp_tools,
+)
 from app.infrastructure.alpha_canary import (
     alpha_canary_audit_counts,
     alpha_canary_binding_count,
@@ -118,6 +123,7 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_control_installation": "gate:agents:manage",
     "gate_alpha_run_model_preflight": "gate:agents:manage",
     "gate_alpha_list_shadow_reviews": "gate:agents:manage",
+    **INSTAGRAM_MCP_TOOL_SCOPES,
 }
 
 
@@ -173,6 +179,14 @@ async def mcp_endpoint(
                     _gate_alpha_control_installation_tool(settings),
                     _gate_alpha_run_model_preflight_tool(settings),
                     _gate_alpha_list_shadow_reviews_tool(settings),
+                    *[
+                        _with_security_scheme(
+                            tool=tool,
+                            settings=settings,
+                            scope=MCP_TOOL_SCOPES[tool["name"]],
+                        )
+                        for tool in instagram_mcp_tools()
+                    ],
                 ]
             },
         )
@@ -205,6 +219,17 @@ async def mcp_endpoint(
                 error=exc.error,
                 description=exc.description,
             )
+        if tool_name in INSTAGRAM_MCP_TOOL_SCOPES:
+            result = await handle_instagram_mcp_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+            text = (
+                f"Instagram request failed: {result['message']}"
+                if "error" in result
+                else "Instagram request completed."
+            )
+            return _tool_result(result, text, request_id)
         if tool_name == "gate_get_status":
             snapshot = await build_gate_status(
                 session=session,
@@ -1076,7 +1101,7 @@ def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -
         return tool
     schemes = [{"type": "oauth2", "scopes": [scope]}]
     tool["securitySchemes"] = schemes
-    tool["_meta"] = {"securitySchemes": schemes}
+    tool.setdefault("_meta", {})["securitySchemes"] = schemes
     return tool
 
 
