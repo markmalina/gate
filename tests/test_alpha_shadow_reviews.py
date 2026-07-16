@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-
 from app.application.alpha_shadow_reviews import alpha_shadow_reviews_payload
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 
