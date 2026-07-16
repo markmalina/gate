@@ -10,9 +10,11 @@ Read these files in this order:
 
 1. `docs/TEAM_WORKFLOW.md` — authority, secrets, PR, CI, merge and deployment rules.
 2. This document — verified state, delivered scope and exact continuation order.
-3. `docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md` — target architecture and Sprints 1–6.
-4. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form technical specification.
-5. `docs/GATE_OPERATOR_REGULATIONS.md` — production operating rules.
+3. `docs/ALPHA_OPERATING_POLICY.md` — standing authorization and release barriers.
+4. `docs/ALPHA_OPERATOR_RUNBOOK.md` — one-time owner setup, provider activation and stop drills.
+5. `docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md` — target architecture and Sprints 1–6.
+6. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form technical specification.
+7. `docs/GATE_OPERATOR_REGULATIONS.md` — production operating rules.
 
 GitHub `main` is the source of truth. Chat history, agent memory and local workspaces are not.
 Before changing anything, query GitHub and production again; all counts below are snapshots.
