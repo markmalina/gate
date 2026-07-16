@@ -112,6 +112,14 @@ class SqlAlphaLifecycleRepository:
         installation = await self._installation_by_key(
             workspace_id, command.installation_key, for_update=True
         )
+        if (
+            command.expected_state is not None
+            and installation.state != command.expected_state.value
+        ):
+            raise AlphaLifecycleError(
+                "alpha_installation_state_changed",
+                "The installation state changed after the owner reviewed it",
+            )
         deployment, revision = await self._approved_binding(
             workspace_id=workspace_id,
             deployment_key=command.deployment_key,
