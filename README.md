@@ -99,7 +99,7 @@ The installed connector is named **Gate M**. It uses the production MCP endpoint
 https://gate-production-bab1.up.railway.app/mcp
 ```
 
-Active OAuth scopes:
+Required OAuth scopes (the first four are active; `gate:agents:manage` needs the one-time Auth0/User-Delegated Access grant):
 
 ```text
 gate:status:read
