@@ -75,8 +75,25 @@ jobs:
           name: alpha-incident-drills
           path: alpha-incident-drills.json
           if-no-files-found: error
+      - name: Alpha privacy retention dry run
+        run: pytest tests/test_alpha_retention.py
       - name: Alembic upgrade
         run: alembic upgrade head
+      - name: Disposable PostgreSQL backup and restore drill
+        env:
+          PGPASSWORD: postgres
+        run: |
+          pg_dump --host localhost --username postgres --dbname gate --format custom --file /tmp/gate-backup.dump
+          dropdb --host localhost --username postgres --if-exists gate_restore
+          createdb --host localhost --username postgres gate_restore
+          pg_restore --host localhost --username postgres --dbname gate_restore --no-owner --no-privileges /tmp/gate-backup.dump
+          python scripts/postgres_restore_evidence.py --database-url postgresql://postgres:postgres@localhost:5432/gate_restore --output postgres-restore-evidence.json
+      - name: Upload PostgreSQL restore evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-restore-evidence
+          path: postgres-restore-evidence.json
+          if-no-files-found: error
       - name: Alembic downgrade
         run: alembic downgrade base
       - name: Docker build
