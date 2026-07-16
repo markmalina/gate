@@ -31,7 +31,7 @@ class InstagramRuntimeConfig:
     accounts: dict[str, InstagramAccountConfig]
 
     @classmethod
-    def from_env(cls) -> "InstagramRuntimeConfig":
+    def from_env(cls) -> InstagramRuntimeConfig:
         accounts: dict[str, InstagramAccountConfig] = {}
         raw = os.getenv("GATE_INSTAGRAM_ACCOUNTS_JSON", "")
         if raw:
