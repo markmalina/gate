@@ -126,6 +126,10 @@ class AlphaProfileScope:
     data_scope: AlphaDataScope = AlphaDataScope.INSTALLATION
 
     def __post_init__(self) -> None:
+        if not isinstance(self.profile, AlphaProfile):
+            raise ValueError("profile must be an AlphaProfile")
+        if not isinstance(self.data_scope, AlphaDataScope):
+            raise ValueError("data_scope must be an AlphaDataScope")
         expected_scope = (
             AlphaDataScope.INSTALLATION
             if self.profile is AlphaProfile.PUBLIC
