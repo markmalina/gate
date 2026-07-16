@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.alpha_delivery import (
+    MAX_TELEGRAM_TEXT_CHARS,
     AlphaDeliveryError,
     AlphaDeliveryReservation,
     AlphaDeliveryStore,
@@ -297,7 +298,7 @@ async def _candidate_text(
     if (
         candidate is None
         or not candidate.strip()
-        or len(candidate) > 8_000
+        or len(candidate) > MAX_TELEGRAM_TEXT_CHARS
         or hashlib.sha256(candidate.encode("utf-8")).hexdigest()
         != grant.candidate_sha256
     ):

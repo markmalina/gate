@@ -18,6 +18,7 @@ from app.application.alpha_canary import (
     AlphaMembershipResult,
     IssueAlphaDeliveryGrantCommand,
     ReconcileAlphaMembershipCommand,
+    compose_alpha_delivery_text,
 )
 from app.application.alpha_group import AlphaInstallationState
 from app.application.alpha_lifecycle import (
@@ -274,13 +275,10 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
             candidate = turn.candidate_text
             if not isinstance(candidate, str) or not candidate.strip():
                 raise AlphaCanaryError("alpha_canary_candidate_unavailable")
-            delivered_text = (
-                candidate
-                if candidate.startswith(command.disclosure_prefix)
-                else command.disclosure_prefix + candidate
+            delivered_text = compose_alpha_delivery_text(
+                candidate=candidate,
+                disclosure_prefix=command.disclosure_prefix,
             )
-            if len(delivered_text) > 8_000:
-                raise AlphaCanaryError("alpha_canary_candidate_too_long")
             candidate_sha = hashlib.sha256(delivered_text.encode("utf-8")).hexdigest()
             turn.candidate_text = delivered_text
             turn.candidate_sha256 = candidate_sha
