@@ -1,14 +1,13 @@
 """Alpha group/private discovery and addressing policy tests."""
 
 import pytest
-
 from app.application.alpha_access_policy import (
     AlphaAccessPolicyError,
     AlphaAddressingSignal,
     AlphaDialogKind,
     AlphaDiscoveryCandidate,
-    AlphaInstallationState,
     AlphaInboundTurn,
+    AlphaInstallationState,
     AlphaTurnDecision,
     evaluate_discovery,
     evaluate_inbound_turn,
