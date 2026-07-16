@@ -318,10 +318,11 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_alpha_list_installations",
                                 "gate_alpha_control_installation",
                                 "gate_alpha_run_model_preflight",
+                                "gate_alpha_list_shadow_reviews",
                             ],
                         },
-                        "minItems": 8,
-                        "maxItems": 8,
+                        "minItems": 9,
+                        "maxItems": 9,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -555,6 +556,49 @@ ALPHA_PREFLIGHT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+ALPHA_SHADOW_REVIEW_SCHEMA = _object(
+    {
+        "turn_ref": {"type": "string", "format": "uuid"},
+        "installation_ref": {"type": "string", "minLength": 1, "maxLength": 128},
+        "group_label": {"type": "string", "minLength": 1, "maxLength": 255},
+        "deployment_key": {"type": "string", "minLength": 1, "maxLength": 128},
+        "status": {
+            "type": "string",
+            "enum": ["queued", "running", "proposed", "failed"],
+        },
+        "outcome": _nullable("string"),
+        "result_code": _nullable("string"),
+        "trigger_text": {
+            "type": ["string", "null"],
+            "maxLength": 4000,
+        },
+        "candidate_text": {
+            "type": ["string", "null"],
+            "maxLength": 12000,
+        },
+        "candidate_sha256": _nullable("string"),
+        "context_message_count": {"type": "integer", "minimum": 0},
+        "created_at": {"type": "string", "format": "date-time"},
+        "sent_to_telegram": {"type": "boolean", "const": False},
+    }
+)
+ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "count": {"type": "integer", "minimum": 0, "maximum": 50},
+            "items": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/alpha_shadow_review"},
+                "maxItems": 50,
+            },
+            "telegram_delivery_blocked": {"type": "boolean", "const": True},
+            "provider_dialog_ids_exposed": {"type": "boolean", "const": False},
+        }
+    ),
+    {"alpha_shadow_review": ALPHA_SHADOW_REVIEW_SCHEMA},
+)
+
+
 MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_get_status": GATE_STATUS_OUTPUT_SCHEMA,
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
@@ -564,4 +608,5 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_alpha_list_installations": ALPHA_INSTALLATIONS_OUTPUT_SCHEMA,
     "gate_alpha_control_installation": ALPHA_CONTROL_OUTPUT_SCHEMA,
     "gate_alpha_run_model_preflight": ALPHA_PREFLIGHT_OUTPUT_SCHEMA,
+    "gate_alpha_list_shadow_reviews": ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA,
 }
