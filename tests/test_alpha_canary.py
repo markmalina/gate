@@ -180,6 +180,43 @@ def test_unapproved_group_and_ambiguous_shapes_fail_before_runtime() -> None:
     assert delivery.commands == []
 
 
+@pytest.mark.parametrize(
+    "media_payload",
+    [
+        {"voice": {"file_id": "voice-1", "duration": 3}},
+        {"photo": [{"file_id": "photo-1", "width": 90, "height": 90}]},
+        {"sticker": {"file_id": "sticker-1", "emoji": "👋"}},
+    ],
+    ids=["voice", "photo", "sticker"],
+)
+def test_non_text_messages_are_terminally_ignored_before_shadow(media_payload) -> None:
+    service, store, shadow, delivery = _service(
+        AlphaShadowWorkerResult(AlphaShadowDisposition.PROPOSED, "unused")
+    )
+    update = _message_update()
+    update["message"].pop("text")
+    update["message"].update(media_payload)
+
+    result = asyncio.run(
+        service.execute(
+            _command(
+                update=update,
+                canonical_message_id=None,
+                delivery_enabled=True,
+            )
+        )
+    )
+
+    assert result.disposition is AlphaCanaryDisposition.NOT_INVOKED
+    assert result.code == "alpha_canary_non_text_ignored"
+    assert result.shadow is None
+    assert result.delivery is None
+    assert store.memberships == []
+    assert store.grants == []
+    assert shadow.commands == []
+    assert delivery.commands == []
+
+
 def test_proposal_stays_delivery_free_until_separate_kill_switch() -> None:
     proposed = AlphaShadowWorkerResult(
         AlphaShadowDisposition.PROPOSED,

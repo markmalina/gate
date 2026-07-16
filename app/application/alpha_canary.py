@@ -198,6 +198,12 @@ class ProcessAlphaCanaryUpdateService:
             )
             return AlphaCanaryResult(disposition, f"alpha_membership_{action.value}")
 
+        if not _has_nonblank_text(payload):
+            return AlphaCanaryResult(
+                AlphaCanaryDisposition.NOT_INVOKED,
+                "alpha_canary_non_text_ignored",
+            )
+
         if command.canonical_message_id is None:
             raise AlphaCanaryError("alpha_canary_canonical_message_required")
         shadow = await self._shadow.execute(
@@ -325,6 +331,11 @@ def _membership_action(payload: JsonObject, *, bot_username: str) -> AlphaMember
     if status in {"left", "kicked"}:
         return AlphaMembershipAction.REMOVED
     raise AlphaCanaryError("alpha_membership_status_invalid")
+
+
+def _has_nonblank_text(payload: JsonObject) -> bool:
+    text = payload.get("text")
+    return isinstance(text, str) and bool(text.strip())
 
 
 def _require_token(value: str, field_name: str, maximum: int) -> None:
