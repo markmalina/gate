@@ -40,6 +40,23 @@ jobs:
         run: mypy app
       - name: Pytest
         run: pytest
+      - name: Alpha delivery-free release rehearsal
+        run: >-
+          pytest
+          tests/test_alpha_model_shadow_rehearsal.py
+          tests/test_alpha_model_adversarial_evals.py
+          tests/test_alpha_model_product_evals.py
+          tests/test_alpha_model_readiness.py
+          tests/test_alpha_multigroup_postgres.py
+          tests/test_alpha_release_evidence.py
+      - name: Build Alpha release evidence
+        run: python scripts/alpha_release_evidence.py --output alpha-release-evidence.json
+      - name: Upload Alpha release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-release-evidence
+          path: alpha-release-evidence.json
+          if-no-files-found: error
       - name: Alembic upgrade
         run: alembic upgrade head
       - name: Alembic downgrade
