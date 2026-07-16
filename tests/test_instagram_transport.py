@@ -5,8 +5,6 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from fastapi import FastAPI
-
 from app.instagram.automation import (
     AutomationDecision,
     AutomationFacts,
@@ -22,6 +20,7 @@ from app.instagram.meta import MetaInstagramClient, MetaInstagramCommandExecutor
 from app.instagram.routes import router as instagram_webhook_router
 from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
+from fastapi import FastAPI
 
 VIDEO = {
     "download_url": "https://files.example/reel.mp4",
