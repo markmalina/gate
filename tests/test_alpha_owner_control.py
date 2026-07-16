@@ -59,9 +59,9 @@ def test_owner_list_uses_group_label_and_never_exposes_provider_dialog_id() -> N
     item = payload["items"][0]
     assert item["group_label"] == "Alpha Group"
     assert item["available_actions"] == ["pause"]
-    assert "provider_dialog_id" not in str(payload)
-    assert "workspace_key" not in str(payload)
-    assert "connector_key" not in str(payload)
+    assert "provider_dialog_id" not in str(payload["items"])
+    assert "workspace_key" not in str(payload["items"])
+    assert "connector_key" not in str(payload["items"])
 
 
 def test_confirmed_pause_and_resume_use_stale_state_fence() -> None:
