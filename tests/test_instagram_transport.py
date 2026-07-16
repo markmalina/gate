@@ -18,6 +18,7 @@ from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
 from app.instagram.events import InstagramEvent, InstagramEventType
+from app.instagram.meta import MetaInstagramClient
 from app.instagram.routes import router as instagram_webhook_router
 from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
@@ -37,7 +38,9 @@ def test_confirmation_round_trip_binds_exact_reel() -> None:
         video=VIDEO,
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
-    restored = verify_confirmation(issue_confirmation(draft, secret="secret"), secret="secret")
+    restored = verify_confirmation(
+        issue_confirmation(draft, secret="secret"), secret="secret"
+    )
     assert restored.account_alias == "main"
     assert restored.caption == "Hello"
     assert restored.video.file_id == "file-1"
@@ -74,7 +77,10 @@ def test_unknown_follow_state_never_unlocks_follow_gated_delivery() -> None:
         messaging_window_open=True,
         follow_state=FollowState.UNKNOWN,
     )
-    assert admit_direct_delivery(facts, requires_follow=True) is AutomationDecision.REQUIRE_HUMAN
+    assert (
+        admit_direct_delivery(facts, requires_follow=True)
+        is AutomationDecision.REQUIRE_HUMAN
+    )
 
 
 def test_automation_kill_switch_blocks_delivery() -> None:
@@ -86,7 +92,9 @@ def test_automation_kill_switch_blocks_delivery() -> None:
         messaging_window_open=True,
         follow_state=FollowState.FOLLOWING,
     )
-    assert admit_direct_delivery(facts, requires_follow=False) is AutomationDecision.BLOCK
+    assert (
+        admit_direct_delivery(facts, requires_follow=False) is AutomationDecision.BLOCK
+    )
 
 
 def test_verified_comment_webhook_is_normalized_and_scoped() -> None:
@@ -97,7 +105,12 @@ def test_verified_comment_webhook_is_normalized_and_scoped() -> None:
                 {
                     "id": "ig-1",
                     "time": 1_700_000_000,
-                    "changes": [{"field": "comments", "value": {"id": "comment-1", "text": "21"}}],
+                    "changes": [
+                        {
+                            "field": "comments",
+                            "value": {"id": "comment-1", "text": "21"},
+                        }
+                    ],
                 }
             ],
         }
@@ -218,9 +231,7 @@ async def test_meta_webhook_verification_returns_plain_challenge(
 
 
 def test_mayaki_private_reply_and_follow_check_commands_run_on_fake_adapter() -> None:
-    executor = FakeInstagramCommandExecutor(
-        follow_state=ProviderFollowState.FOLLOWING
-    )
+    executor = FakeInstagramCommandExecutor(follow_state=ProviderFollowState.FOLLOWING)
     private_reply = {
         "type": "gate.instagram.private_reply.requested.v1",
         "idempotency_key": "session-1:opening-dm",
@@ -245,3 +256,102 @@ def test_mayaki_private_reply_and_follow_check_commands_run_on_fake_adapter() ->
     assert first["external_delivery"] is False
     assert replay["idempotent_replay"] is True
     assert follow["follow_state"] == "following"
+
+
+def instagram_meta_config() -> InstagramRuntimeConfig:
+    return InstagramRuntimeConfig(
+        enabled=True,
+        delivery_enabled=True,
+        webhook_enabled=False,
+        webhook_delivery_enabled=False,
+        graph_base_url="https://graph.instagram.com",
+        graph_version="v23.0",
+        signing_secret="signing-secret",
+        app_secret="",
+        webhook_verify_token="",
+        mayaki_intake_url="",
+        mayaki_intake_bearer_token="",
+        mayaki_intake_hmac_secret="",
+        accounts={},
+    )
+
+
+@pytest.mark.anyio
+async def test_meta_public_and_private_reply_contracts() -> None:
+    account = InstagramAccountConfig(
+        alias="main",
+        instagram_user_id="ig-account-1",
+        access_token="secret",
+    )
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/comment-1/replies"):
+            return httpx.Response(200, json={"id": "reply-1"})
+        return httpx.Response(
+            200, json={"recipient_id": "ig-user-1", "message_id": "mid-1"}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = MetaInstagramClient(config=instagram_meta_config(), http=http)
+        public_id = await client.reply_to_comment(
+            account=account,
+            comment_id="comment-1",
+            text="Отправил в личку",
+        )
+        recipient_id = await client.private_reply_to_comment(
+            account=account,
+            comment_id="comment-1",
+            text="Нажми «Получить».",
+            quick_reply={"title": "Получить", "payload": "ig_consent:session-1:1"},
+        )
+
+    assert public_id == "reply-1"
+    assert recipient_id == "ig-user-1"
+    assert requests[0].url.path == "/v23.0/comment-1/replies"
+    private_body = json.loads(requests[1].content)
+    assert private_body["recipient"] == {"comment_id": "comment-1"}
+    assert private_body["message"]["quick_replies"][0]["payload"].startswith(
+        "ig_consent:"
+    )
+
+
+@pytest.mark.anyio
+async def test_meta_follow_state_is_fail_closed() -> None:
+    account = InstagramAccountConfig(
+        alias="main",
+        instagram_user_id="ig-account-1",
+        access_token="secret",
+    )
+    responses = iter(
+        [
+            httpx.Response(200, json={"is_user_follow_business": True}),
+            httpx.Response(200, json={}),
+            httpx.Response(
+                403, json={"error": {"message": "User consent is required"}}
+            ),
+        ]
+    )
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return next(responses)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = MetaInstagramClient(config=instagram_meta_config(), http=http)
+        following = await client.follow_state(
+            account=account,
+            instagram_scoped_user_id="ig-user-1",
+        )
+        unknown = await client.follow_state(
+            account=account,
+            instagram_scoped_user_id="ig-user-2",
+        )
+        not_permitted = await client.follow_state(
+            account=account,
+            instagram_scoped_user_id="ig-user-3",
+        )
+
+    assert following is ProviderFollowState.FOLLOWING
+    assert unknown is ProviderFollowState.UNKNOWN
+    assert not_permitted is ProviderFollowState.NOT_PERMITTED
