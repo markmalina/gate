@@ -2,7 +2,8 @@
 
 > Canonical continuation guide for a new developer or implementation agent.  
 > Verified against GitHub `main` and Railway production on 2026-07-16.  
-> Verified production commit after PR #178: `7a9898f3cc0dac6fa5c4513bf040ca8a84397027`.
+> GitHub `main` after PR #199: `3f1f29b96fd1794f5bf66ad2d78107306057b3cd`.
+> Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway before claiming the new head is deployed.
 
 ## 1. Start here
 
@@ -12,9 +13,10 @@ Read these files in this order:
 2. This document — verified state, delivered scope and exact continuation order.
 3. `docs/ALPHA_OPERATING_POLICY.md` — standing authorization and release barriers.
 4. `docs/ALPHA_OPERATOR_RUNBOOK.md` — one-time owner setup, provider activation and stop drills.
-5. `docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md` — target architecture and Sprints 1–6.
-6. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form technical specification.
-7. `docs/GATE_OPERATOR_REGULATIONS.md` — production operating rules.
+5. `docs/RELATIONSHIP_CRM_ARCHITECTURE.md` — standalone relationship product and privacy spaces.
+6. `docs/INTEGRATED_DELIVERY_ROADMAP_2026.md` — current cross-product release order.
+7. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form technical specification.
+8. `docs/GATE_OPERATOR_REGULATIONS.md` — production operating rules.
 
 GitHub `main` is the source of truth. Chat history, agent memory and local workspaces are not.
 Before changing anything, query GitHub and production again; all counts below are snapshots.
@@ -151,6 +153,21 @@ The remaining external blocker is provider billing, not missing Alpha product co
 requires a reviewed release after a successful preflight; preflight success does not authorize live
 delivery.
 
+## 4.1. Releases #179–#199 — safety cleanup, voice foundation and Relationship CRM
+
+- MCP publication is guarded as one exact nine-tool contract.
+- unsupported Alpha media is terminal and human-confirmed Telegram text is literal;
+- only delivered Alpha replies enter later context and one reply is bounded to one Telegram message;
+- voice access policy and a durable, dormant voice intake queue exist with no provider runtime;
+- Relationship CRM is the standalone owner of people and interaction semantics;
+- personal, commercial and program spaces are database-isolated;
+- people, channel identities, relationships and immutable interaction facts are durable;
+- attention, notes/thoughts and follow-ups are independent from legacy reply tasks;
+- pipelines, versioned stages, deals and actor-attributed transitions exist only in commercial/program spaces;
+- migrations 0028–0030 are additive and reversible; no production backfill or CRM UI is active yet.
+
+The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state model. No OpenAI call, Oko activation or Telegram test send was introduced by these releases.
+
 ## 5. Important code map
 
 | Path | Responsibility |
@@ -175,6 +192,9 @@ delivery.
 | `app/models/canonical.py` | workspace/connector/dialog/message/ownership ORM |
 | `app/models/agent.py` | Agent Kernel ORM |
 | `app/models/alpha.py` | Alpha installation/grant/send-attempt ORM |
+| `app/application/relationship_crm.py` | Standalone CRM domain kernel for personal/commercial/program spaces |
+| `app/models/relationship_crm.py` | Module-owned people, interaction, attention, notes, pipeline and deal persistence |
+| `alembic/versions/0028_*`–`0030_*` | Relationship CRM core, personal workflow and commercial/program schema |
 | `alembic/versions/0016_*` | canonical foundation |
 | `alembic/versions/0017_*` | Agent Kernel |
 | `alembic/versions/0018_*` | Alpha delivery capabilities |
@@ -188,27 +208,18 @@ delivery.
 
 ## 6. Exact next development order
 
-The fixture canary, owner control plane, review room, adversarial/product evals, multi-group
-isolation and stop drills are complete. OpenAI billing is the only external blocker before preflight.
+1. Re-query GitHub main, open PRs, CI and the exact Railway production fingerprint.
+2. Keep Alpha fixture active and provider/model Telegram delivery blocked until billing is confirmed.
+3. Add Relationship CRM repository/application ports with workspace and relationship-space scope in every method.
+4. Add versioned export/import and sanitized transport-to-CRM projection fixtures; existing conversations enter `personal/untriaged`, never a guessed state.
+5. Add owner control/read projections for people, notes, attention, follow-ups, pipelines and deals; preserve the old inbox as deprecated compatibility.
+6. Complete fixture-only voice transcription and the “Я понял так” response contract with Telegram delivery blocked.
+7. Complete default-deny private Alpha discovery/approval/consent fixtures.
+8. Add synthetic billing/entitlement ledger and concurrent hard-cap tests.
+9. Continue Mayaki LMS and Relationship CRM program-space contracts on fake data only.
+10. Only after billing: one synthetic preflight, delivery-disabled shadow review, then a separately admitted limited canary.
 
-Continue in this exact order:
-
-1. Complete the one-time Auth0 API permission and ChatGPT User-Delegated Access grant for
-   `gate:agents:manage`, then reconnect Gate M. Do not weaken Gate scopes.
-2. Wait until provider billing is confirmed ready. Do not probe billing with status reads or repeated
-   provider calls.
-3. Re-query production: exact commit, one staged model deployment, fixture binding active, zero
-   model delivery grants, no stuck preflight and remaining budget.
-4. Invoke `gate_alpha_run_model_preflight` once with `confirmed=true`. It sends only a synthetic
-   request and never reads group content or calls Telegram.
-5. Require `provider_preflight_verified=true`. Failed or ambiguously reserved preflight is terminal.
-6. Implement a reviewed code release for delivery-disabled model shadow in approved installations.
-7. Collect and review at least ten clean proposals through `gate_alpha_list_shadow_reviews`.
-8. Consider limited canary only after all automatic eval, isolation, budget, error and rollback gates
-   pass. Fixture remains rollback. Oko RU resumes only after Alpha is stable.
-
-No real group approval, provider preflight, model shadow activation or live model delivery is part of
-this handoff update.
+No provider call, live CRM backfill, Oko activation or Telegram smoke send is authorized by this handoff update.
 
 ## 7. Owner inputs required only at the canary boundary
 
