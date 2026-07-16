@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -220,5 +221,232 @@ class RelationshipInteractionModel(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RelationshipChannelIdentityModel(Base):
+    __tablename__ = "relationship_crm_channel_identities"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["person_id", "workspace_id"],
+            ["relationship_crm_people.id", "relationship_crm_people.workspace_id"],
+            name="fk_relationship_crm_identities_person_workspace",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "identity_key",
+            name="uq_relationship_crm_identities_workspace_key",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "channel",
+            "connector_ref",
+            "external_subject_ref",
+            name="uq_relationship_crm_identities_external",
+        ),
+        CheckConstraint(
+            "channel IN ('telegram', 'email', 'phone', 'other')",
+            name="ck_relationship_crm_identities_channel",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    identity_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    connector_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_subject_ref: Mapped[str] = mapped_column(String(512), nullable=False)
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RelationshipAttentionModel(Base):
+    __tablename__ = "relationship_crm_attention"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["relationship_id", "space_id", "person_id", "workspace_id"],
+            [
+                "relationship_crm_relationships.id",
+                "relationship_crm_relationships.space_id",
+                "relationship_crm_relationships.person_id",
+                "relationship_crm_relationships.workspace_id",
+            ],
+            name="fk_relationship_crm_attention_relationship_scope",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "space_id",
+            "conversation_ref",
+            name="uq_relationship_crm_attention_conversation",
+        ),
+        CheckConstraint(
+            "state IN ('untriaged', 'action_on_me', 'waiting_on_them', "
+            "'scheduled', 'no_action', 'archived')",
+            name="ck_relationship_crm_attention_state",
+        ),
+        CheckConstraint("revision > 0", name="ck_relationship_crm_attention_revision"),
+        CheckConstraint(
+            "(state = 'scheduled' AND next_review_at IS NOT NULL) "
+            "OR state <> 'scheduled'",
+            name="ck_relationship_crm_attention_scheduled_review",
+        ),
+        Index(
+            "ix_relationship_crm_attention_review",
+            "workspace_id",
+            "space_id",
+            "state",
+            "next_review_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    relationship_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    conversation_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_command_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    next_review_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RelationshipNoteModel(Base):
+    __tablename__ = "relationship_crm_notes"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["relationship_id", "space_id", "person_id", "workspace_id"],
+            [
+                "relationship_crm_relationships.id",
+                "relationship_crm_relationships.space_id",
+                "relationship_crm_relationships.person_id",
+                "relationship_crm_relationships.workspace_id",
+            ],
+            name="fk_relationship_crm_notes_relationship_scope",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "space_id",
+            "note_key",
+            name="uq_relationship_crm_notes_space_key",
+        ),
+        CheckConstraint(
+            "kind IN ('note', 'thought')",
+            name="ck_relationship_crm_notes_kind",
+        ),
+        CheckConstraint(
+            "char_length(body) BETWEEN 1 AND 16384",
+            name="ck_relationship_crm_notes_body",
+        ),
+        Index(
+            "ix_relationship_crm_notes_person_created",
+            "workspace_id",
+            "space_id",
+            "person_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    relationship_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    note_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    conversation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RelationshipWorkItemModel(Base):
+    __tablename__ = "relationship_crm_work_items"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["relationship_id", "space_id", "person_id", "workspace_id"],
+            [
+                "relationship_crm_relationships.id",
+                "relationship_crm_relationships.space_id",
+                "relationship_crm_relationships.person_id",
+                "relationship_crm_relationships.workspace_id",
+            ],
+            name="fk_relationship_crm_work_items_relationship_scope",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "space_id",
+            "work_item_key",
+            name="uq_relationship_crm_work_items_space_key",
+        ),
+        CheckConstraint(
+            "responsible_party IN ('workspace_owner', 'person', 'shared', 'unassigned')",
+            name="ck_relationship_crm_work_items_responsible",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'done', 'cancelled')",
+            name="ck_relationship_crm_work_items_status",
+        ),
+        CheckConstraint(
+            "updated_at >= created_at",
+            name="ck_relationship_crm_work_items_dates",
+        ),
+        Index(
+            "ix_relationship_crm_work_items_review",
+            "workspace_id",
+            "space_id",
+            "status",
+            "next_review_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    relationship_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    work_item_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    responsible_party: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    next_review_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    conversation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
