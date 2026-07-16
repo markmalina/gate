@@ -26,6 +26,19 @@ ALPHA_DISCLOSURE_PREFIX = (
 )
 
 
+def compose_alpha_delivery_text(*, candidate: str, disclosure_prefix: str) -> str:
+    """Add the mandatory disclosure and enforce one literal Telegram message."""
+
+    if not candidate.strip():
+        raise AlphaCanaryError("alpha_canary_candidate_unavailable")
+    delivered = (
+        candidate if candidate.startswith(disclosure_prefix) else disclosure_prefix + candidate
+    )
+    if len(delivered) > MAX_TELEGRAM_TEXT_CHARS:
+        raise AlphaCanaryError("alpha_canary_candidate_too_long")
+    return delivered
+
+
 class AlphaCanaryDisposition(StrEnum):
     DISABLED = "disabled"
     BLOCKED = "blocked"
