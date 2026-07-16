@@ -8,8 +8,8 @@ import textwrap
 from dataclasses import dataclass
 from typing import Literal
 
-import pytest
 from jsonschema import Draft202012Validator
+import pytest
 
 from app.api import mcp_metadata_routes, mcp_routes
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
