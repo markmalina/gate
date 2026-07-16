@@ -45,6 +45,7 @@ class MemoryLifecyclePort:
         self.approve_calls += 1
         assert command.deployment_key == "alpha-canary-v1-fixture"
         assert command.revision_key == "alpha-canary-v1"
+        assert command.expected_state is AlphaInstallationState.PENDING_APPROVAL
         return _view(AlphaInstallationState.ACTIVE)
 
     async def pause(self, command):
