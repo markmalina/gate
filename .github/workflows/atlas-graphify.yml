@@ -19,35 +19,66 @@ jobs:
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with:
           python-version: "3.12"
-      - run: pip install --disable-pip-version-check "graphifyy==0.9.17"
-      - name: Build private graph
+      - run: pip install --disable-pip-version-check "graphifyy==0.1.14"
+      - name: Build private AST graph
         shell: bash
         run: |
-          set +e
-          graphify extract . --no-viz
-          status=$?
-          set -e
-          if [ "$status" -ne 0 ] || [ ! -s graphify-out/graph.json ]; then
-            mkdir -p graphify-out
-            python - <<'PY'
-          import json, os
-          repo = os.environ["GITHUB_REPOSITORY"]
-          payload = {
-              "metadata": {"generator": "atlas-manifest-fallback", "repository": repo},
-              "nodes": [{"id": repo, "label": repo.split("/")[-1], "type": "repository"}],
-              "edges": []
-          }
-          with open("graphify-out/graph.json", "w", encoding="utf-8") as fh:
-              json.dump(payload, fh, ensure_ascii=False, indent=2)
-          with open("graphify-out/GRAPH_REPORT.md", "w", encoding="utf-8") as fh:
-              fh.write("# Graphify snapshot\n\nDeterministic repository manifest fallback. A semantic document graph requires an explicitly configured model backend.\n")
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from graphify.build import build_from_json
+          from graphify.cluster import cluster
+          from graphify.detect import detect
+          from graphify.export import to_html, to_json
+          from graphify.extract import extract
+
+          root = Path('.').resolve()
+          output = root / 'graphify-out'
+          output.mkdir(parents=True, exist_ok=True)
+          detection = detect(root)
+          code_files = [Path(p) for p in detection.get('files', {}).get('code', [])]
+          extraction = extract(code_files) if code_files else {'nodes': [], 'edges': []}
+
+          if not extraction.get('nodes'):
+              repo = os.environ['GITHUB_REPOSITORY']
+              extraction = {
+                  'nodes': [{
+                      'id': repo.replace('/', '_').replace('-', '_').lower(),
+                      'label': repo.split('/')[-1],
+                      'file_type': 'document',
+                      'source_file': '.',
+                      'source_location': None,
+                  }],
+                  'edges': [],
+              }
+
+          graph = build_from_json(extraction)
+          communities = cluster(graph)
+          labels = {cid: f'Community {cid}' for cid in communities}
+          to_json(graph, communities, str(output / 'graph.json'))
+          if graph.number_of_nodes() <= 5000:
+              to_html(graph, communities, str(output / 'graph.html'), community_labels=labels)
+
+          report = (
+              '# Graphify snapshot\n\n'
+              'Deterministic AST-only snapshot. No repository source was sent to a model.\n'
+              'Semantic document/image extraction requires separate explicit authorization.\n\n'
+              f'- Files detected: {detection.get("total_files", 0)}\n'
+              f'- Code files parsed: {len(code_files)}\n'
+              f'- Sensitive files skipped: {len(detection.get("skipped_sensitive", []))}\n'
+              f'- Nodes: {graph.number_of_nodes()}\n'
+              f'- Edges: {graph.number_of_edges()}\n'
+              f'- Communities: {len(communities)}\n'
+          )
+          (output / 'GRAPH_REPORT.md').write_text(report, encoding='utf-8')
+          print(f'Graphify: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges')
           PY
-          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: graphify-${{ github.event.repository.name }}
           path: |
             graphify-out/graph.json
+            graphify-out/graph.html
             graphify-out/GRAPH_REPORT.md
           if-no-files-found: error
           retention-days: 30
