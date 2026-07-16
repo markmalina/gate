@@ -106,6 +106,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate:inbox:read",
         "gate:drafts:write",
         "gate:messages:send",
+        "gate:agents:manage",
     ]
     assert payload["mcp"]["read_only_tools"] == [
         "gate_get_status",
@@ -131,6 +132,9 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_get_reply_context",
         "gate_save_reply_draft",
         "gate_send_approved_reply",
+        "gate_alpha_list_installations",
+        "gate_alpha_control_installation",
+        "gate_alpha_run_model_preflight",
     ]
     assert tools[0]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:status:read"]}
@@ -147,6 +151,15 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
     ]
     assert tools[4]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:messages:send"]}
+    ]
+    assert tools[5]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:status:read"]}
+    ]
+    assert tools[6]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+    ]
+    assert tools[7]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
     ]
     assert tools[3]["annotations"]["destructiveHint"] is False
     assert "never approves or sends" in tools[3]["description"]
