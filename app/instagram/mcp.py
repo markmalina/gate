@@ -108,7 +108,7 @@ async def handle_instagram_mcp_tool(
                     "account_not_found", "Instagram account alias is not configured"
                 )
             async with httpx.AsyncClient() as http:
-                result = await MetaInstagramClient(
+                published = await MetaInstagramClient(
                     config=config, http=http
                 ).publish_reel(
                     account=account,
@@ -116,9 +116,9 @@ async def handle_instagram_mcp_tool(
                     caption=draft.caption,
                 )
             return {
-                "state": result.state.value,
-                "media_id": result.media_id,
-                "permalink": result.permalink,
+                "state": published.state.value,
+                "media_id": published.media_id,
+                "permalink": published.permalink,
                 "account_alias": draft.account_alias,
             }
         except InstagramContractError as exc:
@@ -135,13 +135,13 @@ async def handle_instagram_mcp_tool(
             )
         try:
             async with httpx.AsyncClient() as http:
-                result = await MetaInstagramClient(config=config, http=http).insights(
+                insights = await MetaInstagramClient(config=config, http=http).insights(
                     account=account, media_id=media_id
                 )
             return {
-                "media_id": result.media_id,
-                "captured_at": result.captured_at.isoformat(),
-                "metrics": result.metrics,
+                "media_id": insights.media_id,
+                "captured_at": insights.captured_at.isoformat(),
+                "metrics": insights.metrics,
             }
         except MetaInstagramError as exc:
             return _error(exc.code, str(exc))
