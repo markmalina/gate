@@ -8,6 +8,7 @@ from app.application.alpha_group import AlphaInstallationState
 from app.application.alpha_lifecycle import (
     AlphaAccessReason,
     AlphaInstallationActionCommand,
+    AlphaLifecycleError,
     AlphaLifecycleService,
     ApproveAlphaInstallationCommand,
     DiscoverAlphaInstallationCommand,
@@ -256,7 +257,7 @@ async def test_discovery_approval_gating_and_usage_are_transactional() -> None:
             assert inactive.reason is AlphaAccessReason.INSTALLATION_INACTIVE
 
             with pytest.raises(
-                Exception,
+                AlphaLifecycleError,
                 match="state changed",
             ):
                 await service.resume(
