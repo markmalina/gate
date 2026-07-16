@@ -1,9 +1,11 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new developer or implementation agent.  
-> Verified against GitHub `main` and Railway production on 2026-07-16.  
-> GitHub `main` after PR #199: `3f1f29b96fd1794f5bf66ad2d78107306057b3cd`.
-> Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway before claiming the new head is deployed.
+> GitHub handoff package verified on 2026-07-17.  
+> Product-code baseline through PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`.  
+> Handoff package inspected at PR #206 merge: `525910f4f54096c88df1a6a0fca8fc5e7587dd22`.  
+> Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway before claiming the accepted GitHub head is deployed.
+> Open WIP at inspection: PR #207 (dormant Instagram transport) and PR #208 (dormant Gate→TAKE boundary); neither belongs to the accepted baseline until separately reviewed, green and merged.  
 
 ## 1. Start here
 
