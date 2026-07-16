@@ -42,7 +42,7 @@ class InstagramProviderCommand:
     quick_reply: dict[str, str] | None
 
     @classmethod
-    def from_mapping(cls, value: Any) -> "InstagramProviderCommand":
+    def from_mapping(cls, value: Any) -> InstagramProviderCommand:
         if not isinstance(value, dict):
             raise InstagramCommandError("command_required")
         raw_type = value.get("type")
