@@ -22,12 +22,12 @@ from app.application.alpha_voice_fixture import (
 NOW = datetime(2026, 7, 16, 20, 0, tzinfo=UTC)
 
 
-def _metadata() -> TelegramVoiceMetadata:
+def _metadata(*, file_size_bytes: int = 5) -> TelegramVoiceMetadata:
     return TelegramVoiceMetadata(
         file_id="fixture-file-sensitive",
         file_unique_id="fixture-unique-sensitive",
         duration_seconds=2,
-        file_size_bytes=5,
+        file_size_bytes=file_size_bytes,
         mime_type="audio/ogg",
     )
 
@@ -129,7 +129,7 @@ def test_fixture_repr_hides_audio_transcript_and_answer() -> None:
     )
     command = RunAlphaVoiceFixtureCommand(
         queued_job=_queued(),
-        metadata=_metadata(),
+        metadata=_metadata(file_size_bytes=len(b"secret-audio")),
         audio_bytes=b"secret-audio",
         started_at=NOW + timedelta(seconds=1),
         completed_at=NOW + timedelta(seconds=2),
