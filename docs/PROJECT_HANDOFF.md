@@ -1,8 +1,8 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new developer or implementation agent.  
-> Verified against GitHub `main` and Railway production on 2026-07-15.  
-> Verified paused production commit before this resume release: `302c0de37acbbb6236093f4cd3f24f7af98fd099`.
+> Verified against GitHub `main` and Railway production on 2026-07-16.  
+> Verified production commit after PR #178: `7a9898f3cc0dac6fa5c4513bf040ca8a84397027`.
 
 ## 1. Start here
 
@@ -38,45 +38,41 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through Gate M after PR #166 deployed and the owner sent the pause probe:
+Verified through Gate M after PR #178 deployed:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `302c0de37acb` (paused drill baseline) |
+| Railway production commit | `7a9898f3cc0d` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
-| MCP | OAuth 2.0 enforced; 5 tools |
+| MCP | OAuth 2.0 enforced; 9 tools |
 | Human send | enabled only through exact explicit confirmation |
 | RU Telegram Business | `ready`, `can_reply=true` |
 | BY Telegram Business | `ready`, `can_reply=true` |
 | RU contacts | 90, source `telegram_desktop_export` |
 | BY contacts | 0; import intentionally deferred |
-| Snapshot counts | 29 conversations, 686 messages, 181 reply tasks, 5 unanswered, 28 drafts |
-| Alpha canary audit | 5 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
+| Snapshot counts | 33 conversations, 830 messages, 245 reply tasks, 4 unanswered, 28 drafts |
+| Alpha fixture audit | 5 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
+| Alpha model evidence | 0 model turns, 0 model delivery grants, USD 0 reserved |
 
-The five MCP tools are `gate_get_status`, `gate_list_unanswered`, `gate_get_reply_context`,
-`gate_save_reply_draft` and `gate_send_approved_reply`.
+The nine MCP tools are the five human-inbox tools plus
+`gate_alpha_list_installations`, `gate_alpha_control_installation`,
+`gate_alpha_run_model_preflight`, and `gate_alpha_list_shadow_reviews`.
+Alpha group discovery and status need no Telegram group ID. Management/review/preflight calls require
+`gate:agents:manage`; Auth0 and ChatGPT User-Delegated Access must grant it before reconnecting
+Gate M.
 
-The separate `AlphaViaBot` connector is active only for the first database-pinned test group. The
-owner-run `/alpha` test delivered the reviewed fixed response with disclosure through one grant and
-one send attempt. The active installation still uses the network-free evaluation fixture. The dormant Responses runtime
-and reviewed `alpha-model-v1` artifact are packaged, while the model deployment is staged only:
-ordinary model generation and provider data egress are not active.
+The separate Alpha connector is active only for the approved fixture installation. Model runtime
+configuration and the reviewed staged deployment are ready, but provider billing has not been
+confirmed. Production is therefore correctly `awaiting_provider_preflight`: fixture binding is
+active, Telegram delivery is blocked for model proposals, and no provider attempt has occurred.
 
-Dated live silence evidence (2026-07-15): the owner sent an ordinary group message without
-`/alpha`, a bot mention or a reply to the bot. After more than 12 seconds, Gate M still reported
-4 accepted Alpha messages, 2 Agent turns, 1 delivery grant and 1 send attempt. Privacy Mode therefore
-kept the message outside Alpha ingress; no turn, grant or delivery was created.
-
-Dated live pause evidence (2026-07-15): migration `0024_pause_alpha_canary_drill` changed only
-the unique exact fixed-canary installation from `active` to `paused` and revoked unused grants.
-The owner's `/alpha pause-test` was durably accepted, increasing accepted Alpha messages from
-4 to 5, while Agent turns remained 2, delivery grants 1 and send attempts 1. This isolates the
-kill-switch boundary: webhook and canonical ingress stayed live, but the paused installation
-blocked agent work and delivery. Migration `0025_resume_alpha_canary_drill` restores only that
-same exact paused binding; its downgrade returns it to the drilled paused state.
+Live privacy/pause evidence from 2026-07-15 remains valid: non-invocation traffic created no turn,
+grant or send, while the pause probe was durably accepted but blocked at the installation boundary.
+PR #175 added a reversible owner pause/resume control with a stale-state fence; PR #178 added
+explicit pending-group approval without exposing Telegram IDs. No new production group was approved.
 
 ## 4. Delivered release history
 
@@ -130,9 +126,28 @@ PRs #146–#161 delivered and activated the owner-approved fixed one-group canar
 - durable workspace-scoped tables for installations, grants and agent send attempts.
 
 This is not yet a generally available or model-backed Telegram agent. The fixed canary is active
-only in the pinned group. Non-command silence and the reversible pause kill switch have dated live
-evidence. Destructive revoke remains outside the canary because it intentionally requires a new
-approval/install lifecycle rather than an automatic resume.
+only in the approved group. Non-command silence and the reversible pause kill switch have dated live
+evidence. Gate M can now approve future pending groups by label/opaque reference, but no production
+approval action was invoked during development. Destructive revoke remains outside Gate M.
+
+
+
+### Model readiness and owner operations: complete before provider billing
+
+PRs #167–#178 delivered:
+
+- hard USD 50 UTC-month budget reservation before provider calls;
+- one-shot synthetic preflight with terminal replay behavior and no Telegram dependency;
+- delivery-blocked model readiness, redacted alerts and non-mutating promotion dry run;
+- offline adversarial and twelve-case product/natural-voice release evals;
+- Gate M installation list, confirmed approve/pause/resume and protected preflight;
+- owner-only, read-only shadow proposal review room;
+- PostgreSQL proof that two groups cannot exchange triggers, limits or usage;
+- five automatic stop drills, each retaining fixture rollback and forbidding promotion.
+
+The remaining external blocker is provider billing, not missing Alpha product code. Model shadow still
+requires a reviewed release after a successful preflight; preflight success does not authorize live
+delivery.
 
 ## 5. Important code map
 
@@ -164,31 +179,34 @@ approval/install lifecycle rather than an automatic resume.
 | `app/api/mcp_routes.py` | current protected ChatGPT MCP adapter |
 | `app/infrastructure/reply_sends.py` | existing human-confirmed idempotent send path |
 | `app/infrastructure/openai_agent_runtime.py` | dormant structured Responses runtime behind both model release gates |
+| `app/application/alpha_owner_control.py` | ID-free owner approval, pause/resume and safe installation views |
+| `app/infrastructure/alpha_shadow_reviews.py` | approved-group-only model shadow review query |
+| `app/application/alpha_model_readiness.py` | fail-closed readiness, stop alerts and promotion dry run |
+| `docs/ALPHA_OPERATOR_RUNBOOK.md` | one-time owner setup, provider activation and incident boundaries |
 
 ## 6. Exact next development order
 
-The fixed one-group fixture canary remains the production rollback baseline. The data-gated
-Responses runtime, reviewed `alpha-model-v1` bundle and exact staged
-`alpha-model-v1-openai` deployment are delivered. Model-backed Telegram delivery remains blocked
-in code.
+The fixture canary, owner control plane, review room, adversarial/product evals, multi-group
+isolation and stop drills are complete. OpenAI billing is the only external blocker before preflight.
 
-The standing owner authorization recorded on 2026-07-15 covers bounded OpenAI shadow testing and
-subsequent reviewed Alpha releases inside approved installations. Provider billing is the remaining
-external blocker; no provider attempt should be made merely to check whether payment has started.
+Continue in this exact order:
 
-Continue in this order:
+1. Complete the one-time Auth0 API permission and ChatGPT User-Delegated Access grant for
+   `gate:agents:manage`, then reconnect Gate M. Do not weaken Gate scopes.
+2. Wait until provider billing is confirmed ready. Do not probe billing with status reads or repeated
+   provider calls.
+3. Re-query production: exact commit, one staged model deployment, fixture binding active, zero
+   model delivery grants, no stuck preflight and remaining budget.
+4. Invoke `gate_alpha_run_model_preflight` once with `confirmed=true`. It sends only a synthetic
+   request and never reads group content or calls Telegram.
+5. Require `provider_preflight_verified=true`. Failed or ambiguously reserved preflight is terminal.
+6. Implement a reviewed code release for delivery-disabled model shadow in approved installations.
+7. Collect and review at least ten clean proposals through `gate_alpha_list_shadow_reviews`.
+8. Consider limited canary only after all automatic eval, isolation, budget, error and rollback gates
+   pass. Fixture remains rollback. Oko RU resumes only after Alpha is stable.
 
-1. Keep the fixed canary and reviewed fixtures as the network-free regression baseline.
-2. After billing is confirmed ready, invoke the protected `POST /admin/alpha/model-preflight`
-   exactly once with `confirmed=true`. It sends only a synthetic request, reserves budget first,
-   has no Telegram dependency and cannot retry the release key.
-3. Require redacted state `provider_preflight_verified` before rebinding only the pinned approved
-   installation to the exact staged deployment for delivery-disabled same-group shadow.
-4. Review real shadow evidence: one explicit invocation, same-group isolation, no delivery grant,
-   no Telegram send attempt, bounded usage and no critical error.
-5. Promote to a limited model canary only through another reviewed code release after the automated
-   gates pass. Keep the fixture revision as rollback. After Alpha is stable, resume Sprint 4 Oko RU;
-   BY and a third Business account remain out of scope.
+No real group approval, provider preflight, model shadow activation or live model delivery is part of
+this handoff update.
 
 ## 7. Owner inputs required only at the canary boundary
 
@@ -207,8 +225,13 @@ GATE_ALPHA_DELIVERY_ENABLED
 GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 ```
 
-The existing transport/canary flags are owner-authorized for the one pinned test group. The model
-path remains separately disabled. Its only secret is `OPENAI_API_KEY`; safe defaults are:
+Gate M owner actions additionally require the Auth0 API permission
+`gate:agents:manage` and the matching ChatGPT User-Delegated Access grant. Reconnect Gate M once
+after the grant changes.
+
+The existing transport/canary flags are owner-authorized for approved installations. New groups
+remain pending until an explicit Gate M approval. The model path is separately controlled. Its only
+secret is `OPENAI_API_KEY`; safe defaults are:
 
 ```text
 OPENAI_API_BASE_URL=https://api.openai.com/v1
@@ -218,9 +241,9 @@ GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS=512
 GATE_ALPHA_MODEL_TIMEOUT_SECONDS=30
 ```
 
-Do not set either model gate true merely because the code or credential exists. Activation also
-requires a new reviewed immutable Alpha bundle/deployment and explicit owner approval of provider
-egress for bounded same-group context.
+The production model gates and reviewed staged deployment are configured, but billing and the
+one-shot provider preflight remain incomplete. Configuration is not proof of provider readiness.
+Follow `docs/ALPHA_OPERATOR_RUNBOOK.md`; never retry a terminal preflight key.
 
 Production configuration changes, manual deploys, retries and rollbacks require Mark's explicit
 authorization. Normal green PR merges may use the standing auto-merge rule in `TEAM_WORKFLOW.md`.
@@ -262,10 +285,13 @@ Never put values in documentation. Important names:
   `TELEGRAM_WEBHOOK_SECRET`;
 - canonical rollout: `GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE`,
   `GATE_TELEGRAM_WORKER_ENABLED`, `GATE_WORKSPACE_ID`;
-- Alpha: `TELEGRAM_ALPHA_BOT_TOKEN`, `TELEGRAM_ALPHA_BOT_USERNAME`,
+- Alpha transport: `TELEGRAM_ALPHA_BOT_TOKEN`, `TELEGRAM_ALPHA_BOT_USERNAME`,
   `TELEGRAM_ALPHA_WEBHOOK_SECRET`, `GATE_ALPHA_CONNECTOR_ENABLED`,
   `GATE_ALPHA_SHADOW_WORKER_ENABLED`, `GATE_ALPHA_CANARY_ENABLED`,
   `GATE_ALPHA_DELIVERY_ENABLED`, `GATE_ALPHA_PRIVACY_MODE_CONFIRMED`;
+- Alpha model: `OPENAI_API_KEY`, `OPENAI_API_BASE_URL`,
+  `GATE_ALPHA_MODEL_RUNTIME_ENABLED`, `GATE_ALPHA_MODEL_DATA_GATE_APPROVED`,
+  `GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS`, `GATE_ALPHA_MODEL_TIMEOUT_SECONDS`;
 - MCP/Auth0: see `app/core/config.py` and `docs/MCP_CHATGPT_AUTH0_RUNBOOK.md`;
 - safe human sending: `GATE_SEND_ENABLED`, `GATE_ACCOUNT_RU_SEND_ENABLED`,
   `GATE_ACCOUNT_BY_SEND_ENABLED`.
