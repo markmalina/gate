@@ -10,6 +10,7 @@ from app.application.alpha_voice import (
     TelegramVoiceMetadata,
     TranscriptionJobKey,
     TranscriptionJobState,
+    VoiceTranscriptionJob,
     new_queued_transcription_job,
     start_transcription_job,
 )
@@ -31,7 +32,7 @@ def _metadata() -> TelegramVoiceMetadata:
     )
 
 
-def _queued():
+def _queued() -> VoiceTranscriptionJob:
     return new_queued_transcription_job(
         TranscriptionJobKey("workspace-mark", "canonical-message-sensitive"),
         now=NOW,
