@@ -99,6 +99,7 @@ async def _seed_reply(
     sessions: async_sessionmaker[AsyncSession],
     *,
     draft_count: int = 1,
+    draft_text: str | None = None,
 ) -> _SeededReply:
     now = datetime.now(UTC)
     bot_id = uuid4()
@@ -212,7 +213,9 @@ async def _seed_reply(
                     trigger_message_id=trigger_message_id,
                     status=ReplyDraftStatus.GENERATED.value,
                     source="reply_send_concurrency_test",
-                    draft_text=f"Approved draft {index}",
+                    draft_text=(
+                        draft_text if draft_text is not None else f"Approved draft {index}"
+                    ),
                     prompt_context={},
                 )
                 for index, draft_id in enumerate(draft_ids, start=1)
@@ -381,6 +384,58 @@ async def _send_once(
             telegram=telegram,
             settings=_settings(),
         ).send(_command(seed, draft_id))
+
+
+class _LiteralRecordingTelegram:
+    def __init__(self) -> None:
+        self.plain_calls: list[dict[str, object]] = []
+
+    async def get_business_connection(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> dict[str, object]:
+        return _live_connection(business_connection_id)
+
+    async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
+        self.plain_calls.append(kwargs)
+        return {"ok": True, "result": {"message_id": 700}}
+
+    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("approved replies must use literal Telegram delivery")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "draft_text",
+    [
+        "ordinary literal text",
+        "Keep <code>this</code> literal.",
+        "Keep <pre>this block</pre> literal.",
+        "Draft created: 01234567-89ab-cdef-0123-456789abcdef",
+        "Edit draft:\nhttps://gate.example/admin/drafts/example",
+    ],
+)
+async def test_approved_reply_uses_exact_literal_delivery(draft_text: str) -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_text=draft_text)
+        telegram = _LiteralRecordingTelegram()
+
+        result = await _send_once(
+            sessions,
+            seed=seed,
+            draft_id=seed.draft_ids[0],
+            telegram=telegram,
+        )
+
+        assert result.sent is True
+        assert telegram.plain_calls == [
+            {
+                "chat_id": seed.recipient_chat_id,
+                "text": draft_text,
+                "business_connection_id": seed.business_connection_id,
+            }
+        ]
 
 
 @pytest.mark.anyio
@@ -651,7 +706,7 @@ class _LockObservingTelegram:
         await self._take_independent_draft_lock()
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **_kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         await self._observe_committed_reservation()
         await self._take_independent_draft_lock()
@@ -702,7 +757,7 @@ class _ConcurrentTelegram:
         await self.release_probes.wait()
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **_kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         self.send_started.set()
         await self.release_send.wait()
@@ -867,7 +922,7 @@ class _BlockingProbeTelegram:
         await self.release_probe.wait()
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **_kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         return {"ok": True, "result": {"message_id": 703}}
 
@@ -1053,7 +1108,7 @@ class _ReplacementConnectionTelegram:
         assert business_connection_id == self._replacement_id
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         self.sent_business_connection_id = kwargs.get("business_connection_id")
         return {"ok": True, "result": {"message_id": 706}}
@@ -1260,7 +1315,7 @@ class _BlockingSendTelegram:
         self.probe_calls += 1
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **_kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         self.send_started.set()
         await self.release_send.wait()
@@ -1579,7 +1634,7 @@ class _TimeoutTelegram:
         self.probe_calls += 1
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **_kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         request = httpx.Request("POST", "https://api.telegram.org/sendMessage")
         raise httpx.ReadTimeout("delivery outcome unknown", request=request)
@@ -1650,7 +1705,7 @@ class _ImmediateTelegram:
         self.probe_calls += 1
         return _live_connection(business_connection_id)
 
-    async def send_message(self, **_kwargs: object) -> dict[str, object]:
+    async def send_plain_message(self, **_kwargs: object) -> dict[str, object]:
         self.send_calls += 1
         return {"ok": True, "result": {"message_id": 705}}
 
