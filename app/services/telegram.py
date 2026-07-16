@@ -98,16 +98,22 @@ class TelegramClient:
         *,
         chat_id: str,
         text: str,
+        business_connection_id: str | None = None,
     ) -> dict[str, Any]:
-        """Send literal bot text with no Business, parse-mode or markup options."""
+        """Send literal text without parse mode or Telegram reply markup."""
 
         if not self._credential:
             raise RuntimeError("Telegram credential is required")
+
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+        }
+        if business_connection_id is not None:
+            payload["business_connection_id"] = business_connection_id
+
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
-        return await self._post_telegram_json(
-            url=url,
-            payload={"chat_id": chat_id, "text": text},
-        )
+        return await self._post_telegram_json(url=url, payload=payload)
 
     async def edit_message_text(
         self,
