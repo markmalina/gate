@@ -462,21 +462,27 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
         assert second_attempt_id is not None
 
         async with sessions.begin() as seed:
+            seed.add(
+                Workspace(
+                    id=workspace_id,
+                    key="mark-personal",
+                    display_name="Mark personal",
+                    is_active=True,
+                )
+            )
+            await seed.flush()
+            seed.add(
+                TransportConnector(
+                    id=connector_id,
+                    workspace_id=workspace_id,
+                    connector_key="alpha_group",
+                    connector_kind="telegram_bot",
+                    is_enabled=True,
+                )
+            )
+            await seed.flush()
             seed.add_all(
                 [
-                    Workspace(
-                        id=workspace_id,
-                        key="mark-personal",
-                        display_name="Mark personal",
-                        is_active=True,
-                    ),
-                    TransportConnector(
-                        id=connector_id,
-                        workspace_id=workspace_id,
-                        connector_key="alpha_group",
-                        connector_kind="telegram_bot",
-                        is_enabled=True,
-                    ),
                     current_dialog,
                     other_dialog,
                     AgentDefinitionModel(
@@ -485,6 +491,11 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                         agent_key="alpha_group",
                         display_name="Alpha",
                     ),
+                ]
+            )
+            await seed.flush()
+            seed.add_all(
+                [
                     InstructionRevisionModel(
                         id=current_revision_id,
                         workspace_id=workspace_id,
@@ -509,6 +520,11 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                         schema_version="agent-bundle-v1",
                         validation_state="validated",
                     ),
+                ]
+            )
+            await seed.flush()
+            seed.add_all(
+                [
                     AgentDeploymentModel(
                         id=current_deployment_id,
                         workspace_id=workspace_id,
@@ -531,36 +547,52 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                         policy_version="alpha-shadow-v1",
                         state="paused",
                     ),
-                    AgentInstallationModel(
-                        id=installation_id,
-                        workspace_id=workspace_id,
-                        connector_id=connector_id,
-                        dialog_id=dialog_id,
-                        deployment_id=current_deployment_id,
-                        instruction_revision_id=current_revision_id,
-                        installation_key="installation-alpha",
-                        dialog_label="Alpha Group",
-                        state="active",
-                        max_turns_per_window=5,
-                        rate_window_seconds=60,
-                        max_tokens_per_turn=2048,
-                    ),
-                    source_receipt,
-                    source_message,
-                    other_receipt,
-                    other_message,
-                    trigger_receipt,
-                    trigger_message,
-                    wrong_trigger_receipt,
-                    wrong_trigger_message,
-                    wrong_source_receipt,
-                    wrong_source_message,
-                    *agent_sessions,
-                    *turns,
-                    *grants,
-                    *attempts,
                 ]
             )
+            await seed.flush()
+            seed.add(
+                AgentInstallationModel(
+                    id=installation_id,
+                    workspace_id=workspace_id,
+                    connector_id=connector_id,
+                    dialog_id=dialog_id,
+                    deployment_id=current_deployment_id,
+                    instruction_revision_id=current_revision_id,
+                    installation_key="installation-alpha",
+                    dialog_label="Alpha Group",
+                    state="active",
+                    max_turns_per_window=5,
+                    rate_window_seconds=60,
+                    max_tokens_per_turn=2048,
+                )
+            )
+            seed.add_all(
+                [
+                    source_receipt,
+                    other_receipt,
+                    trigger_receipt,
+                    wrong_trigger_receipt,
+                    wrong_source_receipt,
+                ]
+            )
+            await seed.flush()
+            seed.add_all(
+                [
+                    source_message,
+                    other_message,
+                    trigger_message,
+                    wrong_trigger_message,
+                    wrong_source_message,
+                ]
+            )
+            await seed.flush()
+            seed.add_all(agent_sessions)
+            await seed.flush()
+            seed.add_all(turns)
+            await seed.flush()
+            seed.add_all(grants)
+            await seed.flush()
+            seed.add_all(attempts)
 
         async with sessions() as verification:
             first = await _load_context(
