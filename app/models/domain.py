@@ -332,6 +332,10 @@ class TelegramBusinessConnection(Base):
 
     __tablename__ = "telegram_business_connections"
     __table_args__ = (
+        UniqueConstraint(
+            "business_connection_id",
+            name="uq_telegram_business_connections_business_connection_id",
+        ),
         Index(
             "uq_telegram_business_connections_enabled_account",
             "account_id",
@@ -345,7 +349,7 @@ class TelegramBusinessConnection(Base):
         ForeignKey("accounts.id"), nullable=False, index=True
     )
     business_connection_id: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
+        String(255), nullable=False, index=True
     )
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     user_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
