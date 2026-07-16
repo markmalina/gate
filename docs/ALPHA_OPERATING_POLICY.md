@@ -100,3 +100,37 @@ database lock. A succeeded, failed or ambiguously reserved release key is termin
 retried automatically. Only content-free evidence and a candidate SHA-256 digest are persisted.
 The preflight endpoint may be deployed while billing is unavailable, but it must not be invoked
 until billing readiness is confirmed.
+
+## Owner control and installation approval
+
+Group discovery is automatic and does not require the owner to provide a Telegram group ID. Gate M
+returns a bounded group label plus an opaque installation reference. A discovered installation
+cannot run Alpha until the owner explicitly applies a confirmed approval in Gate.
+
+Approval, pause and resume require the dedicated `gate:agents:manage` OAuth permission and the
+state the owner reviewed. Approval binds only the reviewed fixture deployment/revision. The
+database row is locked; a concurrent state change fails closed. Revocation remains outside Gate M
+because it is destructive to the installation lifecycle.
+
+The Auth0 Gate API and ChatGPT User-Delegated Access grant must include
+`gate:agents:manage` before Gate M is reconnected. Missing permission must not be solved by
+weakening a tool scope.
+
+## Review, product quality and stop drills
+
+The owner-only shadow review room reads model-backed turns only through the same workspace and an
+active or paused approved installation. It returns no Telegram dialog/message identifiers, bounds
+request and candidate text, and reports `sent_to_telegram=false`.
+
+CI gates now include:
+
+- prompt-injection, secret-extraction and cross-group adversarial cases;
+- twelve product cases for concise answers, clarification, action boundaries, high-stakes handoff,
+  Russian/English coverage and natural voice;
+- PostgreSQL multi-group trigger, rate-limit and usage isolation;
+- automatic stop drills for any model delivery grant, shadow failure, stuck preflight, exhausted
+  monthly budget and non-exact staged deployment.
+
+Every stop drill must keep promotion non-mutating, keep limited-canary review false and retain the
+fixture canary as rollback target. A successful preflight alone never authorizes model delivery.
+
