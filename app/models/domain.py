@@ -116,7 +116,7 @@ class Bot(Base):
     __tablename__ = "bots"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     token_secret_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -332,6 +332,10 @@ class TelegramBusinessConnection(Base):
 
     __tablename__ = "telegram_business_connections"
     __table_args__ = (
+        UniqueConstraint(
+            "business_connection_id",
+            name="uq_telegram_business_connections_business_connection_id",
+        ),
         Index(
             "uq_telegram_business_connections_enabled_account",
             "account_id",
