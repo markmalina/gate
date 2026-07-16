@@ -3,6 +3,7 @@
 from dataclasses import replace
 from typing import Any
 
+import pytest
 from app.application.alpha_model_readiness import (
     AlphaModelReadinessFacts,
     AlphaModelReadinessState,
@@ -154,6 +155,46 @@ def test_limited_canary_review_needs_ten_clean_shadow_proposals() -> None:
     assert complete["limited_canary_review_ready"] is True
     assert complete["next_stage"] == "limited_canary_review"
     assert complete["mutation_allowed"] is False
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected_state"),
+    [
+        (
+            {"provider_preflight_successes": 1, "model_delivery_grants": 1},
+            AlphaModelReadinessState.SAFETY_INVARIANT_VIOLATED,
+        ),
+        (
+            {"model_turns": 1, "failed_turns": 1},
+            AlphaModelReadinessState.PROVIDER_PREFLIGHT_FAILED,
+        ),
+        (
+            {"stuck_provider_preflights": 1},
+            AlphaModelReadinessState.PROVIDER_PREFLIGHT_STUCK,
+        ),
+        (
+            {"reserved_microusd": 50_000_000},
+            AlphaModelReadinessState.BUDGET_EXHAUSTED,
+        ),
+        (
+            {"staged_deployments": 0},
+            AlphaModelReadinessState.DEPLOYMENT_NOT_EXACT,
+        ),
+    ],
+)
+def test_operational_stop_drills_never_mutate_or_promote(
+    changes: dict[str, Any],
+    expected_state: AlphaModelReadinessState,
+) -> None:
+    facts = _facts(**changes)
+    readiness = evaluate_alpha_model_readiness(facts)
+    plan = alpha_model_readiness_payload(facts)["promotion_dry_run"]
+
+    assert isinstance(plan, dict)
+    assert readiness.state is expected_state
+    assert plan["mutation_allowed"] is False
+    assert plan["limited_canary_review_ready"] is False
+    assert plan["rollback_target"] == "fixture_canary"
 
 
 def test_status_payload_is_redacted_and_reports_exact_budget() -> None:
