@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-
 MAX_CAPTION_LENGTH = 2200
 ALLOWED_VIDEO_MIME_TYPES = frozenset({"video/mp4", "video/quicktime"})
 
@@ -34,7 +33,7 @@ class InstagramFile:
     file_name: str
 
     @classmethod
-    def from_mapping(cls, value: Any) -> "InstagramFile":
+    def from_mapping(cls, value: Any) -> InstagramFile:
         if not isinstance(value, dict):
             raise InstagramContractError("video must be a ChatGPT file")
         download_url = value.get("download_url")
@@ -77,7 +76,7 @@ class ReelDraft:
     @classmethod
     def build(
         cls, *, account_alias: Any, caption: Any, video: Any, expires_at: datetime
-    ) -> "ReelDraft":
+    ) -> ReelDraft:
         if not isinstance(account_alias, str) or not account_alias.strip():
             raise InstagramContractError("account_alias is required")
         if not isinstance(caption, str):
