@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from app.instagram.automation import (
     AutomationDecision,
     AutomationFacts,
@@ -15,6 +16,7 @@ from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
 from app.instagram.events import InstagramEvent, InstagramEventType
+from app.instagram.routes import router as instagram_webhook_router
 from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
 
@@ -184,3 +186,30 @@ async def test_gate_signs_and_delivers_instagram_event_to_mayaki() -> None:
             now=lambda: now,
         ).deliver([event])
     assert delivered == 1
+
+
+@pytest.mark.anyio
+async def test_meta_webhook_verification_returns_plain_challenge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GATE_INSTAGRAM_WEBHOOK_ENABLED", "true")
+    monkeypatch.setenv("GATE_INSTAGRAM_APP_SECRET", "app-secret")
+    monkeypatch.setenv("GATE_INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "verify-token")
+    app = FastAPI()
+    app.include_router(instagram_webhook_router)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as http:
+        response = await http.get(
+            "/webhooks/instagram",
+            params={
+                "hub.mode": "subscribe",
+                "hub.challenge": "challenge-123",
+                "hub.verify_token": "verify-token",
+            },
+        )
+    assert response.status_code == 200
+    assert response.text == "challenge-123"
+    assert response.headers["content-type"].startswith("text/plain")
