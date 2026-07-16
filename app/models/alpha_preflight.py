@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -42,6 +43,11 @@ class AlphaModelPreflightModel(Base):
             "workspace_id",
             "preflight_key",
             name="uq_alpha_model_preflight_key",
+        ),
+        Index(
+            "ix_alpha_model_preflight_workspace_created",
+            "workspace_id",
+            "created_at",
         ),
         CheckConstraint(
             "state IN ('reserved', 'succeeded', 'failed')",
