@@ -7,6 +7,7 @@
 > Handoff package inspected at PR #206 merge: `525910f4f54096c88df1a6a0fca8fc5e7587dd22`  
 > Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway for current deployment  
 > Production: Railway automatic deployment from `main`
+> Open WIP at handoff inspection: PR #207 (dormant Instagram transport) and PR #208 (dormant Gate→TAKE boundary). Neither is part of the accepted product baseline until independently reviewed, exact-head CI is green and it is merged.  
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
