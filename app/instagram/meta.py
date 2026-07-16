@@ -8,7 +8,11 @@ from typing import Any
 
 import httpx
 
-from app.instagram.commands import ProviderFollowState
+from app.instagram.commands import (
+    InstagramCommandType,
+    InstagramProviderCommand,
+    ProviderFollowState,
+)
 from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.contracts import PublishedReel, PublishState, ReelInsights
 
@@ -140,6 +144,40 @@ class MetaInstagramClient:
             )
         return recipient_id
 
+    async def send_message(
+        self,
+        *,
+        account: InstagramAccountConfig,
+        instagram_scoped_user_id: str,
+        text: str,
+        quick_reply: dict[str, str] | None = None,
+    ) -> str:
+        """Send a message inside an already-open Instagram conversation window."""
+        message: dict[str, Any] = {"text": text}
+        if quick_reply is not None:
+            message["quick_replies"] = [
+                {
+                    "content_type": "text",
+                    "title": quick_reply["title"],
+                    "payload": quick_reply["payload"],
+                }
+            ]
+        result = await self._request(
+            "POST",
+            account,
+            account.instagram_user_id + "/messages",
+            json={
+                "recipient": {"id": instagram_scoped_user_id},
+                "message": message,
+            },
+        )
+        message_id = result.get("message_id")
+        if not isinstance(message_id, str) or not message_id:
+            raise MetaInstagramError(
+                "provider_contract", "Meta did not return the message id"
+            )
+        return message_id
+
     async def follow_state(
         self,
         *,
@@ -226,3 +264,59 @@ class MetaInstagramClient:
             raise MetaInstagramError(
                 "provider_error", "Meta rejected the Instagram request"
             ) from exc
+
+
+class MetaInstagramCommandExecutor:
+    """Execute validated MAYAKI commands with process-local replay protection."""
+
+    def __init__(self, *, client: MetaInstagramClient) -> None:
+        self.client = client
+        self._results: dict[str, dict[str, Any]] = {}
+
+    async def execute(self, value: Any) -> dict[str, Any]:
+        command = InstagramProviderCommand.from_mapping(value)
+        previous = self._results.get(command.idempotency_key)
+        if previous is not None:
+            return {**previous, "idempotent_replay": True}
+        account = self.client.config.account(command.account_alias)
+        if account is None:
+            raise MetaInstagramError(
+                "account_not_found", "Instagram account alias is not configured"
+            )
+        result: dict[str, Any] = {
+            "status": "delivered",
+            "command_type": command.command_type.value,
+            "idempotency_key": command.idempotency_key,
+            "idempotent_replay": False,
+            "external_delivery": True,
+        }
+        if command.command_type is InstagramCommandType.PUBLIC_REPLY:
+            result["provider_reply_id"] = await self.client.reply_to_comment(
+                account=account,
+                comment_id=str(command.provider_comment_id),
+                text=str(command.text),
+            )
+        elif command.command_type is InstagramCommandType.PRIVATE_REPLY:
+            result["instagram_user_id"] = await self.client.private_reply_to_comment(
+                account=account,
+                comment_id=str(command.provider_comment_id),
+                text=str(command.text),
+                quick_reply=command.quick_reply,
+            )
+        elif command.command_type is InstagramCommandType.FOLLOW_CHECK:
+            state = await self.client.follow_state(
+                account=account,
+                instagram_scoped_user_id=str(command.instagram_user_id),
+            )
+            result["follow_state"] = state.value
+            result["external_delivery"] = False
+            result["status"] = "observed"
+        else:
+            result["provider_message_id"] = await self.client.send_message(
+                account=account,
+                instagram_scoped_user_id=str(command.instagram_user_id),
+                text=str(command.text),
+                quick_reply=command.quick_reply,
+            )
+        self._results[command.idempotency_key] = result
+        return result
