@@ -3,6 +3,7 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from app.instagram.automation import (
     AutomationDecision,
@@ -10,9 +11,11 @@ from app.instagram.automation import (
     FollowState,
     admit_direct_delivery,
 )
+from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
-from app.instagram.events import InstagramEventType
+from app.instagram.events import InstagramEvent, InstagramEventType
+from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
 
 VIDEO = {
@@ -106,3 +109,78 @@ def test_verified_comment_webhook_is_normalized_and_scoped() -> None:
     assert events[0].event_type is InstagramEventType.COMMENT_RECEIVED
     assert events[0].account_alias == "main"
     assert events[0].deduplication_key
+
+
+def test_comment_event_adapts_to_authenticated_mayaki_intake() -> None:
+    event = InstagramEvent(
+        event_type=InstagramEventType.COMMENT_RECEIVED,
+        workspace_key="mark-personal",
+        account_alias="main",
+        provider_event_id="comment-1",
+        occurred_at=datetime(2026, 7, 17, tzinfo=UTC),
+        payload={
+            "from": {"id": "ig-user-1", "username": "anna"},
+            "text": "21",
+        },
+    )
+    payload = event.mayaki_gate_intake_payload()
+    assert payload["provider"] == "instagram"
+    assert payload["provider_user_id"] == "ig-user-1"
+    assert payload["message_text"] == "21"
+    assert payload["raw"]["account_alias"] == "main"
+
+
+@pytest.mark.anyio
+async def test_gate_signs_and_delivers_instagram_event_to_mayaki() -> None:
+    event = InstagramEvent(
+        event_type=InstagramEventType.COMMENT_RECEIVED,
+        workspace_key="mark-personal",
+        account_alias="main",
+        provider_event_id="comment-1",
+        occurred_at=datetime(2026, 7, 17, tzinfo=UTC),
+        payload={"from": {"id": "ig-user-1"}, "text": "21"},
+    )
+    now = datetime(2026, 7, 17, 1, tzinfo=UTC)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raw_body = request.content.decode()
+        expected = sign_mayaki_intake(
+            method="POST",
+            path="/intake/gate",
+            timestamp=now.isoformat(),
+            raw_body=raw_body,
+            secret="hmac-secret",
+        )
+        assert request.headers["authorization"] == "Bearer bearer-secret"
+        assert request.headers["x-mayaki-signature"] == expected
+        assert request.headers["x-mayaki-idempotency-key"] == event.deduplication_key
+        return httpx.Response(200, json={"ok": True})
+
+    config = InstagramRuntimeConfig(
+        enabled=False,
+        delivery_enabled=False,
+        webhook_enabled=True,
+        webhook_delivery_enabled=True,
+        graph_base_url="https://graph.instagram.com",
+        graph_version="",
+        signing_secret="",
+        app_secret="app-secret",
+        webhook_verify_token="verify-token",
+        mayaki_intake_url="https://mayaki.example/intake/gate",
+        mayaki_intake_bearer_token="bearer-secret",
+        mayaki_intake_hmac_secret="hmac-secret",
+        accounts={
+            "main": InstagramAccountConfig(
+                alias="main",
+                instagram_user_id="ig-account-1",
+                access_token="secret",
+            )
+        },
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        delivered = await MayakiInstagramEventSink(
+            config=config,
+            http=http,
+            now=lambda: now,
+        ).deliver([event])
+    assert delivered == 1
