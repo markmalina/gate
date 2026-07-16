@@ -1,6 +1,7 @@
 """Alpha group/private discovery and addressing policy tests."""
 
 import pytest
+
 from app.application.alpha_access_policy import (
     AlphaAccessPolicyError,
     AlphaAddressingSignal,
@@ -82,7 +83,10 @@ def test_active_installations_accept_only_addressed_human_turns(
 @pytest.mark.parametrize(
     ("change", "reason"),
     [
-        ({"installation_state": AlphaInstallationState.PENDING_APPROVAL}, "alpha_installation_not_active"),
+        (
+            {"installation_state": AlphaInstallationState.PENDING_APPROVAL},
+            "alpha_installation_not_active",
+        ),
         ({"sender_is_bot_or_service": True}, "alpha_sender_not_human"),
         ({"connector_ready": False}, "alpha_connector_not_ready"),
         ({"provider_ready": False}, "alpha_provider_not_ready"),
