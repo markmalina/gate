@@ -168,7 +168,7 @@ class SqlTelegramReplySender:
 
         self._require_provider_outside_transaction()
         try:
-            telegram_result = await self._telegram.send_message(
+            telegram_result = await self._telegram.send_plain_message(
                 chat_id=reservation.context.target_chat_id,
                 text=reservation.context.draft_text,
                 business_connection_id=reservation.business_connection_id,

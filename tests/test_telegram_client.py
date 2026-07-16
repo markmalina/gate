@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -40,6 +41,45 @@ async def test_telegram_client_parses_api_error() -> None:
     assert exc_info.value.error_code == 400
     assert exc_info.value.http_status == 400
     assert exc_info.value.description == "Bad Request: business connection not found"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ordinary literal text",
+        "Keep <code>this</code> literal and do not parse it.",
+        "Keep <pre>this block</pre> literal and do not parse it.",
+        "Draft created: 01234567-89ab-cdef-0123-456789abcdef",
+        "Edit draft:\nhttps://gate.example/admin/drafts/example",
+    ],
+)
+async def test_send_plain_message_preserves_exact_literal_payload(text: str) -> None:
+    payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            request=request,
+            json={"ok": True, "result": {"message_id": 123}},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = TelegramClient("secret-token", http_client=http_client)
+        await client.send_plain_message(
+            chat_id="123",
+            text=text,
+            business_connection_id="business-connection",
+        )
+
+    assert payloads == [
+        {
+            "chat_id": "123",
+            "text": text,
+            "business_connection_id": "business-connection",
+        }
+    ]
 
 
 @pytest.mark.anyio
