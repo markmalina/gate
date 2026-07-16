@@ -295,6 +295,27 @@ def test_public_profile_is_scoped_to_one_installation() -> None:
     assert scope.data_scope is AlphaDataScope.INSTALLATION
 
 
+@pytest.mark.parametrize(
+    ("profile", "data_scope", "error"),
+    [
+        ("public", AlphaDataScope.INSTALLATION, "profile must be"),
+        ("mark_private", AlphaDataScope.MARK_PRIVATE, "profile must be"),
+        (AlphaProfile.PUBLIC, "installation", "data_scope must be"),
+        (AlphaProfile.MARK_PRIVATE, object(), "data_scope must be"),
+    ],
+)
+def test_profile_scope_rejects_untyped_nested_values(
+    profile: object,
+    data_scope: object,
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        AlphaProfileScope(
+            profile=profile,  # type: ignore[arg-type]
+            data_scope=data_scope,  # type: ignore[arg-type]
+        )
+
+
 def test_owner_view_has_only_opaque_reference_label_policy_and_quotas() -> None:
     quota = AlphaInstallationQuota(
         max_turns_per_window=7,
