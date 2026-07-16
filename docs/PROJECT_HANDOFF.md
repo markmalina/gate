@@ -110,7 +110,7 @@ PRs #143–#145 delivered:
 No mutable GitHub `main` read, Git credential, model network call or agent delivery exists in this
 shadow result.
 
-### Sprint 3 — Alpha group bot: fixed canary happy path and pause drill verified
+### Sprint 3 — Alpha Telegram bot: fixed group canary happy path and pause drill verified
 
 PRs #146–#161 delivered and activated the owner-approved fixed one-group canary boundary:
 
@@ -153,7 +153,7 @@ The remaining external blocker is provider billing, not missing Alpha product co
 requires a reviewed release after a successful preflight; preflight success does not authorize live
 delivery.
 
-## 4.1. Releases #179–#199 — safety cleanup, voice foundation and Relationship CRM
+## 4.1. Releases #179–#205 — safety cleanup, voice, Relationship CRM and billing
 
 - MCP publication is guarded as one exact nine-tool contract.
 - unsupported Alpha media is terminal and human-confirmed Telegram text is literal;
@@ -164,7 +164,11 @@ delivery.
 - people, channel identities, relationships and immutable interaction facts are durable;
 - attention, notes/thoughts and follow-ups are independent from legacy reply tasks;
 - pipelines, versioned stages, deals and actor-attributed transitions exist only in commercial/program spaces;
-- migrations 0028–0030 are additive and reversible; no production backfill or CRM UI is active yet.
+- migrations 0028–0030 are additive and reversible; no production backfill or CRM UI is active yet;
+- the offline voice fixture now proves synthetic audio → transcript → “Я понял так” → answer with delivery blocked;
+- provider-neutral billing contracts and migration 0031 persist entitlements, usage, costs, revenue and hard-budget reservations across Gate, Alpha, Relationship CRM, Mayaki and Oko;
+- Relationship CRM has a deterministic, checksummed `relationship_crm.transfer.v1` import/export boundary independent of Gate database UUIDs;
+- owner-approved private Alpha installations and direct-message addressing now have a pure default-deny policy; runtime wiring and live activation remain separate work.
 
 The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state model. No OpenAI call, Oko activation or Telegram test send was introduced by these releases.
 
@@ -193,8 +197,12 @@ The legacy inbox still reports answered/unanswered for compatibility. It is not 
 | `app/models/agent.py` | Agent Kernel ORM |
 | `app/models/alpha.py` | Alpha installation/grant/send-attempt ORM |
 | `app/application/relationship_crm.py` | Standalone CRM domain kernel for personal/commercial/program spaces |
+| `app/application/relationship_crm_transfer.py` | Deterministic versioned import/export boundary for later extraction |
 | `app/models/relationship_crm.py` | Module-owned people, interaction, attention, notes, pipeline and deal persistence |
+| `app/application/billing.py` / `app/models/billing.py` | Cross-product entitlement, usage, ledger and hard-budget contracts/persistence |
+| `app/application/alpha_access_policy.py` | Default-deny private/group discovery and explicit addressing policy |
 | `alembic/versions/0028_*`–`0030_*` | Relationship CRM core, personal workflow and commercial/program schema |
+| `alembic/versions/0031_billing_ledger.py` | Unified billing persistence |
 | `alembic/versions/0016_*` | canonical foundation |
 | `alembic/versions/0017_*` | Agent Kernel |
 | `alembic/versions/0018_*` | Alpha delivery capabilities |
@@ -210,12 +218,12 @@ The legacy inbox still reports answered/unanswered for compatibility. It is not 
 
 1. Re-query GitHub main, open PRs, CI and the exact Railway production fingerprint.
 2. Keep Alpha fixture active and provider/model Telegram delivery blocked until billing is confirmed.
-3. Add Relationship CRM repository/application ports with workspace and relationship-space scope in every method.
-4. Add versioned export/import and sanitized transport-to-CRM projection fixtures; existing conversations enter `personal/untriaged`, never a guessed state.
-5. Add owner control/read projections for people, notes, attention, follow-ups, pipelines and deals; preserve the old inbox as deprecated compatibility.
-6. Complete fixture-only voice transcription and the “Я понял так” response contract with Telegram delivery blocked.
-7. Complete default-deny private Alpha discovery/approval/consent fixtures.
-8. Add synthetic billing/entitlement ledger and concurrent hard-cap tests.
+3. Add Relationship CRM repository/application services with workspace and relationship-space scope in every method.
+4. Add sanitized transport-to-CRM projection fixtures and a production-data backfill dry run; existing conversations enter `personal/untriaged`, never a guessed state.
+5. Add owner read/write projections for people, notes, attention, follow-ups, pipelines and deals; preserve the old inbox as deprecated compatibility.
+6. Put the offline voice fixture behind a dormant transcription port with consent, retention and cost guards; do not call a provider.
+7. Wire private Alpha discovery policy into a default-disabled worker and owner approval views; do not activate a private installation.
+8. Add transactional billing repository services and concurrent hard-cap integration tests, then adapt Alpha budget admission without weakening its USD 50 ceiling.
 9. Continue Mayaki LMS and Relationship CRM program-space contracts on fake data only.
 10. Only after billing: one synthetic preflight, delivery-disabled shadow review, then a separately admitted limited canary.
 
