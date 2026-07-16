@@ -18,7 +18,7 @@ from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
 from app.instagram.events import InstagramEvent, InstagramEventType
-from app.instagram.meta import MetaInstagramClient
+from app.instagram.meta import MetaInstagramClient, MetaInstagramCommandExecutor
 from app.instagram.routes import router as instagram_webhook_router
 from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
@@ -355,3 +355,65 @@ async def test_meta_follow_state_is_fail_closed() -> None:
     assert following is ProviderFollowState.FOLLOWING
     assert unknown is ProviderFollowState.UNKNOWN
     assert not_permitted is ProviderFollowState.NOT_PERMITTED
+
+
+@pytest.mark.anyio
+async def test_live_command_executor_maps_validated_commands_to_meta() -> None:
+    account = InstagramAccountConfig(
+        alias="main",
+        instagram_user_id="ig-account-1",
+        access_token="secret",
+    )
+    config = instagram_meta_config()
+    config.accounts["main"] = account
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = json.loads(request.content) if request.content else {}
+        if request.url.path.endswith("/comment-1/replies"):
+            return httpx.Response(200, json={"id": "reply-1"})
+        if body.get("recipient") == {"comment_id": "comment-1"}:
+            return httpx.Response(200, json={"recipient_id": "ig-user-1"})
+        return httpx.Response(200, json={"message_id": "message-1"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        executor = MetaInstagramCommandExecutor(
+            client=MetaInstagramClient(config=config, http=http)
+        )
+        public = await executor.execute(
+            {
+                "type": "gate.instagram.public_reply.requested.v1",
+                "idempotency_key": "session-1:public-reply",
+                "account_alias": "main",
+                "provider_comment_id": "comment-1",
+                "text": "Отправил в личку",
+            }
+        )
+        replay = await executor.execute(
+            {
+                "type": "gate.instagram.public_reply.requested.v1",
+                "idempotency_key": "session-1:public-reply",
+                "account_alias": "main",
+                "provider_comment_id": "comment-1",
+                "text": "Отправил в личку",
+            }
+        )
+        prompt = await executor.execute(
+            {
+                "type": "gate.instagram.follow_prompt.requested.v1",
+                "idempotency_key": "session-1:follow-prompt:3",
+                "account_alias": "main",
+                "instagram_user_id": "ig-user-1",
+                "text": "Подпишись и проверь ещё раз.",
+                "quick_reply": {
+                    "title": "Проверить ещё раз",
+                    "payload": "ig_follow_recheck:session-1:3",
+                },
+            }
+        )
+
+    assert public["provider_reply_id"] == "reply-1"
+    assert replay["idempotent_replay"] is True
+    assert prompt["provider_message_id"] == "message-1"
+    assert len(requests) == 2
