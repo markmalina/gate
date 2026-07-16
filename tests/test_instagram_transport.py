@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -9,6 +12,8 @@ from app.instagram.automation import (
 )
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
+from app.instagram.events import InstagramEventType
+from app.instagram.webhooks import normalize_webhook, verify_meta_signature
 
 VIDEO = {
     "download_url": "https://files.example/reel.mp4",
@@ -75,3 +80,29 @@ def test_automation_kill_switch_blocks_delivery() -> None:
         follow_state=FollowState.FOLLOWING,
     )
     assert admit_direct_delivery(facts, requires_follow=False) is AutomationDecision.BLOCK
+
+
+def test_verified_comment_webhook_is_normalized_and_scoped() -> None:
+    body = json.dumps(
+        {
+            "object": "instagram",
+            "entry": [
+                {
+                    "id": "ig-1",
+                    "time": 1_700_000_000,
+                    "changes": [{"field": "comments", "value": {"id": "comment-1", "text": "21"}}],
+                }
+            ],
+        }
+    ).encode()
+    signature = "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+    verify_meta_signature(body=body, signature_header=signature, app_secret="secret")
+    events = normalize_webhook(
+        body=body,
+        workspace_key="mark-personal",
+        account_alias_by_provider_id={"ig-1": "main"},
+    )
+    assert len(events) == 1
+    assert events[0].event_type is InstagramEventType.COMMENT_RECEIVED
+    assert events[0].account_alias == "main"
+    assert events[0].deduplication_key
