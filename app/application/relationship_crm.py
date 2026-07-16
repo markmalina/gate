@@ -324,10 +324,17 @@ def apply_deal_stage_command(
 
 
 class _RelationshipScoped(Protocol):
-    workspace_key: str
-    space_key: str
-    relationship_key: str
-    person_key: str
+    @property
+    def workspace_key(self) -> str: ...
+
+    @property
+    def space_key(self) -> str: ...
+
+    @property
+    def relationship_key(self) -> str: ...
+
+    @property
+    def person_key(self) -> str: ...
 
 
 def _require_relationship_scope(record: _RelationshipScoped) -> None:
