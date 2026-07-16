@@ -9,6 +9,7 @@ from app.models import (  # noqa: F401
     alpha,
     alpha_preflight,
     alpha_voice,
+    billing,
     canonical,
     relationship_crm,
 )
