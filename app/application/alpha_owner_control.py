@@ -8,9 +8,9 @@ from enum import StrEnum
 from app.application.alpha_group import AlphaInstallationState
 from app.application.alpha_lifecycle import (
     AlphaInstallationActionCommand,
-    ApproveAlphaInstallationCommand,
     AlphaInstallationView,
     AlphaLifecycleService,
+    ApproveAlphaInstallationCommand,
 )
 
 
