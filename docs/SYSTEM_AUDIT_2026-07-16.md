@@ -17,6 +17,8 @@ No production model call, Telegram send, installation mutation or provider prefl
 - Product source documents in `markmalina/alfa`, `markmalina/mayaki`, `markmalina/oko`, `markmalina/mcore` and `markmalina/systemm`.
 - Read-only production snapshot: RU/BY connectors ready; Alpha Group active on fixture; provider preflight not verified; model Telegram delivery blocked; no model turns, failures, stuck grants or model sends.
 
+Architecture amendment: the earlier Personal CRM boundary is generalized by [Relationship CRM architecture](RELATIONSHIP_CRM_ARCHITECTURE.md) into one standalone product with isolated personal, commercial and program spaces.
+
 ## Target responsibility map
 
 ```mermaid
@@ -34,7 +36,7 @@ flowchart LR
     G --> B
 ```
 
-Gate owns receipt, connector identity, routing, idempotency, delivery attempts and transport audit. Personal CRM owns people, relationships, semantic interaction history, notes, follow-ups and attention state. Alpha owns installation/access policy, invocation, instruction bundles, scoped context, proposals and controlled replies. Mayaki owns practices, programs, enrollments, routes, competencies and customer lifecycle. Billing owns usage, cost, entitlement, plan and revenue ledgers.
+Gate owns receipt, connector identity, routing, idempotency, delivery attempts and transport audit. Relationship CRM owns people, space-scoped relationships, semantic interaction history, notes, follow-ups, pipelines, deals and attention state. Alpha owns installation/access policy, invocation, instruction bundles, scoped context, proposals and controlled replies. Mayaki owns practices, programs, enrollments, routes, competencies and customer lifecycle. Billing owns usage, cost, entitlement, plan and revenue ledgers.
 
 They should initially run in one process and one PostgreSQL cluster, with separate Python packages and table namespaces. They communicate through typed in-process ports and durable domain events. A network API between them is deliberately postponed.
 
@@ -200,12 +202,12 @@ PostgreSQL plus bounded workers is sufficient for the near-term MVP. Scale with 
 
 ## Architecture decisions
 
-1. Personal CRM is a separate bounded context, not part of Gate transport and not Alpha’s memory implementation.
+1. Relationship CRM is a separate product and bounded context, not part of Gate transport, Alpha memory or Mayaki learning logic. Personal, commercial and program use are isolated spaces of that product.
 2. For MVP it lives in the same repository/deployment as a module, with module-owned tables and public contracts. A separate repository now would slow coordinated schema/product work without creating real isolation.
 3. Alpha for groups and Alpha direct are one product with two invocation policies.
 4. LMS and customer CRM are Mayaki modules; Gate only transports their messages/events.
 5. Billing/entitlements is independent of all four product modules.
-6. `alfa` remains Mark’s personal human-readable system/interface; it may consume/export Personal CRM data, but it is not the runtime transport or CRM database.
+6. `alfa` remains Mark’s personal human-readable system/interface; it may consume/export Relationship CRM personal-space data, but it is not the runtime transport or CRM database.
 7. “Mark-private Alpha Intelligence” and “Alpha offered to other people” are separate agent profiles and data scopes. External installations must never inherit Mark’s private Alfa repository, Personal CRM or another installation’s context.
 
 ## Exit criteria for the cleanup phase
