@@ -3,7 +3,8 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-16**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Verified production commit after PR #178: `7a9898f3cc0dac6fa5c4513bf040ca8a84397027`  
+> GitHub `main` after PR #199: `3f1f29b96fd1794f5bf66ad2d78107306057b3cd`  
+> Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway for current deployment  
 > Production: Railway automatic deployment from `main`
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
@@ -18,10 +19,10 @@ Continue in this exact order:
    provider scope, $50 hard budget, and fixture → shadow → canary → live gates.
 4. [Alpha operator runbook](docs/ALPHA_OPERATOR_RUNBOOK.md) — ID-free group control,
    one-shot provider activation, stop drills and rollback boundaries.
-5. [Architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md) —
-   target design and Sprints 1–6.
-6. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
-7. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
+5. [Relationship CRM architecture](docs/RELATIONSHIP_CRM_ARCHITECTURE.md) — standalone relationship product, privacy spaces and extraction rule.
+6. [Integrated delivery roadmap](docs/INTEGRATED_DELIVERY_ROADMAP_2026.md) — current cross-product release order.
+7. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
+8. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
 
 If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
 update both documents in the same substantive PR.
@@ -46,7 +47,7 @@ Telegram communication fact
 → audit
 ```
 
-Current product goal: let Mark see who wrote to him, distinguish unanswered inbound conversations from messages he already sent, get GPT help with a reply, approve the exact result and send it through the correct Telegram Business account.
+Current product goal: keep Gate as safe transport while Relationship CRM owns people, personal attention, notes, follow-ups, commercial/program pipelines and deals. The legacy answered/unanswered inbox remains a compatibility surface until explicit CRM attention becomes the primary owner view.
 
 The next product program preserves that human-controlled path while adding two separately scoped agents: an Alpha bot for explicitly approved Telegram groups and an Oko assistant for eligible RU Telegram Business dialogs. Their release sequence and safety boundaries are defined in the [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE_ROADMAP.md).
 
@@ -270,7 +271,9 @@ Important locations:
 | `app/contact_sync/` | Separate one-shot read-only Telegram contact synchronizer |
 | `app/core/mcp_security.py` | MCP OAuth verification and access scope |
 | `app/core/config.py` | Environment-backed settings; names only, no committed values |
-| `app/models/domain.py` | Current SQLAlchemy domain model |
+| `app/models/domain.py` | Legacy SQLAlchemy domain model |
+| `app/application/relationship_crm.py` | Standalone CRM spaces, relationships, interactions, attention and deal contracts |
+| `app/models/relationship_crm.py` | Module-owned CRM persistence, independent from reply tasks and Telegram IDs |
 | `alembic/versions/` | Ordered database migrations |
 | `tests/` | Unit, contract and PostgreSQL integration coverage |
 | `docs/TEAM_WORKFLOW.md` | Collaboration and deployment authority |
@@ -341,6 +344,13 @@ Key merged milestones:
 | #167–#172 | Provider fault isolation, one-shot preflight, hard budget and reviewed model-readiness gates |
 | #173–#174 | Offline adversarial evals, dry-run promotion plan and operational alerts |
 | #175 | Gate M Alpha control plane: ID-free list, pause/resume and protected preflight |
+| #176–#178 | Shadow review, product evals and explicit multi-group approval/isolation |
+| #179–#184 | Incident, retention, restore, supply-chain and release-admission hardening |
+| #185–#186 | Unsupported-media terminal handling and literal human Telegram sends |
+| #187 | Ecosystem audit plus product, technical and integrated roadmaps |
+| #188–#193 | Personal CRM contracts, Alpha context safety, channel/voice policy and durable dormant voice intake |
+| #194 | End-to-end nine-tool MCP surface regression contract |
+| #195–#199 | Standalone Relationship CRM architecture, domain kernel and durable personal/commercial/program tables |
 | #176 | Read-only, delivery-blocked Alpha shadow review room |
 | #177 | Twelve offline product-quality and natural-voice release evals |
 | #178 | Explicit ID-free group approval and PostgreSQL multi-group isolation proof |
@@ -601,10 +611,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** keep the fixed approved Alpha fixture as the production baseline.
-Complete the one-time `gate:agents:manage` Auth0 permission/User-Delegated Access setup and reconnect
-Gate M when owner controls are needed. Do not invoke provider preflight until OpenAI billing is
-confirmed ready. Then run exactly one synthetic, delivery-free preflight through Gate M and require
-redacted success evidence. The next code sprint after that is delivery-disabled model shadow, not
-live Telegram delivery. Preserve explicit human-send confirmation, RU/BY isolation, the USD 50
-monthly ceiling and fixture rollback; Oko, BY contact import and third-account work remain deferred.
+**Immediate continuation:** keep the fixed approved Alpha fixture as the production baseline and keep provider/model delivery blocked while billing is unavailable. Relationship CRM now owns additive tables for personal, commercial and program spaces through migration 0030. Next: add scoped repository/application services, portable export/import, transport-to-CRM projection fixtures and owner control actions without changing the legacy inbox. In parallel, continue fixture-only voice transcription/response and private-Alpha lifecycle work. Re-query Railway before claiming PR #199 is deployed. Do not invoke provider preflight, activate Oko, send test Telegram messages or weaken the USD 50 cap.
