@@ -2,14 +2,14 @@
 
 import pytest
 
-from app.application.alpha_delivery import (
-    MAX_TELEGRAM_TEXT_CHARS,
-    AlphaDeliveryReservation,
-)
 from app.application.alpha_canary import (
     ALPHA_DISCLOSURE_PREFIX,
     AlphaCanaryError,
     compose_alpha_delivery_text,
+)
+from app.application.alpha_delivery import (
+    MAX_TELEGRAM_TEXT_CHARS,
+    AlphaDeliveryReservation,
 )
 from app.application.alpha_group import AgentSendAttemptState
 
