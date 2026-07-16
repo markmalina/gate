@@ -7,11 +7,11 @@ Gate owns provider transport only. TAKE owns all media production. MAYAKI owns C
 1. ChatGPT → Reel: implemented as dormant MCP tools for file validation, exact confirmation, official Meta container publication and permalink return.
 2. Multiple accounts: implemented through alias-based account registry; tokens are environment secrets and are never returned.
 3. Analytics: implemented first read-only Reel insights tool; persistence and scheduled snapshots remain a MAYAKI integration task.
-4. Comments: contracts and webhook work are deferred until Meta App webhook credentials exist.
-5. Direct: deferred until messaging permissions/App Review exist; unknown follow state must never be treated as followed.
+4. Comments: signed Meta webhook normalization, public-reply transport and authenticated Gate-to-MAYAKI delivery are implemented and dormant.
+5. Direct: private reply, quick replies, normal messaging and fail-closed follow-state lookup are implemented against official Meta contracts; activation still requires the real messaging permissions/App Review.
 6. TAKE: boundary is fixed. Gate accepts only a finished video or future versioned TAKE publishing package; it never edits media.
-7. MAYAKI: Gate will emit provider-neutral events after the MAYAKI ingestion endpoint and workspace mapping are supplied.
-8. Automation: deliberately disabled until comments/DM webhooks, idempotency storage, approved copy and a kill switch are present.
+7. MAYAKI: Gate emits provider-neutral comment/message events to MAYAKI's authenticated `/intake/gate` contract with deterministic idempotency keys.
+8. Automation: validated provider commands and a process-local replay-protected executor are implemented, but automatic command dispatch remains deliberately disabled until durable attempts, rate limits and a kill switch are present.
 
 ## Required runtime variables
 
@@ -59,4 +59,4 @@ GATE_INSTAGRAM_MAYAKI_INTAKE_HMAC_SECRET=
 
 Verification and delivery have separate feature flags. Both default to false.
 
-Provider command contracts are implemented for public replies, private replies, follow checks and follow prompts. The fake executor proves validation and idempotent replay without external Meta calls. Real command delivery remains blocked until the connected account exposes the required permissions.
+Provider command contracts are implemented for public replies, private replies, follow checks and follow prompts. A deterministic fake executor proves the workflow without external calls. The real Meta adapter now maps those commands to the official public reply, private reply, Send API and User Profile API endpoints, with process-local replay protection. It is intentionally not exposed as an unattended command endpoint: durable command attempts and the connected account permissions are production admission requirements.
