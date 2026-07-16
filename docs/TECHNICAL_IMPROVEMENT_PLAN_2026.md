@@ -1,5 +1,7 @@
 # Technical self-improvement plan
 
+See [Relationship CRM architecture](RELATIONSHIP_CRM_ARCHITECTURE.md) for the updated cross-product data owner.
+
 ## Goal
 
 Improve Gate only where the improvement unlocks safer product delivery. The plan deliberately avoids an endless platform rewrite and avoids premature microservices.
@@ -11,7 +13,7 @@ Improve Gate only where the improvement unlocks safer product delivery. The plan
 - Add retryable/terminal failure classification and tests around the Telegram worker.
 - Add a delivered-assistant projection so actual sent replies, but never shadow proposals, enter future context.
 - Publish audit, decision map and current production handoff.
-- Add dependency rules for `transport`, `personal_crm`, `alpha`, `mayaki` and `billing` modules.
+- Add dependency rules for `transport`, `relationship_crm`, `alpha`, `mayaki` and `billing` modules.
 - Add a data-ownership registry: aggregate/table/event/retention/export owner.
 - Add CI checks for stale release evidence and migration-head consistency.
 
@@ -27,9 +29,9 @@ Improve Gate only where the improvement unlocks safer product delivery. The plan
 
 **Exit:** migrated webhook classes only authenticate/accept/acknowledge; deleting an expired raw receipt does not erase canonical/product context.
 
-## T2 — Personal CRM boundary and attention semantics
+## T2 — Relationship CRM boundary, spaces and attention semantics
 
-- Create module-owned models for `Person`, `ChannelIdentityLink`, `Interaction`, `Note`, `FollowUp` and `ConversationAttention`.
+- Create module-owned models for `RelationshipSpace`, `Person`, `ChannelIdentityLink`, `Relationship`, `Interaction`, `Note`, `FollowUp`, `ConversationAttention`, `Pipeline`, `Stage` and `Deal`.
 - Use explicit attention state; do not infer it from message direction.
 - Backfill existing conversations to `untriaged`, never to guessed states.
 - Add typed repository/service ports and read projections.
@@ -79,7 +81,7 @@ Telegram currently permits bot downloads up to 20 MB while the OpenAI transcript
 
 - Introduce transactional outbox rows with versioned schemas.
 - Add idempotent consumer checkpoints and dead-letter/operator views.
-- Project transport receipts into Personal CRM interactions.
+- Project transport receipts into space-scoped Relationship CRM interactions.
 - Project model/provider/infra usage into billing.
 - Add replay tests from sanitized fixtures.
 
@@ -113,7 +115,7 @@ Telegram currently permits bot downloads up to 20 MB while the OpenAI transcript
 - Measure which module actually needs independent scaling/deployment/team ownership.
 - Extract only that module when evidence justifies it.
 
-**Exit:** Personal CRM or billing can be moved to another deployment without changing Telegram connector semantics or user-facing IDs.
+**Exit:** Relationship CRM or billing can be moved to another deployment without changing Telegram connector semantics or user-facing IDs.
 
 ## Engineering standards
 
@@ -132,5 +134,5 @@ Telegram currently permits bot downloads up to 20 MB while the OpenAI transcript
 - No broker, Kubernetes or service mesh for the MVP.
 - No universal provider abstraction before a second provider is approved.
 - No autonomous semantic status overwrite.
-- No separate repository merely to simulate modularity.
+- No network split merely to simulate modularity; Relationship CRM is a separate product now and is repository-extractable through stable contracts.
 - No Oko live activation under Alpha’s authorization.
