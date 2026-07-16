@@ -17,6 +17,7 @@ from app.application.alpha_delivery import (
     AlphaProviderDeliveryError,
     AlphaTelegramTextPort,
     DeliverAlphaGrantCommand,
+    MAX_TELEGRAM_TEXT_CHARS,
 )
 from app.application.alpha_group import (
     AgentSendAttemptState,
@@ -297,7 +298,7 @@ async def _candidate_text(
     if (
         candidate is None
         or not candidate.strip()
-        or len(candidate) > 8_000
+        or len(candidate) > MAX_TELEGRAM_TEXT_CHARS
         or hashlib.sha256(candidate.encode("utf-8")).hexdigest()
         != grant.candidate_sha256
     ):
