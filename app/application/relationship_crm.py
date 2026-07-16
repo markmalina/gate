@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from app.application.personal_crm import (
     ChannelIdentityRecord,
@@ -322,14 +323,17 @@ def apply_deal_stage_command(
     )
 
 
-def _require_relationship_scope(record: object) -> None:
-    workspace_key = getattr(record, "workspace_key")
-    space_key = getattr(record, "space_key")
-    relationship_key = getattr(record, "relationship_key")
-    person_key = getattr(record, "person_key")
-    _require_space_scope(workspace_key, space_key)
-    _require_token(relationship_key, "relationship_key", 128)
-    _require_token(person_key, "person_key", 128)
+class _RelationshipScoped(Protocol):
+    workspace_key: str
+    space_key: str
+    relationship_key: str
+    person_key: str
+
+
+def _require_relationship_scope(record: _RelationshipScoped) -> None:
+    _require_space_scope(record.workspace_key, record.space_key)
+    _require_token(record.relationship_key, "relationship_key", 128)
+    _require_token(record.person_key, "person_key", 128)
 
 
 def _require_space_scope(workspace_key: str, space_key: str) -> None:
