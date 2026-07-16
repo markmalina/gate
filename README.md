@@ -3,7 +3,7 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-16**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> GitHub `main` after PR #199: `3f1f29b96fd1794f5bf66ad2d78107306057b3cd`  
+> GitHub `main` after PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`  
 > Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway for current deployment  
 > Production: Railway automatic deployment from `main`
 
@@ -273,7 +273,10 @@ Important locations:
 | `app/core/config.py` | Environment-backed settings; names only, no committed values |
 | `app/models/domain.py` | Legacy SQLAlchemy domain model |
 | `app/application/relationship_crm.py` | Standalone CRM spaces, relationships, interactions, attention and deal contracts |
+| `app/application/relationship_crm_transfer.py` | Versioned deterministic CRM extraction/import boundary |
 | `app/models/relationship_crm.py` | Module-owned CRM persistence, independent from reply tasks and Telegram IDs |
+| `app/application/billing.py` / `app/models/billing.py` | Unified product attribution, entitlements, ledger and hard-budget reservations |
+| `app/application/alpha_access_policy.py` | Default-deny group/private discovery and addressing policy |
 | `alembic/versions/` | Ordered database migrations |
 | `tests/` | Unit, contract and PostgreSQL integration coverage |
 | `docs/TEAM_WORKFLOW.md` | Collaboration and deployment authority |
