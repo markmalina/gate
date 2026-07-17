@@ -12,7 +12,10 @@ from app.models.agent import AgentDeploymentModel, InstructionRevisionModel
 
 
 class FakeResult:
-    def __init__(self, rows: list[tuple[AgentDeploymentModel, InstructionRevisionModel]]) -> None:
+    def __init__(
+        self,
+        rows: list[tuple[AgentDeploymentModel, InstructionRevisionModel]],
+    ) -> None:
         self._rows = rows
 
     def all(self) -> list[tuple[AgentDeploymentModel, InstructionRevisionModel]]:
