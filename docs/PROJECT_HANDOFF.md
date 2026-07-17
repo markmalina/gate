@@ -210,8 +210,12 @@ CRM backfill or Telegram test send was performed.
 | `app/models/relationship_crm.py` | Module-owned people, interaction, attention, notes, pipeline and deal persistence |
 | `app/application/billing.py` / `app/models/billing.py` | Cross-product entitlement, usage, ledger and hard-budget contracts/persistence |
 | `app/application/alpha_access_policy.py` | Default-deny private/group discovery and explicit addressing policy |
+| `app/application/telegram_voice_transcription.py` | Gate-owned budgeted voice-to-text boundary |
+| `app/application/telegram_voice_orchestration.py` | Fail-closed voice admission before downstream routing |
+| `app/infrastructure/telegram_voice.py` / `openai_transcription.py` | Telegram download, ffmpeg normalization and OpenAI adapter |
+| `app/worker/telegram_processing.py` | Canonical worker composition, including identity-first Business voice wiring |
 | `alembic/versions/0028_*`–`0030_*` | Relationship CRM core, personal workflow and commercial/program schema |
-| `alembic/versions/0031_billing_ledger.py` | Unified billing persistence |
+| `alembic/versions/0031_billing_ledger.py` / `0032_gate_voice_entitlement.py` | Unified billing persistence and dormant Gate voice hard ceiling |
 | `alembic/versions/0016_*` | canonical foundation |
 | `alembic/versions/0017_*` | Agent Kernel |
 | `alembic/versions/0018_*` | Alpha delivery capabilities |
