@@ -3,10 +3,10 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-17**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Accepted product baseline through PR #227: `f7c100e4eee575d60cc82dd178d550a15f333229`  
-> Verified Railway production commit: `f7c100e4eee5`  
+> Accepted product baseline through PR #229: `652a70bc16f64f211e64f67da1dfd9310d6d2235`  
+> Verified Railway production commit: `652a70bc16f6`  
 > Production: Railway automatic deployment from `main`  
-> Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency. PR #221 is being rebuilt as this current documentation snapshot.  
+> Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency.  
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -58,7 +58,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current schema head is `0031_billing_ledger`. Never point this
+   and `alembic upgrade head`. Current schema head is `0032_gate_voice_entitlement`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -69,7 +69,7 @@ The receiving owner performs these steps in order and records evidence:
    `gate_alpha_list_installations` and `gate_alpha_list_shadow_reviews`. Confirm production/manual
    mode, RU and BY connection health, owner-scoped installation labels/opaque references and
    Telegram delivery blocked for model proposals.
-7. **Safety state.** Confirm provider preflight remains unverified until billing is ready, the USD 50
+7. **Safety state.** Confirm provider preflight is verified, the USD 50
    monthly hard ceiling remains configured, no cross-group identifiers are exposed, and private
    Alpha, Oko, CRM backfill and real voice transcription are not silently active.
 8. **Documentation consistency.** Compare GitHub head, Railway fingerprint and Gate M status with
@@ -98,7 +98,7 @@ Gate environment/mode: production / manual
 RU/BY connector health: <redacted aggregate>
 MCP public actions: 9 / 9
 Alpha installation review: <labels and states only; no Telegram IDs>
-Provider preflight verified: false (until separately authorized)
+Provider preflight verified: true
 Model Telegram delivery blocked: true
 Billing hard ceiling: USD 50/month
 Open blockers or deviations: <list>
@@ -142,12 +142,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-17 after PR #227:
+Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-17 after PR #229:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `f7c100e4eee575d60cc82dd178d550a15f333229` / `f7c100e4eee5` |
+| Application / Railway commit | `652a70bc16f64f211e64f67da1dfd9310d6d2235` / `652a70bc16f6` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -156,18 +156,18 @@ Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-
 | MCP | OAuth 2.0 enforced, nine tools |
 | Human sending | exact saved draft + explicit confirmation only |
 | Alpha fixture | one approved test group active on the exact reviewed fixture |
-| Alpha model path | staged and delivery-blocked; one synthetic preflight failed with rejected credentials |
-| OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.012288 reserved; Gate voice USD 1/month app ceiling; OpenAI organization spend limit USD 5 |
+| Alpha model path | staged and delivery-blocked; replacement-key synthetic preflight verified |
+| OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.024576 reserved; Gate voice USD 1/month app ceiling; OpenAI organization spend limit USD 5 |
 | Model delivery evidence | 0 model turns and 0 model delivery grants |
 
-Snapshot counters were 41 conversations, 1100 messages, 375 reply-task rows, 17 unanswered and 32
+Snapshot counters were 41 conversations, 1102 messages, 375 reply-task rows, 17 unanswered and 32
 drafts. Alpha evidence was 5 accepted canonical messages, 2 fixture Agent turns, 1 delivery grant
 and 1 send attempt. Re-query production instead of treating these values as invariants.
 
 The production control plane now discovers Alpha groups by label and opaque installation reference;
 no Telegram group ID is needed. Approval, pause and resume require the separate
-`gate:agents:manage` OAuth scope and an explicit confirmed action. The review room is read-only,
-and provider preflight remains uninvoked while billing is unavailable.
+`gate:agents:manage` OAuth scope and an explicit confirmed action. The review room is read-only. The replacement-key provider preflight succeeded with Telegram
+delivery blocked; model shadow observation is now the next release gate.
 
 The canonical detailed status and next work are in
 [docs/PROJECT_HANDOFF.md](docs/PROJECT_HANDOFF.md). After every merge, verify the exact Railway SHA;
@@ -461,14 +461,11 @@ single authority for implementation order. Do not run several tracks in one PR.
    reusable multi-installation operation.
 
 The fixed Alpha transport canary, ID-free owner control plane, shadow review room, adversarial
-evals, product-quality evals and multi-group isolation proof are complete. The model runtime is
-staged and delivery-blocked. The external blocker is the rejected Railway OpenAI credential;
-after a successful replacement-key preflight, model shadow activation still requires reviewed,
-delivery-blocked observation.
-The fixed `/alpha` behavior remains the rollback-safe production baseline. The paid OpenAI
-organization is configured, but the first synthetic preflight failed with the bounded category
-`credentials`. Replace the Railway `OPENAI_API_KEY` with a key from the funded project before one
-new preflight; never paste the key into chat or Git.
+evals, product-quality evals and multi-group isolation proof are complete. The model runtime is staged and delivery-blocked. The replacement-key synthetic preflight is
+verified; model shadow activation still requires ten reviewed, delivery-blocked proposals.
+The fixed `/alpha` behavior remains the rollback-safe production baseline. The first rejected-key
+failure remains as historical audit evidence, and PR #229 issued one new terminal preflight key
+without weakening at-most-once provider behavior.
 
 BY Desktop-export/contact rollout, recurring contact sync and a third personal account remain
 deferred. Gate-owned Telegram Business voice transcription is implemented behind
@@ -707,4 +704,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** GitHub `main` and Railway production are verified at PR #227 / `f7c100e4eee5`. Replace the Railway `OPENAI_API_KEY` with a new key from the funded OpenAI project, wait for the automatic deployment, then run exactly one protected synthetic provider preflight. Do not enable Gate voice transcription until that preflight succeeds. Model Telegram delivery remains blocked; no private Alpha/Oko activation, live CRM backfill or Telegram smoke send is authorized. PR #207 remains draft until it is split into bounded persistence, webhook, provider and MCP releases that preserve the exact nine-tool contract.
+**Immediate continuation:** GitHub `main` and Railway production are verified at PR #229 / `652a70bc16f6`. The replacement-key provider preflight succeeded. Observe ten clean delivery-blocked Alpha model proposals, then complete voice usage settlement and redacted status before any separately authorized real Business voice canary. Model Telegram delivery remains blocked; no private Alpha/Oko activation, live CRM backfill or Telegram smoke send is authorized. PR #207 remains draft until it is split into bounded persistence, webhook, provider and MCP releases that preserve the exact nine-tool contract.
