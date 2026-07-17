@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from fastapi import FastAPI
+
 from app.instagram.automation import (
     AutomationDecision,
     AutomationFacts,
@@ -15,12 +17,13 @@ from app.instagram.commands import FakeInstagramCommandExecutor, ProviderFollowS
 from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
+from app.instagram.diagnostics import diagnose_instagram_transport
 from app.instagram.events import InstagramEvent, InstagramEventType
+from app.instagram.mcp import instagram_mcp_tool_names
 from app.instagram.meta import MetaInstagramClient, MetaInstagramCommandExecutor
 from app.instagram.routes import router as instagram_webhook_router
 from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
-from fastapi import FastAPI
 
 VIDEO = {
     "download_url": "https://files.example/reel.mp4",
@@ -416,3 +419,29 @@ async def test_live_command_executor_maps_validated_commands_to_meta() -> None:
     assert replay["idempotent_replay"] is True
     assert prompt["provider_message_id"] == "message-1"
     assert len(requests) == 2
+
+
+def test_setup_diagnostics_are_available_while_instagram_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GATE_INSTAGRAM_ENABLED", raising=False)
+    monkeypatch.setenv("GATE_INSTAGRAM_SIGNING_SECRET", "secret-not-for-output")
+    assert instagram_mcp_tool_names() == ["gate_instagram_diagnose_setup"]
+    report = diagnose_instagram_transport(InstagramRuntimeConfig.from_env())
+    assert report["status"] == "configuration_required"
+    assert report["external_delivery"] is False
+    assert "account_registry" in report["missing"]
+    assert "secret-not-for-output" not in json.dumps(report)
+
+
+def test_setup_diagnostics_report_capabilities_independently() -> None:
+    config = instagram_meta_config()
+    config.accounts["main"] = InstagramAccountConfig(
+        alias="main",
+        instagram_user_id="ig-account-1",
+        access_token="secret",
+    )
+    report = diagnose_instagram_transport(config)
+    assert report["capabilities"]["publishing"] is True
+    assert report["capabilities"]["external_publish"] is True
+    assert report["capabilities"]["webhook_verification"] is False
