@@ -48,6 +48,7 @@ from app.application.telegram_processing import (
 from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateCommand,
     ProcessTelegramVoiceUpdateService,
+    TelegramVoiceUpdateProcessor,
 )
 from app.application.telegram_voice_transcription import TelegramVoiceTranscriptionService
 from app.application.telegram_voice_update import extract_telegram_voice
@@ -118,7 +119,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         runtime_logger: logging.Logger,
         canonical_store: CanonicalIngressStore | None = None,
         alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
-        voice_updates: ProcessTelegramVoiceUpdateService | None = None,
+        voice_updates: TelegramVoiceUpdateProcessor | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
@@ -333,7 +334,7 @@ async def run_telegram_worker_once(
     identity_reader: TelegramIngressIdentityReader | None = None,
     canonical_store: CanonicalIngressStore | None = None,
     alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
-    voice_updates: ProcessTelegramVoiceUpdateService | None = None,
+    voice_updates: TelegramVoiceUpdateProcessor | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
