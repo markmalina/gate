@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from app.application.telegram_ingress_identity import TelegramIngressIdentitySnapshot
 from app.application.telegram_processing import (
     TelegramProcessingWorkItem,
     TelegramUpdateProcessingError,
@@ -20,7 +21,11 @@ from app.worker.telegram_processing import ShadowClassifyingTelegramProcessor
 
 
 class EmptyIdentityReader:
-    async def read(self, *, business_connection_id: str) -> None:
+    async def read(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> TelegramIngressIdentitySnapshot | None:
         return None
 
 
