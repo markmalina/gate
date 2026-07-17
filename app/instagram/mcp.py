@@ -31,15 +31,11 @@ def instagram_mcp_tool_names() -> list[str]:
     return ["gate_instagram_diagnose_setup"]
 
 
-def instagram_mcp_tools(
-    *, security_scheme: JsonObject | None = None
-) -> list[JsonObject]:
+def instagram_mcp_tools(*, security_scheme: JsonObject | None = None) -> list[JsonObject]:
     config = InstagramRuntimeConfig.from_env()
     tools = [_diagnose_tool()]
     if config.enabled:
-        tools.extend(
-            [_list_accounts_tool(), _prepare_tool(), _publish_tool(), _insights_tool()]
-        )
+        tools.extend([_list_accounts_tool(), _prepare_tool(), _publish_tool(), _insights_tool()])
     if security_scheme:
         for tool in tools:
             tool["securitySchemes"] = [security_scheme]
@@ -47,9 +43,7 @@ def instagram_mcp_tools(
     return tools
 
 
-async def handle_instagram_mcp_tool(
-    *, tool_name: str, arguments: JsonObject
-) -> JsonObject:
+async def handle_instagram_mcp_tool(*, tool_name: str, arguments: JsonObject) -> JsonObject:
     config = InstagramRuntimeConfig.from_env()
     if tool_name == "gate_instagram_diagnose_setup":
         return diagnose_instagram_transport(config)
@@ -74,18 +68,14 @@ async def handle_instagram_mcp_tool(
                 expires_at=datetime.now(UTC) + timedelta(minutes=20),
             )
             if config.account(draft.account_alias) is None:
-                return _error(
-                    "account_not_found", "Instagram account alias is not configured"
-                )
+                return _error("account_not_found", "Instagram account alias is not configured")
             return {
                 "state": "prepared",
                 "account_alias": draft.account_alias,
                 "caption": draft.caption,
                 "video": draft.video.public_summary(),
                 "expires_at": draft.expires_at.isoformat(),
-                "confirmation_token": issue_confirmation(
-                    draft, secret=config.signing_secret
-                ),
+                "confirmation_token": issue_confirmation(draft, secret=config.signing_secret),
                 "instruction": (
                     "Show the exact account, file and caption to the user. "
                     "Publish only after explicit confirmation."
@@ -110,13 +100,9 @@ async def handle_instagram_mcp_tool(
                 )
             account = config.account(draft.account_alias)
             if account is None:
-                return _error(
-                    "account_not_found", "Instagram account alias is not configured"
-                )
+                return _error("account_not_found", "Instagram account alias is not configured")
             async with httpx.AsyncClient() as http:
-                published = await MetaInstagramClient(
-                    config=config, http=http
-                ).publish_reel(
+                published = await MetaInstagramClient(config=config, http=http).publish_reel(
                     account=account,
                     video_url=draft.video.download_url,
                     caption=draft.caption,
