@@ -9,6 +9,8 @@ from app.api.routes import get_telegram_client
 from app.core.config import get_settings
 from app.core.mcp_security import AccessScope, Principal
 from app.main import app
+from app.models.billing import BillingEntitlementModel
+from app.models.canonical import Workspace
 from app.models.domain import (
     Account,
     AuditLog,
@@ -122,6 +124,30 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             )
             await session.flush()
             now = datetime.now(UTC)
+            voice_workspace_id = uuid4()
+            session.add_all(
+                [
+                    Workspace(
+                        id=voice_workspace_id,
+                        key="mark-personal",
+                        display_name="Mark",
+                        is_active=True,
+                    ),
+                    BillingEntitlementModel(
+                        workspace_id=voice_workspace_id,
+                        entitlement_key="gate-telegram-voice-v1",
+                        product="gate",
+                        scope_kind="telegram_connector",
+                        scope_ref="telegram_business",
+                        plan_key="gate-voice-initial",
+                        state="active",
+                        valid_from=now,
+                        valid_until=None,
+                        hard_limit_microusd=1_000_000,
+                    ),
+                ]
+            )
+            await session.flush()
             task_ids: dict[str, UUID] = {}
             conversation_chat_ids: dict[str, str] = {}
             conversation_ids: dict[str, UUID] = {}
@@ -360,6 +386,12 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             assert contact_directory[0]["imported_contacts"] == 1
             assert contact_directory[0]["last_source"] == "telegram_desktop_export"
             assert contact_directory[0]["last_import_at"] == now.isoformat()
+            voice_status = status_payload["telegram_voice"]
+            assert voice_status["state"] == "disabled"
+            assert voice_status["entitlement_active"] is True
+            assert voice_status["hard_limit_microusd"] == 1_000_000
+            assert voice_status["remaining_microusd"] == 1_000_000
+            assert voice_status["telegram_delivery_allowed"] is False
             status_wire = status_response.text
             assert "private-allowed-contact" not in status_wire
             assert "private-denied-contact" not in status_wire
