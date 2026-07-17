@@ -16,7 +16,6 @@ from app.application.telegram_voice_transcription import (
 _SUPPORTED_MODELS = {
     "gpt-4o-mini-transcribe",
     "gpt-4o-transcribe",
-    "gpt-4o-transcribe-diarize",
 }
 
 
