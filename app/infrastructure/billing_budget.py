@@ -157,7 +157,6 @@ class SqlBillingBudgetService:
                 reservation=_reservation(row, command),
             )
 
-
     async def settle(
         self,
         reservation: BudgetReservation,
