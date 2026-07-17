@@ -1,6 +1,6 @@
 """SQL read adapter for Telegram ingress identity shadow parity."""
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
@@ -28,7 +28,6 @@ class SqlTelegramIngressIdentityReader:
             name="target_connection",
         )
         target_account = aliased(Account, name="target_account")
-        owner_account = aliased(Account, name="owner_account")
         owner_connection = aliased(
             TelegramBusinessConnection,
             name="owner_connection",
@@ -37,22 +36,15 @@ class SqlTelegramIngressIdentityReader:
             select(
                 target_account.id,
                 target_account.alias,
-                owner_account.telegram_user_id,
+                target_account.telegram_user_id,
                 owner_connection.telegram_user_id,
                 owner_connection.user_chat_id,
             )
             .select_from(target_connection)
             .join(target_account, target_connection.account_id == target_account.id)
-            .join(
-                owner_account,
-                and_(
-                    owner_account.owner == target_account.owner,
-                    owner_account.is_active.is_(True),
-                ),
-            )
             .outerjoin(
                 owner_connection,
-                owner_connection.account_id == owner_account.id,
+                owner_connection.account_id == target_account.id,
             )
             .where(
                 target_connection.business_connection_id == business_connection_id,
