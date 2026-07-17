@@ -2,6 +2,17 @@
 
 Gate owns provider transport only. TAKE owns all media production. MAYAKI owns CRM, campaigns, funnel policy and long-term product analytics.
 
+## Second pre-connection series
+
+- The Instagram webhook and internal command routers are registered in the real Gate app.
+- Instagram tools are registered in the existing `/mcp` endpoint, not a parallel MCP server.
+- OAuth metadata advertises separate `gate:instagram:read` and `gate:instagram:publish` scopes.
+- Every MCP call is bound to the configured Gate workspace before account lookup.
+- A realistic mixed comment/message fixture verifies account scoping and stable provider IDs.
+
+The diagnostic and account-list tools reuse `gate:status:read`. Insights and publishing require
+their dedicated OAuth scopes. Publishing still requires the exact prepared confirmation token.
+
 ## MAYAKI command bridge
 
 Gate exposes `/internal/instagram/commands` through the exported Instagram router. The route is

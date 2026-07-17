@@ -1,0 +1,40 @@
+{
+  "object": "instagram",
+  "entry": [
+    {
+      "id": "ig-account-1",
+      "time": 1784275200,
+      "changes": [
+        {
+          "field": "comments",
+          "value": {
+            "id": "comment-keyword-21",
+            "text": "21",
+            "from": {"id": "ig-user-1", "username": "fixture_user"},
+            "media": {"id": "reel-1", "media_product_type": "REELS"}
+          }
+        },
+        {"field": "mentions", "value": {"id": "mention-ignored"}}
+      ],
+      "messaging": [
+        {
+          "sender": {"id": "ig-user-1"},
+          "recipient": {"id": "ig-account-1"},
+          "timestamp": 1784275200123,
+          "message": {
+            "mid": "message-consent-1",
+            "text": "Получить",
+            "quick_reply": {"payload": "ig_consent:session-fixture:1"}
+          }
+        }
+      ]
+    },
+    {
+      "id": "unconfigured-account",
+      "time": 1784275200,
+      "changes": [
+        {"field": "comments", "value": {"id": "must-be-ignored", "text": "21"}}
+      ]
+    }
+  ]
+}

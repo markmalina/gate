@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -40,6 +41,7 @@ VIDEO = {
     "mime_type": "video/mp4",
     "file_name": "reel.mp4",
 }
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_confirmation_round_trip_binds_exact_reel() -> None:
@@ -130,6 +132,24 @@ def test_verified_comment_webhook_is_normalized_and_scoped() -> None:
     assert events[0].event_type is InstagramEventType.COMMENT_RECEIVED
     assert events[0].account_alias == "main"
     assert events[0].deduplication_key
+
+
+def test_realistic_mixed_webhook_fixture_is_scoped_and_deterministic() -> None:
+    body = (FIXTURES / "instagram_webhook_mixed.json").read_bytes()
+    events = normalize_webhook(
+        body=body,
+        workspace_key="mark-personal",
+        account_alias_by_provider_id={"ig-account-1": "main"},
+    )
+    assert [event.event_type for event in events] == [
+        InstagramEventType.COMMENT_RECEIVED,
+        InstagramEventType.MESSAGE_RECEIVED,
+    ]
+    assert [event.provider_event_id for event in events] == [
+        "comment-keyword-21",
+        "message-consent-1",
+    ]
+    assert all(event.account_alias == "main" for event in events)
 
 
 def test_comment_event_adapts_to_authenticated_mayaki_intake() -> None:
