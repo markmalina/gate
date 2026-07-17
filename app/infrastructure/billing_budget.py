@@ -57,9 +57,8 @@ class SqlBillingBudgetService:
             if existing is not None:
                 _require_exact_replay(existing, command, period_key=period_key)
                 return BudgetAdmission(
-                    allowed=True,
+                    allowed=False,
                     reason_code="billing_reservation_replayed",
-                    reservation=_reservation(existing, command),
                 )
 
             entitlements = (
