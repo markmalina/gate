@@ -5,6 +5,7 @@
 from typing import Annotated, Any
 
 import httpx
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -63,6 +64,7 @@ from app.infrastructure.alpha_model_preflight import (
 )
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
+from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.alpha_canary import (
@@ -218,6 +220,18 @@ async def mcp_endpoint(
                 settings=settings,
                 workspace_key=principal.access_scope.workspace_id,
             )
+            snapshot["telegram_voice"] = (
+                await telegram_voice_operational_status(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                    enabled=settings.gate_telegram_voice_transcription_enabled,
+                    api_key_configured=bool(
+                        settings.openai_api_key.get_secret_value()
+                    ),
+                    model=settings.gate_telegram_voice_transcription_model,
+                    now=datetime.now(UTC),
+                )
+            ).payload()
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_alpha_list_installations":
             return await _alpha_list_installations_tool_result(
@@ -1211,6 +1225,31 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"{alpha['model_shadow']['budget']['reserved_microusd'] / 1_000_000:.6f}",
             f"- budget_remaining: $"
             f"{alpha['model_shadow']['budget']['remaining_microusd'] / 1_000_000:.6f}",
+        ]
+    )
+    voice = snapshot["telegram_voice"]
+    lines.extend(
+        [
+            "",
+            "Telegram voice transcription:",
+            f"- state: {voice['state']}",
+            f"- enabled: {voice['enabled']}",
+            f"- api_key_configured: {voice['api_key_configured']}",
+            f"- model: {voice['model']}",
+            f"- entitlement_active: {voice['entitlement_active']}",
+            f"- settled_count: {voice['settled_count']}",
+            f"- open_count: {voice['open_count']}",
+            f"- unknown_count: {voice['unknown_count']}",
+            f"- reconciliation_required: "
+            f"{voice['reconciliation_required']}",
+            f"- budget_settled: $"
+            f"{voice['settled_microusd'] / 1_000_000:.6f}",
+            f"- budget_reserved: $"
+            f"{voice['reserved_microusd'] / 1_000_000:.6f}",
+            f"- budget_remaining: $"
+            f"{voice['remaining_microusd'] / 1_000_000:.6f}",
+            f"- telegram_delivery_allowed: "
+            f"{voice['telegram_delivery_allowed']}",
         ]
     )
     return "\n".join(lines)
