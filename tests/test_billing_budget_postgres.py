@@ -139,9 +139,9 @@ async def test_exact_reservation_replay_is_idempotent() -> None:
         replay = await service.reserve(request, period_key="2026-07")
 
         assert first.allowed is True
-        assert replay.allowed is True
+        assert replay.allowed is False
         assert replay.reason_code == "billing_reservation_replayed"
-        assert replay.reservation == first.reservation
+        assert replay.reservation is None
 
 
 @pytest.mark.anyio
