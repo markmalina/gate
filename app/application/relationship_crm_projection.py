@@ -187,7 +187,7 @@ def dry_run_gate_backfill(
 
 
 def _stable_key(namespace: str, value: str) -> str:
-    digest = hashlib.sha256(f"{namespace}\n{value}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{namespace}\n{value}".encode()).hexdigest()
     return f"{namespace}:{digest[:32]}"
 
 
