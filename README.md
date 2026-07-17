@@ -239,6 +239,9 @@ Gate must distinguish direction, not guess from text.
 - Owner self-chats and service/command messages are excluded from the answered-people list.
 - Every result must show the originating account explicitly as RU or BY.
 - Unknown or ambiguous account routing fails closed; it must never silently fall back to RU.
+- Direction is relative to the receiving Business account. A sender identity owned by another
+  connected account is inbound for the receiver; only the receiver's own current or historical
+  identities count as owner-outbound.
 
 Account ownership repairs were performed for legacy data. Do not reintroduce hard-coded per-contact corrections. New account resolution is workspace- and connection-driven.
 
