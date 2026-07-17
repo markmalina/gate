@@ -139,7 +139,7 @@ approval action was invoked during development. Destructive revoke remains outsi
 
 
 
-### Model readiness and owner operations: complete before provider billing
+### Model readiness and owner operations: code complete; credential replacement required
 
 PRs #167–#178 delivered:
 
@@ -152,8 +152,9 @@ PRs #167–#178 delivered:
 - PostgreSQL proof that two groups cannot exchange triggers, limits or usage;
 - five automatic stop drills, each retaining fixture rollback and forbidding promotion.
 
-The remaining external blocker is provider billing, not missing Alpha product code. Model shadow still
-requires a reviewed release after a successful preflight; preflight success does not authorize live
+The remaining external blocker is the rejected Railway OpenAI credential, not missing Alpha product
+code or billing. Model shadow still requires successful preflight and ten clean delivery-blocked
+proposals before any separately reviewed limited canary; preflight success never authorizes live
 delivery.
 
 ## 4.1. Releases #179–#205 — safety cleanup, voice, Relationship CRM and billing
@@ -171,9 +172,14 @@ delivery.
 - the offline voice fixture now proves synthetic audio → transcript → “Я понял так” → answer with delivery blocked;
 - provider-neutral billing contracts and migration 0031 persist entitlements, usage, costs, revenue and hard-budget reservations across Gate, Alpha, Relationship CRM, Mayaki and Oko;
 - Relationship CRM has a deterministic, checksummed `relationship_crm.transfer.v1` import/export boundary independent of Gate database UUIDs;
-- owner-approved private Alpha installations and direct-message addressing now have a pure default-deny policy; runtime wiring and live activation remain separate work.
+- owner-approved private Alpha installations and direct-message addressing now have a pure default-deny policy; runtime wiring and live activation remain separate work;
+- PRs #210–#220 added scoped CRM repository/projection/owner/assist services, default-disabled private-Alpha discovery, transactional PostgreSQL budget admission, ordered Alpha billing, billing reconciliation and Mayaki/Oko fixture/transfer contracts;
+- PRs #222–#227 added Gate-owned OpenAI Telegram Business voice transcription, ffmpeg normalization, text-only projection, fail-closed orchestration and canonical-worker wiring;
+- migration 0032 seeds a dormant USD 1/month Gate voice ceiling for each active workspace.
 
-The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state model. No OpenAI call, Oko activation or Telegram test send was introduced by these releases.
+The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state
+model. Voice transcription remains disabled in Railway; no live voice provider call, Oko activation,
+CRM backfill or Telegram test send was performed.
 
 ## 5. Important code map
 
