@@ -3,11 +3,10 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-17**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Product-code baseline through PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`  
-> Handoff package inspected at PR #206 merge: `525910f4f54096c88df1a6a0fca8fc5e7587dd22`  
-> Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway for current deployment  
-> Production: Railway automatic deployment from `main`
-> Open WIP at handoff inspection: PR #207 (dormant Instagram transport) and PR #208 (dormant Gate→TAKE boundary). Neither is part of the accepted product baseline until independently reviewed, exact-head CI is green and it is merged.  
+> Accepted product baseline through PR #227: `f7c100e4eee575d60cc82dd178d550a15f333229`  
+> Verified Railway production commit: `f7c100e4eee5`  
+> Production: Railway automatic deployment from `main`  
+> Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency. PR #221 is being rebuilt as this current documentation snapshot.  
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -143,12 +142,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-16 after PR #178:
+Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-17 after PR #227:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `7a9898f3cc0dac6fa5c4513bf040ca8a84397027` / `7a9898f3cc0d` |
+| Application / Railway commit | `f7c100e4eee575d60cc82dd178d550a15f333229` / `f7c100e4eee5` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -157,11 +156,11 @@ Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-
 | MCP | OAuth 2.0 enforced, nine tools |
 | Human sending | exact saved draft + explicit confirmation only |
 | Alpha fixture | one approved test group active on the exact reviewed fixture |
-| Alpha model path | staged, delivery-blocked, awaiting one-shot provider preflight |
-| OpenAI budget | USD 50 monthly ceiling; USD 0 reserved |
+| Alpha model path | staged and delivery-blocked; one synthetic preflight failed with rejected credentials |
+| OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.012288 reserved; Gate voice USD 1/month app ceiling; OpenAI organization spend limit USD 5 |
 | Model delivery evidence | 0 model turns and 0 model delivery grants |
 
-Snapshot counters were 33 conversations, 830 messages, 245 reply-task rows, 4 unanswered and 28
+Snapshot counters were 41 conversations, 1100 messages, 375 reply-task rows, 17 unanswered and 32
 drafts. Alpha evidence was 5 accepted canonical messages, 2 fixture Agent turns, 1 delivery grant
 and 1 send attempt. Re-query production instead of treating these values as invariants.
 
@@ -436,6 +435,8 @@ Key merged milestones:
 | #188–#193 | Personal CRM contracts, Alpha context safety, channel/voice policy and durable dormant voice intake |
 | #194 | End-to-end nine-tool MCP surface regression contract |
 | #195–#199 | Standalone Relationship CRM architecture, domain kernel and durable personal/commercial/program tables |
+| #206–#220 | Handoff boundary, scoped CRM services, private-Alpha discovery, transactional billing, Mayaki/Oko contracts and dry runs |
+| #222–#227 | Gate-owned OpenAI voice transcription, ffmpeg normalization, text-only projection, fail-closed orchestration and canonical worker wiring |
 | #176 | Read-only, delivery-blocked Alpha shadow review room |
 | #177 | Twelve offline product-quality and natural-voice release evals |
 | #178 | Explicit ID-free group approval and PostgreSQL multi-group isolation proof |
@@ -463,10 +464,15 @@ The fixed Alpha transport canary, ID-free owner control plane, shadow review roo
 evals, product-quality evals and multi-group isolation proof are complete. The model runtime is
 staged and delivery-blocked. Provider billing is the only external blocker before the one-shot
 synthetic preflight; after preflight, model shadow activation still requires a reviewed code release.
-The fixed `/alpha` behavior remains the rollback-safe production baseline.
+The fixed `/alpha` behavior remains the rollback-safe production baseline. The paid OpenAI
+organization is configured, but the first synthetic preflight failed with the bounded category
+`credentials`. Replace the Railway `OPENAI_API_KEY` with a key from the funded project before one
+new preflight; never paste the key into chat or Git.
 
-BY Desktop-export/contact rollout, recurring contact sync, a third personal account and voice/media
-remain explicitly deferred throughout this program.
+BY Desktop-export/contact rollout, recurring contact sync and a third personal account remain
+deferred. Gate-owned Telegram Business voice transcription is implemented behind
+`GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED=false`; activation requires the valid key and a separate
+owner-authorized Railway configuration change.
 
 Preserve OAuth, account/project isolation, explicit confirmation for every human-managed send and
 backward-compatible MCP schemas throughout.
@@ -700,4 +706,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** GitHub `main` contains product releases through PR #205; re-query its exact head and Railway before claiming deployment. Keep the approved Alpha fixture as the production baseline and keep provider/model Telegram delivery blocked while billing is unavailable. Relationship CRM owns personal, commercial and program persistence through migration `0030`; migration `0031` adds the unified entitlement/usage/ledger/budget tables, and `relationship_crm.transfer.v1` is the portable extraction boundary. Next: add scoped CRM repository/application services, sanitized transport-to-CRM projection plus a production-data backfill dry run, and owner read/write projections without changing the legacy inbox. Then place the voice fixture behind a dormant transcription port, wire private-Alpha discovery behind a default-disabled worker, and add transactional billing/concurrency integration. Do not invoke provider preflight, activate private Alpha or Oko, perform a live CRM backfill, send test Telegram messages or weaken the USD 50 cap.
+**Immediate continuation:** GitHub `main` and Railway production are verified at PR #227 / `f7c100e4eee5`. Replace the Railway `OPENAI_API_KEY` with a new key from the funded OpenAI project, wait for the automatic deployment, then run exactly one protected synthetic provider preflight. Do not enable Gate voice transcription until that preflight succeeds. Model Telegram delivery remains blocked; no private Alpha/Oko activation, live CRM backfill or Telegram smoke send is authorized. PR #207 remains draft until it is split into bounded persistence, webhook, provider and MCP releases that preserve the exact nine-tool contract.
