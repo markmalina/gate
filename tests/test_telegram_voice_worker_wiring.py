@@ -113,5 +113,5 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
     assert command.workspace_key == "mark-personal"
     assert command.connector_ref == "telegram_business"
     assert command.period_key == "2026-07"
-    assert command.requested_microusd == 150
+    assert command.requested_microusd == 300
     assert command.enabled is True
