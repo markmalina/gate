@@ -165,11 +165,13 @@ def dry_run_gate_backfill(
         for _, fact in sorted(by_identity.items(), key=lambda item: item[0])
     )
     material = "\n".join(
-        (
-            plan.space.workspace_key,
-            plan.relationship.relationship_key,
-            plan.interaction.interaction_key,
-            plan.attention.state.value,
+        "|".join(
+            (
+                plan.space.workspace_key,
+                plan.relationship.relationship_key,
+                plan.interaction.interaction_key,
+                plan.attention.state.value,
+            )
         )
         for plan in plans
     )
