@@ -60,3 +60,9 @@ GATE_INSTAGRAM_MAYAKI_INTAKE_HMAC_SECRET=
 Verification and delivery have separate feature flags. Both default to false.
 
 Provider command contracts are implemented for public replies, private replies, follow checks and follow prompts. A deterministic fake executor proves the workflow without external calls. The real Meta adapter now maps those commands to the official public reply, private reply, Send API and User Profile API endpoints, with process-local replay protection. It is intentionally not exposed as an unattended command endpoint: durable command attempts and the connected account permissions are production admission requirements.
+
+## Offline setup diagnostics
+
+`gate_instagram_diagnose_setup` is exposed even while the Instagram feature is disabled. It reports capability booleans, missing check names, configured account aliases and the safe activation order. It never returns access tokens, signing secrets, the Meta app secret, bearer tokens or HMAC secrets.
+
+Use diagnostics before changing any flag. A capability is reported separately for ChatGPT tools, prepared publishing, external publishing, webhook verification and signed MAYAKI delivery, so connection can proceed one canary step at a time.
