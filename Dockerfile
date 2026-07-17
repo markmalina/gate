@@ -12,7 +12,11 @@ COPY app ./app
 COPY alembic ./alembic
 COPY agent_bundles ./agent_bundles
 
-RUN pip install --upgrade pip && pip install -c constraints/runtime.txt .
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --upgrade pip \
+    && pip install -c constraints/runtime.txt .
 
 USER nobody
 
