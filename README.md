@@ -462,8 +462,9 @@ single authority for implementation order. Do not run several tracks in one PR.
 
 The fixed Alpha transport canary, ID-free owner control plane, shadow review room, adversarial
 evals, product-quality evals and multi-group isolation proof are complete. The model runtime is
-staged and delivery-blocked. Provider billing is the only external blocker before the one-shot
-synthetic preflight; after preflight, model shadow activation still requires a reviewed code release.
+staged and delivery-blocked. The external blocker is the rejected Railway OpenAI credential;
+after a successful replacement-key preflight, model shadow activation still requires reviewed,
+delivery-blocked observation.
 The fixed `/alpha` behavior remains the rollback-safe production baseline. The paid OpenAI
 organization is configured, but the first synthetic preflight failed with the bounded category
 `credentials`. Replace the Railway `OPENAI_API_KEY` with a key from the funded project before one
