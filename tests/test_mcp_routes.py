@@ -48,7 +48,7 @@ def _voice_status_payload() -> dict[str, Any]:
     }
 
 
-async def _voice_status(**_kwargs: Any) -> SimpleNamespace:
+async def _voice_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
     return SimpleNamespace(payload=_voice_status_payload)
 
 
