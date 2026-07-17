@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -41,6 +41,12 @@ _SENDABLE_DRAFT_STATUSES = frozenset(
     {
         ReplyDraftStatus.GENERATED.value,
         ReplyDraftStatus.EDITED.value,
+    }
+)
+_SENDABLE_TASK_STATUSES = frozenset(
+    {
+        ReplyTaskStatus.NEEDS_REPLY.value,
+        ReplyTaskStatus.REPLIED.value,
     }
 )
 _ACTIVE_CONVERSATION_ATTEMPT_STATUSES = (
@@ -454,10 +460,24 @@ class SqlTelegramReplySender:
                     "Unanswered tasks changed during validation; review and confirm the draft again"
                 ),
             )
-        if current.task_id not in covered_task_ids:
+        if (
+            current.task_status == ReplyTaskStatus.NEEDS_REPLY.value
+            and current.task_id not in covered_task_ids
+        ):
             raise ReplySendError(
                 code="task_closed",
                 message="Reply task no longer needs a reply",
+            )
+        if (
+            current.task_status == ReplyTaskStatus.REPLIED.value
+            and covered_task_ids
+        ):
+            raise ReplySendError(
+                code="task_superseded",
+                message=(
+                    "A newer inbound reply task exists; review that context and "
+                    "confirm a draft for the current task"
+                ),
             )
 
         now = datetime.now(UTC)
@@ -944,29 +964,22 @@ class SqlTelegramReplySender:
         task_id: UUID,
         draft_id: UUID,
     ) -> None:
-        """Fence overlapping sends without locking attempt rows.
+        """Fence only overlapping or ambiguous sends, not completed follow-ups.
 
         The authoritative call runs after the joined context query has locked the
-        conversation.  Active or ambiguous attempts fence the whole conversation;
-        a completed send fences only its original task so a later inbound task in the
-        same conversation can still be answered.  This remains a non-locking MVCC read
-        to avoid context -> attempt lock inversion with outcome processing.
+        conversation. Active or ambiguous attempts fence the whole conversation.
+        A completed send does not fence another separately persisted and explicitly
+        confirmed draft for the same task. This remains a non-locking MVCC read to
+        avoid context -> attempt lock inversion with outcome processing.
         """
 
+        del task_id  # The task no longer imposes a one-successful-send limit.
         statement = (
             select(SendAttempt.id)
             .where(
                 SendAttempt.reply_draft_id != draft_id,
-                or_(
-                    and_(
-                        SendAttempt.conversation_id == conversation_id,
-                        SendAttempt.status.in_(_ACTIVE_CONVERSATION_ATTEMPT_STATUSES),
-                    ),
-                    and_(
-                        SendAttempt.reply_task_id == task_id,
-                        SendAttempt.status == SendAttemptStatus.SENT.value,
-                    ),
-                ),
+                SendAttempt.conversation_id == conversation_id,
+                SendAttempt.status.in_(_ACTIVE_CONVERSATION_ATTEMPT_STATUSES),
             )
             .order_by(SendAttempt.created_at, SendAttempt.id)
             .limit(1)
@@ -976,8 +989,8 @@ class SqlTelegramReplySender:
             raise ReplySendError(
                 code="task_send_blocked",
                 message=(
-                    "Another send attempt already blocks this reply task or "
-                    "conversation; do not send a second draft"
+                    "Another active or ambiguous send attempt blocks this "
+                    "conversation until its delivery outcome is known"
                 ),
             )
 
@@ -1062,10 +1075,10 @@ class SqlTelegramReplySender:
                 code="draft_closed",
                 message="Reply draft is not available for sending",
             )
-        if context.task_status != ReplyTaskStatus.NEEDS_REPLY.value:
+        if context.task_status not in _SENDABLE_TASK_STATUSES:
             raise ReplySendError(
                 code="task_closed",
-                message="Reply task no longer needs a reply",
+                message="Reply task is not available for an explicit send",
             )
         if not context.account_is_active or not context.account_send_enabled:
             raise ReplySendError(
