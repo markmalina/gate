@@ -24,6 +24,7 @@ from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_telegram_ingress
 from app.core.config import Settings, get_settings
 from app.infrastructure.database import database_runtime_lifespan
+from app.instagram.routes import router as instagram_router
 from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.services.telegram_alpha_webhook import (
@@ -203,6 +204,7 @@ def create_app() -> FastAPI:
     include_telegram_ingress(app)
     app.include_router(sprint12_router)
     app.include_router(router)
+    app.include_router(instagram_router)
     return app
 
 
