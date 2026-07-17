@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 import pytest
 from app.application.billing import (
     BudgetAdmission,
+    BudgetReservation,
     BudgetWindow,
     ReserveBudgetCommand,
+    UsageUnit,
     admit_budget,
 )
 from app.application.telegram_voice_transcription import (
@@ -48,6 +50,9 @@ class FakeBudget:
         self.calls: list[tuple[ReserveBudgetCommand, str]] = []
         self.deny_replays = False
         self._seen: set[str] = set()
+        self.settlements: list[tuple[str, int, int, UsageUnit, str | None]] = []
+        self.releases: list[str] = []
+        self.unknowns: list[tuple[str, str]] = []
 
     async def reserve(
         self,
@@ -67,6 +72,46 @@ class FakeBudget:
             command,
         )
 
+    async def settle(
+        self,
+        reservation: BudgetReservation,
+        *,
+        actual_microusd: int,
+        quantity: int,
+        unit: UsageUnit,
+        provider_operation_ref: str | None,
+        occurred_at: datetime,
+    ) -> None:
+        assert occurred_at == NOW
+        self.settlements.append(
+            (
+                reservation.reservation_key,
+                actual_microusd,
+                quantity,
+                unit,
+                provider_operation_ref,
+            )
+        )
+
+    async def release(
+        self,
+        reservation: BudgetReservation,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        assert occurred_at == NOW
+        self.releases.append(reservation.reservation_key)
+
+    async def mark_unknown(
+        self,
+        reservation: BudgetReservation,
+        *,
+        occurred_at: datetime,
+        error_code: str,
+    ) -> None:
+        assert occurred_at == NOW
+        self.unknowns.append((reservation.reservation_key, error_code))
+
 
 class FakeSpeechToText:
     def __init__(self) -> None:
@@ -83,7 +128,12 @@ class FakeSpeechToText:
         self.calls.append((voice, language))
         if self.error is not None:
             raise self.error
-        return ProviderTranscript("Текст голосового сообщения", "request-opaque")
+        return ProviderTranscript(
+            "Текст голосового сообщения",
+            "request-opaque",
+            billed_quantity=820,
+            actual_microusd=1_100,
+        )
 
 
 def command(
@@ -182,6 +232,17 @@ async def test_gate_transcribes_then_exposes_only_text_to_alpha() -> None:
     assert reservation.attribution.scope_kind == "telegram_connector"
     assert reservation.operation.value == "transcription"
     assert period_key == "2026-07"
+    assert budget.settlements == [
+        (
+            "telegram:voice:update-1:message-2",
+            1_100,
+            820,
+            UsageUnit.TOKENS,
+            "request-opaque",
+        )
+    ]
+    assert budget.releases == []
+    assert budget.unknowns == []
     rendered = repr(result)
     assert "telegram-file-secret" not in rendered
     assert "opaque-telegram-connector" not in rendered
@@ -215,7 +276,30 @@ async def test_unknown_provider_outcome_never_routes_to_alpha_or_retries() -> No
     assert result.alpha_input_text is None
     assert result.route_to_alpha_allowed is False
     assert result.telegram_delivery_allowed is False
+    assert budget.unknowns == [
+        (
+            "telegram:voice:update-1:message-2",
+            "openai_transcription_transport_unknown",
+        )
+    ]
+    assert budget.settlements == []
 
     replay = await worker.transcribe(command())
     assert replay.reason_code == "billing_reservation_replayed"
     assert len(speech.calls) == 1
+
+
+@pytest.mark.anyio
+async def test_definite_provider_rejection_releases_reservation() -> None:
+    worker, _downloader, _normalizer, budget, speech = service()
+    speech.error = TranscriptionProviderError(
+        "openai_transcription_rejected",
+        outcome_unknown=False,
+    )
+
+    result = await worker.transcribe(command())
+
+    assert result.outcome is TelegramVoiceOutcome.REJECTED
+    assert budget.releases == ["telegram:voice:update-1:message-2"]
+    assert budget.settlements == []
+    assert budget.unknowns == []
