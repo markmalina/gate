@@ -29,6 +29,20 @@ class EmptyIdentityReader:
         return None
 
 
+class ResolvedIdentityReader:
+    async def read(
+        self,
+        *,
+        business_connection_id: str,
+    ) -> TelegramIngressIdentitySnapshot | None:
+        return TelegramIngressIdentitySnapshot(
+            account_id="account-1",
+            account_alias="ru",
+            project_id="project-1",
+            owner_identity_ids=frozenset({"owner-identity"}),
+        )
+
+
 class ProjectingVoiceUpdates:
     def __init__(self) -> None:
         self.commands: list[ProcessTelegramVoiceUpdateCommand] = []
@@ -101,7 +115,7 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
             _env_file=None,
             GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED=True,
         ),
-        identity_reader=EmptyIdentityReader(),
+        identity_reader=ResolvedIdentityReader(),
         voice_updates=voice_updates,
         runtime_logger=logging.getLogger("gate.voice.projected"),
     )
@@ -115,3 +129,22 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
     assert command.period_key == "2026-07"
     assert command.requested_microusd == 300
     assert command.enabled is True
+
+
+def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
+    voice_updates = ProjectingVoiceUpdates()
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=Settings(
+            _env_file=None,
+            GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED=True,
+        ),
+        identity_reader=EmptyIdentityReader(),
+        voice_updates=voice_updates,
+        runtime_logger=logging.getLogger("gate.voice.identity-unresolved"),
+    )
+
+    with pytest.raises(TelegramUpdateProcessingError) as captured:
+        asyncio.run(processor.process(voice_item()))
+
+    assert captured.value.error_code == "telegram_voice_identity_unresolved"
+    assert voice_updates.commands == []
