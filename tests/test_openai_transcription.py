@@ -45,7 +45,15 @@ async def test_adapter_posts_multipart_audio_and_returns_normalized_text() -> No
         requests.append(request)
         return httpx.Response(
             200,
-            json={"text": "  распознанный текст  "},
+            json={
+                "text": "  распознанный текст  ",
+                "usage": {
+                    "type": "tokens",
+                    "input_tokens": 800,
+                    "output_tokens": 20,
+                    "total_tokens": 820,
+                },
+            },
             headers={"x-request-id": "provider-request-1"},
         )
 
@@ -61,6 +69,8 @@ async def test_adapter_posts_multipart_audio_and_returns_normalized_text() -> No
 
     assert result.text == "распознанный текст"
     assert result.provider_operation_ref == "provider-request-1"
+    assert result.billed_quantity == 820
+    assert result.actual_microusd == 1_100
     assert requests[0].url.path == "/v1/audio/transcriptions"
     body = requests[0].content
     assert b'gpt-4o-mini-transcribe' in body
@@ -87,6 +97,29 @@ async def test_transport_failure_is_unknown_and_sanitized() -> None:
 
     assert caught.value.outcome_unknown is True
     assert str(caught.value) == "openai_transcription_transport_unknown"
+
+
+@pytest.mark.anyio
+async def test_success_without_billable_usage_fails_closed() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"text": "текст без usage"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="secret", enabled=True),
+            http=http,
+        )
+        with pytest.raises(
+            TranscriptionProviderError,
+            match="openai_transcription_usage_unknown",
+        ) as caught:
+            await client.transcribe(
+                NormalizedVoice(b"wav", "voice.wav", "audio/wav"),
+                language="ru",
+            )
+
+    assert caught.value.outcome_unknown is True
+
 
 def test_diarization_model_requires_a_separate_response_contract() -> None:
     with pytest.raises(
