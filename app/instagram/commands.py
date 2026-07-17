@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 
@@ -111,3 +114,36 @@ class FakeInstagramCommandExecutor:
             result["follow_state"] = self.follow_state.value
         self._results[command.idempotency_key] = result
         return result
+
+
+class JsonInstagramCommandResultStore:
+    """Small atomic replay store for one supervised Gate instance."""
+
+    def __init__(self, path: str) -> None:
+        resolved = Path(path).resolve()
+        if not path.strip() or resolved == Path(resolved.anchor) or resolved == Path.home():
+            raise InstagramCommandError("command_result_store_path_unsafe")
+        self.path = resolved
+
+    def get(self, idempotency_key: str) -> dict[str, Any] | None:
+        return self._load().get(idempotency_key)
+
+    def put(self, idempotency_key: str, result: dict[str, Any]) -> None:
+        data = self._load()
+        data[idempotency_key] = result
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        temporary.replace(self.path)
+
+    def _load(self) -> dict[str, dict[str, Any]]:
+        if not self.path.exists():
+            return {}
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise InstagramCommandError("command_result_store_invalid") from exc
+        if not isinstance(payload, dict):
+            raise InstagramCommandError("command_result_store_invalid")
+        return payload

@@ -253,13 +253,18 @@ class MetaInstagramClient:
 class MetaInstagramCommandExecutor:
     """Execute validated MAYAKI commands with process-local replay protection."""
 
-    def __init__(self, *, client: MetaInstagramClient) -> None:
+    def __init__(self, *, client: MetaInstagramClient, result_store: Any | None = None) -> None:
         self.client = client
         self._results: dict[str, dict[str, Any]] = {}
+        self.result_store = result_store
 
     async def execute(self, value: Any) -> dict[str, Any]:
         command = InstagramProviderCommand.from_mapping(value)
-        previous = self._results.get(command.idempotency_key)
+        previous = (
+            self.result_store.get(command.idempotency_key)
+            if self.result_store is not None
+            else self._results.get(command.idempotency_key)
+        )
         if previous is not None:
             return {**previous, "idempotent_replay": True}
         account = self.client.config.account(command.account_alias)
@@ -302,5 +307,8 @@ class MetaInstagramCommandExecutor:
                 text=str(command.text),
                 quick_reply=command.quick_reply,
             )
-        self._results[command.idempotency_key] = result
+        if self.result_store is not None:
+            self.result_store.put(command.idempotency_key, result)
+        else:
+            self._results[command.idempotency_key] = result
         return result

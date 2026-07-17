@@ -29,6 +29,10 @@ class InstagramRuntimeConfig:
     mayaki_intake_bearer_token: str
     mayaki_intake_hmac_secret: str
     accounts: dict[str, InstagramAccountConfig]
+    command_bridge_enabled: bool = False
+    command_bridge_bearer_token: str = ""
+    command_bridge_hmac_secret: str = ""
+    command_result_file: str = ""
 
     @classmethod
     def from_env(cls) -> InstagramRuntimeConfig:
@@ -65,6 +69,17 @@ class InstagramRuntimeConfig:
             mayaki_intake_bearer_token=os.getenv("GATE_INSTAGRAM_MAYAKI_INTAKE_BEARER_TOKEN", ""),
             mayaki_intake_hmac_secret=os.getenv("GATE_INSTAGRAM_MAYAKI_INTAKE_HMAC_SECRET", ""),
             accounts=accounts,
+            command_bridge_enabled=os.getenv(
+                "GATE_INSTAGRAM_COMMAND_BRIDGE_ENABLED", "false"
+            ).lower()
+            == "true",
+            command_bridge_bearer_token=os.getenv(
+                "GATE_INSTAGRAM_COMMAND_BRIDGE_BEARER_TOKEN", ""
+            ),
+            command_bridge_hmac_secret=os.getenv(
+                "GATE_INSTAGRAM_COMMAND_BRIDGE_HMAC_SECRET", ""
+            ),
+            command_result_file=os.getenv("GATE_INSTAGRAM_COMMAND_RESULT_FILE", ""),
         )
 
     @property
@@ -88,6 +103,16 @@ class InstagramRuntimeConfig:
             and bool(self.mayaki_intake_url)
             and bool(self.mayaki_intake_bearer_token)
             and bool(self.mayaki_intake_hmac_secret)
+        )
+
+    @property
+    def command_bridge_ready(self) -> bool:
+        return (
+            self.enabled
+            and self.command_bridge_enabled
+            and bool(self.command_bridge_bearer_token)
+            and bool(self.command_bridge_hmac_secret)
+            and bool(self.command_result_file)
         )
 
     def account(self, alias: str) -> InstagramAccountConfig | None:

@@ -2,16 +2,49 @@
 
 Gate owns provider transport only. TAKE owns all media production. MAYAKI owns CRM, campaigns, funnel policy and long-term product analytics.
 
+## MAYAKI command bridge
+
+Gate exposes `/internal/instagram/commands` through the exported Instagram router. The route is
+fail-closed and exists operationally only when all of the following are set:
+
+- `GATE_INSTAGRAM_ENABLED=true`
+- `GATE_INSTAGRAM_DELIVERY_ENABLED=true`
+- `GATE_INSTAGRAM_COMMAND_BRIDGE_ENABLED=true`
+- `GATE_INSTAGRAM_COMMAND_BRIDGE_BEARER_TOKEN`
+- `GATE_INSTAGRAM_COMMAND_BRIDGE_HMAC_SECRET`
+- `GATE_INSTAGRAM_COMMAND_RESULT_FILE` on a persistent volume
+
+Every request binds its raw JSON body to the HTTP method, fixed path, timestamp and
+idempotency key using HMAC-SHA256. Requests older than five minutes, mismatched keys, invalid
+commands and bad credentials are rejected before Meta is called.
+
+Successful provider results are stored atomically by idempotency key. This prevents a repeated
+MAYAKI command from sending a second reply even after Gate restarts. A provider timeout is
+returned as `unknown`; MAYAKI must reconcile it manually and must not retry it automatically.
+
+The JSON result file is limited to one supervised Gate instance. Move the same `get/put`
+contract to shared durable storage before running multiple workers.
+
+## Activation order
+
+1. Mount persistent storage but leave all Instagram feature flags false.
+2. Configure account aliases and validate diagnostics without printing tokens.
+3. Enable webhook verification and observe normalized events without delivery.
+4. Enable the command bridge and exercise signed requests against a fake Meta transport.
+5. Enable external delivery for one test account with a low hourly MAYAKI limit.
+6. Reconcile public reply, private reply, consent, follow state and analytics manually.
+7. Enable additional accounts one at a time.
+
 ## Sprint status
 
 1. ChatGPT → Reel: implemented as dormant MCP tools for file validation, exact confirmation, official Meta container publication and permalink return.
 2. Multiple accounts: implemented through alias-based account registry; tokens are environment secrets and are never returned.
 3. Analytics: implemented first read-only Reel insights tool; persistence and scheduled snapshots remain a MAYAKI integration task.
-4. Comments: signed Meta webhook normalization, public-reply transport and authenticated Gate-to-MAYAKI delivery are implemented and dormant.
-5. Direct: private reply, quick replies, normal messaging and fail-closed follow-state lookup are implemented against official Meta contracts; activation still requires the real messaging permissions/App Review.
+4. Comments: contracts and webhook work are deferred until Meta App webhook credentials exist.
+5. Direct: deferred until messaging permissions/App Review exist; unknown follow state must never be treated as followed.
 6. TAKE: boundary is fixed. Gate accepts only a finished video or future versioned TAKE publishing package; it never edits media.
-7. MAYAKI: Gate emits provider-neutral comment/message events to MAYAKI's authenticated `/intake/gate` contract with deterministic idempotency keys.
-8. Automation: validated provider commands and a process-local replay-protected executor are implemented, but automatic command dispatch remains deliberately disabled until durable attempts, rate limits and a kill switch are present.
+7. MAYAKI: Gate will emit provider-neutral events after the MAYAKI ingestion endpoint and workspace mapping are supplied.
+8. Automation: deliberately disabled until comments/DM webhooks, idempotency storage, approved copy and a kill switch are present.
 
 ## Required runtime variables
 
@@ -26,50 +59,3 @@ Both feature flags default to `false`. Enabling tools and enabling delivery are 
 ## Known production gap
 
 The initial confirmation token is stateless. It prevents mutation of account/caption/file and expires quickly, but does not provide durable replay protection. Use one deliberate publish attempt only; any timeout is `unknown` and must be reconciled manually before another attempt. Durable publication attempts are required before unattended automation.
-
-
-## Keyword automation webhook bridge
-
-Gate now exposes a fail-closed Meta callback at:
-
-```text
-/webhooks/instagram
-```
-
-The GET handshake returns Meta's challenge as plain text after a constant-time verify-token check. POST requests require `X-Hub-Signature-256`, normalize supported comment/message events, and deliver them to MAYAKI's existing `/intake/gate` endpoint with:
-
-- a bearer token;
-- a fresh timestamp;
-- an HMAC-SHA256 canonical signature;
-- a deterministic idempotency key.
-
-If MAYAKI delivery is not configured or fails, Gate returns `503`; the webhook is not acknowledged as successfully processed.
-
-Additional environment variables:
-
-```text
-GATE_INSTAGRAM_WEBHOOK_ENABLED=false
-GATE_INSTAGRAM_WEBHOOK_DELIVERY_ENABLED=false
-GATE_INSTAGRAM_APP_SECRET=
-GATE_INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
-GATE_INSTAGRAM_MAYAKI_INTAKE_URL=
-GATE_INSTAGRAM_MAYAKI_INTAKE_BEARER_TOKEN=
-GATE_INSTAGRAM_MAYAKI_INTAKE_HMAC_SECRET=
-```
-
-Verification and delivery have separate feature flags. Both default to false.
-
-Provider command contracts are implemented for public replies, private replies, follow checks and follow prompts. A deterministic fake executor proves the workflow without external calls. The real Meta adapter now maps those commands to the official public reply, private reply, Send API and User Profile API endpoints, with process-local replay protection. It is intentionally not exposed as an unattended command endpoint: durable command attempts and the connected account permissions are production admission requirements.
-
-## Offline setup diagnostics
-
-`gate_instagram_diagnose_setup` is exposed even while the Instagram feature is disabled. It reports capability booleans, missing check names, configured account aliases and the safe activation order. It never returns access tokens, signing secrets, the Meta app secret, bearer tokens or HMAC secrets.
-
-Use diagnostics before changing any flag. A capability is reported separately for ChatGPT tools, prepared publishing, external publishing, webhook verification and signed MAYAKI delivery, so connection can proceed one canary step at a time.
-
-## Offline verification checkpoint
-
-- Repository-configured Ruff passes locally for the Instagram package and focused tests.
-- Strict Mypy passes for the Instagram package.
-- Fifteen focused transport tests pass, including diagnostics while all Instagram flags are false.
-- MAYAKI's companion offline suite passes separately before any Meta credential is supplied.

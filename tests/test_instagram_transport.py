@@ -5,13 +5,23 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from app.instagram.command_gateway import (
+    InstagramCommandGatewayError,
+    execute_authenticated_command,
+    sign_instagram_command,
+    verify_instagram_command,
+)
 from app.instagram.automation import (
     AutomationDecision,
     AutomationFacts,
     FollowState,
     admit_direct_delivery,
 )
-from app.instagram.commands import FakeInstagramCommandExecutor, ProviderFollowState
+from app.instagram.commands import (
+    FakeInstagramCommandExecutor,
+    JsonInstagramCommandResultStore,
+    ProviderFollowState,
+)
 from app.instagram.config import InstagramAccountConfig, InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
@@ -431,3 +441,132 @@ def test_setup_diagnostics_report_capabilities_independently() -> None:
     assert report["capabilities"]["publishing"] is True
     assert report["capabilities"]["external_publish"] is True
     assert report["capabilities"]["webhook_verification"] is False
+
+
+def test_signed_command_gateway_rejects_tampering_and_expired_requests() -> None:
+    raw_body = json.dumps(
+        {
+            "type": "gate.instagram.follow_check.requested.v1",
+            "idempotency_key": "session-1:follow-check:1",
+            "account_alias": "main",
+            "instagram_user_id": "ig-user-1",
+        },
+        separators=(",", ":"),
+    )
+    timestamp = "2026-07-17T08:00:00+00:00"
+    signature = sign_instagram_command(
+        timestamp=timestamp,
+        idempotency_key="session-1:follow-check:1",
+        raw_body=raw_body,
+        secret="hmac-secret",
+    )
+    verified = verify_instagram_command(
+        raw_body=raw_body,
+        authorization="Bearer bearer-secret",
+        timestamp=timestamp,
+        signature=signature,
+        idempotency_key="session-1:follow-check:1",
+        bearer_token="bearer-secret",
+        hmac_secret="hmac-secret",
+        now=lambda: datetime(2026, 7, 17, 8, 0, tzinfo=UTC),
+    )
+    assert verified["account_alias"] == "main"
+    with pytest.raises(InstagramCommandGatewayError, match="signature_invalid"):
+        verify_instagram_command(
+            raw_body=raw_body + " ",
+            authorization="Bearer bearer-secret",
+            timestamp=timestamp,
+            signature=signature,
+            idempotency_key="session-1:follow-check:1",
+            bearer_token="bearer-secret",
+            hmac_secret="hmac-secret",
+            now=lambda: datetime(2026, 7, 17, 8, 0, tzinfo=UTC),
+        )
+    with pytest.raises(InstagramCommandGatewayError, match="timestamp_expired"):
+        verify_instagram_command(
+            raw_body=raw_body,
+            authorization="Bearer bearer-secret",
+            timestamp=timestamp,
+            signature=signature,
+            idempotency_key="session-1:follow-check:1",
+            bearer_token="bearer-secret",
+            hmac_secret="hmac-secret",
+            now=lambda: datetime(2026, 7, 17, 9, 0, tzinfo=UTC),
+        )
+
+
+@pytest.mark.anyio
+async def test_command_result_store_survives_executor_restart(tmp_path) -> None:
+    account = InstagramAccountConfig("main", "ig-account-1", "secret")
+    config = instagram_meta_config()
+    config.accounts["main"] = account
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"id": "reply-1"})
+
+    command = {
+        "type": "gate.instagram.public_reply.requested.v1",
+        "idempotency_key": "session-1:public-reply:persisted",
+        "account_alias": "main",
+        "provider_comment_id": "comment-1",
+        "text": "Отправил в личку",
+    }
+    store = JsonInstagramCommandResultStore(str(tmp_path / "results.json"))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        first = MetaInstagramCommandExecutor(
+            client=MetaInstagramClient(config=config, http=http),
+            result_store=store,
+        )
+        await first.execute(command)
+        restarted = MetaInstagramCommandExecutor(
+            client=MetaInstagramClient(config=config, http=http),
+            result_store=JsonInstagramCommandResultStore(str(tmp_path / "results.json")),
+        )
+        replay = await restarted.execute(command)
+    assert replay["idempotent_replay"] is True
+    assert calls == 1
+
+
+@pytest.mark.anyio
+async def test_authenticated_command_maps_provider_timeout_to_unknown() -> None:
+    account = InstagramAccountConfig("main", "ig-account-1", "secret")
+    config = instagram_meta_config()
+    config.accounts["main"] = account
+    command = {
+        "type": "gate.instagram.public_reply.requested.v1",
+        "idempotency_key": "session-1:public-reply:timeout",
+        "account_alias": "main",
+        "provider_comment_id": "comment-1",
+        "text": "Отправил в личку",
+    }
+    raw_body = json.dumps(command, separators=(",", ":"))
+    timestamp = "2026-07-17T08:00:00+00:00"
+    signature = sign_instagram_command(
+        timestamp=timestamp,
+        idempotency_key=command["idempotency_key"],
+        raw_body=raw_body,
+        secret="hmac-secret",
+    )
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timeout")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await execute_authenticated_command(
+            executor=MetaInstagramCommandExecutor(
+                client=MetaInstagramClient(config=config, http=http)
+            ),
+            raw_body=raw_body,
+            authorization="Bearer bearer-secret",
+            timestamp=timestamp,
+            signature=signature,
+            idempotency_key=command["idempotency_key"],
+            bearer_token="bearer-secret",
+            hmac_secret="hmac-secret",
+            now=lambda: datetime(2026, 7, 17, 8, 0, tzinfo=UTC),
+        )
+    assert result["status"] == "unknown"
+    assert result["external_delivery"] is False

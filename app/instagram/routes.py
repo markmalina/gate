@@ -9,6 +9,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
 
 from app.instagram.config import InstagramRuntimeConfig
+from app.instagram.command_routes import router as instagram_command_router
 from app.instagram.sink import MayakiInstagramEventSink, MayakiInstagramSinkError
 from app.instagram.webhooks import (
     InstagramWebhookError,
@@ -16,10 +17,11 @@ from app.instagram.webhooks import (
     verify_meta_signature,
 )
 
-router = APIRouter(prefix="/webhooks/instagram", tags=["instagram"])
+router = APIRouter()
+webhook_router = APIRouter(prefix="/webhooks/instagram", tags=["instagram"])
 
 
-@router.get("")
+@webhook_router.get("")
 async def verify_instagram_webhook(
     mode: str | None = Query(default=None, alias="hub.mode"),
     challenge: str | None = Query(default=None, alias="hub.challenge"),
@@ -37,7 +39,7 @@ async def verify_instagram_webhook(
     return PlainTextResponse(challenge)
 
 
-@router.post("")
+@webhook_router.post("")
 async def receive_instagram_webhook(
     request: Request,
     signature: str | None = Header(default=None, alias="X-Hub-Signature-256"),
@@ -78,3 +80,7 @@ async def receive_instagram_webhook(
             detail=str(exc),
         ) from exc
     return {"ok": True, "accepted": len(events), "delivered": delivered}
+
+
+router.include_router(webhook_router)
+router.include_router(instagram_command_router)
