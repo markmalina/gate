@@ -37,7 +37,7 @@ def upgrade() -> None:
             hard_limit_microusd
         )
         SELECT
-            md5(workspaces.id::text || ':{_ENTITLEMENT_KEY}')::uuid,
+            md5(workspaces.id::text || '-{_ENTITLEMENT_KEY}')::uuid,
             workspaces.id,
             '{_ENTITLEMENT_KEY}',
             'gate',
