@@ -2,10 +2,9 @@
 
 > Canonical continuation guide for a new developer or implementation agent.  
 > GitHub handoff package verified on 2026-07-17.  
-> Product-code baseline through PR #205: `f8b03c83af08203a9c2edd3dfb165ed8be15ab48`.  
-> Handoff package inspected at PR #206 merge: `525910f4f54096c88df1a6a0fca8fc5e7587dd22`.  
-> Last read-only production fingerprint before this release train: `43f52a2593f5`; re-query Railway before claiming the accepted GitHub head is deployed.
-> Open WIP at inspection: PR #207 (dormant Instagram transport) and PR #208 (dormant Gate→TAKE boundary); neither belongs to the accepted baseline until separately reviewed, green and merged.  
+> Accepted product baseline through PR #227: `f7c100e4eee575d60cc82dd178d550a15f333229`.  
+> Verified Railway production commit: `f7c100e4eee5`.  
+> Open WIP: PR #207 remains a broad dormant Instagram transport. It must be split before review because the current draft expands the exact nine-tool MCP surface and uses non-transactional single-instance replay storage. PR #221 is this documentation refresh.  
 
 ## 1. Start here
 
@@ -44,12 +43,12 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through Gate M after PR #178 deployed:
+Verified through GitHub and Gate M after PR #227 deployed:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `7a9898f3cc0d` |
+| Railway production commit | `f7c100e4eee5` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
@@ -59,9 +58,9 @@ Verified through Gate M after PR #178 deployed:
 | BY Telegram Business | `ready`, `can_reply=true` |
 | RU contacts | 90, source `telegram_desktop_export` |
 | BY contacts | 0; import intentionally deferred |
-| Snapshot counts | 33 conversations, 830 messages, 245 reply tasks, 4 unanswered, 28 drafts |
+| Snapshot counts | 41 conversations, 1100 messages, 375 reply tasks, 17 unanswered, 32 drafts |
 | Alpha fixture audit | 5 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
-| Alpha model evidence | 0 model turns, 0 model delivery grants, USD 0 reserved |
+| Alpha model evidence | 0 model turns, 0 model delivery grants; preflight failed once with credentials; USD 0.012288 reserved |
 
 The nine MCP tools are the five human-inbox tools plus
 `gate_alpha_list_installations`, `gate_alpha_control_installation`,
@@ -70,10 +69,12 @@ Alpha group discovery and status need no Telegram group ID. Management/review/pr
 `gate:agents:manage`; Auth0 and ChatGPT User-Delegated Access must grant it before reconnecting
 Gate M.
 
-The separate Alpha connector is active only for the approved fixture installation. Model runtime
-configuration and the reviewed staged deployment are ready, but provider billing has not been
-confirmed. Production is therefore correctly `awaiting_provider_preflight`: fixture binding is
-active, Telegram delivery is blocked for model proposals, and no provider attempt has occurred.
+The separate Alpha connector is active only for the approved fixture installation. OpenAI billing
+is funded and the organization spend limit is USD 5. The first protected synthetic preflight made
+one provider attempt and failed safely with the bounded category `credentials`; no content or
+Telegram delivery was involved. Production is therefore `provider_preflight_failed`, fixture
+binding remains active and model Telegram delivery remains blocked. Replace Railway
+`OPENAI_API_KEY` with a key from the funded project before exactly one new preflight.
 
 Live privacy/pause evidence from 2026-07-15 remains valid: non-invocation traffic created no turn,
 grant or send, while the pause probe was durably accepted but blocked at the installation boundary.
