@@ -521,7 +521,10 @@ async def _verified_model_shadow_binding(
             select(AgentDeploymentModel, InstructionRevisionModel)
             .join(
                 InstructionRevisionModel,
-                (InstructionRevisionModel.id == AgentDeploymentModel.instruction_revision_id)
+                (
+                    InstructionRevisionModel.id
+                    == AgentDeploymentModel.instruction_revision_id
+                )
                 & (
                     InstructionRevisionModel.workspace_id
                     == AgentDeploymentModel.workspace_id
