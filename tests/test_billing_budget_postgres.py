@@ -93,6 +93,7 @@ async def seed_budget(
                 is_active=True,
             )
         )
+        await session.flush()
         session.add(
             BillingEntitlementModel(
                 workspace_id=workspace_id,
