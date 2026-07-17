@@ -126,6 +126,25 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1",
         validation_alias="OPENAI_API_BASE_URL",
     )
+    gate_telegram_voice_transcription_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED",
+    )
+    gate_telegram_voice_transcription_model: str = Field(
+        default="gpt-4o-mini-transcribe",
+        validation_alias="GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL",
+    )
+    gate_telegram_voice_reserve_microusd_per_second: int = Field(
+        default=50,
+        ge=50,
+        le=10_000,
+        validation_alias="GATE_TELEGRAM_VOICE_RESERVE_MICROUSD_PER_SECOND",
+    )
+    gate_telegram_voice_language: str = Field(
+        default="",
+        max_length=32,
+        validation_alias="GATE_TELEGRAM_VOICE_LANGUAGE",
+    )
     gate_alpha_model_runtime_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_MODEL_RUNTIME_ENABLED",
