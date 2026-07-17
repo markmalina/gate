@@ -135,8 +135,8 @@ class Settings(BaseSettings):
         validation_alias="GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL",
     )
     gate_telegram_voice_reserve_microusd_per_second: int = Field(
-        default=50,
-        ge=50,
+        default=100,
+        ge=100,
         le=10_000,
         validation_alias="GATE_TELEGRAM_VOICE_RESERVE_MICROUSD_PER_SECOND",
     )
