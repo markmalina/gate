@@ -157,7 +157,7 @@ code or billing. Model shadow still requires successful preflight and ten clean 
 proposals before any separately reviewed limited canary; preflight success never authorizes live
 delivery.
 
-## 4.1. Releases #179–#205 — safety cleanup, voice, Relationship CRM and billing
+## 4.1. Releases #179–#227 — safety cleanup, CRM, billing and Gate voice
 
 - MCP publication is guarded as one exact nine-tool contract.
 - unsupported Alpha media is terminal and human-confirmed Telegram text is literal;
