@@ -5,8 +5,6 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from fastapi import FastAPI
-
 from app.instagram.automation import (
     AutomationDecision,
     AutomationFacts,
@@ -24,6 +22,7 @@ from app.instagram.meta import MetaInstagramClient, MetaInstagramCommandExecutor
 from app.instagram.routes import router as instagram_webhook_router
 from app.instagram.sink import MayakiInstagramEventSink, sign_mayaki_intake
 from app.instagram.webhooks import normalize_webhook, verify_meta_signature
+from fastapi import FastAPI
 
 VIDEO = {
     "download_url": "https://files.example/reel.mp4",
@@ -40,9 +39,7 @@ def test_confirmation_round_trip_binds_exact_reel() -> None:
         video=VIDEO,
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
-    restored = verify_confirmation(
-        issue_confirmation(draft, secret="secret"), secret="secret"
-    )
+    restored = verify_confirmation(issue_confirmation(draft, secret="secret"), secret="secret")
     assert restored.account_alias == "main"
     assert restored.caption == "Hello"
     assert restored.video.file_id == "file-1"
@@ -79,10 +76,7 @@ def test_unknown_follow_state_never_unlocks_follow_gated_delivery() -> None:
         messaging_window_open=True,
         follow_state=FollowState.UNKNOWN,
     )
-    assert (
-        admit_direct_delivery(facts, requires_follow=True)
-        is AutomationDecision.REQUIRE_HUMAN
-    )
+    assert admit_direct_delivery(facts, requires_follow=True) is AutomationDecision.REQUIRE_HUMAN
 
 
 def test_automation_kill_switch_blocks_delivery() -> None:
@@ -94,9 +88,7 @@ def test_automation_kill_switch_blocks_delivery() -> None:
         messaging_window_open=True,
         follow_state=FollowState.FOLLOWING,
     )
-    assert (
-        admit_direct_delivery(facts, requires_follow=False) is AutomationDecision.BLOCK
-    )
+    assert admit_direct_delivery(facts, requires_follow=False) is AutomationDecision.BLOCK
 
 
 def test_verified_comment_webhook_is_normalized_and_scoped() -> None:
@@ -291,9 +283,7 @@ async def test_meta_public_and_private_reply_contracts() -> None:
         requests.append(request)
         if request.url.path.endswith("/comment-1/replies"):
             return httpx.Response(200, json={"id": "reply-1"})
-        return httpx.Response(
-            200, json={"recipient_id": "ig-user-1", "message_id": "mid-1"}
-        )
+        return httpx.Response(200, json={"recipient_id": "ig-user-1", "message_id": "mid-1"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         client = MetaInstagramClient(config=instagram_meta_config(), http=http)
@@ -314,9 +304,7 @@ async def test_meta_public_and_private_reply_contracts() -> None:
     assert requests[0].url.path == "/v23.0/comment-1/replies"
     private_body = json.loads(requests[1].content)
     assert private_body["recipient"] == {"comment_id": "comment-1"}
-    assert private_body["message"]["quick_replies"][0]["payload"].startswith(
-        "ig_consent:"
-    )
+    assert private_body["message"]["quick_replies"][0]["payload"].startswith("ig_consent:")
 
 
 @pytest.mark.anyio
@@ -330,9 +318,7 @@ async def test_meta_follow_state_is_fail_closed() -> None:
         [
             httpx.Response(200, json={"is_user_follow_business": True}),
             httpx.Response(200, json={}),
-            httpx.Response(
-                403, json={"error": {"message": "User consent is required"}}
-            ),
+            httpx.Response(403, json={"error": {"message": "User consent is required"}}),
         ]
     )
 
