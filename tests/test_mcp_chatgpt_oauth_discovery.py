@@ -240,7 +240,7 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             ),
         )
 
-    async def voice_status(**_kwargs: Any) -> SimpleNamespace:
+    async def voice_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(payload=_voice_status_payload)
 
     app.dependency_overrides[get_db_session] = override_session
