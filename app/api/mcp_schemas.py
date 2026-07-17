@@ -302,6 +302,38 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     ),
                 }
             ),
+            "telegram_voice": _object(
+                {
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "disabled",
+                            "configuration_incomplete",
+                            "budget_exhausted",
+                            "settlement_pending",
+                            "reconciliation_required",
+                            "ready",
+                        ],
+                    },
+                    "enabled": {"type": "boolean"},
+                    "api_key_configured": {"type": "boolean"},
+                    "model": {"type": "string", "minLength": 1},
+                    "entitlement_active": {"type": "boolean"},
+                    "period_key": {"type": "string", "minLength": 1},
+                    "hard_limit_microusd": {"type": "integer", "minimum": 0},
+                    "settled_microusd": {"type": "integer", "minimum": 0},
+                    "reserved_microusd": {"type": "integer", "minimum": 0},
+                    "remaining_microusd": {"type": "integer", "minimum": 0},
+                    "settled_count": {"type": "integer", "minimum": 0},
+                    "open_count": {"type": "integer", "minimum": 0},
+                    "unknown_count": {"type": "integer", "minimum": 0},
+                    "reconciliation_required": {"type": "boolean"},
+                    "telegram_delivery_allowed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
             "mcp": _object(
                 {
                     "protocol_version": {"type": "string", "minLength": 1},
