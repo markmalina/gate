@@ -246,7 +246,8 @@ async def test_settlement_above_reservation_is_persisted_unknown() -> None:
                     == "reservation-overflow"
                 )
             )
-            usage_count = len((await session.scalars(select(BillingUsageEventModel))).all())
+            usage_rows = await session.scalars(select(BillingUsageEventModel))
+            usage_count = len(usage_rows.all())
 
         assert reservation is not None
         assert reservation.state == BudgetReservationState.UNKNOWN.value
