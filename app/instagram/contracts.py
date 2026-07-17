@@ -83,9 +83,7 @@ class ReelDraft:
             raise InstagramContractError("caption must be text")
         caption = caption.strip()
         if len(caption) > MAX_CAPTION_LENGTH:
-            raise InstagramContractError(
-                f"caption exceeds {MAX_CAPTION_LENGTH} characters"
-            )
+            raise InstagramContractError(f"caption exceeds {MAX_CAPTION_LENGTH} characters")
         return cls(
             account_alias=account_alias.strip(),
             caption=caption,
