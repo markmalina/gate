@@ -168,11 +168,6 @@ class SqlBillingBudgetService:
         provider_operation_ref: str | None,
         occurred_at: datetime,
     ) -> None:
-        settled = settle_budget(
-            reservation,
-            actual_microusd=actual_microusd,
-            occurred_at=occurred_at,
-        )
         overflow = False
         async with self._sessions() as session, session.begin():
             workspace, row = await _locked_reservation(session, reservation)
@@ -182,6 +177,11 @@ class SqlBillingBudgetService:
                 row.updated_at = occurred_at
                 overflow = True
             else:
+                settled = settle_budget(
+                    reservation,
+                    actual_microusd=actual_microusd,
+                    occurred_at=occurred_at,
+                )
                 row.state = settled.state.value
                 row.settled_microusd = settled.settled_microusd
                 row.error_code = None
