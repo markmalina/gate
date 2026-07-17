@@ -229,18 +229,18 @@ CRM backfill or Telegram test send was performed.
 
 ## 6. Exact next development order
 
-1. Re-query GitHub main, open PRs, CI and the exact Railway production fingerprint.
-2. Keep Alpha fixture active and provider/model Telegram delivery blocked until billing is confirmed.
-3. Add Relationship CRM repository/application services with workspace and relationship-space scope in every method.
-4. Add sanitized transport-to-CRM projection fixtures and a production-data backfill dry run; existing conversations enter `personal/untriaged`, never a guessed state.
-5. Add owner read/write projections for people, notes, attention, follow-ups, pipelines and deals; preserve the old inbox as deprecated compatibility.
-6. Put the offline voice fixture behind a dormant transcription port with consent, retention and cost guards; do not call a provider.
-7. Wire private Alpha discovery policy into a default-disabled worker and owner approval views; do not activate a private installation.
-8. Add transactional billing repository services and concurrent hard-cap integration tests, then adapt Alpha budget admission without weakening its USD 50 ceiling.
-9. Continue Mayaki LMS and Relationship CRM program-space contracts on fake data only.
-10. Only after billing: one synthetic preflight, delivery-disabled shadow review, then a separately admitted limited canary.
+1. Re-query GitHub `main`, exact CI and the Railway/Gate production fingerprint.
+2. Replace Railway `OPENAI_API_KEY` with a new key created in the funded OpenAI project; never paste it into chat, logs or Git.
+3. Wait for Railway's automatic deployment and re-verify RU/BY health plus the exact production SHA.
+4. Run exactly one protected synthetic Alpha provider preflight. Keep model Telegram delivery blocked.
+5. Only after preflight success, observe ten clean delivery-blocked model shadow proposals and stop on any configured alert.
+6. Keep `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED=false` until credential preflight succeeds; activation is a separate owner-authorized Railway configuration change.
+7. Add voice usage settlement/reconciliation and redacted Gate voice status before a real Business voice canary.
+8. Keep CRM backfill write-free until a separately reviewed migration/canary plan exists.
+9. Split PR #207 into bounded persistence, webhook, provider and optional future MCP releases; preserve the exact nine public tools.
+10. Continue Oko/Mayaki work on fixture and portable transfer contracts only.
 
-No provider call, live CRM backfill, Oko activation or Telegram smoke send is authorized by this handoff update.
+No live CRM backfill, private Alpha/Oko activation, Telegram smoke send or Instagram publication is authorized by this handoff update.
 
 ## 7. Owner inputs required only at the canary boundary
 
