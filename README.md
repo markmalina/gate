@@ -3,8 +3,8 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-17**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Accepted product baseline through PR #229: `652a70bc16f64f211e64f67da1dfd9310d6d2235`  
-> Verified Railway production commit: `652a70bc16f6`  
+> Accepted product baseline through PR #233: `99ac67a723cb9a59b7c23dff4ff8d22125a5b458`  
+> Verified Railway production commit: `99ac67a723cb`  
 > Production: Railway automatic deployment from `main`  
 > Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency.  
 
@@ -142,12 +142,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-17 after PR #229:
+Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-17 after PR #233:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `652a70bc16f64f211e64f67da1dfd9310d6d2235` / `652a70bc16f6` |
+| Application / Railway commit | `99ac67a723cb9a59b7c23dff4ff8d22125a5b458` / `99ac67a723cb` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -157,8 +157,9 @@ Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-
 | Human sending | exact saved draft + explicit confirmation only |
 | Alpha fixture | one approved test group active on the exact reviewed fixture |
 | Alpha model path | staged and delivery-blocked; replacement-key synthetic preflight verified |
-| OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.024576 reserved; Gate voice USD 1/month app ceiling; OpenAI organization spend limit USD 5 |
+| OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.049152 reserved; Gate voice USD 1/month app ceiling with USD 0 settled/reserved; OpenAI organization spend limit USD 5 |
 | Model delivery evidence | 0 model turns and 0 model delivery grants |
+| Telegram voice readiness | Disabled; API key configured; entitlement active; USD 1 remaining; 0 open/unknown reservations |
 
 Snapshot counters were 41 conversations, 1102 messages, 375 reply-task rows, 17 unanswered and 32
 drafts. Alpha evidence was 5 accepted canonical messages, 2 fixture Agent turns, 1 delivery grant
@@ -172,6 +173,20 @@ delivery blocked; model shadow observation is now the next release gate.
 The canonical detailed status and next work are in
 [docs/PROJECT_HANDOFF.md](docs/PROJECT_HANDOFF.md). After every merge, verify the exact Railway SHA;
 a healthy previous release does not prove the new release deployed.
+
+### Telegram voice canary readiness
+
+PRs #232–#233 completed provider-usage settlement/reconciliation and added redacted voice status to
+`gate_get_status`. The production snapshot on 2026-07-17 confirms the replacement OpenAI key is
+configured, the USD 1 Gate voice entitlement is active, no reservation is open or unknown, and the
+runtime flag remains disabled. Enabling `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED` is a separate
+owner-authorized Railway configuration action.
+
+The first canary is exactly one inbound voice message in an existing Telegram Business dialog. Before
+the message, status must be `ready` after activation. Afterwards, one reservation must settle, no
+open or unknown reservation may remain, and the transcript may enter the existing text-only inbound
+path. Voice transcription never grants Telegram delivery and never bypasses the human-confirmed send
+contract.
 
 ## 4. Current ChatGPT Work MVP
 
