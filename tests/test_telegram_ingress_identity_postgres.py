@@ -154,6 +154,14 @@ async def test_identity_snapshot_is_coherent_and_releases_single_pool_slot() -> 
                         is_enabled=True,
                     ),
                     TelegramBusinessConnection(
+                        account_id=target.id,
+                        business_connection_id="identity-target-historical",
+                        telegram_user_id=414,
+                        user_chat_id=515,
+                        rights={},
+                        is_enabled=False,
+                    ),
+                    TelegramBusinessConnection(
                         account_id=sibling.id,
                         business_connection_id="identity-historical",
                         telegram_user_id=606,
@@ -202,7 +210,10 @@ async def test_identity_snapshot_is_coherent_and_releases_single_pool_slot() -> 
             assert snapshot is not None
             assert snapshot.account_alias == "identity_target"
             assert snapshot.owner_identity_ids == frozenset(
-                {"101", "202", "404", "505", "606", "707"}
+                {"101", "404", "505", "414", "515"}
+            )
+            assert snapshot.owner_identity_ids.isdisjoint(
+                {"202", "606", "707"}
             )
             assert len(identity_sql) == 1
             normalized_sql = identity_sql[0].upper()
