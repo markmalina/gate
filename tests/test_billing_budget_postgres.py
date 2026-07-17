@@ -11,15 +11,22 @@ import pytest
 from app.application.billing import (
     BillingDomainError,
     BillingProduct,
+    BudgetReservationState,
     ReserveBudgetCommand,
     UsageAttribution,
     UsageOperation,
+    UsageUnit,
 )
 from app.infrastructure.billing_budget import SqlBillingBudgetService
-from app.models.billing import BillingEntitlementModel
+from app.models.billing import (
+    BillingBudgetReservationModel,
+    BillingEntitlementModel,
+    BillingLedgerEntryModel,
+    BillingUsageEventModel,
+)
 from app.models.canonical import Workspace
 from app.models.domain import Base
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -163,3 +170,86 @@ async def test_reservation_key_reuse_with_new_amount_fails_closed() -> None:
                 command("reservation-conflict", 11_000_000),
                 period_key="2026-07",
             )
+
+
+@pytest.mark.anyio
+async def test_settlement_persists_matching_usage_and_cost_ledger() -> None:
+    async with postgres_sessions() as sessions:
+        await seed_budget(sessions)
+        service = SqlBillingBudgetService(sessions)
+        admission = await service.reserve(
+            command("reservation-settle", 10_000),
+            period_key="2026-07",
+        )
+        assert admission.reservation is not None
+
+        await service.settle(
+            admission.reservation,
+            actual_microusd=1_100,
+            quantity=820,
+            unit=UsageUnit.TOKENS,
+            provider_operation_ref="provider-request-1",
+            occurred_at=NOW,
+        )
+
+        async with sessions() as session:
+            reservation = await session.scalar(
+                select(BillingBudgetReservationModel).where(
+                    BillingBudgetReservationModel.reservation_key
+                    == "reservation-settle"
+                )
+            )
+            usage = await session.scalar(select(BillingUsageEventModel))
+            ledger = await session.scalar(select(BillingLedgerEntryModel))
+
+        assert reservation is not None
+        assert reservation.state == BudgetReservationState.SETTLED.value
+        assert reservation.settled_microusd == 1_100
+        assert usage is not None
+        assert usage.quantity == 820
+        assert usage.unit == UsageUnit.TOKENS.value
+        assert usage.cost_microusd == 1_100
+        assert usage.provider_operation_ref == "provider-request-1"
+        assert ledger is not None
+        assert ledger.amount_microusd == 1_100
+        assert ledger.source_event_key == usage.event_key
+
+
+@pytest.mark.anyio
+async def test_settlement_above_reservation_is_persisted_unknown() -> None:
+    async with postgres_sessions() as sessions:
+        await seed_budget(sessions)
+        service = SqlBillingBudgetService(sessions)
+        admission = await service.reserve(
+            command("reservation-overflow", 1_000),
+            period_key="2026-07",
+        )
+        assert admission.reservation is not None
+
+        with pytest.raises(
+            BillingDomainError,
+            match="billing_settlement_exceeds_reservation",
+        ):
+            await service.settle(
+                admission.reservation,
+                actual_microusd=1_001,
+                quantity=820,
+                unit=UsageUnit.TOKENS,
+                provider_operation_ref="provider-request-overflow",
+                occurred_at=NOW,
+            )
+
+        async with sessions() as session:
+            reservation = await session.scalar(
+                select(BillingBudgetReservationModel).where(
+                    BillingBudgetReservationModel.reservation_key
+                    == "reservation-overflow"
+                )
+            )
+            usage_rows = await session.scalars(select(BillingUsageEventModel))
+            usage_count = len(usage_rows.all())
+
+        assert reservation is not None
+        assert reservation.state == BudgetReservationState.UNKNOWN.value
+        assert reservation.error_code == "billing_settlement_exceeds_reservation"
+        assert usage_count == 0

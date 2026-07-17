@@ -17,6 +17,10 @@ _SUPPORTED_MODELS = {
     "gpt-4o-mini-transcribe",
     "gpt-4o-transcribe",
 }
+_TOKEN_RATES_HUNDREDTHS_MICROUSD = {
+    "gpt-4o-mini-transcribe": (125, 500),
+    "gpt-4o-transcribe": (250, 1000),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,8 +108,51 @@ class OpenAITranscriptionClient:
                 "openai_transcription_response_unknown",
                 outcome_unknown=True,
             )
+        usage = payload.get("usage")
+        if not isinstance(usage, dict) or usage.get("type") != "tokens":
+            raise TranscriptionProviderError(
+                "openai_transcription_usage_unknown",
+                outcome_unknown=True,
+            )
+        input_tokens = _usage_count(usage.get("input_tokens"))
+        output_tokens = _usage_count(usage.get("output_tokens"))
+        total_tokens = _usage_count(usage.get("total_tokens"))
+        if (
+            input_tokens is None
+            or output_tokens is None
+            or total_tokens is None
+            or total_tokens <= 0
+            or total_tokens != input_tokens + output_tokens
+        ):
+            raise TranscriptionProviderError(
+                "openai_transcription_usage_unknown",
+                outcome_unknown=True,
+            )
         operation_ref = response.headers.get("x-request-id")
         return ProviderTranscript(
             text=text.strip(),
             provider_operation_ref=operation_ref,
+            billed_quantity=total_tokens,
+            actual_microusd=_token_cost_microusd(
+                self._config.model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            ),
         )
+
+
+def _usage_count(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _token_cost_microusd(
+    model: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+) -> int:
+    input_rate, output_rate = _TOKEN_RATES_HUNDREDTHS_MICROUSD[model]
+    hundredths = input_tokens * input_rate + output_tokens * output_rate
+    return (hundredths + 99) // 100

@@ -10,9 +10,11 @@ from typing import Protocol
 from app.application.billing import (
     BillingProduct,
     BudgetAdmission,
+    BudgetReservation,
     ReserveBudgetCommand,
     UsageAttribution,
     UsageOperation,
+    UsageUnit,
 )
 
 TELEGRAM_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024
@@ -89,6 +91,9 @@ class NormalizedVoice:
 class ProviderTranscript:
     text: str
     provider_operation_ref: str | None = field(default=None, repr=False)
+    billed_quantity: int = 0
+    billed_unit: UsageUnit = UsageUnit.TOKENS
+    actual_microusd: int = 0
 
     def __post_init__(self) -> None:
         if not self.text.strip():
@@ -103,6 +108,8 @@ class ProviderTranscript:
                 "telegram_voice_provider_ref_invalid",
                 255,
             )
+        if self.billed_quantity < 0 or self.actual_microusd < 0:
+            raise TelegramVoiceError("telegram_voice_usage_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +173,32 @@ class TranscriptionBudgetPort(Protocol):
         *,
         period_key: str,
     ) -> BudgetAdmission: ...
+
+    async def settle(
+        self,
+        reservation: BudgetReservation,
+        *,
+        actual_microusd: int,
+        quantity: int,
+        unit: UsageUnit,
+        provider_operation_ref: str | None,
+        occurred_at: datetime,
+    ) -> None: ...
+
+    async def release(
+        self,
+        reservation: BudgetReservation,
+        *,
+        occurred_at: datetime,
+    ) -> None: ...
+
+    async def mark_unknown(
+        self,
+        reservation: BudgetReservation,
+        *,
+        occurred_at: datetime,
+        error_code: str,
+    ) -> None: ...
 
 
 class SpeechToTextPort(Protocol):
@@ -236,6 +269,9 @@ class TelegramVoiceTranscriptionService:
         )
         if not budget.allowed:
             return _rejected(budget.reason_code, budget=budget)
+        reservation = budget.reservation
+        if reservation is None:
+            raise TelegramVoiceError("telegram_voice_budget_reservation_missing")
 
         try:
             transcript = await self._speech_to_text.transcribe(
@@ -243,6 +279,17 @@ class TelegramVoiceTranscriptionService:
                 language=command.language,
             )
         except TranscriptionProviderError as exc:
+            if exc.outcome_unknown:
+                await self._budget.mark_unknown(
+                    reservation,
+                    occurred_at=command.occurred_at,
+                    error_code=exc.code,
+                )
+            else:
+                await self._budget.release(
+                    reservation,
+                    occurred_at=command.occurred_at,
+                )
             return TelegramVoiceTranscriptionResult(
                 outcome=(
                     TelegramVoiceOutcome.UNKNOWN
@@ -253,6 +300,14 @@ class TelegramVoiceTranscriptionService:
                 budget=budget,
             )
 
+        await self._budget.settle(
+            reservation,
+            actual_microusd=transcript.actual_microusd,
+            quantity=transcript.billed_quantity,
+            unit=transcript.billed_unit,
+            provider_operation_ref=transcript.provider_operation_ref,
+            occurred_at=command.occurred_at,
+        )
         return TelegramVoiceTranscriptionResult(
             outcome=TelegramVoiceOutcome.TRANSCRIBED,
             reason_code="telegram_voice_transcribed",

@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 import pytest
 from app.application.billing import (
     BudgetAdmission,
+    BudgetReservation,
     BudgetWindow,
     ReserveBudgetCommand,
+    UsageUnit,
     admit_budget,
 )
 from app.application.telegram_voice_orchestration import (
@@ -48,6 +50,40 @@ class Budget:
         if not self.allowed:
             return BudgetAdmission(False, "billing_hard_limit_exceeded")
         return admit_budget(BudgetWindow(period_key, 50_000_000, 0, 0), command)
+
+    async def settle(
+        self,
+        reservation: BudgetReservation,
+        *,
+        actual_microusd: int,
+        quantity: int,
+        unit: UsageUnit,
+        provider_operation_ref: str | None,
+        occurred_at: datetime,
+    ) -> None:
+        assert reservation.reservation_key
+        assert actual_microusd == 0
+        assert quantity == 0
+        assert unit is UsageUnit.TOKENS
+        assert provider_operation_ref is None
+        assert occurred_at == NOW
+
+    async def release(
+        self,
+        reservation: BudgetReservation,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        raise AssertionError((reservation, occurred_at))
+
+    async def mark_unknown(
+        self,
+        reservation: BudgetReservation,
+        *,
+        occurred_at: datetime,
+        error_code: str,
+    ) -> None:
+        raise AssertionError((reservation, occurred_at, error_code))
 
 
 class Speech:
