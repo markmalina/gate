@@ -88,3 +88,14 @@ async def test_transport_failure_is_unknown_and_sanitized() -> None:
     assert caught.value.outcome_unknown is True
     assert str(caught.value) == "openai_transcription_transport_unknown"
 
+def test_diarization_model_requires_a_separate_response_contract() -> None:
+    with pytest.raises(
+        ValueError,
+        match="openai_transcription_model_unsupported",
+    ):
+        OpenAITranscriptionConfig(
+            api_key="secret",
+            enabled=True,
+            model="gpt-4o-transcribe-diarize",
+        )
+
