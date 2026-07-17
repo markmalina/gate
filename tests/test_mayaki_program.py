@@ -90,6 +90,32 @@ def test_handoff_requires_request_then_human_acceptance() -> None:
     assert accepted.telegram_delivery_allowed is False
 
 
+def test_practice_events_advance_revision_without_implicit_completion() -> None:
+    started = active()
+    assigned = apply_program_event(
+        started,
+        command(
+            ProgramEventKind.PRACTICE_ASSIGNED,
+            key="practice-assigned",
+            revision=1,
+            occurred_at=NOW + timedelta(seconds=1),
+        ),
+    )
+    completed = apply_program_event(
+        assigned.session,
+        command(
+            ProgramEventKind.PRACTICE_COMPLETED,
+            key="practice-completed",
+            revision=2,
+            occurred_at=NOW + timedelta(seconds=2),
+        ),
+    )
+
+    assert assigned.session.state is ProgramState.ACTIVE
+    assert completed.session.state is ProgramState.ACTIVE
+    assert completed.session.revision == 3
+
+
 def test_event_contract_is_stable_and_content_free() -> None:
     result = apply_program_event(
         None,
