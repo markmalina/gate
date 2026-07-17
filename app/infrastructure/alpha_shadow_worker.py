@@ -55,12 +55,21 @@ from app.models.alpha import (
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
 
+_OPENAI_RUNTIME_PROFILE = "openai-responses-v1"
+_OPENAI_MODEL_PROFILE = "gpt-5.6-luna"
+
 
 class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
     """Keep runtime outside transactions while making every phase durable."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        verified_model_shadow_enabled: bool = False,
+    ) -> None:
         self._sessions = sessions
+        self._verified_model_shadow_enabled = verified_model_shadow_enabled
 
     async def prepare(
         self, command: ProcessAlphaShadowMessageCommand
@@ -163,8 +172,10 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 installation,
                 deployment,
                 revision,
-                _definition,
+                definition,
             ) = row
+            installation_deployment = deployment
+            installation_revision = revision
             if connector.connector_key.strip() == "":
                 raise AlphaShadowWorkerError("alpha_connector_identity_invalid")
             _require_trigger_connector(
@@ -193,6 +204,14 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 installation_id=installation.id,
                 connector_key=connector.connector_key,
             )
+            if self._verified_model_shadow_enabled:
+                model_binding = await _verified_model_shadow_binding(
+                    session,
+                    workspace_id=workspace.id,
+                    definition_id=definition.id,
+                )
+                if model_binding is not None:
+                    deployment, revision = model_binding
 
             revision_value = InstructionRevision(
                 revision_key=revision.revision_key,
@@ -216,8 +235,8 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 workspace_id=str(workspace.id),
                 dialog_id=str(dialog.id),
                 dialog_kind=DialogKind(dialog.dialog_kind),
-                deployment_key=deployment.deployment_key,
-                instruction_content_sha256=revision.content_sha256,
+                deployment_key=installation_deployment.deployment_key,
+                instruction_content_sha256=installation_revision.content_sha256,
                 state=AlphaInstallationState(installation.state),
             )
             return AlphaShadowPreparedTurn(
@@ -280,7 +299,7 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                         AgentDeploymentModel.workspace_id == workspace_id,
                         AgentDeploymentModel.deployment_key
                         == prepared.deployment.deployment_key,
-                        AgentDeploymentModel.state == AgentDeploymentState.ACTIVE.value,
+                        AgentDeploymentModel.state == prepared.deployment.state.value,
                         InstructionRevisionModel.workspace_id == workspace_id,
                         InstructionRevisionModel.revision_key
                         == prepared.deployment.instruction.revision_key,
@@ -485,6 +504,61 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
             if row is None:
                 raise AlphaShadowWorkerError("alpha_turn_not_found")
             return _snapshot(row[0], session_key=row[1].session_key)
+
+
+async def _verified_model_shadow_binding(
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    definition_id: uuid.UUID,
+) -> tuple[AgentDeploymentModel, InstructionRevisionModel] | None:
+    """Select one preflight-verified staged model without rebinding the installation."""
+
+    from app.models.alpha_preflight import AlphaModelPreflightModel
+
+    rows = (
+        await session.execute(
+            select(AgentDeploymentModel, InstructionRevisionModel)
+            .join(
+                InstructionRevisionModel,
+                (
+                    InstructionRevisionModel.id
+                    == AgentDeploymentModel.instruction_revision_id
+                )
+                & (
+                    InstructionRevisionModel.workspace_id
+                    == AgentDeploymentModel.workspace_id
+                ),
+            )
+            .join(
+                AlphaModelPreflightModel,
+                (AlphaModelPreflightModel.workspace_id == workspace_id)
+                & (
+                    AlphaModelPreflightModel.deployment_id
+                    == AgentDeploymentModel.id
+                )
+                & (
+                    AlphaModelPreflightModel.instruction_revision_id
+                    == InstructionRevisionModel.id
+                ),
+            )
+            .where(
+                AgentDeploymentModel.workspace_id == workspace_id,
+                AgentDeploymentModel.agent_definition_id == definition_id,
+                AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
+                AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
+                AgentDeploymentModel.state == AgentDeploymentState.STAGED.value,
+                InstructionRevisionModel.validation_state == "validated",
+                AlphaModelPreflightModel.state == "succeeded",
+            )
+        )
+    ).all()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise AlphaShadowWorkerError("alpha_model_shadow_binding_ambiguous")
+    deployment, revision = rows[0]
+    return deployment, revision
 
 
 async def _locked_turn_binding(

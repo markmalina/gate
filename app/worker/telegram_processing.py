@@ -419,7 +419,10 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                     alpha_canary = ProcessAlphaCanaryUpdateService(
                         store=SessionFactoryAlphaCanaryStore(sessions),
                         shadow=ProcessAlphaShadowMessageService(
-                            port=SessionFactoryAlphaShadowTurnRepository(sessions),
+                            port=SessionFactoryAlphaShadowTurnRepository(
+                                sessions,
+                                verified_model_shadow_enabled=True,
+                            ),
                             bundle_loader=DeployedInstructionBundleLoader(
                                 Path(settings.gate_agent_bundle_root)
                             ),
