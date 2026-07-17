@@ -38,7 +38,7 @@ from app.models.alpha import AgentInstallationModel, AlphaUsageRecordModel
 from app.models.alpha_preflight import AlphaModelPreflightModel
 from app.models.canonical import Workspace
 
-PREFLIGHT_KEY = "alpha-model-v1-openai-preflight-v1"
+# Versioned explicitly so a credential rotation permits one new operator-authorized attempt.\nPREFLIGHT_KEY = "alpha-model-v1-openai-preflight-v2"
 PREFLIGHT_RESERVED_TOKENS = 2_048
 PREFLIGHT_MAX_OUTPUT_TOKENS = 64
 _RUNTIME_PROFILE = "openai-responses-v1"
