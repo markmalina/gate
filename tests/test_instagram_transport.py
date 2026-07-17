@@ -570,3 +570,53 @@ async def test_authenticated_command_maps_provider_timeout_to_unknown() -> None:
         )
     assert result["status"] == "unknown"
     assert result["external_delivery"] is False
+
+
+@pytest.mark.anyio
+async def test_unknown_provider_result_is_replayed_without_second_call(tmp_path) -> None:
+    account = InstagramAccountConfig("main", "ig-account-1", "secret")
+    config = instagram_meta_config()
+    config.accounts["main"] = account
+    calls = 0
+    command = {
+        "type": "gate.instagram.public_reply.requested.v1",
+        "idempotency_key": "session-1:public-reply:unknown-persisted",
+        "account_alias": "main",
+        "provider_comment_id": "comment-1",
+        "text": "Отправил в личку",
+    }
+    raw_body = json.dumps(command, separators=(",", ":"))
+    timestamp = "2026-07-17T08:00:00+00:00"
+    signature = sign_instagram_command(
+        timestamp=timestamp,
+        idempotency_key=command["idempotency_key"],
+        raw_body=raw_body,
+        secret="hmac-secret",
+    )
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("timeout")
+
+    store = JsonInstagramCommandResultStore(str(tmp_path / "unknown-results.json"))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        first = await execute_authenticated_command(
+            executor=MetaInstagramCommandExecutor(
+                client=MetaInstagramClient(config=config, http=http), result_store=store
+            ),
+            raw_body=raw_body,
+            authorization="Bearer bearer-secret",
+            timestamp=timestamp,
+            signature=signature,
+            idempotency_key=command["idempotency_key"],
+            bearer_token="bearer-secret",
+            hmac_secret="hmac-secret",
+            now=lambda: datetime(2026, 7, 17, 8, 0, tzinfo=UTC),
+        )
+        replay = await MetaInstagramCommandExecutor(
+            client=MetaInstagramClient(config=config, http=http), result_store=store
+        ).execute(command)
+    assert first["status"] == "unknown"
+    assert replay["idempotent_replay"] is True
+    assert calls == 1

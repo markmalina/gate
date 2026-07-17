@@ -93,10 +93,14 @@ async def execute_authenticated_command(
     try:
         return await executor.execute(command)
     except MetaInstagramError as exc:
-        return {
+        result: dict[str, Any] = {
             "status": "unknown" if exc.code == "unknown" else "failed",
             "error": exc.code,
             "message": str(exc),
             "idempotency_key": idempotency_key,
             "external_delivery": False,
+            "retryable": False,
         }
+        if exc.code == "unknown" and executor.result_store is not None:
+            executor.result_store.put(idempotency_key, result)
+        return result
