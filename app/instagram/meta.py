@@ -26,9 +26,7 @@ class MetaInstagramError(RuntimeError):
 
 
 class MetaInstagramClient:
-    def __init__(
-        self, *, config: InstagramRuntimeConfig, http: httpx.AsyncClient
-    ) -> None:
+    def __init__(self, *, config: InstagramRuntimeConfig, http: httpx.AsyncClient) -> None:
         self.config = config
         self.http = http
 
@@ -65,13 +63,9 @@ class MetaInstagramClient:
                 "unknown", "Meta publish outcome is unknown; do not retry automatically"
             )
         permalink = await self._permalink(account=account, media_id=media_id)
-        return PublishedReel(
-            media_id=media_id, permalink=permalink, state=PublishState.PUBLISHED
-        )
+        return PublishedReel(media_id=media_id, permalink=permalink, state=PublishState.PUBLISHED)
 
-    async def insights(
-        self, *, account: InstagramAccountConfig, media_id: str
-    ) -> ReelInsights:
+    async def insights(self, *, account: InstagramAccountConfig, media_id: str) -> ReelInsights:
         data = await self._get(
             account,
             media_id + "/insights",
@@ -84,9 +78,7 @@ class MetaInstagramClient:
             if isinstance(name, str) and values and isinstance(values[0], dict):
                 value = values[0].get("value")
                 metrics[name] = value if isinstance(value, (int, float)) else None
-        return ReelInsights(
-            media_id=media_id, captured_at=datetime.now(UTC), metrics=metrics
-        )
+        return ReelInsights(media_id=media_id, captured_at=datetime.now(UTC), metrics=metrics)
 
     async def reply_to_comment(
         self,
@@ -104,9 +96,7 @@ class MetaInstagramClient:
         )
         reply_id = result.get("id")
         if not isinstance(reply_id, str) or not reply_id:
-            raise MetaInstagramError(
-                "provider_contract", "Meta did not return the public reply id"
-            )
+            raise MetaInstagramError("provider_contract", "Meta did not return the public reply id")
         return reply_id
 
     async def private_reply_to_comment(
@@ -173,9 +163,7 @@ class MetaInstagramClient:
         )
         message_id = result.get("message_id")
         if not isinstance(message_id, str) or not message_id:
-            raise MetaInstagramError(
-                "provider_contract", "Meta did not return the message id"
-            )
+            raise MetaInstagramError("provider_contract", "Meta did not return the message id")
         return message_id
 
     async def follow_state(
@@ -219,9 +207,7 @@ class MetaInstagramClient:
             "processing_timeout", "Meta media processing did not finish in time"
         )
 
-    async def _permalink(
-        self, *, account: InstagramAccountConfig, media_id: str
-    ) -> str | None:
+    async def _permalink(self, *, account: InstagramAccountConfig, media_id: str) -> str | None:
         result = await self._get(account, media_id, {"fields": "permalink"})
         value = result.get("permalink")
         return value if isinstance(value, str) else None
@@ -250,9 +236,7 @@ class MetaInstagramClient:
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, dict):
-                raise MetaInstagramError(
-                    "provider_contract", "Meta returned an invalid response"
-                )
+                raise MetaInstagramError("provider_contract", "Meta returned an invalid response")
             return payload
         except MetaInstagramError:
             raise
