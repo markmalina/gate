@@ -10,11 +10,13 @@ import httpx
 from app.instagram.config import InstagramRuntimeConfig
 from app.instagram.confirmation import issue_confirmation, verify_confirmation
 from app.instagram.contracts import InstagramContractError, ReelDraft
+from app.instagram.diagnostics import diagnose_instagram_transport
 from app.instagram.meta import MetaInstagramClient, MetaInstagramError
 
 JsonObject = dict[str, Any]
 
 INSTAGRAM_MCP_TOOL_SCOPES = {
+    "gate_instagram_diagnose_setup": "gate:status:read",
     "gate_instagram_list_accounts": "gate:status:read",
     "gate_instagram_prepare_reel": "gate:instagram:publish",
     "gate_instagram_publish_reel": "gate:instagram:publish",
@@ -23,19 +25,21 @@ INSTAGRAM_MCP_TOOL_SCOPES = {
 
 
 def instagram_mcp_tool_names() -> list[str]:
-    return (
-        list(INSTAGRAM_MCP_TOOL_SCOPES)
-        if InstagramRuntimeConfig.from_env().enabled
-        else []
-    )
+    config = InstagramRuntimeConfig.from_env()
+    if config.enabled:
+        return list(INSTAGRAM_MCP_TOOL_SCOPES)
+    return ["gate_instagram_diagnose_setup"]
 
 
 def instagram_mcp_tools(
     *, security_scheme: JsonObject | None = None
 ) -> list[JsonObject]:
-    if not InstagramRuntimeConfig.from_env().enabled:
-        return []
-    tools = [_list_accounts_tool(), _prepare_tool(), _publish_tool(), _insights_tool()]
+    config = InstagramRuntimeConfig.from_env()
+    tools = [_diagnose_tool()]
+    if config.enabled:
+        tools.extend(
+            [_list_accounts_tool(), _prepare_tool(), _publish_tool(), _insights_tool()]
+        )
     if security_scheme:
         for tool in tools:
             tool["securitySchemes"] = [security_scheme]
@@ -47,6 +51,8 @@ async def handle_instagram_mcp_tool(
     *, tool_name: str, arguments: JsonObject
 ) -> JsonObject:
     config = InstagramRuntimeConfig.from_env()
+    if tool_name == "gate_instagram_diagnose_setup":
+        return diagnose_instagram_transport(config)
     if not config.ready:
         return _error(
             "configuration_required",
@@ -152,9 +158,7 @@ def _list_accounts_tool() -> JsonObject:
     return {
         "name": "gate_instagram_list_accounts",
         "title": "List connected Instagram accounts",
-        "description": (
-            "List configured Instagram account aliases without exposing access tokens."
-        ),
+        "description": "List configured Instagram account aliases without exposing access tokens.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -165,6 +169,29 @@ def _list_accounts_tool() -> JsonObject:
             "properties": {"accounts": {"type": "array", "items": {"type": "object"}}},
             "required": ["accounts"],
         },
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    }
+
+
+def _diagnose_tool() -> JsonObject:
+    return {
+        "name": "gate_instagram_diagnose_setup",
+        "title": "Diagnose Instagram setup",
+        "description": (
+            "Report missing Instagram configuration and safe activation order "
+            "without exposing secret values."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        "outputSchema": {"type": "object", "additionalProperties": True},
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
