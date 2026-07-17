@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application.relationship_crm import (
     InteractionDirection,
     PersonRecord,
