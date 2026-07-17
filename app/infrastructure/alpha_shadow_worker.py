@@ -52,7 +52,6 @@ from app.models.alpha import (
     AgentSendAttemptModel,
     DeliveryGrantModel,
 )
-from app.models.alpha_preflight import AlphaModelPreflightModel
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
 
@@ -515,6 +514,8 @@ async def _verified_model_shadow_binding(
     definition_id: uuid.UUID,
 ) -> tuple[AgentDeploymentModel, InstructionRevisionModel] | None:
     """Select one preflight-verified staged model without rebinding the installation."""
+
+    from app.models.alpha_preflight import AlphaModelPreflightModel
 
     rows = (
         await session.execute(
