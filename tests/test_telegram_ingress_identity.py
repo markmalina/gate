@@ -84,6 +84,30 @@ def test_non_owner_text_resolves_inbound_reply_task_creation() -> None:
     assert result.project_id == "project-personal"
 
 
+def test_sibling_connected_account_is_inbound_for_target_account() -> None:
+    snapshot = TelegramIngressIdentitySnapshot(
+        account_id="account-by",
+        account_alias="telegram_mark_by",
+        project_id="project-personal",
+        owner_identity_ids=frozenset({"by-current-owner", "by-historical-owner"}),
+    )
+    service = ResolveTelegramIngressIdentityService(FakeIdentityReader(snapshot))
+
+    result = asyncio.run(
+        service.execute(
+            ResolveTelegramIngressIdentityCommand(
+                business_connection_id="connection-by",
+                sender_id="ru-current-owner",
+                text_present=True,
+                sender_kind=TelegramIngressSenderKind.HUMAN,
+            )
+        )
+    )
+
+    assert result.direction is TelegramIngressDirection.INBOUND
+    assert result.reply_task_intent is TelegramReplyTaskIntent.CREATE_INBOUND_HUMAN_TEXT
+
+
 def test_non_text_inbound_message_does_not_create_reply_task() -> None:
     service = ResolveTelegramIngressIdentityService(FakeIdentityReader(_snapshot()))
 
@@ -287,6 +311,14 @@ def test_sql_identity_adapter_has_no_write_or_transaction_methods() -> None:
     assert ".commit(" not in source
     assert ".rollback(" not in source
     assert ".with_for_update(" not in source
+
+
+def test_sql_identity_scope_is_target_account_relative() -> None:
+    source = inspect.getsource(SqlTelegramIngressIdentityReader)
+
+    assert "owner_connection.account_id == target_account.id" in source
+    assert "owner_account" not in source
+    assert "owner_account.owner == target_account.owner" not in source
 
 
 def test_identity_contract_repr_excludes_provider_and_owner_identity_sentinels() -> None:
