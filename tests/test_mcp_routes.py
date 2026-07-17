@@ -28,6 +28,30 @@ def _assert_valid_output(tool_name: str, payload: dict[str, Any]) -> None:
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(payload)
 
 
+def _voice_status_payload() -> dict[str, Any]:
+    return {
+        "state": "disabled",
+        "enabled": False,
+        "api_key_configured": True,
+        "model": "gpt-4o-mini-transcribe",
+        "entitlement_active": True,
+        "period_key": "2026-07",
+        "hard_limit_microusd": 1_000_000,
+        "settled_microusd": 1_100,
+        "reserved_microusd": 2_000,
+        "remaining_microusd": 996_900,
+        "settled_count": 1,
+        "open_count": 1,
+        "unknown_count": 0,
+        "reconciliation_required": False,
+        "telegram_delivery_allowed": False,
+    }
+
+
+async def _voice_status(**_kwargs: Any) -> SimpleNamespace:
+    return SimpleNamespace(payload=_voice_status_payload)
+
+
 class UnexpectedTelegramClient:
     """Fail if a read-only MCP test reaches the Telegram provider."""
 
@@ -547,7 +571,14 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
 
 
 @pytest.mark.anyio
-async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
+async def test_mcp_status_is_scoped(
+    mcp_context: FakeMcpSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.mcp_routes.telegram_voice_operational_status",
+        _voice_status,
+    )
     response = await _post(
         {
             "jsonrpc": "2.0",
@@ -592,11 +623,14 @@ async def test_mcp_status_is_scoped(mcp_context: FakeMcpSession) -> None:
         "reserved_microusd": 0,
         "remaining_microusd": 50_000_000,
     }
+    assert structured["telegram_voice"] == _voice_status_payload()
     assert "Contact directory:" in result["content"][0]["text"]
     assert "accepted_messages: 1" in result["content"][0]["text"]
     assert "Alpha model shadow:" in result["content"][0]["text"]
     assert "budget_remaining: $50.000000" in result["content"][0]["text"]
     assert "promotion_next: provider_preflight" in result["content"][0]["text"]
+    assert "Telegram voice transcription:" in result["content"][0]["text"]
+    assert "budget_remaining: $0.996900" in result["content"][0]["text"]
     assert len(mcp_context.statements) == 30
 
 
