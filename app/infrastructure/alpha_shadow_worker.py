@@ -55,7 +55,6 @@ from app.models.alpha import (
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
 
-
 _OPENAI_RUNTIME_PROFILE = "openai-responses-v1"
 _OPENAI_MODEL_PROFILE = "gpt-5.6-luna"
 
