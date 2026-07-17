@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from app.application.telegram_voice_transcription import (
     TelegramVoiceOutcome,
@@ -61,6 +61,15 @@ class ProcessTelegramVoiceUpdateResult:
             raise ValueError("telegram_voice_downstream_inconsistent")
         if self.downstream_allowed != (self.downstream_update is not None):
             raise ValueError("telegram_voice_downstream_payload_inconsistent")
+
+
+class TelegramVoiceUpdateProcessor(Protocol):
+    """Port used by the Telegram worker before canonical routing."""
+
+    async def execute(
+        self,
+        command: ProcessTelegramVoiceUpdateCommand,
+    ) -> ProcessTelegramVoiceUpdateResult: ...
 
 
 class ProcessTelegramVoiceUpdateService:

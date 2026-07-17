@@ -27,6 +27,7 @@ from app.application.telegram_canonical_projection import (
 )
 from app.application.telegram_ingress_identity import (
     ResolveTelegramIngressIdentityService,
+    TelegramIngressDirection,
     TelegramIngressIdentityReader,
     TelegramIngressIdentityResolution,
     build_telegram_business_identity_command,
@@ -45,6 +46,13 @@ from app.application.telegram_processing import (
     TelegramUpdateProcessingError,
     TelegramUpdateProcessor,
 )
+from app.application.telegram_voice_orchestration import (
+    ProcessTelegramVoiceUpdateCommand,
+    ProcessTelegramVoiceUpdateService,
+    TelegramVoiceUpdateProcessor,
+)
+from app.application.telegram_voice_transcription import TelegramVoiceTranscriptionService
+from app.application.telegram_voice_update import extract_telegram_voice
 from app.application.telegram_work_ownership_shadow import (
     TelegramIngressRoutingView,
     evaluate_telegram_work_ownership_shadow,
@@ -62,12 +70,22 @@ from app.infrastructure.alpha_delivery import (
 from app.infrastructure.alpha_shadow_worker import (
     SessionFactoryAlphaShadowTurnRepository,
 )
+from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
 from app.infrastructure.openai_agent_runtime import ConfiguredAlphaRuntimeFactory
+from app.infrastructure.openai_transcription import (
+    OpenAITranscriptionClient,
+    OpenAITranscriptionConfig,
+)
 from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
+from app.infrastructure.telegram_voice import (
+    TelegramVoiceDownloadConfig,
+    TelegramVoiceDownloader,
+    TelegramVoiceNormalizer,
+)
 from app.services.telegram import TelegramClient, build_telegram_http_client
 
 logger = logging.getLogger(__name__)
@@ -102,12 +120,14 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         runtime_logger: logging.Logger,
         canonical_store: CanonicalIngressStore | None = None,
         alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
+        voice_updates: TelegramVoiceUpdateProcessor | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
         self._identity_reader = identity_reader
         self._canonical_store = canonical_store
         self._alpha_canary = alpha_canary
+        self._voice_updates = voice_updates
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
@@ -117,10 +137,75 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             connector = self._connectors.require_worker_connector(item.bot_key)
         except TelegramConnectorResolutionError as exc:
             raise TelegramUpdateProcessingError(exc.code) from None
+        payload = item.payload
+        voice_disposition = "not_applicable"
+        if connector.role is TelegramConnectorRole.BUSINESS:
+            try:
+                voice = extract_telegram_voice(payload)
+            except Exception:
+                raise TelegramUpdateProcessingError(
+                    "telegram_voice_update_invalid"
+                ) from None
+            if voice is not None:
+                if self._voice_updates is None:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_not_configured"
+                    )
+                voice_identity_command = build_telegram_business_identity_command(payload)
+                if voice_identity_command is None:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_identity_invalid"
+                    )
+                try:
+                    voice_identity = await ResolveTelegramIngressIdentityService(
+                        self._identity_reader
+                    ).execute(voice_identity_command)
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_identity_failed"
+                    ) from None
+                if not voice_identity.resolved:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_identity_unresolved"
+                    )
+                if voice_identity.direction is not TelegramIngressDirection.INBOUND:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_not_inbound"
+                    )
+                try:
+                    voice_result = await self._voice_updates.execute(
+                        ProcessTelegramVoiceUpdateCommand(
+                            update=payload,
+                            workspace_key=self._settings.gate_workspace_id,
+                            connector_ref=connector.key.value,
+                            period_key=item.received_at.strftime("%Y-%m"),
+                            requested_microusd=(
+                                voice.voice.duration_seconds
+                                * self._settings.gate_telegram_voice_reserve_microusd_per_second
+                            ),
+                            occurred_at=item.received_at,
+                            language=self._settings.gate_telegram_voice_language or None,
+                            enabled=self._settings.gate_telegram_voice_transcription_enabled,
+                        )
+                    )
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_processing_failed"
+                    ) from None
+                voice_disposition = voice_result.disposition.value
+                if (
+                    not voice_result.downstream_allowed
+                    or voice_result.downstream_update is None
+                ):
+                    raise TelegramUpdateProcessingError(
+                        voice_result.reason_code
+                    )
+                payload = voice_result.downstream_update
+
         try:
-            decision = classify_telegram_ingress(item.payload)
+            decision = classify_telegram_ingress(payload)
             routing = build_telegram_ingress_routing_context(
-                item.payload,
+                payload,
                 decision=decision,
                 settings=self._settings,
             )
@@ -129,10 +214,10 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
 
         identity = not_applicable_identity_resolution()
         identity_reader_used = False
-        direction_evidence = direction_evidence_from_telegram_message(item.payload)
+        direction_evidence = direction_evidence_from_telegram_message(payload)
         ownership_routing: TelegramIngressRoutingView = routing
         identity_command = (
-            build_telegram_business_identity_command(item.payload)
+            build_telegram_business_identity_command(payload)
             if connector.role is TelegramConnectorRole.BUSINESS
             and decision.reason == "business_update"
             and decision.command is None
@@ -156,7 +241,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
 
         try:
             ownership = evaluate_telegram_work_ownership_shadow(
-                item.payload,
+                payload,
                 decision=decision,
                 routing=ownership_routing,
                 connector_role=connector.role,
@@ -172,7 +257,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         if self._canonical_store is not None:
             try:
                 projection = project_telegram_canonical_message(
-                    item.payload,
+                    payload,
                     workspace_id=self._settings.gate_workspace_id,
                     connector_key=connector.key.value,
                     connector_kind=_connector_kind(connector.role),
@@ -209,7 +294,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     canary = await self._alpha_canary.execute(
                         ProcessAlphaCanaryUpdateCommand(
                             workspace_key=self._settings.gate_workspace_id,
-                            update=item.payload,
+                            update=payload,
                             canonical_message_id=canonical_message_id,
                             bot_username=self._settings.telegram_alpha_bot_username,
                             connector_enabled=self._settings.gate_alpha_connector_enabled,
@@ -239,7 +324,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             "ownership_reason=%s ownership_signal=%s ownership_requirements=%s "
             "ownership_policy=%s ownership_authoritative=%s "
             "canonical_persisted=%s canonical_duplicate=%s "
-            "alpha_canary_disposition=%s",
+            "voice_disposition=%s alpha_canary_disposition=%s",
             decision.handler,
             decision.reason,
             routing.account_resolution,
@@ -257,6 +342,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             ownership.authoritative,
             canonical_persisted,
             canonical_duplicate,
+            voice_disposition,
             alpha_canary_disposition,
         )
 
@@ -270,6 +356,7 @@ async def run_telegram_worker_once(
     identity_reader: TelegramIngressIdentityReader | None = None,
     canonical_store: CanonicalIngressStore | None = None,
     alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
+    voice_updates: TelegramVoiceUpdateProcessor | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -289,6 +376,7 @@ async def run_telegram_worker_once(
             identity_reader=identity_reader,
             canonical_store=canonical_store,
             alpha_canary=alpha_canary,
+            voice_updates=voice_updates,
             runtime_logger=runtime_logger,
         )
     result = await ProcessTelegramOutboxService(
@@ -314,41 +402,76 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
     canonical_store = SessionFactoryCanonicalIngressStore(sessions)
     try:
-        if settings.gate_alpha_canary_enabled:
+        if (
+            settings.gate_alpha_canary_enabled
+            or settings.gate_telegram_voice_transcription_enabled
+        ):
             async with build_telegram_http_client() as http_client:
-                telegram = TelegramClient(
-                    credential=settings.telegram_alpha_bot_token.get_secret_value(),
-                    api_base_url=os.getenv(
-                        "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
-                    ),
-                    http_client=http_client,
-                )
-                alpha_canary = ProcessAlphaCanaryUpdateService(
-                    store=SessionFactoryAlphaCanaryStore(sessions),
-                    shadow=ProcessAlphaShadowMessageService(
-                        port=SessionFactoryAlphaShadowTurnRepository(sessions),
-                        bundle_loader=DeployedInstructionBundleLoader(
-                            Path(settings.gate_agent_bundle_root)
+                alpha_canary = None
+                if settings.gate_alpha_canary_enabled:
+                    telegram = TelegramClient(
+                        credential=settings.telegram_alpha_bot_token.get_secret_value(),
+                        api_base_url=os.getenv(
+                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
                         ),
-                        runtime_factory=ConfiguredAlphaRuntimeFactory(
-                            http_client=http_client,
-                            api_key=settings.openai_api_key.get_secret_value(),
-                            api_base_url=settings.openai_api_base_url,
-                            model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
-                            model_data_gate_approved=(
-                                settings.gate_alpha_model_data_gate_approved
+                        http_client=http_client,
+                    )
+                    alpha_canary = ProcessAlphaCanaryUpdateService(
+                        store=SessionFactoryAlphaCanaryStore(sessions),
+                        shadow=ProcessAlphaShadowMessageService(
+                            port=SessionFactoryAlphaShadowTurnRepository(sessions),
+                            bundle_loader=DeployedInstructionBundleLoader(
+                                Path(settings.gate_agent_bundle_root)
                             ),
-                            max_output_tokens=(
-                                settings.gate_alpha_model_max_output_tokens
+                            runtime_factory=ConfiguredAlphaRuntimeFactory(
+                                http_client=http_client,
+                                api_key=settings.openai_api_key.get_secret_value(),
+                                api_base_url=settings.openai_api_base_url,
+                                model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
+                                model_data_gate_approved=(
+                                    settings.gate_alpha_model_data_gate_approved
+                                ),
+                                max_output_tokens=(
+                                    settings.gate_alpha_model_max_output_tokens
+                                ),
+                                timeout_seconds=settings.gate_alpha_model_timeout_seconds,
                             ),
-                            timeout_seconds=settings.gate_alpha_model_timeout_seconds,
                         ),
-                    ),
-                    delivery=DeliverAlphaGrantService(
-                        store=SessionFactoryAlphaDeliveryStore(sessions),
-                        telegram=TelegramClientAlphaTextAdapter(telegram),
-                    ),
-                )
+                        delivery=DeliverAlphaGrantService(
+                            store=SessionFactoryAlphaDeliveryStore(sessions),
+                            telegram=TelegramClientAlphaTextAdapter(telegram),
+                        ),
+                    )
+                voice_updates = None
+                if settings.gate_telegram_voice_transcription_enabled:
+                    api_key = settings.openai_api_key.get_secret_value()
+                    voice_updates = ProcessTelegramVoiceUpdateService(
+                        TelegramVoiceTranscriptionService(
+                            downloader=TelegramVoiceDownloader(
+                                config=TelegramVoiceDownloadConfig(
+                                    bot_token=settings.telegram_bot_token,
+                                    api_base_url=os.getenv(
+                                        "TELEGRAM_API_BASE_URL",
+                                        "https://api.telegram.org",
+                                    ),
+                                ),
+                                http=http_client,
+                            ),
+                            normalizer=TelegramVoiceNormalizer(),
+                            budget=SqlBillingBudgetService(sessions),
+                            speech_to_text=OpenAITranscriptionClient(
+                                config=OpenAITranscriptionConfig(
+                                    api_key=api_key,
+                                    enabled=bool(api_key),
+                                    model=(
+                                        settings.gate_telegram_voice_transcription_model
+                                    ),
+                                    base_url=settings.openai_api_base_url,
+                                ),
+                                http=http_client,
+                            ),
+                        )
+                    )
                 async with sessions() as session:
                     return await run_telegram_worker_once(
                         settings=settings,
@@ -356,6 +479,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         identity_reader=identity_reader,
                         canonical_store=canonical_store,
                         alpha_canary=alpha_canary,
+                        voice_updates=voice_updates,
                     )
         async with sessions() as session:
             return await run_telegram_worker_once(
