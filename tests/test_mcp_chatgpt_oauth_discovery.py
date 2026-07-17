@@ -1,5 +1,6 @@
 # ruff: noqa
 from collections.abc import AsyncIterator, Iterator
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -48,6 +49,26 @@ class CountSession:
     async def scalar(self, _statement: object) -> int:
         self.query_count += 1
         return 0
+
+
+def _voice_status_payload() -> dict[str, Any]:
+    return {
+        "state": "disabled",
+        "enabled": False,
+        "api_key_configured": False,
+        "model": "gpt-4o-mini-transcribe",
+        "entitlement_active": True,
+        "period_key": "2026-07",
+        "hard_limit_microusd": 1_000_000,
+        "settled_microusd": 0,
+        "reserved_microusd": 0,
+        "remaining_microusd": 1_000_000,
+        "settled_count": 0,
+        "open_count": 0,
+        "unknown_count": 0,
+        "reconciliation_required": False,
+        "telegram_delivery_allowed": False,
+    }
 
 
 class CommitSession:
@@ -219,8 +240,15 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             ),
         )
 
+    async def voice_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(payload=_voice_status_payload)
+
     app.dependency_overrides[get_db_session] = override_session
     monkeypatch.setattr("app.api.mcp_routes.authenticate_mcp_oauth", authenticate)
+    monkeypatch.setattr(
+        "app.api.mcp_routes.telegram_voice_operational_status",
+        voice_status,
+    )
     response = await _post(
         {
             "jsonrpc": "2.0",
