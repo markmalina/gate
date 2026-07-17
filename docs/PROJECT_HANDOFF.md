@@ -275,9 +275,10 @@ GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS=512
 GATE_ALPHA_MODEL_TIMEOUT_SECONDS=30
 ```
 
-The production model gates and reviewed staged deployment are configured, but billing and the
-one-shot provider preflight remain incomplete. Configuration is not proof of provider readiness.
-Follow `docs/ALPHA_OPERATOR_RUNBOOK.md`; never retry a terminal preflight key.
+The production model gates and reviewed staged deployment are configured. Billing is funded, but the
+first provider preflight failed with rejected credentials. Replace the Railway key from the funded
+project, wait for the automatic deployment and then run one new protected preflight. Configuration
+is not proof of provider readiness.
 
 Production configuration changes, manual deploys, retries and rollbacks require Mark's explicit
 authorization. Normal green PR merges may use the standing auto-merge rule in `TEAM_WORKFLOW.md`.
@@ -326,6 +327,10 @@ Never put values in documentation. Important names:
 - Alpha model: `OPENAI_API_KEY`, `OPENAI_API_BASE_URL`,
   `GATE_ALPHA_MODEL_RUNTIME_ENABLED`, `GATE_ALPHA_MODEL_DATA_GATE_APPROVED`,
   `GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS`, `GATE_ALPHA_MODEL_TIMEOUT_SECONDS`;
+- Gate voice: `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED`,
+  `GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL`,
+  `GATE_TELEGRAM_VOICE_RESERVE_MICROUSD_PER_SECOND`,
+  `GATE_TELEGRAM_VOICE_LANGUAGE`;
 - MCP/Auth0: see `app/core/config.py` and `docs/MCP_CHATGPT_AUTH0_RUNBOOK.md`;
 - safe human sending: `GATE_SEND_ENABLED`, `GATE_ACCOUNT_RU_SEND_ENABLED`,
   `GATE_ACCOUNT_BY_SEND_ENABLED`.
