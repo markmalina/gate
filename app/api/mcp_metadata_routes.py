@@ -18,11 +18,14 @@ MCP_RESOURCE_SCOPES = [
     "gate:drafts:write",
     "gate:messages:send",
     "gate:agents:manage",
+    "gate:instagram:read",
+    "gate:instagram:publish",
 ]
 
 MCP_READ_ONLY_SCOPES = [
     "gate:status:read",
     "gate:inbox:read",
+    "gate:instagram:read",
 ]
 
 
@@ -93,13 +96,17 @@ async def mcp_metadata(
                 "gate_get_reply_context",
                 "gate_alpha_list_installations",
                 "gate_alpha_list_shadow_reviews",
+                "gate_instagram_diagnose_setup",
+                "gate_instagram_list_accounts",
+                "gate_instagram_get_reel_insights",
             ],
             "write": [
                 "gate_save_reply_draft",
                 "gate_alpha_control_installation",
                 "gate_alpha_run_model_preflight",
+                "gate_instagram_prepare_reel",
             ],
-            "send": ["gate_send_approved_reply"],
+            "send": ["gate_send_approved_reply", "gate_instagram_publish_reel"],
             "send_requires_explicit_confirmation": True,
         },
     }
@@ -121,15 +128,19 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_get_reply_context",
             "gate_alpha_list_installations",
             "gate_alpha_list_shadow_reviews",
+            "gate_instagram_diagnose_setup",
+            "gate_instagram_list_accounts",
+            "gate_instagram_get_reel_insights",
         ],
         "write_tools_enabled": True,
         "write_tools": [
             "gate_save_reply_draft",
             "gate_alpha_control_installation",
             "gate_alpha_run_model_preflight",
+            "gate_instagram_prepare_reel",
         ],
         "send_tools_enabled": settings.gate_send_enabled,
-        "send_tools": ["gate_send_approved_reply"],
+        "send_tools": ["gate_send_approved_reply", "gate_instagram_publish_reel"],
         "send_requires_explicit_confirmation": True,
     }
 
