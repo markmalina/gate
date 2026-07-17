@@ -27,6 +27,7 @@ from app.application.telegram_canonical_projection import (
 )
 from app.application.telegram_ingress_identity import (
     ResolveTelegramIngressIdentityService,
+    TelegramIngressDirection,
     TelegramIngressIdentityReader,
     TelegramIngressIdentityResolution,
     build_telegram_business_identity_command,
@@ -149,6 +150,27 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 if self._voice_updates is None:
                     raise TelegramUpdateProcessingError(
                         "telegram_voice_not_configured"
+                    )
+                voice_identity_command = build_telegram_business_identity_command(payload)
+                if voice_identity_command is None:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_identity_invalid"
+                    )
+                try:
+                    voice_identity = await ResolveTelegramIngressIdentityService(
+                        self._identity_reader
+                    ).execute(voice_identity_command)
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_identity_failed"
+                    ) from None
+                if not voice_identity.resolved:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_identity_unresolved"
+                    )
+                if voice_identity.direction is not TelegramIngressDirection.INBOUND:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_not_inbound"
                     )
                 try:
                     voice_result = await self._voice_updates.execute(
