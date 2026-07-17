@@ -29,6 +29,8 @@ class ProgramState(StrEnum):
 
 class ProgramEventKind(StrEnum):
     CONSENT_GRANTED = "consent_granted"
+    PRACTICE_ASSIGNED = "practice_assigned"
+    PRACTICE_COMPLETED = "practice_completed"
     PAUSED = "paused"
     RESUMED = "resumed"
     COMPLETED = "completed"
@@ -184,6 +186,14 @@ def apply_program_event(
 
 def _next_state(current: ProgramState, kind: ProgramEventKind) -> ProgramState:
     transitions = {
+        (
+            ProgramState.ACTIVE,
+            ProgramEventKind.PRACTICE_ASSIGNED,
+        ): ProgramState.ACTIVE,
+        (
+            ProgramState.ACTIVE,
+            ProgramEventKind.PRACTICE_COMPLETED,
+        ): ProgramState.ACTIVE,
         (ProgramState.ACTIVE, ProgramEventKind.PAUSED): ProgramState.PAUSED,
         (ProgramState.PAUSED, ProgramEventKind.RESUMED): ProgramState.ACTIVE,
         (ProgramState.ACTIVE, ProgramEventKind.COMPLETED): ProgramState.COMPLETED,
