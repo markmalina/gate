@@ -66,3 +66,10 @@ Provider command contracts are implemented for public replies, private replies, 
 `gate_instagram_diagnose_setup` is exposed even while the Instagram feature is disabled. It reports capability booleans, missing check names, configured account aliases and the safe activation order. It never returns access tokens, signing secrets, the Meta app secret, bearer tokens or HMAC secrets.
 
 Use diagnostics before changing any flag. A capability is reported separately for ChatGPT tools, prepared publishing, external publishing, webhook verification and signed MAYAKI delivery, so connection can proceed one canary step at a time.
+
+## Offline verification checkpoint
+
+- Repository-configured Ruff passes locally for the Instagram package and focused tests.
+- Strict Mypy passes for the Instagram package.
+- Fifteen focused transport tests pass, including diagnostics while all Instagram flags are false.
+- MAYAKI's companion offline suite passes separately before any Meta credential is supplied.
