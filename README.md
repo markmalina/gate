@@ -124,7 +124,7 @@ Telegram communication fact
 → proposed draft
 → Mark sees account, recipient and exact text
 → explicit approval
-→ one idempotent delivery attempt
+→ one idempotent delivery attempt per confirmed draft
 → Telegram
 → audit
 ```
@@ -243,7 +243,7 @@ Sending is the highest-risk currently active path. These invariants are non-nego
 9. Persist `sent`, `failed` or `unknown`.
 10. Close the reply task only after Telegram confirms delivery.
 
-Repeated calls for the same draft are idempotent. A timeout or crash ambiguity becomes `unknown` and is never retried automatically. Never fall back across RU/BY boundaries. Never send merely because a draft exists.
+Repeated calls for the same draft are idempotent. Separately persisted drafts that Mark explicitly confirms may be sent sequentially from the same reply task, including after its first successful send. A newer inbound reply task supersedes that follow-up path, and any active or `unknown` attempt fences the conversation until its outcome is known. A timeout or crash ambiguity becomes `unknown` and is never retried automatically. Never fall back across RU/BY boundaries. Never send merely because a draft exists.
 
 The confirmed production send to the BY account succeeded after Business connection reconciliation. This proves the path, not permission for future automatic sends.
 
