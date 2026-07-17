@@ -466,94 +466,157 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                         },
                     },
                 )
+                follow_up = await client.post(
+                    "/mcp",
+                    headers={"Authorization": "Bearer signed-token"},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "follow-up-draft",
+                        "method": "tools/call",
+                        "params": {
+                            "name": "gate_save_reply_draft",
+                            "arguments": {
+                                "task_id": str(task_ids["allowed message"]),
+                                "text": "И ещё одно подтверждённое сообщение.",
+                            },
+                        },
+                    },
+                )
 
             denied_payload = denied.json()["result"]["structuredContent"]
             allowed_payload = allowed.json()["result"]["structuredContent"]
+            follow_up_payload = follow_up.json()["result"]["structuredContent"]
             draft_validator = Draft202012Validator(
                 GATE_DRAFT_OUTPUT_SCHEMA,
                 format_checker=FormatChecker(),
             )
             draft_validator.validate(denied_payload)
             draft_validator.validate(allowed_payload)
+            draft_validator.validate(follow_up_payload)
             assert denied.json()["result"]["isError"] is True
             assert denied_payload["error"] == "task_not_found"
             assert allowed.json()["result"]["isError"] is False
             assert allowed_payload["sent"] is False
-            assert allowed.json()["result"]["structuredContent"]["account"]["label"] == "RU"
-            allowed_draft_id = allowed.json()["result"]["structuredContent"]["draft_id"]
+            assert allowed_payload["account"]["label"] == "RU"
+            assert follow_up.json()["result"]["isError"] is False
+            assert follow_up_payload["sent"] is False
+            allowed_draft_id = allowed_payload["draft_id"]
+            follow_up_draft_id = follow_up_payload["draft_id"]
 
-            send_payload = {
-                "jsonrpc": "2.0",
-                "id": "send-approved",
-                "method": "tools/call",
-                "params": {
-                    "name": "gate_send_approved_reply",
-                    "arguments": {
-                        "draft_id": allowed_draft_id,
-                        "confirmed": True,
-                        "expected_account": "RU",
-                        "expected_recipient_chat_id": "sender",
+            def send_payload(*, request_id: str, draft_id: str) -> dict[str, object]:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "gate_send_approved_reply",
+                        "arguments": {
+                            "draft_id": draft_id,
+                            "confirmed": True,
+                            "expected_account": "RU",
+                            "expected_recipient_chat_id": "sender",
+                        },
                     },
-                },
-            }
+                }
+
+            first_send_payload = send_payload(
+                request_id="send-approved",
+                draft_id=allowed_draft_id,
+            )
+            follow_up_send_payload = send_payload(
+                request_id="send-follow-up",
+                draft_id=follow_up_draft_id,
+            )
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 sent = await client.post(
                     "/mcp",
                     headers={"Authorization": "Bearer signed-token"},
-                    json=send_payload,
+                    json=first_send_payload,
+                )
+                followed_up = await client.post(
+                    "/mcp",
+                    headers={"Authorization": "Bearer signed-token"},
+                    json=follow_up_send_payload,
                 )
                 replayed = await client.post(
                     "/mcp",
                     headers={"Authorization": "Bearer signed-token"},
-                    json=send_payload,
+                    json=follow_up_send_payload,
                 )
 
             sent_payload = sent.json()["result"]["structuredContent"]
+            followed_up_payload = followed_up.json()["result"]["structuredContent"]
             replayed_payload = replayed.json()["result"]["structuredContent"]
             send_validator = Draft202012Validator(
                 GATE_SEND_OUTPUT_SCHEMA,
                 format_checker=FormatChecker(),
             )
             send_validator.validate(sent_payload)
+            send_validator.validate(followed_up_payload)
             send_validator.validate(replayed_payload)
             assert sent_payload["sent"] is True
             assert sent_payload["account"]["label"] == "RU"
             assert sent_payload["recipient_chat_id"] == "sender"
+            assert followed_up_payload["sent"] is True
+            assert followed_up_payload["idempotent_replay"] is False
             assert replayed_payload["sent"] is True
             assert replayed_payload["idempotent_replay"] is True
-            assert len(telegram.calls) == 1
-            assert telegram.calls[0] == {
-                "chat_id": "sender",
-                "text": "Привет! С удовольствием расскажу подробнее.",
-                "business_connection_id": "bc-allowed",
-            }
+            assert len(telegram.calls) == 2
+            assert telegram.calls == [
+                {
+                    "chat_id": "sender",
+                    "text": "Привет! С удовольствием расскажу подробнее.",
+                    "business_connection_id": "bc-allowed",
+                },
+                {
+                    "chat_id": "sender",
+                    "text": "И ещё одно подтверждённое сообщение.",
+                    "business_connection_id": "bc-allowed",
+                },
+            ]
             drafts = (
                 (await session.execute(select(ReplyDraft).order_by(ReplyDraft.created_at)))
                 .scalars()
                 .all()
             )
-            assert [(draft.account_id, draft.project_id, draft.draft_text) for draft in drafts] == [
+            assert [
+                (draft.account_id, draft.project_id, draft.draft_text)
+                for draft in drafts
+            ] == [
                 (
                     allowed_account,
                     allowed_project,
                     "Привет! С удовольствием расскажу подробнее.",
-                )
+                ),
+                (
+                    allowed_account,
+                    allowed_project,
+                    "И ещё одно подтверждённое сообщение.",
+                ),
             ]
-            assert drafts[0].status == ReplyDraftStatus.APPROVED.value
+            assert all(
+                draft.status == ReplyDraftStatus.APPROVED.value for draft in drafts
+            )
             attempts = (await session.execute(select(SendAttempt))).scalars().all()
-            assert len(attempts) == 1
-            assert attempts[0].status == SendAttemptStatus.SENT.value
+            assert len(attempts) == 2
+            assert all(
+                attempt.status == SendAttemptStatus.SENT.value for attempt in attempts
+            )
             sent_messages = (
                 (
                     await session.execute(
-                        select(Message).where(Message.source == "gate-approved-draft")
+                        select(Message)
+                        .where(Message.source == "gate-approved-draft")
+                        .order_by(Message.created_at)
                     )
                 )
                 .scalars()
                 .all()
             )
-            assert len(sent_messages) == 1
-            assert sent_messages[0].text == "Привет! С удовольствием расскажу подробнее."
+            assert [message.text for message in sent_messages] == [
+                "Привет! С удовольствием расскажу подробнее.",
+                "И ещё одно подтверждённое сообщение.",
+            ]
             await session.rollback()
     finally:
         app.dependency_overrides.clear()
