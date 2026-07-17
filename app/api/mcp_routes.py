@@ -2,6 +2,7 @@
 # ruff: noqa
 """Scoped Gate MCP endpoint for inbox, drafts and explicit reply sending."""
 
+import json
 from typing import Annotated, Any
 
 import httpx
@@ -65,6 +66,12 @@ from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.instagram.mcp import (
+    INSTAGRAM_MCP_TOOL_SCOPES,
+    handle_instagram_mcp_tool,
+    instagram_mcp_tool_names,
+    instagram_mcp_tools,
+)
 from app.infrastructure.alpha_canary import (
     alpha_canary_audit_counts,
     alpha_canary_binding_count,
@@ -105,7 +112,7 @@ MCP_TOOL_NAMES = [
     "gate_alpha_control_installation",
     "gate_alpha_run_model_preflight",
     "gate_alpha_list_shadow_reviews",
-]
+] + instagram_mcp_tool_names()
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
 MCP_TOOL_SCOPES = {
@@ -118,6 +125,7 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_control_installation": "gate:agents:manage",
     "gate_alpha_run_model_preflight": "gate:agents:manage",
     "gate_alpha_list_shadow_reviews": "gate:agents:manage",
+    **INSTAGRAM_MCP_TOOL_SCOPES,
 }
 
 
@@ -173,6 +181,7 @@ async def mcp_endpoint(
                     _gate_alpha_control_installation_tool(settings),
                     _gate_alpha_run_model_preflight_tool(settings),
                     _gate_alpha_list_shadow_reviews_tool(settings),
+                    *instagram_mcp_tools(),
                 ]
             },
         )
@@ -204,6 +213,22 @@ async def mcp_endpoint(
                 scope=MCP_TOOL_SCOPES[tool_name],
                 error=exc.error,
                 description=exc.description,
+            )
+        if tool_name in INSTAGRAM_MCP_TOOL_SCOPES:
+            if principal.access_scope.workspace_id != settings.gate_workspace_id:
+                return _tool_error_result(
+                    request_id=request_id,
+                    code="workspace_not_allowed",
+                    message="Instagram tools are not configured for this workspace",
+                )
+            instagram_result = await handle_instagram_mcp_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+            return _tool_result(
+                instagram_result,
+                json.dumps(instagram_result, ensure_ascii=False),
+                request_id,
             )
         if tool_name == "gate_get_status":
             snapshot = await build_gate_status(
