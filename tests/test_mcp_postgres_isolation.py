@@ -125,27 +125,28 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             await session.flush()
             now = datetime.now(UTC)
             voice_workspace_id = uuid4()
-            session.add_all(
-                [
-                    Workspace(
-                        id=voice_workspace_id,
-                        key="mark-personal",
-                        display_name="Mark",
-                        is_active=True,
-                    ),
-                    BillingEntitlementModel(
-                        workspace_id=voice_workspace_id,
-                        entitlement_key="gate-telegram-voice-v1",
-                        product="gate",
-                        scope_kind="telegram_connector",
-                        scope_ref="telegram_business",
-                        plan_key="gate-voice-initial",
-                        state="active",
-                        valid_from=now,
-                        valid_until=None,
-                        hard_limit_microusd=1_000_000,
-                    ),
-                ]
+            session.add(
+                Workspace(
+                    id=voice_workspace_id,
+                    key="mark-personal",
+                    display_name="Mark",
+                    is_active=True,
+                )
+            )
+            await session.flush()
+            session.add(
+                BillingEntitlementModel(
+                    workspace_id=voice_workspace_id,
+                    entitlement_key="gate-telegram-voice-v1",
+                    product="gate",
+                    scope_kind="telegram_connector",
+                    scope_ref="telegram_business",
+                    plan_key="gate-voice-initial",
+                    state="active",
+                    valid_from=now,
+                    valid_until=None,
+                    hard_limit_microusd=1_000_000,
+                )
             )
             await session.flush()
             task_ids: dict[str, UUID] = {}
