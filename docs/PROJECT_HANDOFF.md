@@ -2,8 +2,8 @@
 
 > Canonical continuation guide for a new developer or implementation agent.  
 > GitHub handoff package verified on 2026-07-17.  
-> Accepted product baseline through PR #233: `99ac67a723cb9a59b7c23dff4ff8d22125a5b458`.  
-> Verified Railway production commit: `99ac67a723cb`.  
+> Accepted product baseline through PR #235: `2c83271f869762763db395a4b4054bd69c442f65`.  
+> Verified Railway production commit: `2c83271f8697`.  
 > Open WIP: PR #207 remains a broad dormant Instagram transport. It must be split before review because the current draft expands the exact nine-tool MCP surface and uses non-transactional single-instance replay storage.  
 
 ## 1. Start here
@@ -43,12 +43,12 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through GitHub and Gate M after PR #233 deployed:
+Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints after PR #235 deployed:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `99ac67a723cb` |
+| Railway production commit | `2c83271f8697` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
@@ -69,6 +69,8 @@ The nine MCP tools are the five human-inbox tools plus
 Alpha group discovery and status need no Telegram group ID. Management/review/preflight calls require
 `gate:agents:manage`; Auth0 and ChatGPT User-Delegated Access must grant it before reconnecting
 Gate M.
+
+PR #235 is live in Railway production. Telegram Business direction is relative to the receiving account: a sibling connected-account sender is inbound for the receiver, while only the receiver's own current or historical identity is outbound. Bot/service, missing and ambiguous senders still fail closed.
 
 The separate Alpha connector is active only for the approved fixture installation. OpenAI billing
 is funded and the organization spend limit is USD 5. After the project key was replaced, PR #229
@@ -236,7 +238,7 @@ CRM backfill or Telegram test send was performed.
 
 ## 6. Exact next development order
 
-1. Re-query GitHub `main`, exact CI and the Railway/Gate production fingerprint.
+1. Re-query GitHub `main`, exact CI and the Railway/Gate production fingerprint; the last accepted production baseline is PR #235 / `2c83271f8697`.
 2. Observe ten clean delivery-blocked Alpha model shadow proposals from real approved-group invocations;
    stop on any configured alert and never synthesize group evidence.
 3. For the first Gate voice canary, confirm status shows the API key configured, one active entitlement,
