@@ -1,0 +1,16 @@
+{
+  "contract": "gate.delivery-fact",
+  "version": "1.0.0",
+  "event_id": "evt_demo_09",
+  "occurred_at": "2026-07-18T12:00:00Z",
+  "idempotency_key": "idem_demo_09",
+  "correlation_id": "corr_demo_vertical_slice_001",
+  "trace_id": "trace_demo_vertical_slice_001",
+  "payload": {
+    "delivery_intent_ref": "intent_demo_001",
+    "attempt_ref": "attempt_demo_001",
+    "outcome": "unknown",
+    "provider_receipt_ref": "receipt_unavailable",
+    "reconciliation_required": true
+  }
+}

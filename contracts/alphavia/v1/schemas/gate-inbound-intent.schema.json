@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.alphavia.dev/v1/gate.inbound-intent.schema.json",
+  "title": "gate.inbound-intent v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "event_id", "occurred_at", "idempotency_key", "correlation_id", "trace_id", "payload"],
+  "properties": {
+    "contract": {"const": "gate.inbound-intent"},
+    "version": {"const": "1.0.0"},
+    "event_id": {"type": "string", "pattern": "^evt_[A-Za-z0-9._:-]+$"},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 128},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "trace_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel_ref", "person_ref", "intent", "consent_ref", "purpose"],
+      "properties": {
+        "channel_ref": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{3,128}$"},
+        "person_ref": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{3,128}$"},
+        "intent": {"type": "string", "minLength": 1, "maxLength": 128},
+        "consent_ref": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{3,128}$"},
+        "purpose": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    }
+  }
+}

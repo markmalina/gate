@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.alphavia.dev/v1/gate.delivery-grant.schema.json",
+  "title": "gate.delivery-grant v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "event_id", "occurred_at", "idempotency_key", "correlation_id", "trace_id", "payload"],
+  "properties": {
+    "contract": {"const": "gate.delivery-grant"},
+    "version": {"const": "1.0.0"},
+    "event_id": {"type": "string", "pattern": "^evt_[A-Za-z0-9._:-]+$"},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 128},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "trace_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery_intent_ref", "approval_ref", "authorized", "expires_at"],
+      "properties": {
+        "delivery_intent_ref": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{3,128}$"},
+        "approval_ref": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{3,128}$"},
+        "authorized": {"type": "boolean"},
+        "expires_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}
