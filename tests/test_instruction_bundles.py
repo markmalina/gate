@@ -214,3 +214,25 @@ def test_deployed_alpha_model_bundle_is_valid_and_review_bounded() -> None:
     }
     assert "одной явно утверждённой Telegram-группе" in bundle.system_instructions
     assert "нет доступа к интернету" in bundle.system_instructions
+
+
+
+def test_deployed_alpha_model_v2_bundle_is_feminine_and_context_focused() -> None:
+    repository_root = Path(__file__).parents[1]
+    bundle = DeployedInstructionBundleLoader(
+        repository_root / "agent_bundles"
+    ).load("alpha_model_v2")
+
+    assert bundle.agent_key is AgentKey.ALPHA_GROUP
+    assert bundle.revision.revision_key == "alpha-model-v2"
+    assert bundle.revision.source_path == "alpha_model_v2"
+    assert bundle.allowed_capabilities == frozenset(
+        {"reply", "handoff", "no_reply"}
+    )
+    assert len(bundle.evaluations) == 10
+    assert "Ты — Альфа, цифровая помощница" in bundle.system_instructions
+    assert "говори о себе в женском роде" in bundle.system_instructions
+    assert "не объединяй ответы на несколько прошлых запросов" in (
+        bundle.system_instructions
+    )
+    assert "нет доступа к интернету" in bundle.system_instructions
