@@ -8,6 +8,7 @@ from app.application.account_labels import account_label
 from app.application.reply_drafts import (
     ReplyTaskClosedError,
     ReplyTaskNotFoundError,
+    ReplyTaskSupersededError,
     SavedReplyDraft,
     SaveReplyDraftCommand,
 )
@@ -73,8 +74,26 @@ class SqlReplyDraftWriter:
         if row is None:
             raise ReplyTaskNotFoundError()
         task, conversation, trigger_message, account = row
-        if task.status != ReplyTaskStatus.NEEDS_REPLY.value:
+        is_follow_up = (
+            task.status == ReplyTaskStatus.REPLIED.value and command.follow_up
+        )
+        if task.status != ReplyTaskStatus.NEEDS_REPLY.value and not is_follow_up:
             raise ReplyTaskClosedError()
+        if is_follow_up:
+            newer_task_id = await self._session.scalar(
+                select(ReplyTask.id)
+                .where(
+                    ReplyTask.conversation_id == task.conversation_id,
+                    ReplyTask.account_id == task.account_id,
+                    ReplyTask.project_id == task.project_id,
+                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                    ReplyTask.id != task.id,
+                )
+                .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
+                .limit(1)
+            )
+            if newer_task_id is not None:
+                raise ReplyTaskSupersededError()
 
         label = account_label(alias=account.alias, country_code=account.country_code)
         recipient_chat_id = trigger_message.sender_id
@@ -89,14 +108,22 @@ class SqlReplyDraftWriter:
             status=ReplyDraftStatus.GENERATED.value,
             source="chatgpt-mcp",
             draft_text=command.text,
-            prompt_context={"bounded_context": True, "source": "chatgpt-mcp"},
+            prompt_context={
+                "bounded_context": True,
+                "source": "chatgpt-mcp",
+                "follow_up": is_follow_up,
+            },
         )
         self._session.add(draft)
         await self._session.flush()
         self._session.add(
             AuditLog(
                 actor=f"mcp:{command.principal.subject}"[:255],
-                action="reply_draft_saved_from_mcp",
+                action=(
+                    "reply_follow_up_draft_saved_from_mcp"
+                    if is_follow_up
+                    else "reply_draft_saved_from_mcp"
+                ),
                 account_id=task.account_id,
                 project_id=task.project_id,
                 metadata_={

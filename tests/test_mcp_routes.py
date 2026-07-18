@@ -280,7 +280,15 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
                     "Аня — бухгалтер",
                 )
             ],
-            [(outbound_message, outbound_update, account, "Аня — бухгалтер")],
+            [
+                (
+                    outbound_message,
+                    outbound_update,
+                    account,
+                    task.id,
+                    "Аня — бухгалтер",
+                )
+            ],
         ]
     )
 
@@ -547,6 +555,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_reply_context",
         "gate_save_reply_draft",
         "gate_send_approved_reply",
+        "gate_queue_approved_reply_sequence",
         "gate_alpha_list_installations",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
@@ -559,6 +568,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_reply_context",
         "gate_save_reply_draft",
         "gate_send_approved_reply",
+        "gate_queue_approved_reply_sequence",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_list_shadow_reviews",
@@ -579,20 +589,26 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "idempotentHint": True,
         "openWorldHint": True,
     }
-    assert tools[5]["annotations"]["readOnlyHint"] is True
-    assert tools[6]["annotations"] == {
+    assert tools[5]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+    assert tools[6]["annotations"]["readOnlyHint"] is True
+    assert tools[7]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": False,
     }
-    assert tools[7]["annotations"] == {
+    assert tools[8]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     }
-    assert tools[8]["annotations"]["readOnlyHint"] is True
+    assert tools[9]["annotations"]["readOnlyHint"] is True
 
 
 @pytest.mark.anyio
@@ -701,6 +717,11 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     }
     assert result["structuredContent"]["answered_count"] == 1
     answered = result["structuredContent"]["answered_items"][0]
+    assert answered["task_id"] == str(
+        UUID("11111111-1111-1111-1111-111111111111")
+    )
+    assert answered["task_ref"] == "11111111"
+    assert answered["follow_up_available"] is True
     assert answered["message"]["direction"] == "outbound"
     assert answered["message"]["text_preview"] == "Анна, привет!"
     assert answered["counterparty"]["label"] == "Аня — бухгалтер"

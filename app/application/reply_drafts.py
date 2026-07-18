@@ -32,7 +32,20 @@ class ReplyTaskClosedError(ReplyDraftError):
     """The task no longer accepts draft revisions."""
 
     def __init__(self) -> None:
-        super().__init__(code="task_closed", message="Reply task no longer needs a reply")
+        super().__init__(
+            code="task_closed",
+            message="Reply task is not available for a draft",
+        )
+
+
+class ReplyTaskSupersededError(ReplyDraftError):
+    """A newer inbound task must be reviewed before any follow-up."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="task_superseded",
+            message="A newer inbound reply task supersedes this follow-up",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +55,7 @@ class SaveReplyDraftCommand:
     principal: Principal
     task_id: UUID
     text: str
+    follow_up: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,5 +110,6 @@ class SaveReplyDraftService:
                 principal=principal,
                 task_id=command.task_id,
                 text=text,
+                follow_up=command.follow_up,
             )
         )
