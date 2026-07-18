@@ -1,9 +1,8 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
-> Verified on 2026-07-18 after PR #244.  
-> Accepted GitHub `main` / Railway production merge: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` (`6680d9dce1cb` in Gate status).  
-> Schema head in this release: `0037_direction_parity_v2`.
+> Verified on 2026-07-18 at GitHub `main` / Railway production `5daeead020f50751d4e4998fd7ed9b26c38bd158` (`5daeead020f5` in Gate status).  
+> Ordinary Business-text cutover release schema head: `0038_business_text_cutover`.
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.
 
 ## 1. Transfer outcome
@@ -38,6 +37,7 @@ The protected human path is live:
 Telegram Business
 → durable receipt
 → receiving-account-relative direction
+→ ordinary text exclusively owned by the durable worker
 → reply task and bounded context
 → exact draft
 → Mark sees account + recipient + final text
@@ -67,7 +67,7 @@ consume canonical text; they do not fetch or transcribe Telegram voice themselve
 
 ## 3. Current verified production snapshot
 
-Snapshot captured through Gate M after exact production commit `6680d9dce1cb` became active.
+Snapshot captured through Gate M after exact production commit `5daeead020f5` became active.
 
 | Area | Verified state |
 |---|---|
@@ -75,16 +75,17 @@ Snapshot captured through Gate M after exact production commit `6680d9dce1cb` be
 | Workspace | `mark-personal` |
 | Business bot | `gate_m_bot` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
-| Business counts | 47 conversations, 1192 messages, 406 reply tasks, 17 unanswered, 321 answered, 32 drafts |
+| Business counts | 47 conversations, 1245 messages, 429 reply tasks, 18 unanswered, 346 answered, 43 drafts |
 | Contact directory | RU: 90 imported; BY: 0, intentionally deferred |
-| Gate M | OAuth enforced; exactly 9 public tools |
+| Business text parity | ready; 4/4 matched; RU and BY covered; `cutover_ready=true` |
+| Gate M | OAuth enforced; exactly 10 public tools |
 | Human sending | enabled only for exact saved draft + explicit confirmation |
 | Alpha group installation | one approved active fixture-bound group |
 | Alpha v2 deployment | one exact staged OpenAI deployment, preflight verified |
-| Alpha v2 shadow | 10 model turns, 10 proposals, 0 failed, 0 delivery grants |
+| Alpha v2 shadow | 11 model turns, 11 proposals, 0 failed, 0 delivery grants |
 | Alpha promotion dry run | next stage `limited_canary_review`; no blockers |
 | Alpha delivery | model Telegram delivery blocked |
-| Alpha budget | USD 0.307200 reserved; USD 49.692800 remaining from the internal USD 50 monthly ceiling |
+| Alpha budget | USD 0.319488 reserved; USD 49.680512 remaining from the internal USD 50 monthly ceiling |
 | Voice | 3 received, 2 delivered, 1 correctly dead-lettered as non-inbound, 0 retry/open/unknown |
 | Voice billing | USD 0.000242 settled; USD 0.999758 remaining from the internal USD 1 monthly ceiling |
 | Agent audit | 26 canonical Alpha messages, 22 total Agent turns, 1 historical fixture grant/send attempt |
@@ -107,7 +108,7 @@ active hard boundary wins.
 
 ## 4. Exact Gate M contract
 
-Do not add a tenth public MCP tool. Extend an existing owner surface when product behavior belongs
+Do not add an eleventh public MCP tool. Extend an existing owner surface when product behavior belongs
 to the same bounded workflow.
 
 | Tool | Purpose |
@@ -117,6 +118,7 @@ to the same bounded workflow.
 | `gate_get_reply_context` | bounded chronological context |
 | `gate_save_reply_draft` | save only; never approve/send |
 | `gate_send_approved_reply` | exact draft after explicit account/recipient/text confirmation |
+| `gate_queue_approved_reply_sequence` | exact ordered drafts after one explicit sequence confirmation |
 | `gate_alpha_list_installations` | labels and opaque references, never Telegram IDs |
 | `gate_alpha_control_installation` | confirmed approve/pause/resume with stale-state fence |
 | `gate_alpha_run_model_preflight` | one-shot synthetic provider verification, no group data/send |
@@ -233,8 +235,33 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - Replay and worker restart update the same row. A conflicting canonical-message scope fails closed.
 - `gate_get_status.telegram_business_text_parity` exposes scoped aggregate counts, covered versus
   required active Business accounts and an explicit `cutover_ready` barrier.
-- The observer still creates no additional reply task, Agent turn, draft, grant or send. Legacy text
-  routing remains active until real RU and BY observations make the barrier ready.
+- The observer still creates no additional reply task, Agent turn, draft, grant or send.
+- PR #250 corrected direction to be relative to the receiving Business account and versioned the
+  evidence contract so stale observations could not authorize cutover.
+- Fresh real RU↔BY observations produced 4/4 matches, covered both active accounts and made
+  `cutover_ready=true` with no pending or mismatch rows.
+
+### PR #247 — explicitly approved reply sequences
+
+- Added the tenth Gate M action for one explicitly confirmed ordered set of already-saved drafts.
+- Delivery is durable, interval-bounded and stops on newer inbound work, failure or unknown outcome.
+- This does not authorize automatic content generation or unconfirmed Telegram sending.
+
+### Sprint 2 release candidate — ordinary Business text canonical cutover
+
+- The authenticated webhook bypasses the legacy sprint-router chain only for ordinary private
+  human Business text. Commands, callbacks, connection updates, bot/service events, voice and
+  unsupported envelopes retain their existing owners.
+- The durable worker projects canonical text into the current human inbox read model so the stable
+  Gate M draft/send contract remains unchanged.
+- `messages.canonical_message_id` is nullable for history and unique for new canonical projections;
+  replay/restart therefore creates at most one current-inbox message and one trigger reply task.
+- The projection creates no Telegram send, draft, Agent turn, grant, legacy `GateEvent`, raw
+  `TelegramUpdate` or legacy audit side effect.
+- PostgreSQL coverage proves inbound projection/replay, changed-fact conflict, outbound task
+  satisfaction and visibility through the existing MCP inbox query.
+- Release acceptance still requires exact-head CI, exact Railway SHA and user-generated RU→BY plus
+  BY→RU production canaries. Do not start Sprint 3 before that evidence is recorded.
 
 ## 7. Production evidence and test history
 
@@ -247,11 +274,11 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 
 ### 7.2 Ordinary Business text
 
-- A connected-account text test reached the production Business path.
-- PR #243 compares canonical facts with the committed legacy reply-task fact.
-- This release makes parity evidence durable and exposes its bounded status summary.
-- Current limitation: real RU and BY matched evidence must accumulate after deployment; do not
-  bypass the legacy path until `cutover_ready=true` with no pending or mismatch rows.
+- PR #243 compares canonical facts with the committed current-inbox reply-task fact.
+- PR #250 fixed receiving-account-relative direction and invalidated the earlier evidence version.
+- Fresh real RU↔BY text produced 4 matched rows, no pending/mismatch rows and 2/2 account coverage.
+- The Sprint 2 release candidate may bypass legacy only for the same ordinary private human-text
+  classifier. Production acceptance remains pending until fresh post-deploy canaries are observed.
 
 ### 7.3 Alpha v2 sample
 
@@ -332,6 +359,8 @@ outcomes.
 | `app/infrastructure/canonical_messaging.py` | idempotent PostgreSQL canonical store |
 | `app/application/telegram_business_text_parity.py` | pure canonical/legacy Business-text comparison |
 | `app/infrastructure/telegram_business_text_parity.py` | read-only legacy fact observer |
+| `app/application/telegram_business_text_inbox.py` | narrow ordinary-text cutover classifier and canonical inbox command |
+| `app/infrastructure/telegram_business_text_inbox.py` | idempotent canonical-to-current-inbox projection |
 | `app/application/telegram_voice_*` | voice extraction, transcription and fail-closed orchestration |
 | `app/infrastructure/openai_transcription.py` | OpenAI transcription adapter |
 | `app/application/agent_kernel.py` | deployment/session/turn/result contracts |
@@ -343,7 +372,7 @@ outcomes.
 | `app/infrastructure/alpha_delivery.py` | exact target consumption and send-attempt ledger |
 | `app/infrastructure/alpha_model_status.py` | model readiness and promotion evidence |
 | `app/infrastructure/alpha_shadow_reviews.py` | owner-scoped proposal review query |
-| `app/api/mcp_routes.py` / `mcp_schemas.py` | exact protected nine-tool Gate M surface |
+| `app/api/mcp_routes.py` / `mcp_schemas.py` | exact protected ten-tool Gate M surface |
 | `app/application/billing.py` / `app/models/billing.py` | provider-neutral entitlement, usage and cost ledger |
 | `app/application/relationship_crm.py` | standalone Relationship CRM domain |
 | `alembic/versions/0033_*`–`0035_*` | input origin, Alpha v2 and durable rate-limit recovery |
@@ -353,7 +382,7 @@ outcomes.
 Each sprint is a bounded PR train with exact-head CI and automatic Railway deployment only after the
 standing merge conditions are satisfied.
 
-### Sprint 1 — durable Business text parity evidence (implemented in this release)
+### Sprint 1 — durable Business text parity evidence (accepted in production)
 
 **Product outcome:** the owner can see that ordinary connected-account text is safely represented in
 both canonical and legacy paths before cutover.
@@ -364,7 +393,7 @@ private comparison values in the evidence table.
 
 **Acceptance:** real RU↔BY text produces matched evidence; no extra reply task, turn, draft or send.
 
-### Sprint 2 — ordinary Business text canonical cutover
+### Sprint 2 — ordinary Business text canonical cutover (implemented; production canary pending)
 
 **Product outcome:** all ordinary Business text uses the durable worker without double processing.
 
@@ -373,6 +402,11 @@ reply-task intent from canonical input; keep rollback to the last known-good dep
 
 **Acceptance:** one update creates one canonical message and at most one human reply task across
 restart/replay; legacy side effects are unreachable.
+
+Implementation uses one shared classifier at HTTP and worker boundaries, derives inbox facts from
+the already-authoritative canonical projection, and links the compatibility message to the
+canonical message through a unique nullable foreign key. Commands and non-ordinary update classes
+do not enter this cutover path.
 
 ### Sprint 3 — one canonical downstream input contract
 
@@ -409,7 +443,7 @@ context leakage; no delivery grant; account/recipient/input-origin visible throu
 tool.
 
 **Technical scope:** extend the existing Alpha review/control workflow; bind approval to turn,
-candidate SHA, installation/account, recipient and expiry; preserve the nine-tool contract.
+candidate SHA, installation/account, recipient and expiry; preserve the ten-tool contract.
 
 **Acceptance:** edited/stale/wrong-target proposals cannot obtain authority; rejection writes audit
 only.
