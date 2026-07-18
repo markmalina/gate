@@ -1,321 +1,484 @@
 # Gate project handoff
 
-> Canonical continuation guide for a new developer or implementation agent.  
-> GitHub handoff package verified on 2026-07-18.  
-> Accepted product baseline through PR #238: `bb0389b7394fc6a51f032a51afd415cbbbf618dc`.  
-> Verified Railway production commit: `bb0389b7394f`.  
-> Open WIP: PR #207 remains a broad dormant Instagram transport. It must be split before review because the current draft expands the exact nine-tool MCP surface and uses non-transactional single-instance replay storage.  
+> Canonical continuation guide for a new product owner, developer or implementation agent.  
+> Verified on 2026-07-18 after PR #244.  
+> Accepted GitHub `main` / Railway production merge: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` (`6680d9dce1cb` in Gate status).  
+> Schema head: `0035_alpha_rate_limit_deferral`.  
+> Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.
 
-## 1. Start here
+## 1. Transfer outcome
 
-Read these files in this order:
+This file is the single current handoff for Gate. A receiving team must be able to continue from
+GitHub, CI and the protected production control surfaces without chat history, agent memory or a
+previous local workspace.
 
-1. `docs/TEAM_WORKFLOW.md` — authority, secrets, PR, CI, merge and deployment rules.
-2. This document — verified state, delivered scope and exact continuation order.
-3. `docs/ALPHA_OPERATING_POLICY.md` — standing authorization and release barriers.
-4. `docs/ALPHA_OPERATOR_RUNBOOK.md` — one-time owner setup, provider activation and stop drills.
-5. `docs/RELATIONSHIP_CRM_ARCHITECTURE.md` — standalone relationship product and privacy spaces.
-6. `docs/INTEGRATED_DELIVERY_ROADMAP_2026.md` — current cross-product release order.
-7. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form technical specification.
-8. `docs/GATE_OPERATOR_REGULATIONS.md` — production operating rules.
+Read in this order:
 
-GitHub `main` is the source of truth. Chat history, agent memory and local workspaces are not.
-Before changing anything, query GitHub and production again; all counts below are snapshots.
+1. `docs/TEAM_WORKFLOW.md` — authority, secrets, CI, merge and deployment rules.
+2. This document — current truth, decisions, incidents and exact continuation order.
+3. `docs/DEVELOPMENT_AND_COST_REGULATIONS.md` — engineering, test and cost discipline.
+4. `docs/ALPHA_OPERATING_POLICY.md` — Alpha provider, budget and delivery barriers.
+5. `docs/ALPHA_OPERATOR_RUNBOOK.md` — owner control and incident boundaries.
+6. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form architecture.
+7. `docs/RELATIONSHIP_CRM_ARCHITECTURE.md` — separately extractable relationship product.
 
-## 2. What Gate is
+GitHub `main` is the source of truth. Re-query GitHub and production before acting because counters
+below are dated evidence, not invariants.
 
-Gate is Mark's workspace-scoped communication gateway. It currently receives Telegram Business
-communication facts, exposes a protected MCP interface to ChatGPT, prepares drafts and sends only
-the exact draft that Mark explicitly confirms. Gate is transport and safety infrastructure; Alpha,
-Oko and future Mayak products supply versioned instructions and product policy through isolated
-agent deployments.
+## 2. Product definition
 
-The protected human path is already operational:
+Gate is the workspace-scoped communication and safety gateway between Telegram, ChatGPT and
+versioned agents. Gate owns transport, durable facts, account/dialog scope, approval boundaries,
+provider usage accounting and delivery audit. Alpha, Oko and future Mayak agents own product voice
+and domain behavior through immutable instruction revisions.
+
+The protected human path is live:
 
 ```text
-Telegram Business → Gate facts → unanswered task → bounded context
-→ exact draft → Mark confirms account + recipient + text
-→ one idempotent send attempt → Telegram → audit
+Telegram Business
+→ durable receipt
+→ receiving-account-relative direction
+→ reply task and bounded context
+→ exact draft
+→ Mark sees account + recipient + final text
+→ explicit confirmation
+→ one idempotent Telegram attempt
+→ audit
 ```
 
-Never weaken this path while adding agents. A saved draft is not approval. An ambiguous provider
-outcome is terminal `unknown` and is not retried automatically.
+The Alpha group path is live only in delivery-blocked model shadow:
 
-## 3. Verified production snapshot
+```text
+approved Telegram group
+→ dedicated Alpha bot webhook
+→ durable receipt and canonical message
+→ explicit /alpha invocation
+→ exact immutable model deployment
+→ budget reservation
+→ structured reply | handoff | no_reply proposal
+→ owner review
+→ no Telegram delivery without a separate exact grant
+```
 
-Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints after PR #238 deployed:
+Telegram Business voice transcription belongs to Gate, not to Alpha. Gate downloads and normalizes
+the voice file, calls the OpenAI transcription model, settles the Gate voice budget and persists the
+transcript as a canonical text input with origin `telegram_voice_transcription`. Downstream agents
+consume canonical text; they do not fetch or transcribe Telegram voice themselves.
 
-| Item | State |
+## 3. Current verified production snapshot
+
+Snapshot captured through Gate M after exact production commit `6680d9dce1cb` became active.
+
+| Area | Verified state |
 |---|---|
-| GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `bb0389b7394f` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
-| Existing Telegram bot | `gate_m_bot` |
-| MCP | OAuth 2.0 enforced; 9 tools |
-| Human send | enabled only through exact explicit confirmation |
-| RU Telegram Business | `ready`, `can_reply=true` |
-| BY Telegram Business | `ready`, `can_reply=true` |
-| RU contacts | 90, source `telegram_desktop_export` |
-| BY contacts | 0; import intentionally deferred |
-| Snapshot counts | 46 conversations, 1172 messages, 397 reply tasks, 14 unanswered, 32 drafts |
-| Telegram voice | Enabled and ready; first cross-account canary delivered; USD 0.000129 settled, USD 0.999871 remaining; 0 open/unknown reservations |
-| Alpha fixture audit | 5 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
-| Alpha model evidence | 0 model turns, 0 model delivery grants; replacement-key preflight verified; USD 0.049152 reserved |
+| Business bot | `gate_m_bot` |
+| Telegram Business | RU and BY both `ready`, `can_reply=true` |
+| Business counts | 47 conversations, 1192 messages, 406 reply tasks, 17 unanswered, 321 answered, 32 drafts |
+| Contact directory | RU: 90 imported; BY: 0, intentionally deferred |
+| Gate M | OAuth enforced; exactly 9 public tools |
+| Human sending | enabled only for exact saved draft + explicit confirmation |
+| Alpha group installation | one approved active fixture-bound group |
+| Alpha v2 deployment | one exact staged OpenAI deployment, preflight verified |
+| Alpha v2 shadow | 10 model turns, 10 proposals, 0 failed, 0 delivery grants |
+| Alpha promotion dry run | next stage `limited_canary_review`; no blockers |
+| Alpha delivery | model Telegram delivery blocked |
+| Alpha budget | USD 0.307200 reserved; USD 49.692800 remaining from the internal USD 50 monthly ceiling |
+| Voice | 3 received, 2 delivered, 1 correctly dead-lettered as non-inbound, 0 retry/open/unknown |
+| Voice billing | USD 0.000242 settled; USD 0.999758 remaining from the internal USD 1 monthly ceiling |
+| Agent audit | 26 canonical Alpha messages, 22 total Agent turns, 1 historical fixture grant/send attempt |
 
-The nine MCP tools are the five human-inbox tools plus
-`gate_alpha_list_installations`, `gate_alpha_control_installation`,
-`gate_alpha_run_model_preflight`, and `gate_alpha_list_shadow_reviews`.
-Alpha group discovery and status need no Telegram group ID. Management/review/preflight calls require
-`gate:agents:manage`; Auth0 and ChatGPT User-Delegated Access must grant it before reconnecting
-Gate M.
+The one Alpha delivery grant and send attempt are historical fixture-canary evidence. Model v2 has
+zero grants and zero Telegram sends. The third-account voice dead letter is also historical expected
+evidence; the connected-account-to-connected-account test succeeded.
 
-PR #238 is live in Railway production. Telegram Business direction is relative to the receiving account: a sibling connected-account sender is inbound for the receiver, while only the receiver's own current or historical identity is outbound. Bot/service, missing and ambiguous senders still fail closed.
+External provider billing at the time of this handoff:
 
-The separate Alpha connector is active only for the approved fixture installation. OpenAI billing
-is funded and the organization spend limit is USD 5. After the project key was replaced, PR #229
-issued a new immutable preflight release key and the protected synthetic request succeeded with
-765 input tokens and 25 output tokens. Production is `provider_preflight_verified`; fixture binding
-remains active and model Telegram delivery remains blocked. The earlier credential failure remains
-as historical audit evidence and is never retried.
+- OpenAI Platform prepaid balance was funded with USD 5;
+- automatic recharge was off;
+- organization spend limit was USD 5;
+- GitHub Actions account budget was USD 5 with stop-usage behavior;
+- a July billing example showed 503 Linux minutes at USD 0.006/minute, USD 3.02 gross. Treat this as
+  a dated invoice fact, not a permanent price promise.
 
-Live privacy/pause evidence from 2026-07-15 remains valid: non-invocation traffic created no turn,
-grant or send, while the pause probe was durably accepted but blocked at the installation boundary.
-PR #175 added a reversible owner pause/resume control with a stale-state fence; PR #178 added
-explicit pending-group approval without exposing Telegram IDs. No new production group was approved.
+Internal Gate ceilings do not authorize external spend beyond provider/account limits. The lowest
+active hard boundary wins.
 
-## 4. Delivered release history
+## 4. Exact Gate M contract
 
-### Sprint 1 — canonical transport and ownership foundation: complete
+Do not add a tenth public MCP tool. Extend an existing owner surface when product behavior belongs
+to the same bounded workflow.
 
-PRs #137–#142 delivered:
+| Tool | Purpose |
+|---|---|
+| `gate_get_status` | redacted scoped production state |
+| `gate_list_unanswered` | current human reply work |
+| `gate_get_reply_context` | bounded chronological context |
+| `gate_save_reply_draft` | save only; never approve/send |
+| `gate_send_approved_reply` | exact draft after explicit account/recipient/text confirmation |
+| `gate_alpha_list_installations` | labels and opaque references, never Telegram IDs |
+| `gate_alpha_control_installation` | confirmed approve/pause/resume with stale-state fence |
+| `gate_alpha_run_model_preflight` | one-shot synthetic provider verification, no group data/send |
+| `gate_alpha_list_shadow_reviews` | bounded delivery-blocked model proposals for owner review |
 
-- default-disabled durable Telegram receipt/outbox acceptance;
-- supervised, default-disabled retry/dead-letter worker with bounded failures;
-- SELECT-only Business identity resolution;
-- workspace-scoped connector-neutral `Dialog`, `CanonicalMessage` and `WorkOwnership` contracts;
-- expand-only canonical schema;
-- atomic idempotent canonical persistence;
-- Telegram-to-canonical projection composed in the default-disabled shadow worker.
+Management/review/preflight requires `gate:agents:manage`. Human sending requires the existing send
+scope and an exact explicit confirmation. Missing or ambiguous scope fails closed.
 
-The product result is a durable, idempotent ownership decision in shadow without changing the human
-inbox or sending.
+## 5. Product decisions that must survive handoff
 
-### Sprint 2 — Agent Kernel and immutable instructions: complete for shadow
+### 5.1 Alpha identity and answer quality
 
-PRs #143–#145 delivered:
+- Product name: **Альфа**.
+- Russian self-reference is feminine: `помощница`, `создана`, `проверила` only when actually true.
+- Do not call her AlphaViaBot, a bot or `помощник` in product answers.
+- Answer the current message first. Earlier context is for meaning, not for concatenating several
+  previous requests unless the user explicitly requests a summary.
+- Natural, calm Russian; usually 1–4 short sentences.
+- No claims of internet, current-data, Telegram or external-action access when the runtime lacks it.
+- One inbound invocation permits at most one generation and, after separate authority, one send
+  attempt.
 
-- transport-neutral `AgentDefinition`, `InstructionRevision`, `AgentDeployment`, `AgentSession` and
-  `AgentTurn` contracts;
-- structured `reply | handoff | no_reply` output with no target or delivery authority;
-- workspace-scoped Agent Kernel tables and reversible migration;
-- deployed-artifact instruction bundle loader with SHA-256 verification, path/size/capability checks;
-- offline evaluation-fixture runtime and traceable proposal metadata pinned to instruction Git SHA,
-  content hash and policy version.
+These rules are pinned in immutable bundle `agent_bundles/alpha_model_v2` and deployment
+`alpha-model-v2-openai`.
 
-No mutable GitHub `main` read, Git credential, model network call or agent delivery exists in this
-shadow result.
+### 5.2 Permanent principles, not temporary switches
 
-### Sprint 3 — Alpha Telegram bot: fixed group canary happy path and pause drill verified
+Do not make the operator manage engineering scaffolding through Railway toggles. State is encoded by
+deployed code, durable lifecycle and exact revision bindings. Operator controls remain only for real
+decisions: installation approval/pause, dialog eligibility, exact delivery authority, hard budgets,
+manual deploy/retry/rollback and production configuration.
 
-PRs #146–#161 delivered and activated the owner-approved fixed one-group canary boundary:
+### 5.3 Account and direction semantics
 
-- `discovered → pending_approval → active/paused/revoked` installation contract;
-- transactional workspace-scoped discovery, approval, pause, revoke and read-only status;
-- idempotent per-trigger rate reservation and bounded token accounting behind owner-admin control;
-- default-disabled delivery-free shadow orchestration with one durable Agent turn per trigger;
-- installation-pinned bundle verification and bounded same-group context reconstruction;
-- persisted `reply | handoff | no_reply` trace with duplicate/restart/poison isolation;
-- exact-target grant consumption and a literal bot-only Telegram delivery adapter;
-- durable `sent | failed | blocked | unknown` outcomes with terminal-unknown replay;
-- group/supergroup-only explicit command/mention/reply invocation policy;
-- human-sender, active-installation and rate gates;
-- five-minute, exact-target, exact-trigger, exact-candidate, one-use `DeliveryGrant` contract;
-- agent-only `AgentSendAttempt` with terminal `unknown`, separate from human sending;
-- separate default-disabled `/telegram/alpha/webhook` with its own secret and connector key;
-- durable workspace-scoped tables for installations, grants and agent send attempts.
+Direction is relative to the receiving Business account. A message sent from one connected account
+to the other is inbound for the receiving account. Only the receiver's own current or historical
+identity is outbound for that receiver. Never infer direction from message text and never fall back
+to RU when account resolution is missing or ambiguous.
 
-This is not yet a generally available or model-backed Telegram agent. The fixed canary is active
-only in the approved group. Non-command silence and the reversible pause kill switch have dated live
-evidence. Gate M can now approve future pending groups by label/opaque reference, but no production
-approval action was invoked during development. Destructive revoke remains outside Gate M.
+### 5.4 Delivery authority
 
+- A model proposal cannot select workspace, connector, account, group, recipient or parse mode.
+- A proposal is not a grant.
+- A grant must bind exact installation, target dialog, trigger, candidate hash and expiry.
+- External Telegram sending always requires the exact user-facing target and final text to be shown
+  to Mark and explicitly confirmed.
+- Provider timeout/crash ambiguity becomes terminal `unknown`; do not automatically resend.
 
+### 5.5 Privacy
 
-### Model readiness and owner operations: provider verified; shadow observation next
+- Never commit message contents, Telegram IDs, phone numbers, provider IDs, keys or secrets.
+- Message and transcript text may exist in scoped database columns but not logs or `repr`.
+- Owner views use account labels, group labels and opaque references.
+- Cross-group and cross-workspace reads fail closed and have PostgreSQL tests.
 
-PRs #167–#178 delivered:
+## 6. Delivered work after the previous handoff
 
-- hard USD 50 UTC-month budget reservation before provider calls;
-- one-shot synthetic preflight with terminal replay behavior and no Telegram dependency;
-- delivery-blocked model readiness, redacted alerts and non-mutating promotion dry run;
-- offline adversarial and twelve-case product/natural-voice release evals;
-- Gate M installation list, confirmed approve/pause/resume and protected preflight;
-- owner-only, read-only shadow proposal review room with bounded text/voice input origin;
-- PostgreSQL proof that two groups cannot exchange triggers, limits or usage;
-- five automatic stop drills, each retaining fixture rollback and forbidding promotion.
+The former handoff stopped at PR #238. The following releases are now accepted:
 
-The rejected-key blocker is cleared. Model shadow now requires ten clean delivery-blocked proposals
-before any separately reviewed limited canary; preflight success never authorizes live delivery.
-PR #229 preserved one-shot terminal behavior while issuing a new explicit release key after the
-owner-authorized credential rotation.
+### PR #239 — Business voice exclusive durable ownership
 
-## 4.1. Releases #179–#238 — safety cleanup, CRM, billing and Gate voice
+- Voice updates no longer enter the legacy sprint-router chain.
+- The authenticated webhook durably accepts the update and the canonical worker owns transcription,
+  billing, canonical projection, retry and dead-letter evidence.
+- Voice never creates delivery authority.
 
-- MCP publication is guarded as one exact nine-tool contract.
-- unsupported Alpha media is terminal and human-confirmed Telegram text is literal;
-- only delivered Alpha replies enter later context and one reply is bounded to one Telegram message;
-- voice access policy and a durable, dormant voice intake queue exist with no provider runtime;
-- Relationship CRM is the standalone owner of people and interaction semantics;
-- personal, commercial and program spaces are database-isolated;
-- people, channel identities, relationships and immutable interaction facts are durable;
-- attention, notes/thoughts and follow-ups are independent from legacy reply tasks;
-- pipelines, versioned stages, deals and actor-attributed transitions exist only in commercial/program spaces;
-- migrations 0028–0030 are additive and reversible; no production backfill or CRM UI is active yet;
-- the offline voice fixture now proves synthetic audio → transcript → “Я понял так” → answer with delivery blocked;
-- provider-neutral billing contracts and migration 0031 persist entitlements, usage, costs, revenue and hard-budget reservations across Gate, Alpha, Relationship CRM, Mayaki and Oko;
-- Relationship CRM has a deterministic, checksummed `relationship_crm.transfer.v1` import/export boundary independent of Gate database UUIDs;
-- owner-approved private Alpha installations and direct-message addressing now have a pure default-deny policy; runtime wiring and live activation remain separate work;
-- PRs #210–#220 added scoped CRM repository/projection/owner/assist services, default-disabled private-Alpha discovery, transactional PostgreSQL budget admission, ordered Alpha billing, billing reconciliation and Mayaki/Oko fixture/transfer contracts;
-- PRs #222–#227 added Gate-owned OpenAI Telegram Business voice transcription, ffmpeg normalization, text-only projection, fail-closed orchestration and canonical-worker wiring;
-- migration 0032 seeds a dormant USD 1/month Gate voice ceiling for each active workspace.
-- PR #231 selects the exact preflight-verified staged model only for delivery-blocked Alpha shadow;
-  the installation remains fixture-bound and ambiguity fails closed;
-- PR #232 settles or releases each Gate voice budget reservation from trusted OpenAI usage, retains
-  ambiguous/overflow outcomes as `unknown`, and atomically records usage and ledger cost;
-- PR #233 exposes only aggregate Telegram voice readiness and billing state through
-  `gate_get_status`; no provider, operation, Telegram or content reference is returned;
-- migration 0033 and the canonical projection persist normalized Telegram text plus one bounded
-  input origin (`telegram_text` or `telegram_voice_transcription`), while repr and logs remain
-  content-free.
+### PR #240 — canonical text and input-origin contract
 
-The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state
-model. PRs #235–#238 made direction receiving-account-relative, exposed redacted voice queue
-health and made durable acceptance invariant without an operator migration switch. Production then
-completed one cross-account voice canary through OpenAI and the canonical worker with no retry or
-dead letter. Voice never grants Telegram delivery. No Oko activation, CRM backfill or Instagram
-publication was performed.
+- Canonical persistence stores ordinary Telegram text and voice transcripts through the same private
+  text field.
+- `input_origin` is exactly `telegram_text` or `telegram_voice_transcription`.
+- Migration `0033_canonical_input_origin` is additive and reversible.
 
-## 5. Important code map
+### PR #241 — Alpha review source evidence
+
+- Existing shadow review items include bounded input origin.
+- No new MCP tool was added.
+
+### PR #242 — immutable Alpha model v2
+
+- Added the female Alpha identity and current-message-focused response policy.
+- Paused v1 as rollback target and staged one exact v2 deployment.
+- Added a fresh idempotent provider preflight release key.
+- Production preflight succeeded on the first attempt with Telegram delivery blocked.
+- v2 evidence is deployment-scoped; old v1 proposals do not count toward v2 promotion.
+
+### PR #243 — Business text parity barrier
+
+- Added a read-only production observer comparing canonical and legacy facts for ordinary Business
+  text: RU/BY account, receiving-account-relative direction, dialog, Business connection, exact
+  in-memory text and expected reply-task cardinality.
+- The observer creates no workflow writes, drafts, turns, grants or sends.
+- Private text and identifiers remain absent from logs and result representations.
+- Legacy bypass has not happened yet; durable content-free parity evidence is still needed before
+  cutover.
+
+### PR #244 — durable Alpha rate-limit deferral
+
+- Root cause: the installation allows 5 turns per 60 seconds. The first five burst messages created
+  proposals; later messages returned `rate_limited` and were incorrectly marked processed.
+- Fix: `rate_limited` is now durable backpressure, rescheduled after 61 seconds without an attempt
+  cap instead of terminal loss/dead-letter.
+- Migration `0035_alpha_rate_limit_deferral` requeued only v2 `/alpha` commands that had canonical
+  ingress but neither usage reservation nor Agent turn.
+- Five lost test commands recovered automatically without asking the user to resend.
+- Production reached 10/10 v2 proposals, 0 failures and 0 model delivery grants.
+
+## 7. Production evidence and test history
+
+### 7.1 Voice
+
+- A voice message from an unrelated third account was rejected as `telegram_voice_not_inbound`.
+- A connected-account-to-connected-account voice message was correctly treated as inbound for the
+  receiver, transcribed and settled.
+- Final snapshot: 3 received, 2 delivered, 1 expected dead letter, no retry/open/unknown reservation.
+
+### 7.2 Ordinary Business text
+
+- A connected-account text test reached the production Business path.
+- PR #243 compares canonical facts with the committed legacy reply-task fact.
+- Current limitation: matched parity is log-only. Before legacy bypass, persist content-free
+  `matched/mismatch/pending` counters and expose a bounded status summary.
+
+### 7.3 Alpha v2 sample
+
+Ten real group proposals are now recorded for `alpha-model-v2-openai`:
+
+- all `status=proposed`, `outcome=reply`, `result_code=ok`;
+- all `input_origin=telegram_text`;
+- all `sent_to_telegram=false`;
+- female identity and current-message behavior are correct;
+- two duplicate summary prompts produced distinct per-message turns, proving trigger identity rather
+  than content-hash deduplication;
+- promotion dry run has no blockers and reports `limited_canary_review` as the next stage.
+
+The sample is sufficient to begin exact owner review. It is not blanket permission to send.
+
+## 8. Work on errors / lessons learned
+
+### Error 1 — billing language was confusing
+
+Usage, free allowance, accrued invoice amount, prepaid credit and hard spend limits were discussed as
+if they were one concept. They are not. Future communication must state separately:
+
+1. what resource was consumed;
+2. whether it was included or billable;
+3. whether an amount is an invoice/debt or only usage evidence;
+4. whether a payment method/prepaid balance exists;
+5. which hard stop prevents further spend.
+
+### Error 2 — a healthy older deployment was treated as progress evidence
+
+Production is accepted only when the deployment fingerprint equals the exact merge SHA. Health of an
+older revision is not proof that a release deployed.
+
+### Error 3 — test instructions were formatted ambiguously
+
+A Telegram message containing several monospace `/alpha` lines is one Telegram message, not several
+invocations. With group privacy mode, code/preformatted text may also lack a bot-command entity and
+may not reach the bot as a command. When Mark must run a packet:
+
+- provide one service message containing separate inline-monospace snippets;
+- each snippet represents one actual Telegram message;
+- Mark copies and sends each snippet separately;
+- verification counts actual durable triggers, not visible bubbles alone.
+
+### Error 4 — rate limiting silently lost work
+
+Safety backpressure must delay work, not erase it. A capacity limit is not a terminal business
+decision. PR #244 establishes the permanent rule: defer and retry the same durable identity without
+granting extra delivery authority.
+
+### Error 5 — v1 identity and context behavior were not product-correct
+
+v1 answered as `AlphaViaBot — помощник` and sometimes blended prior prompts. v2 fixed the immutable
+instruction bundle; old evidence was not reused to claim v2 quality.
+
+### Error 6 — operator switches were overused conceptually
+
+Temporary engineering controls pushed mental work onto the product owner. Future designs must use
+permanent code and lifecycle principles. Add an operator control only when the operator is making a
+real product, safety, cost or deployment decision.
+
+### Error 7 — tests from the wrong account were initially interpreted as product failure
+
+Always establish the sender, receiving connected account and account-relative direction before
+diagnosing. Third-account rejection and connected-account inbound success are different expected
+outcomes.
+
+## 9. Current architecture map
 
 | Path | Responsibility |
 |---|---|
-| `app/api/telegram_ingress.py` | Business durable seam plus frozen legacy registration boundary |
-| `app/api/alpha_telegram_ingress.py` | isolated, default-disabled group-only Alpha receipt endpoint |
-| `app/application/canonical_messaging.py` | connector-neutral messaging/ownership contracts |
-| `app/application/telegram_canonical_projection.py` | Telegram projection with fail-closed provider identity |
-| `app/application/agent_kernel.py` | immutable revision/deployment/session/turn/runtime contracts |
-| `app/application/instruction_bundles.py` | deployed bundle verification and offline fixture runtime |
-| `app/application/agent_shadow.py` | traceable delivery-free shadow proposal service |
-| `app/application/alpha_shadow_worker.py` | explicit invocation and idempotent shadow orchestration |
-| `app/application/alpha_group.py` | installation, invocation, grant and send-attempt invariants |
-| `app/infrastructure/alpha_shadow_worker.py` | transactional binding, context and turn persistence |
-| `app/application/alpha_delivery.py` | opaque-grant-only delivery contract |
-| `app/infrastructure/alpha_delivery.py` | exact-target consumption, attempt ledger and literal Telegram adapter |
-| `app/application/alpha_canary.py` | single-group gates, disclosure and orchestration |
-| `app/infrastructure/alpha_canary.py` | membership reconciliation and exact-revision grant issuance |
-| `app/services/telegram_alpha_webhook.py` | isolated webhook reconciliation for two update types |
-| `app/worker/alpha_shadow.py` | separate default-disabled Alpha runtime boundary |
-| `app/infrastructure/canonical_messaging.py` | atomic PostgreSQL canonical ingress store |
-| `app/models/canonical.py` | workspace/connector/dialog/message/ownership ORM |
-| `app/models/agent.py` | Agent Kernel ORM |
-| `app/models/alpha.py` | Alpha installation/grant/send-attempt ORM |
-| `app/application/relationship_crm.py` | Standalone CRM domain kernel for personal/commercial/program spaces |
-| `app/application/relationship_crm_transfer.py` | Deterministic versioned import/export boundary for later extraction |
-| `app/models/relationship_crm.py` | Module-owned people, interaction, attention, notes, pipeline and deal persistence |
-| `app/application/billing.py` / `app/models/billing.py` | Cross-product entitlement, usage, ledger and hard-budget contracts/persistence |
-| `app/application/alpha_access_policy.py` | Default-deny private/group discovery and explicit addressing policy |
-| `app/application/telegram_voice_transcription.py` | Gate-owned budgeted voice-to-text boundary |
-| `app/application/telegram_voice_orchestration.py` | Fail-closed voice admission before downstream routing |
-| `app/infrastructure/telegram_voice.py` / `openai_transcription.py` | Telegram download, ffmpeg normalization and OpenAI adapter |
-| `app/worker/telegram_processing.py` | Canonical worker composition, including identity-first Business voice wiring |
-| `alembic/versions/0028_*`–`0030_*` | Relationship CRM core, personal workflow and commercial/program schema |
-| `alembic/versions/0031_billing_ledger.py`–`0033_canonical_input_origin.py` | Unified billing, Gate voice ceiling and canonical text-origin persistence |
-| `alembic/versions/0016_*` | canonical foundation |
-| `alembic/versions/0017_*` | Agent Kernel |
-| `alembic/versions/0018_*` | Alpha delivery capabilities |
-| `app/api/mcp_routes.py` | current protected ChatGPT MCP adapter |
-| `app/infrastructure/reply_sends.py` | existing human-confirmed idempotent send path |
-| `app/infrastructure/openai_agent_runtime.py` | dormant structured Responses runtime behind both model release gates |
-| `app/application/alpha_owner_control.py` | ID-free owner approval, pause/resume and safe installation views |
-| `app/infrastructure/alpha_shadow_reviews.py` | approved-group-only model shadow review query |
-| `app/application/alpha_model_readiness.py` | fail-closed readiness, stop alerts and promotion dry run |
-| `docs/ALPHA_OPERATOR_RUNBOOK.md` | one-time owner setup, provider activation and incident boundaries |
+| `app/api/telegram_ingress.py` | Telegram Business authenticated durable ingress and remaining legacy boundary |
+| `app/api/alpha_telegram_ingress.py` | dedicated Alpha bot webhook |
+| `app/application/telegram_processing.py` | durable receipt/outbox contracts, retry and non-terminal deferral |
+| `app/worker/telegram_processing.py` | canonical worker composition for Business text/voice and Alpha |
+| `app/application/canonical_messaging.py` | connector-neutral dialog/message/ownership contracts |
+| `app/application/telegram_canonical_projection.py` | Telegram-to-canonical projection |
+| `app/infrastructure/canonical_messaging.py` | idempotent PostgreSQL canonical store |
+| `app/application/telegram_business_text_parity.py` | pure canonical/legacy Business-text comparison |
+| `app/infrastructure/telegram_business_text_parity.py` | read-only legacy fact observer |
+| `app/application/telegram_voice_*` | voice extraction, transcription and fail-closed orchestration |
+| `app/infrastructure/openai_transcription.py` | OpenAI transcription adapter |
+| `app/application/agent_kernel.py` | deployment/session/turn/result contracts |
+| `app/application/instruction_bundles.py` | immutable bundle loader and SHA verification |
+| `app/application/alpha_shadow_worker.py` | invocation recognition and delivery-free model orchestration |
+| `app/infrastructure/alpha_shadow_worker.py` | exact binding, context, budget and turn persistence |
+| `app/application/alpha_canary.py` | installation and proposal/delivery boundary |
+| `app/application/alpha_delivery.py` | one-use grant delivery contract |
+| `app/infrastructure/alpha_delivery.py` | exact target consumption and send-attempt ledger |
+| `app/infrastructure/alpha_model_status.py` | model readiness and promotion evidence |
+| `app/infrastructure/alpha_shadow_reviews.py` | owner-scoped proposal review query |
+| `app/api/mcp_routes.py` / `mcp_schemas.py` | exact protected nine-tool Gate M surface |
+| `app/application/billing.py` / `app/models/billing.py` | provider-neutral entitlement, usage and cost ledger |
+| `app/application/relationship_crm.py` | standalone Relationship CRM domain |
+| `alembic/versions/0033_*`–`0035_*` | input origin, Alpha v2 and durable rate-limit recovery |
 
-## 6. Exact next development order
+## 10. Product and technical plan — next ten sprints
 
-1. Cut Business voice over as the first update class owned exclusively by the durable worker; keep
-   its authenticated receipt, canonical transcript projection, budget and DLQ evidence intact.
-2. Move ordinary Business text through the same canonical worker and prove parity for account,
-   direction, reply-task intent and idempotency before bypassing the legacy chain.
-3. Make the canonical transcript/text message the single downstream input contract, preserving
-   `gate_input_origin` while preventing duplicate legacy and canonical domain effects.
-4. Make work ownership authoritative: exactly one of human, approved agent or no-reply owns a
-   dialog version; any human outbound or handoff revokes stale agent capability.
-5. Produce ten real, delivery-blocked Alpha shadow proposals for the approved installation and
-   review bounded redacted evidence; stop on any configured alert.
-6. Add the private Alpha proposal path for explicitly eligible RU/BY dialogs with no delivery grant.
-7. Expose account, recipient, source text/transcript and exact proposal to the existing owner review
-   surface without expanding the nine-tool MCP contract.
-8. Allow one explicitly approved proposal to obtain one exact-target, one-use delivery grant.
-9. Canary autonomous text and voice responses only in designated test dialogs; one inbound permits
-   at most one model generation and one Telegram send attempt.
-10. Remove the now-unreachable sprint-router layers, complete restore/outage drills and publish the
-    reusable development and cost-control regulations.
+Each sprint is a bounded PR train with exact-head CI and automatic Railway deployment only after the
+standing merge conditions are satisfied.
 
-Each step is a bounded, reversible code release. Development migration state is encoded by deployed
-code and rolled back by a known-good deployment, not by temporary Railway switches. Product controls
-remain only where an operator decision is real: installation approval, dialog eligibility, delivery
-authority and hard budgets.
+### Sprint 1 — durable Business text parity evidence
 
-No live CRM backfill, Oko activation or Instagram publication is implied by this order. Voice
-transcription is already live, but it remains input processing only and never authorizes a reply.
+**Product outcome:** the owner can see that ordinary connected-account text is safely represented in
+both canonical and legacy paths before cutover.
 
-## 7. Owner inputs required only at the canary boundary
+**Technical scope:** persist content-free `matched`, `pending` and bounded mismatch-code counters;
+expose the summary through `gate_get_status`; add restart/idempotency/PostgreSQL tests. Do not store
+private comparison values in the evidence table.
 
-Do not request or store secret values in Git, issues, PRs, logs or chat. The live fixed canary
-configuration already exists in Railway; only variable names belong in repository documentation:
+**Acceptance:** real RU↔BY text produces matched evidence; no extra reply task, turn, draft or send.
 
-```text
-TELEGRAM_ALPHA_BOT_TOKEN
-TELEGRAM_ALPHA_BOT_USERNAME=AlphaViaBot
-TELEGRAM_ALPHA_WEBHOOK_SECRET
-GATE_ALPHA_CONNECTOR_ENABLED
-GATE_TELEGRAM_WORKER_ENABLED
-GATE_ALPHA_SHADOW_WORKER_ENABLED
-GATE_ALPHA_CANARY_ENABLED
-GATE_ALPHA_DELIVERY_ENABLED
-GATE_ALPHA_PRIVACY_MODE_CONFIRMED
-```
+### Sprint 2 — ordinary Business text canonical cutover
 
-Gate M owner actions additionally require the Auth0 API permission
-`gate:agents:manage` and the matching ChatGPT User-Delegated Access grant. Reconnect Gate M once
-after the grant changes.
+**Product outcome:** all ordinary Business text uses the durable worker without double processing.
 
-The existing transport/canary flags are owner-authorized for approved installations. New groups
-remain pending until an explicit Gate M approval. The model path is separately controlled. Its only
-secret is `OPENAI_API_KEY`; safe defaults are:
+**Technical scope:** bypass the legacy webhook chain only after parity evidence; derive the same
+reply-task intent from canonical input; keep rollback to the last known-good deployment.
 
-```text
-OPENAI_API_BASE_URL=https://api.openai.com/v1
-GATE_ALPHA_MODEL_RUNTIME_ENABLED=false
-GATE_ALPHA_MODEL_DATA_GATE_APPROVED=false
-GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS=512
-GATE_ALPHA_MODEL_TIMEOUT_SECONDS=30
-```
+**Acceptance:** one update creates one canonical message and at most one human reply task across
+restart/replay; legacy side effects are unreachable.
 
-The production model gates and reviewed staged deployment are configured. Billing is funded and the
-replacement-key provider preflight is verified. Gate remains on the fixture canary while ten clean,
-delivery-blocked model shadow proposals are observed; this evidence does not authorize model
-Telegram delivery.
+### Sprint 3 — one canonical downstream input contract
 
-Production configuration changes, manual deploys, retries and rollbacks require Mark's explicit
-authorization. Normal green PR merges may use the standing auto-merge rule in `TEAM_WORKFLOW.md`.
+**Product outcome:** text and voice behave consistently for later agents and human work.
 
-## 8. Local development bootstrap
+**Technical scope:** make canonical text plus `input_origin` the only downstream input; remove
+duplicate transcript/text adapters; preserve voice billing and dead-letter evidence.
 
-The supported shell for owner instructions is Windows PowerShell. A developer may use another shell,
-but must preserve the same commands and checks.
+**Acceptance:** the same policy suite passes for `telegram_text` and
+`telegram_voice_transcription`; no transport-specific duplicate effects.
+
+### Sprint 4 — authoritative dialog ownership
+
+**Product outcome:** every dialog is clearly human-owned, approved-agent-owned or no-reply.
+
+**Technical scope:** versioned ownership fence; human outbound/handoff revokes stale agent capability;
+ordered per-dialog claims; ambiguity quarantines.
+
+**Acceptance:** concurrency tests prove one owner and stale grants cannot send after takeover.
+
+### Sprint 5 — private Alpha proposal path
+
+**Product outcome:** explicitly eligible RU/BY private dialogs can receive reviewed Alpha proposals
+without automatic delivery.
+
+**Technical scope:** wire the existing default-deny private policy to canonical input; no group
+context leakage; no delivery grant; account/recipient/input-origin visible through opaque owner scope.
+
+**Acceptance:** eligible designated dialog proposes; every unapproved dialog remains silent.
+
+### Sprint 6 — exact owner review and approval
+
+**Product outcome:** Mark can review one exact candidate and approve or reject it without IDs or a new
+tool.
+
+**Technical scope:** extend the existing Alpha review/control workflow; bind approval to turn,
+candidate SHA, installation/account, recipient and expiry; preserve the nine-tool contract.
+
+**Acceptance:** edited/stale/wrong-target proposals cannot obtain authority; rejection writes audit
+only.
+
+### Sprint 7 — one-use limited Alpha canary
+
+**Product outcome:** one explicitly confirmed reviewed proposal can be delivered to one designated
+test target.
+
+**Technical scope:** consume one exact five-minute grant; one provider attempt; terminal unknown;
+mandatory disclosure; fixture rollback retained.
+
+**Acceptance:** show Mark group/account, exact final text and target label; send only after explicit
+confirmation; verify one send and idempotent replay.
+
+### Sprint 8 — designated text and voice dialog canaries
+
+**Product outcome:** Alpha can assist in explicitly designated test dialogs for both typed and voice
+input under the same review/delivery rules.
+
+**Technical scope:** canonical input parity, per-dialog ordering, budget admission, human takeover,
+stop conditions and bounded context.
+
+**Acceptance:** one inbound creates at most one generation and one authorized send attempt; any
+failure, budget exhaustion or ownership change stops delivery.
+
+### Sprint 9 — legacy removal and operational proof
+
+**Product outcome:** the system is simpler to own and failures are visible/recoverable.
+
+**Technical scope:** remove unreachable sprint routers and obsolete flags; expose content-free queue
+backlog/deferral/parity state; run provider outage, restore, rollback and unknown-send drills.
+
+**Acceptance:** disposable restore and downgrade/upgrade pass; production remains exact-head; no
+hidden compatibility writer remains.
+
+### Sprint 10 — reusable product platform and transfer closure
+
+**Product outcome:** a new team can operate Gate and add Oko/Mayak without chat history.
+
+**Technical scope:** finalize module boundaries, extract reusable agent/transport contracts, update
+cost dashboards/regulations, refresh architecture/README/handoff and define the next Oko release
+train. Relationship CRM backfill remains a separate authorized product action.
+
+**Acceptance:** repository-only transfer checklist passes; documentation, schema, CI and production
+fingerprint agree.
+
+## 11. Actions that still require Mark
+
+Stop and request Mark only when one of these boundaries is reached:
+
+1. show exact Telegram target and final text, then obtain explicit confirmation before any send;
+2. approve a new Alpha installation or private-dialog eligibility decision;
+3. change Railway/OpenAI/GitHub production billing or configuration;
+4. manually deploy, retry, roll back or alter production variables;
+5. choose a product behavior when alternatives materially change user experience or risk.
+
+Do not ask Mark to perform repository status checks, inspect CI, copy IDs, manage temporary switches
+or resend work that Gate can safely recover itself.
+
+## 12. Development and release procedure
+
+For every PR:
+
+1. branch from exact current `main`;
+2. keep one bounded product outcome;
+3. inspect the complete diff and privacy/delivery impact;
+4. require Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/drift/downgrade,
+   disposable PostgreSQL backup/restore and both Docker builds;
+5. fix only the observed CI cause on the same PR;
+6. merge only the exact green head under `docs/TEAM_WORKFLOW.md`;
+7. wait for Railway to report the exact merge SHA;
+8. run affected read-only production smoke checks;
+9. update this handoff when state, next order or owner requirements change.
+
+CI run #906 for PR #244 passed every required stage. Production then reported exact merge
+`6680d9dce1cb` and recovered the five deferred Alpha triggers.
+
+## 13. Local bootstrap and environment inventory
+
+Use a disposable PostgreSQL database, never production. Owner-facing local instructions default to
+Windows PowerShell.
 
 ```powershell
 git clone https://github.com/markmalina/gate.git
@@ -324,74 +487,55 @@ py -3.12 -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install ".[dev,contact-sync]"
 & .\.venv\Scripts\python.exe -m ruff check .
-& .\.venv\Scripts\python.exe -m mypy app
+& .\.venv\Scripts\python.exe -m mypy app tests
 & .\.venv\Scripts\python.exe -m pytest
-```
-
-Use a disposable PostgreSQL database for migration work, never production:
-
-```powershell
 $env:DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/gate"
 & .\.venv\Scripts\python.exe -m alembic upgrade head
 & .\.venv\Scripts\python.exe -m alembic downgrade -1
 & .\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-CI is authoritative and additionally exercises production-shaped PostgreSQL migrations and both
-Docker builds. A local green run is not completion.
+Important environment-variable names only:
 
-## 9. Environment-variable inventory
-
-Never put values in documentation. Important names:
-
-- core: `DATABASE_URL`, `GATE_ENV`, `RAILWAY_GIT_COMMIT_SHA`, `RAILWAY_SERVICE_NAME`;
-- Business Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`,
-  `TELEGRAM_WEBHOOK_SECRET`;
-- canonical runtime: `GATE_TELEGRAM_WORKER_ENABLED`, `GATE_WORKSPACE_ID`;
-- Alpha transport: `TELEGRAM_ALPHA_BOT_TOKEN`, `TELEGRAM_ALPHA_BOT_USERNAME`,
-  `TELEGRAM_ALPHA_WEBHOOK_SECRET`, `GATE_ALPHA_CONNECTOR_ENABLED`,
+- core: `DATABASE_URL`, `GATE_ENV`, `GATE_WORKSPACE_ID`, `RAILWAY_GIT_COMMIT_SHA`;
+- Business: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`;
+- Alpha: `TELEGRAM_ALPHA_BOT_TOKEN`, `TELEGRAM_ALPHA_BOT_USERNAME`,
+  `TELEGRAM_ALPHA_WEBHOOK_SECRET`;
+- canonical/Alpha runtime: `GATE_TELEGRAM_WORKER_ENABLED`, `GATE_ALPHA_CONNECTOR_ENABLED`,
   `GATE_ALPHA_SHADOW_WORKER_ENABLED`, `GATE_ALPHA_CANARY_ENABLED`,
   `GATE_ALPHA_DELIVERY_ENABLED`, `GATE_ALPHA_PRIVACY_MODE_CONFIRMED`;
-- Alpha model: `OPENAI_API_KEY`, `OPENAI_API_BASE_URL`,
-  `GATE_ALPHA_MODEL_RUNTIME_ENABLED`, `GATE_ALPHA_MODEL_DATA_GATE_APPROVED`,
-  `GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS`, `GATE_ALPHA_MODEL_TIMEOUT_SECONDS`;
-- Gate voice: `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED`,
-  `GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL`,
-  `GATE_TELEGRAM_VOICE_RESERVE_MICROUSD_PER_SECOND`,
-  `GATE_TELEGRAM_VOICE_LANGUAGE`;
-- MCP/Auth0: see `app/core/config.py` and `docs/MCP_CHATGPT_AUTH0_RUNBOOK.md`;
-- safe human sending: `GATE_SEND_ENABLED`, `GATE_ACCOUNT_RU_SEND_ENABLED`,
-  `GATE_ACCOUNT_BY_SEND_ENABLED`.
+- OpenAI: `OPENAI_API_KEY`, `OPENAI_API_BASE_URL`, `GATE_ALPHA_MODEL_RUNTIME_ENABLED`,
+  `GATE_ALPHA_MODEL_DATA_GATE_APPROVED`, `GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS`,
+  `GATE_ALPHA_MODEL_TIMEOUT_SECONDS`;
+- voice: `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED`,
+  `GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL`, `GATE_TELEGRAM_VOICE_LANGUAGE`;
+- human sending: `GATE_SEND_ENABLED`, `GATE_ACCOUNT_RU_SEND_ENABLED`,
+  `GATE_ACCOUNT_BY_SEND_ENABLED`;
+- MCP/Auth0: see `docs/MCP_CHATGPT_AUTH0_RUNBOOK.md`.
 
-Absence, emptiness or ambiguity must fail closed. Never introduce an RU fallback.
+Never place values in Git, issue/PR bodies, logs, screenshots intended for publication or chat.
 
-## 10. Non-negotiable engineering rules
+## 14. Transfer acceptance checklist
 
-- Gate is the only Telegram transport for these product paths.
-- Human replies remain exact draft + explicit confirmation.
-- Business and Alpha credentials, webhook paths and send permissions remain technically isolated.
-- Agent/model output never selects workspace, connector, account, dialog, recipient or parse mode.
-- Every accepted update and external write is durable and idempotent.
-- Every new aggregate and query proves workspace scope.
-- Network calls occur outside database lock transactions.
-- `unknown` delivery state is terminal without automatic retry.
-- Message text, prompts, provider identifiers and secrets stay out of logs and repr.
-- Personal data belongs in the database, not Git.
-- BY contact import, third Business account and Oko activation do not enter an unrelated PR.
-- Keep PRs small; never combine a schema/cutover with unrelated product work.
+A receiving owner records:
 
-## 11. Completion and handoff checklist
+```text
+Gate handoff accepted at: <UTC timestamp>
+Accepted GitHub main SHA: <full SHA>
+Exact-head CI: <run URL/number> — success
+Railway production SHA: <full SHA> — matches / mismatch
+Schema head: <revision>
+Environment/mode: production/manual
+RU/BY health: <redacted aggregate>
+MCP public tools: 9 / 9
+Alpha v2: preflight verified; proposals <count>; failures <count>
+Model Telegram delivery blocked: true
+Voice: delivered/retry/dead-letter/open/unknown <aggregate>
+Provider/account hard budgets: <redacted limits>
+Open PRs and blockers: <list>
+Accepted by: <name/role>
+```
 
-For every PR:
+Acceptance is read-only. Do not send, approve, run preflight, alter installation state, change
+variables, deploy, retry or roll back merely to complete the checklist.
 
-1. branch from the exact current `main` SHA;
-2. review the complete diff and privacy/safety impact;
-3. run Ruff, strict mypy, pytest, migration up/down and Docker CI;
-4. inspect exact failure logs and fix only the observed cause;
-5. merge only the exact green head, preferably squash;
-6. wait for Railway to report the exact merge SHA;
-7. smoke-check Gate M status and the affected safety boundary;
-8. update this handoff when release state, activation requirements or next order materially changes.
-
-A future owner should be able to continue from GitHub alone. If a decision exists only in chat,
-write it here or in the relevant specification before relying on it.
