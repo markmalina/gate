@@ -39,13 +39,13 @@ from app.models.alpha_preflight import AlphaModelPreflightModel
 from app.models.canonical import Workspace
 
 # Versioned explicitly so a credential rotation permits one new operator-authorized attempt.
-PREFLIGHT_KEY = "alpha-model-v1-openai-preflight-v2"
+PREFLIGHT_KEY = "alpha-model-v2-openai-preflight-v1"
 PREFLIGHT_RESERVED_TOKENS = 2_048
 PREFLIGHT_MAX_OUTPUT_TOKENS = 64
 _RUNTIME_PROFILE = "openai-responses-v1"
 _MODEL_PROFILE = "gpt-5.6-luna"
-_DEPLOYMENT_KEY = "alpha-model-v1-openai"
-_REVISION_KEY = "alpha-model-v1"
+_DEPLOYMENT_KEY = "alpha-model-v2-openai"
+_REVISION_KEY = "alpha-model-v2"
 _SYNTHETIC_REQUEST = "/alpha Ответь одним словом: готово."
 
 
