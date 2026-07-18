@@ -1,8 +1,6 @@
-"""Transitional registration boundary for the legacy Telegram webhook stack.
+"""Durable Telegram ingress with staged canonical update-class ownership.
 
-The individual sprint routers intentionally remain unchanged in this sprint. Keeping their
-registration in one place freezes the production order and gives the canonical ingress
-cutover one explicit seam.
+The frozen sprint routers still own update classes that have not completed canonical cutover.
 """
 
 import hmac
@@ -26,6 +24,9 @@ from app.api.sprint15b_routes import router as sprint15b_router
 from app.api.sprint16_raw_routes import router as sprint16_raw_router
 from app.api.sprint16d_clean_inbox_routes import router as sprint16d_clean_inbox_router
 from app.api.sprint17_send_draft_routes import router as sprint17_send_draft_router
+from app.application.telegram_business_text_inbox import (
+    is_telegram_business_text_cutover_update,
+)
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
@@ -91,7 +92,9 @@ async def durable_telegram_webhook(
             detail="Durable Telegram receipt is unavailable",
         ) from None
 
-    if _is_business_voice_update(accepted_update):
+    if _is_business_voice_update(accepted_update) or is_telegram_business_text_cutover_update(
+        accepted_update
+    ):
         return {
             "ok": True,
             "accepted": True,
@@ -174,7 +177,7 @@ async def _accept_durable_receipt(
 
 
 def _is_business_voice_update(update: JsonObject) -> bool:
-    """Route the first canonical update class exclusively through the durable worker."""
+    """Route the canonical voice class exclusively through the durable worker."""
 
     message = update.get("business_message")
     return isinstance(message, dict) and "voice" in message
