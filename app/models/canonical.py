@@ -179,6 +179,76 @@ class CanonicalMessage(Base):
     )
 
 
+class TelegramBusinessTextParityEvidence(Base):
+    """Content-free proof that canonical and legacy Business text facts agree."""
+
+    __tablename__ = "telegram_business_text_parity_evidence"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["canonical_message_id", "workspace_id"],
+            ["canonical_messages.id", "canonical_messages.workspace_id"],
+            name="fk_business_text_parity_message_workspace",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "canonical_message_id",
+            name="uq_business_text_parity_canonical_message",
+        ),
+        CheckConstraint(
+            "state IN ('matched', 'pending', 'mismatch')",
+            name="ck_business_text_parity_state",
+        ),
+        CheckConstraint(
+            "(state = 'matched' AND mismatch_code IS NULL) OR "
+            "(state = 'pending' AND mismatch_code = "
+            "'telegram_business_text_parity_legacy_pending') OR "
+            "(state = 'mismatch' AND mismatch_code IN ("
+            "'telegram_business_text_parity_account_mismatch', "
+            "'telegram_business_text_parity_direction_mismatch', "
+            "'telegram_business_text_parity_dialog_mismatch', "
+            "'telegram_business_text_parity_text_mismatch', "
+            "'telegram_business_text_parity_reply_task_mismatch', "
+            "'telegram_business_text_parity_legacy_cardinality', "
+            "'telegram_business_text_parity_legacy_invalid'))",
+            name="ck_business_text_parity_code_state",
+        ),
+        CheckConstraint(
+            "observation_count > 0",
+            name="ck_business_text_parity_observation_count",
+        ),
+        Index(
+            "ix_business_text_parity_workspace_account_state",
+            "workspace_id",
+            "account_id",
+            "state",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    canonical_message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    mismatch_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    observation_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class WorkOwnership(Base):
     """Versioned current ownership for one workspace-scoped dialog."""
 
