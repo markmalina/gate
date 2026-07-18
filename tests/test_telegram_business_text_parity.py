@@ -6,9 +6,12 @@ from app.application.canonical_messaging import (
     WorkRoute,
 )
 from app.application.telegram_business_text_parity import (
+    TELEGRAM_BUSINESS_TEXT_PARITY_MISMATCH_CODES,
     TelegramBusinessLegacyTextFact,
     TelegramBusinessTextParityCommand,
     TelegramBusinessTextParityError,
+    TelegramBusinessTextParityState,
+    classify_telegram_business_text_parity_error,
     compare_telegram_business_text_parity,
 )
 
@@ -19,6 +22,9 @@ def _command(
     route: WorkRoute = WorkRoute.HUMAN_REPLY_TASK,
 ) -> TelegramBusinessTextParityCommand:
     return TelegramBusinessTextParityCommand(
+        workspace_key="mark-personal",
+        account_id="22222222-2222-2222-2222-222222222222",
+        canonical_message_id="44444444-4444-4444-4444-444444444444",
         update_id=42,
         account_alias="telegram_mark_ru",
         direction=direction,
@@ -119,3 +125,15 @@ def test_private_mismatches_fail_with_bounded_codes(
     assert captured.value.code == error_code
     assert "private" not in str(captured.value)
     assert "private-text" not in repr(legacy)
+
+
+def test_only_bounded_codes_can_be_persisted_as_evidence() -> None:
+    assert classify_telegram_business_text_parity_error(
+        "telegram_business_text_parity_legacy_pending"
+    ) is TelegramBusinessTextParityState.PENDING
+    for code in TELEGRAM_BUSINESS_TEXT_PARITY_MISMATCH_CODES:
+        assert classify_telegram_business_text_parity_error(
+            code
+        ) is TelegramBusinessTextParityState.MISMATCH
+    with pytest.raises(ValueError, match="unsupported"):
+        classify_telegram_business_text_parity_error("private-text")
