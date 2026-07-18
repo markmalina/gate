@@ -5,6 +5,11 @@ from collections.abc import AsyncIterator, Iterator
 import pytest
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
+from app.api.telegram_ingress import get_telegram_receipt_store
+from app.application.telegram_processing import (
+    AcceptTelegramReceiptCommand,
+    TelegramReceiptAcceptance,
+)
 from app.core.config import get_settings
 from app.main import app
 from app.services.telegram import TelegramClient
@@ -16,6 +21,20 @@ class DummyTelegramClient(TelegramClient):
 
     def __init__(self) -> None:
         pass
+
+
+class DummyReceiptStore:
+    """Accept validated envelopes before unsupported legacy acknowledgement."""
+
+    async def create_if_absent(
+        self,
+        command: AcceptTelegramReceiptCommand,
+    ) -> TelegramReceiptAcceptance:
+        return TelegramReceiptAcceptance(
+            receipt_id=f"receipt-{command.update_id}",
+            outbox_event_id=f"outbox-{command.update_id}",
+            duplicate=False,
+        )
 
 
 @pytest.fixture
@@ -38,6 +57,7 @@ def unsupported_update_context(
 
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_telegram_client] = override_telegram_client
+    app.dependency_overrides[get_telegram_receipt_store] = lambda: DummyReceiptStore()
     yield
     app.dependency_overrides.clear()
     get_settings.cache_clear()

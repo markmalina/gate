@@ -1,4 +1,4 @@
-"""Focused guards for the disabled-by-default durable Telegram ingress seam."""
+"""Focused guards for invariant durable Telegram ingress acceptance."""
 
 import json
 from collections.abc import Callable
@@ -11,10 +11,9 @@ from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     TelegramReceiptAcceptance,
 )
-from app.core.config import Settings, TelegramDurableAcceptanceMode
+from app.core.config import Settings
 from app.services.telegram import TelegramClient
 from fastapi import HTTPException
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from starlette.types import Message, Scope
@@ -55,13 +54,11 @@ def anyio_backend() -> str:
 
 def _settings(
     *,
-    mode: str = "disabled",
     secret: str = "test-secret",
     bot_username: str = "gate_m_bot",
 ) -> Settings:
     return Settings.model_validate(
         {
-            "GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE": mode,
             "TELEGRAM_WEBHOOK_SECRET": secret,
             "TELEGRAM_BOT_USERNAME": bot_username,
         }
@@ -111,46 +108,23 @@ async def _invoke(
     )
 
 
-def test_durable_acceptance_config_is_typed_disabled_and_secret_safe() -> None:
-    settings = Settings.model_validate({"TELEGRAM_WEBHOOK_SECRET": "private-webhook-secret"})
+def test_durable_acceptance_has_no_runtime_mode_switch() -> None:
+    settings = Settings.model_validate(
+        {
+            "TELEGRAM_WEBHOOK_SECRET": "private-webhook-secret",
+            "GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE": "disabled",
+        }
+    )
 
-    assert settings.gate_telegram_durable_acceptance_mode is TelegramDurableAcceptanceMode.DISABLED
+    assert not hasattr(settings, "gate_telegram_durable_acceptance_mode")
     assert settings.telegram_webhook_secret.get_secret_value() == "private-webhook-secret"
     assert "private-webhook-secret" not in (
         f"{settings.telegram_webhook_secret!r} {settings.model_dump()}"
     )
 
-    with pytest.raises(ValidationError):
-        _settings(mode="enabled")
-
 
 @pytest.mark.anyio
-async def test_disabled_mode_delegates_without_auth_body_or_store_access(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    events: list[str] = []
-    store = RecordingReceiptStore(events=events)
-
-    async def delegate(**_: object) -> dict[str, Any]:
-        events.append("delegate")
-        return {"ok": True, "legacy": True}
-
-    monkeypatch.setattr(ingress, "legacy_telegram_webhook", delegate)
-
-    result = await _invoke(
-        request=_raw_request(b"not-json"),
-        settings=_settings(mode="disabled", secret=""),
-        store=store,
-        x_telegram_secret=None,
-    )
-
-    assert result == {"ok": True, "legacy": True}
-    assert events == ["delegate"]
-    assert store.commands == []
-
-
-@pytest.mark.anyio
-async def test_shadow_mode_commits_stable_envelope_before_legacy_delegation(
+async def test_durable_acceptance_commits_stable_envelope_before_legacy_delegation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
@@ -170,7 +144,7 @@ async def test_shadow_mode_commits_stable_envelope_before_legacy_delegation(
 
     result = await _invoke(
         request=_request(payload),
-        settings=_settings(mode="shadow"),
+        settings=_settings(),
         store=store,
     )
 
@@ -191,31 +165,31 @@ async def test_shadow_mode_commits_stable_envelope_before_legacy_delegation(
     ("settings_factory", "provided_secret", "request_factory", "status_code"),
     [
         (
-            lambda: _settings(mode="shadow", secret=""),
+            lambda: _settings(secret=""),
             "test-secret",
             lambda: _request({"update_id": 1}),
             503,
         ),
-        (lambda: _settings(mode="shadow"), "wrong-secret", lambda: _request({"update_id": 1}), 403),
-        (lambda: _settings(mode="shadow"), "не-ascii", lambda: _request({"update_id": 1}), 403),
-        (lambda: _settings(mode="shadow"), "test-secret", lambda: _request([]), 400),
+        (lambda: _settings(), "wrong-secret", lambda: _request({"update_id": 1}), 403),
+        (lambda: _settings(), "не-ascii", lambda: _request({"update_id": 1}), 403),
+        (lambda: _settings(), "test-secret", lambda: _request([]), 400),
         (
-            lambda: _settings(mode="shadow"),
+            lambda: _settings(),
             "test-secret",
             lambda: _request({"update_id": True}),
             400,
         ),
-        (lambda: _settings(mode="shadow"), "test-secret", lambda: _request({"update_id": -1}), 400),
+        (lambda: _settings(), "test-secret", lambda: _request({"update_id": -1}), 400),
         (
-            lambda: _settings(mode="shadow"),
+            lambda: _settings(),
             "test-secret",
             lambda: _request({"update_id": ingress.TELEGRAM_UPDATE_ID_MAX + 1}),
             400,
         ),
-        (lambda: _settings(mode="shadow"), "test-secret", lambda: _raw_request(b"not-json"), 400),
+        (lambda: _settings(), "test-secret", lambda: _raw_request(b"not-json"), 400),
     ],
 )
-async def test_shadow_mode_rejects_before_store_and_legacy(
+async def test_durable_acceptance_rejects_before_store_and_legacy(
     monkeypatch: pytest.MonkeyPatch,
     settings_factory: Callable[[], Settings],
     provided_secret: str,
@@ -270,7 +244,7 @@ async def test_acceptance_failure_is_retryable_redacted_and_not_delegated(
                         "business_message": {"text": "private-message-text"},
                     }
                 ),
-                settings=_settings(mode="shadow"),
+                settings=_settings(),
                 store=store,
             )
 
@@ -297,7 +271,7 @@ async def test_invalid_connector_identity_cannot_block_trusted_receipt_key(
 
     result = await _invoke(
         request=_request({"update_id": 4242, "callback_query": {"id": "x"}}),
-        settings=_settings(mode="shadow", bot_username=""),
+        settings=_settings(bot_username=""),
         store=store,
     )
 
@@ -321,14 +295,14 @@ async def test_unexpected_acceptance_exception_is_retryable_not_legacy_acknowled
         events.append("delegate")
         return {"ok": True}
 
-    monkeypatch.setattr(ingress, "_accept_shadow_receipt", fail_acceptance)
+    monkeypatch.setattr(ingress, "_accept_durable_receipt", fail_acceptance)
     monkeypatch.setattr(ingress, "legacy_telegram_webhook", delegate)
 
     with caplog.at_level("ERROR", logger=ingress.logger.name):
         with pytest.raises(HTTPException) as captured:
             await _invoke(
                 request=_request({"update_id": 4242}),
-                settings=_settings(mode="shadow"),
+                settings=_settings(),
                 store=store,
             )
 
@@ -356,12 +330,12 @@ async def test_first_and_duplicate_acceptances_both_reach_the_legacy_chain(
 
     first = await _invoke(
         request=_request({"update_id": 4242, "callback_query": {"id": "first"}}),
-        settings=_settings(mode="shadow"),
+        settings=_settings(),
         store=store,
     )
     duplicate = await _invoke(
         request=_request({"update_id": 4242, "callback_query": {"id": "first"}}),
-        settings=_settings(mode="shadow"),
+        settings=_settings(),
         store=store,
     )
 
@@ -386,7 +360,7 @@ async def test_downstream_failure_occurs_only_after_durable_acceptance(
     with pytest.raises(RuntimeError, match="legacy failure"):
         await _invoke(
             request=_request({"update_id": 4242, "callback_query": {"id": "x"}}),
-            settings=_settings(mode="shadow"),
+            settings=_settings(),
             store=store,
         )
 

@@ -4,7 +4,6 @@ Configuration is loaded from environment variables. Secrets are referenced by va
 name only and must never be committed.
 """
 
-from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -14,13 +13,6 @@ from app.core.telegram_connectors import (
     TelegramConnectorRegistry,
     build_telegram_connector_registry,
 )
-
-
-class TelegramDurableAcceptanceMode(StrEnum):
-    """Release-pinned modes for public Telegram receipt composition."""
-
-    DISABLED = "disabled"
-    SHADOW = "shadow"
 
 
 class Settings(BaseSettings):
@@ -170,10 +162,6 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=128,
         validation_alias="GATE_WORKSPACE_ID",
-    )
-    gate_telegram_durable_acceptance_mode: TelegramDurableAcceptanceMode = Field(
-        default=TelegramDurableAcceptanceMode.DISABLED,
-        validation_alias="GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE",
     )
     gate_reply_send_recovery_enabled: bool = Field(
         default=False,

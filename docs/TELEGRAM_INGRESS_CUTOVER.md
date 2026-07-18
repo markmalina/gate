@@ -181,25 +181,21 @@ PR #126 adds a dormant authenticated HTTPS notifier. It sends only the redacted 
 uses the incident id as the channel idempotency key and requires an explicit bearer credential.
 No endpoint value, secret, environment setting, scheduler or runtime composition is added.
 
-PR #137 adds one public durable-acceptance seam before every frozen legacy webhook layer. Its typed
-`GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE` accepts only `disabled` or `shadow` and defaults to
-`disabled`; a normal deploy therefore preserves the legacy request path and performs no receipt
-write. In `shadow`, Gate authenticates with the typed `TELEGRAM_WEBHOOK_SECRET`, validates a signed
-BIGINT Telegram update id, commits the existing receipt/outbox pair under the stable
-`telegram_business` connector key, and only then delegates to the unchanged legacy chain.
+Durable receipt acceptance is now an invariant of the public Telegram Business
+webhook rather than an operator-controlled release mode. Every authenticated update validates its
+signed BIGINT Telegram update id and commits the receipt/outbox pair under the stable
+`telegram_business` connector key before the unchanged legacy compatibility chain runs.
 
-An acceptance failure in `shadow` returns `503` so Telegram may retry; it is never converted to the
-legacy poison-update `200`. A downstream legacy failure may keep its current acknowledgement only
-because the raw update is already committed durably. Receipt and outbox identifiers are not added
-to the response or logs. The merge does not activate `shadow`, run a worker, change a production
-variable or call Telegram. Canary activation remains a separate owner-controlled release action.
-Rollback is `disabled`; already accepted receipts are retained and are never deleted or blindly
-replayed during rollback.
+There is no `GATE_TELEGRAM_DURABLE_ACCEPTANCE_MODE` setting. A receipt failure returns `503` so
+Telegram may retry; it is never converted to a legacy acknowledgement. Receipt and outbox
+identifiers remain absent from responses and logs. Operational rollback is a normal deployment of
+the last known-good release, not a partially enabled Railway configuration.
 
 ### Phase 4 — staged cutover
 
-Enable the canonical dispatcher for one update class at a time behind a kill switch. Keep parity
-metrics and a rollback path. Admin send behavior is cut over last.
+Move each update class to the canonical dispatcher in a reviewed, versioned release. Keep parity
+metrics and deploy-level rollback evidence; do not expose temporary migration switches as Railway
+configuration. Admin send behavior is cut over last.
 
 ### Phase 5 — remove legacy layers
 

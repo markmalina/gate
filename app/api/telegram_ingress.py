@@ -32,11 +32,7 @@ from app.application.telegram_processing import (
     TelegramReceiptError,
     TelegramReceiptStore,
 )
-from app.core.config import (
-    Settings,
-    TelegramDurableAcceptanceMode,
-    get_settings,
-)
+from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
 from app.services.telegram import TelegramClient
@@ -77,24 +73,23 @@ async def durable_telegram_webhook(
     telegram: TelegramClient = telegram_client_dependency,
     receipt_store: TelegramReceiptStore = receipt_store_dependency,
 ) -> JsonObject:
-    """Durably accept shadow-enabled updates before the frozen legacy chain."""
+    """Durably accept every authenticated update before the frozen legacy chain."""
 
-    if settings.gate_telegram_durable_acceptance_mode is TelegramDurableAcceptanceMode.SHADOW:
-        try:
-            await _accept_shadow_receipt(
-                request=request,
-                x_telegram_secret=x_telegram_secret,
-                settings=settings,
-                receipt_store=receipt_store,
-            )
-        except HTTPException:
-            raise
-        except Exception as exc:
-            _log_acceptance_failure(exc)
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Durable Telegram receipt is unavailable",
-            ) from None
+    try:
+        await _accept_durable_receipt(
+            request=request,
+            x_telegram_secret=x_telegram_secret,
+            settings=settings,
+            receipt_store=receipt_store,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log_acceptance_failure(exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Durable Telegram receipt is unavailable",
+        ) from None
 
     return await legacy_telegram_webhook(
         request=request,
@@ -105,7 +100,7 @@ async def durable_telegram_webhook(
     )
 
 
-async def _accept_shadow_receipt(
+async def _accept_durable_receipt(
     *,
     request: Request,
     x_telegram_secret: str | None,

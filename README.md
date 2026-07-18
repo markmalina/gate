@@ -467,7 +467,7 @@ The [architecture audit and release roadmap](docs/ARCHITECTURE_AUDIT_AND_RELEASE
 single authority for implementation order. Do not run several tracks in one PR.
 
 1. **Reliable transport foundation:** process-owned DB/runtime resources, honest readiness, replay
-   evidence, ownership contracts and dormant durable acceptance.
+   evidence, ownership contracts and invariant durable receipt acceptance.
 2. **Canonical ingress and Agent Kernel:** worker cutover by update class plus versioned,
    shadow-only agent proposals.
 3. **Alpha group bot:** one separate credential, approved installation and command/reply-only pilot.
