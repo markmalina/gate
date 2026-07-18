@@ -5,7 +5,7 @@
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
 > Runtime/product baseline through PR #244: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d`  
 > Transfer package merged by PR #245 and verified on Railway at `c364df2e7fcf`; re-query the current fingerprint before acting.  
-> Schema head: `0035_alpha_rate_limit_deferral`  
+> Schema head: `0036_business_text_parity`
 > Production: Railway automatic deployment from `main`  
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
 
@@ -61,7 +61,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current schema head is `0035_alpha_rate_limit_deferral`. Never point this
+   and `alembic upgrade head`. Current schema head is `0036_business_text_parity`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -151,7 +151,7 @@ Verified through exact-head GitHub CI and Railway production on 2026-07-18 after
 |---|---|
 | GitHub default branch | `main` |
 | Accepted merge / Railway fingerprint | `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` / `6680d9dce1cb` |
-| Schema head | `0035_alpha_rate_limit_deferral` |
+| Schema head | `0036_business_text_parity` |
 | Environment / mode | `production` / `manual` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
 | Contact import | RU 90; BY 0 and intentionally deferred |
@@ -708,4 +708,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** Start Sprint 1 in `docs/PROJECT_HANDOFF.md`: persist content-free Business-text parity evidence and expose its aggregate state before any legacy-router bypass. Alpha v2 has eleven clean delivery-blocked proposals at the latest read-only check and is eligible for limited-canary review, but no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
+**Immediate continuation:** Start Sprint 2 in `docs/PROJECT_HANDOFF.md` only after real RU and BY Business text observations make `telegram_business_text_parity.cutover_ready=true`: bypass the legacy text path without duplicate reply tasks or other side effects. Alpha v2 remains delivery-blocked; no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
