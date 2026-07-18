@@ -4,12 +4,12 @@ from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
 from app.api.telegram_ingress import get_telegram_receipt_store
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     TelegramReceiptAcceptance,
 )
-from app.api.routes import get_telegram_client
 from app.core.config import get_settings
 from app.main import app
 from app.services.telegram import TelegramClient
