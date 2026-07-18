@@ -26,6 +26,7 @@ from app.application.telegram_ingress_identity import TelegramIngressIdentitySna
 from app.application.telegram_processing import (
     TelegramProcessingPlan,
     TelegramProcessingWorkItem,
+    TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
 )
 from app.core.config import Settings
@@ -500,10 +501,11 @@ def test_rate_limited_alpha_update_is_deferred_instead_of_marked_processed() -> 
         runtime_logger=logging.getLogger("gate.worker.alpha-rate-limit-test"),
     )
 
-    with pytest.raises(TelegramUpdateProcessingError) as captured:
+    with pytest.raises(TelegramUpdateDeferred) as captured:
         asyncio.run(processor.process(item))
 
     assert captured.value.error_code == "alpha_rate_limited_deferred"
+    assert captured.value.retry_after_seconds == 61
     assert len(canonical.messages) == 1
     assert len(canary.commands) == 1
 
