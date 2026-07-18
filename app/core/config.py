@@ -163,6 +163,16 @@ class Settings(BaseSettings):
         max_length=128,
         validation_alias="GATE_WORKSPACE_ID",
     )
+    gate_reply_sequence_worker_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_REPLY_SEQUENCE_WORKER_ENABLED",
+    )
+    gate_reply_sequence_poll_seconds: float = Field(
+        default=5,
+        ge=1,
+        le=30,
+        validation_alias="GATE_REPLY_SEQUENCE_POLL_SECONDS",
+    )
     gate_reply_send_recovery_enabled: bool = Field(
         default=False,
         validation_alias="GATE_REPLY_SEND_RECOVERY_ENABLED",
