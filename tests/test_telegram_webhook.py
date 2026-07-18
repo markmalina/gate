@@ -7,6 +7,11 @@ from typing import Any
 
 import pytest
 from app.api.deps import get_db_session
+from app.api.telegram_ingress import get_telegram_receipt_store
+from app.application.telegram_processing import (
+    AcceptTelegramReceiptCommand,
+    TelegramReceiptAcceptance,
+)
 from app.api.routes import get_telegram_client
 from app.core.config import get_settings
 from app.main import app
@@ -26,6 +31,25 @@ from app.services.telegram import TelegramClient
 from httpx import ASGITransport, AsyncClient
 
 MODEL_TYPES = (Bot, GateEvent, AuditLog, TelegramUpdate, Message, Conversation, ReplyTask)
+
+
+class FakeReceiptStore:
+    """Durably accept test envelopes without coupling legacy tests to SQLAlchemy."""
+
+    def __init__(self) -> None:
+        self.update_ids: set[int] = set()
+
+    async def create_if_absent(
+        self,
+        command: AcceptTelegramReceiptCommand,
+    ) -> TelegramReceiptAcceptance:
+        duplicate = command.update_id in self.update_ids
+        self.update_ids.add(command.update_id)
+        return TelegramReceiptAcceptance(
+            receipt_id=f"receipt-{command.update_id}",
+            outbox_event_id=f"outbox-{command.update_id}",
+            duplicate=duplicate,
+        )
 
 
 class FakeScalars:
@@ -167,6 +191,7 @@ def webhook_context(
 
     session = FakeSession()
     telegram_client = FakeTelegramClient()
+    receipt_store = FakeReceiptStore()
 
     async def override_session() -> AsyncIterator[FakeSession]:
         yield session
@@ -176,6 +201,7 @@ def webhook_context(
 
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_telegram_client] = override_telegram_client
+    app.dependency_overrides[get_telegram_receipt_store] = lambda: receipt_store
 
     yield session, telegram_client
 
