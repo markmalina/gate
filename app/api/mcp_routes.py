@@ -869,8 +869,8 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "name": "gate_save_reply_draft",
         "title": "Save a Gate reply draft",
         "description": (
-            "Save proposed text as a scoped draft for an unanswered task or "
-            "for the latest eligible replied conversation returned by Gate. "
+            "Save proposed text as a scoped draft for an unanswered task. "
+            "For a task_id returned by answered_items, set follow_up=true explicitly. "
             "This tool never approves or sends the message."
         ),
         "inputSchema": {
@@ -878,6 +878,7 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
                 "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "follow_up": {"type": "boolean", "default": False},
             },
             "required": ["task_id", "text"],
             "additionalProperties": False,
@@ -1008,11 +1009,16 @@ async def _save_reply_draft_tool_result(
 ) -> JsonObject:
     raw_task_id = arguments.get("task_id")
     raw_text = arguments.get("text")
-    if not isinstance(raw_task_id, str) or not isinstance(raw_text, str):
+    raw_follow_up = arguments.get("follow_up", False)
+    if (
+        not isinstance(raw_task_id, str)
+        or not isinstance(raw_text, str)
+        or not isinstance(raw_follow_up, bool)
+    ):
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
-            message="task_id and text are required",
+            message="task_id and text are required; follow_up must be boolean",
         )
     try:
         task_id = UUID(raw_task_id)
@@ -1026,7 +1032,12 @@ async def _save_reply_draft_tool_result(
     service = SaveReplyDraftService(SqlReplyDraftWriter(session))
     try:
         saved = await service.execute(
-            SaveReplyDraftCommand(principal=principal, task_id=task_id, text=raw_text)
+            SaveReplyDraftCommand(
+                principal=principal,
+                task_id=task_id,
+                text=raw_text,
+                follow_up=raw_follow_up,
+            )
         )
     except ReplyDraftError as exc:
         return _tool_error_result(
