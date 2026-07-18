@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.application.reply_sequences import (
     QueueApprovedReplySequenceCommand,
     QueueApprovedReplySequenceService,
@@ -12,7 +11,6 @@ from app.application.reply_sequences import (
 )
 from app.core.mcp_security import AccessScope, Principal
 from app.worker.reply_sequences import _due_items
-
 
 ACCOUNT_ID = UUID("22222222-2222-2222-2222-222222222222")
 PROJECT_ID = UUID("33333333-3333-3333-3333-333333333333")
