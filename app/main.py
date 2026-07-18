@@ -78,7 +78,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         worker_task = asyncio.create_task(
                             run_telegram_worker_loop(settings)
                         )
-                    if settings.gate_reply_sequence_worker_enabled:
+                    if getattr(settings, "gate_reply_sequence_worker_enabled", False):
                         reply_sequence_task = asyncio.create_task(
                             run_reply_sequence_worker_loop(
                                 settings=settings,
