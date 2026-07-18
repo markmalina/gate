@@ -14,6 +14,7 @@ from app.application.telegram_business_text_parity import (
 )
 from app.core.config import get_settings
 from app.infrastructure.telegram_business_text_parity import (
+    TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION,
     _record_evidence,
     _status,
     telegram_business_text_parity_status,
@@ -187,6 +188,9 @@ async def test_postgres_evidence_is_scoped_content_free_and_restart_replay_safe(
         assert evidence.state == "matched"
         assert evidence.mismatch_code is None
         assert evidence.observation_count == 2
+        assert evidence.direction_policy_version == (
+            TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
+        )
         assert evidence.account_id == account_id
         assert evidence.canonical_message_id == message_id
         assert status.payload() == {
@@ -232,6 +236,7 @@ def test_evidence_schema_has_scope_idempotency_and_privacy_guards() -> None:
     assert "uq_business_text_parity_canonical_message" in constraint_names
     assert "ck_business_text_parity_state" in constraint_names
     assert "ck_business_text_parity_code_state" in constraint_names
+    assert "ck_business_text_parity_direction_policy_version" in constraint_names
     assert "text_content" not in table.columns
     assert "provider_dialog_id" not in table.columns
     assert "business_connection_id" not in table.columns
