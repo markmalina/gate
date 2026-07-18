@@ -3,7 +3,7 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-18**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Current verified GitHub `main` / Railway baseline: `5daeead020f50751d4e4998fd7ed9b26c38bd158`  
+> Current verified GitHub `main` / Railway baseline: `f879fefde08dbd1264829ce201808f726581eb1f`  
 > Ordinary Business-text cutover release schema head: `0038_business_text_cutover`  
 > Production: Railway automatic deployment from `main`  
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
@@ -144,12 +144,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through Gate M and exact Railway production on 2026-07-18 at `5daeead020f5`:
+Verified through Gate M and exact Railway production on 2026-07-18 at `f879fefde08d`:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Accepted merge / Railway fingerprint | `5daeead020f50751d4e4998fd7ed9b26c38bd158` / `5daeead020f5` |
+| Accepted merge / Railway fingerprint | `f879fefde08dbd1264829ce201808f726581eb1f` / `f879fefde08d` |
 | Release schema head | `0038_business_text_cutover` |
 | Environment / mode | `production` / `manual` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
@@ -162,8 +162,8 @@ Verified through Gate M and exact Railway production on 2026-07-18 at `5daeead02
 | Telegram voice | ready; 3 received, 2 delivered, 1 expected unrelated-account dead letter; no retry/open/unknown |
 | Voice budget | USD 0.000242 settled; USD 0.999758 remaining against Gate's internal USD 1 ceiling |
 | OpenAI account boundary | USD 5 prepaid balance at setup, auto-recharge off, USD 5 organization spend limit |
-| Business text parity | ready; 4/4 matched; RU and BY covered; cutover ready |
-| Current business counts | 47 conversations, 1245 messages, 429 reply tasks, 18 unanswered, 346 answered, 43 drafts |
+| Business text parity | ready; 8/8 matched; RU and BY covered; cutover accepted |
+| Current business counts | 47 conversations, 1249 messages, 431 reply tasks, 18 unanswered, 346 answered, 43 drafts |
 
 The migration in PR #244 recovered five accepted Alpha commands that had previously been marked
 processed after an installation rate-limit result. Durable backpressure now defers those messages
@@ -710,4 +710,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** Deploy the bounded Sprint 2 ordinary Business-text cutover, then accept it only after one user-generated RU→BY and BY→RU canary proves one canonical message, at most one reply task and no parity mismatch across replay. Do not start Sprint 3 before that production evidence is recorded. Alpha v2 remains delivery-blocked; no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
+**Immediate continuation:** Sprint 2 ordinary Business-text cutover is accepted in production. Start Sprint 3 only as a separate bounded release: make canonical text plus `input_origin` the single downstream contract without changing human send authority. Alpha v2 remains delivery-blocked; no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
