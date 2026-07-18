@@ -177,7 +177,7 @@ async def sprint14_telegram_webhook(
         business_connection_id=normalized.business_connection_id,
         settings=settings,
     )
-    owner_identity_ids = await _find_owner_identity_ids(
+    owner_identity_ids = await _find_receiving_account_identity_ids(
         session=session,
         account_id=account_id,
     )
@@ -508,15 +508,12 @@ async def _send_business_text_reply(
     }
 
 
-async def _find_owner_identity_ids(
+async def _find_receiving_account_identity_ids(
     *,
     session: AsyncSession,
     account_id: Any,
 ) -> frozenset[str]:
-    owner_result = await session.execute(select(Account.owner).where(Account.id == account_id))
-    owner = owner_result.scalar_one_or_none()
-    if owner is None:
-        return frozenset()
+    """Return only identities that make a message outbound for this receiver."""
 
     identity_result = await session.execute(
         select(
@@ -529,7 +526,7 @@ async def _find_owner_identity_ids(
             TelegramBusinessConnection.account_id == Account.id,
         )
         .where(
-            Account.owner == owner,
+            Account.id == account_id,
             Account.is_active.is_(True),
         )
     )
