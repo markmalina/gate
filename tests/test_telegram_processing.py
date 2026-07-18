@@ -15,6 +15,7 @@ from app.application.telegram_processing import (
     TelegramReceiptAcceptance,
     TelegramReceiptError,
     TelegramRetryPolicy,
+    TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
     TelegramWorkerDisposition,
 )
@@ -195,6 +196,19 @@ class StubProcessor:
             raise TelegramUpdateProcessingError(self.error_code)
 
 
+class DeferredProcessor:
+    def __init__(self, retry_after_seconds: int = 61) -> None:
+        self.retry_after_seconds = retry_after_seconds
+        self.items: list[TelegramProcessingWorkItem] = []
+
+    async def process(self, item: TelegramProcessingWorkItem) -> None:
+        self.items.append(item)
+        raise TelegramUpdateDeferred(
+            "alpha_rate_limited_deferred",
+            retry_after_seconds=self.retry_after_seconds,
+        )
+
+
 def _work_item(*, attempt: int = 1) -> TelegramProcessingWorkItem:
     return TelegramProcessingWorkItem(
         receipt_id="receipt-1",
@@ -251,6 +265,24 @@ def test_worker_schedules_redacted_retry() -> None:
     assert result.error_code == "timeout"
     assert result.next_attempt_at == now + timedelta(seconds=10)
     assert queue.failure is not None
+    assert queue.processed_at is None
+
+
+def test_worker_defers_backpressure_without_attempt_limit() -> None:
+    item = _work_item(attempt=999)
+    queue = InMemoryProcessingQueue(item)
+    processor = DeferredProcessor()
+    now = datetime(2026, 7, 13, 12, 1, tzinfo=UTC)
+
+    result = asyncio.run(
+        ProcessTelegramOutboxService(queue=queue, processor=processor).run_once(now=now)
+    )
+
+    assert result.disposition == TelegramWorkerDisposition.RETRY
+    assert result.error_code == "alpha_rate_limited_deferred"
+    assert result.next_attempt_at == now + timedelta(seconds=61)
+    assert queue.failure is not None
+    assert queue.failure[1].disposition == TelegramProcessingDisposition.RETRY
     assert queue.processed_at is None
 
 
