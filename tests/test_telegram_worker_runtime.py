@@ -6,6 +6,12 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+from app.application.alpha_canary import (
+    AlphaCanaryDisposition,
+    AlphaCanaryResult,
+    ProcessAlphaCanaryUpdateCommand,
+    ProcessAlphaCanaryUpdateService,
+)
 from app.application.canonical_messaging import (
     CanonicalIngressResult,
     CanonicalMessageEnvelope,
@@ -20,6 +26,7 @@ from app.application.telegram_ingress_identity import TelegramIngressIdentitySna
 from app.application.telegram_processing import (
     TelegramProcessingPlan,
     TelegramProcessingWorkItem,
+    TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
 )
 from app.core.config import Settings
@@ -440,6 +447,67 @@ class CapturingCanonicalStore:
             ownership_id="ownership-1",
             duplicate=False,
         )
+
+
+class RateLimitedAlphaCanary(ProcessAlphaCanaryUpdateService):
+    def __init__(self) -> None:
+        self.commands: list[ProcessAlphaCanaryUpdateCommand] = []
+
+    async def execute(
+        self,
+        command: ProcessAlphaCanaryUpdateCommand,
+    ) -> AlphaCanaryResult:
+        self.commands.append(command)
+        return AlphaCanaryResult(
+            AlphaCanaryDisposition.BLOCKED,
+            "rate_limited",
+        )
+
+
+def test_rate_limited_alpha_update_is_deferred_instead_of_marked_processed() -> None:
+    canonical = CapturingCanonicalStore()
+    canary = RateLimitedAlphaCanary()
+    settings = Settings(
+        _env_file=None,
+        GATE_ALPHA_CONNECTOR_ENABLED=True,
+        GATE_ALPHA_SHADOW_WORKER_ENABLED=True,
+        GATE_ALPHA_CANARY_ENABLED=True,
+        GATE_ALPHA_PRIVACY_MODE_CONFIRMED=True,
+        TELEGRAM_ALPHA_BOT_TOKEN="private-alpha-token",
+        TELEGRAM_ALPHA_WEBHOOK_SECRET="private-alpha-secret",
+        TELEGRAM_ALPHA_BOT_USERNAME="AlphaViaBot",
+    )
+    item = replace(
+        _work_item(bot_key="telegram_alpha_group"),
+        payload={
+            "update_id": 42,
+            "message": {
+                "message_id": 7,
+                "chat": {
+                    "id": -1007001,
+                    "type": "supergroup",
+                    "title": "Alpha Group",
+                },
+                "from": {"id": 700000001, "is_bot": False},
+                "text": "/alpha deferred test",
+            },
+        },
+    )
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=settings,
+        identity_reader=FakeIdentityReader(),
+        canonical_store=canonical,
+        alpha_canary=canary,
+        runtime_logger=logging.getLogger("gate.worker.alpha-rate-limit-test"),
+    )
+
+    with pytest.raises(TelegramUpdateDeferred) as captured:
+        asyncio.run(processor.process(item))
+
+    assert captured.value.error_code == "alpha_rate_limited_deferred"
+    assert captured.value.retry_after_seconds == 61
+    assert len(canonical.messages) == 1
+    assert len(canary.commands) == 1
 
 
 class CapturingBusinessTextParity:
