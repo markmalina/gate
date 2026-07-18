@@ -30,6 +30,7 @@ from app.services.telegram_alpha_webhook import (
     reconcile_alpha_telegram_webhook_with_retries,
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
+from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.telegram_processing import run_telegram_worker_loop
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             async with build_telegram_http_client() as http_client:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
+                reply_sequence_task: asyncio.Task[None] | None = None
                 try:
                     api_base_url = os.getenv(
                         "TELEGRAM_API_BASE_URL",
@@ -76,9 +78,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         worker_task = asyncio.create_task(
                             run_telegram_worker_loop(settings)
                         )
+                    if settings.gate_reply_sequence_worker_enabled:
+                        reply_sequence_task = asyncio.create_task(
+                            run_reply_sequence_worker_loop(
+                                settings=settings,
+                                session_factory=database_runtime.session_factory,
+                                telegram=_app.state.telegram_client,
+                            )
+                        )
                     yield
                 finally:
                     try:
+                        if reply_sequence_task is not None:
+                            if not reply_sequence_task.done():
+                                reply_sequence_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await reply_sequence_task
                         if worker_task is not None:
                             if not worker_task.done():
                                 worker_task.cancel()
