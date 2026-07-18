@@ -443,7 +443,7 @@ class CapturingCanonicalStore:
         self.messages.append(message)
         return CanonicalIngressResult(
             dialog_id="dialog-1",
-            message_id="message-1",
+            message_id="44444444-4444-4444-4444-444444444444",
             ownership_id="ownership-1",
             duplicate=False,
         )
@@ -527,7 +527,7 @@ def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None
     parity = CapturingBusinessTextParity()
     reader = FakeIdentityReader(
         TelegramIngressIdentitySnapshot(
-            account_id="account-ru",
+            account_id="22222222-2222-2222-2222-222222222222",
             account_alias="telegram_mark_ru",
             project_id="project-1",
             owner_identity_ids=frozenset({"owner-identity"}),
@@ -552,6 +552,9 @@ def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None
     assert len(parity.commands) == 1
     command = parity.commands[0]
     assert command.update_id == 42
+    assert command.workspace_key == "mark-personal"
+    assert command.account_id == "22222222-2222-2222-2222-222222222222"
+    assert command.canonical_message_id == "44444444-4444-4444-4444-444444444444"
     assert command.account_alias == "telegram_mark_ru"
     assert command.direction.value == "inbound"
     assert command.route.value == "human_reply_task"
