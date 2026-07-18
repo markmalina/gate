@@ -261,7 +261,15 @@ def unanswered_context() -> Iterator[FakeMcpSession]:
                     "Аня — бухгалтер",
                 )
             ],
-            [(outbound_message, outbound_update, account, "Аня — бухгалтер")],
+            [
+                (
+                    outbound_message,
+                    outbound_update,
+                    account,
+                    task.id,
+                    "Аня — бухгалтер",
+                )
+            ],
         ]
     )
 
@@ -683,6 +691,11 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
     }
     assert result["structuredContent"]["answered_count"] == 1
     answered = result["structuredContent"]["answered_items"][0]
+    assert answered["task_id"] == str(
+        UUID("11111111-1111-1111-1111-111111111111")
+    )
+    assert answered["task_ref"] == "11111111"
+    assert answered["follow_up_available"] is True
     assert answered["message"]["direction"] == "outbound"
     assert answered["message"]["text_preview"] == "Анна, привет!"
     assert answered["counterparty"]["label"] == "Аня — бухгалтер"
