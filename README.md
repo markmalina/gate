@@ -3,8 +3,8 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-17**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Accepted product baseline through PR #235: `2c83271f869762763db395a4b4054bd69c442f65`  
-> Verified Railway production commit: `2c83271f8697`  
+> Accepted product baseline through PR #238: `bb0389b7394fc6a51f032a51afd415cbbbf618dc`  
+> Verified Railway production commit: `bb0389b7394f`  
 > Production: Railway automatic deployment from `main`  
 > Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency.  
 
@@ -142,12 +142,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints on 2026-07-18 after PR #235:
+Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints on 2026-07-18 after PR #238:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `2c83271f869762763db395a4b4054bd69c442f65` / `2c83271f8697` |
+| Application / Railway commit | `bb0389b7394fc6a51f032a51afd415cbbbf618dc` / `bb0389b7394f` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -159,7 +159,7 @@ Verified through GitHub CI and the public Railway liveness, readiness and deploy
 | Alpha model path | staged and delivery-blocked; replacement-key synthetic preflight verified |
 | OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.049152 reserved; Gate voice USD 1/month app ceiling with USD 0 settled/reserved; OpenAI organization spend limit USD 5 |
 | Model delivery evidence | 0 model turns and 0 model delivery grants |
-| Telegram voice readiness | Disabled; API key configured; entitlement active; USD 1 remaining; 0 open/unknown reservations |
+| Telegram voice readiness | Enabled and ready; first cross-account canary delivered through the durable worker; USD 0.000129 settled; USD 0.999871 remaining; 0 open/unknown reservations |
 
 Snapshot counters were 41 conversations, 1102 messages, 375 reply-task rows, 17 unanswered and 32
 drafts. Alpha evidence was 5 accepted canonical messages, 2 fixture Agent turns, 1 delivery grant
@@ -174,19 +174,21 @@ The canonical detailed status and next work are in
 [docs/PROJECT_HANDOFF.md](docs/PROJECT_HANDOFF.md). After every merge, verify the exact Railway SHA;
 a healthy previous release does not prove the new release deployed.
 
-### Telegram voice canary readiness
+### Telegram voice production state
 
-PRs #232–#233 completed provider-usage settlement/reconciliation and added redacted voice status to
-`gate_get_status`. The production snapshot on 2026-07-17 confirms the replacement OpenAI key is
-configured, the USD 1 Gate voice entitlement is active, no reservation is open or unknown, and the
-runtime flag remains disabled. Enabling `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED` is a separate
-owner-authorized Railway configuration action.
+PRs #232–#238 completed provider settlement, redacted queue diagnostics, account-relative
+direction resolution and unconditional durable webhook acceptance. Production at
+`bb0389b7394f` processed the first cross-account Business voice canary end to end:
+one receipt was accepted, one item was delivered, no retry or dead-letter remained and
+OpenAI usage settled at USD 0.000129. The Gate voice ceiling remains USD 1/month with
+USD 0.999871 available at the recorded snapshot.
 
-The first canary is exactly one inbound voice message in an existing Telegram Business dialog. Before
-the message, status must be `ready` after activation. Afterwards, one reservation must settle, no
-open or unknown reservation may remain, and the transcript may enter the existing text-only inbound
-path. Voice transcription never grants Telegram delivery and never bypasses the human-confirmed send
-contract.
+Business voice is now the first update class owned exclusively by the canonical durable
+worker. The public webhook commits the authenticated receipt and acknowledges it without
+entering the legacy sprint-router chain. Transcription produces an ordinary canonical text
+projection marked with `gate_input_origin=telegram_voice_transcription`; it never grants
+Telegram delivery and never bypasses the human-confirmed send contract. Text updates remain
+on the compatibility chain until their independently tested cutover.
 
 ## 4. Current ChatGPT Work MVP
 
