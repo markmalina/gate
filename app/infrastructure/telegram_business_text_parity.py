@@ -33,6 +33,8 @@ from app.models.domain import (
     TelegramBusinessConnection,
 )
 
+TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION = 2
+
 
 class SessionFactoryTelegramBusinessTextParityObserver(
     TelegramBusinessTextParityObserver
@@ -206,6 +208,9 @@ async def _record_evidence(
         "canonical_message_id": canonical_message_id,
         "state": state.value,
         "mismatch_code": mismatch_code,
+        "direction_policy_version": (
+            TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
+        ),
     }
     statement = insert(TelegramBusinessTextParityEvidence).values(**values)
     evidence_id = await session.scalar(
@@ -214,6 +219,9 @@ async def _record_evidence(
             set_={
                 "state": statement.excluded.state,
                 "mismatch_code": statement.excluded.mismatch_code,
+                "direction_policy_version": (
+                    statement.excluded.direction_policy_version
+                ),
                 "observation_count": (
                     TelegramBusinessTextParityEvidence.observation_count + 1
                 ),
@@ -276,6 +284,8 @@ async def telegram_business_text_parity_status(
             .where(
                 TelegramBusinessTextParityEvidence.workspace_id == workspace_id,
                 TelegramBusinessTextParityEvidence.account_id.in_(account_ids),
+                TelegramBusinessTextParityEvidence.direction_policy_version
+                == TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION,
             )
             .group_by(TelegramBusinessTextParityEvidence.state)
         )
@@ -290,6 +300,8 @@ async def telegram_business_text_parity_status(
             .where(
                 TelegramBusinessTextParityEvidence.workspace_id == workspace_id,
                 TelegramBusinessTextParityEvidence.account_id.in_(account_ids),
+                TelegramBusinessTextParityEvidence.direction_policy_version
+                == TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION,
                 TelegramBusinessTextParityEvidence.state
                 == TelegramBusinessTextParityState.MISMATCH.value,
             )
@@ -307,6 +319,8 @@ async def telegram_business_text_parity_status(
                 ).where(
                     TelegramBusinessTextParityEvidence.workspace_id == workspace_id,
                     TelegramBusinessTextParityEvidence.account_id.in_(account_ids),
+                    TelegramBusinessTextParityEvidence.direction_policy_version
+                    == TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION,
                     TelegramBusinessTextParityEvidence.state
                     == TelegramBusinessTextParityState.MATCHED.value,
                 )
