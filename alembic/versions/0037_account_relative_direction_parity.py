@@ -30,6 +30,13 @@ def upgrade() -> None:
         "telegram_business_text_parity_evidence",
         "direction_policy_version > 0",
     )
+    op.alter_column(
+        "telegram_business_text_parity_evidence",
+        "direction_policy_version",
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+        server_default=sa.text("2"),
+    )
     op.drop_index(
         "ix_business_text_parity_workspace_account_state",
         table_name="telegram_business_text_parity_evidence",
