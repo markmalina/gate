@@ -21,14 +21,14 @@ from app.application.alpha_delivery import DeliverAlphaGrantService
 from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
 from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
 from app.application.instruction_bundles import DeployedInstructionBundleLoader
-from app.application.telegram_canonical_projection import (
-    TelegramCanonicalProjectionError,
-    project_telegram_canonical_message,
-)
 from app.application.telegram_business_text_parity import (
     TelegramBusinessTextParityCommand,
     TelegramBusinessTextParityError,
     TelegramBusinessTextParityObserver,
+)
+from app.application.telegram_canonical_projection import (
+    TelegramCanonicalProjectionError,
+    project_telegram_canonical_message,
 )
 from app.application.telegram_ingress_identity import (
     ResolveTelegramIngressIdentityService,
