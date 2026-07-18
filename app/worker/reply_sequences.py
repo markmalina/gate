@@ -20,7 +20,14 @@ from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SEQUENCE_CONTEXT_KEY
-from app.models.domain import AuditLog, ReplyDraft, SendAttempt, SendAttemptStatus
+from app.models.domain import (
+    AuditLog,
+    ReplyDraft,
+    ReplyTask,
+    ReplyTaskStatus,
+    SendAttempt,
+    SendAttemptStatus,
+)
 from app.services.telegram import TelegramClient
 
 logger = logging.getLogger(__name__)
@@ -29,6 +36,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class _DueSequenceItem:
     draft_id: UUID
+    task_id: UUID
+    conversation_id: UUID
     sequence_id: str
     position: int
     account_id: UUID
@@ -64,6 +73,18 @@ async def run_reply_sequence_once(
     due = _due_items(rows, now=current_time)
     sent_count = 0
     for item in due:
+        if await _sequence_superseded(
+            session_factory=session_factory,
+            item=item,
+        ):
+            await _record_sequence_outcome(
+                session_factory=session_factory,
+                item=item,
+                state="stopped",
+                error_code="task_superseded",
+                stop_remaining=True,
+            )
+            continue
         principal = Principal(
             subject=item.principal_subject,
             auth_method="approved-reply-sequence",
@@ -177,6 +198,8 @@ def _due_items(
         due.append(
             _DueSequenceItem(
                 draft_id=draft.id,
+                task_id=draft.reply_task_id,
+                conversation_id=draft.conversation_id,
                 sequence_id=sequence_id,
                 position=position,
                 account_id=draft.account_id,
@@ -188,6 +211,35 @@ def _due_items(
             )
         )
     return tuple(due)
+
+
+async def _sequence_superseded(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    item: _DueSequenceItem,
+) -> bool:
+    async with session_factory() as session:
+        current_created_at = await session.scalar(
+            select(ReplyTask.created_at).where(ReplyTask.id == item.task_id)
+        )
+        if current_created_at is None:
+            await session.rollback()
+            return True
+        newer = await session.scalar(
+            select(ReplyTask.id)
+            .where(
+                ReplyTask.conversation_id == item.conversation_id,
+                ReplyTask.account_id == item.account_id,
+                ReplyTask.project_id == item.project_id,
+                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
+                ReplyTask.id != item.task_id,
+                ReplyTask.created_at > current_created_at,
+            )
+            .order_by(ReplyTask.created_at, ReplyTask.id)
+            .limit(1)
+        )
+        await session.rollback()
+        return newer is not None
 
 
 async def _record_sequence_outcome(
