@@ -1,0 +1,16 @@
+{
+  "contract": "gate.inbound-intent",
+  "version": "1.0.0",
+  "event_id": "evt_demo_05",
+  "occurred_at": "2026-07-18T12:00:00Z",
+  "idempotency_key": "idem_demo_05",
+  "correlation_id": "corr_demo_vertical_slice_001",
+  "trace_id": "trace_demo_vertical_slice_001",
+  "payload": {
+    "channel_ref": "channel_demo_001",
+    "person_ref": "person_demo_001",
+    "intent": "program_start",
+    "consent_ref": "consent_demo_001",
+    "purpose": "program_delivery"
+  }
+}
