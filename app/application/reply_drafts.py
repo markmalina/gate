@@ -55,6 +55,7 @@ class SaveReplyDraftCommand:
     principal: Principal
     task_id: UUID
     text: str
+    follow_up: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,5 +110,6 @@ class SaveReplyDraftService:
                 principal=principal,
                 task_id=command.task_id,
                 text=text,
+                follow_up=command.follow_up,
             )
         )
