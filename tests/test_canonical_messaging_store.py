@@ -43,6 +43,7 @@ def _message(*, workspace_id: str = "mark-personal") -> CanonicalMessageEnvelope
         direction=CanonicalMessageDirection.INBOUND,
         occurred_at=datetime(2026, 7, 15, tzinfo=UTC),
         text_present=True,
+        text_content="private-message-text",
     )
 
 
@@ -81,6 +82,8 @@ def test_store_rejects_invalid_receipt_before_sql() -> None:
         direction=message.direction,
         occurred_at=message.occurred_at,
         text_present=message.text_present,
+        text_content=message.text_content,
+        input_origin=message.input_origin,
     )
 
     with pytest.raises(ValueError, match="source_receipt_id must be a UUID"):
