@@ -65,6 +65,9 @@ from app.infrastructure.alpha_model_preflight import (
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
+from app.infrastructure.telegram_business_text_parity import (
+    telegram_business_text_parity_status,
+)
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.alpha_canary import (
@@ -230,6 +233,13 @@ async def mcp_endpoint(
                     ),
                     model=settings.gate_telegram_voice_transcription_model,
                     now=datetime.now(UTC),
+                )
+            ).payload()
+            snapshot["telegram_business_text_parity"] = (
+                await telegram_business_text_parity_status(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                    account_ids=principal.access_scope.account_ids,
                 )
             ).payload()
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
@@ -1256,6 +1266,21 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"{voice['remaining_microusd'] / 1_000_000:.6f}",
             f"- telegram_delivery_allowed: "
             f"{voice['telegram_delivery_allowed']}",
+        ]
+    )
+    parity = snapshot["telegram_business_text_parity"]
+    lines.extend(
+        [
+            "",
+            "Telegram Business text parity:",
+            f"- state: {parity['state']}",
+            f"- matched_count: {parity['matched_count']}",
+            f"- pending_count: {parity['pending_count']}",
+            f"- mismatch_count: {parity['mismatch_count']}",
+            f"- covered_accounts: {parity['covered_account_count']}/"
+            f"{parity['required_account_count']}",
+            f"- cutover_ready: {parity['cutover_ready']}",
+            "- private_content_exposed: False",
         ]
     )
     return "\n".join(lines)
