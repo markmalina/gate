@@ -22,5 +22,6 @@ def test_direction_parity_epoch_migration_is_additive_and_reversible() -> None:
     source = path.read_text(encoding="utf-8")
     assert "direction_policy_version" in source
     assert "server_default=sa.text(\"1\")" in source
+    assert "server_default=sa.text(\"2\")" in source
     assert callable(module.upgrade)
     assert callable(module.downgrade)
