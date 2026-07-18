@@ -1,7 +1,7 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
-> Verified on 2026-07-18 at GitHub `main` / Railway production `5daeead020f50751d4e4998fd7ed9b26c38bd158` (`5daeead020f5` in Gate status).  
+> Verified on 2026-07-18 at GitHub `main` / Railway production `f879fefde08dbd1264829ce201808f726581eb1f` (`f879fefde08d` in Gate status).  
 > Ordinary Business-text cutover release schema head: `0038_business_text_cutover`.
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.
 
@@ -67,7 +67,7 @@ consume canonical text; they do not fetch or transcribe Telegram voice themselve
 
 ## 3. Current verified production snapshot
 
-Snapshot captured through Gate M after exact production commit `5daeead020f5` became active.
+Snapshot captured through Gate M after exact production commit `f879fefde08d` became active.
 
 | Area | Verified state |
 |---|---|
@@ -75,9 +75,9 @@ Snapshot captured through Gate M after exact production commit `5daeead020f5` be
 | Workspace | `mark-personal` |
 | Business bot | `gate_m_bot` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
-| Business counts | 47 conversations, 1245 messages, 429 reply tasks, 18 unanswered, 346 answered, 43 drafts |
+| Business counts | 47 conversations, 1249 messages, 431 reply tasks, 18 unanswered, 346 answered, 43 drafts |
 | Contact directory | RU: 90 imported; BY: 0, intentionally deferred |
-| Business text parity | ready; 4/4 matched; RU and BY covered; `cutover_ready=true` |
+| Business text parity | ready; 8/8 matched; RU and BY covered; cutover accepted |
 | Gate M | OAuth enforced; exactly 10 public tools |
 | Human sending | enabled only for exact saved draft + explicit confirmation |
 | Alpha group installation | one approved active fixture-bound group |
@@ -247,7 +247,7 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - Delivery is durable, interval-bounded and stops on newer inbound work, failure or unknown outcome.
 - This does not authorize automatic content generation or unconfirmed Telegram sending.
 
-### Sprint 2 release candidate — ordinary Business text canonical cutover
+### Sprint 2 accepted release — ordinary Business text canonical cutover
 
 - The authenticated webhook bypasses the legacy sprint-router chain only for ordinary private
   human Business text. Commands, callbacks, connection updates, bot/service events, voice and
@@ -260,8 +260,12 @@ The former handoff stopped at PR #238. The following releases are now accepted:
   `TelegramUpdate` or legacy audit side effect.
 - PostgreSQL coverage proves inbound projection/replay, changed-fact conflict, outbound task
   satisfaction and visibility through the existing MCP inbox query.
-- Release acceptance still requires exact-head CI, exact Railway SHA and user-generated RU→BY plus
-  BY→RU production canaries. Do not start Sprint 3 before that evidence is recorded.
+- PR #251 passed exact-head CI and deployed automatically as `f879fefde08d` with healthy database
+  and migration readiness.
+- One user-generated RU→BY and one BY→RU canary produced four canonical/current-inbox messages and
+  exactly two human reply tasks. Parity moved 4→8 with all rows matched and no pending/mismatch.
+- A delayed second status read remained stable at 1249 messages and 431 reply tasks, proving no late
+  duplicate effect. Sprint 2 is accepted; Sprint 3 must remain a separate release.
 
 ## 7. Production evidence and test history
 
@@ -277,8 +281,8 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - PR #243 compares canonical facts with the committed current-inbox reply-task fact.
 - PR #250 fixed receiving-account-relative direction and invalidated the earlier evidence version.
 - Fresh real RU↔BY text produced 4 matched rows, no pending/mismatch rows and 2/2 account coverage.
-- The Sprint 2 release candidate may bypass legacy only for the same ordinary private human-text
-  classifier. Production acceptance remains pending until fresh post-deploy canaries are observed.
+- Post-deploy RU→BY and BY→RU canaries added four matched facts, four inbox messages and two reply
+  tasks with no late duplicate, pending row or mismatch. The cutover is accepted in production.
 
 ### 7.3 Alpha v2 sample
 
@@ -393,7 +397,7 @@ private comparison values in the evidence table.
 
 **Acceptance:** real RU↔BY text produces matched evidence; no extra reply task, turn, draft or send.
 
-### Sprint 2 — ordinary Business text canonical cutover (implemented; production canary pending)
+### Sprint 2 — ordinary Business text canonical cutover (accepted in production)
 
 **Product outcome:** all ordinary Business text uses the durable worker without double processing.
 
