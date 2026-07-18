@@ -1,12 +1,13 @@
 # Gate
 
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
-> Verified: **2026-07-17**  
+> Verified: **2026-07-18**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Accepted product baseline through PR #238: `bb0389b7394fc6a51f032a51afd415cbbbf618dc`  
-> Verified Railway production commit: `bb0389b7394f`  
+> Accepted product baseline through PR #244: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d`  
+> Verified Railway production commit: `6680d9dce1cb`  
+> Schema head: `0035_alpha_rate_limit_deferral`  
 > Production: Railway automatic deployment from `main`  
-> Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency.  
+> Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -14,16 +15,18 @@ Do not rely on chat history or a local workspace.
 Continue in this exact order:
 
 1. [Team workflow](docs/TEAM_WORKFLOW.md) — authority, safety, PR/CI/merge/deploy rules.
-2. [Current project handoff](docs/PROJECT_HANDOFF.md) — verified production state, delivered PRs,
-   code map, environment names and the exact next development order.
-3. [Alpha operating policy](docs/ALPHA_OPERATING_POLICY.md) — standing authorization,
-   provider scope, $50 hard budget, and fixture → shadow → canary → live gates.
-4. [Alpha operator runbook](docs/ALPHA_OPERATOR_RUNBOOK.md) — ID-free group control,
+2. [Current project handoff](docs/PROJECT_HANDOFF.md) — current production truth, delivered work,
+   error lessons, architecture map and the next ten sprints.
+3. [Development and cost regulations](docs/DEVELOPMENT_AND_COST_REGULATIONS.md) — company-level
+   CI, OpenAI, testing, retry and transfer discipline.
+4. [Alpha operating policy](docs/ALPHA_OPERATING_POLICY.md) — standing authorization,
+   provider scope, $50 internal hard budget, and fixture → shadow → canary → live gates.
+5. [Alpha operator runbook](docs/ALPHA_OPERATOR_RUNBOOK.md) — ID-free group control,
    one-shot provider activation, stop drills and rollback boundaries.
-5. [Relationship CRM architecture](docs/RELATIONSHIP_CRM_ARCHITECTURE.md) — standalone relationship product, privacy spaces and extraction rule.
-6. [Integrated delivery roadmap](docs/INTEGRATED_DELIVERY_ROADMAP_2026.md) — current cross-product release order.
-7. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
-8. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
+6. [Relationship CRM architecture](docs/RELATIONSHIP_CRM_ARCHITECTURE.md) — standalone relationship product, privacy spaces and extraction rule.
+7. [Integrated delivery roadmap](docs/INTEGRATED_DELIVERY_ROADMAP_2026.md) — current cross-product release order.
+8. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
+9. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
 
 If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
 update both documents in the same substantive PR.
@@ -58,7 +61,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current schema head is `0033_canonical_input_origin`. Never point this
+   and `alembic upgrade head`. Current schema head is `0035_alpha_rate_limit_deferral`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -142,55 +145,34 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints on 2026-07-18 after PR #238:
+Verified through exact-head GitHub CI and Railway production on 2026-07-18 after PR #244:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `bb0389b7394fc6a51f032a51afd415cbbbf618dc` / `bb0389b7394f` |
+| Accepted merge / Railway fingerprint | `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` / `6680d9dce1cb` |
+| Schema head | `0035_alpha_rate_limit_deferral` |
 | Environment / mode | `production` / `manual` |
-| Workspace | `mark-personal` |
-| Existing Business bot | `gate_m_bot` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
-| Contact import | RU 90 from Desktop export; BY deferred |
-| MCP | OAuth 2.0 enforced, nine tools |
+| Contact import | RU 90; BY 0 and intentionally deferred |
+| MCP | OAuth 2.0 enforced; exactly nine tools |
 | Human sending | exact saved draft + explicit confirmation only |
-| Alpha fixture | one approved test group active on the exact reviewed fixture |
-| Alpha model path | staged and delivery-blocked; replacement-key synthetic preflight verified |
-| OpenAI budgets | Alpha USD 50/month app ceiling with USD 0.049152 reserved; Gate voice USD 1/month app ceiling with USD 0 settled/reserved; OpenAI organization spend limit USD 5 |
-| Model delivery evidence | 0 model turns and 0 model delivery grants |
-| Telegram voice readiness | Enabled and ready; first cross-account canary delivered through the durable worker; USD 0.000129 settled; USD 0.999871 remaining; 0 open/unknown reservations |
+| Alpha model path | immutable v2 deployment; preflight verified; Telegram delivery blocked |
+| Alpha model evidence | 10 proposed model turns, 0 failed, 0 delivery grants |
+| Alpha model budget | USD 0.307200 reserved; USD 49.692800 remaining against Gate's internal USD 50 ceiling |
+| Telegram voice | ready; 3 received, 2 delivered, 1 expected unrelated-account dead letter; no retry/open/unknown |
+| Voice budget | USD 0.000242 settled; USD 0.999758 remaining against Gate's internal USD 1 ceiling |
+| OpenAI account boundary | USD 5 prepaid balance at setup, auto-recharge off, USD 5 organization spend limit |
+| Current business counts | 47 conversations, 1192 messages, 406 reply tasks, 17 unanswered, 321 answered, 32 drafts |
 
-Snapshot counters were 41 conversations, 1102 messages, 375 reply-task rows, 17 unanswered and 32
-drafts. Alpha evidence was 5 accepted canonical messages, 2 fixture Agent turns, 1 delivery grant
-and 1 send attempt. Re-query production instead of treating these values as invariants.
+The migration in PR #244 recovered five accepted Alpha commands that had previously been marked
+processed after an installation rate-limit result. Durable backpressure now defers those messages
+instead of silently losing them.
 
-The production control plane now discovers Alpha groups by label and opaque installation reference;
-no Telegram group ID is needed. Approval, pause and resume require the separate
-`gate:agents:manage` OAuth scope and an explicit confirmed action. The review room is read-only. The replacement-key provider preflight succeeded with Telegram
-delivery blocked; model shadow observation is now the next release gate.
-
-The canonical detailed status and next work are in
+These values are a dated operational snapshot. The canonical detailed state, product decisions,
+incident lessons and next ten sprints are in
 [docs/PROJECT_HANDOFF.md](docs/PROJECT_HANDOFF.md). After every merge, verify the exact Railway SHA;
-a healthy previous release does not prove the new release deployed.
-
-### Telegram voice production state
-
-PRs #232–#238 completed provider settlement, redacted queue diagnostics, account-relative
-direction resolution and unconditional durable webhook acceptance. Production at
-`bb0389b7394f` processed the first cross-account Business voice canary end to end:
-one receipt was accepted, one item was delivered, no retry or dead-letter remained and
-OpenAI usage settled at USD 0.000129. The Gate voice ceiling remains USD 1/month with
-USD 0.999871 available at the recorded snapshot.
-
-Business voice is now the first update class owned exclusively by the canonical durable
-worker. The public webhook commits the authenticated receipt and acknowledges it without
-entering the legacy sprint-router chain. Transcription produces an ordinary canonical text
-projection marked with `gate_input_origin=telegram_voice_transcription`. Canonical persistence
-stores the normalized text in the existing private message column plus the bounded input origin;
-both fields are excluded from repr and operational logs. Voice never grants Telegram delivery and
-never bypasses the human-confirmed send contract. Text updates remain
-on the compatibility chain until their independently tested cutover.
+a healthy previous release does not prove that the new release deployed.
 
 ## 4. Current ChatGPT Work MVP
 
