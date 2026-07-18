@@ -123,7 +123,6 @@ def test_durable_acceptance_has_no_runtime_mode_switch() -> None:
     )
 
 
-
 @pytest.mark.anyio
 async def test_durable_acceptance_commits_stable_envelope_before_legacy_delegation(
     monkeypatch: pytest.MonkeyPatch,
