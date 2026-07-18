@@ -1,9 +1,11 @@
 """Sprint 14 Telegram Business connection routing tests."""
 
 import asyncio
+import inspect
 
 from app.api.sprint14_routes import (
     _account_id_from_configured_connection,
+    _find_receiving_account_identity_ids,
     _is_business_send_enabled,
     _is_business_update,
     _is_outbound_business_message,
@@ -63,7 +65,7 @@ def test_business_update_detection_is_limited_to_telegram_business_shapes() -> N
     assert not _is_business_update({"message": {"text": "ping"}})
 
 
-def test_business_message_direction_uses_all_owner_identities() -> None:
+def test_business_message_direction_uses_receiving_account_identities() -> None:
     owner_identity_ids = frozenset({"7819816320", "8648171437"})
 
     assert _is_outbound_business_message(
@@ -82,6 +84,13 @@ def test_business_message_direction_uses_all_owner_identities() -> None:
         sender_id="7819816320",
         owner_identity_ids=frozenset(),
     )
+
+
+def test_owner_identity_lookup_is_receiving_account_relative() -> None:
+    source = inspect.getsource(_find_receiving_account_identity_ids)
+
+    assert "Account.id == account_id" in source
+    assert "Account.owner == owner" not in source
 
 
 class _Result:
