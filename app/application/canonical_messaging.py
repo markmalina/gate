@@ -93,6 +93,8 @@ class CanonicalMessageEnvelope:
     direction: CanonicalMessageDirection = CanonicalMessageDirection.UNKNOWN
     occurred_at: datetime | None = None
     text_present: bool = False
+    text_content: str | None = field(default=None, repr=False)
+    input_origin: str = "telegram_text"
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_id, field_name="workspace_id", maximum=128)
@@ -112,6 +114,18 @@ class CanonicalMessageEnvelope:
             field_name="provider_message_id",
             maximum=255,
         )
+        if self.input_origin not in {
+            "telegram_text",
+            "telegram_voice_transcription",
+        }:
+            raise ValueError("input_origin is unsupported")
+        content_present = (
+            isinstance(self.text_content, str) and bool(self.text_content.strip())
+        )
+        if content_present != self.text_present:
+            raise ValueError("text_content and text_present must agree")
+        if self.text_content is not None and len(self.text_content) > 100_000:
+            raise ValueError("text_content is too large")
 
 
 @dataclass(frozen=True, slots=True)
