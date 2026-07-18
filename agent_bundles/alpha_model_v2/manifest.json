@@ -1,0 +1,9 @@
+{
+  "schema_version": "agent-bundle-v1",
+  "agent_key": "alpha_group",
+  "revision_key": "alpha-model-v2",
+  "source_repository": "markmalina/Gate",
+  "source_path": "alpha_model_v2",
+  "source_commit_sha": "0675e284e2a5b1a4b1e7255a033d5b1f2aa06ec3",
+  "content_sha256": "ad3a1ee421358afb2e137841c0dfec7a8e83fe17688e6916ad818c923e14fb00"
+}
