@@ -44,6 +44,12 @@ def _voice_status_payload() -> dict[str, Any]:
         "open_count": 1,
         "unknown_count": 0,
         "reconciliation_required": False,
+        "received_count": 3,
+        "processing_count": 0,
+        "delivered_count": 1,
+        "retry_count": 0,
+        "dead_letter_count": 2,
+        "last_error_code": "openai_transcription_rejected",
         "telegram_delivery_allowed": False,
     }
 

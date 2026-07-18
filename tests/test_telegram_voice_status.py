@@ -64,10 +64,20 @@ def test_payload_contains_no_operation_or_provider_references() -> None:
         open_count=0,
         unknown_count=0,
         reconciliation_required=False,
+        received_count=3,
+        processing_count=0,
+        delivered_count=1,
+        retry_count=0,
+        dead_letter_count=2,
+        last_error_code="openai_transcription_rejected",
     )
 
     payload = status.payload()
 
+    assert payload["received_count"] == 3
+    assert payload["delivered_count"] == 1
+    assert payload["dead_letter_count"] == 2
+    assert payload["last_error_code"] == "openai_transcription_rejected"
     assert payload["telegram_delivery_allowed"] is False
     assert "provider_operation_ref" not in payload
     assert "reservation_key" not in payload
@@ -87,6 +97,16 @@ class _Summary:
         return (1_100, 2_000, 1, 1, 0)
 
 
+class _QueueSummary:
+    def one(self) -> tuple[int, int, int, int, int]:
+        return (3, 0, 1, 0, 2)
+
+
+class _LatestError:
+    def scalar_one_or_none(self) -> str:
+        return "openai_transcription_rejected"
+
+
 class _StatusSession:
     def __init__(self) -> None:
         workspace_id = uuid4()
@@ -96,6 +116,7 @@ class _StatusSession:
             display_name="Mark",
             is_active=True,
         )
+        self.execute_calls = 0
         self.entitlement = BillingEntitlementModel(
             workspace_id=workspace_id,
             entitlement_key="gate-telegram-voice-v1",
@@ -115,8 +136,17 @@ class _StatusSession:
     async def scalars(self, _statement: object) -> _Entitlements:
         return _Entitlements([self.entitlement])
 
-    async def execute(self, _statement: object) -> _Summary:
-        return _Summary()
+    async def execute(
+        self, _statement: object
+    ) -> _Summary | _QueueSummary | _LatestError:
+        self.execute_calls += 1
+        if self.execute_calls == 1:
+            return _Summary()
+        if self.execute_calls == 2:
+            return _QueueSummary()
+        if self.execute_calls == 3:
+            return _LatestError()
+        raise AssertionError("unexpected voice status query")
 
 
 def test_operational_query_returns_only_aggregated_budget_state() -> None:
@@ -138,3 +168,9 @@ def test_operational_query_returns_only_aggregated_budget_state() -> None:
     assert status.remaining_microusd == 996_900
     assert status.open_count == 1
     assert status.unknown_count == 0
+    assert status.received_count == 3
+    assert status.processing_count == 0
+    assert status.delivered_count == 1
+    assert status.retry_count == 0
+    assert status.dead_letter_count == 2
+    assert status.last_error_code == "openai_transcription_rejected"
