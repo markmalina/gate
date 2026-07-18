@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "markmalina/alphavia",
+  "sourceCommit": "fea64b1b582a08f7526c4d67de5f41aa02806403",
+  "externalEffectsAuthorized": false,
+  "runtimeWiring": false,
+  "durableSharedReplayRequiredBeforeActivation": true,
+  "contracts": [
+    {
+      "id": "gate.inbound-intent",
+      "version": "1.0.0",
+      "status": "proposed-ready",
+      "compatibility": "supersedes gate.interaction.received.v1 for new integrations"
+    },
+    {
+      "id": "gate.delivery-grant",
+      "version": "1.0.0",
+      "status": "proposed-blocked",
+      "owner": "Delivery Authority"
+    },
+    {
+      "id": "gate.delivery-fact",
+      "version": "1.0.0",
+      "status": "proposed-ready",
+      "compatibility": "supersedes gate.delivery.outcome.v1 for new integrations"
+    }
+  ]
+}
