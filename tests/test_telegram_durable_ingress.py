@@ -296,7 +296,7 @@ async def test_unexpected_acceptance_exception_is_retryable_not_legacy_acknowled
         events.append("delegate")
         return {"ok": True}
 
-    monkeypatch.setattr(ingress, "_accept_shadow_receipt", fail_acceptance)
+    monkeypatch.setattr(ingress, "_accept_durable_receipt", fail_acceptance)
     monkeypatch.setattr(ingress, "legacy_telegram_webhook", delegate)
 
     with caplog.at_level("ERROR", logger=ingress.logger.name):
