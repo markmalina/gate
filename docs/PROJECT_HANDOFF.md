@@ -151,7 +151,7 @@ PRs #167–#178 delivered:
 - delivery-blocked model readiness, redacted alerts and non-mutating promotion dry run;
 - offline adversarial and twelve-case product/natural-voice release evals;
 - Gate M installation list, confirmed approve/pause/resume and protected preflight;
-- owner-only, read-only shadow proposal review room;
+- owner-only, read-only shadow proposal review room with bounded text/voice input origin;
 - PostgreSQL proof that two groups cannot exchange triggers, limits or usage;
 - five automatic stop drills, each retaining fixture rollback and forbidding promotion.
 

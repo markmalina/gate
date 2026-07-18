@@ -16,6 +16,7 @@ class AlphaShadowReview:
     outcome: str | None
     result_code: str | None
     trigger_text: str | None
+    input_origin: str
     candidate_text: str | None
     candidate_sha256: str | None
     context_message_count: int
@@ -45,6 +46,7 @@ def _review_payload(review: AlphaShadowReview) -> dict[str, object]:
         "outcome": review.outcome,
         "result_code": review.result_code,
         "trigger_text": _bounded(review.trigger_text, 4_000),
+        "input_origin": review.input_origin,
         "candidate_text": _bounded(review.candidate_text, 12_000),
         "candidate_sha256": review.candidate_sha256,
         "context_message_count": review.context_message_count,
