@@ -126,11 +126,27 @@ async def build_unanswered_list(
         ) in result.all()
     ]
 
+    answered_task_id = (
+        select(ReplyTask.id)
+        .join(Conversation, ReplyTask.conversation_id == Conversation.id)
+        .where(
+            ReplyTask.account_id == Message.account_id,
+            ReplyTask.project_id == Message.project_id,
+            Conversation.account_id == Message.account_id,
+            Conversation.project_id == Message.project_id,
+            Conversation.chat_id == Message.chat_id,
+        )
+        .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
+        .limit(1)
+        .correlate(Message)
+        .scalar_subquery()
+    )
     answered_result = await session.execute(
         select(
             Message,
             TelegramUpdate,
             Account,
+            answered_task_id.label("reply_task_id"),
             PersonIdentity.metadata_["telegram_contact_name"]
             .as_string()
             .label("resolved_contact_name"),
@@ -170,9 +186,16 @@ async def build_unanswered_list(
             message=message,
             telegram_update=telegram_update,
             account=account,
+            task_id=task_id,
             resolved_contact_name=resolved_contact_name,
         )
-        for message, telegram_update, account, resolved_contact_name in answered_result.all()
+        for (
+            message,
+            telegram_update,
+            account,
+            task_id,
+            resolved_contact_name,
+        ) in answered_result.all()
     ]
     return {
         "items": items,
@@ -370,9 +393,14 @@ def _serialize_answered_item(
     message: Message,
     telegram_update: TelegramUpdate | None,
     account: Account,
+    task_id: UUID | None,
     resolved_contact_name: str | None,
 ) -> JsonObject:
+    serialized_task_id = str(task_id) if task_id is not None else None
     return {
+        "task_id": serialized_task_id,
+        "task_ref": serialized_task_id[:8] if serialized_task_id else None,
+        "follow_up_available": task_id is not None,
         "account_id": str(message.account_id),
         "project_id": str(message.project_id),
         "account": _serialize_account(account),
