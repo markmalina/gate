@@ -58,7 +58,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current schema head is `0032_gate_voice_entitlement`. Never point this
+   and `alembic upgrade head`. Current schema head is `0033_canonical_input_origin`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -186,8 +186,10 @@ USD 0.999871 available at the recorded snapshot.
 Business voice is now the first update class owned exclusively by the canonical durable
 worker. The public webhook commits the authenticated receipt and acknowledges it without
 entering the legacy sprint-router chain. Transcription produces an ordinary canonical text
-projection marked with `gate_input_origin=telegram_voice_transcription`; it never grants
-Telegram delivery and never bypasses the human-confirmed send contract. Text updates remain
+projection marked with `gate_input_origin=telegram_voice_transcription`. Canonical persistence
+stores the normalized text in the existing private message column plus the bounded input origin;
+both fields are excluded from repr and operational logs. Voice never grants Telegram delivery and
+never bypasses the human-confirmed send contract. Text updates remain
 on the compatibility chain until their independently tested cutover.
 
 ## 4. Current ChatGPT Work MVP
