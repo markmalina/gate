@@ -47,6 +47,7 @@ async def test_review_room_is_group_scoped_and_provider_id_free() -> None:
                 "installation-opaque-ref",
                 "Alpha Group",
                 "/alpha Что дальше?",
+                "telegram_text",
             )
         ]
     )
@@ -66,6 +67,7 @@ async def test_review_room_is_group_scoped_and_provider_id_free() -> None:
     assert item["group_label"] == "Alpha Group"
     assert item["installation_ref"] == "installation-opaque-ref"
     assert item["trigger_text"] == "/alpha Что дальше?"
+    assert item["input_origin"] == "telegram_text"
     assert item["candidate_text"] == "Короткий ответ Alpha"
     assert item["context_message_count"] == 2
     assert item["sent_to_telegram"] is False
