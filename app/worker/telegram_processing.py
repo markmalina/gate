@@ -308,8 +308,10 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         ):
             if (
                 not identity.resolved
+                or identity.account_id is None
                 or identity.account_alias is None
                 or identity_command is None
+                or canonical_message_id is None
                 or projection.message.text_content is None
             ):
                 raise TelegramUpdateProcessingError(
@@ -318,6 +320,9 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             try:
                 parity = await self._business_text_parity.observe(
                     TelegramBusinessTextParityCommand(
+                        workspace_key=self._settings.gate_workspace_id,
+                        account_id=identity.account_id,
+                        canonical_message_id=canonical_message_id,
                         update_id=item.update_id,
                         account_alias=identity.account_alias,
                         direction=projection.message.direction,
