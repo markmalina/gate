@@ -508,6 +508,38 @@ GATE_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+SEQUENCE_SUCCESS_SCHEMA = _object(
+    {
+        "sequence_id": {"type": "string", "format": "uuid"},
+        "sequence_ref": {"type": "string", "minLength": 1, "maxLength": 8},
+        "task_id": {"type": "string", "format": "uuid"},
+        "account_id": {"type": "string", "format": "uuid"},
+        "project_id": {"type": "string", "format": "uuid"},
+        "account": _ref("account_label"),
+        "recipient_chat_id": {"type": "string", "minLength": 1, "maxLength": 255},
+        "interval_seconds": {"type": "integer", "const": 60},
+        "queued": {"type": "boolean", "const": True},
+        "sent": {"type": "boolean", "const": False},
+        "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 20,
+            "items": _object(
+                {
+                    "draft_id": {"type": "string", "format": "uuid"},
+                    "position": {"type": "integer", "minimum": 0},
+                    "scheduled_at": {"type": "string", "format": "date-time"},
+                }
+            ),
+        },
+    }
+)
+GATE_SEQUENCE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    SEQUENCE_SUCCESS_SCHEMA,
+    {"account_label": ACCOUNT_LABEL_SCHEMA},
+)
+
+
 ALPHA_INSTALLATION_SCHEMA = _object(
     {
         "installation_ref": {"type": "string", "minLength": 1, "maxLength": 128},
@@ -656,6 +688,7 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_get_reply_context": GATE_REPLY_CONTEXT_OUTPUT_SCHEMA,
     "gate_save_reply_draft": GATE_DRAFT_OUTPUT_SCHEMA,
     "gate_send_approved_reply": GATE_SEND_OUTPUT_SCHEMA,
+    "gate_queue_approved_reply_sequence": GATE_SEQUENCE_OUTPUT_SCHEMA,
     "gate_alpha_list_installations": ALPHA_INSTALLATIONS_OUTPUT_SCHEMA,
     "gate_alpha_control_installation": ALPHA_CONTROL_OUTPUT_SCHEMA,
     "gate_alpha_run_model_preflight": ALPHA_PREFLIGHT_OUTPUT_SCHEMA,
