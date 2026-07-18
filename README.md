@@ -3,9 +3,8 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-18**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Runtime/product baseline through PR #244: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d`  
-> Transfer package merged by PR #245 and verified on Railway at `c364df2e7fcf`; re-query the current fingerprint before acting.  
-> Schema head: `0037_direction_parity_v2`
+> Current verified GitHub `main` / Railway baseline: `5daeead020f50751d4e4998fd7ed9b26c38bd158`  
+> Ordinary Business-text cutover release schema head: `0038_business_text_cutover`  
 > Production: Railway automatic deployment from `main`  
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
 
@@ -40,7 +39,7 @@ previous local workspace.
 ### What is being handed over
 
 - Gate production source, migrations, tests, Docker build and GitHub Actions workflow;
-- the protected Telegram Business human-reply path and nine-tool Gate M MCP contract;
+- the protected Telegram Business human-reply path and ten-tool Gate M MCP contract;
 - the delivery-blocked Alpha fixture/model release path and owner controls;
 - the standalone Relationship CRM domain, migrations, billing boundary and transfer format;
 - architecture decisions, operating policy, runbooks, known debt and the ordered next plan;
@@ -61,12 +60,12 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current schema head is `0037_direction_parity_v2`. Never point this
+   and `alembic upgrade head`. Current release schema head is `0038_business_text_cutover`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
-5. **Gate M surface.** Confirm OAuth is used and exactly nine public actions are visible: five
-   human-inbox actions plus Alpha list/control/preflight/shadow-review actions. Do not weaken scopes
+5. **Gate M surface.** Confirm OAuth is used and exactly ten public actions are visible: six
+   human-inbox/send actions plus Alpha list/control/preflight/shadow-review actions. Do not weaken scopes
    to make an action appear.
 6. **Read-only production health.** Call only `gate_get_status`,
    `gate_alpha_list_installations` and `gate_alpha_list_shadow_reviews`. Confirm production/manual
@@ -145,25 +144,26 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through exact-head GitHub CI and Railway production on 2026-07-18 after PR #244:
+Verified through Gate M and exact Railway production on 2026-07-18 at `5daeead020f5`:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Accepted merge / Railway fingerprint | `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` / `6680d9dce1cb` |
-| Schema head | `0037_direction_parity_v2` |
+| Accepted merge / Railway fingerprint | `5daeead020f50751d4e4998fd7ed9b26c38bd158` / `5daeead020f5` |
+| Release schema head | `0038_business_text_cutover` |
 | Environment / mode | `production` / `manual` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
 | Contact import | RU 90; BY 0 and intentionally deferred |
-| MCP | OAuth 2.0 enforced; exactly nine tools |
+| MCP | OAuth 2.0 enforced; exactly ten tools |
 | Human sending | exact saved draft + explicit confirmation only |
 | Alpha model path | immutable v2 deployment; preflight verified; Telegram delivery blocked |
-| Alpha model evidence | 10 proposed model turns, 0 failed, 0 delivery grants |
-| Alpha model budget | USD 0.307200 reserved; USD 49.692800 remaining against Gate's internal USD 50 ceiling |
+| Alpha model evidence | 11 proposed model turns, 0 failed, 0 delivery grants |
+| Alpha model budget | USD 0.319488 reserved; USD 49.680512 remaining against Gate's internal USD 50 ceiling |
 | Telegram voice | ready; 3 received, 2 delivered, 1 expected unrelated-account dead letter; no retry/open/unknown |
 | Voice budget | USD 0.000242 settled; USD 0.999758 remaining against Gate's internal USD 1 ceiling |
 | OpenAI account boundary | USD 5 prepaid balance at setup, auto-recharge off, USD 5 organization spend limit |
-| Current business counts | 47 conversations, 1192 messages, 406 reply tasks, 17 unanswered, 321 answered, 32 drafts |
+| Business text parity | ready; 4/4 matched; RU and BY covered; cutover ready |
+| Current business counts | 47 conversations, 1245 messages, 429 reply tasks, 18 unanswered, 346 answered, 43 drafts |
 
 The migration in PR #244 recovered five accepted Alpha commands that had previously been marked
 processed after an installation rate-limit result. Durable backpressure now defers those messages
@@ -710,4 +710,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** Start Sprint 2 in `docs/PROJECT_HANDOFF.md` only after real RU and BY Business text observations make `telegram_business_text_parity.cutover_ready=true`: bypass the legacy text path without duplicate reply tasks or other side effects. Alpha v2 remains delivery-blocked; no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
+**Immediate continuation:** Deploy the bounded Sprint 2 ordinary Business-text cutover, then accept it only after one user-generated RU→BY and BY→RU canary proves one canonical message, at most one reply task and no parity mismatch across replay. Do not start Sprint 3 before that production evidence is recorded. Alpha v2 remains delivery-blocked; no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
