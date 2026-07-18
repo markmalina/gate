@@ -18,6 +18,10 @@ from app.application.canonical_messaging import (
     DialogIdentity,
     WorkOwnershipDecision,
 )
+from app.application.telegram_business_text_inbox import (
+    TelegramBusinessTextInboxCommand,
+    TelegramBusinessTextInboxResult,
+)
 from app.application.telegram_business_text_parity import (
     TelegramBusinessTextParityCommand,
     TelegramBusinessTextParityResult,
@@ -146,9 +150,7 @@ def _work_item(*, bot_key: str = "gate_m_bot") -> TelegramProcessingWorkItem:
 def test_worker_is_disabled_by_default_and_never_claims() -> None:
     settings = Settings(_env_file=None)
 
-    result = asyncio.run(
-        run_telegram_worker_once(settings=settings, queue=ExplodingQueue())
-    )
+    result = asyncio.run(run_telegram_worker_once(settings=settings, queue=ExplodingQueue()))
 
     assert settings.gate_telegram_worker_enabled is False
     assert result.enabled is False
@@ -428,7 +430,6 @@ def test_business_control_command_with_connection_id_never_reads_identity(
     assert reader.connection_ids == []
 
 
-
 class CapturingCanonicalStore:
     def __init__(self) -> None:
         self.messages: list[CanonicalMessageEnvelope] = []
@@ -522,14 +523,31 @@ class CapturingBusinessTextParity:
         return TelegramBusinessTextParityResult()
 
 
+class CapturingBusinessTextInbox:
+    def __init__(self) -> None:
+        self.commands: list[TelegramBusinessTextInboxCommand] = []
+
+    async def project(
+        self,
+        command: TelegramBusinessTextInboxCommand,
+    ) -> TelegramBusinessTextInboxResult:
+        self.commands.append(command)
+        return TelegramBusinessTextInboxResult(
+            duplicate=False,
+            message_created=True,
+            reply_task_created=True,
+        )
+
+
 def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None:
     canonical = CapturingCanonicalStore()
     parity = CapturingBusinessTextParity()
+    inbox = CapturingBusinessTextInbox()
     reader = FakeIdentityReader(
         TelegramIngressIdentitySnapshot(
             account_id="22222222-2222-2222-2222-222222222222",
             account_alias="telegram_mark_ru",
-            project_id="project-1",
+            project_id="33333333-3333-3333-3333-333333333333",
             owner_identity_ids=frozenset({"owner-identity"}),
         )
     )
@@ -543,6 +561,7 @@ def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None
         identity_reader=reader,
         canonical_store=canonical,
         business_text_parity=parity,
+        business_text_inbox=inbox,
         runtime_logger=logging.getLogger("gate.worker.text-parity-test"),
     )
 
@@ -550,6 +569,11 @@ def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None
 
     assert len(canonical.messages) == 1
     assert len(parity.commands) == 1
+    assert len(inbox.commands) == 1
+    inbox_command = inbox.commands[0]
+    assert inbox_command.canonical_message_id == ("44444444-4444-4444-4444-444444444444")
+    assert inbox_command.route.value == "human_reply_task"
+    assert "private-message-text" not in repr(inbox_command)
     command = parity.commands[0]
     assert command.update_id == 42
     assert command.workspace_key == "mark-personal"
