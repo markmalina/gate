@@ -402,6 +402,19 @@ UNANSWERED_ITEM_SCHEMA = _object(
 )
 ANSWERED_ITEM_SCHEMA = _object(
     {
+        "task_id": {
+            "anyOf": [
+                {"type": "string", "format": "uuid"},
+                {"type": "null"},
+            ]
+        },
+        "task_ref": {
+            "anyOf": [
+                {"type": "string", "minLength": 1, "maxLength": 8},
+                {"type": "null"},
+            ]
+        },
+        "follow_up_available": {"type": "boolean"},
         "account_id": {"type": "string", "format": "uuid"},
         "project_id": {"type": "string", "format": "uuid"},
         "account": _ref("account"),
