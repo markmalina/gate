@@ -35,6 +35,7 @@ async def list_alpha_shadow_reviews(
                 AgentInstallationModel.installation_key,
                 AgentInstallationModel.dialog_label,
                 CanonicalMessage.text_content,
+                CanonicalMessage.input_origin,
             )
             .join(
                 AgentSessionModel,
@@ -83,10 +84,18 @@ async def list_alpha_shadow_reviews(
             outcome=turn.result_kind,
             result_code=turn.result_code,
             trigger_text=trigger_text,
+            input_origin=input_origin,
             candidate_text=turn.candidate_text,
             candidate_sha256=turn.candidate_sha256,
             context_message_count=len(turn.context_message_ids),
             created_at=turn.created_at,
         )
-        for turn, deployment_key, installation_key, dialog_label, trigger_text in rows
+        for (
+            turn,
+            deployment_key,
+            installation_key,
+            dialog_label,
+            trigger_text,
+            input_origin,
+        ) in rows
     )
