@@ -1,6 +1,6 @@
 # Telegram ingress cutover plan
 
-Status: transitional architecture baseline  
+Status: staged canonical cutover in production  
 Production endpoint: `POST /telegram/webhook`  
 Owner: Gate application
 
@@ -196,6 +196,14 @@ the last known-good release, not a partially enabled Railway configuration.
 Move each update class to the canonical dispatcher in a reviewed, versioned release. Keep parity
 metrics and deploy-level rollback evidence; do not expose temporary migration switches as Railway
 configuration. Admin send behavior is cut over last.
+
+Business voice is the first exclusive canonical class. After durable acceptance, a
+`business_message` containing `voice` is acknowledged directly and is not delegated through the
+legacy sprint routers. The worker resolves the receiving account, admits the bounded OpenAI
+transcription cost, projects the transcript as canonical text and completes or dead-letters the
+queue item. The first production canary completed with one accepted and one delivered item, no
+retry/dead-letter and USD 0.000129 settled. Ordinary Business text remains on the compatibility
+chain until its own parity release.
 
 ### Phase 5 — remove legacy layers
 

@@ -161,6 +161,46 @@ async def test_durable_acceptance_commits_stable_envelope_before_legacy_delegati
 
 
 @pytest.mark.anyio
+async def test_business_voice_is_exclusively_accepted_for_durable_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    store = RecordingReceiptStore(events=events)
+    payload = {
+        "update_id": 4243,
+        "business_message": {
+            "message_id": 8,
+            "business_connection_id": "private-connection",
+            "voice": {
+                "file_id": "private-file",
+                "file_unique_id": "private-unique-file",
+                "duration": 3,
+            },
+        },
+    }
+
+    async def delegate(**_: object) -> dict[str, Any]:
+        events.append("delegate")
+        return {"ok": True, "legacy": True}
+
+    monkeypatch.setattr(ingress, "legacy_telegram_webhook", delegate)
+
+    result = await _invoke(
+        request=_request(payload),
+        settings=_settings(),
+        store=store,
+    )
+
+    assert result == {
+        "ok": True,
+        "accepted": True,
+        "processing": "durable_worker",
+    }
+    assert events == ["accept"]
+    assert store.commands[0].payload == payload
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("settings_factory", "provided_secret", "request_factory", "status_code"),
     [

@@ -1,9 +1,9 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new developer or implementation agent.  
-> GitHub handoff package verified on 2026-07-17.  
-> Accepted product baseline through PR #235: `2c83271f869762763db395a4b4054bd69c442f65`.  
-> Verified Railway production commit: `2c83271f8697`.  
+> GitHub handoff package verified on 2026-07-18.  
+> Accepted product baseline through PR #238: `bb0389b7394fc6a51f032a51afd415cbbbf618dc`.  
+> Verified Railway production commit: `bb0389b7394f`.  
 > Open WIP: PR #207 remains a broad dormant Instagram transport. It must be split before review because the current draft expands the exact nine-tool MCP surface and uses non-transactional single-instance replay storage.  
 
 ## 1. Start here
@@ -43,12 +43,12 @@ outcome is terminal `unknown` and is not retried automatically.
 
 ## 3. Verified production snapshot
 
-Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints after PR #235 deployed:
+Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints after PR #238 deployed:
 
 | Item | State |
 |---|---|
 | GitHub repository/default branch | `markmalina/Gate`, `main` |
-| Railway production commit | `2c83271f8697` |
+| Railway production commit | `bb0389b7394f` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Telegram bot | `gate_m_bot` |
@@ -58,8 +58,8 @@ Verified through GitHub CI and the public Railway liveness, readiness and deploy
 | BY Telegram Business | `ready`, `can_reply=true` |
 | RU contacts | 90, source `telegram_desktop_export` |
 | BY contacts | 0; import intentionally deferred |
-| Snapshot counts | 42 conversations, 1106 messages, 375 reply tasks, 16 unanswered, 32 drafts |
-| Telegram voice | Disabled; API key configured; entitlement active; USD 1 remaining; 0 settled/open/unknown reservations |
+| Snapshot counts | 46 conversations, 1172 messages, 397 reply tasks, 14 unanswered, 32 drafts |
+| Telegram voice | Enabled and ready; first cross-account canary delivered; USD 0.000129 settled, USD 0.999871 remaining; 0 open/unknown reservations |
 | Alpha fixture audit | 5 accepted messages, 2 Agent turns, 1 delivery grant, 1 send attempt |
 | Alpha model evidence | 0 model turns, 0 model delivery grants; replacement-key preflight verified; USD 0.049152 reserved |
 
@@ -70,7 +70,7 @@ Alpha group discovery and status need no Telegram group ID. Management/review/pr
 `gate:agents:manage`; Auth0 and ChatGPT User-Delegated Access must grant it before reconnecting
 Gate M.
 
-PR #235 is live in Railway production. Telegram Business direction is relative to the receiving account: a sibling connected-account sender is inbound for the receiver, while only the receiver's own current or historical identity is outbound. Bot/service, missing and ambiguous senders still fail closed.
+PR #238 is live in Railway production. Telegram Business direction is relative to the receiving account: a sibling connected-account sender is inbound for the receiver, while only the receiver's own current or historical identity is outbound. Bot/service, missing and ambiguous senders still fail closed.
 
 The separate Alpha connector is active only for the approved fixture installation. OpenAI billing
 is funded and the organization spend limit is USD 5. After the project key was replaced, PR #229
@@ -160,7 +160,7 @@ before any separately reviewed limited canary; preflight success never authorize
 PR #229 preserved one-shot terminal behavior while issuing a new explicit release key after the
 owner-authorized credential rotation.
 
-## 4.1. Releases #179–#227 — safety cleanup, CRM, billing and Gate voice
+## 4.1. Releases #179–#238 — safety cleanup, CRM, billing and Gate voice
 
 - MCP publication is guarded as one exact nine-tool contract.
 - unsupported Alpha media is terminal and human-confirmed Telegram text is literal;
@@ -187,8 +187,11 @@ owner-authorized credential rotation.
   `gate_get_status`; no provider, operation, Telegram or content reference is returned.
 
 The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state
-model. Voice transcription remains disabled in Railway; no live voice provider call, Oko activation,
-CRM backfill or Telegram test send was performed.
+model. PRs #235–#238 made direction receiving-account-relative, exposed redacted voice queue
+health and made durable acceptance invariant without an operator migration switch. Production then
+completed one cross-account voice canary through OpenAI and the canonical worker with no retry or
+dead letter. Voice never grants Telegram delivery. No Oko activation, CRM backfill or Instagram
+publication was performed.
 
 ## 5. Important code map
 
@@ -238,21 +241,32 @@ CRM backfill or Telegram test send was performed.
 
 ## 6. Exact next development order
 
-1. Re-query GitHub `main`, exact CI and the Railway/Gate production fingerprint; the last accepted production baseline is PR #235 / `2c83271f8697`.
-2. Observe ten clean delivery-blocked Alpha model shadow proposals from real approved-group invocations;
-   stop on any configured alert and never synthesize group evidence.
-3. For the first Gate voice canary, confirm status shows the API key configured, one active entitlement,
-   positive remaining budget and zero open/unknown reservations; then enable
-   `GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED` as a separate owner-authorized Railway change.
-4. After activation, require status `ready`, process exactly one inbound Telegram Business voice
-   message, and verify one settled reservation with zero open/unknown reservations. Stop on
-   `configuration_incomplete`, `budget_exhausted`, `settlement_pending` or
-   `reconciliation_required`; do not retry an ambiguous provider outcome.
-5. Keep CRM backfill write-free until a separately reviewed migration/canary plan exists.
-6. Split PR #207 into bounded persistence, webhook, provider and optional future MCP releases; preserve the exact nine public tools.
-7. Continue Oko/Mayaki work on fixture and portable transfer contracts only.
+1. Cut Business voice over as the first update class owned exclusively by the durable worker; keep
+   its authenticated receipt, canonical transcript projection, budget and DLQ evidence intact.
+2. Move ordinary Business text through the same canonical worker and prove parity for account,
+   direction, reply-task intent and idempotency before bypassing the legacy chain.
+3. Make the canonical transcript/text message the single downstream input contract, preserving
+   `gate_input_origin` while preventing duplicate legacy and canonical domain effects.
+4. Make work ownership authoritative: exactly one of human, approved agent or no-reply owns a
+   dialog version; any human outbound or handoff revokes stale agent capability.
+5. Produce ten real, delivery-blocked Alpha shadow proposals for the approved installation and
+   review bounded redacted evidence; stop on any configured alert.
+6. Add the private Alpha proposal path for explicitly eligible RU/BY dialogs with no delivery grant.
+7. Expose account, recipient, source text/transcript and exact proposal to the existing owner review
+   surface without expanding the nine-tool MCP contract.
+8. Allow one explicitly approved proposal to obtain one exact-target, one-use delivery grant.
+9. Canary autonomous text and voice responses only in designated test dialogs; one inbound permits
+   at most one model generation and one Telegram send attempt.
+10. Remove the now-unreachable sprint-router layers, complete restore/outage drills and publish the
+    reusable development and cost-control regulations.
 
-No live CRM backfill, private Alpha/Oko activation, Telegram outbound smoke send or Instagram publication is authorized by this handoff update. The voice canary is inbound-only and never authorizes a Telegram reply.
+Each step is a bounded, reversible code release. Development migration state is encoded by deployed
+code and rolled back by a known-good deployment, not by temporary Railway switches. Product controls
+remain only where an operator decision is real: installation approval, dialog eligibility, delivery
+authority and hard budgets.
+
+No live CRM backfill, Oko activation or Instagram publication is implied by this order. Voice
+transcription is already live, but it remains input processing only and never authorizes a reply.
 
 ## 7. Owner inputs required only at the canary boundary
 
