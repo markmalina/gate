@@ -869,7 +869,8 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "name": "gate_save_reply_draft",
         "title": "Save a Gate reply draft",
         "description": (
-            "Save proposed text as a scoped draft for an unanswered task. "
+            "Save proposed text as a scoped draft for an unanswered task or "
+            "for the latest eligible replied conversation returned by Gate. "
             "This tool never approves or sends the message."
         ),
         "inputSchema": {
