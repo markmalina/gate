@@ -102,6 +102,8 @@ def _draft(
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid4(),
+        reply_task_id=uuid4(),
+        conversation_id=uuid4(),
         account_id=ACCOUNT_ID,
         project_id=PROJECT_ID,
         prompt_context={
