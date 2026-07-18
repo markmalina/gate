@@ -13,6 +13,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.application.alpha_canary import (
+    AlphaCanaryDisposition,
     AlphaCanaryError,
     ProcessAlphaCanaryUpdateCommand,
     ProcessAlphaCanaryUpdateService,
@@ -363,6 +364,13 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     raise TelegramUpdateProcessingError(exc.code) from None
                 except Exception:
                     raise TelegramUpdateProcessingError("alpha_canary_processing_failed") from None
+                if (
+                    canary.disposition is AlphaCanaryDisposition.BLOCKED
+                    and canary.code == "rate_limited"
+                ):
+                    raise TelegramUpdateProcessingError(
+                        "alpha_rate_limited_deferred"
+                    )
                 alpha_canary_disposition = canary.disposition.value
 
         self._logger.info(
