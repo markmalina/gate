@@ -49,7 +49,10 @@ async def test_oauth_protected_resource_metadata() -> None:
         "gate_alpha_run_model_preflight",
     ]
     assert payload["mcp"]["send_tools_enabled"] is True
-    assert payload["mcp"]["send_tools"] == ["gate_send_approved_reply"]
+    assert payload["mcp"]["send_tools"] == [
+        "gate_send_approved_reply",
+        "gate_queue_approved_reply_sequence",
+    ]
     assert payload["mcp"]["send_requires_explicit_confirmation"] is True
 
 
@@ -116,7 +119,10 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
     ]
-    assert payload["tools"]["send"] == ["gate_send_approved_reply"]
+    assert payload["tools"]["send"] == [
+        "gate_send_approved_reply",
+        "gate_queue_approved_reply_sequence",
+    ]
     assert payload["tools"]["send_requires_explicit_confirmation"] is True
 
 
