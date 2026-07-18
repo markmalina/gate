@@ -216,10 +216,15 @@ class TelegramBusinessTextParityEvidence(Base):
             "observation_count > 0",
             name="ck_business_text_parity_observation_count",
         ),
+        CheckConstraint(
+            "direction_policy_version > 0",
+            name="ck_business_text_parity_direction_policy_version",
+        ),
         Index(
             "ix_business_text_parity_workspace_account_state",
             "workspace_id",
             "account_id",
+            "direction_policy_version",
             "state",
         ),
     )
@@ -238,6 +243,9 @@ class TelegramBusinessTextParityEvidence(Base):
     )
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     mismatch_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    direction_policy_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=2, server_default=text("2")
+    )
     observation_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default=text("1")
     )
