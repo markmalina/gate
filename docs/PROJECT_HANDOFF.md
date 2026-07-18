@@ -3,7 +3,7 @@
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
 > Verified on 2026-07-18 after PR #244.  
 > Accepted GitHub `main` / Railway production merge: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` (`6680d9dce1cb` in Gate status).  
-> Schema head in this release: `0036_business_text_parity`.
+> Schema head in this release: `0037_direction_parity_v2`.
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.
 
 ## 1. Transfer outcome
