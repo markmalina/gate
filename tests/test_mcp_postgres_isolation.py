@@ -392,6 +392,12 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             assert voice_status["entitlement_active"] is True
             assert voice_status["hard_limit_microusd"] == 1_000_000
             assert voice_status["remaining_microusd"] == 1_000_000
+            assert voice_status["received_count"] == 0
+            assert voice_status["processing_count"] == 0
+            assert voice_status["delivered_count"] == 0
+            assert voice_status["retry_count"] == 0
+            assert voice_status["dead_letter_count"] == 0
+            assert voice_status["last_error_code"] is None
             assert voice_status["telegram_delivery_allowed"] is False
             status_wire = status_response.text
             assert "private-allowed-contact" not in status_wire
