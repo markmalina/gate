@@ -619,6 +619,10 @@ ALPHA_SHADOW_REVIEW_SCHEMA = _object(
             "type": ["string", "null"],
             "maxLength": 4000,
         },
+        "input_origin": {
+            "type": "string",
+            "enum": ["telegram_text", "telegram_voice_transcription"],
+        },
         "candidate_text": {
             "type": ["string", "null"],
             "maxLength": 12000,
