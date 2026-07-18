@@ -3,8 +3,8 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-17**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Accepted product baseline through PR #233: `99ac67a723cb9a59b7c23dff4ff8d22125a5b458`  
-> Verified Railway production commit: `99ac67a723cb`  
+> Accepted product baseline through PR #235: `2c83271f869762763db395a4b4054bd69c442f65`  
+> Verified Railway production commit: `2c83271f8697`  
 > Production: Railway automatic deployment from `main`  
 > Open WIP: PR #207 remains a broad dormant Instagram transport and must not merge because it changes the exact nine-tool MCP contract and still lacks shared transactional idempotency.  
 
@@ -142,12 +142,12 @@ Do not rename the ChatGPT product to WorkGPT in user-facing copy. WorkGPT identi
 
 ## 3. Verified production snapshot
 
-Verified through GitHub, Railway/Gate M and exact-merge smoke checks on 2026-07-17 after PR #233:
+Verified through GitHub CI and the public Railway liveness, readiness and deployment-fingerprint endpoints on 2026-07-18 after PR #235:
 
 | Item | Verified state |
 |---|---|
 | GitHub default branch | `main` |
-| Application / Railway commit | `99ac67a723cb9a59b7c23dff4ff8d22125a5b458` / `99ac67a723cb` |
+| Application / Railway commit | `2c83271f869762763db395a4b4054bd69c442f65` / `2c83271f8697` |
 | Environment / mode | `production` / `manual` |
 | Workspace | `mark-personal` |
 | Existing Business bot | `gate_m_bot` |
@@ -722,4 +722,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** GitHub `main` and Railway production are verified at PR #229 / `652a70bc16f6`. The replacement-key provider preflight succeeded. Observe ten clean delivery-blocked Alpha model proposals, then complete voice usage settlement and redacted status before any separately authorized real Business voice canary. Model Telegram delivery remains blocked; no private Alpha/Oko activation, live CRM backfill or Telegram smoke send is authorized. PR #207 remains draft until it is split into bounded persistence, webhook, provider and MCP releases that preserve the exact nine-tool contract.
+**Immediate continuation:** GitHub `main` and Railway production are verified at PR #235 / `2c83271f8697`. Cross-account Telegram Business direction is receiving-account relative: RU → BY and BY → RU are inbound for the receiver, while only the receiving account's own identity is outbound. Observe ten clean delivery-blocked Alpha model proposals before any model canary. Voice settlement and redacted status are complete, but enabling the voice runtime and processing one inbound voice canary still require a separate owner-authorized Railway configuration action. Model Telegram delivery remains blocked; no private Alpha/Oko activation, live CRM backfill or Telegram smoke send is authorized. PR #207 remains draft until it is split into bounded persistence, webhook, provider and MCP releases that preserve the exact nine-tool contract.
