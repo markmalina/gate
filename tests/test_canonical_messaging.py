@@ -40,12 +40,17 @@ def test_message_repr_excludes_provider_identities() -> None:
         provider_sender_id="private-sender",
         direction=CanonicalMessageDirection.INBOUND,
         text_present=True,
+        text_content="private-message-text",
+        input_origin="telegram_voice_transcription",
     )
 
     wire = repr(message)
     assert "private-dialog" not in wire
     assert "private-message" not in wire
     assert "private-sender" not in wire
+    assert "private-message-text" not in wire
+    assert message.text_content == "private-message-text"
+    assert message.input_origin == "telegram_voice_transcription"
 
 
 def test_agent_route_requires_authoritative_agent_state_and_identity() -> None:
