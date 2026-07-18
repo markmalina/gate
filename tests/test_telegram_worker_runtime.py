@@ -6,6 +6,16 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+from app.application.canonical_messaging import (
+    CanonicalIngressResult,
+    CanonicalMessageEnvelope,
+    DialogIdentity,
+    WorkOwnershipDecision,
+)
+from app.application.telegram_business_text_parity import (
+    TelegramBusinessTextParityCommand,
+    TelegramBusinessTextParityResult,
+)
 from app.application.telegram_ingress_identity import TelegramIngressIdentitySnapshot
 from app.application.telegram_processing import (
     TelegramProcessingPlan,
@@ -409,3 +419,73 @@ def test_business_control_command_with_connection_id_never_reads_identity(
     asyncio.run(processor.process(control))
 
     assert reader.connection_ids == []
+
+
+
+class CapturingCanonicalStore:
+    def __init__(self) -> None:
+        self.messages: list[CanonicalMessageEnvelope] = []
+
+    async def persist(
+        self,
+        *,
+        dialog: DialogIdentity,
+        message: CanonicalMessageEnvelope,
+        ownership: WorkOwnershipDecision,
+    ) -> CanonicalIngressResult:
+        self.messages.append(message)
+        return CanonicalIngressResult(
+            dialog_id="dialog-1",
+            message_id="message-1",
+            ownership_id="ownership-1",
+            duplicate=False,
+        )
+
+
+class CapturingBusinessTextParity:
+    def __init__(self) -> None:
+        self.commands: list[TelegramBusinessTextParityCommand] = []
+
+    async def observe(
+        self,
+        command: TelegramBusinessTextParityCommand,
+    ) -> TelegramBusinessTextParityResult:
+        self.commands.append(command)
+        return TelegramBusinessTextParityResult()
+
+
+def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None:
+    canonical = CapturingCanonicalStore()
+    parity = CapturingBusinessTextParity()
+    reader = FakeIdentityReader(
+        TelegramIngressIdentitySnapshot(
+            account_id="account-ru",
+            account_alias="telegram_mark_ru",
+            project_id="project-1",
+            owner_identity_ids=frozenset({"owner-identity"}),
+        )
+    )
+    item = _work_item()
+    message = item.payload["business_message"]
+    assert isinstance(message, dict)
+    message["chat"] = {"id": 800000001, "type": "private"}
+
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=Settings(_env_file=None),
+        identity_reader=reader,
+        canonical_store=canonical,
+        business_text_parity=parity,
+        runtime_logger=logging.getLogger("gate.worker.text-parity-test"),
+    )
+
+    asyncio.run(processor.process(item))
+
+    assert len(canonical.messages) == 1
+    assert len(parity.commands) == 1
+    command = parity.commands[0]
+    assert command.update_id == 42
+    assert command.account_alias == "telegram_mark_ru"
+    assert command.direction.value == "inbound"
+    assert command.route.value == "human_reply_task"
+    assert "private-message-text" not in repr(command)
+    assert "private-connection" not in repr(command)
