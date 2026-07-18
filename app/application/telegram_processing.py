@@ -134,6 +134,17 @@ class TelegramProcessingWorkItem:
     attempt: int
 
 
+class TelegramUpdateDeferred(Exception):
+    """Expected backpressure carrying a safe code and an exact retry delay."""
+
+    def __init__(self, error_code: str, *, retry_after_seconds: int) -> None:
+        if not 1 <= retry_after_seconds <= 86_400:
+            raise ValueError("retry_after_seconds must be between 1 and 86400")
+        self.error_code = error_code.strip()[:128] or "processing_deferred"
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(self.error_code)
+
+
 class TelegramUpdateProcessingError(Exception):
     """Expected processing failure carrying only a bounded safe error code."""
 
@@ -215,6 +226,26 @@ class ProcessTelegramOutboxService:
 
         try:
             await self._processor.process(item)
+        except TelegramUpdateDeferred as exc:
+            plan = TelegramProcessingPlan(
+                disposition=TelegramProcessingDisposition.RETRY,
+                next_attempt_at=now + timedelta(seconds=exc.retry_after_seconds),
+                attempt=item.attempt,
+                error_code=exc.error_code,
+            )
+            await self._queue.record_failure(
+                item,
+                failed_at=now,
+                plan=plan,
+            )
+            return TelegramWorkerResult(
+                disposition=TelegramWorkerDisposition.RETRY,
+                receipt_id=item.receipt_id,
+                outbox_event_id=item.outbox_event_id,
+                attempt=item.attempt,
+                error_code=plan.error_code,
+                next_attempt_at=plan.next_attempt_at,
+            )
         except TelegramUpdateProcessingError as exc:
             plan = self._retry_policy.plan_failure(
                 TelegramProcessingFailure(
