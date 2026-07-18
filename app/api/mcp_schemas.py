@@ -328,6 +328,21 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "open_count": {"type": "integer", "minimum": 0},
                     "unknown_count": {"type": "integer", "minimum": 0},
                     "reconciliation_required": {"type": "boolean"},
+                    "received_count": {"type": "integer", "minimum": 0},
+                    "processing_count": {"type": "integer", "minimum": 0},
+                    "delivered_count": {"type": "integer", "minimum": 0},
+                    "retry_count": {"type": "integer", "minimum": 0},
+                    "dead_letter_count": {"type": "integer", "minimum": 0},
+                    "last_error_code": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                            },
+                            {"type": "null"},
+                        ],
+                    },
                     "telegram_delivery_allowed": {
                         "type": "boolean",
                         "const": False,
