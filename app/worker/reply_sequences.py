@@ -59,7 +59,7 @@ async def run_reply_sequence_once(
 
     current_time = now or datetime.now(UTC)
     async with session_factory() as discovery_session:
-        rows = (
+        raw_rows = (
             await discovery_session.execute(
                 select(ReplyDraft, SendAttempt)
                 .outerjoin(SendAttempt, SendAttempt.reply_draft_id == ReplyDraft.id)
@@ -69,6 +69,8 @@ async def run_reply_sequence_once(
             )
         ).all()
         await discovery_session.rollback()
+
+    rows = [(draft, attempt) for draft, attempt in raw_rows]
 
     due = _due_items(rows, now=current_time)
     sent_count = 0
@@ -152,7 +154,10 @@ def _due_items(
     due: list[_DueSequenceItem] = []
     for sequence_id, sequence_rows in groups.items():
         try:
-            ordered = sorted(sequence_rows, key=lambda row: int(row[2]["position"]))
+            ordered = sorted(
+                sequence_rows,
+                key=lambda row: _metadata_int(row[2]["position"]),
+            )
         except (KeyError, TypeError, ValueError):
             continue
         candidate: tuple[ReplyDraft, SendAttempt | None, dict[str, object]] | None = None
@@ -175,8 +180,8 @@ def _due_items(
         draft, _attempt, metadata = candidate
         try:
             scheduled_at = datetime.fromisoformat(str(metadata["scheduled_at"]))
-            interval_seconds = int(metadata["interval_seconds"])
-            position = int(metadata["position"])
+            interval_seconds = _metadata_int(metadata["interval_seconds"])
+            position = _metadata_int(metadata["position"])
             expected_account = str(metadata["expected_account"])
             expected_recipient = str(metadata["expected_recipient_chat_id"])
             principal_subject = str(metadata["principal_subject"])
@@ -211,6 +216,16 @@ def _due_items(
             )
         )
     return tuple(due)
+
+
+def _metadata_int(value: object) -> int:
+    if isinstance(value, bool):
+        raise ValueError("Boolean sequence metadata is not an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value)
+    raise TypeError("Sequence metadata is not an integer")
 
 
 async def _sequence_superseded(
