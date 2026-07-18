@@ -409,6 +409,7 @@ async def test_inbound_message_is_saved_when_auto_reply_send_fails(
     monkeypatch.delenv("TELEGRAM_ADMIN_USER_IDS", raising=False)
     get_settings.cache_clear()
     session = FakeSession()
+    receipt_store = FakeReceiptStore()
 
     async def override_session() -> AsyncIterator[FakeSession]:
         yield session
@@ -418,6 +419,7 @@ async def test_inbound_message_is_saved_when_auto_reply_send_fails(
 
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_telegram_client] = override_telegram_client
+    app.dependency_overrides[get_telegram_receipt_store] = lambda: receipt_store
 
     try:
         async with AsyncClient(
