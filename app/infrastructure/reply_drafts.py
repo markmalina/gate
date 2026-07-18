@@ -74,12 +74,12 @@ class SqlReplyDraftWriter:
         if row is None:
             raise ReplyTaskNotFoundError()
         task, conversation, trigger_message, account = row
-        if task.status not in {
-            ReplyTaskStatus.NEEDS_REPLY.value,
-            ReplyTaskStatus.REPLIED.value,
-        }:
+        is_follow_up = (
+            task.status == ReplyTaskStatus.REPLIED.value and command.follow_up
+        )
+        if task.status != ReplyTaskStatus.NEEDS_REPLY.value and not is_follow_up:
             raise ReplyTaskClosedError()
-        if task.status == ReplyTaskStatus.REPLIED.value:
+        if is_follow_up:
             newer_task_id = await self._session.scalar(
                 select(ReplyTask.id)
                 .where(
@@ -111,7 +111,7 @@ class SqlReplyDraftWriter:
             prompt_context={
                 "bounded_context": True,
                 "source": "chatgpt-mcp",
-                "follow_up": task.status == ReplyTaskStatus.REPLIED.value,
+                "follow_up": is_follow_up,
             },
         )
         self._session.add(draft)
@@ -121,7 +121,7 @@ class SqlReplyDraftWriter:
                 actor=f"mcp:{command.principal.subject}"[:255],
                 action=(
                     "reply_follow_up_draft_saved_from_mcp"
-                    if task.status == ReplyTaskStatus.REPLIED.value
+                    if is_follow_up
                     else "reply_draft_saved_from_mcp"
                 ),
                 account_id=task.account_id,
