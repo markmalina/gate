@@ -82,11 +82,11 @@ from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
-from app.infrastructure.telegram_ingress_identity import (
-    SessionFactoryTelegramIngressIdentityReader,
-)
 from app.infrastructure.telegram_business_text_parity import (
     SessionFactoryTelegramBusinessTextParityObserver,
+)
+from app.infrastructure.telegram_ingress_identity import (
+    SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 from app.infrastructure.telegram_voice import (
