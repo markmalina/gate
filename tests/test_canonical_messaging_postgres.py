@@ -49,6 +49,8 @@ def _message(*, receipt_id: str, provider_message_id: str) -> CanonicalMessageEn
         direction=CanonicalMessageDirection.INBOUND,
         occurred_at=datetime(2026, 7, 15, tzinfo=UTC),
         text_present=True,
+        text_content=f"private text {provider_message_id}",
+        input_origin="telegram_voice_transcription",
     )
 
 
@@ -147,6 +149,11 @@ async def test_store_is_idempotent_and_advances_current_ownership_once_per_messa
             }
             ownership = (await verify.execute(select(WorkOwnership))).scalar_one()
             connector = (await verify.execute(select(TransportConnector))).scalar_one()
+            messages = (
+                await verify.execute(
+                    select(CanonicalMessage).order_by(CanonicalMessage.provider_message_id)
+                )
+            ).scalars().all()
 
         assert counts == {
             "workspaces": 1,
@@ -159,6 +166,13 @@ async def test_store_is_idempotent_and_advances_current_ownership_once_per_messa
         assert ownership.reason_code == "second_human_message"
         assert connector.is_enabled is False
         assert connector.credential_secret_ref is None
+        assert [message.text_content for message in messages] == [
+            "private text provider-message-1",
+            "private text provider-message-2",
+        ]
+        assert {message.input_origin for message in messages} == {
+            "telegram_voice_transcription"
+        }
     finally:
         await engine.dispose()
         async with admin_engine.begin() as connection:
