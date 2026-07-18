@@ -1,0 +1,15 @@
+{
+  "contract": "gate.delivery-grant",
+  "version": "1.0.0",
+  "event_id": "evt_demo_08",
+  "occurred_at": "2026-07-18T12:00:00Z",
+  "idempotency_key": "idem_demo_08",
+  "correlation_id": "corr_demo_vertical_slice_001",
+  "trace_id": "trace_demo_vertical_slice_001",
+  "payload": {
+    "delivery_intent_ref": "intent_demo_001",
+    "approval_ref": "approval_pending",
+    "authorized": false,
+    "expires_at": "2026-07-19T00:00:00Z"
+  }
+}
