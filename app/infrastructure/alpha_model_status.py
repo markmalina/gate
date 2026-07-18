@@ -148,6 +148,9 @@ async def alpha_model_operational_status(
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.deployment_id.in_(
+                _staged_model_deployment_ids(workspace_key)
+            ),
             AlphaModelPreflightModel.state == "succeeded",
         )
     )
@@ -158,6 +161,9 @@ async def alpha_model_operational_status(
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.deployment_id.in_(
+                _staged_model_deployment_ids(workspace_key)
+            ),
             AlphaModelPreflightModel.state == "failed",
         )
     )
@@ -168,6 +174,9 @@ async def alpha_model_operational_status(
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.deployment_id.in_(
+                _staged_model_deployment_ids(workspace_key)
+            ),
             AlphaModelPreflightModel.state == "reserved",
             AlphaModelPreflightModel.updated_at
             < observed_at - timedelta(minutes=5),
@@ -179,6 +188,9 @@ async def alpha_model_operational_status(
         .where(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
+            AlphaModelPreflightModel.deployment_id.in_(
+                _staged_model_deployment_ids(workspace_key)
+            ),
             AlphaModelPreflightModel.state == "failed",
         )
         .order_by(AlphaModelPreflightModel.updated_at.desc())
@@ -203,6 +215,9 @@ async def alpha_model_operational_status(
             Workspace.is_active.is_(True),
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
+            AgentDeploymentModel.id.in_(
+                _staged_model_deployment_ids(workspace_key)
+            ),
         )
     )
     token_count = int(reserved_tokens or 0) + int(preflight_reserved_tokens or 0)
@@ -254,9 +269,40 @@ async def _model_turn_count(
             AgentDeploymentModel.workspace_id == AgentTurnModel.workspace_id,
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
+            AgentSessionModel.deployment_id.in_(
+                _staged_model_deployment_ids(workspace_key)
+            ),
         )
     )
     if status is not None:
         statement = statement.where(AgentTurnModel.status == status)
     count = await session.scalar(statement)
     return int(count or 0)
+
+
+def _staged_model_deployment_ids(workspace_key: str) -> object:
+    """Select only the current staged Alpha model release for evidence counts."""
+
+    return (
+        select(AgentDeploymentModel.id)
+        .join(Workspace, Workspace.id == AgentDeploymentModel.workspace_id)
+        .join(
+            AgentDefinitionModel,
+            (AgentDefinitionModel.id == AgentDeploymentModel.agent_definition_id)
+            & (AgentDefinitionModel.workspace_id == AgentDeploymentModel.workspace_id),
+        )
+        .join(
+            InstructionRevisionModel,
+            (InstructionRevisionModel.id == AgentDeploymentModel.instruction_revision_id)
+            & (InstructionRevisionModel.workspace_id == AgentDeploymentModel.workspace_id),
+        )
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            AgentDefinitionModel.agent_key == "alpha_group",
+            AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
+            AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
+            AgentDeploymentModel.state == "staged",
+            InstructionRevisionModel.validation_state == "validated",
+        )
+    )
