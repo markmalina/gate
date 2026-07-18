@@ -3,7 +3,7 @@
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
 > Verified on 2026-07-18 after PR #244.  
 > Accepted GitHub `main` / Railway production merge: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` (`6680d9dce1cb` in Gate status).  
-> Schema head: `0035_alpha_rate_limit_deferral`.  
+> Schema head in this release: `0036_business_text_parity`.
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.
 
 ## 1. Transfer outcome
@@ -224,6 +224,18 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - Five lost test commands recovered automatically without asking the user to resend.
 - Production reached 10/10 v2 proposals, 0 failures and 0 model delivery grants.
 
+### Sprint 1 release — durable Business text parity evidence
+
+- Ordinary Telegram Business text now upserts one workspace/account-scoped evidence row per
+  canonical message with exactly `matched`, `pending` or one bounded mismatch code.
+- The evidence table contains internal scope IDs, bounded state, observation count and timestamps;
+  it never stores text, provider dialog IDs or Business connection IDs.
+- Replay and worker restart update the same row. A conflicting canonical-message scope fails closed.
+- `gate_get_status.telegram_business_text_parity` exposes scoped aggregate counts, covered versus
+  required active Business accounts and an explicit `cutover_ready` barrier.
+- The observer still creates no additional reply task, Agent turn, draft, grant or send. Legacy text
+  routing remains active until real RU and BY observations make the barrier ready.
+
 ## 7. Production evidence and test history
 
 ### 7.1 Voice
@@ -237,8 +249,9 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 
 - A connected-account text test reached the production Business path.
 - PR #243 compares canonical facts with the committed legacy reply-task fact.
-- Current limitation: matched parity is log-only. Before legacy bypass, persist content-free
-  `matched/mismatch/pending` counters and expose a bounded status summary.
+- This release makes parity evidence durable and exposes its bounded status summary.
+- Current limitation: real RU and BY matched evidence must accumulate after deployment; do not
+  bypass the legacy path until `cutover_ready=true` with no pending or mismatch rows.
 
 ### 7.3 Alpha v2 sample
 
@@ -340,7 +353,7 @@ outcomes.
 Each sprint is a bounded PR train with exact-head CI and automatic Railway deployment only after the
 standing merge conditions are satisfied.
 
-### Sprint 1 — durable Business text parity evidence
+### Sprint 1 — durable Business text parity evidence (implemented in this release)
 
 **Product outcome:** the owner can see that ordinary connected-account text is safely represented in
 both canonical and legacy paths before cutover.
@@ -538,4 +551,3 @@ Accepted by: <name/role>
 
 Acceptance is read-only. Do not send, approve, run preflight, alter installation state, change
 variables, deploy, retry or roll back merely to complete the checklist.
-

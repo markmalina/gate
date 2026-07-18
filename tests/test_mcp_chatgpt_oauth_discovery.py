@@ -249,11 +249,31 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     async def voice_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(payload=_voice_status_payload)
 
+    async def parity_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            payload=lambda: {
+                "state": "no_evidence",
+                "total_count": 0,
+                "matched_count": 0,
+                "pending_count": 0,
+                "mismatch_count": 0,
+                "required_account_count": 0,
+                "covered_account_count": 0,
+                "mismatch_codes": [],
+                "cutover_ready": False,
+                "private_content_exposed": False,
+            }
+        )
+
     app.dependency_overrides[get_db_session] = override_session
     monkeypatch.setattr("app.api.mcp_routes.authenticate_mcp_oauth", authenticate)
     monkeypatch.setattr(
         "app.api.mcp_routes.telegram_voice_operational_status",
         voice_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.telegram_business_text_parity_status",
+        parity_status,
     )
     response = await _post(
         {

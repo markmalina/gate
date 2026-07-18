@@ -54,8 +54,27 @@ def _voice_status_payload() -> dict[str, Any]:
     }
 
 
+def _parity_status_payload() -> dict[str, Any]:
+    return {
+        "state": "collecting",
+        "total_count": 4,
+        "matched_count": 2,
+        "pending_count": 2,
+        "mismatch_count": 0,
+        "required_account_count": 2,
+        "covered_account_count": 1,
+        "mismatch_codes": [],
+        "cutover_ready": False,
+        "private_content_exposed": False,
+    }
+
+
 async def _voice_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
     return SimpleNamespace(payload=_voice_status_payload)
+
+
+async def _parity_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
+    return SimpleNamespace(payload=_parity_status_payload)
 
 
 class UnexpectedTelegramClient:
@@ -585,6 +604,10 @@ async def test_mcp_status_is_scoped(
         "app.api.mcp_routes.telegram_voice_operational_status",
         _voice_status,
     )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.telegram_business_text_parity_status",
+        _parity_status,
+    )
     response = await _post(
         {
             "jsonrpc": "2.0",
@@ -630,12 +653,15 @@ async def test_mcp_status_is_scoped(
         "remaining_microusd": 50_000_000,
     }
     assert structured["telegram_voice"] == _voice_status_payload()
+    assert structured["telegram_business_text_parity"] == _parity_status_payload()
     assert "Contact directory:" in result["content"][0]["text"]
     assert "accepted_messages: 1" in result["content"][0]["text"]
     assert "Alpha model shadow:" in result["content"][0]["text"]
     assert "budget_remaining: $50.000000" in result["content"][0]["text"]
     assert "promotion_next: provider_preflight" in result["content"][0]["text"]
     assert "Telegram voice transcription:" in result["content"][0]["text"]
+    assert "Telegram Business text parity:" in result["content"][0]["text"]
+    assert "cutover_ready: False" in result["content"][0]["text"]
     assert "budget_remaining: $0.996900" in result["content"][0]["text"]
     assert len(mcp_context.statements) == 30
 
