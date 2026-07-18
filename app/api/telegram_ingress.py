@@ -76,7 +76,7 @@ async def durable_telegram_webhook(
     """Durably accept every authenticated update before the frozen legacy chain."""
 
     try:
-        await _accept_durable_receipt(
+        accepted_update = await _accept_durable_receipt(
             request=request,
             x_telegram_secret=x_telegram_secret,
             settings=settings,
@@ -90,6 +90,13 @@ async def durable_telegram_webhook(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Durable Telegram receipt is unavailable",
         ) from None
+
+    if _is_business_voice_update(accepted_update):
+        return {
+            "ok": True,
+            "accepted": True,
+            "processing": "durable_worker",
+        }
 
     return await legacy_telegram_webhook(
         request=request,
@@ -106,7 +113,7 @@ async def _accept_durable_receipt(
     x_telegram_secret: str | None,
     settings: Settings,
     receipt_store: TelegramReceiptStore,
-) -> None:
+) -> JsonObject:
     configured_secret = settings.telegram_webhook_secret.get_secret_value()
     if not configured_secret:
         raise HTTPException(
@@ -163,6 +170,14 @@ async def _accept_durable_receipt(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Durable Telegram receipt is unavailable",
         ) from None
+    return update
+
+
+def _is_business_voice_update(update: JsonObject) -> bool:
+    """Route the first canonical update class exclusively through the durable worker."""
+
+    message = update.get("business_message")
+    return isinstance(message, dict) and "voice" in message
 
 
 def _secrets_match(*, provided: str, configured: str) -> bool:
