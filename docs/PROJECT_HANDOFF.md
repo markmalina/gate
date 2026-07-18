@@ -184,7 +184,10 @@ owner-authorized credential rotation.
 - PR #232 settles or releases each Gate voice budget reservation from trusted OpenAI usage, retains
   ambiguous/overflow outcomes as `unknown`, and atomically records usage and ledger cost;
 - PR #233 exposes only aggregate Telegram voice readiness and billing state through
-  `gate_get_status`; no provider, operation, Telegram or content reference is returned.
+  `gate_get_status`; no provider, operation, Telegram or content reference is returned;
+- migration 0033 and the canonical projection persist normalized Telegram text plus one bounded
+  input origin (`telegram_text` or `telegram_voice_transcription`), while repr and logs remain
+  content-free.
 
 The legacy inbox still reports answered/unanswered for compatibility. It is not the target CRM state
 model. PRs #235–#238 made direction receiving-account-relative, exposed redacted voice queue
@@ -227,7 +230,7 @@ publication was performed.
 | `app/infrastructure/telegram_voice.py` / `openai_transcription.py` | Telegram download, ffmpeg normalization and OpenAI adapter |
 | `app/worker/telegram_processing.py` | Canonical worker composition, including identity-first Business voice wiring |
 | `alembic/versions/0028_*`–`0030_*` | Relationship CRM core, personal workflow and commercial/program schema |
-| `alembic/versions/0031_billing_ledger.py` / `0032_gate_voice_entitlement.py` | Unified billing persistence and dormant Gate voice hard ceiling |
+| `alembic/versions/0031_billing_ledger.py`–`0033_canonical_input_origin.py` | Unified billing, Gate voice ceiling and canonical text-origin persistence |
 | `alembic/versions/0016_*` | canonical foundation |
 | `alembic/versions/0017_*` | Agent Kernel |
 | `alembic/versions/0018_*` | Alpha delivery capabilities |
