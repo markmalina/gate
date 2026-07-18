@@ -349,6 +349,57 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                 }
             ),
+            "telegram_business_text_parity": _object(
+                {
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "no_evidence",
+                            "collecting",
+                            "blocked",
+                            "ready",
+                        ],
+                    },
+                    "total_count": {"type": "integer", "minimum": 0},
+                    "matched_count": {"type": "integer", "minimum": 0},
+                    "pending_count": {"type": "integer", "minimum": 0},
+                    "mismatch_count": {"type": "integer", "minimum": 0},
+                    "required_account_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "covered_account_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "mismatch_codes": {
+                        "type": "array",
+                        "maxItems": 7,
+                        "items": _object(
+                            {
+                                "code": {
+                                    "type": "string",
+                                    "enum": [
+                                        "telegram_business_text_parity_account_mismatch",
+                                        "telegram_business_text_parity_direction_mismatch",
+                                        "telegram_business_text_parity_dialog_mismatch",
+                                        "telegram_business_text_parity_text_mismatch",
+                                        "telegram_business_text_parity_reply_task_mismatch",
+                                        "telegram_business_text_parity_legacy_cardinality",
+                                        "telegram_business_text_parity_legacy_invalid",
+                                    ],
+                                },
+                                "count": {"type": "integer", "minimum": 1},
+                            }
+                        ),
+                    },
+                    "cutover_ready": {"type": "boolean"},
+                    "private_content_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
             "mcp": _object(
                 {
                     "protocol_version": {"type": "string", "minLength": 1},
