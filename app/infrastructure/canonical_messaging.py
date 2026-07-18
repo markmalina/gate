@@ -182,7 +182,8 @@ class SqlCanonicalIngressStore(CanonicalIngressStore):
                 provider_message_id=message.provider_message_id,
                 provider_sender_id=message.provider_sender_id,
                 direction=message.direction.value,
-                text_content=None,
+                text_content=message.text_content,
+                input_origin=message.input_origin,
                 occurred_at=occurred_at,
             )
             .on_conflict_do_nothing()
@@ -198,6 +199,8 @@ class SqlCanonicalIngressStore(CanonicalIngressStore):
                     CanonicalMessage.provider_message_id,
                     CanonicalMessage.provider_sender_id,
                     CanonicalMessage.direction,
+                    CanonicalMessage.text_content,
+                    CanonicalMessage.input_origin,
                     CanonicalMessage.occurred_at,
                 ).where(
                     or_(
@@ -216,6 +219,8 @@ class SqlCanonicalIngressStore(CanonicalIngressStore):
             message.provider_message_id,
             message.provider_sender_id,
             message.direction.value,
+            message.text_content,
+            message.input_origin,
             occurred_at,
         )
         if existing is None or tuple(existing[1:]) != expected:

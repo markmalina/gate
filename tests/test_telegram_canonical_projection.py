@@ -62,9 +62,35 @@ def test_ru_oko_candidate_remains_human_routed_and_payload_free() -> None:
         WorkOwnershipReason.OKO_EXACT_ENROLLMENT_CANDIDATE.value
     )
     assert projection.ownership.candidate_agent is not None
+    assert projection.message.text_content == "Око возрождения"
+    assert projection.message.input_origin == "telegram_text"
     assert "Око возрождения" not in repr(projection)
     assert "730000001" not in repr(projection)
     assert "740000001" not in repr(projection)
+
+
+def test_transcribed_voice_preserves_text_and_bounded_origin() -> None:
+    update = _private_update("расшифрованный текст")
+    message = update["business_message"]
+    assert isinstance(message, dict)
+    message["gate_input_origin"] = "telegram_voice_transcription"
+
+    projection = project_telegram_canonical_message(
+        update,
+        workspace_id="mark-personal",
+        connector_key="telegram_business",
+        connector_kind=ConnectorKind.TELEGRAM_BUSINESS,
+        source_receipt_id="00000000-0000-0000-0000-000000000055",
+        received_at=datetime(2026, 7, 15, tzinfo=UTC),
+        direction_evidence=DirectionEvidence.HUMAN_INBOUND,
+        reply_task_intent="create_inbound_human_text",
+        ownership=_oko_ownership(DirectionEvidence.HUMAN_INBOUND),
+    )
+
+    assert projection is not None
+    assert projection.message.text_content == "расшифрованный текст"
+    assert projection.message.input_origin == "telegram_voice_transcription"
+    assert "расшифрованный текст" not in repr(projection)
 
 
 def test_owner_outbound_fact_does_not_create_human_reply_route() -> None:

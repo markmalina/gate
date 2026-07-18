@@ -78,7 +78,13 @@ def project_telegram_canonical_message(
     sender_id = _sender_id(selected)
     direction = _canonical_direction(direction_evidence)
     text_value = selected.get("text")
-    text_present = isinstance(text_value, str) and bool(text_value.strip())
+    text_content = (
+        text_value
+        if isinstance(text_value, str) and bool(text_value.strip())
+        else None
+    )
+    text_present = text_content is not None
+    input_origin = _input_origin(selected)
     occurred_at = _occurred_at(selected.get("date"), fallback=received_at)
     dialog = DialogIdentity(
         workspace_id=workspace_id,
@@ -97,6 +103,8 @@ def project_telegram_canonical_message(
         direction=direction,
         occurred_at=occurred_at,
         text_present=text_present,
+        text_content=text_content,
+        input_origin=input_origin,
     )
     decision = WorkOwnershipDecision(
         state=ownership.proposed_state,
@@ -126,6 +134,15 @@ def _single_message(update: Mapping[str, Any]) -> Mapping[str, Any] | None:
         return None
     return cast(Mapping[str, Any], business_message if has_business else message)
 
+
+
+def _input_origin(message: Mapping[str, Any]) -> str:
+    value = message.get("gate_input_origin")
+    if value is None:
+        return "telegram_text"
+    if value == "telegram_voice_transcription":
+        return "telegram_voice_transcription"
+    raise TelegramCanonicalProjectionError("canonical_input_origin_invalid")
 
 def _sender_id(message: Mapping[str, Any]) -> str | None:
     sender_chat = message.get("sender_chat")
