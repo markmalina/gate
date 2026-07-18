@@ -15,6 +15,11 @@ from app.models.billing import (
     BillingEntitlementModel,
 )
 from app.models.canonical import Workspace
+from app.models.domain import (
+    TelegramOutboxEvent,
+    TelegramOutboxStatus,
+    TelegramReceipt,
+)
 
 JsonObject = dict[str, Any]
 _VOICE_SCOPE_KIND = "telegram_connector"
@@ -38,6 +43,12 @@ class TelegramVoiceOperationalStatus:
     unknown_count: int
     reconciliation_required: bool
     telegram_delivery_allowed: bool = False
+    received_count: int = 0
+    processing_count: int = 0
+    delivered_count: int = 0
+    retry_count: int = 0
+    dead_letter_count: int = 0
+    last_error_code: str | None = None
 
     def payload(self) -> JsonObject:
         return {
@@ -56,6 +67,12 @@ class TelegramVoiceOperationalStatus:
             "unknown_count": self.unknown_count,
             "reconciliation_required": self.reconciliation_required,
             "telegram_delivery_allowed": self.telegram_delivery_allowed,
+            "received_count": self.received_count,
+            "processing_count": self.processing_count,
+            "delivered_count": self.delivered_count,
+            "retry_count": self.retry_count,
+            "dead_letter_count": self.dead_letter_count,
+            "last_error_code": self.last_error_code,
         }
 
 
@@ -104,6 +121,7 @@ async def telegram_voice_operational_status(
         else 0
     )
     period_key = now.strftime("%Y-%m")
+    period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     settled_expression = case(
         (
             BillingBudgetReservationModel.state
@@ -160,6 +178,10 @@ async def telegram_voice_operational_status(
         hard_limit_microusd - settled_microusd - reserved_microusd,
         0,
     )
+    queue = await _telegram_voice_queue_summary(
+        session,
+        period_start=period_start,
+    )
     state = classify_telegram_voice_status(
         enabled=enabled,
         api_key_configured=api_key_configured,
@@ -183,6 +205,98 @@ async def telegram_voice_operational_status(
         open_count=open_count,
         unknown_count=unknown_count,
         reconciliation_required=unknown_count > 0,
+        received_count=queue.received_count,
+        processing_count=queue.processing_count,
+        delivered_count=queue.delivered_count,
+        retry_count=queue.retry_count,
+        dead_letter_count=queue.dead_letter_count,
+        last_error_code=queue.last_error_code,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _TelegramVoiceQueueSummary:
+    received_count: int
+    processing_count: int
+    delivered_count: int
+    retry_count: int
+    dead_letter_count: int
+    last_error_code: str | None
+
+
+async def _telegram_voice_queue_summary(
+    session: AsyncSession,
+    *,
+    period_start: datetime,
+) -> _TelegramVoiceQueueSummary:
+    voice_payload = or_(
+        TelegramReceipt.payload.op("#>")("{business_message,voice}").is_not(None),
+        TelegramReceipt.payload.op("#>")("{message,voice}").is_not(None),
+    )
+    base_filters = (
+        TelegramReceipt.bot_key == "telegram_business",
+        TelegramReceipt.received_at >= period_start,
+        voice_payload,
+    )
+    row = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(
+                    TelegramOutboxEvent.status.in_(
+                        (
+                            TelegramOutboxStatus.PENDING.value,
+                            TelegramOutboxStatus.PROCESSING.value,
+                        )
+                    )
+                ),
+                func.count().filter(
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.DELIVERED.value
+                ),
+                func.count().filter(
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.RETRY_SCHEDULED.value
+                ),
+                func.count().filter(
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.DEAD_LETTER.value
+                ),
+            )
+            .select_from(TelegramReceipt)
+            .join(
+                TelegramOutboxEvent,
+                TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
+            )
+            .where(*base_filters)
+        )
+    ).one()
+    last_error_code = (
+        await session.execute(
+            select(TelegramOutboxEvent.last_error_code)
+            .select_from(TelegramOutboxEvent)
+            .join(
+                TelegramReceipt,
+                TelegramReceipt.id == TelegramOutboxEvent.receipt_id,
+            )
+            .where(
+                *base_filters,
+                TelegramOutboxEvent.last_error_code.is_not(None),
+            )
+            .order_by(
+                TelegramOutboxEvent.last_error_at.desc(),
+                TelegramOutboxEvent.id.desc(),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return _TelegramVoiceQueueSummary(
+        received_count=int(row[0] or 0),
+        processing_count=int(row[1] or 0),
+        delivered_count=int(row[2] or 0),
+        retry_count=int(row[3] or 0),
+        dead_letter_count=int(row[4] or 0),
+        last_error_code=last_error_code,
     )
 
 
