@@ -141,7 +141,7 @@ def _input_origin(message: Mapping[str, Any]) -> str:
     if value is None:
         return "telegram_text"
     if value == "telegram_voice_transcription":
-        return value
+        return "telegram_voice_transcription"
     raise TelegramCanonicalProjectionError("canonical_input_origin_invalid")
 
 def _sender_id(message: Mapping[str, Any]) -> str | None:
