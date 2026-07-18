@@ -5,7 +5,7 @@
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
 > Runtime/product baseline through PR #244: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d`  
 > Transfer package merged by PR #245 and verified on Railway at `c364df2e7fcf`; re-query the current fingerprint before acting.  
-> Schema head: `0036_business_text_parity`
+> Schema head: `0037_direction_parity_v2`
 > Production: Railway automatic deployment from `main`  
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
 
@@ -61,7 +61,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current schema head is `0036_business_text_parity`. Never point this
+   and `alembic upgrade head`. Current schema head is `0037_direction_parity_v2`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -151,7 +151,7 @@ Verified through exact-head GitHub CI and Railway production on 2026-07-18 after
 |---|---|
 | GitHub default branch | `main` |
 | Accepted merge / Railway fingerprint | `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d` / `6680d9dce1cb` |
-| Schema head | `0036_business_text_parity` |
+| Schema head | `0037_direction_parity_v2` |
 | Environment / mode | `production` / `manual` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
 | Contact import | RU 90; BY 0 and intentionally deferred |
