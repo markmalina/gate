@@ -142,7 +142,10 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_alpha_list_installations",
         "gate_alpha_list_shadow_reviews",
     ]
-    assert payload["mcp"]["send_tools"] == ["gate_send_approved_reply"]
+    assert payload["mcp"]["send_tools"] == [
+        "gate_send_approved_reply",
+        "gate_queue_approved_reply_sequence",
+    ]
     assert payload["mcp"]["send_requires_explicit_confirmation"] is True
 
 
@@ -161,6 +164,7 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_get_reply_context",
         "gate_save_reply_draft",
         "gate_send_approved_reply",
+        "gate_queue_approved_reply_sequence",
         "gate_alpha_list_installations",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
@@ -183,15 +187,18 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[5]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:status:read"]}
+        {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[6]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+        {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]
     assert tools[7]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:agents:manage"]}
     ]
     assert tools[8]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+    ]
+    assert tools[9]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:agents:manage"]}
     ]
     assert tools[3]["annotations"]["destructiveHint"] is False
