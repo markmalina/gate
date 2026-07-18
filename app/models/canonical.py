@@ -150,6 +150,10 @@ class CanonicalMessage(Base):
             "direction IN ('inbound', 'outbound', 'bot_or_service', 'unknown')",
             name="ck_canonical_messages_direction",
         ),
+        CheckConstraint(
+            "input_origin IN ('telegram_text', 'telegram_voice_transcription')",
+            name="ck_canonical_messages_input_origin",
+        ),
         Index("ix_canonical_messages_dialog_occurred", "dialog_id", "occurred_at"),
     )
 
@@ -166,6 +170,9 @@ class CanonicalMessage(Base):
         String(32), nullable=False, server_default=text("'unknown'")
     )
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_origin: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'telegram_text'")
+    )
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
