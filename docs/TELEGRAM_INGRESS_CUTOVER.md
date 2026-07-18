@@ -202,8 +202,17 @@ Business voice is the first exclusive canonical class. After durable acceptance,
 legacy sprint routers. The worker resolves the receiving account, admits the bounded OpenAI
 transcription cost, projects the transcript as canonical text and completes or dead-letters the
 queue item. The first production canary completed with one accepted and one delivered item, no
-retry/dead-letter and USD 0.000129 settled. Ordinary Business text remains on the compatibility
-chain until its own parity release.
+retry/dead-letter and USD 0.000129 settled.
+
+Ordinary private human Business text is the second exclusive canonical class. Cutover admission is
+shared by the authenticated HTTP boundary and worker: ordinary text bypasses the legacy sprint
+routers, while commands, callbacks, connection updates, voice, bot/service and unsupported events
+retain their existing owners. The worker derives current-inbox facts from the canonical projection
+and writes one compatibility `Message` linked by unique `canonical_message_id`, plus at most one
+human `ReplyTask`. Replay with identical facts is a no-op; incompatible reuse fails closed. This
+projection creates no legacy `GateEvent`, raw `TelegramUpdate`, legacy audit, draft, Agent turn,
+grant or send. Production acceptance requires exact-head deploy identity and fresh user-generated
+RU→BY and BY→RU canaries before Phase 5 or Sprint 3 begins.
 
 ### Phase 5 — remove legacy layers
 

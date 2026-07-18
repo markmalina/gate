@@ -373,6 +373,10 @@ class Message(Base):
 
     __tablename__ = "messages"
     __table_args__ = (
+        UniqueConstraint(
+            "canonical_message_id",
+            name="uq_messages_canonical_message_id",
+        ),
         Index("ix_messages_bot_chat_created_at", "bot_id", "chat_id", "created_at"),
         Index("ix_messages_direction_created_at", "direction", "created_at"),
         Index(
@@ -409,6 +413,11 @@ class Message(Base):
     )
     gate_event_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("gate_events.id"), nullable=True, index=True
+    )
+    canonical_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("canonical_messages.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     direction: Mapped[str] = mapped_column(String(16), nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False)

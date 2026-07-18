@@ -201,6 +201,79 @@ async def test_business_voice_is_exclusively_accepted_for_durable_worker(
 
 
 @pytest.mark.anyio
+async def test_ordinary_business_text_is_exclusively_accepted_for_durable_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    store = RecordingReceiptStore(events=events)
+    payload = {
+        "update_id": 4244,
+        "business_message": {
+            "message_id": 9,
+            "business_connection_id": "private-connection",
+            "chat": {"id": 101, "type": "private"},
+            "from": {"id": 202, "is_bot": False},
+            "text": "private-message-text",
+        },
+    }
+
+    async def delegate(**_: object) -> dict[str, Any]:
+        events.append("delegate")
+        return {"ok": True, "legacy": True}
+
+    monkeypatch.setattr(ingress, "legacy_telegram_webhook", delegate)
+
+    result = await _invoke(
+        request=_request(payload),
+        settings=_settings(),
+        store=store,
+    )
+
+    assert result == {
+        "ok": True,
+        "accepted": True,
+        "processing": "durable_worker",
+    }
+    assert events == ["accept"]
+    assert store.commands[0].payload == payload
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["ping", " /status "])
+async def test_business_control_text_stays_on_legacy_chain(
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    events: list[str] = []
+    store = RecordingReceiptStore(events=events)
+    payload = {
+        "update_id": 4245,
+        "business_message": {
+            "message_id": 10,
+            "business_connection_id": "private-connection",
+            "chat": {"id": 101, "type": "private"},
+            "from": {"id": 202, "is_bot": False},
+            "text": text,
+        },
+    }
+
+    async def delegate(**_: object) -> dict[str, Any]:
+        events.append("delegate")
+        return {"ok": True, "legacy": True}
+
+    monkeypatch.setattr(ingress, "legacy_telegram_webhook", delegate)
+
+    result = await _invoke(
+        request=_request(payload),
+        settings=_settings(),
+        store=store,
+    )
+
+    assert result == {"ok": True, "legacy": True}
+    assert events == ["accept", "delegate"]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("settings_factory", "provided_secret", "request_factory", "status_code"),
     [

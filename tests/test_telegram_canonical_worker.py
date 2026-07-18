@@ -12,6 +12,10 @@ from app.application.canonical_messaging import (
     WorkOwnershipDecision,
     WorkRoute,
 )
+from app.application.telegram_business_text_inbox import (
+    TelegramBusinessTextInboxCommand,
+    TelegramBusinessTextInboxResult,
+)
 from app.application.telegram_ingress_identity import TelegramIngressIdentitySnapshot
 from app.application.telegram_processing import (
     TelegramProcessingWorkItem,
@@ -32,9 +36,9 @@ class FakeIdentityReader:
         business_connection_id: str,
     ) -> TelegramIngressIdentitySnapshot | None:
         return TelegramIngressIdentitySnapshot(
-            account_id="account-ru",
+            account_id="22222222-2222-2222-2222-222222222222",
             account_alias="telegram_mark_ru",
-            project_id="project-personal",
+            project_id="33333333-3333-3333-3333-333333333333",
             owner_identity_ids=frozenset({"900000001"}),
         )
 
@@ -63,10 +67,26 @@ class CapturingCanonicalStore:
         if self.error is not None:
             raise self.error
         return CanonicalIngressResult(
-            dialog_id="dialog-id",
-            message_id="message-id",
-            ownership_id="ownership-id",
+            dialog_id="44444444-4444-4444-4444-444444444444",
+            message_id="55555555-5555-5555-5555-555555555555",
+            ownership_id="66666666-6666-6666-6666-666666666666",
             duplicate=self.duplicate,
+        )
+
+
+class CapturingBusinessTextInbox:
+    def __init__(self) -> None:
+        self.commands: list[TelegramBusinessTextInboxCommand] = []
+
+    async def project(
+        self,
+        command: TelegramBusinessTextInboxCommand,
+    ) -> TelegramBusinessTextInboxResult:
+        self.commands.append(command)
+        return TelegramBusinessTextInboxResult(
+            duplicate=False,
+            message_created=True,
+            reply_task_created=True,
         )
 
 
@@ -121,6 +141,7 @@ def _processor(
         settings=Settings(_env_file=None),
         identity_reader=FakeIdentityReader(),
         canonical_store=store,
+        business_text_inbox=CapturingBusinessTextInbox(),
         runtime_logger=runtime_logger or logging.getLogger("gate.canonical-worker-test"),
     )
 

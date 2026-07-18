@@ -22,6 +22,11 @@ from app.application.alpha_delivery import DeliverAlphaGrantService
 from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
 from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
 from app.application.instruction_bundles import DeployedInstructionBundleLoader
+from app.application.telegram_business_text_inbox import (
+    TelegramBusinessTextInboxProjector,
+    build_telegram_business_text_inbox_command,
+    is_telegram_business_text_cutover_update,
+)
 from app.application.telegram_business_text_parity import (
     TelegramBusinessTextParityCommand,
     TelegramBusinessTextParityError,
@@ -84,6 +89,9 @@ from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
+from app.infrastructure.telegram_business_text_inbox import (
+    SessionFactoryTelegramBusinessTextInboxProjector,
+)
 from app.infrastructure.telegram_business_text_parity import (
     SessionFactoryTelegramBusinessTextParityObserver,
 )
@@ -132,6 +140,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
+        business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
@@ -140,6 +149,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._alpha_canary = alpha_canary
         self._voice_updates = voice_updates
         self._business_text_parity = business_text_parity
+        self._business_text_inbox = business_text_inbox
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
@@ -298,13 +308,13 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 canonical_duplicate = persisted.duplicate
                 canonical_message_id = persisted.message_id
 
+        business_text_inbox_disposition = "not_applicable"
         business_text_parity_disposition = "not_applicable"
         if (
             connector.role is TelegramConnectorRole.BUSINESS
             and voice_disposition == "not_applicable"
             and projection is not None
             and projection.message.text_present
-            and self._business_text_parity is not None
         ):
             if (
                 not identity.resolved
@@ -317,30 +327,58 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 raise TelegramUpdateProcessingError(
                     "telegram_business_text_parity_identity_invalid"
                 )
-            try:
-                parity = await self._business_text_parity.observe(
-                    TelegramBusinessTextParityCommand(
-                        workspace_key=self._settings.gate_workspace_id,
-                        account_id=identity.account_id,
-                        canonical_message_id=canonical_message_id,
-                        update_id=item.update_id,
-                        account_alias=identity.account_alias,
-                        direction=projection.message.direction,
-                        route=projection.ownership.route,
-                        provider_dialog_id=projection.dialog.provider_dialog_id,
-                        business_connection_id=(
-                            identity_command.business_connection_id
-                        ),
-                        text_content=projection.message.text_content,
+            if is_telegram_business_text_cutover_update(payload):
+                if self._business_text_inbox is None:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_business_text_inbox_not_configured"
                     )
+                try:
+                    inbox_projection = await self._business_text_inbox.project(
+                        build_telegram_business_text_inbox_command(
+                            payload,
+                            account_id=identity.account_id,
+                            project_id=identity.project_id or "",
+                            canonical_message_id=canonical_message_id,
+                            bot_username=self._settings.telegram_bot_username,
+                            update_id=item.update_id,
+                            business_connection_id=(
+                                identity_command.business_connection_id
+                            ),
+                            projection=projection,
+                        )
+                    )
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_business_text_inbox_projection_failed"
+                    ) from None
+                business_text_inbox_disposition = (
+                    "inbox_duplicate" if inbox_projection.duplicate else "inbox_projected"
                 )
-            except TelegramBusinessTextParityError as exc:
-                raise TelegramUpdateProcessingError(exc.code) from None
-            except Exception:
-                raise TelegramUpdateProcessingError(
-                    "telegram_business_text_parity_failed"
-                ) from None
-            business_text_parity_disposition = parity.disposition
+            if self._business_text_parity is not None:
+                try:
+                    parity = await self._business_text_parity.observe(
+                        TelegramBusinessTextParityCommand(
+                            workspace_key=self._settings.gate_workspace_id,
+                            account_id=identity.account_id,
+                            canonical_message_id=canonical_message_id,
+                            update_id=item.update_id,
+                            account_alias=identity.account_alias,
+                            direction=projection.message.direction,
+                            route=projection.ownership.route,
+                            provider_dialog_id=projection.dialog.provider_dialog_id,
+                            business_connection_id=(
+                                identity_command.business_connection_id
+                            ),
+                            text_content=projection.message.text_content,
+                        )
+                    )
+                except TelegramBusinessTextParityError as exc:
+                    raise TelegramUpdateProcessingError(exc.code) from None
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_business_text_parity_failed"
+                    ) from None
+                business_text_parity_disposition = parity.disposition
 
         alpha_canary_disposition = "not_applicable"
         if connector.role is TelegramConnectorRole.ALPHA_GROUP:
@@ -389,7 +427,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             "ownership_reason=%s ownership_signal=%s ownership_requirements=%s "
             "ownership_policy=%s ownership_authoritative=%s "
             "canonical_persisted=%s canonical_duplicate=%s "
-            "voice_disposition=%s business_text_parity=%s "
+            "voice_disposition=%s business_text_inbox=%s "
+            "business_text_parity=%s "
             "alpha_canary_disposition=%s",
             decision.handler,
             decision.reason,
@@ -409,6 +448,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             canonical_persisted,
             canonical_duplicate,
             voice_disposition,
+            business_text_inbox_disposition,
             business_text_parity_disposition,
             alpha_canary_disposition,
         )
@@ -425,6 +465,7 @@ async def run_telegram_worker_once(
     alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
+    business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -446,6 +487,7 @@ async def run_telegram_worker_once(
             alpha_canary=alpha_canary,
             voice_updates=voice_updates,
             business_text_parity=business_text_parity,
+            business_text_inbox=business_text_inbox,
             runtime_logger=runtime_logger,
         )
     result = await ProcessTelegramOutboxService(
@@ -473,6 +515,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     business_text_parity = SessionFactoryTelegramBusinessTextParityObserver(
         sessions
     )
+    business_text_inbox = SessionFactoryTelegramBusinessTextInboxProjector(sessions)
     try:
         if (
             settings.gate_alpha_canary_enabled
@@ -555,6 +598,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         canonical_store=canonical_store,
                         alpha_canary=alpha_canary,
                         business_text_parity=business_text_parity,
+                        business_text_inbox=business_text_inbox,
                         voice_updates=voice_updates,
                     )
         async with sessions() as session:
@@ -564,6 +608,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                 identity_reader=identity_reader,
                 canonical_store=canonical_store,
                 business_text_parity=business_text_parity,
+                business_text_inbox=business_text_inbox,
             )
     finally:
         await engine.dispose()
