@@ -49,6 +49,7 @@ from app.application.telegram_processing import (
     ProcessTelegramOutboxService,
     TelegramProcessingQueue,
     TelegramProcessingWorkItem,
+    TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
     TelegramUpdateProcessor,
 )
@@ -368,8 +369,9 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     canary.disposition is AlphaCanaryDisposition.BLOCKED
                     and canary.code == "rate_limited"
                 ):
-                    raise TelegramUpdateProcessingError(
-                        "alpha_rate_limited_deferred"
+                    raise TelegramUpdateDeferred(
+                        "alpha_rate_limited_deferred",
+                        retry_after_seconds=61,
                     )
                 alpha_canary_disposition = canary.disposition.value
 
