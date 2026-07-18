@@ -314,9 +314,7 @@ class PersonProjectRelation(Base):
     )
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict
@@ -348,9 +346,7 @@ class TelegramBusinessConnection(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("accounts.id"), nullable=False, index=True
     )
-    business_connection_id: Mapped[str] = mapped_column(
-        String(255), nullable=False, index=True
-    )
+    business_connection_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     user_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     rights: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -373,6 +369,10 @@ class Message(Base):
 
     __tablename__ = "messages"
     __table_args__ = (
+        UniqueConstraint(
+            "canonical_message_id",
+            name="uq_messages_canonical_message_id",
+        ),
         Index("ix_messages_bot_chat_created_at", "bot_id", "chat_id", "created_at"),
         Index("ix_messages_direction_created_at", "direction", "created_at"),
         Index(
@@ -409,6 +409,11 @@ class Message(Base):
     )
     gate_event_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("gate_events.id"), nullable=True, index=True
+    )
+    canonical_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("canonical_messages.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     direction: Mapped[str] = mapped_column(String(16), nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -846,9 +851,7 @@ class TelegramQueueIncidentRecord(Base):
             "uq_telegram_queue_incidents_single_active",
             text("(1)"),
             unique=True,
-            postgresql_where=text(
-                "status IN ('open', 'notified', 'acknowledged')"
-            ),
+            postgresql_where=text("status IN ('open', 'notified', 'acknowledged')"),
         ),
     )
 
