@@ -3,8 +3,8 @@
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Verified: **2026-07-18**  
 > Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Accepted product baseline through PR #244: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d`  
-> Verified Railway production commit: `6680d9dce1cb`  
+> Runtime/product baseline through PR #244: `6680d9dce1cbcfd13aa62b22f757be8f22ce9c6d`  
+> Transfer package merged by PR #245 and verified on Railway at `c364df2e7fcf`; re-query the current fingerprint before acting.  
 > Schema head: `0035_alpha_rate_limit_deferral`  
 > Production: Railway automatic deployment from `main`  
 > Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
@@ -708,4 +708,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** GitHub `main` and Railway production are verified at PR #235 / `2c83271f8697`. Cross-account Telegram Business direction is receiving-account relative: RU → BY and BY → RU are inbound for the receiver, while only the receiving account's own identity is outbound. Observe ten clean delivery-blocked Alpha model proposals before any model canary. Voice settlement and redacted status are complete, but enabling the voice runtime and processing one inbound voice canary still require a separate owner-authorized Railway configuration action. Model Telegram delivery remains blocked; no private Alpha/Oko activation, live CRM backfill or Telegram smoke send is authorized. PR #207 remains draft until it is split into bounded persistence, webhook, provider and MCP releases that preserve the exact nine-tool contract.
+**Immediate continuation:** Start Sprint 1 in `docs/PROJECT_HANDOFF.md`: persist content-free Business-text parity evidence and expose its aggregate state before any legacy-router bypass. Alpha v2 has eleven clean delivery-blocked proposals at the latest read-only check and is eligible for limited-canary review, but no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
