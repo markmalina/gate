@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from app.application.alpha_shadow_worker import (
     ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
@@ -280,7 +282,9 @@ async def _model_turn_count(
     return int(count or 0)
 
 
-def _staged_model_deployment_ids(workspace_key: str) -> object:
+def _staged_model_deployment_ids(
+    workspace_key: str,
+) -> Select[tuple[uuid.UUID]]:
     """Select only the current staged Alpha model release for evidence counts."""
 
     return (
