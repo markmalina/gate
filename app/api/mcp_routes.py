@@ -49,6 +49,11 @@ from app.application.reply_sends import (
     SendApprovedReplyCommand,
     SendApprovedReplyService,
 )
+from app.application.reply_sequences import (
+    QueueApprovedReplySequenceCommand,
+    QueueApprovedReplySequenceService,
+    ReplySequenceError,
+)
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
 from app.core.mcp_security import (
@@ -67,6 +72,7 @@ from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.infrastructure.alpha_canary import (
     alpha_canary_audit_counts,
     alpha_canary_binding_count,
@@ -103,6 +109,7 @@ MCP_TOOL_NAMES = [
     "gate_get_reply_context",
     "gate_save_reply_draft",
     "gate_send_approved_reply",
+    "gate_queue_approved_reply_sequence",
     "gate_alpha_list_installations",
     "gate_alpha_control_installation",
     "gate_alpha_run_model_preflight",
@@ -116,6 +123,7 @@ MCP_TOOL_SCOPES = {
     "gate_get_reply_context": "gate:inbox:read",
     "gate_save_reply_draft": "gate:drafts:write",
     "gate_send_approved_reply": "gate:messages:send",
+    "gate_queue_approved_reply_sequence": "gate:messages:send",
     "gate_alpha_list_installations": "gate:status:read",
     "gate_alpha_control_installation": "gate:agents:manage",
     "gate_alpha_run_model_preflight": "gate:agents:manage",
@@ -171,6 +179,7 @@ async def mcp_endpoint(
                     _gate_get_reply_context_tool(settings),
                     _gate_save_reply_draft_tool(settings),
                     _gate_send_approved_reply_tool(settings),
+                    _gate_queue_approved_reply_sequence_tool(settings),
                     _gate_alpha_list_installations_tool(settings),
                     _gate_alpha_control_installation_tool(settings),
                     _gate_alpha_run_model_preflight_tool(settings),
@@ -290,6 +299,13 @@ async def mcp_endpoint(
                 session=session,
                 telegram=telegram,
                 settings=settings,
+            )
+        if tool_name == "gate_queue_approved_reply_sequence":
+            return await _queue_approved_reply_sequence_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
             )
     if method == "notifications/initialized":
         if not oauth_discovery:
@@ -923,6 +939,65 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
     )
 
 
+def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_queue_approved_reply_sequence",
+        "title": "Queue an explicitly approved Gate reply sequence",
+        "description": (
+            "Queue two to twenty saved drafts for the same RU/BY recipient. "
+            "Call only after showing Mark the account, recipient and every final "
+            "message in order and receiving one explicit confirmation of the whole "
+            "sequence. The first item becomes due immediately and later items no "
+            "sooner than 60 seconds after the preceding confirmed delivery."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_ids": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 20,
+                    "uniqueItems": True,
+                    "items": {"type": "string", "format": "uuid"},
+                },
+                "confirmed": {"type": "boolean", "const": True},
+                "expected_account": {
+                    "type": "string",
+                    "enum": ["RU", "BY"],
+                },
+                "expected_recipient_chat_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                },
+                "interval_seconds": {"type": "integer", "const": 60},
+            },
+            "required": [
+                "draft_ids",
+                "confirmed",
+                "expected_account",
+                "expected_recipient_chat_id",
+                "interval_seconds",
+            ],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_queue_approved_reply_sequence"
+        ],
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:messages:send",
+    )
+
+
 async def _save_reply_draft_tool_result(
     *,
     request_id: Any,
@@ -1083,6 +1158,99 @@ async def _send_approved_reply_tool_result(
             "Do not retry this draft automatically."
         )
     return _tool_result(content, text, request_id)
+
+
+async def _queue_approved_reply_sequence_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_draft_ids = arguments.get("draft_ids")
+    confirmed = arguments.get("confirmed")
+    expected_account = arguments.get("expected_account")
+    expected_recipient = arguments.get("expected_recipient_chat_id")
+    interval_seconds = arguments.get("interval_seconds")
+    if (
+        not isinstance(raw_draft_ids, list)
+        or not all(isinstance(item, str) for item in raw_draft_ids)
+        or not isinstance(confirmed, bool)
+        or not isinstance(expected_account, str)
+        or not isinstance(expected_recipient, str)
+        or not isinstance(interval_seconds, int)
+        or isinstance(interval_seconds, bool)
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message=(
+                "draft_ids, confirmed, expected_account, "
+                "expected_recipient_chat_id and interval_seconds are required"
+            ),
+        )
+    try:
+        draft_ids = tuple(UUID(item) for item in raw_draft_ids)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="Every draft_id must be a UUID",
+        )
+
+    service = QueueApprovedReplySequenceService(SqlReplySequenceWriter(session))
+    try:
+        queued = await service.execute(
+            QueueApprovedReplySequenceCommand(
+                principal=principal,
+                draft_ids=draft_ids,
+                confirmed=confirmed,
+                expected_account=expected_account,
+                expected_recipient_chat_id=expected_recipient,
+                interval_seconds=interval_seconds,
+            )
+        )
+    except ReplySequenceError as exc:
+        await session.rollback()
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+    await session.commit()
+    content = {
+        "sequence_id": str(queued.sequence_id),
+        "sequence_ref": str(queued.sequence_id)[:8],
+        "task_id": str(queued.task_id),
+        "account_id": str(queued.account_id),
+        "project_id": str(queued.project_id),
+        "account": {
+            "alias": queued.account_alias,
+            "label": queued.account_label,
+        },
+        "recipient_chat_id": queued.recipient_chat_id,
+        "interval_seconds": queued.interval_seconds,
+        "queued": True,
+        "sent": False,
+        "items": [
+            {
+                "draft_id": str(item.draft_id),
+                "position": item.position,
+                "scheduled_at": item.scheduled_at.isoformat(),
+            }
+            for item in queued.items
+        ],
+    }
+    return _tool_result(
+        content,
+        (
+            f"Reply sequence queued through {queued.account_label} for chat "
+            f"{queued.recipient_chat_id}: {len(queued.items)} messages, "
+            f"{queued.interval_seconds}-second minimum interval. "
+            "No delivery was attempted by this tool call."
+        ),
+        request_id,
+    )
 
 
 def _with_security_scheme(*, tool: JsonObject, settings: Settings, scope: str) -> JsonObject:
