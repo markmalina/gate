@@ -230,8 +230,8 @@ async def _telegram_voice_queue_summary(
     period_start: datetime,
 ) -> _TelegramVoiceQueueSummary:
     voice_payload = or_(
-        TelegramReceipt.payload.op("#>")("{business_message,voice}").is_not(None),
-        TelegramReceipt.payload.op("#>")("{message,voice}").is_not(None),
+        TelegramReceipt.payload["business_message"]["voice"].is_not(None),
+        TelegramReceipt.payload["message"]["voice"].is_not(None),
     )
     base_filters = (
         TelegramReceipt.bot_key == "telegram_business",
