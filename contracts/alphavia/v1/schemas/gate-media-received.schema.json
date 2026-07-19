@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.alphav.dev/v1/gate-media-received.schema.json",
+  "title": "gate.media-received@1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "event_id",
+    "occurred_at",
+    "idempotency_key",
+    "correlation_id",
+    "trace_id",
+    "payload"
+  ],
+  "properties": {
+    "contract": {"const": "gate.media-received"},
+    "version": {"const": "1.0.0"},
+    "event_id": {"$ref": "#/$defs/opaqueRef"},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "idempotency_key": {"$ref": "#/$defs/opaqueRef"},
+    "correlation_id": {"$ref": "#/$defs/opaqueRef"},
+    "trace_id": {"$ref": "#/$defs/opaqueRef"},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submission_ref",
+        "source_file_ref",
+        "take_contract",
+        "transport",
+        "source_media_kind",
+        "normalized_media_kind",
+        "detected_mime",
+        "bytes",
+        "sha256",
+        "consent_scope_ref",
+        "consent_evidence_ref",
+        "adult_confirmed",
+        "publication_authorized",
+        "personal_identifiers_included"
+      ],
+      "properties": {
+        "submission_ref": {"$ref": "#/$defs/opaqueRef"},
+        "source_file_ref": {"$ref": "#/$defs/opaqueRef"},
+        "take_contract": {"const": "take.capture-manifest@1"},
+        "transport": {"enum": ["telegram_synthetic", "dropbox_reference_synthetic"]},
+        "source_media_kind": {"enum": ["photo", "video", "audio", "document"]},
+        "normalized_media_kind": {"enum": ["video", "audio", "document"]},
+        "detected_mime": {
+          "enum": [
+            "image/jpeg",
+            "image/png",
+            "video/mp4",
+            "video/quicktime",
+            "audio/mpeg",
+            "audio/wav",
+            "application/octet-stream"
+          ]
+        },
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "consent_scope_ref": {"$ref": "#/$defs/opaqueRef"},
+        "consent_evidence_ref": {"$ref": "#/$defs/opaqueRef"},
+        "adult_confirmed": {"const": true},
+        "publication_authorized": {"const": false},
+        "personal_identifiers_included": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "opaqueRef": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
