@@ -1,12 +1,10 @@
 # Gate
 
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
-> Verified: **2026-07-18**  
-> Repository: `markmalina/Gate` (private), source of truth: GitHub `main`  
-> Current verified GitHub `main` / Railway baseline: `f879fefde08dbd1264829ce201808f726581eb1f`  
-> Ordinary Business-text cutover release schema head: `0038_business_text_cutover`  
-> Production: Railway automatic deployment from `main`  
-> Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.  
+> Repository: `markmalina/gate` (private), source of truth: GitHub `main`  
+> Latest repository / automatic Railway deployment: `2d2b6e81f6019d6f01c2e5848479b1a4dfe6574c`, verified by the Gate #263 receipt on **2026-07-20**.  
+> The detailed production counters below remain a dated **2026-07-18** snapshot at `f879fefde08dbd1264829ce201808f726581eb1f`; re-query before operational use.  
+> Current work: #260 and #261 are `waiting_user`; #263 Stage A is done through #264 and Stage B is owner-gated. PR #207 is closed without merge.
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -29,6 +27,16 @@ Continue in this exact order:
 
 If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
 update both documents in the same substantive PR.
+
+## Current GitHub pointers
+
+GitHub issues and their latest receipts supersede dated roadmap prose:
+
+- [#260](https://github.com/markmalina/gate/issues/260) — `waiting_user`: select the exact owner-controlled media, transport, storage/retention and any permitted provider action before a private Capture canary.
+- [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: provide only the redacted latest Auth0 failed token-exchange log fields named in the issue. Do not reconnect or invoke Telegram before that evidence.
+- [#263](https://github.com/markmalina/gate/issues/263) Stage A — done through [#264](https://github.com/markmalina/gate/pull/264): default-off personal Telegram transport contract, synthetic tests and rollback. Stage B requires a separate exact owner authorization before API application credentials, phone/2FA or session creation.
+
+There is no independent `ready` Gate stage after #264. Do not invent activation work, restart the accepted canonical-input sprint or revive PR #207.
 
 ## Project transfer acceptance / Приёмка проекта
 
@@ -447,6 +455,9 @@ Key merged milestones:
 | #177 | Twelve offline product-quality and natural-voice release evals |
 | #178 | Explicit ID-free group approval and PostgreSQL multi-group isolation proof |
 
+| #248–#262 | AlphaV ecosystem boundary, default-off portfolio transports, Work bootstrap and owner-group canary repository readiness |
+| #264 | Default-off personal Telegram user-session port, exact-text approval/idempotency contract, synthetic tests, threat model and rollback |
+
 Migration lesson from #88–#92: green CI on a clean database is necessary but insufficient for a data repair. Any future backfill must be tested against production-like empty conversations, duplicate natural keys, nullable legacy ownership and already-coexisting target rows.
 
 ## 13. Ordered next development plan
@@ -710,4 +721,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** Sprint 2 ordinary Business-text cutover is accepted in production. Start Sprint 3 only as a separate bounded release: make canonical text plus `input_origin` the single downstream contract without changing human send authority. Alpha v2 remains delivery-blocked; no model Telegram delivery, private Alpha/Oko activation, live CRM backfill or unconfirmed Telegram send is authorized. PR #207 remains draft and must be split and redesigned before review.
+**Immediate continuation:** follow the current GitHub pointers above. #260 and #261 remain at their exact owner gates. Personal Telegram Stage A is accepted and default-off through #264; Stage B is not authorized. Do not send a message, log in to Telegram/MTProto, handle credentials, reconnect Gate M, activate a provider or process real-person data until the matching issue records exact authority.
