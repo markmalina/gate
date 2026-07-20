@@ -49,7 +49,7 @@ class ExactSendCommand:
 class ProviderSendReceipt:
     outcome: ProviderOutcome
     provider_receipt_ref: str | None
-    external_effect_performed: bool
+    external_effect_performed: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +58,7 @@ class ExactSendResult:
     provider_receipt_ref: str | None
     deterministic_random_id: int
     idempotent_replay: bool
-    external_effect_performed: bool
+    external_effect_performed: bool | None
 
 
 class EncryptedSessionSecretStore(Protocol):
@@ -66,6 +66,7 @@ class EncryptedSessionSecretStore(Protocol):
 
     def load_ciphertext(self, *, session_ref: str) -> bytes:
         """Load an encrypted session blob by opaque reference."""
+        ...
 
 
 class PersonalTelegramTransport(Protocol):
@@ -80,6 +81,7 @@ class PersonalTelegramTransport(Protocol):
         deterministic_random_id: int,
     ) -> ProviderSendReceipt:
         """Make one exact-text provider attempt."""
+        ...
 
 
 @dataclass(slots=True)
@@ -125,8 +127,8 @@ class MemoryPersonalTelegramControlStore:
             raise PersonalTelegramTransportError("personal_telegram_expiry_invalid")
         record = _ApprovalRecord(
             token_digest=token_digest,
-            actor_ref=_require_opaque_ref(actor_ref, "actor_ref"),
-            peer_ref=_require_opaque_ref(peer_ref, "peer_ref"),
+            actor_ref=_require_prefixed_ref(actor_ref, "actor_", "actor_ref"),
+            peer_ref=_require_prefixed_ref(peer_ref, "peer_", "peer_ref"),
             exact_text_digest=_exact_text_digest(exact_text),
             expires_at=expires_at,
         )
@@ -186,10 +188,14 @@ class SendExactPersonalTelegramService:
     async def execute(self, command: ExactSendCommand) -> ExactSendResult:
         if not self._policy.send_enabled:
             raise PersonalTelegramTransportError("personal_telegram_send_disabled")
-        actor_ref = _require_opaque_ref(command.actor_ref, "actor_ref")
-        session_ref = _require_opaque_ref(command.session_ref, "session_ref")
-        peer_ref = _require_opaque_ref(command.peer_ref, "peer_ref")
-        idempotency_key = _require_opaque_ref(command.idempotency_key, "idempotency_key")
+        actor_ref = _require_prefixed_ref(command.actor_ref, "actor_", "actor_ref")
+        session_ref = _require_prefixed_ref(command.session_ref, "session_", "session_ref")
+        peer_ref = _require_prefixed_ref(command.peer_ref, "peer_", "peer_ref")
+        idempotency_key = _require_prefixed_ref(
+            command.idempotency_key,
+            "send_",
+            "idempotency_key",
+        )
         text_digest = _exact_text_digest(command.exact_text)
         fingerprint = _digest(
             {
@@ -231,7 +237,7 @@ class SendExactPersonalTelegramService:
             provider_receipt = ProviderSendReceipt(
                 outcome=ProviderOutcome.UNKNOWN,
                 provider_receipt_ref=None,
-                external_effect_performed=False,
+                external_effect_performed=None,
             )
 
         if provider_receipt.provider_receipt_ref is not None:
@@ -311,6 +317,13 @@ def _require_opaque_ref(value: object, field_name: str) -> str:
     ):
         raise PersonalTelegramTransportError(f"personal_telegram_{field_name}_invalid")
     return value
+
+
+def _require_prefixed_ref(value: object, prefix: str, field_name: str) -> str:
+    reference = _require_opaque_ref(value, field_name)
+    if not reference.startswith(prefix):
+        raise PersonalTelegramTransportError(f"personal_telegram_{field_name}_invalid")
+    return reference
 
 
 def _deterministic_random_id(
