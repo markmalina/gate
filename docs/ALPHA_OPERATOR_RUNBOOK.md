@@ -93,3 +93,53 @@ rollback_target=fixture_canary.
 4. Alpha fixture installation remains exact and connector/webhook readiness is true.
 5. Model delivery grants stay zero; model budget and bounded error state are visible.
 6. No live message is manufactured for a smoke test.
+
+
+## Persistent ChatGPT permission warning recovery
+
+An orange ChatGPT warning that not all requested permissions were granted is an
+authorization-server grant mismatch. Reconnecting cannot add a scope that the Auth0
+user-delegated client grant does not allow.
+
+Recovery order:
+
+1. Stop repeating reconnect attempts and keep all live Alpha actions blocked.
+2. In Auth0, open **Applications → APIs → Gate API → Application Access**.
+3. Edit the ChatGPT/Gate M application's **User-Delegated Access** grant and allow
+   all five Gate scopes:
+   `gate:status:read`, `gate:inbox:read`, `gate:drafts:write`,
+   `gate:messages:send`, and `gate:agents:manage`.
+4. For a dynamically registered ChatGPT client without a stable application row,
+   configure the same set under **Settings → Default Permissions for Third Party
+   Apps → User-Delegated Access**. Do not select future or unrelated scopes.
+5. Save the Auth0 grant first, then disconnect/reconnect Gate M exactly once.
+6. Verify read-only calls in order: `gate_get_status`,
+   `gate_alpha_list_installations`, and `gate_alpha_list_shadow_reviews`.
+7. If any call still reports a missing scope or refresh token, stop. Record only the
+   bounded error category; never paste a token, client secret, authorization code or
+   raw group identifier.
+
+Do not fix the warning by moving `gate:agents:manage` tools to a weaker scope or by
+removing protected tools from the connector.
+
+## Owner test-group limited-canary boundary
+
+Repository readiness may proceed while OAuth is blocked, but the live canary may not.
+
+Before the first owner test-group delivery:
+
+- production commit and schema equal the accepted GitHub/Railway receipt;
+- Gate M read-only status and installation list succeed;
+- exactly one existing owner-controlled installation is selected by label and opaque
+  reference, never by a Telegram numeric ID;
+- the installation is approved or resumed through the reviewed-state fence;
+- invocation is explicit: `/alpha`, exact mention, or reply;
+- one model turn is bound to the reviewed deployment and budget ceiling;
+- one invocation can create at most one Telegram delivery attempt;
+- fixture remains the rollback target and pause remains the immediate kill switch;
+- audit receipt records bounded installation label, turn state, delivery state and
+  service health without tokens or Telegram identifiers.
+
+The first canary ends after one verified answer. No proactive message, broadcast,
+second group, Alexander group, Meta path or cross-group memory is part of this release.
+Any ambiguous provider or Telegram result is terminal and is not retried.
