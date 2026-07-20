@@ -273,8 +273,8 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - One user-generated RU→BY and one BY→RU canary produced four canonical/current-inbox messages and
   exactly two human reply tasks. Parity moved 4→8 with all rows matched and no pending/mismatch.
 - A delayed second status read remained stable at 1249 messages and 431 reply tasks, proving no late
-  duplicate effect. Sprint 2 is accepted; Sprint 3 must remain a separate release.
-
+  duplicate effect. Sprint 2 is accepted. The separately delivered canonical input contract in PR
+  #240 supplies the accepted Sprint 3 boundary.
 
 ### PR #264 — default-off personal Telegram transport safety contract
 
