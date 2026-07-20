@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 RELATIONS_MAIN_SHA = "3598833776c9fc660d518d712dceabc5e65582f5"
 SOURCE_CONTRACT = "relations.draft-approval-recorded"
