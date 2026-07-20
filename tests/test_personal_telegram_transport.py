@@ -141,7 +141,7 @@ def test_unknown_outcome_is_recorded_and_never_blindly_retried() -> None:
 
     assert first.outcome is ProviderOutcome.UNKNOWN
     assert first.provider_receipt_ref is None
-    assert first.external_effect_performed is False
+    assert first.external_effect_performed is None
     assert replay.outcome is ProviderOutcome.UNKNOWN
     assert replay.idempotent_replay is True
     assert len(transport.attempts) == 1
@@ -178,7 +178,7 @@ def test_raw_peer_identifiers_and_blank_text_are_rejected() -> None:
     invalid_peer = ExactSendCommand(
         actor_ref=invalid_peer.actor_ref,
         session_ref=invalid_peer.session_ref,
-        peer_ref="+375291234567",
+        peer_ref="375291234567",
         exact_text=invalid_peer.exact_text,
         approval_token=invalid_peer.approval_token,
         idempotency_key=invalid_peer.idempotency_key,
