@@ -454,7 +454,6 @@ Key merged milestones:
 | #176 | Read-only, delivery-blocked Alpha shadow review room |
 | #177 | Twelve offline product-quality and natural-voice release evals |
 | #178 | Explicit ID-free group approval and PostgreSQL multi-group isolation proof |
-
 | #248–#262 | AlphaV ecosystem boundary, default-off portfolio transports, Work bootstrap and owner-group canary repository readiness |
 | #264 | Default-off personal Telegram user-session port, exact-text approval/idempotency contract, synthetic tests, threat model and rollback |
 
