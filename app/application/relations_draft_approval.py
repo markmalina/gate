@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 RELATIONS_MAIN_SHA = "3598833776c9fc660d518d712dceabc5e65582f5"
 SOURCE_CONTRACT = "relations.draft-approval-recorded"
