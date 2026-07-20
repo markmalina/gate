@@ -1,10 +1,9 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
-> Verified on 2026-07-18 at GitHub `main` / Railway production `f879fefde08dbd1264829ce201808f726581eb1f` (`f879fefde08d` in Gate status).  
-> Ordinary Business-text cutover release schema head: `0038_business_text_cutover`.
-> Open WIP: draft PR #207 is a dormant broad Instagram transport. Do not merge it as-is; split and redesign it before review.
-
+> Latest repository / automatic Railway deployment verified on 2026-07-20 at `2d2b6e81f6019d6f01c2e5848479b1a4dfe6574c`.  
+> The detailed production snapshot remains dated 2026-07-18 at `f879fefde08dbd1264829ce201808f726581eb1f` (`f879fefde08d` in Gate status); re-query before operational use.  
+> PR #207 is closed without merge. Current work is governed by GitHub #260, #261 and the completed #263/#264 receipt.
 ## 1. Transfer outcome
 
 This file is the single current handoff for Gate. A receiving team must be able to continue from
@@ -23,6 +22,15 @@ Read in this order:
 
 GitHub `main` is the source of truth. Re-query GitHub and production before acting because counters
 below are dated evidence, not invariants.
+
+### Current pointer
+
+- Gate #260 is `waiting_user` for the exact owner-controlled media, chosen transport, storage/retention and any permitted provider action.
+- Gate #261 is `waiting_user` for the redacted Auth0 failed token-exchange fields named in that issue; do not repeat reconnect first.
+- Gate #263 Stage A is done through PR #264 at merge `2d2b6e81f6019d6f01c2e5848479b1a4dfe6574c`: the personal Telegram contract is default-off, synthetic and provider-free.
+- MTProto Stage B needs a separate exact owner decision before API application credentials, phone/2FA authorization or session creation.
+
+There is no independent `ready` Gate stage after #264. Latest issue receipts override the historical sprint list below.
 
 ## 2. Product definition
 
@@ -267,6 +275,16 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - A delayed second status read remained stable at 1249 messages and 431 reply tasks, proving no late
   duplicate effect. Sprint 2 is accepted; Sprint 3 must remain a separate release.
 
+
+### PR #264 — default-off personal Telegram transport safety contract
+
+- Gate owns the personal Telegram user-session adapter; Relations continues to own Person, context and draft.
+- Read, contact sync and send capabilities are independently default-off.
+- Exact-text approval, deterministic provider idempotency and terminal unknown/no-blind-retry behavior are covered by synthetic tests.
+- The repository stores no Telegram application credential, phone, code, password, session or raw provider identity.
+- Stage A performed no Telegram login, provider call, message, real-person-data action or Relations mutation.
+- Stage B is a separate owner gate.
+
 ## 7. Production evidence and test history
 
 ### 7.1 Voice
@@ -381,10 +399,12 @@ outcomes.
 | `app/application/relationship_crm.py` | standalone Relationship CRM domain |
 | `alembic/versions/0033_*`–`0035_*` | input origin, Alpha v2 and durable rate-limit recovery |
 
-## 10. Product and technical plan — next ten sprints
+## 10. Historical product and technical release plan
 
-Each sprint is a bounded PR train with exact-head CI and automatic Railway deployment only after the
-standing merge conditions are satisfied.
+This section preserves the accepted release sequence. It is not a live next-work queue: current
+GitHub issues and receipts above decide what may run. Each future sprint remains a bounded PR train
+with exact-head CI and automatic Railway deployment only after the standing merge conditions are
+satisfied.
 
 ### Sprint 1 — durable Business text parity evidence (accepted in production)
 
@@ -412,7 +432,7 @@ the already-authoritative canonical projection, and links the compatibility mess
 canonical message through a unique nullable foreign key. Commands and non-ordinary update classes
 do not enter this cutover path.
 
-### Sprint 3 — one canonical downstream input contract
+### Sprint 3 — one canonical downstream input contract (accepted)
 
 **Product outcome:** text and voice behave consistently for later agents and human work.
 
@@ -496,6 +516,10 @@ train. Relationship CRM backfill remains a separate authorized product action.
 fingerprint agree.
 
 ## 11. Actions that still require Mark
+
+Current exact owner gates are recorded in #260, #261 and the #263 Stage A receipt. In particular,
+MTProto Stage B is not implied by repository readiness, and the Gate M reconnect must not be repeated
+before the requested redacted Auth0 token-exchange evidence exists.
 
 Stop and request Mark only when one of these boundaries is reached:
 
