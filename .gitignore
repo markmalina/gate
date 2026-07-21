@@ -2,6 +2,7 @@
 *.session
 *.session.enc
 *.fernet.key
+*.fernet.key.dpapi
 *.sqlite
 *.db
 __pycache__/
