@@ -330,6 +330,19 @@ def _windows_dpapi_transform(value: bytes, *, protect: bool) -> bytes:
         operation = crypt32.CryptProtectData
     else:
         operation = crypt32.CryptUnprotectData
+    operation.argtypes = [
+        ctypes.POINTER(_DataBlob),
+        ctypes.c_void_p,
+        ctypes.POINTER(_DataBlob),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(_DataBlob),
+    ]
+    operation.restype = wintypes.BOOL
+    local_free: Any = kernel32.LocalFree
+    local_free.argtypes = [ctypes.c_void_p]
+    local_free.restype = ctypes.c_void_p
     succeeded = operation(
         ctypes.byref(input_blob),
         None,
@@ -340,13 +353,15 @@ def _windows_dpapi_transform(value: bytes, *, protect: bool) -> bytes:
         ctypes.byref(output_blob),
     )
     if not succeeded:
+        if output_blob.pbData:
+            local_free(ctypes.cast(output_blob.pbData, ctypes.c_void_p))
         raise PersonalTelegramEnrollmentError(
             "personal_telegram_windows_dpapi_operation_failed"
         )
     try:
         return ctypes.string_at(output_blob.pbData, output_blob.cbData)
     finally:
-        kernel32.LocalFree(output_blob.pbData)
+        local_free(ctypes.cast(output_blob.pbData, ctypes.c_void_p))
 
 
 def _new_session_ref() -> str:
