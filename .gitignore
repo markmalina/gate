@@ -1,5 +1,7 @@
 .env
 *.session
+*.session.enc
+*.fernet.key
 *.sqlite
 *.db
 __pycache__/
