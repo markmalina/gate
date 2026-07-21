@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import secrets
 from collections.abc import Callable
+from ctypes import wintypes
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,9 +15,21 @@ from typing import Any, Protocol
 
 from cryptography.fernet import Fernet
 
+_DPAPI_KEY_PREFIX = b"GATE-DPAPI-CURRENT-USER-V1\x00"
+_CRYPTPROTECT_UI_FORBIDDEN = 0x1
+
 
 class PersonalTelegramEnrollmentError(RuntimeError):
     """A redacted, fail-closed enrollment error."""
+
+
+class _DataBlob(ctypes.Structure):
+    """Windows DATA_BLOB used by the native DPAPI boundary."""
+
+    _fields_ = [
+        ("cbData", wintypes.DWORD),
+        ("pbData", ctypes.POINTER(ctypes.c_ubyte)),
+    ]
 
 
 class PersonalTelegramSessionAuthorizer(Protocol):
@@ -55,7 +69,7 @@ class EnrollmentArtifacts:
 
 
 class EncryptedSessionFileStore:
-    """Persist session ciphertext and a separate receipt with owner-only permissions."""
+    """Persist session ciphertext and a separate redacted receipt."""
 
     def __init__(
         self,
@@ -63,6 +77,7 @@ class EncryptedSessionFileStore:
         output_directory: Path,
         encryption_key: bytes,
         session_ref_factory: Callable[[], str] | None = None,
+        secret_store_class: str | None = None,
     ) -> None:
         self._output_directory = output_directory
         try:
@@ -72,6 +87,7 @@ class EncryptedSessionFileStore:
                 "personal_telegram_encryption_key_invalid"
             ) from exc
         self._session_ref_factory = session_ref_factory or _new_session_ref
+        self._secret_store_class = secret_store_class or _secret_store_class()
 
     def persist(
         self,
@@ -97,7 +113,8 @@ class EncryptedSessionFileStore:
             )
 
         self._output_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(self._output_directory, 0o700)
+        if not _uses_windows_current_user_dpapi():
+            os.chmod(self._output_directory, 0o700)
         ciphertext_path = self._output_directory / f"{session_ref}.session.enc"
         receipt_path = self._output_directory / f"{session_ref}.receipt.json"
         if ciphertext_path.exists() or receipt_path.exists():
@@ -111,10 +128,11 @@ class EncryptedSessionFileStore:
             account_label=account_label,
             application_label=application_label,
             created_at=timestamp.astimezone(UTC).isoformat(),
+            secret_store_class=self._secret_store_class,
         )
         try:
-            _write_new_owner_only(ciphertext_path, ciphertext)
-            _write_new_owner_only(receipt_path, receipt.as_json().encode("utf-8"))
+            _write_new_private_file(ciphertext_path, ciphertext)
+            _write_new_private_file(receipt_path, receipt.as_json().encode("utf-8"))
         except Exception:
             _remove_created(receipt_path)
             _remove_created(ciphertext_path)
@@ -220,12 +238,14 @@ async def enroll_personal_telegram_session(
 
 
 def generate_encryption_key_file(path: Path) -> None:
-    """Create one owner-only Fernet key file and fail if it already exists."""
+    """Create a protected Fernet key file and fail if it already exists."""
 
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(path.parent, 0o700)
+    if not _uses_windows_current_user_dpapi():
+        os.chmod(path.parent, 0o700)
+    stored_key = _protect_encryption_key_for_storage(Fernet.generate_key())
     try:
-        _write_new_owner_only(path, Fernet.generate_key())
+        _write_new_private_file(path, stored_key)
     except FileExistsError as exc:
         raise PersonalTelegramEnrollmentError(
             "personal_telegram_key_file_exists"
@@ -237,10 +257,10 @@ def generate_encryption_key_file(path: Path) -> None:
 
 
 def read_encryption_key_file(path: Path) -> bytes:
-    """Read an enrollment key without including its value in any error."""
+    """Read and unwrap an enrollment key without leaking it in an error."""
 
     try:
-        value = path.read_bytes().strip()
+        value = path.read_bytes()
     except OSError as exc:
         raise PersonalTelegramEnrollmentError(
             "personal_telegram_key_file_read_failed"
@@ -249,7 +269,84 @@ def read_encryption_key_file(path: Path) -> bytes:
         raise PersonalTelegramEnrollmentError(
             "personal_telegram_encryption_key_invalid"
         )
-    return value
+    return _unprotect_encryption_key_from_storage(value)
+
+
+def _uses_windows_current_user_dpapi() -> bool:
+    return os.name == "nt"
+
+
+def _secret_store_class() -> str:
+    if _uses_windows_current_user_dpapi():
+        return "windows_current_user_dpapi_wrapped_fernet"
+    return "posix_owner_only_fernet_file"
+
+
+def _protect_encryption_key_for_storage(key: bytes) -> bytes:
+    if not _uses_windows_current_user_dpapi():
+        return key
+    return _DPAPI_KEY_PREFIX + _windows_dpapi_transform(key, protect=True)
+
+
+def _unprotect_encryption_key_from_storage(value: bytes) -> bytes:
+    if not _uses_windows_current_user_dpapi():
+        return value
+    if not value.startswith(_DPAPI_KEY_PREFIX):
+        raise PersonalTelegramEnrollmentError(
+            "personal_telegram_windows_dpapi_key_required"
+        )
+    protected = value[len(_DPAPI_KEY_PREFIX) :]
+    if not protected:
+        raise PersonalTelegramEnrollmentError(
+            "personal_telegram_windows_dpapi_key_invalid"
+        )
+    key = _windows_dpapi_transform(protected, protect=False)
+    try:
+        Fernet(key)
+    except (TypeError, ValueError) as exc:
+        raise PersonalTelegramEnrollmentError(
+            "personal_telegram_windows_dpapi_key_invalid"
+        ) from exc
+    return key
+
+
+def _windows_dpapi_transform(value: bytes, *, protect: bool) -> bytes:
+    """Protect or unprotect bytes with native CurrentUser Windows DPAPI."""
+
+    win_dll: Any = getattr(ctypes, "WinDLL", None)
+    if win_dll is None:
+        raise PersonalTelegramEnrollmentError(
+            "personal_telegram_windows_dpapi_unavailable"
+        )
+    input_buffer = ctypes.create_string_buffer(value)
+    input_blob = _DataBlob(
+        len(value), ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_ubyte))
+    )
+    output_blob = _DataBlob()
+    crypt32: Any = win_dll("crypt32", use_last_error=True)
+    kernel32: Any = win_dll("kernel32", use_last_error=True)
+    operation: Any
+    if protect:
+        operation = crypt32.CryptProtectData
+    else:
+        operation = crypt32.CryptUnprotectData
+    succeeded = operation(
+        ctypes.byref(input_blob),
+        None,
+        None,
+        None,
+        None,
+        _CRYPTPROTECT_UI_FORBIDDEN,
+        ctypes.byref(output_blob),
+    )
+    if not succeeded:
+        raise PersonalTelegramEnrollmentError(
+            "personal_telegram_windows_dpapi_operation_failed"
+        )
+    try:
+        return ctypes.string_at(output_blob.pbData, output_blob.cbData)
+    finally:
+        kernel32.LocalFree(output_blob.pbData)
 
 
 def _new_session_ref() -> str:
@@ -270,14 +367,16 @@ def _safe_session_ref(value: str) -> str:
 
 def _safe_label(value: str, field_name: str) -> str:
     normalized = value.strip()
-    if not 1 <= len(normalized) <= 80 or any(character in "\r\n\0" for character in normalized):
+    if not 1 <= len(normalized) <= 80 or any(
+        character in "\r\n\0" for character in normalized
+    ):
         raise PersonalTelegramEnrollmentError(
             f"personal_telegram_{field_name}_invalid"
         )
     return normalized
 
 
-def _write_new_owner_only(path: Path, content: bytes) -> None:
+def _write_new_private_file(path: Path, content: bytes) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(descriptor, "wb") as stream:
@@ -287,7 +386,8 @@ def _write_new_owner_only(path: Path, content: bytes) -> None:
     except Exception:
         _remove_created(path)
         raise
-    os.chmod(path, 0o600)
+    if not _uses_windows_current_user_dpapi():
+        os.chmod(path, 0o600)
 
 
 def _remove_created(path: Path) -> None:
