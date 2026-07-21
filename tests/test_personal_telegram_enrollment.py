@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cryptography.fernet import Fernet
 import pytest
 from app.personal_telegram import enrollment
 from app.personal_telegram.enrollment import (
@@ -20,6 +19,7 @@ from app.personal_telegram.enrollment import (
     generate_encryption_key_file,
     read_encryption_key_file,
 )
+from cryptography.fernet import Fernet
 
 SECRET_SESSION = "synthetic-session-secret-never-emit"
 SECRET_HASH = "synthetic-api-hash-never-emit"
