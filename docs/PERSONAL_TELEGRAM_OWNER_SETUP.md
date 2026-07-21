@@ -58,35 +58,41 @@ checkout:
 py -m pip install -e ".[contact-sync]"
 ```
 
-Create the encryption key once. The command fails instead of overwriting an
-existing key:
+Create the encryption key once. On Windows the command wraps the generated
+Fernet key with native CurrentUser DPAPI before the key reaches disk. The file
+can be unwrapped only under the same Windows user profile. The command fails
+instead of overwriting an existing key:
 
 ```powershell
 gate-personal-telegram-enroll init-key `
-  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key"
+  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key.dpapi"
 ```
 
-After the Telegram application exists, perform one enrollment:
+After the Telegram application exists, perform one enrollment under that same
+Windows account:
 
 ```powershell
 gate-personal-telegram-enroll enroll `
-  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key" `
+  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key.dpapi" `
   --output-directory "$env:USERPROFILE\.gate\personal-telegram" `
   --account-label "Alfa owner" `
   --application-label "Alfa Personal"
 ```
 
-The utility asks for `api_id`, `api_hash`, phone, login code and optional 2FA
-through non-echoing terminal prompts. Normal output is only the redacted
-receipt. It writes one encrypted `.session.enc` file and one safe receipt file
-with owner-only permissions. Neither file belongs in Git.
+The utility rejects an unwrapped legacy Fernet key on Windows. It asks for
+`api_id`, `api_hash`, phone, login code and optional 2FA through non-echoing
+terminal prompts. Normal output is only the redacted receipt. The Telegram
+session is encrypted with Fernet, while the corresponding Fernet key remains
+bound to the current Windows account by DPAPI. Neither artifact belongs in Git.
 
-The encryption runtime is an explicit, release-pinned Gate dependency; the
-enrollment command never downloads or selects cryptography code dynamically.
+The receipt remains non-secret and records
+`windows_current_user_dpapi_wrapped_fernet`; all capability flags remain false.
+The enrollment command never downloads or selects cryptography code
+dynamically.
 
-Keep the encryption key separate from the ciphertext in the approved secret
-store before any later runtime wiring. Deleting either one makes the stored
-session unusable. Do not run contact sync or a send after enrollment.
+Keep the DPAPI-wrapped key file separate from the session ciphertext before any
+later runtime wiring. Deleting either one makes the stored session unusable. Do
+not run dialog reads, contact sync, runtime wiring or a send after enrollment.
 
 ## Stage C — read-only canary gate
 
@@ -130,8 +136,8 @@ Rollback sequence:
 1. Disable send, contact sync and dialog read.
 2. Revoke the Telegram user authorization/session from the owner-controlled
    Telegram security surface.
-3. Delete the encrypted session ciphertext and rotate the application secret if
-   exposure is suspected.
+3. Delete the encrypted session ciphertext and DPAPI-wrapped key; rotate the
+   application secret if exposure is suspected.
 4. Preserve only opaque audit receipts and the unknown-outcome marker.
 5. Do not delete evidence required to prevent a duplicate retry.
 6. Confirm Gate has no usable session and no queued personal Telegram attempt.
