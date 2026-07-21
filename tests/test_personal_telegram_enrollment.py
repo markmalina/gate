@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
 from cryptography.fernet import Fernet
+import pytest
 
 from app.personal_telegram.enrollment import (
     EncryptedSessionFileStore,
