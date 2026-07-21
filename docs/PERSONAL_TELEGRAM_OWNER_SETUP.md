@@ -81,6 +81,9 @@ through non-echoing terminal prompts. Normal output is only the redacted
 receipt. It writes one encrypted `.session.enc` file and one safe receipt file
 with owner-only permissions. Neither file belongs in Git.
 
+The encryption runtime is an explicit, release-pinned Gate dependency; the
+enrollment command never downloads or selects cryptography code dynamically.
+
 Keep the encryption key separate from the ciphertext in the approved secret
 store before any later runtime wiring. Deleting either one makes the stored
 session unusable. Do not run contact sync or a send after enrollment.
