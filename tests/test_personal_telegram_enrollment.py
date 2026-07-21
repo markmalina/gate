@@ -12,11 +12,13 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 import pytest
 
+from app.personal_telegram import enrollment
 from app.personal_telegram.enrollment import (
     EncryptedSessionFileStore,
     PersonalTelegramEnrollmentError,
     enroll_personal_telegram_session,
     generate_encryption_key_file,
+    read_encryption_key_file,
 )
 
 SECRET_SESSION = "synthetic-session-secret-never-emit"
@@ -114,6 +116,67 @@ def test_key_file_is_owner_only_and_never_overwritten(tmp_path: Path) -> None:
         generate_encryption_key_file(key_file)
 
     assert key_file.read_bytes() == first
+
+
+def test_windows_key_is_dpapi_bound_and_unwrapped_for_same_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_dpapi(value: bytes, *, protect: bool) -> bytes:
+        marker = b"synthetic-current-user:"
+        if protect:
+            return marker + value[::-1]
+        assert value.startswith(marker)
+        return value[len(marker) :][::-1]
+
+    monkeypatch.setattr(enrollment, "_uses_windows_current_user_dpapi", lambda: True)
+    monkeypatch.setattr(enrollment, "_windows_dpapi_transform", fake_dpapi)
+    key_file = tmp_path / "personal-telegram.fernet.key.dpapi"
+
+    generate_encryption_key_file(key_file)
+    stored = key_file.read_bytes()
+    key = read_encryption_key_file(key_file)
+
+    assert stored.startswith(enrollment._DPAPI_KEY_PREFIX)
+    assert key not in stored
+    Fernet(key)
+
+
+def test_windows_rejects_unwrapped_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(enrollment, "_uses_windows_current_user_dpapi", lambda: True)
+    key_file = tmp_path / "unwrapped.fernet.key"
+    key_file.write_bytes(Fernet.generate_key())
+
+    with pytest.raises(
+        PersonalTelegramEnrollmentError,
+        match="personal_telegram_windows_dpapi_key_required",
+    ):
+        read_encryption_key_file(key_file)
+
+
+def test_windows_receipt_records_dpapi_store_without_enabling_capabilities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(enrollment, "_uses_windows_current_user_dpapi", lambda: True)
+    store = EncryptedSessionFileStore(
+        output_directory=tmp_path,
+        encryption_key=Fernet.generate_key(),
+        session_ref_factory=lambda: "session_synthetic0001",
+    )
+
+    artifacts = store.persist(
+        session_string=SECRET_SESSION,
+        account_label="Alfa owner",
+        application_label="Alfa Personal",
+    )
+
+    assert artifacts.receipt.secret_store_class == (
+        "windows_current_user_dpapi_wrapped_fernet"
+    )
+    assert artifacts.receipt.read_dialogs_enabled is False
+    assert artifacts.receipt.contact_sync_enabled is False
+    assert artifacts.receipt.send_enabled is False
 
 
 def test_errors_are_redacted_when_authorization_fails(tmp_path: Path) -> None:
