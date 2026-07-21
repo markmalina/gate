@@ -1,7 +1,8 @@
 # Personal Telegram owner setup checklist
 
-Status: Stage A documentation only. Do not perform this checklist until the
-matching later stage has an exact owner authorization.
+Status: Stage A contract is merged and default-off. Issue #269 records the
+separate owner authorization for Stage B. Issue #270 owns the protected local
+enrollment utility; its existence never activates a runtime capability.
 
 ## Stage A acceptance
 
@@ -20,22 +21,76 @@ Only after a separate owner approval:
 
 1. Confirm the exact owner-controlled Telegram account and one Telegram API
    application.
-2. Put api_id and api_hash directly into the approved secret store. Never enter
-   them in chat, GitHub, CI, logs or a Flow payload.
-3. Complete phone code and optional 2FA directly in the authorization surface.
-4. Store the resulting session encrypted; expose only an opaque session_ref to
-   Gate.
-5. Record a redacted capability receipt: account label, application label,
-   created time, secret-store reference class and enabled flags. Do not record
-   phone, code, password, api hash, session string or raw provider identifiers.
-6. Keep read, contact sync and send disabled.
+2. Enter `api_id`, `api_hash`, phone, login code and optional 2FA only in the
+   non-echoing local enrollment prompts. Never enter them in chat, GitHub, CI,
+   logs or a Flow payload.
+3. Encrypt the resulting session before it is persisted; expose only an opaque
+   `session_ref` to Gate.
+4. Record a redacted capability receipt: safe account/application labels,
+   created time, secret-store class and disabled flags. Do not record phone,
+   code, password, API hash, session string or raw provider identifiers.
+5. Keep read, contact sync and send disabled.
+
+### Telegram application form
+
+The current personal application is for Alfa itself, not AlphaV and not Gate.
+Use non-secret labels only:
+
+```text
+App title: Alfa Personal
+Short name: alfapersonal26
+URL: leave blank
+Platform: Desktop
+Description: Personal desktop client for Alfa.
+```
+
+If Telegram returns only `ERROR`, do not keep changing architecture names and
+do not paste credentials into an issue. Retry the same minimal ASCII values
+later from the owner account; application creation remains an external Telegram
+action, not a Gate repository action.
+
+### Protected local enrollment (Windows PowerShell)
+
+Install the already pinned optional client dependency in a protected local
+checkout:
+
+```powershell
+py -m pip install -e ".[contact-sync]"
+```
+
+Create the encryption key once. The command fails instead of overwriting an
+existing key:
+
+```powershell
+gate-personal-telegram-enroll init-key `
+  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key"
+```
+
+After the Telegram application exists, perform one enrollment:
+
+```powershell
+gate-personal-telegram-enroll enroll `
+  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key" `
+  --output-directory "$env:USERPROFILE\.gate\personal-telegram" `
+  --account-label "Alfa owner" `
+  --application-label "Alfa Personal"
+```
+
+The utility asks for `api_id`, `api_hash`, phone, login code and optional 2FA
+through non-echoing terminal prompts. Normal output is only the redacted
+receipt. It writes one encrypted `.session.enc` file and one safe receipt file
+with owner-only permissions. Neither file belongs in Git.
+
+Keep the encryption key separate from the ciphertext in the approved secret
+store before any later runtime wiring. Deleting either one makes the stored
+session unusable. Do not run contact sync or a send after enrollment.
 
 ## Stage C — read-only canary gate
 
 Only after a separate owner approval naming the scope:
 
 1. Select no more than three dialogs in the owner authorization surface.
-2. Convert each selection to an opaque Gate peer_ref.
+2. Convert each selection to an opaque Gate `peer_ref`.
 3. Enable read-only access for that exact allowlist and a fixed observation
    window.
 4. Return only the minimum Relations projection needed for the approved purpose.
