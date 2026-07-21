@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import stat
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -153,6 +154,19 @@ def test_windows_rejects_unwrapped_key(
         match="personal_telegram_windows_dpapi_key_required",
     ):
         read_encryption_key_file(key_file)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native Windows CurrentUser DPAPI only")
+def test_windows_native_dpapi_key_round_trip(tmp_path: Path) -> None:
+    key_file = tmp_path / "personal-telegram.fernet.key.dpapi"
+
+    generate_encryption_key_file(key_file)
+    stored = key_file.read_bytes()
+    key = read_encryption_key_file(key_file)
+
+    assert stored.startswith(enrollment._DPAPI_KEY_PREFIX)
+    assert key not in stored
+    Fernet(key)
 
 
 def test_windows_receipt_records_dpapi_store_without_enabling_capabilities(
