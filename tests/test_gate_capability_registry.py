@@ -13,6 +13,7 @@ ALLOWED_LIFECYCLES = {
     "not-implemented",
 }
 EXPECTED_OWNERS = {"gate", "alfa", "relations", "mayaki", "take", "center"}
+EXPECTED_CAPABILITY_OWNERS = EXPECTED_OWNERS | {"alfa-relations", "future-alpha-platform"}
 EXPECTED_ROADMAP = {f"P{index}" for index in range(8)}
 
 
@@ -41,7 +42,7 @@ def test_gate_capability_registry_is_well_formed() -> None:
         "alpha-platform",
     }
     assert {capability["lifecycle"] for capability in capabilities} <= ALLOWED_LIFECYCLES
-    assert all(capability["owner"] in EXPECTED_OWNERS for capability in capabilities)
+    assert all(capability["owner"] in EXPECTED_CAPABILITY_OWNERS for capability in capabilities)
 
     roadmap = registry["roadmap"]
     assert {stage["id"] for stage in roadmap} == EXPECTED_ROADMAP
