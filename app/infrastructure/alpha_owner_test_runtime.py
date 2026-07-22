@@ -90,6 +90,7 @@ async def observe_owner_test_presence(
         installation.state = "paused"
         installation.updated_at = observed_at
         await session.flush()
+        await session.commit()
     return presence
 
 
@@ -223,16 +224,21 @@ async def send_owner_test_review(
     attempt = AgentSendAttemptModel(
         workspace_id=installation.workspace_id,
         grant_id=grant.id,
-        state="sending",
+        state="unknown",
+        error_code="alpha_owner_test_provider_outcome_pending",
     )
     session.add(attempt)
     await session.flush()
+    # Persist a terminal fail-closed receipt before crossing the provider boundary.
+    # A crash may leave "unknown", but a later exact request can never send twice.
+    await session.commit()
 
     token = settings.telegram_alpha_bot_token.get_secret_value().strip()
     if not token:
         attempt.state = "blocked"
         attempt.error_code = "alpha_owner_test_credentials_incomplete"
         await session.flush()
+        await session.commit()
         return _delivery_payload(
             installation_ref=installation.installation_key,
             turn_ref=str(turn.id),
@@ -262,11 +268,13 @@ async def send_owner_test_review(
             attempt.error_code = "alpha_owner_test_provider_result_invalid"
         else:
             attempt.state = "sent"
+            attempt.error_code = None
             message_id = result.get("message_id")
             if isinstance(message_id, int) and not isinstance(message_id, bool):
                 attempt.provider_message_id = str(message_id)
     attempt.updated_at = datetime.now(UTC)
     await session.flush()
+    await session.commit()
     return _delivery_payload(
         installation_ref=installation.installation_key,
         turn_ref=str(turn.id),
