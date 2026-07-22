@@ -70,6 +70,10 @@ from app.infrastructure.alpha_model_preflight import (
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
+from app.infrastructure.telegram_webhook_status import (
+    TelegramWebhookStatusError,
+    get_alpha_webhook_status,
+)
 from app.infrastructure.telegram_business_text_parity import (
     telegram_business_text_parity_status,
 )
@@ -114,6 +118,7 @@ MCP_TOOL_NAMES = [
     "gate_send_approved_reply",
     "gate_queue_approved_reply_sequence",
     "gate_alpha_list_installations",
+    "gate_alpha_get_webhook_status",
     "gate_alpha_control_installation",
     "gate_alpha_run_model_preflight",
     "gate_alpha_list_shadow_reviews",
@@ -128,6 +133,7 @@ MCP_TOOL_SCOPES = {
     "gate_send_approved_reply": "gate:messages:send",
     "gate_queue_approved_reply_sequence": "gate:messages:send",
     "gate_alpha_list_installations": "gate:status:read",
+    "gate_alpha_get_webhook_status": "gate:status:read",
     "gate_alpha_control_installation": "gate:agents:manage",
     "gate_alpha_run_model_preflight": "gate:agents:manage",
     "gate_alpha_list_shadow_reviews": "gate:agents:manage",
@@ -184,6 +190,7 @@ async def mcp_endpoint(
                     _gate_send_approved_reply_tool(settings),
                     _gate_queue_approved_reply_sequence_tool(settings),
                     _gate_alpha_list_installations_tool(settings),
+                    _gate_alpha_get_webhook_status_tool(settings),
                     _gate_alpha_control_installation_tool(settings),
                     _gate_alpha_run_model_preflight_tool(settings),
                     _gate_alpha_list_shadow_reviews_tool(settings),
@@ -257,6 +264,14 @@ async def mcp_endpoint(
                 request_id=request_id,
                 principal=principal,
                 session=session,
+            )
+        if tool_name == "gate_alpha_get_webhook_status":
+            return await _alpha_get_webhook_status_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                settings=settings,
             )
         if tool_name == "gate_alpha_list_shadow_reviews":
             return await _alpha_list_shadow_reviews_tool_result(
@@ -538,6 +553,88 @@ async def _alpha_list_installations_tool_result(
     return _tool_result(payload, "\n".join(lines), request_id)
 
 
+async def _alpha_get_webhook_status_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    raw_ref = arguments.get("installation_ref")
+    if (
+        not isinstance(raw_ref, str)
+        or not raw_ref
+        or len(raw_ref) > 128
+        or arguments.get("confirmed") is not True
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="installation_ref and confirmed=true are required",
+        )
+
+    service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
+    try:
+        installations = await service.list_status(
+            principal.access_scope.workspace_id
+        )
+    except AlphaLifecycleError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+    installation = next(
+        (
+            item
+            for item in installations
+            if item.installation_key == raw_ref
+        ),
+        None,
+    )
+    if installation is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="alpha_installation_not_found",
+            message="Alpha installation not found in the allowed scope",
+        )
+    if (
+        installation.state is not AlphaInstallationState.ACTIVE
+        or not installation.connector_enabled
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="alpha_webhook_installation_not_ready",
+            message="Alpha installation is not active and connector-ready",
+        )
+
+    try:
+        async with httpx.AsyncClient() as http_client:
+            webhook = await get_alpha_webhook_status(
+                settings=settings,
+                http_client=http_client,
+            )
+    except TelegramWebhookStatusError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.code,
+        )
+
+    payload = {
+        "installation_ref": raw_ref,
+        "webhook": webhook,
+    }
+    match = "exact" if webhook["exact_match"] else "mismatch"
+    return _tool_result(
+        payload,
+        f"Alpha webhook: {match}; pending="
+        f"{webhook['pending_update_count']}",
+        request_id,
+    )
+
+
 async def _alpha_list_shadow_reviews_tool_result(
     *,
     request_id: Any,
@@ -706,6 +803,46 @@ def _gate_alpha_list_installations_tool(settings: Settings) -> JsonObject:
             "gate_alpha_list_installations"
         ],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:status:read",
+    )
+
+
+def _gate_alpha_get_webhook_status_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_get_webhook_status",
+        "title": "Check Alpha webhook status",
+        "description": (
+            "After exact owner confirmation, call Telegram Bot API "
+            "getWebhookInfo once for the configured Alpha bot and return only "
+            "redacted webhook status. It cannot send messages, read history or "
+            "participants, or change the webhook or installation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "installation_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": ["installation_ref", "confirmed"],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_get_webhook_status"
+        ],
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
     }
     return _with_security_scheme(
         tool=tool,
