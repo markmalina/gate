@@ -1,7 +1,7 @@
 """Repository contract tests for the Gate capability registry."""
 
-import json
 from pathlib import Path
+import json
 
 
 REGISTRY_PATH = Path(__file__).parents[1] / "registry" / "gate-capabilities.v1.json"
