@@ -27,7 +27,8 @@ because counters below are dated evidence, not invariants.
 
 ### Current pointer
 
-- Gate #277 P0 is complete with exact CI, merge and Railway receipts.\n- Gate #279 owns the P2 personal-Telegram capability audit. Business/Bot API is primary; residual MTProto runtime is blocked behind Telegram-terms/compliance and exact owner data gates.
+- Gate #277 P0 is complete with exact CI, merge and Railway receipts.
+- Gate #279 owns the P2 personal-Telegram capability audit. Business/Bot API is primary; residual MTProto runtime is blocked behind Telegram-terms/compliance and exact owner data gates.
 - Gate #261 is `waiting_user` at the exact external Auth0/ChatGPT authorization gate.
 - Gate #260 is `blocked` behind #261; it authorizes neither raw-media movement nor provider action.
 - Gate #272 is the single durable Center cutover pointer.
