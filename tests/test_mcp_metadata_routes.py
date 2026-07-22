@@ -52,6 +52,7 @@ async def test_oauth_protected_resource_metadata() -> None:
     assert payload["mcp"]["send_tools"] == [
         "gate_send_approved_reply",
         "gate_queue_approved_reply_sequence",
+        "gate_alpha_send_review",
     ]
     assert payload["mcp"]["send_requires_explicit_confirmation"] is True
 
@@ -77,6 +78,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
+        "gate_alpha_get_test_group_presence",
     ]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
@@ -115,6 +117,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
+        "gate_alpha_get_test_group_presence",
     ]
     assert payload["tools"]["write"] == [
         "gate_save_reply_draft",
@@ -124,6 +127,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["tools"]["send"] == [
         "gate_send_approved_reply",
         "gate_queue_approved_reply_sequence",
+        "gate_alpha_send_review",
     ]
     assert payload["tools"]["send_requires_explicit_confirmation"] is True
 
