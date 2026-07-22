@@ -221,9 +221,15 @@ async def test_exact_delivery_replays_across_independent_sessions() -> None:
 
 
 @pytest.mark.anyio
-async def test_paused_installation_blocks_before_provider() -> None:
+@pytest.mark.parametrize(
+    "installation_state",
+    ("discovered", "pending_approval", "paused", "revoked"),
+)
+async def test_non_active_installation_blocks_before_provider(
+    installation_state: str,
+) -> None:
     fixtures = _fixtures()
-    fixtures.installation.state = "paused"
+    fixtures.installation.state = installation_state
     ledger = _Ledger()
     session = _DeliverySession(ledger=ledger, fixtures=fixtures)
     http_client = _HttpClient(ledger=ledger)
