@@ -801,6 +801,49 @@ ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+ALPHA_OWNER_TEST_PRESENCE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "installation_ref": {"type": "string", "minLength": 1, "maxLength": 128},
+            "group_label": {"type": "string", "minLength": 1, "maxLength": 255},
+            "member_count": _nullable("integer"),
+            "state": {
+                "type": "string",
+                "enum": ["owner_only", "third_party_present", "unknown"],
+            },
+            "observed_at": {"type": "string", "format": "date-time"},
+            "participant_identities_exposed": {
+                "type": "boolean",
+                "const": False,
+            },
+        }
+    ),
+    {},
+)
+ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "installation_ref": {"type": "string", "minLength": 1, "maxLength": 128},
+            "turn_ref": {"type": "string", "format": "uuid"},
+            "state": {
+                "type": "string",
+                "enum": ["reserved", "sending", "sent", "failed", "unknown", "blocked"],
+            },
+            "replay": {"type": "boolean"},
+            "provider_message_id_exposed": {
+                "type": "boolean",
+                "const": False,
+            },
+            "participant_identities_exposed": {
+                "type": "boolean",
+                "const": False,
+            },
+        }
+    ),
+    {},
+)
+
+
 MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_get_status": GATE_STATUS_OUTPUT_SCHEMA,
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
@@ -813,4 +856,6 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_alpha_control_installation": ALPHA_CONTROL_OUTPUT_SCHEMA,
     "gate_alpha_run_model_preflight": ALPHA_PREFLIGHT_OUTPUT_SCHEMA,
     "gate_alpha_list_shadow_reviews": ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA,
+    "gate_alpha_get_test_group_presence": ALPHA_OWNER_TEST_PRESENCE_OUTPUT_SCHEMA,
+    "gate_alpha_send_review": ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA,
 }
