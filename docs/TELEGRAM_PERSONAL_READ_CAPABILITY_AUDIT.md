@@ -144,6 +144,7 @@ must disable the read flag automatically, discard transient payloads and retain 
 redacted terminal receipt. Revoking a real session or deleting its encrypted artifacts is
 an owner-controlled external action and needs an exact command.
 
-The next safe P2 unit is a repository-only, provider-neutral read contract with fake
-adapter tests that enforce the limits above. It must not import Telethon at runtime or
-read any dialog. Live activation remains blocked behind the two human gates.
+The repository-only provider-neutral read contract and fake adapter tests are owned by
+[#281](https://github.com/markmalina/gate/issues/281). They enforce the limits above
+without importing Telethon or reading a dialog. Live activation remains blocked behind
+the two human gates.

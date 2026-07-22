@@ -4,7 +4,7 @@
 > Repository: `markmalina/gate` (private), source of truth: GitHub `main`  
 > Current `main` / automatic Railway deployment: `80751280521baa6f0a259032f5093d1161da2363`, verified on **2026-07-22**; exact-head CI for PR #276 (run `29918762063`) succeeded.  
 > The detailed production counters below remain a dated **2026-07-18** snapshot at `f879fefde08dbd1264829ce201808f726581eb1f`; re-query before operational use.  
-> Current work: #277 P0 is complete; #279 owns the completed P2 personal-Telegram capability audit; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer. Protected personal-Telegram enrollment exists, while runtime/read/send remain disabled.
+> Current work: #277 P0 is complete; #279 records the completed capability audit and #281 owns the bounded-read contract; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer. Protected personal-Telegram enrollment exists, while runtime/read/send remain disabled.
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -728,4 +728,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** #279 defines the next safe P2 unit as a provider-neutral bounded-read contract with fake tests only. Live MTProto reading remains blocked by Telegram-terms/compliance and exact owner data gates. #261 remains at its external authorization gate; #260 remains blocked behind it. Do not send a message, handle credentials, reconnect Gate M, activate a provider, manually mutate production or process real-person data until the matching issue records exact authority.
+**Immediate continuation:** #281 owns the provider-neutral bounded-read contract with fake tests only. Live MTProto reading remains blocked by Telegram-terms/compliance and exact owner data gates. #261 remains at its external authorization gate; #260 remains blocked behind it. Do not send a message, handle credentials, reconnect Gate M, activate a provider, manually mutate production or process real-person data until the matching issue records exact authority.

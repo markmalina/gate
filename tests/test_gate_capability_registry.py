@@ -50,8 +50,8 @@ def test_gate_capability_registry_is_well_formed() -> None:
     assert p0["state"] == "done"
     assert p0["pointer"] == registry["sourceIssue"]
     p2 = next(stage for stage in roadmap if stage["id"] == "P2")
-    assert p2["state"] == "audit-complete-runtime-gated"
-    assert p2["pointer"] == "https://github.com/markmalina/gate/issues/279"
+    assert p2["state"] == "contract-ready-runtime-gated"
+    assert p2["pointer"] == "https://github.com/markmalina/gate/issues/281"
     personal = next(
         capability
         for capability in capabilities
@@ -59,6 +59,9 @@ def test_gate_capability_registry_is_well_formed() -> None:
     )
     assert personal["currentPointer"] == p2["pointer"]
     assert "official-api-gap-matrix" in personal["current"]
+    assert "provider-neutral-bounded-read-contract" in personal["current"]
+    assert "one-use-digest-read-grant" in personal["current"]
+    assert "redacted-read-receipt" in personal["current"]
     assert "telegram-ai-terms-gate" in personal["current"]
 
 

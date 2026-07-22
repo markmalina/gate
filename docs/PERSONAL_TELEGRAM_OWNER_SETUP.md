@@ -96,15 +96,22 @@ not run dialog reads, contact sync, runtime wiring or a send after enrollment.
 
 ## Stage C — read-only canary gate
 
-Only after a separate owner approval naming the scope:
+The repository-only contract in #281 is limited to a fake adapter, one opaque
+dialog, five content-free metadata envelopes and a 24-hour maximum window. It
+does not load the enrolled session and cannot call Telegram. A live adapter is
+not authorized.
 
-1. Select no more than three dialogs in the owner authorization surface.
-2. Convert each selection to an opaque Gate `peer_ref`.
-3. Enable read-only access for that exact allowlist and a fixed observation
-   window.
-4. Return only the minimum Relations projection needed for the approved purpose.
-5. Do not import bulk history, secret chats, deleted messages or contacts.
-6. Disable the read flag and record the redacted receipt after the canary.
+Before any live read, record both a permitted Telegram-terms/compliance basis
+for the exact use and a separate owner approval naming the scope:
+
+1. Select exactly one cloud dialog in the owner authorization surface.
+2. Convert the selection to an opaque Gate `peer_ref`.
+3. Bind one one-use grant to that peer, at most five envelopes and at most the
+   preceding 24 hours.
+4. Keep message text and media out of the transport canary and out of Alfa/model.
+5. Do not import bulk history, secret chats, deleted messages or contacts, and
+   do not mark messages read.
+6. Consume the grant, disable read and retain only the redacted terminal receipt.
 
 ## Stage D — one exact send gate
 

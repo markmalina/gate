@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0",
   "status": "current-target",
-  "capturedAt": "2026-07-22T14:57:14Z",
+  "capturedAt": "2026-07-22T15:18:00Z",
   "sourceIssue": "https://github.com/markmalina/gate/issues/277",
-  "repositoryBaseline": "d30d63ab598faae9ede4b3199caa3e31482aeb10",
+  "repositoryBaseline": "3e894ebb6d0919e44bc6c3f3855bc2893b7374f1",
   "productRole": "safe-omnichannel-communication-platform",
   "lifecycleValues": [
     "production-bounded",
@@ -173,17 +173,21 @@
         "windows-current-user-dpapi-key",
         "exact-text-approval-contract",
         "official-api-gap-matrix",
+        "provider-neutral-bounded-read-contract",
+        "one-use-digest-read-grant",
+        "redacted-read-receipt",
+        "fake-read-adapter",
         "telegram-ai-terms-gate",
-        "read-send-disabled"
+        "runtime-read-send-disabled"
       ],
       "target": [
-        "provider-neutral-bounded-read-contract",
         "opaque-peer-allowlist",
-        "transient-redacted-read-canary",
+        "terms-compatible-live-read-decision",
+        "transient-redacted-provider-canary",
         "one-exact-send"
       ],
       "externalGate": "separate-terms-data-read-and-send-authorizations",
-      "currentPointer": "https://github.com/markmalina/gate/issues/279",
+      "currentPointer": "https://github.com/markmalina/gate/issues/281",
       "blocker": "telegram-ai-terms-compliance-and-exact-owner-data-authorization"
     },
     {
@@ -328,8 +332,8 @@
     {
       "id": "P2",
       "name": "personal-telegram-read",
-      "state": "audit-complete-runtime-gated",
-      "pointer": "https://github.com/markmalina/gate/issues/279"
+      "state": "contract-ready-runtime-gated",
+      "pointer": "https://github.com/markmalina/gate/issues/281"
     },
     {
       "id": "P3",
