@@ -47,8 +47,19 @@ def test_gate_capability_registry_is_well_formed() -> None:
     roadmap = registry["roadmap"]
     assert {stage["id"] for stage in roadmap} == EXPECTED_ROADMAP
     p0 = next(stage for stage in roadmap if stage["id"] == "P0")
-    assert p0["state"] == "running"
+    assert p0["state"] == "done"
     assert p0["pointer"] == registry["sourceIssue"]
+    p2 = next(stage for stage in roadmap if stage["id"] == "P2")
+    assert p2["state"] == "audit-complete-runtime-gated"
+    assert p2["pointer"] == "https://github.com/markmalina/gate/issues/279"
+    personal = next(
+        capability
+        for capability in capabilities
+        if capability["id"] == "telegram-personal-mtproto"
+    )
+    assert personal["currentPointer"] == p2["pointer"]
+    assert "official-api-gap-matrix" in personal["current"]
+    assert "telegram-ai-terms-gate" in personal["current"]
 
 
 def test_gate_capability_registry_contains_no_secret_shaped_keys() -> None:
