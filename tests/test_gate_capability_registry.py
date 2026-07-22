@@ -3,7 +3,6 @@
 from json import loads
 from pathlib import Path
 
-
 REGISTRY_PATH = Path(__file__).parents[1] / "registry" / "gate-capabilities.v1.json"
 ALLOWED_LIFECYCLES = {
     "production-bounded",
