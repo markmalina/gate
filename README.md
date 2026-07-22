@@ -4,7 +4,7 @@
 > Repository: `markmalina/gate` (private), source of truth: GitHub `main`  
 > Current `main` / automatic Railway deployment: `80751280521baa6f0a259032f5093d1161da2363`, verified on **2026-07-22**; exact-head CI for PR #276 (run `29918762063`) succeeded.  
 > The detailed production counters below remain a dated **2026-07-18** snapshot at `f879fefde08dbd1264829ce201808f726581eb1f`; re-query before operational use.  
-> Current work: #277 P0 product truth is `running`; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer. Protected personal-Telegram enrollment is complete, while runtime/read/send remain disabled.
+> Current work: #277 P0 is complete; #279 owns the completed P2 personal-Telegram capability audit; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer. Protected personal-Telegram enrollment exists, while runtime/read/send remain disabled.
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -33,7 +33,8 @@ registry, then the handoff and this README. Re-query GitHub and production befor
 
 GitHub issues and their latest receipts supersede dated roadmap prose:
 
-- [#277](https://github.com/markmalina/gate/issues/277) — `running`: one repository-only P0 execution for product truth and the capability registry.
+- [#277](https://github.com/markmalina/gate/issues/277) — `done`: accepted product truth and capability registry.
+- [#279](https://github.com/markmalina/gate/issues/279) — P2 capability audit: Business/Bot API first, owner export second, residual MTProto only after terms/compliance and exact data gates.
 - [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: external Auth0/ChatGPT authorization remains incomplete; do not reconnect or invoke Telegram without the exact issue gate.
 - [#260](https://github.com/markmalina/gate/issues/260) — `blocked` behind #261: inspect only the redacted owner-media receipt after the control connection is accepted; never resend or upload raw media.
 - [#272](https://github.com/markmalina/gate/issues/272) — the single durable Center cutover pointer.
@@ -41,7 +42,7 @@ GitHub issues and their latest receipts supersede dated roadmap prose:
 - [#273](https://github.com/markmalina/gate/issues/273) is closed setup evidence. The Instagram owner-account OAuth and transport runtime remain inactive.
 
 Do not invent activation work, restart an accepted sprint or revive PR #207. Human gates block only
-their dependent branches; independent repository-only product work follows #277.
+their dependent branches; independent repository-only product work follows #279 and its accepted next-work pointer.
 
 ## Project transfer acceptance / Приёмка проекта
 
@@ -727,4 +728,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** complete #277 P0 in its one repository-only execution and PR. #261 remains at its exact external authorization gate; #260 remains blocked behind it. Protected personal-Telegram enrollment is complete, but MTProto runtime/read/send are disabled. Do not send a message, handle credentials, reconnect Gate M, activate a provider, mutate production or process real-person data until the matching issue records exact authority.
+**Immediate continuation:** #279 defines the next safe P2 unit as a provider-neutral bounded-read contract with fake tests only. Live MTProto reading remains blocked by Telegram-terms/compliance and exact owner data gates. #261 remains at its external authorization gate; #260 remains blocked behind it. Do not send a message, handle credentials, reconnect Gate M, activate a provider, manually mutate production or process real-person data until the matching issue records exact authority.

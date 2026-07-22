@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0",
   "status": "current-target",
-  "capturedAt": "2026-07-22T13:56:00Z",
+  "capturedAt": "2026-07-22T14:57:14Z",
   "sourceIssue": "https://github.com/markmalina/gate/issues/277",
-  "repositoryBaseline": "80751280521baa6f0a259032f5093d1161da2363",
+  "repositoryBaseline": "d30d63ab598faae9ede4b3199caa3e31482aeb10",
   "productRole": "safe-omnichannel-communication-platform",
   "lifecycleValues": [
     "production-bounded",
@@ -172,16 +172,19 @@
         "encrypted-local-session",
         "windows-current-user-dpapi-key",
         "exact-text-approval-contract",
+        "official-api-gap-matrix",
+        "telegram-ai-terms-gate",
         "read-send-disabled"
       ],
       "target": [
-        "official-api-gap-matrix",
-        "bounded-read-only-runtime",
+        "provider-neutral-bounded-read-contract",
         "opaque-peer-allowlist",
+        "transient-redacted-read-canary",
         "one-exact-send"
       ],
-      "externalGate": "separate-read-and-send-authorizations",
-      "currentPointer": "https://github.com/markmalina/gate/issues/269"
+      "externalGate": "separate-terms-data-read-and-send-authorizations",
+      "currentPointer": "https://github.com/markmalina/gate/issues/279",
+      "blocker": "telegram-ai-terms-compliance-and-exact-owner-data-authorization"
     },
     {
       "id": "alfa-relations-memory-projection",
@@ -313,7 +316,7 @@
     {
       "id": "P0",
       "name": "product-truth",
-      "state": "running",
+      "state": "done",
       "pointer": "https://github.com/markmalina/gate/issues/277"
     },
     {
@@ -325,7 +328,8 @@
     {
       "id": "P2",
       "name": "personal-telegram-read",
-      "state": "planned"
+      "state": "audit-complete-runtime-gated",
+      "pointer": "https://github.com/markmalina/gate/issues/279"
     },
     {
       "id": "P3",

@@ -3,7 +3,7 @@
 > Status: current product definition and target architecture  
 > Owner decision: [Gate #277](https://github.com/markmalina/gate/issues/277)  
 > Captured: 2026-07-22  
-> Repository baseline: `80751280521baa6f0a259032f5093d1161da2363`
+> Repository baseline: `d30d63ab598faae9ede4b3199caa3e31482aeb10`
 
 ## 1. Product purpose
 
@@ -236,8 +236,8 @@ relationship meaning. Alfa owns the private semantic memory. Center receives no 
 
 ## 8. Current factual baseline
 
-The repository baseline for this decision is current `main` at
-`80751280521baa6f0a259032f5093d1161da2363`.
+The accepted P0 repository baseline is `main` at
+`d30d63ab598faae9ede4b3199caa3e31482aeb10`.
 
 | Surface | Current state |
 |---|---|
@@ -303,6 +303,8 @@ of MTProto does not override the later accepted default-off personal Telegram bo
 
 ### P2 — Personal Telegram read contour
 
+- capability audit accepted in [#279](https://github.com/markmalina/gate/issues/279);
+- treat Telegram API AI-use terms as a fail-closed compliance gate;
 - audit current official Bot API/Business/Secretary capabilities;
 - identify the remaining MTProto-only requirements;
 - wire one encrypted read-only canary;
@@ -348,8 +350,9 @@ of MTProto does not override the later accepted default-off personal Telegram bo
 
 ## 12. Immediate pointer
 
-The execution and acceptance checklist for P0 live in
-[Gate #277](https://github.com/markmalina/gate/issues/277).
+The accepted P0 receipt lives in [Gate #277](https://github.com/markmalina/gate/issues/277).
+The P2 personal-Telegram capability audit and next safe contract pointer live in
+[Gate #279](https://github.com/markmalina/gate/issues/279).
 
 The pre-existing bounded work remains:
 
