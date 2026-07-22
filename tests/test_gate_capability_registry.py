@@ -1,7 +1,7 @@
 """Repository contract tests for the Gate capability registry."""
 
+from json import loads
 from pathlib import Path
-import json
 
 
 REGISTRY_PATH = Path(__file__).parents[1] / "registry" / "gate-capabilities.v1.json"
@@ -18,7 +18,7 @@ EXPECTED_ROADMAP = {f"P{index}" for index in range(8)}
 
 
 def test_gate_capability_registry_is_well_formed() -> None:
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry = loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 
     assert registry["schemaVersion"] == "1.0.0"
     assert registry["status"] == "current-target"
@@ -52,7 +52,7 @@ def test_gate_capability_registry_is_well_formed() -> None:
 
 
 def test_gate_capability_registry_contains_no_secret_shaped_keys() -> None:
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry = loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     forbidden_keys = {
         "access_token",
         "api_hash",
