@@ -2,9 +2,9 @@
 
 > **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
 > Repository: `markmalina/gate` (private), source of truth: GitHub `main`  
-> Latest repository / automatic Railway deployment: `2d2b6e81f6019d6f01c2e5848479b1a4dfe6574c`, verified by the Gate #263 receipt on **2026-07-20**.  
+> Current `main` / automatic Railway deployment: `80751280521baa6f0a259032f5093d1161da2363`, verified on **2026-07-22**; exact-head CI for PR #276 (run `29918762063`) succeeded.  
 > The detailed production counters below remain a dated **2026-07-18** snapshot at `f879fefde08dbd1264829ce201808f726581eb1f`; re-query before operational use.  
-> Current work: #260 and #261 are `waiting_user`; #263 Stage A is done through #264 and Stage B is owner-gated. PR #207 is closed without merge.
+> Current work: #277 P0 product truth is `running`; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer. Protected personal-Telegram enrollment is complete, while runtime/read/send remain disabled.
 
 This README is the entry point for transferring Gate to another developer or implementation agent.
 Do not rely on chat history or a local workspace.
@@ -12,33 +12,36 @@ Do not rely on chat history or a local workspace.
 Continue in this exact order:
 
 1. [Team workflow](docs/TEAM_WORKFLOW.md) — authority, safety, PR/CI/merge/deploy rules.
-2. [Current project handoff](docs/PROJECT_HANDOFF.md) — current production truth, delivered work,
-   error lessons, architecture map and the next ten sprints.
-3. [Development and cost regulations](docs/DEVELOPMENT_AND_COST_REGULATIONS.md) — company-level
-   CI, OpenAI, testing, retry and transfer discipline.
-4. [Alpha operating policy](docs/ALPHA_OPERATING_POLICY.md) — standing authorization,
-   provider scope, $50 internal hard budget, and fixture → shadow → canary → live gates.
-5. [Alpha operator runbook](docs/ALPHA_OPERATOR_RUNBOOK.md) — ID-free group control,
-   one-shot provider activation, stop drills and rollback boundaries.
-6. [Relationship CRM architecture](docs/RELATIONSHIP_CRM_ARCHITECTURE.md) — standalone relationship product, privacy spaces and extraction rule.
-7. [Integrated delivery roadmap](docs/INTEGRATED_DELIVERY_ROADMAP_2026.md) — current cross-product release order.
-8. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
-9. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
-10. [Instagram connection handoff](docs/INSTAGRAM_CONNECTION_HANDOFF.md) — current `gate-IG` setup, OAuth recovery and safe connector stages.
+2. [Gate product platform](docs/GATE_PRODUCT_PLATFORM.md) — current product tree, domain ownership,
+   invariants, mind map and P0–P7 delivery program.
+3. [Capability registry](registry/gate-capabilities.v1.json) — machine-readable current/target lifecycle.
+4. [Current project handoff](docs/PROJECT_HANDOFF.md) — current production truth, delivered work,
+   error lessons, architecture map and continuation order.
+5. [Development and cost regulations](docs/DEVELOPMENT_AND_COST_REGULATIONS.md).
+6. [Alpha operating policy](docs/ALPHA_OPERATING_POLICY.md).
+7. [Alpha operator runbook](docs/ALPHA_OPERATOR_RUNBOOK.md).
+8. [Relationship CRM architecture](docs/RELATIONSHIP_CRM_ARCHITECTURE.md).
+9. [Integrated delivery roadmap](docs/INTEGRATED_DELIVERY_ROADMAP_2026.md).
+10. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
+11. [Instagram connection handoff](docs/INSTAGRAM_CONNECTION_HANDOFF.md).
+12. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md) — historical architecture baseline.
 
-If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
-update both documents in the same substantive PR.
+When documents disagree, current issues/receipts win, followed by the product platform and capability
+registry, then the handoff and this README. Re-query GitHub and production before operational use.
 
 ## Current GitHub pointers
 
 GitHub issues and their latest receipts supersede dated roadmap prose:
 
-- [#260](https://github.com/markmalina/gate/issues/260) — `waiting_user`: select the exact owner-controlled media, transport, storage/retention and any permitted provider action before a private Capture canary.
-- [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: provide only the redacted latest Auth0 failed token-exchange log fields named in the issue. Do not reconnect or invoke Telegram before that evidence.
-- [#263](https://github.com/markmalina/gate/issues/263) Stage A — done through [#264](https://github.com/markmalina/gate/pull/264): default-off personal Telegram transport contract, synthetic tests and rollback. Stage B requires a separate exact owner authorization before API application credentials, phone/2FA or session creation.
-- [#273](https://github.com/markmalina/gate/issues/273) — `waiting_user`: `gate-IG` exists, but `mark.mayak.oko` cannot yet complete Instagram web login because of a repeated CAPTCHA challenge. Preserve the mobile session; no OAuth token or Instagram action is active.
+- [#277](https://github.com/markmalina/gate/issues/277) — `running`: one repository-only P0 execution for product truth and the capability registry.
+- [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: external Auth0/ChatGPT authorization remains incomplete; do not reconnect or invoke Telegram without the exact issue gate.
+- [#260](https://github.com/markmalina/gate/issues/260) — `blocked` behind #261: inspect only the redacted owner-media receipt after the control connection is accepted; never resend or upload raw media.
+- [#272](https://github.com/markmalina/gate/issues/272) — the single durable Center cutover pointer.
+- [#269](https://github.com/markmalina/gate/issues/269) records completed protected owner MTProto enrollment. The encrypted local session is not runtime wiring and authorizes neither read nor send.
+- [#273](https://github.com/markmalina/gate/issues/273) is closed setup evidence. The Instagram owner-account OAuth and transport runtime remain inactive.
 
-There is no independent `ready` Gate stage after #264. Do not invent activation work, restart the accepted canonical-input sprint or revive PR #207.
+Do not invent activation work, restart an accepted sprint or revive PR #207. Human gates block only
+their dependent branches; independent repository-only product work follows #277.
 
 ## Project transfer acceptance / Приёмка проекта
 
@@ -49,7 +52,7 @@ previous local workspace.
 ### What is being handed over
 
 - Gate production source, migrations, tests, Docker build and GitHub Actions workflow;
-- the protected Telegram Business human-reply path and ten-tool Gate M MCP contract;
+- the protected Telegram Business human-reply path and eleven-tool Gate M MCP contract;
 - the delivery-blocked Alpha fixture/model release path and owner controls;
 - the standalone Relationship CRM domain, migrations, billing boundary and transfer format;
 - architecture decisions, operating policy, runbooks, known debt and the ordered next plan;
@@ -74,8 +77,8 @@ The receiving owner performs these steps in order and records evidence:
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
-5. **Gate M surface.** Confirm OAuth is used and exactly ten public actions are visible: six
-   human-inbox/send actions plus Alpha list/control/preflight/shadow-review actions. Do not weaken scopes
+5. **Gate M surface.** Confirm OAuth is used and exactly eleven public actions are code-defined: six
+   human-inbox/send actions plus Alpha list/control/preflight/shadow-review/webhook-status actions. Do not weaken scopes
    to make an action appear.
 6. **Read-only production health.** Call only `gate_get_status`,
    `gate_alpha_list_installations` and `gate_alpha_list_shadow_reviews`. Confirm production/manual
@@ -108,7 +111,7 @@ CI run: <URL / run number> — success
 Railway production SHA: <full SHA> — matches / does not match
 Gate environment/mode: production / manual
 RU/BY connector health: <redacted aggregate>
-MCP public actions: 9 / 9
+MCP public actions: 11 / 11
 Alpha installation review: <labels and states only; no Telegram IDs>
 Provider preflight verified: true
 Model Telegram delivery blocked: true
@@ -192,7 +195,7 @@ The installed connector is named **Gate M**. It uses the production MCP endpoint
 https://gate-production-bab1.up.railway.app/mcp
 ```
 
-Required OAuth scopes (the first four are active; `gate:agents:manage` needs the one-time Auth0/User-Delegated Access grant):
+Required OAuth scopes. Repository metadata advertises all five; the latest external token evidence is missing `gate:messages:send`, so #261 remains the authorization gate:
 
 ```text
 gate:status:read
@@ -211,10 +214,12 @@ Active tools:
 | `gate_get_reply_context` | `gate:inbox:read` | Bounded chronological context for one scoped reply task |
 | `gate_save_reply_draft` | `gate:drafts:write` | Saves proposed text; never approves or sends |
 | `gate_send_approved_reply` | `gate:messages:send` | Sends the exact saved draft only after explicit confirmation of account, recipient and final text |
+| `gate_queue_approved_reply_sequence` | `gate:messages:send` | Queues one explicitly confirmed ordered set of saved drafts |
 | `gate_alpha_list_installations` | `gate:status:read` | Lists Alpha groups by label and opaque reference; never exposes Telegram IDs |
 | `gate_alpha_control_installation` | `gate:agents:manage` | Confirmed approve, pause or resume with a reviewed-state fence |
 | `gate_alpha_run_model_preflight` | `gate:agents:manage` | One-shot synthetic OpenAI check; no group content or Telegram delivery |
 | `gate_alpha_list_shadow_reviews` | `gate:agents:manage` | Read-only bounded review of delivery-blocked model proposals |
+| `gate_alpha_get_webhook_status` | `gate:status:read` | Redacted Alpha webhook readiness and failure evidence; never a provider probe |
 
 Every tool advertises a strict JSON `outputSchema`; CI validates the descriptors and representative success/error `structuredContent` against those schemas.
 
@@ -722,4 +727,4 @@ If operational recovery requires a sensitive value, retrieve it from the approve
 
 ---
 
-**Immediate continuation:** follow the current GitHub pointers above. #260 and #261 remain at their exact owner gates. Personal Telegram Stage A is accepted and default-off through #264; Stage B is not authorized. Do not send a message, log in to Telegram/MTProto, handle credentials, reconnect Gate M, activate a provider or process real-person data until the matching issue records exact authority.
+**Immediate continuation:** complete #277 P0 in its one repository-only execution and PR. #261 remains at its exact external authorization gate; #260 remains blocked behind it. Protected personal-Telegram enrollment is complete, but MTProto runtime/read/send are disabled. Do not send a message, handle credentials, reconnect Gate M, activate a provider, mutate production or process real-person data until the matching issue records exact authority.
