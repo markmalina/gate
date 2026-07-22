@@ -557,6 +557,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_send_approved_reply",
         "gate_queue_approved_reply_sequence",
         "gate_alpha_list_installations",
+        "gate_alpha_get_webhook_status",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_list_shadow_reviews",
@@ -569,6 +570,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_save_reply_draft",
         "gate_send_approved_reply",
         "gate_queue_approved_reply_sequence",
+        "gate_alpha_get_webhook_status",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_list_shadow_reviews",
@@ -597,18 +599,24 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     }
     assert tools[6]["annotations"]["readOnlyHint"] is True
     assert tools[7]["annotations"] == {
-        "readOnlyHint": False,
+        "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
-        "openWorldHint": False,
+        "openWorldHint": True,
     }
     assert tools[8]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[9]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
         "openWorldHint": True,
     }
-    assert tools[9]["annotations"]["readOnlyHint"] is True
+    assert tools[10]["annotations"]["readOnlyHint"] is True
 
 
 @pytest.mark.anyio
