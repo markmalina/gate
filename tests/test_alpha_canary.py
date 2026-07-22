@@ -16,11 +16,15 @@ from app.application.alpha_canary import (
     ProcessAlphaCanaryUpdateService,
 )
 from app.application.alpha_delivery import AlphaDeliveryResult
-from app.application.alpha_group import AgentSendAttemptState
+from app.application.alpha_group import (
+    AgentSendAttemptState,
+    AlphaInvocationKind,
+)
 from app.application.alpha_shadow_worker import (
     AlphaProposalDeliveryMode,
     AlphaShadowDisposition,
     AlphaShadowWorkerResult,
+    recognize_alpha_invocation,
 )
 
 NOW = datetime(2026, 7, 15, 9, 0, tzinfo=UTC)
@@ -109,6 +113,25 @@ def _service(shadow_result: AlphaShadowWorkerResult):
         delivery=delivery,
     )
     return service, store, shadow, delivery
+
+
+def test_privacy_mode_canary_command_targets_the_exact_bot() -> None:
+    assert (
+        recognize_alpha_invocation(
+            "/alpha@AlphaViaBot Ответь одним сообщением: Альфа на связи.",
+            bot_username="AlphaViaBot",
+            reply_to_bot=False,
+        )
+        is AlphaInvocationKind.COMMAND
+    )
+    assert (
+        recognize_alpha_invocation(
+            "/alpha@OtherAlphaBot Ответь одним сообщением: Альфа на связи.",
+            bot_username="AlphaViaBot",
+            reply_to_bot=False,
+        )
+        is AlphaInvocationKind.NONE
+    )
 
 
 def test_disabled_canary_touches_nothing() -> None:

@@ -133,7 +133,13 @@ Before the first owner test-group delivery:
 - exactly one existing owner-controlled installation is selected by label and opaque
   reference, never by a Telegram numeric ID;
 - the installation is approved or resumed through the reviewed-state fence;
-- invocation is explicit: `/alpha`, exact mention, or reply;
+- the first Privacy Mode canary uses the exact addressed command
+  `/alpha@AlphaViaBot Ответь одним сообщением: Альфа на связи.`;
+- a bare `/alpha` remains recognizable if Telegram delivers it, but is not a
+  reliable first-canary instruction: Privacy Mode guarantees delivery only for a
+  command addressed to this bot, a qualifying general command after this bot's
+  own group message, or a reply to this bot;
+- exact mention and verified reply remain supported invocation forms;
 - one model turn is bound to the reviewed deployment and budget ceiling;
 - one invocation can create at most one Telegram delivery attempt;
 - fixture remains the rollback target and pause remains the immediate kill switch;
