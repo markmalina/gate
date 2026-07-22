@@ -128,6 +128,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_alpha_list_installations",
             "gate_alpha_get_webhook_status",
             "gate_alpha_list_shadow_reviews",
+            "gate_alpha_get_test_group_presence",
         ],
         "write_tools_enabled": True,
         "write_tools": [
@@ -139,6 +140,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "send_tools": [
             "gate_send_approved_reply",
             "gate_queue_approved_reply_sequence",
+            "gate_alpha_send_review",
         ],
         "send_requires_explicit_confirmation": True,
     }
