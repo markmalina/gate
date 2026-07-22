@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.infrastructure.alpha_owner_test_runtime import (
+    AlphaOwnerTestRuntimeError,
     observe_owner_test_presence,
     send_owner_test_review,
 )
@@ -217,6 +218,36 @@ async def test_exact_delivery_replays_across_independent_sessions() -> None:
     assert second_session.commits == 0
     assert ledger.attempt is not None
     assert ledger.attempt.error_code is None
+
+
+@pytest.mark.anyio
+async def test_paused_installation_blocks_before_provider() -> None:
+    fixtures = _fixtures()
+    fixtures.installation.state = "paused"
+    ledger = _Ledger()
+    session = _DeliverySession(ledger=ledger, fixtures=fixtures)
+    http_client = _HttpClient(ledger=ledger)
+
+    with pytest.raises(
+        AlphaOwnerTestRuntimeError,
+        match="alpha_owner_test_installation_not_active",
+    ):
+        await send_owner_test_review(
+            session=session,  # type: ignore[arg-type]
+            settings=_settings(),  # type: ignore[arg-type]
+            http_client=http_client,  # type: ignore[arg-type]
+            workspace_key="mark-personal",
+            installation_ref="installation-test",
+            turn_ref=str(fixtures.turn.id),
+            expected_candidate_sha256=fixtures.digest,
+            confirmed=True,
+        )
+
+    assert session.execute_count == 1
+    assert session.commits == 0
+    assert ledger.grant is None
+    assert ledger.attempt is None
+    assert http_client.send_count == 0
 
 
 @pytest.mark.anyio
