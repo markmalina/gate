@@ -3,7 +3,7 @@
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
 > Current `main` / automatic Railway deployment verified on 2026-07-22 at `d30d63ab598faae9ede4b3199caa3e31482aeb10`; exact-head CI for PR #278 (run `29928856018`) succeeded.  
 > The detailed production snapshot remains dated 2026-07-18 at `f879fefde08dbd1264829ce201808f726581eb1f` (`f879fefde08d` in Gate status); re-query before operational use.  
-> Current work: #277 P0 is `done`; #279 owns the completed P2 capability audit; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer.
+> Current work: #277 P0 is `done`; #279 records the completed P2 capability audit; #281 owns the bounded-read contract; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer.
 ## 1. Transfer outcome
 
 This file is the single current handoff for Gate. A receiving team must be able to continue from
@@ -28,7 +28,7 @@ because counters below are dated evidence, not invariants.
 ### Current pointer
 
 - Gate #277 P0 is complete with exact CI, merge and Railway receipts.
-- Gate #279 owns the P2 personal-Telegram capability audit. Business/Bot API is primary; residual MTProto runtime is blocked behind Telegram-terms/compliance and exact owner data gates.
+- Gate #279 records the accepted P2 personal-Telegram capability audit. Gate #281 owns the provider-neutral bounded-read contract; residual MTProto runtime is blocked behind Telegram-terms/compliance and exact owner data gates.
 - Gate #261 is `waiting_user` at the exact external Auth0/ChatGPT authorization gate.
 - Gate #260 is `blocked` behind #261; it authorizes neither raw-media movement nor provider action.
 - Gate #272 is the single durable Center cutover pointer.
@@ -36,7 +36,7 @@ because counters below are dated evidence, not invariants.
 - Gate #273 is closed documentation evidence. Instagram owner-account OAuth and transport runtime remain inactive.
 
 Latest issue receipts override the historical sprint list below. Human gates block only their
-dependent branch; independent repository-only work continues through #279 and its accepted next-work pointer.
+dependent branch; independent repository-only work continues through #281 and its accepted next-work pointer.
 
 ## 2. Product definition
 
