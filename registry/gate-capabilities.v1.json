@@ -1,0 +1,356 @@
+{
+  "schemaVersion": "1.0.0",
+  "status": "current-target",
+  "capturedAt": "2026-07-22T13:56:00Z",
+  "sourceIssue": "https://github.com/markmalina/gate/issues/277",
+  "repositoryBaseline": "80751280521baa6f0a259032f5093d1161da2363",
+  "productRole": "safe-omnichannel-communication-platform",
+  "lifecycleValues": [
+    "production-bounded",
+    "canary",
+    "shadow",
+    "contract-only",
+    "planned",
+    "not-implemented"
+  ],
+  "ownership": {
+    "gate": [
+      "connector",
+      "credential-boundary",
+      "webhook",
+      "durable-ingress",
+      "routing-envelope",
+      "capability-grant",
+      "delivery-attempt",
+      "terminal-outcome",
+      "transport-audit",
+      "provider-cost-boundary"
+    ],
+    "alfa": [
+      "private-intelligence",
+      "life-analysis",
+      "personal-memory",
+      "reasoning"
+    ],
+    "relations": [
+      "person",
+      "identity-link",
+      "consent",
+      "relationship-truth",
+      "commitment",
+      "attention",
+      "commercial-relationship"
+    ],
+    "mayaki": [
+      "expertise",
+      "program",
+      "practice",
+      "progress",
+      "publication-workflow",
+      "funnel",
+      "analytics-meaning"
+    ],
+    "take": [
+      "media-analysis",
+      "edit",
+      "render",
+      "approval-package"
+    ],
+    "center": [
+      "portfolio",
+      "work",
+      "execution",
+      "task",
+      "receipt"
+    ]
+  },
+  "invariants": [
+    "mark-private-alfa-never-crosses-user-boundary",
+    "one-user-alfa-is-workspace-isolated",
+    "agent-identity-is-visible",
+    "mayak-to-alfa-transition-requires-consent",
+    "raw-communication-is-not-a-memory-dump",
+    "memory-is-sourced-correctable-and-deletable",
+    "model-output-never-selects-provider-target-or-capability",
+    "capabilities-are-default-deny-and-installation-scoped",
+    "unknown-outcome-is-terminal-until-reconciliation",
+    "channel-capability-parity-is-never-assumed",
+    "commercial-access-does-not-share-provider-credentials"
+  ],
+  "capabilities": [
+    {
+      "id": "gate-kernel",
+      "owner": "gate",
+      "lifecycle": "production-bounded",
+      "current": [
+        "workspace-scope",
+        "canonical-telegram-facts",
+        "durable-idempotency",
+        "delivery-ledger",
+        "oauth-mcp",
+        "hard-provider-budgets",
+        "audit"
+      ],
+      "target": [
+        "provider-neutral-installations",
+        "versioned-capability-matrix",
+        "credential-store-interface",
+        "connector-sdk",
+        "uniform-retention-classes"
+      ],
+      "currentPointer": "https://github.com/markmalina/gate/issues/277"
+    },
+    {
+      "id": "telegram-business-owner",
+      "owner": "gate",
+      "lifecycle": "production-bounded",
+      "current": [
+        "ru-by-connections",
+        "text-ingress",
+        "voice-transcription",
+        "unanswered-inbox",
+        "draft",
+        "exact-confirmed-send",
+        "approved-sequence"
+      ],
+      "target": [
+        "dynamic-n-account-registry",
+        "secretary-bot-capability-audit",
+        "bounded-history-projection",
+        "third-account-canary"
+      ],
+      "externalGate": "exact-message-confirmation"
+    },
+    {
+      "id": "gate-m-control",
+      "owner": "gate",
+      "lifecycle": "canary",
+      "current": [
+        "eleven-tools-in-code",
+        "workspace-oauth",
+        "status",
+        "inbox",
+        "draft",
+        "send",
+        "alpha-control",
+        "webhook-diagnostic"
+      ],
+      "target": [
+        "stable-versioned-owner-control-plane",
+        "complete-external-oauth-grant"
+      ],
+      "blocker": "external-auth0-chatgpt-authorization",
+      "currentPointer": "https://github.com/markmalina/gate/issues/261"
+    },
+    {
+      "id": "telegram-alpha-group",
+      "owner": "gate",
+      "lifecycle": "canary",
+      "current": [
+        "opaque-installation",
+        "privacy-mode-ingress",
+        "model-shadow",
+        "budget",
+        "review",
+        "pause",
+        "bounded-webhook-diagnostic"
+      ],
+      "target": [
+        "one-accepted-model-canary",
+        "reusable-multi-installation",
+        "community-channel-capabilities"
+      ],
+      "blocker": "owner-gated-live-canary",
+      "currentPointer": "https://github.com/markmalina/gate/issues/261"
+    },
+    {
+      "id": "telegram-personal-mtproto",
+      "owner": "gate",
+      "lifecycle": "contract-only",
+      "current": [
+        "telethon-port",
+        "encrypted-local-session",
+        "windows-current-user-dpapi-key",
+        "exact-text-approval-contract",
+        "read-send-disabled"
+      ],
+      "target": [
+        "official-api-gap-matrix",
+        "bounded-read-only-runtime",
+        "opaque-peer-allowlist",
+        "one-exact-send"
+      ],
+      "externalGate": "separate-read-and-send-authorizations",
+      "currentPointer": "https://github.com/markmalina/gate/issues/269"
+    },
+    {
+      "id": "alfa-relations-memory-projection",
+      "owner": "alfa-relations",
+      "lifecycle": "planned",
+      "current": [
+        "canonical-message-source",
+        "relationship-domain-contracts",
+        "draft-approval-reference"
+      ],
+      "target": [
+        "sourced-facts",
+        "people",
+        "commitments",
+        "timeline",
+        "confidence",
+        "correction",
+        "deletion",
+        "bounded-retrieval"
+      ],
+      "prohibition": "no-full-history-prompt-dump"
+    },
+    {
+      "id": "mayak-installation",
+      "owner": "mayaki",
+      "transportOwner": "gate",
+      "lifecycle": "planned",
+      "current": [
+        "alpha-group-pattern",
+        "oko-dry-contracts"
+      ],
+      "target": [
+        "private-dialog",
+        "group",
+        "community",
+        "channel",
+        "visible-agent-identity",
+        "program-handoff",
+        "personal-alfa-opt-in",
+        "human-takeover"
+      ]
+    },
+    {
+      "id": "instagram-meta",
+      "owner": "gate",
+      "productWorkflowOwner": "mayaki",
+      "mediaOwner": "take",
+      "lifecycle": "contract-only",
+      "current": [
+        "meta-app-created",
+        "connection-handoff",
+        "dormant-fake-transport-rehearsal"
+      ],
+      "target": [
+        "oauth-token-health",
+        "owner-account-registry",
+        "one-confirmed-reel",
+        "insights",
+        "normalized-comment-dm-events"
+      ],
+      "blocker": "owner-account-not-oauth-connected"
+    },
+    {
+      "id": "take-media-intake",
+      "owner": "take",
+      "transportOwner": "gate",
+      "lifecycle": "shadow",
+      "current": [
+        "synthetic-gate-media-received-contract",
+        "consent-token-contract",
+        "default-off"
+      ],
+      "target": [
+        "one-private-owner-media-receipt",
+        "redacted-take-manifest"
+      ],
+      "currentPointer": "https://github.com/markmalina/gate/issues/260"
+    },
+    {
+      "id": "whatsapp",
+      "owner": "gate",
+      "lifecycle": "not-implemented",
+      "target": [
+        "program-conversation"
+      ],
+      "prerequisite": "proven-provider-neutral-connector-contract"
+    },
+    {
+      "id": "tiktok",
+      "owner": "gate",
+      "productWorkflowOwner": "mayaki",
+      "lifecycle": "not-implemented",
+      "target": [
+        "approved-content-publication",
+        "acquisition-events"
+      ],
+      "prerequisite": "proven-publication-grant-and-take-package"
+    },
+    {
+      "id": "messenger",
+      "owner": "gate",
+      "lifecycle": "not-implemented",
+      "target": [
+        "program-conversation"
+      ],
+      "prerequisite": "proven-provider-neutral-connector-contract"
+    },
+    {
+      "id": "alpha-platform",
+      "owner": "future-alpha-platform",
+      "lifecycle": "planned",
+      "current": [
+        "gate-billing-primitives"
+      ],
+      "target": [
+        "per-user-auth",
+        "workspace",
+        "private-alfa",
+        "mayak-entitlements",
+        "quotas",
+        "privacy-center",
+        "support",
+        "commercial-plans"
+      ],
+      "prohibition": "no-shared-openai-or-channel-credentials"
+    }
+  ],
+  "roadmap": [
+    {
+      "id": "P0",
+      "name": "product-truth",
+      "state": "running",
+      "pointer": "https://github.com/markmalina/gate/issues/277"
+    },
+    {
+      "id": "P1",
+      "name": "current-telegram-control",
+      "state": "blocked-owner-external",
+      "pointer": "https://github.com/markmalina/gate/issues/261"
+    },
+    {
+      "id": "P2",
+      "name": "personal-telegram-read",
+      "state": "planned"
+    },
+    {
+      "id": "P3",
+      "name": "alfa-relations-memory",
+      "state": "planned"
+    },
+    {
+      "id": "P4",
+      "name": "reusable-mayak-installation",
+      "state": "planned"
+    },
+    {
+      "id": "P5",
+      "name": "instagram",
+      "state": "planned"
+    },
+    {
+      "id": "P6",
+      "name": "friends-beta-commerce",
+      "state": "planned"
+    },
+    {
+      "id": "P7",
+      "name": "additional-connectors",
+      "state": "planned"
+    }
+  ]
+}

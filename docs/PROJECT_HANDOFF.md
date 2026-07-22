@@ -1,9 +1,9 @@
 # Gate project handoff
 
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
-> Latest repository / automatic Railway deployment verified on 2026-07-20 at `2d2b6e81f6019d6f01c2e5848479b1a4dfe6574c`.  
+> Current `main` / automatic Railway deployment verified on 2026-07-22 at `80751280521baa6f0a259032f5093d1161da2363`; exact-head CI for PR #276 (run `29918762063`) succeeded.  
 > The detailed production snapshot remains dated 2026-07-18 at `f879fefde08dbd1264829ce201808f726581eb1f` (`f879fefde08d` in Gate status); re-query before operational use.  
-> PR #207 is closed without merge. Current work is governed by GitHub #260, #261 and the completed #263/#264 receipt.
+> Current work: #277 P0 is `running`; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer.
 ## 1. Transfer outcome
 
 This file is the single current handoff for Gate. A receiving team must be able to continue from
@@ -13,31 +13,41 @@ previous local workspace.
 Read in this order:
 
 1. `docs/TEAM_WORKFLOW.md` — authority, secrets, CI, merge and deployment rules.
-2. This document — current truth, decisions, incidents and exact continuation order.
-3. `docs/DEVELOPMENT_AND_COST_REGULATIONS.md` — engineering, test and cost discipline.
-4. `docs/ALPHA_OPERATING_POLICY.md` — Alpha provider, budget and delivery barriers.
-5. `docs/ALPHA_OPERATOR_RUNBOOK.md` — owner control and incident boundaries.
-6. `docs/GATE_FULL_TECHNICAL_SPEC.md` — long-form architecture.
+2. `docs/GATE_PRODUCT_PLATFORM.md` — current product tree, ownership, invariants and P0–P7 program.
+3. `registry/gate-capabilities.v1.json` — machine-readable current/target lifecycle.
+4. This document — current production truth, decisions, incidents and continuation order.
+5. `docs/DEVELOPMENT_AND_COST_REGULATIONS.md` — engineering, test and cost discipline.
+6. `docs/ALPHA_OPERATING_POLICY.md` and `docs/ALPHA_OPERATOR_RUNBOOK.md`.
 7. `docs/RELATIONSHIP_CRM_ARCHITECTURE.md` — separately extractable relationship product.
+8. `docs/GATE_FULL_TECHNICAL_SPEC.md` — historical long-form architecture baseline.
 
-GitHub `main` is the source of truth. Re-query GitHub and production before acting because counters
-below are dated evidence, not invariants.
+Current GitHub issues and accepted receipts are authoritative. They are followed by the product
+platform and registry, then this handoff and README. Re-query GitHub and production before acting
+because counters below are dated evidence, not invariants.
 
 ### Current pointer
 
-- Gate #260 is `waiting_user` for the exact owner-controlled media, chosen transport, storage/retention and any permitted provider action.
-- Gate #261 is `waiting_user` for the redacted Auth0 failed token-exchange fields named in that issue; do not repeat reconnect first.
-- Gate #263 Stage A is done through PR #264 at merge `2d2b6e81f6019d6f01c2e5848479b1a4dfe6574c`: the personal Telegram contract is default-off, synthetic and provider-free.
-- MTProto Stage B needs a separate exact owner decision before API application credentials, phone/2FA authorization or session creation.
+- Gate #277 P0 is the single `running` repository-only product-truth execution.
+- Gate #261 is `waiting_user` at the exact external Auth0/ChatGPT authorization gate.
+- Gate #260 is `blocked` behind #261; it authorizes neither raw-media movement nor provider action.
+- Gate #272 is the single durable Center cutover pointer.
+- Gate #269 records completed protected owner MTProto enrollment. The encrypted local session is not runtime wiring; read and send remain disabled.
+- Gate #273 is closed documentation evidence. Instagram owner-account OAuth and transport runtime remain inactive.
 
-There is no independent `ready` Gate stage after #264. Latest issue receipts override the historical sprint list below.
+Latest issue receipts override the historical sprint list below. Human gates block only their
+dependent branch; independent repository-only work continues through #277.
 
 ## 2. Product definition
 
-Gate is the workspace-scoped communication and safety gateway between Telegram, ChatGPT and
-versioned agents. Gate owns transport, durable facts, account/dialog scope, approval boundaries,
-provider usage accounting and delivery audit. Alpha, Oko and future Mayak agents own product voice
-and domain behavior through immutable instruction revisions.
+Gate is Alpha V's safe omnichannel communication platform. It connects Telegram, Instagram and
+future providers to workspace-scoped Alfa and Mayak contexts without becoming a second intelligence,
+CRM, program engine, work manager or media editor. Gate owns transport, durable communication facts,
+account/dialog scope, capability grants, provider usage boundaries and terminal delivery audit.
+Alfa owns private intelligence and memory; Relations owns people, consent and relationship truth;
+MAYAKI/Oko own expertise and programs; TAKE owns media editing; Center owns Work metadata.
+
+The canonical product tree and target architecture are in
+[`docs/GATE_PRODUCT_PLATFORM.md`](GATE_PRODUCT_PLATFORM.md).
 
 The protected human path is live:
 
@@ -86,7 +96,7 @@ Snapshot captured through Gate M after exact production commit `f879fefde08d` be
 | Business counts | 47 conversations, 1249 messages, 431 reply tasks, 18 unanswered, 346 answered, 43 drafts |
 | Contact directory | RU: 90 imported; BY: 0, intentionally deferred |
 | Business text parity | ready; 8/8 matched; RU and BY covered; cutover accepted |
-| Gate M | OAuth enforced; exactly 10 public tools |
+| Gate M | 11 code-defined public tools; external token authorization remains gated by #261 |
 | Human sending | enabled only for exact saved draft + explicit confirmation |
 | Alpha group installation | one approved active fixture-bound group |
 | Alpha v2 deployment | one exact staged OpenAI deployment, preflight verified |
@@ -116,8 +126,9 @@ active hard boundary wins.
 
 ## 4. Exact Gate M contract
 
-Do not add an eleventh public MCP tool. Extend an existing owner surface when product behavior belongs
-to the same bounded workflow.
+The code-defined Gate M contract contains exactly eleven public tools. A new tool still requires a
+distinct bounded owner workflow, strict schema, least-privilege scope and repository tests; do not
+multiply tools for cosmetic variations.
 
 | Tool | Purpose |
 |---|---|
@@ -131,6 +142,7 @@ to the same bounded workflow.
 | `gate_alpha_control_installation` | confirmed approve/pause/resume with stale-state fence |
 | `gate_alpha_run_model_preflight` | one-shot synthetic provider verification, no group data/send |
 | `gate_alpha_list_shadow_reviews` | bounded delivery-blocked model proposals for owner review |
+| `gate_alpha_get_webhook_status` | confirmed redacted webhook health; one read-only provider request only under its exact gate |
 
 Management/review/preflight requires `gate:agents:manage`. Human sending requires the existing send
 scope and an exact explicit confirmation. Missing or ambiguous scope fails closed.
@@ -283,7 +295,29 @@ The former handoff stopped at PR #238. The following releases are now accepted:
 - Exact-text approval, deterministic provider idempotency and terminal unknown/no-blind-retry behavior are covered by synthetic tests.
 - The repository stores no Telegram application credential, phone, code, password, session or raw provider identity.
 - Stage A performed no Telegram login, provider call, message, real-person-data action or Relations mutation.
-- Stage B is a separate owner gate.
+- Stage B was separated from repository readiness and performed only under #269's exact owner gate.
+
+### Issue #269 / PR #271 — protected owner enrollment
+
+- Added a local non-echoing enrollment utility with encrypted session persistence and Windows CurrentUser DPAPI key wrapping.
+- Owner enrollment completed; the repository and receipts contain no credential, phone, code, password, session or raw provider identity.
+- The resulting local session remains disconnected from Gate runtime. Read, contact sync and send are disabled and require new exact gates.
+
+### PR #274 — Instagram connection handoff
+
+- Recorded the `gate-IG` connector boundary and staged OAuth-to-one-Reel path.
+- No owner-account OAuth, Meta call, publication, Direct message or runtime activation occurred.
+
+### PR #275 — bounded Alpha webhook diagnostic
+
+- Added the eleventh protected Gate M tool, `gate_alpha_get_webhook_status`.
+- Its separately gated call returns only redacted readiness evidence and cannot send, invoke a model or mutate the webhook/installation.
+
+### PR #276 — addressed first Alpha canary command
+
+- Changed the first operator command to the bot-addressed Privacy Mode form while retaining compatible bare-command handling.
+- Exact-head CI succeeded and the merge deployed as `80751280521baa6f0a259032f5093d1161da2363`.
+- The model-backed canary is still not accepted; #261 remains the live pointer.
 
 ## 7. Production evidence and test history
 
@@ -394,7 +428,7 @@ outcomes.
 | `app/infrastructure/alpha_delivery.py` | exact target consumption and send-attempt ledger |
 | `app/infrastructure/alpha_model_status.py` | model readiness and promotion evidence |
 | `app/infrastructure/alpha_shadow_reviews.py` | owner-scoped proposal review query |
-| `app/api/mcp_routes.py` / `mcp_schemas.py` | exact protected ten-tool Gate M surface |
+| `app/api/mcp_routes.py` / `mcp_schemas.py` | exact protected eleven-tool Gate M surface |
 | `app/application/billing.py` / `app/models/billing.py` | provider-neutral entitlement, usage and cost ledger |
 | `app/application/relationship_crm.py` | standalone Relationship CRM domain |
 | `alembic/versions/0033_*`–`0035_*` | input origin, Alpha v2 and durable rate-limit recovery |
@@ -517,9 +551,10 @@ fingerprint agree.
 
 ## 11. Actions that still require Mark
 
-Current exact owner gates are recorded in #260, #261 and the #263 Stage A receipt. In particular,
-MTProto Stage B is not implied by repository readiness, and the Gate M reconnect must not be repeated
-before the requested redacted Auth0 token-exchange evidence exists.
+Current exact owner gates are recorded in #261 and dependent #260. The protected MTProto enrollment
+recorded in #269 does not authorize runtime wiring, dialog/contact reads or sending. Gate M reconnect,
+provider diagnostics and the model-backed canary must not run before #261's exact external
+authorization evidence exists.
 
 Stop and request Mark only when one of these boundaries is reached:
 
@@ -602,7 +637,7 @@ Railway production SHA: <full SHA> — matches / mismatch
 Schema head: <revision>
 Environment/mode: production/manual
 RU/BY health: <redacted aggregate>
-MCP public tools: 9 / 9
+MCP public tools: 11 / 11
 Alpha v2: preflight verified; proposals <count>; failures <count>
 Model Telegram delivery blocked: true
 Voice: delivered/retry/dead-letter/open/unknown <aggregate>

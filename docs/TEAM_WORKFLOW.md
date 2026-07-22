@@ -19,8 +19,10 @@ Mark:
 - defines intent, priorities and constraints;
 - may ask Work to create or update GitHub pull requests when Work decides a PR is the correct next step;
 - may allow Work to implement small, bounded development sprints directly when Codex is not the fastest reliable path;
+- grants standing authorization for Work to move the intended Work-managed PR from draft to ready and run full exact-head CI after scope and safety review;
 - grants standing authorization for Work to merge Work-managed Gate PRs when every auto-merge condition in this file is satisfied;
 - grants standing authorization for the Railway production deployment automatically caused by such an eligible merge;
+- requires every Work progress or completion message to remind him of this standing ready → CI → merge → automatic-deploy rule;
 - remains the only authority for manual deployments, deployment retries, rollbacks and production configuration changes outside that automatic merge path.
 
 ### Work
@@ -177,7 +179,24 @@ When Mark needs to perform several user-side actions to complete one verificatio
 
 If the task is actually Work's responsibility, Work must not assign it to Mark. Work should perform it directly through available tools.
 
-## Standing auto-merge rule
+## Standing ready, CI, auto-merge and automatic-deploy rule
+
+Mark grants standing authorization for Work to complete the normal GitHub delivery path without asking for another permission at each transition.
+
+For every intended active Work-managed PR, Work must:
+
+1. review the complete diff, scope, secrets and safety boundary;
+2. move the PR from draft to ready when that review passes;
+3. allow full exact-head GitHub Actions CI to run;
+4. fix small, clear and safe failures on the same branch;
+5. merge immediately when exact-head CI is 🟢 green, the PR is mergeable and all conditions below pass;
+6. verify the automatic Railway deployment and bounded smoke checks for the exact merge commit.
+
+Work must not stop merely to ask Mark for ready, CI, merge or the automatic deployment caused by an eligible merge. Every progress or completion message must explicitly remind Mark that this standing rule is active.
+
+This standing authorization does not permit provider calls, credential or OAuth changes, messages, publications, real-person-data operations, manual deployment/retry/rollback, or production configuration/data mutation outside the exact automatic deployment created by the eligible merge.
+
+## Standing auto-merge conditions
 
 Mark grants standing authorization for Work to merge Work-managed Gate PRs without asking for a separate merge command when all conditions below are true.
 
