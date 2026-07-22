@@ -9,7 +9,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.infrastructure.alpha_owner_test_runtime import (
     observe_owner_test_presence,
     send_owner_test_review,
