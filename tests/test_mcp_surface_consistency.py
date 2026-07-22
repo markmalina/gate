@@ -96,6 +96,18 @@ TOOL_CONTRACTS = (
         "read_only_tools",
         "_gate_alpha_list_shadow_reviews_tool",
     ),
+    ToolContract(
+        "gate_alpha_get_test_group_presence",
+        "gate:agents:manage",
+        "write_tools",
+        "_gate_alpha_get_test_group_presence_tool",
+    ),
+    ToolContract(
+        "gate_alpha_send_review",
+        "gate:messages:send",
+        "send_tools",
+        "_gate_alpha_send_review_tool",
+    ),
 )
 
 
@@ -105,7 +117,7 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_every_mcp_projection_matches_the_eleven_tool_contract() -> None:
+async def test_every_mcp_projection_matches_the_thirteen_tool_contract() -> None:
     settings = Settings(
         _env_file=None,
         GATE_MCP_ENABLED=True,
@@ -127,7 +139,7 @@ async def test_every_mcp_projection_matches_the_eleven_tool_contract() -> None:
         contract.name: contract.scope for contract in TOOL_CONTRACTS
     }
 
-    assert len(TOOL_CONTRACTS) == 11
+    assert len(TOOL_CONTRACTS) == 13
     assert [tool["name"] for tool in advertised_tools] == expected_names
     assert mcp_routes.MCP_TOOL_NAMES == expected_names
     assert mcp_routes.MCP_TOOL_SCOPES == expected_scopes

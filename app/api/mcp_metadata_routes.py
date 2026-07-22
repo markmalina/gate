@@ -99,10 +99,12 @@ async def mcp_metadata(
                 "gate_save_reply_draft",
                 "gate_alpha_control_installation",
                 "gate_alpha_run_model_preflight",
+                "gate_alpha_get_test_group_presence",
             ],
             "send": [
                 "gate_send_approved_reply",
                 "gate_queue_approved_reply_sequence",
+                "gate_alpha_send_review",
             ],
             "send_requires_explicit_confirmation": True,
         },
@@ -132,11 +134,13 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_save_reply_draft",
             "gate_alpha_control_installation",
             "gate_alpha_run_model_preflight",
+            "gate_alpha_get_test_group_presence",
         ],
         "send_tools_enabled": settings.gate_send_enabled,
         "send_tools": [
             "gate_send_approved_reply",
             "gate_queue_approved_reply_sequence",
+            "gate_alpha_send_review",
         ],
         "send_requires_explicit_confirmation": True,
     }
