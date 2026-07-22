@@ -68,6 +68,11 @@ from app.infrastructure.alpha_model_preflight import (
     run_alpha_model_preflight,
 )
 from app.infrastructure.alpha_model_status import alpha_model_operational_status
+from app.infrastructure.alpha_owner_test_runtime import (
+    AlphaOwnerTestRuntimeError,
+    observe_owner_test_presence,
+    send_owner_test_review,
+)
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.telegram_webhook_status import (
@@ -122,6 +127,8 @@ MCP_TOOL_NAMES = [
     "gate_alpha_control_installation",
     "gate_alpha_run_model_preflight",
     "gate_alpha_list_shadow_reviews",
+    "gate_alpha_get_test_group_presence",
+    "gate_alpha_send_review",
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -137,6 +144,8 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_control_installation": "gate:agents:manage",
     "gate_alpha_run_model_preflight": "gate:agents:manage",
     "gate_alpha_list_shadow_reviews": "gate:agents:manage",
+    "gate_alpha_get_test_group_presence": "gate:agents:manage",
+    "gate_alpha_send_review": "gate:messages:send",
 }
 
 
@@ -194,6 +203,8 @@ async def mcp_endpoint(
                     _gate_alpha_control_installation_tool(settings),
                     _gate_alpha_run_model_preflight_tool(settings),
                     _gate_alpha_list_shadow_reviews_tool(settings),
+                    _gate_alpha_get_test_group_presence_tool(settings),
+                    _gate_alpha_send_review_tool(settings),
                 ]
             },
         )
@@ -279,6 +290,22 @@ async def mcp_endpoint(
                 arguments=arguments,
                 principal=principal,
                 session=session,
+            )
+        if tool_name == "gate_alpha_get_test_group_presence":
+            return await _alpha_get_test_group_presence_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                settings=settings,
+            )
+        if tool_name == "gate_alpha_send_review":
+            return await _alpha_send_review_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                settings=settings,
             )
         if tool_name == "gate_alpha_control_installation":
             return await _alpha_control_installation_tool_result(
@@ -671,6 +698,101 @@ async def _alpha_list_shadow_reviews_tool_result(
     return _tool_result(payload, "\n".join(lines), request_id)
 
 
+async def _alpha_get_test_group_presence_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    raw_ref = arguments.get("installation_ref")
+    if not isinstance(raw_ref, str) or arguments.get("confirmed") is not True:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="installation_ref and confirmed=true are required",
+        )
+    try:
+        async with httpx.AsyncClient() as http_client:
+            presence = await observe_owner_test_presence(
+                session=session,
+                settings=settings,
+                http_client=http_client,
+                workspace_key=principal.access_scope.workspace_id,
+                installation_ref=raw_ref,
+            )
+    except AlphaOwnerTestRuntimeError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message="Alpha owner-test presence probe failed closed",
+        )
+    payload = presence.payload()
+    return _tool_result(
+        payload,
+        (
+            f"Alpha test group {payload['group_label']}: "
+            f"{payload['state']}; members={payload['member_count']}"
+        ),
+        request_id,
+    )
+
+
+async def _alpha_send_review_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    raw_ref = arguments.get("installation_ref")
+    raw_turn = arguments.get("turn_ref")
+    raw_digest = arguments.get("expected_candidate_sha256")
+    if (
+        not isinstance(raw_ref, str)
+        or not isinstance(raw_turn, str)
+        or not isinstance(raw_digest, str)
+        or arguments.get("confirmed") is not True
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message=(
+                "installation_ref, turn_ref, expected_candidate_sha256 "
+                "and confirmed=true are required"
+            ),
+        )
+    try:
+        async with httpx.AsyncClient() as http_client:
+            payload = await send_owner_test_review(
+                session=session,
+                settings=settings,
+                http_client=http_client,
+                workspace_key=principal.access_scope.workspace_id,
+                installation_ref=raw_ref,
+                turn_ref=raw_turn,
+                expected_candidate_sha256=raw_digest,
+                confirmed=True,
+            )
+    except (AlphaOwnerTestRuntimeError, ValueError) as exc:
+        code = exc.code if isinstance(exc, AlphaOwnerTestRuntimeError) else str(exc)
+        return _tool_error_result(
+            request_id=request_id,
+            code=code,
+            message="Alpha owner-test delivery failed closed",
+        )
+    return _tool_result(
+        payload,
+        (
+            f"Alpha review delivery: {payload['state']}; "
+            f"replay={payload['replay']}"
+        ),
+        request_id,
+    )
+
+
 async def _alpha_control_installation_tool_result(
     *,
     request_id: Any,
@@ -880,6 +1002,91 @@ def _gate_alpha_list_shadow_reviews_tool(settings: Settings) -> JsonObject:
         tool=tool,
         settings=settings,
         scope="gate:agents:manage",
+    )
+
+
+def _gate_alpha_get_test_group_presence_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_get_test_group_presence",
+        "title": "Check owner-only Alpha test group",
+        "description": (
+            "After owner confirmation, read only the aggregate member count for "
+            "one approved Alpha test-group installation. It never exposes identities."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "installation_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": ["installation_ref", "confirmed"],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_get_test_group_presence"
+        ],
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:agents:manage",
+    )
+
+
+def _gate_alpha_send_review_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_send_review",
+        "title": "Send one exact Alpha review",
+        "description": (
+            "Send one exact model proposal only after rechecking that the approved "
+            "test group still contains only the owner and bot."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "installation_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
+                "turn_ref": {"type": "string", "format": "uuid"},
+                "expected_candidate_sha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64,
+                },
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": [
+                "installation_ref",
+                "turn_ref",
+                "expected_candidate_sha256",
+                "confirmed",
+            ],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_send_review"],
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:messages:send",
     )
 
 
