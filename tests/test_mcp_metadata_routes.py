@@ -47,6 +47,7 @@ async def test_oauth_protected_resource_metadata() -> None:
         "gate_save_reply_draft",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
+        "gate_alpha_get_test_group_presence",
     ]
     assert payload["mcp"]["send_tools_enabled"] is True
     assert payload["mcp"]["send_tools"] == [
@@ -78,7 +79,6 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
-        "gate_alpha_get_test_group_presence",
     ]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
@@ -117,12 +117,12 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
-        "gate_alpha_get_test_group_presence",
     ]
     assert payload["tools"]["write"] == [
         "gate_save_reply_draft",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
+        "gate_alpha_get_test_group_presence",
     ]
     assert payload["tools"]["send"] == [
         "gate_send_approved_reply",
