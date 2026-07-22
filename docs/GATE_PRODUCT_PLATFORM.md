@@ -303,7 +303,9 @@ of MTProto does not override the later accepted default-off personal Telegram bo
 
 ### P2 — Personal Telegram read contour
 
-- capability audit accepted in [#279](https://github.com/markmalina/gate/issues/279);\n- treat Telegram API AI-use terms as a fail-closed compliance gate;\n- audit current official Bot API/Business/Secretary capabilities;
+- capability audit accepted in [#279](https://github.com/markmalina/gate/issues/279);
+- treat Telegram API AI-use terms as a fail-closed compliance gate;
+- audit current official Bot API/Business/Secretary capabilities;
 - identify the remaining MTProto-only requirements;
 - wire one encrypted read-only canary;
 - expand by explicit dialog/data class;
@@ -348,7 +350,9 @@ of MTProto does not override the later accepted default-off personal Telegram bo
 
 ## 12. Immediate pointer
 
-The accepted P0 receipt lives in [Gate #277](https://github.com/markmalina/gate/issues/277).\nThe P2 personal-Telegram capability audit and next safe contract pointer live in\n[Gate #279](https://github.com/markmalina/gate/issues/279).
+The accepted P0 receipt lives in [Gate #277](https://github.com/markmalina/gate/issues/277).
+The P2 personal-Telegram capability audit and next safe contract pointer live in
+[Gate #279](https://github.com/markmalina/gate/issues/279).
 
 The pre-existing bounded work remains:
 
