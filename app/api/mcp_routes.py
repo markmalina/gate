@@ -1010,8 +1010,9 @@ def _gate_alpha_get_test_group_presence_tool(settings: Settings) -> JsonObject:
         "name": "gate_alpha_get_test_group_presence",
         "title": "Check owner-only Alpha test group",
         "description": (
-            "After owner confirmation, read only the aggregate member count for "
-            "one approved Alpha test-group installation. It never exposes identities."
+            "After owner confirmation, inspect only the aggregate member count for "
+            "one approved Alpha test-group installation. It never exposes identities "
+            "and pauses the installation unless the group remains owner-only."
         ),
         "inputSchema": {
             "type": "object",
@@ -1030,7 +1031,7 @@ def _gate_alpha_get_test_group_presence_tool(settings: Settings) -> JsonObject:
             "gate_alpha_get_test_group_presence"
         ],
         "annotations": {
-            "readOnlyHint": True,
+            "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": True,
             "openWorldHint": True,
