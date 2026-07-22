@@ -142,7 +142,6 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
-        "gate_alpha_get_test_group_presence",
     ]
     assert payload["mcp"]["send_tools"] == [
         "gate_send_approved_reply",
