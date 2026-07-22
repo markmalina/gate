@@ -415,13 +415,14 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_send_approved_reply",
                                 "gate_queue_approved_reply_sequence",
                                 "gate_alpha_list_installations",
+                                "gate_alpha_get_webhook_status",
                                 "gate_alpha_control_installation",
                                 "gate_alpha_run_model_preflight",
                                 "gate_alpha_list_shadow_reviews",
                             ],
                         },
-                        "minItems": 10,
-                        "maxItems": 10,
+                        "minItems": 11,
+                        "maxItems": 11,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -656,6 +657,59 @@ ALPHA_INSTALLATIONS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     ),
     {"alpha_installation": ALPHA_INSTALLATION_SCHEMA},
 )
+ALPHA_WEBHOOK_STATUS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "installation_ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+            },
+            "webhook": _object(
+                {
+                    "api_ok": {"type": "boolean", "const": True},
+                    "bot_username": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 64,
+                    },
+                    "webhook_configured": {"type": "boolean"},
+                    "exact_match": {"type": "boolean"},
+                    "actual_origin_match": {"type": "boolean"},
+                    "expected_webhook_path": {
+                        "type": "string",
+                        "const": "/telegram/alpha/webhook",
+                    },
+                    "pending_update_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "allowed_updates": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                        },
+                        "maxItems": 32,
+                    },
+                    "max_connections": _nullable("integer"),
+                    "has_custom_certificate": {"type": "boolean"},
+                    "last_error_present": {"type": "boolean"},
+                    "provider_dialog_ids_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "telegram_private_data_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
+        }
+    ),
+    {},
+)
 ALPHA_CONTROL_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     _object(
         {
@@ -755,6 +809,7 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_send_approved_reply": GATE_SEND_OUTPUT_SCHEMA,
     "gate_queue_approved_reply_sequence": GATE_SEQUENCE_OUTPUT_SCHEMA,
     "gate_alpha_list_installations": ALPHA_INSTALLATIONS_OUTPUT_SCHEMA,
+    "gate_alpha_get_webhook_status": ALPHA_WEBHOOK_STATUS_OUTPUT_SCHEMA,
     "gate_alpha_control_installation": ALPHA_CONTROL_OUTPUT_SCHEMA,
     "gate_alpha_run_model_preflight": ALPHA_PREFLIGHT_OUTPUT_SCHEMA,
     "gate_alpha_list_shadow_reviews": ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA,
