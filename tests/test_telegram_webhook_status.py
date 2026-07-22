@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from app.core.config import Settings
 from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
