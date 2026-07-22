@@ -51,6 +51,23 @@ access to this transport.
 | Ownership drift | Relations owns Person/context; Gate stores only opaque transport references |
 | Sensitive identifiers in Git | phone, codes, passwords, api hash, session strings and provider ids are excluded from the contract |
 
+## P2 bounded-read contract
+
+Issue #281 adds a provider-neutral metadata-only read boundary with no real
+adapter. It enforces one opaque session, one opaque peer, one-use digest-only
+grant, at most five envelopes from at most the preceding 24 hours, redacted
+digest receipt, automatic grant consumption and idempotent unknown-outcome
+capture. The fake adapter has no account, network, content or external effect.
+
+The contract deliberately has no message-text field, contact surface, media
+bytes, search, dialog discovery, read-state method or Telethon import. Synthetic
+success proves only repository behavior. It grants no provider or data access.
+
+Telegram API-derived personal content must not be routed to Alfa or another AI
+system without a recorded terms/compliance basis for the exact use. A live read
+also requires exact owner authorization for account, dialog, window, data
+classes, purpose and retention.
+
 ## Activation boundary
 
 This Stage A PR authorizes no Telegram API application, login, phone or 2FA
