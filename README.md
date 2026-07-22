@@ -33,7 +33,8 @@ registry, then the handoff and this README. Re-query GitHub and production befor
 
 GitHub issues and their latest receipts supersede dated roadmap prose:
 
-- [#277](https://github.com/markmalina/gate/issues/277) — `done`: accepted product truth and capability registry.\n- [#279](https://github.com/markmalina/gate/issues/279) — P2 capability audit: Business/Bot API first, owner export second, residual MTProto only after terms/compliance and exact data gates.
+- [#277](https://github.com/markmalina/gate/issues/277) — `done`: accepted product truth and capability registry.
+- [#279](https://github.com/markmalina/gate/issues/279) — P2 capability audit: Business/Bot API first, owner export second, residual MTProto only after terms/compliance and exact data gates.
 - [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: external Auth0/ChatGPT authorization remains incomplete; do not reconnect or invoke Telegram without the exact issue gate.
 - [#260](https://github.com/markmalina/gate/issues/260) — `blocked` behind #261: inspect only the redacted owner-media receipt after the control connection is accepted; never resend or upload raw media.
 - [#272](https://github.com/markmalina/gate/issues/272) — the single durable Center cutover pointer.
@@ -41,7 +42,7 @@ GitHub issues and their latest receipts supersede dated roadmap prose:
 - [#273](https://github.com/markmalina/gate/issues/273) is closed setup evidence. The Instagram owner-account OAuth and transport runtime remain inactive.
 
 Do not invent activation work, restart an accepted sprint or revive PR #207. Human gates block only
-their dependent branches; independent repository-only product work follows #277.
+their dependent branches; independent repository-only product work follows #279 and its accepted next-work pointer.
 
 ## Project transfer acceptance / Приёмка проекта
 
