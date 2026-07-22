@@ -24,6 +24,7 @@ Continue in this exact order:
 7. [Integrated delivery roadmap](docs/INTEGRATED_DELIVERY_ROADMAP_2026.md) — current cross-product release order.
 8. [Full technical specification](docs/GATE_FULL_TECHNICAL_SPEC.md).
 9. [Operator regulations](docs/GATE_OPERATOR_REGULATIONS.md).
+10. [Instagram connection handoff](docs/INSTAGRAM_CONNECTION_HANDOFF.md) — current `gate-IG` setup, OAuth recovery and safe connector stages.
 
 If an older section conflicts with `docs/PROJECT_HANDOFF.md`, re-query GitHub and production, then
 update both documents in the same substantive PR.
@@ -35,6 +36,7 @@ GitHub issues and their latest receipts supersede dated roadmap prose:
 - [#260](https://github.com/markmalina/gate/issues/260) — `waiting_user`: select the exact owner-controlled media, transport, storage/retention and any permitted provider action before a private Capture canary.
 - [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: provide only the redacted latest Auth0 failed token-exchange log fields named in the issue. Do not reconnect or invoke Telegram before that evidence.
 - [#263](https://github.com/markmalina/gate/issues/263) Stage A — done through [#264](https://github.com/markmalina/gate/pull/264): default-off personal Telegram transport contract, synthetic tests and rollback. Stage B requires a separate exact owner authorization before API application credentials, phone/2FA or session creation.
+- [#273](https://github.com/markmalina/gate/issues/273) — `waiting_user`: `gate-IG` exists, but `mark.mayak.oko` cannot yet complete Instagram web login because of a repeated CAPTCHA challenge. Preserve the mobile session; no OAuth token or Instagram action is active.
 
 There is no independent `ready` Gate stage after #264. Do not invent activation work, restart the accepted canonical-input sprint or revive PR #207.
 
