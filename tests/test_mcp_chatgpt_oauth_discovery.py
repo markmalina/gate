@@ -142,10 +142,12 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
+        "gate_alpha_get_test_group_presence",
     ]
     assert payload["mcp"]["send_tools"] == [
         "gate_send_approved_reply",
         "gate_queue_approved_reply_sequence",
+        "gate_alpha_send_review",
     ]
     assert payload["mcp"]["send_requires_explicit_confirmation"] is True
 
@@ -171,6 +173,8 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_list_shadow_reviews",
+        "gate_alpha_get_test_group_presence",
+        "gate_alpha_send_review",
     ]
     assert tools[0]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:status:read"]}
