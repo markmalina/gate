@@ -404,8 +404,8 @@ def _redact_provider_receipt(
     )
 
 
-def _require_limit(value: object) -> int:
-    if type(value) is not int or not 1 <= value <= MAX_READ_MESSAGES:
+def _require_limit(value: int) -> int:
+    if isinstance(value, bool) or not 1 <= value <= MAX_READ_MESSAGES:
         raise PersonalTelegramTransportError(
             "personal_telegram_read_limit_invalid"
         )
