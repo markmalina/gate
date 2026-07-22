@@ -99,7 +99,7 @@ TOOL_CONTRACTS = (
     ToolContract(
         "gate_alpha_get_test_group_presence",
         "gate:agents:manage",
-        "read_only_tools",
+        "write_tools",
         "_gate_alpha_get_test_group_presence_tool",
     ),
     ToolContract(
