@@ -1,4 +1,4 @@
-from __future__ import annotations
+"""Repository contract tests for the Gate capability registry."""
 
 import json
 from pathlib import Path
