@@ -94,6 +94,7 @@ async def mcp_metadata(
                 "gate_alpha_list_installations",
                 "gate_alpha_get_webhook_status",
                 "gate_alpha_list_shadow_reviews",
+                "gate_alpha_get_test_group_presence",
             ],
             "write": [
                 "gate_save_reply_draft",
@@ -103,6 +104,7 @@ async def mcp_metadata(
             "send": [
                 "gate_send_approved_reply",
                 "gate_queue_approved_reply_sequence",
+                "gate_alpha_send_review",
             ],
             "send_requires_explicit_confirmation": True,
         },
