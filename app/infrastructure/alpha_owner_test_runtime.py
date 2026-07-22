@@ -152,6 +152,10 @@ async def send_owner_test_review(
     if row is None:
         raise AlphaOwnerTestRuntimeError("alpha_owner_test_review_not_found")
     installation, dialog, turn, trigger = row
+    if installation.state != "active":
+        raise AlphaOwnerTestRuntimeError(
+            "alpha_owner_test_installation_not_active"
+        )
 
     existing = (
         await session.execute(
