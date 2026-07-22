@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application.alpha_owner_test_policy import (
     OwnerTestPresenceState,
     authorize_owner_test_delivery,
