@@ -723,6 +723,7 @@ async def _alpha_get_test_group_presence_tool_result(
                 installation_ref=raw_ref,
             )
     except AlphaOwnerTestRuntimeError as exc:
+        await session.rollback()
         return _tool_error_result(
             request_id=request_id,
             code=exc.code,
@@ -777,6 +778,7 @@ async def _alpha_send_review_tool_result(
                 confirmed=True,
             )
     except (AlphaOwnerTestRuntimeError, ValueError) as exc:
+        await session.rollback()
         code = exc.code if isinstance(exc, AlphaOwnerTestRuntimeError) else str(exc)
         return _tool_error_result(
             request_id=request_id,
