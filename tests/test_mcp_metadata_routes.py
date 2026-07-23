@@ -80,6 +80,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
         "gate_alpha_verify_review_replay",
+        "gate_alpha_verify_review_replay",
     ]
     assert payload["mcp"]["auth_status"] == "disabled_by_default"
 
@@ -118,6 +119,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
+        "gate_alpha_verify_review_replay",
         "gate_alpha_verify_review_replay",
     ]
     assert payload["tools"]["write"] == [
