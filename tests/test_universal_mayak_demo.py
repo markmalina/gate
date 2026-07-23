@@ -126,6 +126,22 @@ class Delivery:
         )
 
 
+class RaisingDelivery(Delivery):
+    async def deliver(self, delivery_ref):
+        self.calls.append(delivery_ref)
+        raise RuntimeError("synthetic delivery timeout")
+
+
+class MismatchedDelivery(Delivery):
+    async def deliver(self, delivery_ref):
+        self.calls.append(delivery_ref)
+        return DemoDeliveryReceipt(
+            "delivery_wrong",
+            DemoDeliveryState.SENT,
+            provider_message_ref="provider_message_1",
+        )
+
+
 def command(
     *,
     scope=SCOPE,
@@ -340,13 +356,20 @@ async def test_default_off_and_owner_only_block_before_effect(
     actor,
     code,
 ) -> None:
-    app, _store, model, delivery = service(store=Store(installation))
+    app, store, model, delivery = service(store=Store(installation))
 
     with pytest.raises(UniversalMayakDemoError, match=code):
         await app.execute(command(actor=actor))
 
     assert model.calls == []
     assert delivery.calls == []
+    if code == "installation_not_active":
+        assert next(iter(store.turns.values()))[2] == DemoTerminalReceipt(
+            DemoDisposition.BLOCKED,
+            "mayak_demo_installation_not_active",
+        )
+    else:
+        assert store.turns == {}
 
 
 @pytest.mark.anyio
@@ -414,3 +437,38 @@ async def test_unknown_delivery_is_terminal_and_exact_replay_does_not_retry() ->
     assert replay.code == "mayak_demo_delivery_unknown"
     assert len(model.calls) == 1
     assert delivery.calls == ["delivery_turn_1"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "delivery",
+    [RaisingDelivery(), MismatchedDelivery()],
+)
+async def test_ambiguous_delivery_is_unknown_and_exact_replay_never_retries(
+    delivery,
+) -> None:
+    app, _store, model, _delivery = service(delivery=delivery)
+
+    first = await app.execute(command())
+    replay = await app.execute(command())
+
+    assert first.disposition is DemoDisposition.UNKNOWN
+    assert first.code == "mayak_demo_delivery_unknown"
+    assert replay.disposition is DemoDisposition.REPLAYED
+    assert replay.code == "mayak_demo_delivery_unknown"
+    assert len(model.calls) == 1
+    assert delivery.calls == ["delivery_turn_1"]
+
+
+def test_terminal_receipt_rejects_inconsistent_delivery_state() -> None:
+    sent = DemoDeliveryReceipt(
+        "delivery_1",
+        DemoDeliveryState.SENT,
+        provider_message_ref="provider_message_1",
+    )
+
+    with pytest.raises(ValueError, match="must match"):
+        DemoTerminalReceipt(DemoDisposition.UNKNOWN, "unknown", sent)
+
+    with pytest.raises(ValueError, match="result projection"):
+        DemoTerminalReceipt(DemoDisposition.REPLAYED, "replayed")
