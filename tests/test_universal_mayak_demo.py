@@ -6,7 +6,6 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-
 from app.application.universal_mayak_demo import (
     DemoContextMessage,
     DemoDeliveryReceipt,
