@@ -287,6 +287,78 @@ async def send_owner_test_review(
     )
 
 
+async def verify_owner_test_review_replay(
+    *,
+    session: AsyncSession,
+    workspace_key: str,
+    installation_ref: str,
+    turn_ref: str,
+    expected_candidate_sha256: str,
+) -> JsonObject:
+    """Return one exact stored terminal receipt without crossing a provider boundary."""
+
+    try:
+        turn_id = UUID(turn_ref)
+    except ValueError as exc:
+        raise AlphaOwnerTestRuntimeError("alpha_owner_test_turn_invalid") from exc
+
+    row = (
+        await session.execute(
+            select(AgentInstallationModel, AgentTurnModel)
+            .join(
+                AgentSessionModel,
+                (AgentSessionModel.dialog_id == AgentInstallationModel.dialog_id)
+                & (AgentSessionModel.workspace_id == AgentInstallationModel.workspace_id),
+            )
+            .join(
+                AgentTurnModel,
+                (AgentTurnModel.session_id == AgentSessionModel.id)
+                & (AgentTurnModel.workspace_id == AgentSessionModel.workspace_id),
+            )
+            .join(Workspace, Workspace.id == AgentInstallationModel.workspace_id)
+            .where(
+                Workspace.key == workspace_key,
+                Workspace.is_active.is_(True),
+                AgentInstallationModel.installation_key == installation_ref,
+                AgentTurnModel.id == turn_id,
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        raise AlphaOwnerTestRuntimeError("alpha_owner_test_review_not_found")
+    installation, turn = row
+    if turn.candidate_sha256 != expected_candidate_sha256:
+        raise AlphaOwnerTestRuntimeError("alpha_owner_test_candidate_mismatch")
+
+    existing = (
+        await session.execute(
+            select(DeliveryGrantModel, AgentSendAttemptModel)
+            .join(
+                AgentSendAttemptModel,
+                (AgentSendAttemptModel.grant_id == DeliveryGrantModel.id)
+                & (AgentSendAttemptModel.workspace_id == DeliveryGrantModel.workspace_id),
+            )
+            .where(
+                DeliveryGrantModel.workspace_id == installation.workspace_id,
+                DeliveryGrantModel.installation_id == installation.id,
+                DeliveryGrantModel.trigger_message_id == turn.trigger_message_id,
+                DeliveryGrantModel.candidate_sha256 == expected_candidate_sha256,
+            )
+        )
+    ).one_or_none()
+    if existing is None:
+        raise AlphaOwnerTestRuntimeError("alpha_owner_test_replay_not_found")
+    _, attempt = existing
+    if attempt.state not in {"sent", "failed", "unknown", "blocked"}:
+        raise AlphaOwnerTestRuntimeError("alpha_owner_test_replay_not_terminal")
+    return _delivery_payload(
+        installation_ref=installation.installation_key,
+        turn_ref=str(turn.id),
+        state=attempt.state,
+        replay=True,
+    )
+
+
 async def _telegram_member_count(
     *,
     settings: Settings,
