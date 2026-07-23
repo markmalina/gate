@@ -108,6 +108,7 @@ TOOL_CONTRACTS = (
         "send_tools",
         "_gate_alpha_send_review_tool",
     ),
+    # Replay proof is read-only: it never crosses the provider boundary.
     ToolContract(
         "gate_alpha_verify_review_replay",
         "gate:status:read",
