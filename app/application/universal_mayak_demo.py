@@ -317,7 +317,7 @@ class ProcessUniversalMayakDemoService:
         self, command: ProcessUniversalMayakCommand
     ) -> UniversalMayakDemoResult:
         installation = await self._store.resolve_installation(command.scope)
-        _admit(installation, command)
+        _admit_scope(installation, command)
         input_sha256 = _input_digest(command)
         reservation = await self._store.reserve_turn(
             command,
@@ -338,6 +338,8 @@ class ProcessUniversalMayakDemoService:
                 "mayak_demo_turn_in_progress",
                 reservation.turn_ref,
             )
+        if installation.state is not DemoInstallationState.ACTIVE:
+            raise UniversalMayakDemoError("mayak_demo_installation_not_active")
 
         if command.invocation in {
             DemoInvocation.PAUSE,
@@ -414,7 +416,7 @@ class ProcessUniversalMayakDemoService:
         return _terminal_result(reservation.turn_ref, terminal)
 
 
-def _admit(
+def _admit_scope(
     installation: UniversalMayakInstallation,
     command: ProcessUniversalMayakCommand,
 ) -> None:
@@ -424,8 +426,6 @@ def _admit(
         raise UniversalMayakDemoError("mayak_demo_dialog_not_private")
     if not installation.owner_only or command.actor_scope != "owner":
         raise UniversalMayakDemoError("mayak_demo_owner_only")
-    if installation.state is not DemoInstallationState.ACTIVE:
-        raise UniversalMayakDemoError("mayak_demo_installation_not_active")
 
 
 def _validate_context(
