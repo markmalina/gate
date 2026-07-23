@@ -195,14 +195,24 @@ class DemoTerminalReceipt:
 
     def __post_init__(self) -> None:
         _require_token(self.code, "code", 128)
-        if self.disposition is DemoDisposition.SENT:
-            if self.delivery is None or self.delivery.state is not DemoDeliveryState.SENT:
-                raise ValueError("sent terminal receipt requires sent delivery")
+        if self.disposition is DemoDisposition.REPLAYED:
+            raise ValueError("replayed is a result projection, not a terminal state")
         if self.disposition in {
             DemoDisposition.PAUSED,
             DemoDisposition.HUMAN_TAKEOVER,
         } and self.delivery is not None:
             raise ValueError("control transition cannot contain a delivery receipt")
+        if self.disposition is DemoDisposition.SENT:
+            if self.delivery is None or self.delivery.state is not DemoDeliveryState.SENT:
+                raise ValueError("sent terminal receipt requires sent delivery")
+            return
+        expected_delivery_state = {
+            DemoDisposition.BLOCKED: DemoDeliveryState.BLOCKED,
+            DemoDisposition.FAILED: DemoDeliveryState.FAILED,
+            DemoDisposition.UNKNOWN: DemoDeliveryState.UNKNOWN,
+        }.get(self.disposition)
+        if self.delivery is not None and self.delivery.state is not expected_delivery_state:
+            raise ValueError("terminal disposition and delivery state must match")
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,6 +349,15 @@ class ProcessUniversalMayakDemoService:
                 reservation.turn_ref,
             )
         if installation.state is not DemoInstallationState.ACTIVE:
+            terminal = DemoTerminalReceipt(
+                DemoDisposition.BLOCKED,
+                "mayak_demo_installation_not_active",
+            )
+            await self._store.finish_turn(
+                turn_ref=reservation.turn_ref,
+                terminal=terminal,
+                now=command.now,
+            )
             raise UniversalMayakDemoError("mayak_demo_installation_not_active")
 
         if command.invocation in {
@@ -372,7 +391,19 @@ class ProcessUniversalMayakDemoService:
             command.scope,
             observed_at=command.now,
         )
-        _validate_context(installation, context, observed_at=command.now)
+        try:
+            _validate_context(installation, context, observed_at=command.now)
+        except UniversalMayakDemoError as exc:
+            terminal = DemoTerminalReceipt(
+                DemoDisposition.FAILED,
+                exc.code,
+            )
+            await self._store.finish_turn(
+                turn_ref=reservation.turn_ref,
+                terminal=terminal,
+                now=command.now,
+            )
+            raise
         try:
             model_reply = await self._model.propose(
                 UniversalMayakModelRequest(
@@ -397,16 +428,49 @@ class ProcessUniversalMayakDemoService:
             return _terminal_result(reservation.turn_ref, terminal)
 
         candidate_sha256 = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
-        delivery_ref = await self._store.stage_reply(
-            turn_ref=reservation.turn_ref,
-            scope=command.scope,
-            candidate_text=candidate,
-            candidate_sha256=candidate_sha256,
-            now=command.now,
-        )
-        delivery = await self._delivery.deliver(delivery_ref)
+        try:
+            delivery_ref = await self._store.stage_reply(
+                turn_ref=reservation.turn_ref,
+                scope=command.scope,
+                candidate_text=candidate,
+                candidate_sha256=candidate_sha256,
+                now=command.now,
+            )
+        except Exception:
+            terminal = DemoTerminalReceipt(
+                DemoDisposition.FAILED,
+                "mayak_demo_stage_failed",
+            )
+            await self._store.finish_turn(
+                turn_ref=reservation.turn_ref,
+                terminal=terminal,
+                now=command.now,
+            )
+            return _terminal_result(reservation.turn_ref, terminal)
+        try:
+            delivery = await self._delivery.deliver(delivery_ref)
+        except Exception:
+            terminal = _unknown_delivery_terminal(
+                delivery_ref,
+                "mayak_demo_delivery_exception",
+            )
+            await self._store.finish_turn(
+                turn_ref=reservation.turn_ref,
+                terminal=terminal,
+                now=command.now,
+            )
+            return _terminal_result(reservation.turn_ref, terminal)
         if delivery.delivery_ref != delivery_ref:
-            raise UniversalMayakDemoError("mayak_demo_delivery_ref_mismatch")
+            terminal = _unknown_delivery_terminal(
+                delivery_ref,
+                "mayak_demo_delivery_ref_mismatch",
+            )
+            await self._store.finish_turn(
+                turn_ref=reservation.turn_ref,
+                terminal=terminal,
+                now=command.now,
+            )
+            return _terminal_result(reservation.turn_ref, terminal)
         terminal = _delivery_terminal(delivery)
         await self._store.finish_turn(
             turn_ref=reservation.turn_ref,
@@ -493,6 +557,21 @@ def _delivery_terminal(delivery: DemoDeliveryReceipt) -> DemoTerminalReceipt:
         disposition,
         f"mayak_demo_delivery_{delivery.state.value}",
         delivery,
+    )
+
+
+def _unknown_delivery_terminal(
+    delivery_ref: str,
+    error_code: str,
+) -> DemoTerminalReceipt:
+    return DemoTerminalReceipt(
+        DemoDisposition.UNKNOWN,
+        "mayak_demo_delivery_unknown",
+        DemoDeliveryReceipt(
+            delivery_ref,
+            DemoDeliveryState.UNKNOWN,
+            error_code=error_code,
+        ),
     )
 
 
