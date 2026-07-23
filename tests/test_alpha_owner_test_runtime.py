@@ -13,6 +13,7 @@ from app.infrastructure.alpha_owner_test_runtime import (
     AlphaOwnerTestRuntimeError,
     observe_owner_test_presence,
     send_owner_test_review,
+    verify_owner_test_review_replay,
 )
 from app.models.alpha import AgentSendAttemptModel, DeliveryGrantModel
 
@@ -79,6 +80,24 @@ class _DeliverySession:
     async def rollback(self) -> None:
         self.rollbacks += 1
         self.pending.clear()
+
+
+class _ReplaySession:
+    def __init__(self, *, ledger: _Ledger, fixtures: SimpleNamespace) -> None:
+        self.ledger = ledger
+        self.fixtures = fixtures
+        self.execute_count = 0
+        self.commits = 0
+
+    async def execute(self, _statement: object) -> _Result:
+        self.execute_count += 1
+        if self.execute_count == 1:
+            return _Result((self.fixtures.installation, self.fixtures.turn))
+        if self.execute_count == 2:
+            if self.ledger.grant is None or self.ledger.attempt is None:
+                return _Result(None)
+            return _Result((self.ledger.grant, self.ledger.attempt))
+        raise AssertionError("unexpected database query")
 
 
 class _PresenceSession:
@@ -218,6 +237,40 @@ async def test_exact_delivery_replays_across_independent_sessions() -> None:
     assert second_session.commits == 0
     assert ledger.attempt is not None
     assert ledger.attempt.error_code is None
+
+
+@pytest.mark.anyio
+async def test_read_only_replay_proof_works_while_installation_is_paused() -> None:
+    fixtures = _fixtures()
+    ledger = _Ledger()
+    http_client = _HttpClient(ledger=ledger)
+    first = await send_owner_test_review(
+        session=_DeliverySession(ledger=ledger, fixtures=fixtures),  # type: ignore[arg-type]
+        settings=_settings(),  # type: ignore[arg-type]
+        http_client=http_client,  # type: ignore[arg-type]
+        workspace_key="mark-personal",
+        installation_ref="installation-test",
+        turn_ref=str(fixtures.turn.id),
+        expected_candidate_sha256=fixtures.digest,
+        confirmed=True,
+    )
+    fixtures.installation.state = "paused"
+    proof_session = _ReplaySession(ledger=ledger, fixtures=fixtures)
+
+    proof = await verify_owner_test_review_replay(
+        session=proof_session,  # type: ignore[arg-type]
+        workspace_key="mark-personal",
+        installation_ref="installation-test",
+        turn_ref=str(fixtures.turn.id),
+        expected_candidate_sha256=fixtures.digest,
+    )
+
+    assert first["state"] == "sent"
+    assert proof["state"] == "sent"
+    assert proof["replay"] is True
+    assert http_client.send_count == 1
+    assert proof_session.execute_count == 2
+    assert proof_session.commits == 0
 
 
 @pytest.mark.anyio
