@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "status": "current-target",
-  "capturedAt": "2026-07-23T03:28:00Z",
+  "capturedAt": "2026-07-23T03:36:00Z",
   "sourceIssue": "https://github.com/markmalina/gate/issues/277",
   "repositoryBaseline": "3e894ebb6d0919e44bc6c3f3855bc2893b7374f1",
   "productRole": "safe-omnichannel-communication-platform",
@@ -220,10 +220,15 @@
       "id": "mayak-installation",
       "owner": "mayaki",
       "transportOwner": "gate",
-      "lifecycle": "planned",
+      "lifecycle": "contract-only",
       "current": [
         "alpha-group-pattern",
-        "oko-dry-contracts"
+        "oko-dry-contracts",
+        "visible-agent-installation-contract",
+        "explicit-capability-matrix",
+        "explicit-transition-receipts",
+        "pause-revoke-delete-reconsent",
+        "synthetic-privacy-and-isolation-tests"
       ],
       "target": [
         "private-dialog",
@@ -234,7 +239,8 @@
         "program-handoff",
         "personal-alfa-opt-in",
         "human-takeover"
-      ]
+      ],
+      "currentPointer": "https://github.com/markmalina/gate/issues/293"
     },
     {
       "id": "instagram-meta",
@@ -349,7 +355,8 @@
     {
       "id": "P4",
       "name": "reusable-mayak-installation",
-      "state": "planned"
+      "state": "contract-ready-runtime-gated",
+      "pointer": "https://github.com/markmalina/gate/issues/293"
     },
     {
       "id": "P5",
