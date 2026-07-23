@@ -563,6 +563,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_alpha_list_shadow_reviews",
         "gate_alpha_get_test_group_presence",
         "gate_alpha_send_review",
+        "gate_alpha_verify_review_replay",
     ]
     for tool in tools:
         assert tool["outputSchema"] == MCP_TOOL_OUTPUT_SCHEMAS[tool["name"]]
@@ -578,6 +579,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_alpha_list_shadow_reviews",
         "gate_alpha_get_test_group_presence",
         "gate_alpha_send_review",
+        "gate_alpha_verify_review_replay",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
     assert tools[0]["annotations"]["readOnlyHint"] is True
@@ -621,6 +623,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "openWorldHint": True,
     }
     assert tools[10]["annotations"]["readOnlyHint"] is True
+    assert tools[13]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
 
 
 @pytest.mark.anyio
