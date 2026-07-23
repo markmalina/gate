@@ -72,6 +72,7 @@ from app.infrastructure.alpha_owner_test_runtime import (
     AlphaOwnerTestRuntimeError,
     observe_owner_test_presence,
     send_owner_test_review,
+    verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
@@ -129,6 +130,7 @@ MCP_TOOL_NAMES = [
     "gate_alpha_list_shadow_reviews",
     "gate_alpha_get_test_group_presence",
     "gate_alpha_send_review",
+    "gate_alpha_verify_review_replay",
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -146,6 +148,7 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_list_shadow_reviews": "gate:agents:manage",
     "gate_alpha_get_test_group_presence": "gate:agents:manage",
     "gate_alpha_send_review": "gate:messages:send",
+    "gate_alpha_verify_review_replay": "gate:status:read",
 }
 
 
@@ -205,6 +208,7 @@ async def mcp_endpoint(
                     _gate_alpha_list_shadow_reviews_tool(settings),
                     _gate_alpha_get_test_group_presence_tool(settings),
                     _gate_alpha_send_review_tool(settings),
+                    _gate_alpha_verify_review_replay_tool(settings),
                 ]
             },
         )
@@ -306,6 +310,13 @@ async def mcp_endpoint(
                 principal=principal,
                 session=session,
                 settings=settings,
+            )
+        if tool_name == "gate_alpha_verify_review_replay":
+            return await _alpha_verify_review_replay_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
             )
         if tool_name == "gate_alpha_control_installation":
             return await _alpha_control_installation_tool_result(
@@ -795,6 +806,55 @@ async def _alpha_send_review_tool_result(
     )
 
 
+async def _alpha_verify_review_replay_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_ref = arguments.get("installation_ref")
+    raw_turn = arguments.get("turn_ref")
+    raw_digest = arguments.get("expected_candidate_sha256")
+    if (
+        not isinstance(raw_ref, str)
+        or not isinstance(raw_turn, str)
+        or not isinstance(raw_digest, str)
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message=(
+                "installation_ref, turn_ref and expected_candidate_sha256 "
+                "are required"
+            ),
+        )
+    try:
+        payload = await verify_owner_test_review_replay(
+            session=session,
+            workspace_key=principal.access_scope.workspace_id,
+            installation_ref=raw_ref,
+            turn_ref=raw_turn,
+            expected_candidate_sha256=raw_digest,
+        )
+    except (AlphaOwnerTestRuntimeError, ValueError) as exc:
+        await session.rollback()
+        code = exc.code if isinstance(exc, AlphaOwnerTestRuntimeError) else str(exc)
+        return _tool_error_result(
+            request_id=request_id,
+            code=code,
+            message="Alpha owner-test replay verification failed closed",
+        )
+    return _tool_result(
+        payload,
+        (
+            f"Alpha review replay proof: {payload['state']}; "
+            f"replay={payload['replay']}"
+        ),
+        request_id,
+    )
+
+
 async def _alpha_control_installation_tool_result(
     *,
     request_id: Any,
@@ -1090,6 +1150,49 @@ def _gate_alpha_send_review_tool(settings: Settings) -> JsonObject:
         tool=tool,
         settings=settings,
         scope="gate:messages:send",
+    )
+
+
+def _gate_alpha_verify_review_replay_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_alpha_verify_review_replay",
+        "title": "Verify one stored Alpha replay",
+        "description": (
+            "Read one exact already-persisted terminal Alpha delivery receipt. "
+            "It cannot call Telegram or any provider, create delivery records, "
+            "or mutate installation state."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "installation_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
+                "turn_ref": {"type": "string", "format": "uuid"},
+                "expected_candidate_sha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64,
+                },
+            },
+            "required": [
+                "installation_ref",
+                "turn_ref",
+                "expected_candidate_sha256",
+            ],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_alpha_verify_review_replay"
+        ],
+        "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:status:read",
     )
 
 

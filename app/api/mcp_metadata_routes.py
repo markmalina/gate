@@ -94,6 +94,7 @@ async def mcp_metadata(
                 "gate_alpha_list_installations",
                 "gate_alpha_get_webhook_status",
                 "gate_alpha_list_shadow_reviews",
+                "gate_alpha_verify_review_replay",
             ],
             "write": [
                 "gate_save_reply_draft",
@@ -128,6 +129,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_alpha_list_installations",
             "gate_alpha_get_webhook_status",
             "gate_alpha_list_shadow_reviews",
+            "gate_alpha_verify_review_replay",
         ],
         "write_tools_enabled": True,
         "write_tools": [
