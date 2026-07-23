@@ -385,6 +385,22 @@ async def test_pause_and_human_takeover_are_terminal_without_model_or_delivery(
 
 
 @pytest.mark.anyio
+async def test_pause_exact_replay_returns_receipt_after_installation_is_paused() -> None:
+    app, store, model, delivery = service()
+    pause = command(invocation=DemoInvocation.PAUSE, text="/pause")
+
+    first = await app.execute(pause)
+    replay = await app.execute(pause)
+
+    assert first.disposition is DemoDisposition.PAUSED
+    assert replay.disposition is DemoDisposition.REPLAYED
+    assert replay.code == "mayak_demo_paused"
+    assert store.transitions == [DemoInstallationState.PAUSED]
+    assert model.calls == []
+    assert delivery.calls == []
+
+
+@pytest.mark.anyio
 async def test_unknown_delivery_is_terminal_and_exact_replay_does_not_retry() -> None:
     app, _store, model, delivery = service(
         delivery=Delivery(DemoDeliveryState.UNKNOWN)
