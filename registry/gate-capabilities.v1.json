@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "status": "current-target",
-  "capturedAt": "2026-07-22T15:18:00Z",
+  "capturedAt": "2026-07-23T03:28:00Z",
   "sourceIssue": "https://github.com/markmalina/gate/issues/277",
   "repositoryBaseline": "3e894ebb6d0919e44bc6c3f3855bc2893b7374f1",
   "productRole": "safe-omnichannel-communication-platform",
@@ -193,11 +193,15 @@
     {
       "id": "alfa-relations-memory-projection",
       "owner": "alfa-relations",
-      "lifecycle": "planned",
+      "lifecycle": "contract-only",
       "current": [
         "canonical-message-source",
         "relationship-domain-contracts",
-        "draft-approval-reference"
+        "draft-approval-reference",
+        "source-attributed-projection-contract",
+        "terminal-digest-receipt",
+        "correction-supersession-deletion-retention",
+        "synthetic-privacy-contract-tests"
       ],
       "target": [
         "sourced-facts",
@@ -209,7 +213,8 @@
         "deletion",
         "bounded-retrieval"
       ],
-      "prohibition": "no-full-history-prompt-dump"
+      "prohibition": "no-full-history-prompt-dump",
+      "currentPointer": "https://github.com/markmalina/gate/issues/291"
     },
     {
       "id": "mayak-installation",
@@ -338,7 +343,8 @@
     {
       "id": "P3",
       "name": "alfa-relations-memory",
-      "state": "planned"
+      "state": "contract-ready-runtime-gated",
+      "pointer": "https://github.com/markmalina/gate/issues/291"
     },
     {
       "id": "P4",
