@@ -56,14 +56,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Own process-scoped resources and reconcile the Telegram webhook."""
 
     settings = get_settings()
+    telegram_worker_enabled = getattr(settings, "gate_telegram_worker_enabled", False)
+    reply_sequence_worker_enabled = getattr(
+        settings,
+        "gate_reply_sequence_worker_enabled",
+        False,
+    )
     worker_health = WorkerHealthRegistry()
     worker_health.register(
         TELEGRAM_WORKER,
-        enabled=settings.gate_telegram_worker_enabled,
+        enabled=telegram_worker_enabled,
     )
     worker_health.register(
         REPLY_SEQUENCE_WORKER,
-        enabled=settings.gate_reply_sequence_worker_enabled,
+        enabled=reply_sequence_worker_enabled,
     )
     _app.state.worker_health_registry = worker_health
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
@@ -89,14 +95,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     reconciliation_task = asyncio.create_task(
                         _reconcile_all_telegram_webhooks(settings, http_client)
                     )
-                    if settings.gate_telegram_worker_enabled:
+                    if telegram_worker_enabled:
                         worker_task = asyncio.create_task(
                             run_telegram_worker_loop(
                                 settings,
                                 health_reporter=worker_health,
                             )
                         )
-                    if settings.gate_reply_sequence_worker_enabled:
+                    if reply_sequence_worker_enabled:
                         reply_sequence_task = asyncio.create_task(
                             run_reply_sequence_worker_loop(
                                 settings=settings,
