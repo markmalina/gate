@@ -464,7 +464,7 @@ async def test_context_merges_verified_inbound_and_exactly_one_sent_candidate() 
     assert tuple(item.content for item in context) == (
         "Reply from the previous validated revision",
         "Delivered reply",
-        "Second user message",
+        "/alpha@AlphaViaBot Second user message",
     )
     delivered_sql = session.statements[1]
     assert "recent_alpha_sent_attempts" in delivered_sql
