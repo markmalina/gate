@@ -18,6 +18,7 @@ from app.application.reply_sends import (
     SendApprovedReplyCommand,
     SendApprovedReplyService,
 )
+from app.application.worker_health import REPLY_SEQUENCE_WORKER, WorkerHealthReporter
 from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
 from app.infrastructure.reply_sends import SqlTelegramReplySender
@@ -396,6 +397,7 @@ async def run_reply_sequence_worker_loop(
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
     telegram: TelegramClient,
+    health_reporter: WorkerHealthReporter | None = None,
 ) -> None:
     """Poll durable schedules; cancellation is owned by the application lifespan."""
 
@@ -406,10 +408,21 @@ async def run_reply_sequence_worker_loop(
                 session_factory=session_factory,
                 telegram=telegram,
             )
+            if health_reporter is not None:
+                health_reporter.record_success(
+                    REPLY_SEQUENCE_WORKER,
+                    observed_at=datetime.now(UTC),
+                )
             if sent:
                 logger.info("Reply-sequence worker delivered %s message(s)", sent)
         except asyncio.CancelledError:
             raise
         except Exception:
+            if health_reporter is not None:
+                health_reporter.record_failure(
+                    REPLY_SEQUENCE_WORKER,
+                    error_code="reply_sequence_iteration_failed",
+                    observed_at=datetime.now(UTC),
+                )
             logger.exception("Reply-sequence worker iteration failed safely")
         await asyncio.sleep(settings.gate_reply_sequence_poll_seconds)
