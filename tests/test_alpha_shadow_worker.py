@@ -26,6 +26,8 @@ from app.application.alpha_lifecycle import (
     AlphaUsageReservation,
 )
 from app.application.alpha_shadow_worker import (
+    ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+    AlphaProposalDeliveryMode,
     AlphaShadowDisposition,
     AlphaShadowPreparedTurn,
     AlphaShadowWorkerError,
@@ -34,6 +36,7 @@ from app.application.alpha_shadow_worker import (
     AlphaTurnStatus,
     ProcessAlphaShadowMessageCommand,
     ProcessAlphaShadowMessageService,
+    alpha_proposal_delivery_mode,
     recognize_alpha_invocation,
 )
 from app.application.canonical_messaging import DialogKind
@@ -278,6 +281,44 @@ def test_invocation_requires_exact_command_mention_or_verified_reply(
             reply_to_bot=reply_to_bot,
         )
         is expected
+    )
+
+
+def test_model_delivery_requires_active_explicit_bounded_live_policy(
+    tmp_path: Path,
+) -> None:
+    fixture = _prepared(tmp_path, text="/alpha fixture hello").deployment
+    model_shadow = replace(
+        fixture,
+        deployment_key="alpha-model-v2-openai",
+        runtime_profile="openai-responses-v1",
+        model_profile="gpt-5.6-luna",
+        policy_version="alpha-model-v2",
+        state=AgentDeploymentState.ACTIVE,
+    )
+
+    assert (
+        alpha_proposal_delivery_mode(model_shadow)
+        is AlphaProposalDeliveryMode.SHADOW_ONLY
+    )
+    assert (
+        alpha_proposal_delivery_mode(
+            replace(
+                model_shadow,
+                policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+                state=AgentDeploymentState.STAGED,
+            )
+        )
+        is AlphaProposalDeliveryMode.SHADOW_ONLY
+    )
+    assert (
+        alpha_proposal_delivery_mode(
+            replace(
+                model_shadow,
+                policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+            )
+        )
+        is AlphaProposalDeliveryMode.BOUNDED_LIVE
     )
 
 
