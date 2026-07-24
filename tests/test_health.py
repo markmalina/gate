@@ -29,3 +29,17 @@ async def test_deployment_fingerprint_omits_secrets() -> None:
     body = response.json()
     assert body["bot_username"] == "gate_m_bot"
     assert "telegram_bot_token" not in body
+
+
+@pytest.mark.anyio
+async def test_temporary_personal_transcription_route_is_absent() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        route_response = await client.get(
+            "/tmp/removed-personal-transcription",
+            params={"token": "synthetic-revoked-token"},
+        )
+        openapi_response = await client.get("/openapi.json")
+
+    assert route_response.status_code == 404
+    assert openapi_response.status_code == 200
+    assert all(not path.startswith("/tmp/") for path in openapi_response.json()["paths"])
