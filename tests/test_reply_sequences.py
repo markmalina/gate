@@ -12,9 +12,9 @@ from app.application.reply_sequences import (
 )
 from app.core.mcp_security import AccessScope, Principal
 from app.worker.reply_sequences import (
-    _SequenceRow,
     _due_items,
     _sequence_row_from_scalars,
+    _SequenceRow,
 )
 
 ACCOUNT_ID = UUID("22222222-2222-2222-2222-222222222222")
