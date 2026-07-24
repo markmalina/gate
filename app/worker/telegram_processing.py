@@ -69,6 +69,7 @@ from app.application.telegram_work_ownership_shadow import (
     TelegramIngressRoutingView,
     evaluate_telegram_work_ownership_shadow,
 )
+from app.application.worker_health import TELEGRAM_WORKER, WorkerHealthReporter
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import (
     TelegramConnectorResolutionError,
@@ -624,6 +625,7 @@ async def run_telegram_worker_loop(
     idle_delay_seconds: float = 1.0,
     error_delay_seconds: float = 5.0,
     runtime_logger: logging.Logger = logger,
+    health_reporter: WorkerHealthReporter | None = None,
 ) -> None:
     """Continuously drain due work while the explicit global worker gate is enabled."""
 
@@ -640,12 +642,29 @@ async def run_telegram_worker_loop(
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if health_reporter is not None:
+                health_reporter.record_failure(
+                    TELEGRAM_WORKER,
+                    error_code="telegram_worker_iteration_failed",
+                    observed_at=datetime.now(UTC),
+                )
             runtime_logger.warning(
                 "Telegram worker loop iteration failed: error_type=%s",
                 exc.__class__.__name__,
             )
             delay = error_delay_seconds
         else:
+            if health_reporter is not None and result.error_code is not None:
+                health_reporter.record_failure(
+                    TELEGRAM_WORKER,
+                    error_code=result.error_code,
+                    observed_at=datetime.now(UTC),
+                )
+            elif health_reporter is not None:
+                health_reporter.record_success(
+                    TELEGRAM_WORKER,
+                    observed_at=datetime.now(UTC),
+                )
             delay = idle_delay_seconds if result.disposition == "idle" else 0.0
         if stop.is_set():
             break

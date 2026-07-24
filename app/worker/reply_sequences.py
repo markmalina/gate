@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,6 +18,7 @@ from app.application.reply_sends import (
     SendApprovedReplyCommand,
     SendApprovedReplyService,
 )
+from app.application.worker_health import REPLY_SEQUENCE_WORKER, WorkerHealthReporter
 from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
 from app.infrastructure.reply_sends import SqlTelegramReplySender
@@ -31,6 +34,28 @@ from app.models.domain import (
 from app.services.telegram import TelegramClient
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _SequenceRow:
+    """Immutable discovery projection that is safe after the DB session closes."""
+
+    draft_id: UUID
+    task_id: UUID
+    conversation_id: UUID
+    sequence_id: str
+    position: int
+    state: str
+    scheduled_at: datetime
+    interval_seconds: int
+    account_id: UUID
+    project_id: UUID
+    expected_account: str
+    expected_recipient_chat_id: str
+    principal_subject: str
+    workspace_id: str
+    attempt_status: str | None
+    attempt_finished_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,19 +83,7 @@ async def run_reply_sequence_once(
     """Deliver at most one due draft per sequence and return the sent count."""
 
     current_time = now or datetime.now(UTC)
-    async with session_factory() as discovery_session:
-        raw_rows = (
-            await discovery_session.execute(
-                select(ReplyDraft, SendAttempt)
-                .outerjoin(SendAttempt, SendAttempt.reply_draft_id == ReplyDraft.id)
-                .where(ReplyDraft.prompt_context.has_key(SEQUENCE_CONTEXT_KEY))  # noqa: E711
-                .order_by(ReplyDraft.created_at, ReplyDraft.id)
-                .limit(500)
-            )
-        ).all()
-        await discovery_session.rollback()
-
-    rows = [(draft, attempt) for draft, attempt in raw_rows]
+    rows = await _discover_sequence_rows(session_factory)
 
     due = _due_items(rows, now=current_time)
     sent_count = 0
@@ -137,82 +150,149 @@ async def run_reply_sequence_once(
     return sent_count
 
 
+async def _discover_sequence_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[_SequenceRow, ...]:
+    """Return scalar snapshots only after the discovery session has been closed."""
+
+    rows: list[_SequenceRow] = []
+    async with session_factory() as session:
+        result = await session.execute(
+            select(
+                ReplyDraft.id.label("draft_id"),
+                ReplyDraft.reply_task_id.label("task_id"),
+                ReplyDraft.conversation_id.label("conversation_id"),
+                ReplyDraft.account_id.label("account_id"),
+                ReplyDraft.project_id.label("project_id"),
+                ReplyDraft.prompt_context.label("prompt_context"),
+                SendAttempt.status.label("attempt_status"),
+                SendAttempt.finished_at.label("attempt_finished_at"),
+            )
+            .outerjoin(SendAttempt, SendAttempt.reply_draft_id == ReplyDraft.id)
+            .where(ReplyDraft.prompt_context.has_key(SEQUENCE_CONTEXT_KEY))  # noqa: E711
+            .order_by(ReplyDraft.created_at, ReplyDraft.id)
+            .limit(500)
+        )
+        for raw in result.mappings():
+            row = _sequence_row_from_scalars(
+                draft_id=raw["draft_id"],
+                task_id=raw["task_id"],
+                conversation_id=raw["conversation_id"],
+                account_id=raw["account_id"],
+                project_id=raw["project_id"],
+                prompt_context=raw["prompt_context"],
+                attempt_status=raw["attempt_status"],
+                attempt_finished_at=raw["attempt_finished_at"],
+            )
+            if row is not None:
+                rows.append(row)
+        await session.rollback()
+    return tuple(rows)
+
+
+def _sequence_row_from_scalars(
+    *,
+    draft_id: UUID,
+    task_id: UUID,
+    conversation_id: UUID,
+    account_id: UUID,
+    project_id: UUID,
+    prompt_context: Mapping[str, Any] | None,
+    attempt_status: str | None,
+    attempt_finished_at: datetime | None,
+) -> _SequenceRow | None:
+    """Convert JSON/scalars to a fully detached immutable sequence projection."""
+
+    if prompt_context is None:
+        return None
+    metadata = prompt_context.get(SEQUENCE_CONTEXT_KEY)
+    if not isinstance(metadata, Mapping):
+        return None
+    try:
+        sequence_id = metadata["id"]
+        if not isinstance(sequence_id, str) or not sequence_id:
+            return None
+        scheduled_at = datetime.fromisoformat(str(metadata["scheduled_at"]))
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=UTC)
+        state = metadata["state"]
+        if not isinstance(state, str):
+            return None
+        return _SequenceRow(
+            draft_id=draft_id,
+            task_id=task_id,
+            conversation_id=conversation_id,
+            sequence_id=sequence_id,
+            position=_metadata_int(metadata["position"]),
+            state=state,
+            scheduled_at=scheduled_at,
+            interval_seconds=_metadata_int(metadata["interval_seconds"]),
+            account_id=account_id,
+            project_id=project_id,
+            expected_account=str(metadata["expected_account"]),
+            expected_recipient_chat_id=str(metadata["expected_recipient_chat_id"]),
+            principal_subject=str(metadata["principal_subject"]),
+            workspace_id=str(metadata["workspace_id"]),
+            attempt_status=attempt_status,
+            attempt_finished_at=attempt_finished_at,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _due_items(
-    rows: list[tuple[ReplyDraft, SendAttempt | None]],
+    rows: Sequence[_SequenceRow],
     *,
     now: datetime,
 ) -> tuple[_DueSequenceItem, ...]:
-    groups: dict[str, list[tuple[ReplyDraft, SendAttempt | None, dict[str, object]]]] = {}
-    for draft, attempt in rows:
-        metadata = (draft.prompt_context or {}).get(SEQUENCE_CONTEXT_KEY)
-        if not isinstance(metadata, dict):
-            continue
-        sequence_id = metadata.get("id")
-        if isinstance(sequence_id, str) and sequence_id:
-            groups.setdefault(sequence_id, []).append((draft, attempt, metadata))
+    groups: dict[str, list[_SequenceRow]] = {}
+    for row in rows:
+        groups.setdefault(row.sequence_id, []).append(row)
 
     due: list[_DueSequenceItem] = []
     for sequence_id, sequence_rows in groups.items():
-        try:
-            ordered = sorted(
-                sequence_rows,
-                key=lambda row: _metadata_int(row[2]["position"]),
-            )
-        except (KeyError, TypeError, ValueError):
-            continue
-        candidate: tuple[ReplyDraft, SendAttempt | None, dict[str, object]] | None = None
-        previous_attempt: SendAttempt | None = None
+        ordered = sorted(sequence_rows, key=lambda row: row.position)
+        candidate: _SequenceRow | None = None
+        previous_finished_at: datetime | None = None
         blocked = False
-        for draft, attempt, metadata in ordered:
-            if attempt is not None:
-                if attempt.status != SendAttemptStatus.SENT.value:
+        for row in ordered:
+            if row.attempt_status is not None:
+                if (
+                    row.attempt_status != SendAttemptStatus.SENT.value
+                    or row.attempt_finished_at is None
+                ):
                     blocked = True
                     break
-                previous_attempt = attempt
+                previous_finished_at = row.attempt_finished_at
                 continue
-            if metadata.get("state") != "scheduled":
+            if row.state != "scheduled":
                 blocked = True
                 break
-            candidate = (draft, attempt, metadata)
+            candidate = row
             break
         if blocked or candidate is None:
             continue
-        draft, _attempt, metadata = candidate
-        try:
-            scheduled_at = datetime.fromisoformat(str(metadata["scheduled_at"]))
-            interval_seconds = _metadata_int(metadata["interval_seconds"])
-            position = _metadata_int(metadata["position"])
-            expected_account = str(metadata["expected_account"])
-            expected_recipient = str(metadata["expected_recipient_chat_id"])
-            principal_subject = str(metadata["principal_subject"])
-            workspace_id = str(metadata["workspace_id"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=UTC)
-        earliest = scheduled_at
-        if previous_attempt is not None:
-            if previous_attempt.finished_at is None:
-                continue
+        earliest = candidate.scheduled_at
+        if previous_finished_at is not None:
             earliest = max(
                 earliest,
-                previous_attempt.finished_at + timedelta(seconds=interval_seconds),
+                previous_finished_at + timedelta(seconds=candidate.interval_seconds),
             )
         if now < earliest:
             continue
         due.append(
             _DueSequenceItem(
-                draft_id=draft.id,
-                task_id=draft.reply_task_id,
-                conversation_id=draft.conversation_id,
+                draft_id=candidate.draft_id,
+                task_id=candidate.task_id,
+                conversation_id=candidate.conversation_id,
                 sequence_id=sequence_id,
-                position=position,
-                account_id=draft.account_id,
-                project_id=draft.project_id,
-                expected_account=expected_account,
-                expected_recipient_chat_id=expected_recipient,
-                principal_subject=principal_subject,
-                workspace_id=workspace_id,
+                position=candidate.position,
+                account_id=candidate.account_id,
+                project_id=candidate.project_id,
+                expected_account=candidate.expected_account,
+                expected_recipient_chat_id=candidate.expected_recipient_chat_id,
+                principal_subject=candidate.principal_subject,
+                workspace_id=candidate.workspace_id,
             )
         )
     return tuple(due)
@@ -317,6 +397,7 @@ async def run_reply_sequence_worker_loop(
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
     telegram: TelegramClient,
+    health_reporter: WorkerHealthReporter | None = None,
 ) -> None:
     """Poll durable schedules; cancellation is owned by the application lifespan."""
 
@@ -327,10 +408,21 @@ async def run_reply_sequence_worker_loop(
                 session_factory=session_factory,
                 telegram=telegram,
             )
+            if health_reporter is not None:
+                health_reporter.record_success(
+                    REPLY_SEQUENCE_WORKER,
+                    observed_at=datetime.now(UTC),
+                )
             if sent:
                 logger.info("Reply-sequence worker delivered %s message(s)", sent)
         except asyncio.CancelledError:
             raise
         except Exception:
+            if health_reporter is not None:
+                health_reporter.record_failure(
+                    REPLY_SEQUENCE_WORKER,
+                    error_code="reply_sequence_iteration_failed",
+                    observed_at=datetime.now(UTC),
+                )
             logger.exception("Reply-sequence worker iteration failed safely")
         await asyncio.sleep(settings.gate_reply_sequence_poll_seconds)

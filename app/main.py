@@ -22,6 +22,11 @@ from app.api.mcp_routes import router as mcp_router
 from app.api.routes import router
 from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_telegram_ingress
+from app.application.worker_health import (
+    REPLY_SEQUENCE_WORKER,
+    TELEGRAM_WORKER,
+    WorkerHealthRegistry,
+)
 from app.core.config import Settings, get_settings
 from app.infrastructure.database import database_runtime_lifespan
 from app.infrastructure.readiness import build_readiness_service
@@ -51,6 +56,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Own process-scoped resources and reconcile the Telegram webhook."""
 
     settings = get_settings()
+    telegram_worker_enabled = getattr(settings, "gate_telegram_worker_enabled", False)
+    reply_sequence_worker_enabled = getattr(
+        settings,
+        "gate_reply_sequence_worker_enabled",
+        False,
+    )
+    worker_health = WorkerHealthRegistry()
+    worker_health.register(
+        TELEGRAM_WORKER,
+        enabled=telegram_worker_enabled,
+    )
+    worker_health.register(
+        REPLY_SEQUENCE_WORKER,
+        enabled=reply_sequence_worker_enabled,
+    )
+    _app.state.worker_health_registry = worker_health
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
         try:
@@ -74,16 +95,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     reconciliation_task = asyncio.create_task(
                         _reconcile_all_telegram_webhooks(settings, http_client)
                     )
-                    if getattr(settings, "gate_telegram_worker_enabled", False):
+                    if telegram_worker_enabled:
                         worker_task = asyncio.create_task(
-                            run_telegram_worker_loop(settings)
+                            run_telegram_worker_loop(
+                                settings,
+                                health_reporter=worker_health,
+                            )
                         )
-                    if getattr(settings, "gate_reply_sequence_worker_enabled", False):
+                    if reply_sequence_worker_enabled:
                         reply_sequence_task = asyncio.create_task(
                             run_reply_sequence_worker_loop(
                                 settings=settings,
                                 session_factory=database_runtime.session_factory,
                                 telegram=_app.state.telegram_client,
+                                health_reporter=worker_health,
                             )
                         )
                     yield
@@ -111,6 +136,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                             delattr(_app.state, "telegram_client")
         finally:
             delattr(_app.state, "database_runtime")
+            delattr(_app.state, "worker_health_registry")
 
 
 async def telegram_http_exception_handler(
