@@ -212,7 +212,7 @@ async def _execute(
 
 def test_explicit_command_calls_mock_provider_once_and_never_delivers() -> None:
     port = MemoryModelShadowPort(
-        _prepared(text="/alpha Сформулируй короткое приветствие")
+        _prepared(text="/alpha@AlphaViaBot Сформулируй короткое приветствие")
     )
     provider_calls = 0
 
