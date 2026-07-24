@@ -38,7 +38,8 @@ _ALPHA_COMMAND = "alpha"
 ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD = 50_000_000
 ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN = 6
 _MODEL_RUNTIME_PROFILES = frozenset({"openai-responses-v1"})
-ALPHA_BOUNDED_LIVE_POLICY_VERSION = "alpha-bounded-live-v1"
+ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY = "alpha-model-v2-openai"
+ALPHA_BOUNDED_LIVE_POLICY_VERSION = "alpha-model-v2"
 _FIXTURE_RUNTIME_PROFILES = frozenset(
     {"fixture", "fixture-only-v1", "evaluation-fixture-v1"}
 )
@@ -398,7 +399,8 @@ def alpha_proposal_delivery_mode(
     ):
         return AlphaProposalDeliveryMode.CANARY
     if (
-        deployment.runtime_profile in _MODEL_RUNTIME_PROFILES
+        deployment.deployment_key == ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY
+        and deployment.runtime_profile in _MODEL_RUNTIME_PROFILES
         and deployment.policy_version == ALPHA_BOUNDED_LIVE_POLICY_VERSION
         and deployment.state is AgentDeploymentState.ACTIVE
     ):
@@ -425,7 +427,7 @@ def recognize_alpha_invocation(
     bot_username: str,
     reply_to_bot: bool,
 ) -> AlphaInvocationKind:
-    """Recognize only /alpha, an exact @bot mention, or a verified reply."""
+    """Recognize only targeted /alpha@bot, an exact mention, or a verified reply."""
 
     if reply_to_bot:
         return AlphaInvocationKind.REPLY_TO_BOT
@@ -436,7 +438,7 @@ def recognize_alpha_invocation(
     )
     if command is not None and command.group("command").casefold() == _ALPHA_COMMAND:
         target = command.group("target")
-        if target is None or target.casefold() == bot_username.casefold():
+        if target is not None and target.casefold() == bot_username.casefold():
             return AlphaInvocationKind.COMMAND
     mention = re.compile(
         rf"(?<![A-Za-z0-9_])@{re.escape(bot_username)}(?![A-Za-z0-9_])",

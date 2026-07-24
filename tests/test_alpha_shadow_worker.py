@@ -26,6 +26,7 @@ from app.application.alpha_lifecycle import (
     AlphaUsageReservation,
 )
 from app.application.alpha_shadow_worker import (
+    ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
     ALPHA_BOUNDED_LIVE_POLICY_VERSION,
     AlphaProposalDeliveryMode,
     AlphaShadowDisposition,
@@ -72,7 +73,7 @@ def _bundle(root: Path) -> str:
         {
             "cases": [
                 {
-                    "input": "/alpha fixture hello",
+                    "input": "/alpha@AlphaViaBot fixture hello",
                     "kind": "reply",
                     "result_code": "fixture_reply",
                     "candidate_text": "Fixture proposal",
@@ -261,7 +262,7 @@ def _service(root: Path, port: MemoryAlphaPort) -> ProcessAlphaShadowMessageServ
 @pytest.mark.parametrize(
     ("text", "reply_to_bot", "expected"),
     [
-        ("/alpha hello", False, AlphaInvocationKind.COMMAND),
+        ("/alpha hello", False, AlphaInvocationKind.NONE),
         ("/alpha@AlphaViaBot hello", False, AlphaInvocationKind.COMMAND),
         ("hello @AlphaViaBot", False, AlphaInvocationKind.MENTION),
         ("ordinary group text", True, AlphaInvocationKind.REPLY_TO_BOT),
@@ -287,13 +288,13 @@ def test_invocation_requires_exact_command_mention_or_verified_reply(
 def test_model_delivery_requires_active_explicit_bounded_live_policy(
     tmp_path: Path,
 ) -> None:
-    fixture = _prepared(tmp_path, text="/alpha fixture hello").deployment
+    fixture = _prepared(tmp_path, text="/alpha@AlphaViaBot fixture hello").deployment
     model_shadow = replace(
         fixture,
-        deployment_key="alpha-model-v2-openai",
+        deployment_key="alpha-model-unreviewed",
         runtime_profile="openai-responses-v1",
         model_profile="gpt-5.6-luna",
-        policy_version="alpha-model-v2",
+        policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
         state=AgentDeploymentState.ACTIVE,
     )
 
@@ -301,22 +302,18 @@ def test_model_delivery_requires_active_explicit_bounded_live_policy(
         alpha_proposal_delivery_mode(model_shadow)
         is AlphaProposalDeliveryMode.SHADOW_ONLY
     )
+    reviewed_staged = replace(
+        model_shadow,
+        deployment_key=ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+        state=AgentDeploymentState.STAGED,
+    )
     assert (
-        alpha_proposal_delivery_mode(
-            replace(
-                model_shadow,
-                policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
-                state=AgentDeploymentState.STAGED,
-            )
-        )
+        alpha_proposal_delivery_mode(reviewed_staged)
         is AlphaProposalDeliveryMode.SHADOW_ONLY
     )
     assert (
         alpha_proposal_delivery_mode(
-            replace(
-                model_shadow,
-                policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
-            )
+            replace(reviewed_staged, state=AgentDeploymentState.ACTIVE)
         )
         is AlphaProposalDeliveryMode.BOUNDED_LIVE
     )
@@ -335,7 +332,7 @@ def test_uninvoked_group_text_creates_no_usage_turn_or_runtime(tmp_path: Path) -
 
 
 def test_duplicate_trigger_runs_fixture_once_and_replays_proposal(tmp_path: Path) -> None:
-    prepared = _prepared(tmp_path, text="/alpha fixture hello")
+    prepared = _prepared(tmp_path, text="/alpha@AlphaViaBot fixture hello")
     port = MemoryAlphaPort(prepared)
     service = _service(tmp_path, port)
 
@@ -369,7 +366,7 @@ def test_prompt_injection_is_untrusted_fixture_input_and_fails_to_no_reply(
 
 
 def test_restart_never_reruns_a_turn_with_unknown_runtime_outcome(tmp_path: Path) -> None:
-    prepared = _prepared(tmp_path, text="/alpha fixture hello")
+    prepared = _prepared(tmp_path, text="/alpha@AlphaViaBot fixture hello")
     port = MemoryAlphaPort(prepared)
     port.turn = AlphaTurnSnapshot(
         turn_key="turn-00000000000000000000000000000005",
@@ -386,7 +383,7 @@ def test_restart_never_reruns_a_turn_with_unknown_runtime_outcome(tmp_path: Path
 
 
 def test_poison_bundle_persists_bounded_failure_without_runtime(tmp_path: Path) -> None:
-    prepared = _prepared(tmp_path, text="/alpha fixture hello")
+    prepared = _prepared(tmp_path, text="/alpha@AlphaViaBot fixture hello")
     (tmp_path / "alpha" / "v1" / "system.md").write_text(
         "tampered",
         encoding="utf-8",
@@ -402,7 +399,7 @@ def test_poison_bundle_persists_bounded_failure_without_runtime(tmp_path: Path) 
 
 
 def test_cross_group_or_unknown_trigger_fails_before_usage(tmp_path: Path) -> None:
-    prepared = _prepared(tmp_path, text="/alpha fixture hello")
+    prepared = _prepared(tmp_path, text="/alpha@AlphaViaBot fixture hello")
     port = MemoryAlphaPort(
         prepared,
         prepare_error=AlphaShadowWorkerError("alpha_trigger_not_eligible"),

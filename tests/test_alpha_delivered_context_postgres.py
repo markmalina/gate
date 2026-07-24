@@ -152,7 +152,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 message_id=1,
                 chat_id=-100730000001,
                 sender_id=740000001,
-                text_value="/alpha earlier",
+                text_value="/alpha@AlphaViaBot earlier",
             ),
             received_at=base_time + timedelta(seconds=1),
         )
@@ -175,7 +175,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 message_id=2,
                 chat_id=-100730000002,
                 sender_id=740000002,
-                text_value="/alpha other group",
+                text_value="/alpha@AlphaViaBot other group",
             ),
             received_at=base_time + timedelta(seconds=2),
         )
@@ -198,7 +198,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 message_id=3,
                 chat_id=-100730000001,
                 sender_id=740000003,
-                text_value="/alpha continue",
+                text_value="/alpha@AlphaViaBot continue",
             ),
             received_at=base_time + timedelta(seconds=5),
         )
@@ -221,7 +221,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 message_id=4,
                 chat_id=-100730000001,
                 sender_id=740000004,
-                text_value="/alpha wrong connector",
+                text_value="/alpha@AlphaViaBot wrong connector",
             ),
             received_at=base_time + timedelta(seconds=6),
         )
@@ -244,7 +244,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 message_id=5,
                 chat_id=-100730000001,
                 sender_id=740000005,
-                text_value="/alpha wrong connector context",
+                text_value="/alpha@AlphaViaBot wrong connector context",
             ),
             received_at=base_time + timedelta(seconds=2, milliseconds=500),
         )
@@ -603,6 +603,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 trigger_received_at=trigger_receipt.received_at,
                 installation_id=installation_id,
                 connector_key="alpha_group",
+                bot_username="AlphaViaBot",
             )
             replay = await _load_context(
                 verification,
@@ -612,6 +613,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
                 trigger_received_at=trigger_receipt.received_at,
                 installation_id=installation_id,
                 connector_key="alpha_group",
+                bot_username="AlphaViaBot",
             )
 
         assert tuple(item.message_id for item in first) == (
@@ -621,7 +623,7 @@ async def test_sent_reply_survives_revision_upgrade_once_and_bad_scopes_stay_out
         )
         assert tuple(item.role for item in first) == ("user", "assistant", "assistant")
         assert tuple(item.content for item in first) == (
-            "/alpha earlier",
+            "/alpha@AlphaViaBot earlier",
             second_candidate,
             historical_candidate,
         )

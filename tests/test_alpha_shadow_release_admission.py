@@ -16,7 +16,7 @@ def _facts(**overrides: object) -> AlphaShadowAdmissionFacts:
         provider_preflight_failures=0,
         staged_deployments=1,
         approved_installations=1,
-        deployment_key="alpha-model-v1-openai",
+        deployment_key="alpha-model-v2-openai",
         runtime_profile="openai-responses-v1",
         model_profile="gpt-5.6-luna",
         fixture_binding_active=True,

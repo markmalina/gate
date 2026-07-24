@@ -49,7 +49,7 @@ def _bundle(root: Path) -> str:
         {
             "cases": [
                 {
-                    "input": "/alpha fixture hello",
+                    "input": "/alpha@AlphaViaBot fixture hello",
                     "kind": "reply",
                     "result_code": "fixture_reply",
                     "candidate_text": "Fixture proposal",
@@ -248,7 +248,7 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
                             message_id=1,
                             chat_id=-100730000001,
                             sender_id=740000001,
-                            text_value="Installed group context",
+                            text_value="/alpha@AlphaViaBot Installed group context",
                         ),
                         received_at=base_time,
                     ),
@@ -261,7 +261,7 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
                             message_id=2,
                             chat_id=-100730000001,
                             sender_id=740000002,
-                            text_value="/alpha fixture hello",
+                            text_value="/alpha@AlphaViaBot fixture hello",
                         ),
                         received_at=base_time + timedelta(seconds=1),
                     ),
@@ -274,7 +274,7 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
                             message_id=3,
                             chat_id=-100730000002,
                             sender_id=740000003,
-                            text_value="/alpha fixture hello",
+                            text_value="/alpha@AlphaViaBot fixture hello",
                         ),
                         received_at=base_time + timedelta(seconds=2),
                     ),
