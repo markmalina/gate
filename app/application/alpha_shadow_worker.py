@@ -11,6 +11,7 @@ from typing import Protocol
 from app.application.agent_kernel import (
     AgentContextMessage,
     AgentDeployment,
+    AgentDeploymentState,
     AgentResultKind,
     AgentSession,
     AgentTurnCommand,
@@ -37,6 +38,7 @@ _ALPHA_COMMAND = "alpha"
 ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD = 50_000_000
 ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN = 6
 _MODEL_RUNTIME_PROFILES = frozenset({"openai-responses-v1"})
+ALPHA_BOUNDED_LIVE_POLICY_VERSION = "alpha-bounded-live-v1"
 _FIXTURE_RUNTIME_PROFILES = frozenset(
     {"fixture", "fixture-only-v1", "evaluation-fixture-v1"}
 )
@@ -47,6 +49,7 @@ class AlphaProposalDeliveryMode(StrEnum):
 
     SHADOW_ONLY = "shadow_only"
     CANARY = "canary"
+    BOUNDED_LIVE = "bounded_live"
 
 
 class AlphaShadowDisposition(StrEnum):
@@ -387,13 +390,19 @@ class ProcessAlphaShadowMessageService:
 def alpha_proposal_delivery_mode(
     deployment: AgentDeployment,
 ) -> AlphaProposalDeliveryMode:
-    """Keep every model-backed proposal shadow-only until a reviewed code release."""
+    """Return explicit delivery authority; model runtimes fail closed by default."""
 
     if (
         deployment.runtime_profile in _FIXTURE_RUNTIME_PROFILES
         and deployment.model_profile in {"none", "no-network"}
     ):
         return AlphaProposalDeliveryMode.CANARY
+    if (
+        deployment.runtime_profile in _MODEL_RUNTIME_PROFILES
+        and deployment.policy_version == ALPHA_BOUNDED_LIVE_POLICY_VERSION
+        and deployment.state is AgentDeploymentState.ACTIVE
+    ):
+        return AlphaProposalDeliveryMode.BOUNDED_LIVE
     return AlphaProposalDeliveryMode.SHADOW_ONLY
 
 
