@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.application.reply_sequences import (
     QueueApprovedReplySequenceCommand,
     QueueApprovedReplySequenceService,
