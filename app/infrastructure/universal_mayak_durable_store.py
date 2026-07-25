@@ -253,7 +253,7 @@ class SessionFactoryUniversalMayakDemoStore:
                     .order_by(CanonicalMessage.occurred_at.desc())
                     .limit(MAX_CONTEXT_MESSAGES)
                 )
-            ).all()
+            )
         rows.reverse()
         context: list[DemoContextMessage] = []
         for message in rows:
