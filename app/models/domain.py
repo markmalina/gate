@@ -853,6 +853,116 @@ class TelegramVoiceArchive(Base):
     )
 
 
+class DropboxCallInboxState(Base):
+    """Durable Dropbox delta cursor and retry state without file payloads."""
+
+    __tablename__ = "dropbox_call_inbox_states"
+
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pending: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    webhook_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PhoneCallRecording(Base):
+    """Bounded original mobile call recording and its automatic transcript."""
+
+    __tablename__ = "phone_call_recordings"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_account_id",
+            "source_file_id",
+            "source_revision",
+            name="uq_phone_call_recordings_source_revision",
+        ),
+        Index(
+            "ix_phone_call_recordings_workspace_received",
+            "workspace_key",
+            "received_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    source_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="phone_call_dropbox",
+        server_default=text("'phone_call_dropbox'"),
+    )
+    source_account_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_file_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_revision: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    transcription_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="received",
+        server_default=text("'received'"),
+    )
+    transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript_language: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    transcription_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    transcription_reason_code: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    transcribed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
 class TelegramOutboxEvent(Base):
     """One transactional processing event for a durable Telegram receipt."""
 
