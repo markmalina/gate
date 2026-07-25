@@ -388,7 +388,7 @@ async def _build_feed_payload(
             )
         )
     for row in call_result.all():
-        recording = row[0] if isinstance(row, tuple) else row
+        recording = row[0]
         items.append(_call_feed_item(recording, owner_timezone))
 
     items.sort(key=lambda item: (item["occurred_at"], item["source_ref"]))
