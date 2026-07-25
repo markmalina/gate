@@ -800,6 +800,33 @@ async def _voice_transcript_tool_result(
     session: AsyncSession,
     settings: Settings,
 ) -> JsonObject:
+    if (
+        archive.transcription_status == "transcribed"
+        and archive.transcript_text is not None
+    ):
+        return _jsonrpc_result(
+            request_id=request_id,
+            result={
+                "content": [
+                    {
+                        "type": "text",
+                        "text": archive.transcript_text,
+                    },
+                ],
+                "structuredContent": context,
+                "isError": False,
+            },
+        )
+    if archive.transcription_status is not None:
+        return _tool_error_result(
+            request_id=request_id,
+            code=(
+                archive.transcription_reason_code
+                or "telegram_voice_transcription_blocked"
+            ),
+            message="Stored OpenAI voice transcription has no text",
+        )
+
     api_key = settings.openai_api_key.get_secret_value()
     if not settings.gate_telegram_voice_transcription_enabled or not api_key:
         return _tool_error_result(
@@ -848,7 +875,7 @@ async def _voice_transcript_tool_result(
                     ),
                     workspace_key=settings.gate_workspace_id,
                     connector_ref="telegram_business",
-                    reservation_key=f"mcp-transcription:{archive.id}",
+                    reservation_key=f"mcp-transcription-v2:{archive.id}",
                     period_key=occurred_at.strftime("%Y-%m"),
                     requested_microusd=max(
                         100,
@@ -866,6 +893,16 @@ async def _voice_transcript_tool_result(
                 code="telegram_voice_transcription_failed",
                 message="OpenAI voice transcription failed closed",
             )
+
+    archive.transcription_status = transcription.outcome.value
+    archive.transcript_text = transcription.alpha_input_text
+    archive.transcript_language = "ru"
+    archive.transcription_model = (
+        settings.gate_telegram_voice_transcription_model
+    )
+    archive.transcription_reason_code = transcription.reason_code
+    archive.transcribed_at = occurred_at
+    await session.commit()
 
     if (
         transcription.outcome is not TelegramVoiceOutcome.TRANSCRIBED
