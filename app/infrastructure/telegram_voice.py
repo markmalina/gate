@@ -1,4 +1,4 @@
-"""Telegram voice download and OGG/Opus normalization adapters."""
+"""Telegram voice download and bounded audio normalization adapters."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-
 from app.application.telegram_voice_transcription import (
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
@@ -45,10 +44,9 @@ class TelegramVoiceDownloader:
 
     async def download(self, voice: TelegramVoiceReference) -> DownloadedVoice:
         api = self._config.api_base_url.rstrip("/")
-        get_file_url = f"{api}/bot{self._config.bot_token}/getFile"
         try:
             metadata_response = await self._http.post(
-                get_file_url,
+                f"{api}/bot{self._config.bot_token}/getFile",
                 json={"file_id": voice.file_id},
             )
             metadata = metadata_response.json()
@@ -65,11 +63,13 @@ class TelegramVoiceDownloader:
         if any(part in {".", ".."} for part in path.parts):
             raise TelegramVoiceError("telegram_voice_file_path_invalid")
         safe_path = quote(path.as_posix(), safe="/")
-        download_url = f"{api}/file/bot{self._config.bot_token}/{safe_path}"
         try:
             data = bytearray()
             media_type = "audio/ogg"
-            async with self._http.stream("GET", download_url) as response:
+            async with self._http.stream(
+                "GET",
+                f"{api}/file/bot{self._config.bot_token}/{safe_path}",
+            ) as response:
                 response.raise_for_status()
                 media_type = response.headers.get("content-type", media_type).split(
                     ";", 1
@@ -82,10 +82,9 @@ class TelegramVoiceDownloader:
                         )
         except httpx.HTTPError:
             raise TelegramVoiceError("telegram_voice_download_failed") from None
-        filename = PurePosixPath(file_path).name or "telegram-voice.ogg"
         return DownloadedVoice(
             data=bytes(data),
-            filename=filename,
+            filename=PurePosixPath(file_path).name or "telegram-voice.ogg",
             media_type=media_type,
         )
 
@@ -100,28 +99,44 @@ def _telegram_result(response: httpx.Response, payload: Any) -> dict[str, Any]:
 
 
 FfmpegRunner = Callable[[bytes], Awaitable[tuple[int, bytes, bytes]]]
+_OPENAI_NATIVE_SUFFIXES = {
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpga",
+    ".m4a",
+    ".wav",
+    ".webm",
+}
+_FFMPEG_AUDIO_SUFFIXES = {
+    ".3gp",
+    ".aac",
+    ".amr",
+    ".flac",
+    ".oga",
+    ".ogg",
+    ".opus",
+}
 
 
 class TelegramVoiceNormalizer:
-    """Pass documented formats through and convert Telegram OGG/Opus to WAV."""
+    """Pass provider-native formats through and convert other bounded audio to WAV."""
 
     def __init__(self, runner: FfmpegRunner | None = None) -> None:
         self._runner = runner or _run_ffmpeg
 
     async def normalize(self, voice: DownloadedVoice) -> NormalizedVoice:
         suffix = PurePosixPath(voice.filename).suffix.lower()
-        if suffix in {".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm"}:
+        if suffix in _OPENAI_NATIVE_SUFFIXES:
             return NormalizedVoice(
                 data=voice.data,
                 filename=voice.filename,
                 media_type=voice.media_type,
             )
-        if suffix not in {".ogg", ".oga", ".opus"} and voice.media_type not in {
-            "audio/ogg",
-            "audio/opus",
-        }:
+        if suffix not in _FFMPEG_AUDIO_SUFFIXES and not voice.media_type.startswith(
+            "audio/"
+        ):
             raise TelegramVoiceError("telegram_voice_format_unsupported")
-
         return_code, stdout, _stderr = await self._runner(voice.data)
         if return_code != 0 or not stdout:
             raise TelegramVoiceError("telegram_voice_normalization_failed")
@@ -129,7 +144,7 @@ class TelegramVoiceNormalizer:
             raise TelegramVoiceError("telegram_voice_normalized_too_large")
         return NormalizedVoice(
             data=stdout,
-            filename="telegram-voice.wav",
+            filename="normalized-audio.wav",
             media_type="audio/wav",
         )
 
