@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODE,
     is_alpha_membership_update,
@@ -78,6 +79,17 @@ def test_membership_replay_is_default_off_and_bounded(
 
     monkeypatch.setenv("GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT", "2")
     assert Settings(_env_file=None).gate_alpha_membership_replay_limit == 2
+
+
+@pytest.mark.parametrize("limit", [-1, 33])
+def test_membership_replay_rejects_out_of_range_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    limit: int,
+) -> None:
+    monkeypatch.setenv("GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT", str(limit))
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 @pytest.mark.anyio
