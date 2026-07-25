@@ -5,9 +5,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
+from app.api.communication_feed_mcp import router as communication_feed_router
 from app.core.config import Settings, get_settings
 
 router = APIRouter()
+router.include_router(communication_feed_router)
 settings_dependency = Depends(get_settings)
 
 JsonObject = dict[str, Any]
