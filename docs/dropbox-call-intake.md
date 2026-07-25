@@ -5,7 +5,8 @@ changes Telegram read state.
 
 ## Data flow
 
-1. An Android sync client uploads a recording into a dedicated Dropbox App Folder.
+1. An Android sync client uploads a recording into the existing `/Alpha/Calls`
+   Dropbox folder.
 2. Dropbox signs and posts a change notification to
    `https://<gate-host>/dropbox/calls/webhook`.
 3. Gate verifies `X-Dropbox-Signature` with the app secret and durably marks the
@@ -20,15 +21,22 @@ Webhook payloads are signals only. They do not contain or transport recording by
 
 ## Dropbox application
 
-Create a scoped Dropbox API application with **App Folder** access and only:
+Create a scoped Dropbox API application with **Full Dropbox** access and only:
 
 - `files.metadata.read`
 - `files.content.read`
 - `account_info.read` (fail-closed refresh-token/account binding)
 
 Use the OAuth authorization-code flow with offline access so Gate receives a refresh
-token. The Android sync target shown to the owner is `/Apps/<Dropbox app name>/`.
-Inside the App Folder API, Gate sees that directory as the empty root path (`""`).
+token. Full Dropbox access is required because `/Alpha/Calls` is an existing normal
+folder rather than a folder beneath `/Apps/<Dropbox app name>/`. Keep the app
+read-only with the scopes above.
+
+Dropbox webhook notifications are app/account-level signals; Dropbox does not create
+a separate webhook subscription for an individual folder. Gate therefore roots its
+persisted `list_folder` cursor at exactly `/Alpha/Calls` and rejects entries outside
+that path before download or transcription. Sibling folders such as `/Alpha/Camera`
+are never ingested.
 
 Configure Dropbox's webhook URL as:
 
@@ -47,13 +55,13 @@ DROPBOX_CALL_APP_KEY=
 DROPBOX_CALL_APP_SECRET=
 DROPBOX_CALL_REFRESH_TOKEN=
 DROPBOX_CALL_ACCOUNT_ID=
-DROPBOX_CALL_INBOX_PATH=
+DROPBOX_CALL_INBOX_PATH=/Alpha/Calls
 GATE_DROPBOX_CALL_POLL_SECONDS=30
 ```
 
-Enable the feature only after the migration is deployed, the dedicated App Folder is
-empty or reviewed, and the Dropbox account ID has been verified. The first live test
-must contain only the owner's voice or a participant who knowingly consented to the
+Enable the feature only after the migration is deployed, `/Alpha/Calls` is empty or
+reviewed, and the Dropbox account ID has been verified. The first live test must
+contain only the owner's voice or a participant who knowingly consented to the
 recording and test processing.
 
 ## Gate M retrieval
