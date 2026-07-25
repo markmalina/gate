@@ -57,6 +57,22 @@ _SUPPORTED_SUFFIXES = {
     ".wav",
     ".webm",
 }
+_AUDIO_MEDIA_TYPES = {
+    ".3gp": "audio/3gpp",
+    ".aac": "audio/aac",
+    ".amr": "audio/amr",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".mp4": "audio/mp4",
+    ".mpeg": "audio/mpeg",
+    ".mpga": "audio/mpeg",
+    ".oga": "audio/ogg",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/opus",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+}
 
 
 class DropboxCallWorkerError(RuntimeError):
@@ -129,6 +145,11 @@ async def process_dropbox_call_changes(
 
     access_token = await _refresh_access_token(settings, http)
     await _verify_account_id(settings, http, access_token)
+    await _resume_received_recordings(
+        settings=settings,
+        session_factory=session_factory,
+        http=http,
+    )
     cursor = state.cursor
     while True:
         payload = await _list_changes(
@@ -383,6 +404,63 @@ async def _ingest_entry(
         await session.commit()
         await session.refresh(recording)
 
+    await _transcribe_recording(
+        settings=settings,
+        session_factory=session_factory,
+        http=http,
+        recording=recording,
+    )
+
+
+async def _resume_received_recordings(
+    *,
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+) -> None:
+    """Resume durable rows left incomplete by a prior worker failure or restart."""
+
+    async with session_factory() as session:
+        recording_ids = list(
+            (
+                await session.scalars(
+                    select(PhoneCallRecording.id)
+                    .where(
+                        PhoneCallRecording.workspace_key == settings.gate_workspace_id,
+                        PhoneCallRecording.source_account_id
+                        == settings.dropbox_call_account_id,
+                        PhoneCallRecording.transcription_status
+                        == "received",
+                    )
+                    .order_by(PhoneCallRecording.received_at.asc())
+                    .limit(10)
+                )
+            ).all()
+        )
+    for recording_id in recording_ids:
+        async with session_factory() as session:
+            recording = await session.get(PhoneCallRecording, recording_id)
+        if recording is None or recording.transcription_status != "received":
+            continue
+        await _transcribe_recording(
+            settings=settings,
+            session_factory=session_factory,
+            http=http,
+            recording=recording,
+        )
+
+
+async def _transcribe_recording(
+    *,
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    recording: PhoneCallRecording,
+) -> None:
+    duration_seconds = recording.duration_seconds
+    if duration_seconds is None:
+        raise DropboxCallWorkerError("dropbox_call_duration_unknown")
+    occurred_at = recording.received_at
     service = TelegramVoiceTranscriptionService(
         downloader=_StoredCallDownloader(recording),
         normalizer=TelegramVoiceNormalizer(),
@@ -400,21 +478,21 @@ async def _ingest_entry(
     result = await service.transcribe(
         TranscribeTelegramVoiceCommand(
             voice=TelegramVoiceReference(
-                file_id=file_id,
-                file_unique_id=revision,
-                declared_size_bytes=len(data),
+                file_id=recording.source_file_id,
+                file_unique_id=recording.source_revision,
+                declared_size_bytes=recording.size_bytes,
                 duration_seconds=duration_seconds,
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=f"dropbox:{settings.dropbox_call_account_id}",
             reservation_key=f"dropbox-call-v1:{recording.id}",
-            period_key=now.strftime("%Y-%m"),
+            period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
                 100,
                 duration_seconds
                 * settings.gate_telegram_voice_reserve_microusd_per_second,
             ),
-            occurred_at=now,
+            occurred_at=occurred_at,
             language="ru",
             enabled=True,
             budget_scope_kind="dropbox_account",
@@ -467,8 +545,17 @@ async def _download_revision(
     ):
         raise DropboxCallWorkerError("dropbox_call_download_size_mismatch")
     if not media_type.startswith("audio/"):
-        media_type = mimetypes.guess_type(fallback_name)[0] or "application/octet-stream"
+        media_type = _audio_media_type(fallback_name)
     return bytes(data), media_type
+
+
+def _audio_media_type(filename: str) -> str:
+    suffix = PurePosixPath(filename).suffix.lower()
+    return (
+        _AUDIO_MEDIA_TYPES.get(suffix)
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
 
 
 async def _probe_duration_seconds(data: bytes) -> int | None:

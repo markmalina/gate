@@ -5,6 +5,7 @@
 from typing import Annotated, Any
 
 import base64
+import mimetypes
 import httpx
 import json
 from datetime import UTC, datetime, timedelta
@@ -746,6 +747,10 @@ async def _latest_phone_call_tool_result(
         "count": 0,
         "limit": 1,
     }
+    effective_media_type = _effective_phone_call_media_type(
+        recording.media_type,
+        recording.filename,
+    )
     if payload_kind == "transcript":
         if (
             recording.transcription_status != "transcribed"
@@ -773,15 +778,26 @@ async def _latest_phone_call_tool_result(
             context=context,
             archive_id=recording_id,
             data=recording.data,
-            media_type=recording.media_type,
+            media_type=effective_media_type,
             filename_prefix="phone-call",
         )
     return _voice_audio_tool_result(
         request_id=request_id,
         context=context,
         data=recording.data,
-        media_type=recording.media_type,
+        media_type=effective_media_type,
     )
+
+
+def _effective_phone_call_media_type(media_type: str, filename: str) -> str:
+    if media_type.startswith("audio/"):
+        return media_type
+    guessed = mimetypes.guess_type(filename)[0]
+    if guessed is not None and guessed.startswith("audio/"):
+        return guessed
+    if filename.casefold().endswith(".m4a"):
+        return "audio/mp4"
+    return media_type
 
 
 def _parse_latest_voice_file_selector(raw_task_id: str) -> str | None:

@@ -1,7 +1,14 @@
+import asyncio
+import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
-from app.api.mcp_routes import _parse_latest_call_selector
+from app.api.mcp_routes import (
+    _effective_phone_call_media_type,
+    _parse_latest_call_selector,
+)
 from app.application.telegram_voice_transcription import (
     TelegramVoiceError,
     TelegramVoiceReference,
@@ -10,7 +17,9 @@ from app.application.telegram_voice_transcription import (
 from app.core.config import Settings
 from app.worker.dropbox_calls import (
     DropboxCallWorkerError,
+    _audio_media_type,
     _is_supported_file,
+    _resume_received_recordings,
     _validate_settings,
 )
 
@@ -139,3 +148,78 @@ def test_transcription_budget_scope_rejects_unbounded_value() -> None:
             enabled=True,
             budget_scope_kind="x" * 65,
         )
+
+
+def test_m4a_media_type_is_deterministic_without_host_mime_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.worker.dropbox_calls.mimetypes.guess_type",
+        lambda _filename: (None, None),
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.mimetypes.guess_type",
+        lambda _filename: (None, None),
+    )
+
+    assert _audio_media_type("Call.m4a") == "audio/mp4"
+    assert (
+        _effective_phone_call_media_type(
+            "application/octet-stream",
+            "Call.m4a",
+        )
+        == "audio/mp4"
+    )
+
+
+def test_received_call_is_resumed_after_worker_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recording_id = uuid.uuid4()
+    recording = SimpleNamespace(
+        id=recording_id,
+        transcription_status="received",
+    )
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _exc_type, _exc, _traceback):
+            return None
+
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: [recording_id])
+
+        async def get(self, _model, requested_id):
+            assert requested_id == recording_id
+            return recording
+
+    def session_factory():
+        return FakeSession()
+
+    transcribe = AsyncMock()
+    monkeypatch.setattr(
+        "app.worker.dropbox_calls._transcribe_recording",
+        transcribe,
+    )
+
+    settings = Settings(
+        GATE_WORKSPACE_ID="mark-personal",
+        DROPBOX_CALL_ACCOUNT_ID="account-id",
+    )
+    http = object()
+    asyncio.run(
+        _resume_received_recordings(
+            settings=settings,
+            session_factory=session_factory,
+            http=http,
+        )
+    )
+
+    transcribe.assert_awaited_once_with(
+        settings=settings,
+        session_factory=session_factory,
+        http=http,
+        recording=recording,
+    )
