@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import base64
 import httpx
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -552,6 +553,22 @@ async def _get_reply_context_tool_result(
             message="task_id is required",
         )
     try:
+        latest_voice_file_alias = _parse_latest_voice_file_selector(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="latest voice file selector is invalid",
+        )
+    if latest_voice_file_alias is not None:
+        return await _latest_voice_archive_tool_result(
+            request_id=request_id,
+            account_alias=latest_voice_file_alias,
+            principal=principal,
+            session=session,
+            file_payload=True,
+        )
+    try:
         latest_voice_alias = _parse_latest_voice_selector(raw_task_id)
     except ValueError:
         return _tool_error_result(
@@ -617,12 +634,27 @@ def _parse_latest_voice_selector(raw_task_id: str) -> str | None:
     return alias
 
 
+def _parse_latest_voice_file_selector(raw_task_id: str) -> str | None:
+    prefix = "voice:latest-file:"
+    if not raw_task_id.startswith(prefix):
+        return None
+    alias = raw_task_id.removeprefix(prefix)
+    if (
+        not alias
+        or len(alias) > 64
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in alias)
+    ):
+        raise ValueError("invalid latest voice file selector")
+    return alias
+
+
 async def _latest_voice_archive_tool_result(
     *,
     request_id: Any,
     account_alias: str,
     principal: Principal,
     session: AsyncSession,
+    file_payload: bool = False,
 ) -> JsonObject:
     result = await session.execute(
         select(TelegramVoiceArchive, Account)
@@ -678,6 +710,14 @@ async def _latest_voice_archive_tool_result(
         "count": 0,
         "limit": 1,
     }
+    if file_payload:
+        return _voice_file_tool_result(
+            request_id=request_id,
+            context=context,
+            archive_id=archive_id,
+            data=archive.data,
+            media_type=archive.media_type,
+        )
     return _voice_audio_tool_result(
         request_id=request_id,
         context=context,
@@ -940,6 +980,42 @@ def _voice_audio_tool_result(
                     "type": "audio",
                     "data": base64.b64encode(data).decode("ascii"),
                     "mimeType": media_type,
+                },
+            ],
+            "structuredContent": context,
+            "isError": False,
+        },
+    )
+
+
+def _voice_file_tool_result(
+    *,
+    request_id: Any,
+    context: JsonObject,
+    archive_id: str,
+    data: bytes,
+    media_type: str,
+) -> JsonObject:
+    if not data or not media_type.startswith("audio/"):
+        raise ValueError("invalid audio content")
+    extension = "ogg" if media_type in {"audio/ogg", "audio/opus"} else "audio"
+    file_payload = {
+        "version": 1,
+        "filename": f"telegram-voice-{archive_id}.{extension}",
+        "mime_type": media_type,
+        "data_base64": base64.b64encode(data).decode("ascii"),
+    }
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        file_payload,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                    ),
                 },
             ],
             "structuredContent": context,

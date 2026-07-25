@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import base64
+import json
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from app.api.mcp_routes import (
     _extract_voice_from_linked_payloads,
+    _parse_latest_voice_file_selector,
     _parse_latest_voice_selector,
     _parse_reply_context_selector,
     _same_telegram_message,
     _voice_audio_tool_result,
+    _voice_file_tool_result,
 )
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -35,6 +38,34 @@ def test_latest_voice_selector_binds_one_account_alias() -> None:
 def test_invalid_latest_voice_selector_fails_closed(selector: str) -> None:
     with pytest.raises(ValueError):
         _parse_latest_voice_selector(selector)
+
+
+def test_latest_voice_file_selector_binds_one_account_alias() -> None:
+    assert (
+        _parse_latest_voice_file_selector(
+            "voice:latest-file:telegram_mark_ru"
+        )
+        == "telegram_mark_ru"
+    )
+    assert _parse_latest_voice_file_selector(str(TASK_ID)) is None
+    assert _parse_latest_voice_selector(
+        "voice:latest-file:telegram_mark_ru"
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "selector",
+    (
+        "voice:latest-file:",
+        "voice:latest-file:Telegram",
+        "voice:latest-file:telegram.mark",
+    ),
+)
+def test_invalid_latest_voice_file_selector_fails_closed(
+    selector: str,
+) -> None:
+    with pytest.raises(ValueError):
+        _parse_latest_voice_file_selector(selector)
 
 
 def test_plain_reply_context_selector_preserves_existing_behavior() -> None:
@@ -201,3 +232,29 @@ def test_voice_audio_result_rejects_invalid_content(
             data=data,
             media_type=media_type,
         )
+
+
+def test_voice_file_result_emits_connector_safe_base64_json() -> None:
+    context = {
+        "task_id": str(TASK_ID),
+        "messages": [],
+    }
+    payload = _voice_file_tool_result(
+        request_id="voice-file-1",
+        context=context,
+        archive_id=str(TASK_ID),
+        data=b"voice-bytes",
+        media_type="audio/ogg",
+    )
+    result = payload["result"]
+    file_payload = json.loads(result["content"][0]["text"])
+
+    assert result["structuredContent"] is context
+    assert result["isError"] is False
+    assert result["content"][0]["type"] == "text"
+    assert file_payload == {
+        "version": 1,
+        "filename": f"telegram-voice-{TASK_ID}.ogg",
+        "mime_type": "audio/ogg",
+        "data_base64": base64.b64encode(b"voice-bytes").decode("ascii"),
+    }
