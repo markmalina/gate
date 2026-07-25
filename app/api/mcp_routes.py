@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select, union_all
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
@@ -77,9 +77,15 @@ from app.infrastructure.alpha_owner_test_runtime import (
     verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
+from app.infrastructure.billing_budget import SqlBillingBudgetService
+from app.infrastructure.openai_transcription import (
+    OpenAITranscriptionClient,
+    OpenAITranscriptionConfig,
+)
 from app.infrastructure.telegram_voice import (
     TelegramVoiceDownloadConfig,
     TelegramVoiceDownloader,
+    TelegramVoiceNormalizer,
 )
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.telegram_webhook_status import (
@@ -110,8 +116,12 @@ from app.models.domain import (
 )
 from app.services.telegram import TelegramClient
 from app.application.telegram_voice_transcription import (
+    DownloadedVoice,
     TelegramVoiceError,
+    TelegramVoiceOutcome,
     TelegramVoiceReference,
+    TelegramVoiceTranscriptionService,
+    TranscribeTelegramVoiceCommand,
 )
 from app.application.telegram_voice_update import extract_telegram_voice
 
@@ -553,6 +563,25 @@ async def _get_reply_context_tool_result(
             message="task_id is required",
         )
     try:
+        latest_voice_transcript_alias = _parse_latest_voice_transcript_selector(
+            raw_task_id
+        )
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="latest voice transcript selector is invalid",
+        )
+    if latest_voice_transcript_alias is not None:
+        return await _latest_voice_archive_tool_result(
+            request_id=request_id,
+            account_alias=latest_voice_transcript_alias,
+            principal=principal,
+            session=session,
+            settings=settings,
+            transcript_payload=True,
+        )
+    try:
         latest_voice_file_alias = _parse_latest_voice_file_selector(raw_task_id)
     except ValueError:
         return _tool_error_result(
@@ -648,6 +677,20 @@ def _parse_latest_voice_file_selector(raw_task_id: str) -> str | None:
     return alias
 
 
+def _parse_latest_voice_transcript_selector(raw_task_id: str) -> str | None:
+    prefix = "voice:latest-transcript:"
+    if not raw_task_id.startswith(prefix):
+        return None
+    alias = raw_task_id.removeprefix(prefix)
+    if (
+        not alias
+        or len(alias) > 64
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in alias)
+    ):
+        raise ValueError("invalid latest voice transcript selector")
+    return alias
+
+
 async def _latest_voice_archive_tool_result(
     *,
     request_id: Any,
@@ -655,6 +698,8 @@ async def _latest_voice_archive_tool_result(
     principal: Principal,
     session: AsyncSession,
     file_payload: bool = False,
+    settings: Settings | None = None,
+    transcript_payload: bool = False,
 ) -> JsonObject:
     result = await session.execute(
         select(TelegramVoiceArchive, Account)
@@ -710,6 +755,16 @@ async def _latest_voice_archive_tool_result(
         "count": 0,
         "limit": 1,
     }
+    if transcript_payload:
+        if settings is None:
+            raise ValueError("settings are required for transcription")
+        return await _voice_transcript_tool_result(
+            request_id=request_id,
+            context=context,
+            archive=archive,
+            session=session,
+            settings=settings,
+        )
     if file_payload:
         return _voice_file_tool_result(
             request_id=request_id,
@@ -723,6 +778,116 @@ async def _latest_voice_archive_tool_result(
         context=context,
         data=archive.data,
         media_type=archive.media_type,
+    )
+
+
+class _ArchivedVoiceDownloader:
+    def __init__(self, voice: DownloadedVoice) -> None:
+        self._voice = voice
+
+    async def download(
+        self,
+        _reference: TelegramVoiceReference,
+    ) -> DownloadedVoice:
+        return self._voice
+
+
+async def _voice_transcript_tool_result(
+    *,
+    request_id: Any,
+    context: JsonObject,
+    archive: TelegramVoiceArchive,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    api_key = settings.openai_api_key.get_secret_value()
+    if not settings.gate_telegram_voice_transcription_enabled or not api_key:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_transcription_unavailable",
+            message="OpenAI voice transcription is not ready",
+        )
+    if session.bind is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_transcription_unavailable",
+            message="Voice transcription database binding is unavailable",
+        )
+
+    occurred_at = datetime.now(UTC)
+    sessions = async_sessionmaker(session.bind, expire_on_commit=False)
+    async with httpx.AsyncClient(timeout=30.0) as http_client:
+        service = TelegramVoiceTranscriptionService(
+            downloader=_ArchivedVoiceDownloader(
+                DownloadedVoice(
+                    data=archive.data,
+                    filename=archive.filename,
+                    media_type=archive.media_type,
+                )
+            ),
+            normalizer=TelegramVoiceNormalizer(),
+            budget=SqlBillingBudgetService(sessions),
+            speech_to_text=OpenAITranscriptionClient(
+                config=OpenAITranscriptionConfig(
+                    api_key=api_key,
+                    enabled=True,
+                    model=settings.gate_telegram_voice_transcription_model,
+                    base_url=settings.openai_api_base_url,
+                ),
+                http=http_client,
+            ),
+        )
+        try:
+            transcription = await service.transcribe(
+                TranscribeTelegramVoiceCommand(
+                    voice=TelegramVoiceReference(
+                        file_id=f"archive-{archive.id}",
+                        file_unique_id=str(archive.id),
+                        declared_size_bytes=archive.size_bytes,
+                        duration_seconds=archive.duration_seconds,
+                    ),
+                    workspace_key=settings.gate_workspace_id,
+                    connector_ref="telegram_business",
+                    reservation_key=f"mcp-transcription:{archive.id}",
+                    period_key=occurred_at.strftime("%Y-%m"),
+                    requested_microusd=max(
+                        100,
+                        archive.duration_seconds
+                        * settings.gate_telegram_voice_reserve_microusd_per_second,
+                    ),
+                    occurred_at=occurred_at,
+                    language="ru",
+                    enabled=True,
+                )
+            )
+        except Exception:
+            return _tool_error_result(
+                request_id=request_id,
+                code="telegram_voice_transcription_failed",
+                message="OpenAI voice transcription failed closed",
+            )
+
+    if (
+        transcription.outcome is not TelegramVoiceOutcome.TRANSCRIBED
+        or transcription.alpha_input_text is None
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code=transcription.reason_code,
+            message="OpenAI voice transcription did not return text",
+        )
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [
+                {
+                    "type": "text",
+                    "text": transcription.alpha_input_text,
+                },
+            ],
+            "structuredContent": context,
+            "isError": False,
+        },
     )
 
 
