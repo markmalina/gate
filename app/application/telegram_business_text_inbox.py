@@ -135,6 +135,7 @@ def build_telegram_business_text_inbox_command(
     update_id: int,
     business_connection_id: str,
     projection: TelegramCanonicalProjection,
+    route_override: WorkRoute | None = None,
 ) -> TelegramBusinessTextInboxCommand:
     """Build the read-model command from the already-authoritative projection."""
 
@@ -167,7 +168,7 @@ def build_telegram_business_text_inbox_command(
         update_id=update_id,
         event_type=event_type,
         direction=direction,
-        route=projection.ownership.route,
+        route=route_override or projection.ownership.route,
         occurred_at=occurred_at,
         provider_dialog_id=projection.dialog.provider_dialog_id,
         provider_message_id=projection.message.provider_message_id,
