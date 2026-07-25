@@ -8,8 +8,6 @@ import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
-from jsonschema import Draft202012Validator
-
 from app.api.mcp_schemas import GATE_STATUS_OUTPUT_SCHEMA
 from app.core.config import Settings
 from app.infrastructure.universal_mayak_private_runtime import (
@@ -20,6 +18,7 @@ from app.infrastructure.universal_mayak_status import (
     _redacted_code,
     universal_mayak_operational_status,
 )
+from jsonschema import Draft202012Validator
 
 DIGEST = "a" * 64
 
