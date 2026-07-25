@@ -9,6 +9,13 @@ from typing import Any, Protocol
 JsonObject = dict[str, Any]
 
 ALPHA_GROUP_CAPACITY_ERROR_CODE = "alpha_canary_group_capacity_reached"
+ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE = "alpha_canary_group_already_pinned"
+ALPHA_GROUP_CAPACITY_ERROR_CODES = frozenset(
+    {
+        ALPHA_GROUP_CAPACITY_ERROR_CODE,
+        ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE,
+    }
+)
 
 
 def is_alpha_membership_update(payload: Mapping[str, Any], *, update_id: int) -> bool:

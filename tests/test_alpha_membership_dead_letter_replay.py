@@ -6,6 +6,8 @@ from uuid import uuid4
 import pytest
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODE,
+    ALPHA_GROUP_CAPACITY_ERROR_CODES,
+    ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE,
     is_alpha_membership_update,
 )
 from app.core.config import Settings, get_settings
@@ -72,6 +74,13 @@ def test_membership_replay_predicate_accepts_exact_group_update() -> None:
     assert is_alpha_membership_update(_membership(7, -1007), update_id=7) is True
 
 
+def test_capacity_error_allowlist_is_exact_and_backward_compatible() -> None:
+    assert ALPHA_GROUP_CAPACITY_ERROR_CODES == {
+        "alpha_canary_group_capacity_reached",
+        "alpha_canary_group_already_pinned",
+    }
+
+
 def test_membership_replay_is_default_off_and_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -118,17 +127,20 @@ async def test_replay_is_filtered_bounded_transactional_and_idempotent() -> None
                 _membership(100, -100100),
                 TelegramConnectorKey.ALPHA_GROUP.value,
                 ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                ALPHA_GROUP_CAPACITY_ERROR_CODE,
             ),
             (
                 101,
                 _membership(101, -100101),
                 TelegramConnectorKey.ALPHA_GROUP.value,
-                ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE,
+                ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE,
             ),
             (
                 102,
                 {"update_id": 102, "message": {}},
                 TelegramConnectorKey.ALPHA_GROUP.value,
+                ALPHA_GROUP_CAPACITY_ERROR_CODE,
                 ALPHA_GROUP_CAPACITY_ERROR_CODE,
             ),
             (
@@ -136,16 +148,31 @@ async def test_replay_is_filtered_bounded_transactional_and_idempotent() -> None
                 _membership(103, -100103),
                 TelegramConnectorKey.ALPHA_GROUP.value,
                 "different_failure",
+                "different_failure",
             ),
             (
                 104,
                 _membership(104, -100104),
                 TelegramConnectorKey.BUSINESS.value,
                 ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                ALPHA_GROUP_CAPACITY_ERROR_CODE,
+            ),
+            (
+                105,
+                _membership(105, -100105),
+                TelegramConnectorKey.ALPHA_GROUP.value,
+                ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE,
             ),
         )
         async with sessions.begin() as seed:
-            for offset, (update_id, payload, bot_key, error_code) in enumerate(cases):
+            for offset, (
+                update_id,
+                payload,
+                bot_key,
+                receipt_error_code,
+                outbox_error_code,
+            ) in enumerate(cases):
                 received_at = NOW + timedelta(seconds=offset)
                 receipt = TelegramReceipt(
                     bot_key=bot_key,
@@ -154,7 +181,7 @@ async def test_replay_is_filtered_bounded_transactional_and_idempotent() -> None
                     status=TelegramReceiptStatus.DEAD_LETTER.value,
                     attempt_count=5,
                     received_at=received_at,
-                    last_error_code=error_code,
+                    last_error_code=receipt_error_code,
                     last_error_at=received_at,
                 )
                 seed.add(receipt)
@@ -165,7 +192,7 @@ async def test_replay_is_filtered_bounded_transactional_and_idempotent() -> None
                         status=TelegramOutboxStatus.DEAD_LETTER.value,
                         attempt_count=5,
                         available_at=received_at,
-                        last_error_code=error_code,
+                        last_error_code=outbox_error_code,
                         last_error_at=received_at,
                         locked_at=received_at,
                     )
@@ -213,7 +240,7 @@ async def test_replay_is_filtered_bounded_transactional_and_idempotent() -> None
             assert event.attempt_count == receipt.attempt_count == 0
             assert event.last_error_code is receipt.last_error_code is None
             assert event.locked_at is None
-        for update_id in (102, 103, 104):
+        for update_id in (102, 103, 104, 105):
             event, receipt = states[update_id]
             assert event.status == TelegramOutboxStatus.DEAD_LETTER.value
             assert receipt.status == TelegramReceiptStatus.DEAD_LETTER.value

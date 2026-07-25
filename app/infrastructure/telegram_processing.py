@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.telegram_processing import (
-    ALPHA_GROUP_CAPACITY_ERROR_CODE,
+    ALPHA_GROUP_CAPACITY_ERROR_CODES,
     AcceptTelegramReceiptCommand,
     TelegramProcessingDisposition,
     TelegramProcessingPlan,
@@ -125,12 +125,13 @@ class SqlAlphaCapacityDeadLetterReplayer:
                 .where(
                     TelegramReceipt.bot_key == bot_key,
                     TelegramReceipt.status == TelegramReceiptStatus.DEAD_LETTER.value,
-                    TelegramReceipt.last_error_code
-                    == ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                    TelegramReceipt.last_error_code.in_(
+                        ALPHA_GROUP_CAPACITY_ERROR_CODES
+                    ),
                     TelegramOutboxEvent.status
                     == TelegramOutboxStatus.DEAD_LETTER.value,
                     TelegramOutboxEvent.last_error_code
-                    == ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                    == TelegramReceipt.last_error_code,
                 )
                 .order_by(
                     TelegramReceipt.received_at,
