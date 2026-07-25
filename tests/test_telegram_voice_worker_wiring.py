@@ -43,7 +43,7 @@ class ResolvedIdentityReader:
             account_id="account-1",
             account_alias="ru",
             project_id="project-1",
-            owner_identity_ids=frozenset({"owner-identity"}),
+            owner_identity_ids=frozenset({"700000002"}),
         )
 
 
@@ -180,7 +180,7 @@ def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
 
 def test_outbound_business_voice_is_archived_without_transcription() -> None:
     item = voice_item()
-    item.payload["business_message"]["from"]["id"] = "owner-identity"
+    item.payload["business_message"]["from"]["id"] = 700000002
     voice_updates = ProjectingVoiceUpdates()
     voice_archive = RecordingVoiceArchive()
     processor = ShadowClassifyingTelegramProcessor(
