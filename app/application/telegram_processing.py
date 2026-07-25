@@ -1,5 +1,6 @@
 """Application contracts for durable Telegram receipt and outbox processing."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -10,7 +11,7 @@ JsonObject = dict[str, Any]
 ALPHA_GROUP_CAPACITY_ERROR_CODE = "alpha_canary_group_capacity_reached"
 
 
-def is_alpha_membership_update(payload: JsonObject, *, update_id: int) -> bool:
+def is_alpha_membership_update(payload: Mapping[str, Any], *, update_id: int) -> bool:
     """Accept only a structurally bounded group membership update for replay."""
 
     payload_update_id = payload.get("update_id")
