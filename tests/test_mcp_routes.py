@@ -182,6 +182,7 @@ def mcp_context() -> Iterator[FakeMcpSession]:
             0,
             None,
             0,
+            0,
         ]
     )
 
@@ -700,7 +701,7 @@ async def test_mcp_status_is_scoped(
     assert "Telegram Business text parity:" in result["content"][0]["text"]
     assert "cutover_ready: False" in result["content"][0]["text"]
     assert "budget_remaining: $0.996900" in result["content"][0]["text"]
-    assert len(mcp_context.statements) == 31
+    assert len(mcp_context.statements) == 32
 
 
 @pytest.mark.anyio
