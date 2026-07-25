@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -171,8 +172,7 @@ def test_m4a_media_type_is_deterministic_without_host_mime_tables(
     )
 
 
-@pytest.mark.asyncio
-async def test_received_call_is_resumed_after_worker_restart(
+def test_received_call_is_resumed_after_worker_restart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recording_id = uuid.uuid4()
@@ -209,10 +209,12 @@ async def test_received_call_is_resumed_after_worker_restart(
         DROPBOX_CALL_ACCOUNT_ID="account-id",
     )
     http = object()
-    await _resume_received_recordings(
-        settings=settings,
-        session_factory=session_factory,
-        http=http,
+    asyncio.run(
+        _resume_received_recordings(
+            settings=settings,
+            session_factory=session_factory,
+            http=http,
+        )
     )
 
     transcribe.assert_awaited_once_with(
