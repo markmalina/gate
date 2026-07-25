@@ -219,8 +219,10 @@ async def _session_counts(
         await session.execute(
             sa.text(
                 "SELECT COUNT(*)::int AS total, "
-                "COUNT(*) FILTER (WHERE agent_session.state = 'active')::int AS active, "
-                "COUNT(*) FILTER (WHERE agent_session.state = 'paused')::int AS paused, "
+                "COUNT(*) FILTER (WHERE agent_session.state = 'active')::int "
+                " AS active, "
+                "COUNT(*) FILTER (WHERE agent_session.state = 'paused')::int "
+                " AS paused, "
                 "COUNT(*) FILTER (WHERE agent_session.state = 'handoff_required')::int "
                 " AS handoff_required "
                 "FROM agent_sessions agent_session "
@@ -279,7 +281,8 @@ async def _grant_counts(
                 "COUNT(*) FILTER (WHERE grant_row.used_at IS NULL "
                 " AND grant_row.revoked_at IS NULL)::int AS open, "
                 "COUNT(*) FILTER (WHERE grant_row.used_at IS NOT NULL)::int AS used, "
-                "COUNT(*) FILTER (WHERE grant_row.revoked_at IS NOT NULL)::int AS revoked "
+                "COUNT(*) FILTER (WHERE grant_row.revoked_at IS NOT NULL)::int "
+                " AS revoked "
                 "FROM delivery_grants grant_row "
                 "JOIN agent_installations ai ON ai.id = grant_row.installation_id "
                 " AND ai.workspace_id = grant_row.workspace_id "
@@ -368,6 +371,9 @@ def _redacted_code(value: object) -> str | None:
     bounded = value.strip()[:128]
     if not bounded or not bounded.startswith(("mayak_", "telegram_")):
         return None
-    if any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_:-" for character in bounded):
+    if any(
+        character not in "abcdefghijklmnopqrstuvwxyz0123456789_:-"
+        for character in bounded
+    ):
         return None
     return bounded
