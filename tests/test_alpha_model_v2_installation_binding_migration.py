@@ -19,7 +19,7 @@ def test_alpha_model_v2_installation_binding_is_exact_and_reversible() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.revision == "0043_alpha_model_v2_installation_binding"
+    assert module.revision == "0043_alpha_model_v2_binding"
     assert module.down_revision == "0042_dropbox_phone_calls"
     assert module._WORKSPACE_KEY == "mark-personal"
     assert module._CONNECTOR_KEY == "telegram_alpha_group"
