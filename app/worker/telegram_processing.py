@@ -95,6 +95,7 @@ from app.application.universal_mayak_private_ingress import (
 from app.application.worker_health import TELEGRAM_WORKER, WorkerHealthReporter
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import (
+    TelegramConnectorKey,
     TelegramConnectorResolutionError,
     TelegramConnectorRole,
 )
@@ -122,7 +123,10 @@ from app.infrastructure.telegram_business_text_parity import (
 from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
-from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
+from app.infrastructure.telegram_processing import (
+    SqlAlphaCapacityDeadLetterReplayer,
+    SqlTelegramProcessingQueue,
+)
 from app.infrastructure.telegram_voice import (
     TelegramVoiceDownloadConfig,
     TelegramVoiceDownloader,
@@ -722,6 +726,28 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    if settings.gate_alpha_membership_replay_limit:
+        if (
+            not settings.gate_alpha_connector_enabled
+            or not settings.gate_alpha_canary_enabled
+            or settings.gate_alpha_group_capacity < 2
+        ):
+            raise RuntimeError(
+                "Alpha membership replay requires the enabled canary and group capacity above one"
+            )
+        async with sessions() as replay_session:
+            replayed = await SqlAlphaCapacityDeadLetterReplayer(
+                replay_session
+            ).requeue(
+                bot_key=TelegramConnectorKey.ALPHA_GROUP.value,
+                now=datetime.now(UTC),
+                limit=settings.gate_alpha_membership_replay_limit,
+            )
+        if replayed:
+            logger.info(
+                "Requeued bounded Alpha membership capacity failures: count=%s",
+                replayed,
+            )
     identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
     canonical_store = SessionFactoryCanonicalIngressStore(sessions)
     business_text_parity = SessionFactoryTelegramBusinessTextParityObserver(

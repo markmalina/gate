@@ -594,6 +594,8 @@ Configuration is supplied through environment variables. Safe variable names inc
 
 `GATE_ALPHA_GROUP_CAPACITY` defaults to `1`. Raising it only permits additional group identities to be discovered as `pending_approval`; message processing still requires an explicitly active installation.
 
+`GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT` defaults to `0`. A temporary value from `1` to `32` requeues only matching Alpha membership receipts that exhausted retries on the capacity guard. The transition is transactional and idempotent; reset it to `0` after recovery.
+
 ```text
 DATABASE_URL
 TELEGRAM_BOT_TOKEN
@@ -609,6 +611,7 @@ GATE_ALPHA_CONNECTOR_ENABLED
 GATE_ALPHA_SHADOW_WORKER_ENABLED
 GATE_ALPHA_CANARY_ENABLED
 GATE_ALPHA_GROUP_CAPACITY
+GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT
 GATE_ALPHA_DELIVERY_ENABLED
 GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 GATE_ALPHA_MODEL_RUNTIME_ENABLED

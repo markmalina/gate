@@ -1,11 +1,34 @@
 """Application contracts for durable Telegram receipt and outbox processing."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
 
 JsonObject = dict[str, Any]
+
+ALPHA_GROUP_CAPACITY_ERROR_CODE = "alpha_canary_group_capacity_reached"
+
+
+def is_alpha_membership_update(payload: Mapping[str, Any], *, update_id: int) -> bool:
+    """Accept only a structurally bounded group membership update for replay."""
+
+    payload_update_id = payload.get("update_id")
+    membership = payload.get("my_chat_member")
+    if type(payload_update_id) is not int or payload_update_id != update_id:
+        return False
+    if not isinstance(membership, dict):
+        return False
+    chat = membership.get("chat")
+    new_chat_member = membership.get("new_chat_member")
+    if not isinstance(chat, dict) or not isinstance(new_chat_member, dict):
+        return False
+    if chat.get("type") not in {"group", "supergroup"}:
+        return False
+    if type(chat.get("id")) is not int:
+        return False
+    return isinstance(new_chat_member.get("status"), str)
 
 
 class TelegramReceiptError(ValueError):
