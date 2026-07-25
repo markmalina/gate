@@ -50,7 +50,7 @@ async def universal_mayak_operational_status(
     last_attempt: dict[str, Any] | None = None
 
     if workspace_valid:
-        parameters = {
+        parameters: dict[str, object] = {
             "workspace_id": workspace_id,
             "agent_key": _AGENT_KEY,
             "revision_key": _REVISION_KEY,
