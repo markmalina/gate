@@ -58,6 +58,12 @@ from app.application.telegram_processing import (
     TelegramUpdateProcessingError,
     TelegramUpdateProcessor,
 )
+from app.application.telegram_voice_archive import (
+    ArchiveTelegramVoiceCommand,
+    ArchiveTelegramVoiceService,
+    TelegramVoiceArchiveDirection,
+    TelegramVoiceArchiver,
+)
 from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateCommand,
     ProcessTelegramVoiceUpdateService,
@@ -100,6 +106,9 @@ from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
+from app.infrastructure.telegram_voice_archive import (
+    SessionFactoryTelegramVoiceArchiveStore,
+)
 from app.infrastructure.telegram_voice import (
     TelegramVoiceDownloadConfig,
     TelegramVoiceDownloader,
@@ -140,6 +149,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         canonical_store: CanonicalIngressStore | None = None,
         alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
+        voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
         business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
     ) -> None:
@@ -149,6 +159,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._canonical_store = canonical_store
         self._alpha_canary = alpha_canary
         self._voice_updates = voice_updates
+        self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
         self._business_text_inbox = business_text_inbox
         self._logger = runtime_logger
@@ -170,10 +181,6 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     "telegram_voice_update_invalid"
                 ) from None
             if voice is not None:
-                if self._voice_updates is None:
-                    raise TelegramUpdateProcessingError(
-                        "telegram_voice_not_configured"
-                    )
                 voice_identity_command = build_telegram_business_identity_command(payload)
                 if voice_identity_command is None:
                     raise TelegramUpdateProcessingError(
@@ -187,13 +194,60 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     raise TelegramUpdateProcessingError(
                         "telegram_voice_identity_failed"
                     ) from None
-                if not voice_identity.resolved:
+                if (
+                    not voice_identity.resolved
+                    or voice_identity.account_id is None
+                    or voice_identity.project_id is None
+                ):
                     raise TelegramUpdateProcessingError(
                         "telegram_voice_identity_unresolved"
                     )
-                if voice_identity.direction is not TelegramIngressDirection.INBOUND:
+                if not self._settings.gate_telegram_voice_archive_enabled:
                     raise TelegramUpdateProcessingError(
-                        "telegram_voice_not_inbound"
+                        "telegram_voice_archive_disabled"
+                    )
+                if self._voice_archive is None:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_archive_not_configured"
+                    )
+                if voice_identity.direction not in {
+                    TelegramIngressDirection.INBOUND,
+                    TelegramIngressDirection.OUTBOUND,
+                }:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_archive_direction_invalid"
+                    )
+                try:
+                    archived = await self._voice_archive.archive(
+                        ArchiveTelegramVoiceCommand(
+                            receipt_id=item.receipt_id,
+                            account_id=voice_identity.account_id,
+                            project_id=voice_identity.project_id,
+                            direction=TelegramVoiceArchiveDirection(
+                                voice_identity.direction.value
+                            ),
+                            update=payload,
+                            received_at=item.received_at,
+                        )
+                    )
+                except Exception:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_archive_failed"
+                    ) from None
+                voice_disposition = (
+                    "archive_duplicate" if archived.duplicate else "archived"
+                )
+                if voice_identity.direction is TelegramIngressDirection.OUTBOUND:
+                    self._logger.info(
+                        "Telegram Business voice archived: direction=outbound "
+                        "duplicate=%s size_bytes=%s",
+                        archived.duplicate,
+                        archived.size_bytes,
+                    )
+                    return
+                if self._voice_updates is None:
+                    raise TelegramUpdateProcessingError(
+                        "telegram_voice_not_configured"
                     )
                 try:
                     voice_result = await self._voice_updates.execute(
@@ -215,7 +269,9 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     raise TelegramUpdateProcessingError(
                         "telegram_voice_processing_failed"
                     ) from None
-                voice_disposition = voice_result.disposition.value
+                voice_disposition = (
+                    f"{voice_disposition}:{voice_result.disposition.value}"
+                )
                 if (
                     not voice_result.downstream_allowed
                     or voice_result.downstream_update is None
