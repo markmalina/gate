@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -13,7 +14,10 @@ from app.application.telegram_processing import (
 )
 from app.application.telegram_voice_archive import (
     ArchiveTelegramVoiceCommand,
+    PersistTelegramVoiceTranscriptCommand,
     TelegramVoiceArchiveResult,
+    TelegramVoiceTranscriptPersistenceResult,
+    TelegramVoiceTranscriptStatus,
 )
 from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateCommand,
@@ -50,6 +54,7 @@ class ResolvedIdentityReader:
 class RecordingVoiceArchive:
     def __init__(self) -> None:
         self.commands: list[ArchiveTelegramVoiceCommand] = []
+        self.transcripts: list[PersistTelegramVoiceTranscriptCommand] = []
 
     async def archive(
         self,
@@ -61,6 +66,17 @@ class RecordingVoiceArchive:
             duplicate=False,
             size_bytes=1024,
             media_type="audio/ogg",
+        )
+
+    async def persist_transcript(
+        self,
+        command: PersistTelegramVoiceTranscriptCommand,
+    ) -> TelegramVoiceTranscriptPersistenceResult:
+        self.transcripts.append(command)
+        return TelegramVoiceTranscriptPersistenceResult(
+            archive_id=command.archive_id,
+            duplicate=False,
+            status=command.status,
         )
 
 
@@ -86,6 +102,11 @@ class ProjectingVoiceUpdates:
             disposition=TelegramVoiceUpdateDisposition.PROJECTED,
             reason_code="telegram_voice_transcribed",
             downstream_update=update,
+            transcription=SimpleNamespace(
+                outcome=SimpleNamespace(value="transcribed"),
+                reason_code="telegram_voice_transcribed",
+                alpha_input_text="расшифрованный текст",
+            ),
             downstream_allowed=True,
         )
 
@@ -155,7 +176,12 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
     assert command.connector_ref == "telegram_business"
     assert command.period_key == "2026-07"
     assert command.requested_microusd == 300
+    assert command.language == "ru"
     assert command.enabled is True
+    assert voice_archive.transcripts[0].status is (
+        TelegramVoiceTranscriptStatus.TRANSCRIBED
+    )
+    assert voice_archive.transcripts[0].text == "расшифрованный текст"
 
 
 def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
@@ -178,7 +204,7 @@ def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
     assert voice_updates.commands == []
 
 
-def test_outbound_business_voice_is_archived_without_transcription() -> None:
+def test_outbound_business_voice_is_archived_and_transcribed() -> None:
     item = voice_item()
     item.payload["business_message"]["from"]["id"] = 700000002
     voice_updates = ProjectingVoiceUpdates()
@@ -198,4 +224,6 @@ def test_outbound_business_voice_is_archived_without_transcription() -> None:
 
     assert len(voice_archive.commands) == 1
     assert voice_archive.commands[0].direction.value == "outbound"
-    assert voice_updates.commands == []
+    assert len(voice_updates.commands) == 1
+    assert voice_updates.commands[0].language == "ru"
+    assert voice_archive.transcripts[0].text == "расшифрованный текст"
