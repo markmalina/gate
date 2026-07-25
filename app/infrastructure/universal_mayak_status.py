@@ -16,6 +16,7 @@ from app.core.config import Settings
 
 _AGENT_KEY = "oko"
 _REVISION_KEY = "universal-mayak-v1"
+_INSTALLATION_KEY = "universal-mayak-v1-owner-private"
 _TERMINAL_ATTEMPT_STATES = frozenset({"sent", "failed", "unknown", "blocked"})
 _INPUT_DIGEST_PREFIX = "mayak-input-sha256:"
 
@@ -41,7 +42,7 @@ async def universal_mayak_operational_status(
     workspace_id = workspace_rows[0] if workspace_valid else None
 
     installation = _zero_installation()
-    sessions = _zero_states(("active", "paused", "handoff_required"))
+    sessions = _zero_states(("active", "paused", "completed", "handoff_required"))
     turns = _zero_states(("queued", "running", "proposed", "failed"))
     grants = _zero_states(("open", "used", "revoked"))
     attempts = _zero_states(
@@ -55,31 +56,36 @@ async def universal_mayak_operational_status(
             "workspace_id": workspace_id,
             "agent_key": _AGENT_KEY,
             "revision_key": _REVISION_KEY,
+            "installation_key": _INSTALLATION_KEY,
         }
         installation = dict(
             (
                 await session.execute(
                     sa.text(
                         "SELECT COUNT(*)::int AS total, "
-                        "COUNT(*) FILTER (WHERE ai.state = 'active')::int AS active, "
-                        "COUNT(*) FILTER (WHERE ai.state = 'paused')::int AS paused, "
+                        "COUNT(*) FILTER (WHERE ai.state = 'discovered')::int "
+                        " AS discovered, "
                         "COUNT(*) FILTER (WHERE ai.state = 'pending_approval')::int "
                         " AS pending_approval, "
+                        "COUNT(*) FILTER (WHERE ai.state = 'active')::int AS active, "
+                        "COUNT(*) FILTER (WHERE ai.state = 'paused')::int AS paused, "
+                        "COUNT(*) FILTER (WHERE ai.state = 'revoked')::int AS revoked, "
                         "COUNT(*) FILTER (WHERE ai.state = 'active' "
                         " AND ad.state = 'active' "
+                        " AND definition.agent_key = :agent_key "
+                        " AND ir.revision_key = :revision_key "
                         " AND ir.validation_state = 'validated')::int AS exact_active "
                         "FROM agent_installations ai "
-                        "JOIN agent_deployments ad ON ad.id = ai.deployment_id "
+                        "LEFT JOIN agent_deployments ad ON ad.id = ai.deployment_id "
                         " AND ad.workspace_id = ai.workspace_id "
-                        "JOIN agent_definitions definition "
+                        "LEFT JOIN agent_definitions definition "
                         " ON definition.id = ad.agent_definition_id "
                         " AND definition.workspace_id = ad.workspace_id "
-                        "JOIN instruction_revisions ir "
+                        "LEFT JOIN instruction_revisions ir "
                         " ON ir.id = ai.instruction_revision_id "
                         " AND ir.workspace_id = ai.workspace_id "
                         "WHERE ai.workspace_id = :workspace_id "
-                        " AND definition.agent_key = :agent_key "
-                        " AND ir.revision_key = :revision_key"
+                        " AND ai.installation_key = :installation_key"
                     ),
                     parameters,
                 )
@@ -143,7 +149,9 @@ async def universal_mayak_operational_status(
         "delivery_enabled": settings.gate_universal_mayak_delivery_enabled,
     }
     configuration_ready = all(gates.values())
-    installation_ready = installation["exact_active"] == 1
+    installation_ready = (
+        installation["total"] == 1 and installation["exact_active"] == 1
+    )
     reconciliation_required = attempts["sending"] > 0 or attempts["unknown"] > 0
     if not workspace_valid:
         state = "workspace_unavailable"
@@ -223,6 +231,8 @@ async def _session_counts(
                 " AS active, "
                 "COUNT(*) FILTER (WHERE agent_session.state = 'paused')::int "
                 " AS paused, "
+                "COUNT(*) FILTER (WHERE agent_session.state = 'completed')::int "
+                " AS completed, "
                 "COUNT(*) FILTER (WHERE agent_session.state = 'handoff_required')::int "
                 " AS handoff_required "
                 "FROM agent_sessions agent_session "
@@ -336,9 +346,11 @@ async def _attempt_counts(
 def _zero_installation() -> dict[str, int]:
     return {
         "total": 0,
+        "discovered": 0,
+        "pending_approval": 0,
         "active": 0,
         "paused": 0,
-        "pending_approval": 0,
+        "revoked": 0,
         "exact_active": 0,
     }
 
