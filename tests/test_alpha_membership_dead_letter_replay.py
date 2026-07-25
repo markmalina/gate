@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODE,
     is_alpha_membership_update,
@@ -21,6 +20,7 @@ from app.models.domain import (
     TelegramReceipt,
     TelegramReceiptStatus,
 )
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
