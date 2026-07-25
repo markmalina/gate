@@ -17,6 +17,8 @@ from app.application.telegram_voice_transcription import (
 from app.core.config import Settings
 from app.worker.dropbox_calls import (
     DropboxCallWorkerError,
+    _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
+    _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
     _audio_media_type,
     _is_supported_file,
     _resume_received_recordings,
@@ -109,7 +111,7 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False
 
 
-def test_transcription_budget_scope_can_identify_dropbox() -> None:
+def test_dropbox_call_uses_existing_hard_limited_voice_budget() -> None:
     command = TranscribeTelegramVoiceCommand(
         voice=TelegramVoiceReference(
             file_id="id:file",
@@ -118,16 +120,17 @@ def test_transcription_budget_scope_can_identify_dropbox() -> None:
             duration_seconds=3,
         ),
         workspace_key="mark-personal",
-        connector_ref="dropbox:account",
+        connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
         reservation_key="dropbox-call-v1:test",
         period_key="2026-07",
         requested_microusd=300,
         occurred_at=datetime.now(UTC),
         enabled=True,
-        budget_scope_kind="dropbox_account",
+        budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
     )
 
-    assert command.budget_scope_kind == "dropbox_account"
+    assert command.budget_scope_kind == "telegram_connector"
+    assert command.connector_ref == "telegram_business"
 
 
 def test_transcription_budget_scope_rejects_unbounded_value() -> None:
