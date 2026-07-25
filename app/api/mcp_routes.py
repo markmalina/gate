@@ -638,25 +638,15 @@ async def _voice_reply_context_tool_result(
             message="Selected outbound Telegram message was not found",
         )
     message, telegram_update = row
-    if telegram_update is None:
-        return _tool_error_result(
-            request_id=request_id,
-            code="voice_receipt_not_found",
-            message="Selected message has no durable Telegram receipt",
-        )
-    try:
-        envelope = extract_telegram_voice(telegram_update.payload)
-    except TelegramVoiceError:
-        envelope = None
-    if (
-        envelope is None
-        or message.telegram_message_id is None
-        or envelope.message_id != message.telegram_message_id
-    ):
+    envelope = _extract_voice_from_linked_payloads(
+        telegram_update.payload if telegram_update is not None else None,
+        message.payload,
+    )
+    if envelope is None:
         return _tool_error_result(
             request_id=request_id,
             code="selected_message_is_not_voice",
-            message="Selected message is not an exact Telegram voice receipt",
+            message="Selected message has no linked Telegram voice payload",
         )
     if not settings.telegram_bot_token:
         return _tool_error_result(
@@ -691,6 +681,19 @@ async def _voice_reply_context_tool_result(
         data=downloaded.data,
         media_type=media_type,
     )
+
+
+def _extract_voice_from_linked_payloads(*payloads: JsonObject | None) -> Any:
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        try:
+            envelope = extract_telegram_voice(payload)
+        except TelegramVoiceError:
+            continue
+        if envelope is not None:
+            return envelope
+    return None
 
 
 def _voice_audio_tool_result(
