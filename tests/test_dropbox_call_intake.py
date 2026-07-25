@@ -149,7 +149,6 @@ def test_transcription_budget_scope_rejects_unbounded_value() -> None:
         )
 
 
-
 def test_m4a_media_type_is_deterministic_without_host_mime_tables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -205,18 +204,20 @@ async def test_received_call_is_resumed_after_worker_restart(
         transcribe,
     )
 
+    settings = Settings(
+        GATE_WORKSPACE_ID="mark-personal",
+        DROPBOX_CALL_ACCOUNT_ID="account-id",
+    )
+    http = object()
     await _resume_received_recordings(
-        settings=Settings(
-            GATE_WORKSPACE_ID="mark-personal",
-            DROPBOX_CALL_ACCOUNT_ID="account-id",
-        ),
+        settings=settings,
         session_factory=session_factory,
-        http=object(),
+        http=http,
     )
 
     transcribe.assert_awaited_once_with(
-        settings=transcribe.await_args.kwargs["settings"],
+        settings=settings,
         session_factory=session_factory,
-        http=transcribe.await_args.kwargs["http"],
+        http=http,
         recording=recording,
     )
