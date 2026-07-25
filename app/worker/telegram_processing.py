@@ -727,6 +727,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     try:
         if (
             settings.gate_alpha_canary_enabled
+            or settings.gate_universal_mayak_runtime_enabled
             or settings.gate_telegram_voice_transcription_enabled
             or settings.gate_telegram_voice_archive_enabled
         ):
@@ -767,6 +768,57 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         delivery=DeliverAlphaGrantService(
                             store=SessionFactoryAlphaDeliveryStore(sessions),
                             telegram=TelegramClientAlphaTextAdapter(telegram),
+                        ),
+                    )
+                universal_mayak = None
+                if settings.gate_universal_mayak_runtime_enabled:
+                    bundle = DeployedInstructionBundleLoader(
+                        Path(settings.gate_agent_bundle_root)
+                    ).load("universal_mayak_v1")
+                    model = build_configured_universal_mayak_model(
+                        bundle=bundle,
+                        http_client=http_client,
+                        api_key=settings.openai_api_key.get_secret_value(),
+                        api_base_url=settings.openai_api_base_url,
+                        model_profile=(
+                            settings.gate_universal_mayak_model_profile
+                        ),
+                        runtime_enabled=(
+                            settings.gate_universal_mayak_runtime_enabled
+                        ),
+                        data_gate_approved=(
+                            settings.gate_universal_mayak_model_data_gate_approved
+                        ),
+                        max_output_tokens=(
+                            settings.gate_universal_mayak_max_output_tokens
+                        ),
+                        timeout_seconds=(
+                            settings.gate_universal_mayak_timeout_seconds
+                        ),
+                    )
+                    business_telegram = TelegramClient(
+                        credential=settings.telegram_bot_token,
+                        api_base_url=os.getenv(
+                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                        ),
+                        http_client=http_client,
+                    )
+                    universal_mayak = ProcessUniversalMayakPrivateMessageService(
+                        bindings=SessionFactoryApprovedPrivateBindingResolver(
+                            sessions
+                        ),
+                        mayak=ProcessUniversalMayakDemoService(
+                            store=SessionFactoryUniversalMayakDemoStore(
+                                sessions
+                            ),
+                            model=model,
+                            delivery=TelegramBusinessUniversalMayakDelivery(
+                                sessions=sessions,
+                                telegram=business_telegram,
+                                enabled=(
+                                    settings.gate_universal_mayak_delivery_enabled
+                                ),
+                            ),
                         ),
                     )
                 voice_downloader = None
@@ -824,6 +876,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         alpha_canary=alpha_canary,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
+                        universal_mayak=universal_mayak,
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
                     )
