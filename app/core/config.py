@@ -6,13 +6,12 @@ name only and must never be committed.
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
 from app.core.telegram_connectors import (
     TelegramConnectorRegistry,
     build_telegram_connector_registry,
 )
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -140,6 +139,38 @@ class Settings(BaseSettings):
         default="",
         max_length=32,
         validation_alias="GATE_TELEGRAM_VOICE_LANGUAGE",
+    )
+    gate_dropbox_call_intake_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_DROPBOX_CALL_INTAKE_ENABLED",
+    )
+    dropbox_call_app_key: str = Field(
+        default="",
+        validation_alias="DROPBOX_CALL_APP_KEY",
+    )
+    dropbox_call_app_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="DROPBOX_CALL_APP_SECRET",
+    )
+    dropbox_call_refresh_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="DROPBOX_CALL_REFRESH_TOKEN",
+    )
+    dropbox_call_account_id: str = Field(
+        default="",
+        max_length=255,
+        validation_alias="DROPBOX_CALL_ACCOUNT_ID",
+    )
+    dropbox_call_inbox_path: str = Field(
+        default="",
+        max_length=1024,
+        validation_alias="DROPBOX_CALL_INBOX_PATH",
+    )
+    gate_dropbox_call_poll_seconds: float = Field(
+        default=30,
+        ge=5,
+        le=300,
+        validation_alias="GATE_DROPBOX_CALL_POLL_SECONDS",
     )
     gate_alpha_model_runtime_enabled: bool = Field(
         default=False,
