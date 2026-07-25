@@ -651,17 +651,32 @@ async def _latest_voice_archive_tool_result(
             message="No archived Telegram voice is available for this account",
         )
     archive, account = row
+    archive_id = str(archive.id)
     context = {
-        "archive_id": str(archive.id),
+        "task_id": archive_id,
+        "task_ref": archive_id[:8],
+        "status": "archived_voice",
+        "reply_required": False,
         "account": {
+            "id": str(account.id),
             "alias": account.alias,
             "label": account.alias.upper(),
         },
-        "direction": archive.direction,
-        "received_at": archive.received_at.isoformat(),
-        "duration_seconds": archive.duration_seconds,
-        "size_bytes": archive.size_bytes,
-        "media_type": archive.media_type,
+        "conversation": {
+            "id": archive_id,
+            "chat_id": "archived-voice",
+            "business_connection_id": None,
+        },
+        "counterparty": {
+            "platform": "telegram",
+            "platform_user_id": None,
+            "display_name": None,
+            "username": None,
+            "label": None,
+        },
+        "messages": [],
+        "count": 0,
+        "limit": 1,
     }
     return _voice_audio_tool_result(
         request_id=request_id,
