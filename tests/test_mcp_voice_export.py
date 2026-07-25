@@ -53,15 +53,73 @@ def test_linked_voice_payload_falls_back_to_the_exact_durable_update() -> None:
         },
     }
 
-    envelope = _extract_voice_from_linked_payloads({}, payload)
+    reference = _extract_voice_from_linked_payloads({}, payload)
 
-    assert envelope is not None
-    assert envelope.update_id == 10
-    assert envelope.message_id == 20
+    assert reference is not None
+    assert reference.file_unique_id == "opaque-unique"
+    assert reference.declared_size_bytes == 128
+    assert reference.duration_seconds == 3
 
 
-def test_linked_voice_payload_fails_closed_without_voice() -> None:
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {
+            "audio": {
+                "file_id": "opaque-file",
+                "file_unique_id": "opaque-unique",
+                "file_size": 128,
+                "duration": 3,
+            },
+        },
+        {
+            "edited_business_message": {
+                "document": {
+                    "file_id": "opaque-file",
+                    "file_unique_id": "opaque-unique",
+                    "file_size": 128,
+                    "duration": 3,
+                    "mime_type": "audio/mpeg",
+                },
+            },
+        },
+        {
+            "result": {
+                "voice": {
+                    "file_id": "opaque-file",
+                    "file_unique_id": "opaque-unique",
+                    "file_size": 128,
+                    "duration": 3,
+                },
+            },
+        },
+    ),
+)
+def test_linked_audio_payload_accepts_durable_telegram_shapes(
+    payload: dict[str, object],
+) -> None:
+    reference = _extract_voice_from_linked_payloads(payload)
+
+    assert reference is not None
+    assert reference.file_unique_id == "opaque-unique"
+
+
+def test_linked_voice_payload_fails_closed_without_audio() -> None:
     assert _extract_voice_from_linked_payloads({}, None) is None
+    assert (
+        _extract_voice_from_linked_payloads(
+            {
+                "document": {
+                    "file_id": "opaque-file",
+                    "file_unique_id": "opaque-unique",
+                    "file_size": 128,
+                    "duration": 3,
+                    "mime_type": "application/pdf",
+                },
+            }
+        )
+        is None
+    )
 
 
 def test_voice_audio_result_keeps_context_and_emits_mcp_audio() -> None:
