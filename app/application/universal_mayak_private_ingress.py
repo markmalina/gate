@@ -114,6 +114,7 @@ class ApprovedPrivateBindingResolver(Protocol):
         *,
         account_id: str,
         project_id: str,
+        canonical_message_id: str,
         business_connection_id: str,
         provider_dialog_id: str,
         provider_actor_id: str,
@@ -162,6 +163,7 @@ class ProcessUniversalMayakPrivateMessageService:
         binding = await self._bindings.resolve(
             account_id=command.account_id,
             project_id=command.project_id,
+            canonical_message_id=command.canonical_message_id,
             business_connection_id=command.business_connection_id,
             provider_dialog_id=command.provider_dialog_id,
             provider_actor_id=command.provider_actor_id,
