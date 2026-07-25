@@ -6,13 +6,14 @@ name only and must never be committed.
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
 from app.core.telegram_connectors import (
     TelegramConnectorRegistry,
     build_telegram_connector_registry,
 )
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DROPBOX_CALL_INBOX_PATH = "/Alpha/Calls"
 
 
 class Settings(BaseSettings):
@@ -163,7 +164,7 @@ class Settings(BaseSettings):
         validation_alias="DROPBOX_CALL_ACCOUNT_ID",
     )
     dropbox_call_inbox_path: str = Field(
-        default="",
+        default=DROPBOX_CALL_INBOX_PATH,
         max_length=1024,
         validation_alias="DROPBOX_CALL_INBOX_PATH",
     )
