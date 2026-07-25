@@ -551,7 +551,14 @@ async def _get_reply_context_tool_result(
             code="invalid_arguments",
             message="task_id is required",
         )
-    latest_voice_alias = _parse_latest_voice_selector(raw_task_id)
+    try:
+        latest_voice_alias = _parse_latest_voice_selector(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="latest voice selector is invalid",
+        )
     if latest_voice_alias is not None:
         return await _latest_voice_archive_tool_result(
             request_id=request_id,
