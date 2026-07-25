@@ -13,6 +13,9 @@ from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.telegram_voice_transcription import (
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     DownloadedVoice,
@@ -33,8 +36,6 @@ from app.models.domain import (
     DropboxCallInboxState,
     PhoneCallRecording,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
