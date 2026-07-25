@@ -1,7 +1,7 @@
 """Bind the single Alpha Group installation to the reviewed model v2 release.
 
-Revision ID: 0042_alpha_model_v2_installation_binding
-Revises: 0041_voice_transcript_store
+Revision ID: 0043_alpha_model_v2_installation_binding
+Revises: 0042_dropbox_phone_calls
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0042_alpha_model_v2_installation_binding"
-down_revision: str | None = "0041_voice_transcript_store"
+revision: str = "0043_alpha_model_v2_installation_binding"
+down_revision: str | None = "0042_dropbox_phone_calls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -56,7 +56,7 @@ ACCOUNT_LABEL_SCHEMA = _object(
 )
 COUNTERPARTY_SCHEMA = _object(
     {
-        "platform": {"type": "string", "const": "telegram"},
+        "platform": {"type": "string", "enum": ["telegram", "phone_call_dropbox"]},
         "platform_user_id": _nullable("string"),
         "display_name": _nullable("string"),
         "username": _nullable("string"),
