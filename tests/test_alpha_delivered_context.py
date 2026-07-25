@@ -184,7 +184,7 @@ def _delivered_row(
             chat_id=-100700000001,
             message_id=10,
             sender_id=7001,
-            text="/alpha first",
+            text="/alpha@AlphaViaBot first",
         ),
         received_at=delivered_at - timedelta(seconds=1),
     )
@@ -250,7 +250,31 @@ async def test_context_merges_verified_inbound_and_exactly_one_sent_candidate() 
             chat_id=-100700000001,
             message_id=11,
             sender_id=7003,
-            text="Second user message",
+            text="/alpha@AlphaViaBot Second user message",
+        ),
+        received_at=base + timedelta(seconds=3),
+    )
+    ordinary_inbound_id = uuid4()
+    ordinary_receipt_id = uuid4()
+    ordinary_inbound = CanonicalMessage(
+        id=ordinary_inbound_id,
+        workspace_id=workspace_id,
+        dialog_id=dialog_id,
+        receipt_id=ordinary_receipt_id,
+        provider_message_id="13",
+        provider_sender_id="7005",
+        direction="inbound",
+        occurred_at=base + timedelta(seconds=3),
+    )
+    ordinary_receipt = TelegramReceipt(
+        id=ordinary_receipt_id,
+        bot_key="alpha_group",
+        update_id=13,
+        payload=_payload(
+            chat_id=-100700000001,
+            message_id=13,
+            sender_id=7005,
+            text="Private ordinary group text",
         ),
         received_at=base + timedelta(seconds=3),
     )
@@ -401,7 +425,11 @@ async def test_context_merges_verified_inbound_and_exactly_one_sent_candidate() 
         candidate_text="Other dialog",
     )
     session = _Session(
-        [(inbound, inbound_receipt), (wrong_inbound, wrong_inbound_receipt)],
+        [
+            (inbound, inbound_receipt),
+            (ordinary_inbound, ordinary_receipt),
+            (wrong_inbound, wrong_inbound_receipt),
+        ],
         [
             *([valid] * 70),
             historical,
@@ -424,6 +452,7 @@ async def test_context_merges_verified_inbound_and_exactly_one_sent_candidate() 
         trigger_received_at=base + timedelta(seconds=4),
         installation_id=installation_id,
         connector_key="alpha_group",
+        bot_username="AlphaViaBot",
     )
 
     assert tuple(item.message_id for item in context) == (
@@ -435,7 +464,7 @@ async def test_context_merges_verified_inbound_and_exactly_one_sent_candidate() 
     assert tuple(item.content for item in context) == (
         "Reply from the previous validated revision",
         "Delivered reply",
-        "Second user message",
+        "/alpha@AlphaViaBot Second user message",
     )
     delivered_sql = session.statements[1]
     assert "recent_alpha_sent_attempts" in delivered_sql

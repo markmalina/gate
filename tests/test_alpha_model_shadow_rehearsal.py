@@ -212,7 +212,7 @@ async def _execute(
 
 def test_explicit_command_calls_mock_provider_once_and_never_delivers() -> None:
     port = MemoryModelShadowPort(
-        _prepared(text="/alpha Сформулируй короткое приветствие")
+        _prepared(text="/alpha@AlphaViaBot Сформулируй короткое приветствие")
     )
     provider_calls = 0
 
@@ -285,7 +285,7 @@ def test_unaddressed_or_spoofed_text_never_reaches_provider(text: str) -> None:
 
 def test_unknown_group_fails_before_usage_and_provider() -> None:
     port = MemoryModelShadowPort(
-        _prepared(text="/alpha hello"),
+        _prepared(text="/alpha@AlphaViaBot hello"),
         prepare_error=AlphaShadowWorkerError("alpha_trigger_not_eligible"),
     )
     provider_calls = 0
@@ -304,7 +304,7 @@ def test_unknown_group_fails_before_usage_and_provider() -> None:
 
 @pytest.mark.parametrize("failure", ["timeout", "unavailable"])
 def test_provider_failure_is_terminal_and_duplicate_never_retries(failure: str) -> None:
-    port = MemoryModelShadowPort(_prepared(text="/alpha hello"))
+    port = MemoryModelShadowPort(_prepared(text="/alpha@AlphaViaBot hello"))
     provider_calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -327,7 +327,7 @@ def test_provider_failure_is_terminal_and_duplicate_never_retries(failure: str) 
 
 
 def test_context_and_input_are_bounded_before_runtime() -> None:
-    prepared = _prepared(text="/alpha hello")
+    prepared = _prepared(text="/alpha@AlphaViaBot hello")
     oversized_context = tuple(
         replace(prepared.context[0], message_id=f"message-{index}")
         for index in range(33)

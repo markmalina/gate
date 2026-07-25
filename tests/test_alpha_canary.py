@@ -281,6 +281,26 @@ def test_enabled_delivery_issues_exact_disclosed_grant_then_uses_opaque_key() ->
     assert "-1007001" not in repr(delivery.commands[0])
 
 
+def test_bounded_live_model_uses_existing_exact_grant_and_delivery_chain() -> None:
+    proposed = AlphaShadowWorkerResult(
+        AlphaShadowDisposition.REPLAYED,
+        "alpha_answer",
+        turn_key="turn-model-live-1",
+        result_kind=AgentResultKind.REPLY,
+        candidate_sha256="c" * 64,
+        delivery_mode=AlphaProposalDeliveryMode.BOUNDED_LIVE,
+    )
+    service, store, _shadow, delivery = _service(proposed)
+
+    result = asyncio.run(service.execute(_command(delivery_enabled=True)))
+
+    assert result.disposition is AlphaCanaryDisposition.SENT
+    assert len(store.grants) == 1
+    assert store.grants[0].turn_key == "turn-model-live-1"
+    assert store.grants[0].disclosure_prefix == ALPHA_DISCLOSURE_PREFIX
+    assert len(delivery.commands) == 1
+
+
 def test_model_shadow_cannot_issue_grant_even_when_delivery_switch_is_on() -> None:
     proposed = AlphaShadowWorkerResult(
         AlphaShadowDisposition.PROPOSED,

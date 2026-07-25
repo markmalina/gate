@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-TARGET_DEPLOYMENT_KEY = "alpha-model-v1-openai"
+TARGET_DEPLOYMENT_KEY = "alpha-model-v2-openai"
 TARGET_RUNTIME_PROFILE = "openai-responses-v1"
 TARGET_MODEL_PROFILE = "gpt-5.6-luna"
 

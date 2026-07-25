@@ -22,7 +22,11 @@ from app.application.agent_kernel import (
 )
 from app.application.agent_shadow import AgentShadowProposal
 from app.application.alpha_delivery import MAX_TELEGRAM_TEXT_CHARS
-from app.application.alpha_group import AlphaInstallation, AlphaInstallationState
+from app.application.alpha_group import (
+    AlphaInstallation,
+    AlphaInstallationState,
+    AlphaInvocationKind,
+)
 from app.application.alpha_lifecycle import (
     AlphaUsageReservation,
     RecordAlphaUsageCommand,
@@ -36,6 +40,7 @@ from app.application.alpha_shadow_worker import (
     AlphaTurnStatus,
     ProcessAlphaShadowMessageCommand,
     alpha_model_usage_budget,
+    recognize_alpha_invocation,
 )
 from app.application.canonical_messaging import DialogKind
 from app.application.work_ownership import AgentKey
@@ -203,6 +208,7 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 trigger_received_at=receipt.received_at,
                 installation_id=installation.id,
                 connector_key=connector.connector_key,
+                bot_username=command.bot_username,
             )
             if self._verified_model_shadow_enabled:
                 model_binding = await _verified_model_shadow_binding(
@@ -619,6 +625,7 @@ async def _load_context(
     trigger_received_at: datetime,
     installation_id: uuid.UUID,
     connector_key: str,
+    bot_username: str,
 ) -> tuple[AgentContextMessage, ...]:
     """Return verified dialog history, including only literally delivered Alpha replies.
 
@@ -661,6 +668,18 @@ async def _load_context(
         if not isinstance(text, str) or not text.strip() or len(text) > 16_000:
             continue
         if not _sender_is_human(message):
+            continue
+        if (
+            recognize_alpha_invocation(
+                text,
+                bot_username=bot_username,
+                reply_to_bot=_is_reply_to_bot(
+                    message,
+                    bot_username=bot_username,
+                ),
+            )
+            is AlphaInvocationKind.NONE
+        ):
             continue
         context_message = AgentContextMessage(
             message_id=str(canonical.id),
@@ -908,6 +927,21 @@ async def _load_context(
         except AlphaShadowWorkerError:
             continue
         if not _sender_is_human(source_message):
+            continue
+        source_text = source_message.get("text")
+        if not isinstance(source_text, str) or not source_text.strip():
+            continue
+        if (
+            recognize_alpha_invocation(
+                source_text,
+                bot_username=bot_username,
+                reply_to_bot=_is_reply_to_bot(
+                    source_message,
+                    bot_username=bot_username,
+                ),
+            )
+            is AlphaInvocationKind.NONE
+        ):
             continue
         candidate_text = context_turn.candidate_text
         turn_candidate_sha256 = context_turn.candidate_sha256
