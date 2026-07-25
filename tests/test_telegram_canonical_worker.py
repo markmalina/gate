@@ -275,7 +275,7 @@ def test_processed_mayak_route_never_creates_parallel_human_work() -> None:
     asyncio.run(processor.process(_work_item()))
 
     assert len(mayak.commands) == 1
-    assert [command.route for command in inbox.commands] == [WorkRoute.AGENT_WORK]
+    assert [command.route for command in inbox.commands] == [WorkRoute.AGENT_TURN]
 
 
 def test_unclaimed_mayak_route_promotes_once_to_human_work() -> None:
@@ -295,6 +295,6 @@ def test_unclaimed_mayak_route_promotes_once_to_human_work() -> None:
 
     assert len(mayak.commands) == 1
     assert [command.route for command in inbox.commands] == [
-        WorkRoute.AGENT_WORK,
+        WorkRoute.AGENT_TURN,
         WorkRoute.HUMAN_REPLY_TASK,
     ]
