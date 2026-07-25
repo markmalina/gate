@@ -59,13 +59,23 @@ def test_status_is_redacted_and_proves_terminal_replay_without_provider() -> Non
             [
                 {
                     "total": 1,
+                    "discovered": 0,
+                    "pending_approval": 0,
                     "active": 1,
                     "paused": 0,
-                    "pending_approval": 0,
+                    "revoked": 0,
                     "exact_active": 1,
                 }
             ],
-            [{"total": 1, "active": 1, "paused": 0, "handoff_required": 0}],
+            [
+                {
+                    "total": 1,
+                    "active": 1,
+                    "paused": 0,
+                    "completed": 0,
+                    "handoff_required": 0,
+                }
+            ],
             [{"total": 1, "queued": 0, "running": 0, "proposed": 1, "failed": 0}],
             [{"total": 1, "open": 0, "used": 1, "revoked": 0}],
             [
