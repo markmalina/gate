@@ -16,9 +16,9 @@ from app.application.telegram_voice_transcription import (
 )
 from app.core.config import Settings
 from app.worker.dropbox_calls import (
-    DropboxCallWorkerError,
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+    DropboxCallWorkerError,
     _audio_media_type,
     _is_supported_file,
     _resume_received_recordings,
