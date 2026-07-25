@@ -185,6 +185,44 @@ def test_owner_route_migration_is_exact_reversible_and_not_account_global() -> N
     assert callable(module.downgrade)
 
 
+
+def test_successor_reconciles_after_reply_task_status_changes() -> None:
+    path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0046_mayak_installation_reconcile.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "mayak_installation_reconcile",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0046_mayak_reconcile"
+    assert module.down_revision == "0045_mayak_owner_route"
+    source = path.read_text(encoding="utf-8")
+    assert "rt.status = 'needs_reply'" not in source
+    for guard in (
+        "rt.id = :task_id",
+        "source_project.alias IN",
+        "(:source_project_alias, :target_project_alias)",
+        '"target_project_alias": _TARGET_PROJECT_ALIAS',
+        "installation_key, state",
+        "installation_key = :installation_key, state = 'active'",
+        '"active",',
+        "UPDATE delivery_grants SET revoked_at = now()",
+        "UPDATE messages SET project_id = :source_project_id",
+        "UPDATE reply_tasks SET project_id = :source_project_id",
+    ):
+        assert guard in source
+    assert "UPDATE accounts SET linked_project_id" not in source
+    assert callable(module.upgrade)
+    assert callable(module.downgrade)
+
+
 def test_runtime_accepts_only_explicit_source_or_oko_project() -> None:
     source = inspect.getsource(SessionFactoryApprovedPrivateBindingResolver)
     assert 'source_project.alias.in_(("unclassified", AgentKey.OKO.value))' in source
