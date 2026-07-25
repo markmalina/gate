@@ -157,9 +157,9 @@ def test_inbox_command_allows_agent_route_without_changing_canonical_truth() -> 
         update_id=42,
         business_connection_id="private-connection",
         projection=_projection(),
-        route_override=WorkRoute.AGENT_WORK,
+        route_override=WorkRoute.AGENT_TURN,
     )
 
     assert command.direction is CanonicalMessageDirection.INBOUND
-    assert command.route is WorkRoute.AGENT_WORK
+    assert command.route is WorkRoute.AGENT_TURN
     assert _projection().ownership.route is WorkRoute.HUMAN_REPLY_TASK
