@@ -336,3 +336,44 @@ def test_connector_successor_uses_exact_canonical_dialog_binding() -> None:
     assert "TransportConnector.is_enabled.is_(True)" in runtime_source
     assert callable(module.upgrade)
     assert callable(module.downgrade)
+
+
+
+def test_connector_activation_successor_is_exact_and_reversible() -> None:
+    path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0049_mayak_connector_activation.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "mayak_connector_activation",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0049_mayak_connector_active"
+    assert module.down_revision == "0048_mayak_connector"
+    source = path.read_text(encoding="utf-8")
+    for guard in (
+        "rt.id = :task_id",
+        "rt.account_id = :account_id",
+        "m.account_id = :account_id",
+        "cm.provider_sender_id = d.provider_dialog_id",
+        "m.sender_id = d.provider_dialog_id",
+        "d.dialog_kind = 'private'",
+        "c.connector_kind = 'telegram_business'",
+        "c.is_enabled IS FALSE",
+        "bc.is_enabled IS TRUE",
+        "FOR UPDATE OF rt, m, d, c",
+        "SET is_enabled = TRUE",
+        "SET is_enabled = FALSE",
+        "UPDATE delivery_grants SET revoked_at = now()",
+        "state = 'paused'",
+    ):
+        assert guard in source
+    assert "UPDATE accounts SET linked_project_id" not in source
+    assert callable(module.upgrade)
+    assert callable(module.downgrade)
