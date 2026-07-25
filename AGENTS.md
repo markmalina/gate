@@ -2,8 +2,8 @@
 
 Gate Work follows the canonical AlphaVia Work bootstrap policy in
 [AlphaVia issue #67](https://github.com/markmalina/alphavia/issues/67).
-That issue owns the cross-repository policy; this repository only records the
-Gate-specific entrypoint.
+That issue owns the cross-repository policy; this repository records the
+Gate-specific entrypoint and owner authorizations.
 
 On the first turn of every newly opened Gate Work:
 
@@ -18,7 +18,35 @@ On the first turn of every newly opened Gate Work:
    caps recurrence at hourly. Report the schedule that was really created.
 6. Follow the lease and state protocol in `docs/work-bootstrap.md`.
 
-A heartbeat never grants authority. Stop at `waiting_user` and before every
-production deployment, provider call, credential or OAuth action, message,
-publication, real-person-data operation, paid-resource action, or other
-external effect unless the owner gives exact authorization for that action.
+## Owner standing authorization: pre-user autonomy
+
+Effective 25 July 2026, the owner authorizes Gate workers to complete bounded
+technical work autonomously while Gate is provably in pre-user mode. Repeated
+confirmation is not required for repository changes, one exact-head CI, merge,
+Production deployment, runtime verification, or rollback.
+
+Pre-user mode exists only when the current canonical Work and fresh redacted
+evidence both prove:
+
+- `pre_user_mode: true` and `external_users: 0`;
+- no third-party payload or real-person data is in the execution scope;
+- every owner-only live check names one exact installation and hard caps
+  provider calls and outbound messages;
+- a last-known-good Production revision and rollback condition are recorded.
+
+Within that boundary, a worker may autonomously create or resume one execution,
+one lease, one branch and one PR; run local checks and one necessary exact-head
+CI; mark the PR ready; merge the verified exact head; deploy it to Production;
+verify the deployed fingerprint, redacted health and accepted runtime outcome;
+and roll back to the recorded revision when the acceptance condition fails.
+
+This standing authorization fails closed immediately when any external user,
+third-party participant, third-party payload, or unbounded external effect is
+detected. Exact owner authorization is still required for credentials, secrets,
+OAuth or identity actions; payments or legal actions; publication; destructive
+history or data operations; new external-user processing; and provider or
+message effects outside the exact owner-only caps recorded in the current Work.
+
+CI, merge, deployment status and provider dashboards never prove runtime or
+product readiness by themselves. Every autonomous Production change must end
+with an exact deployed revision and redacted acceptance or rollback receipt.
