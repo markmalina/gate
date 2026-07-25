@@ -55,7 +55,7 @@ class FakeSession:
 def test_status_is_redacted_and_proves_terminal_replay_without_provider() -> None:
     session = FakeSession(
         [
-            [["workspace-id"]],
+            ["workspace-id"],
             [
                 {
                     "total": 1,
