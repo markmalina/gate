@@ -88,7 +88,12 @@ async def test_membership_admission_is_bounded_transactional_and_idempotent() ->
         assert first.installation_key
         assert second.installation_key
         assert third.installation_key
-        assert len({first.installation_key, second.installation_key, third.installation_key}) == 3
+        installation_keys = {
+            first.installation_key,
+            second.installation_key,
+            third.installation_key,
+        }
+        assert len(installation_keys) == 3
         assert replay.installation_key == third.installation_key
 
         with pytest.raises(
