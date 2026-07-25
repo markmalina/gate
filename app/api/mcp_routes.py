@@ -4,6 +4,7 @@
 
 from typing import Annotated, Any
 
+import base64
 import httpx
 from datetime import UTC, datetime
 from uuid import UUID
@@ -75,6 +76,10 @@ from app.infrastructure.alpha_owner_test_runtime import (
     verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
+from app.infrastructure.telegram_voice import (
+    TelegramVoiceDownloadConfig,
+    TelegramVoiceDownloader,
+)
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
@@ -98,8 +103,11 @@ from app.models.domain import (
     Project,
     ReplyDraft,
     ReplyTask,
+    TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
+from app.application.telegram_voice_transcription import TelegramVoiceError
+from app.application.telegram_voice_update import extract_telegram_voice
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -346,6 +354,7 @@ async def mcp_endpoint(
                 arguments=arguments,
                 principal=principal,
                 session=session,
+                settings=settings,
             )
         if tool_name == "gate_save_reply_draft":
             return await _save_reply_draft_tool_result(
@@ -528,6 +537,7 @@ async def _get_reply_context_tool_result(
     arguments: JsonObject,
     principal: Principal,
     session: AsyncSession,
+    settings: Settings,
 ) -> JsonObject:
     raw_task_id = arguments.get("task_id")
     if not isinstance(raw_task_id, str):
@@ -537,12 +547,12 @@ async def _get_reply_context_tool_result(
             message="task_id is required",
         )
     try:
-        task_id = UUID(raw_task_id)
+        task_id, voice_message_id = _parse_reply_context_selector(raw_task_id)
     except ValueError:
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
-            message="task_id must be a UUID",
+            message="task_id must be a UUID or an exact task:voice:message selector",
         )
 
     context = await get_reply_context(
@@ -557,10 +567,158 @@ async def _get_reply_context_tool_result(
             code="task_not_found",
             message="Reply task not found in the allowed scope",
         )
+    if voice_message_id is not None:
+        return await _voice_reply_context_tool_result(
+            request_id=request_id,
+            context=context,
+            message_id=voice_message_id,
+            principal=principal,
+            session=session,
+            settings=settings,
+        )
     return _tool_result(
         context,
         _format_reply_context_text(context),
         request_id,
+    )
+
+
+def _parse_reply_context_selector(raw_task_id: str) -> tuple[UUID, UUID | None]:
+    parts = raw_task_id.split(":voice:")
+    if len(parts) == 1:
+        return UUID(raw_task_id), None
+    if len(parts) != 2 or not all(parts):
+        raise ValueError("invalid voice selector")
+    return UUID(parts[0]), UUID(parts[1])
+
+
+async def _voice_reply_context_tool_result(
+    *,
+    request_id: Any,
+    context: JsonObject,
+    message_id: UUID,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    visible_message_ids = {
+        item.get("id")
+        for item in context.get("messages", [])
+        if isinstance(item, dict)
+    }
+    if str(message_id) not in visible_message_ids:
+        return _tool_error_result(
+            request_id=request_id,
+            code="voice_message_not_in_context",
+            message="Selected message is not in the scoped reply context",
+        )
+
+    result = await session.execute(
+        select(Message, TelegramUpdate)
+        .outerjoin(
+            TelegramUpdate,
+            (
+                (TelegramUpdate.bot_id == Message.bot_id)
+                & (TelegramUpdate.update_id == Message.telegram_update_id)
+            ),
+        )
+        .where(
+            Message.id == message_id,
+            Message.account_id.in_(principal.access_scope.account_ids),
+            Message.project_id.in_(principal.access_scope.project_ids),
+            Message.direction == MessageDirection.OUTBOUND.value,
+            Message.source == "telegram",
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="voice_message_not_found",
+            message="Selected outbound Telegram message was not found",
+        )
+    message, telegram_update = row
+    if telegram_update is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="voice_receipt_not_found",
+            message="Selected message has no durable Telegram receipt",
+        )
+    try:
+        envelope = extract_telegram_voice(telegram_update.payload)
+    except TelegramVoiceError:
+        envelope = None
+    if (
+        envelope is None
+        or message.telegram_message_id is None
+        or envelope.message_id != message.telegram_message_id
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="selected_message_is_not_voice",
+            message="Selected message is not an exact Telegram voice receipt",
+        )
+    if not settings.telegram_bot_token:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_download_unavailable",
+            message="Telegram voice download is not configured",
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            downloaded = await TelegramVoiceDownloader(
+                config=TelegramVoiceDownloadConfig(
+                    bot_token=settings.telegram_bot_token,
+                ),
+                http=http_client,
+            ).download(envelope.voice)
+    except (TelegramVoiceError, ValueError):
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_download_failed",
+            message="Telegram voice download failed closed",
+        )
+
+    media_type = (
+        downloaded.media_type
+        if downloaded.media_type.startswith("audio/")
+        else "audio/ogg"
+    )
+    return _voice_audio_tool_result(
+        request_id=request_id,
+        context=context,
+        data=downloaded.data,
+        media_type=media_type,
+    )
+
+
+def _voice_audio_tool_result(
+    *,
+    request_id: Any,
+    context: JsonObject,
+    data: bytes,
+    media_type: str,
+) -> JsonObject:
+    if not data or not media_type.startswith("audio/"):
+        raise ValueError("invalid audio content")
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Owner-selected Telegram voice attached.",
+                },
+                {
+                    "type": "audio",
+                    "data": base64.b64encode(data).decode("ascii"),
+                    "mimeType": media_type,
+                },
+            ],
+            "structuredContent": context,
+            "isError": False,
+        },
     )
 
 
