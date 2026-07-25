@@ -12,6 +12,7 @@ from app.api.mcp_routes import (
     _extract_voice_from_linked_payloads,
     _parse_latest_voice_file_selector,
     _parse_latest_voice_selector,
+    _parse_latest_voice_transcript_selector,
     _parse_reply_context_selector,
     _same_telegram_message,
     _voice_audio_tool_result,
@@ -66,6 +67,34 @@ def test_invalid_latest_voice_file_selector_fails_closed(
 ) -> None:
     with pytest.raises(ValueError):
         _parse_latest_voice_file_selector(selector)
+
+
+def test_latest_voice_transcript_selector_binds_one_account_alias() -> None:
+    assert (
+        _parse_latest_voice_transcript_selector(
+            "voice:latest-transcript:telegram_mark_ru"
+        )
+        == "telegram_mark_ru"
+    )
+    assert _parse_latest_voice_transcript_selector(str(TASK_ID)) is None
+    assert _parse_latest_voice_selector(
+        "voice:latest-transcript:telegram_mark_ru"
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "selector",
+    (
+        "voice:latest-transcript:",
+        "voice:latest-transcript:Telegram",
+        "voice:latest-transcript:telegram.mark",
+    ),
+)
+def test_invalid_latest_voice_transcript_selector_fails_closed(
+    selector: str,
+) -> None:
+    with pytest.raises(ValueError):
+        _parse_latest_voice_transcript_selector(selector)
 
 
 def test_plain_reply_context_selector_preserves_existing_behavior() -> None:
