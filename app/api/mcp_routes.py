@@ -2738,7 +2738,15 @@ async def _build_alpha_canary_status(
             model_delivery_grants=model.model_delivery_grants,
             stuck_provider_preflights=model.stuck_provider_preflights,
             last_provider_error_code=model.last_provider_error_code,
-            fixture_binding_active=active_binding_count == 1,
+            fixture_binding_active=(
+                active_binding_count == 1
+                and model.active_model_bindings == 0
+            ),
+            telegram_delivery_blocked=not (
+                settings.gate_alpha_delivery_enabled
+                and active_binding_count == 1
+                and model.active_model_bindings == 1
+            ),
             provider_preflight_successes=model.provider_preflight_successes,
             provider_preflight_failures=model.provider_preflight_failures,
         )

@@ -22,7 +22,7 @@ class FakeScalarSession:
 @pytest.mark.anyio
 async def test_status_uses_exact_model_deployment_and_redacted_safety_signals() -> None:
     session = FakeScalarSession(
-        [1, 4, 2, 1, 1, 0, 2_048, 256, 1, 0, 0, None, 0]
+        [1, 1, 4, 2, 1, 1, 0, 2_048, 256, 1, 0, 0, None, 0]
     )
 
     status = await alpha_model_operational_status(
@@ -32,6 +32,7 @@ async def test_status_uses_exact_model_deployment_and_redacted_safety_signals() 
     )
 
     assert status.staged_deployments == 1
+    assert status.active_model_bindings == 1
     assert status.model_turns == 4
     assert status.proposed_turns == 2
     assert status.failed_turns == 1
@@ -45,30 +46,36 @@ async def test_status_uses_exact_model_deployment_and_redacted_safety_signals() 
     assert status.remaining_microusd == 49_986_176
     assert status.provider_preflight_successes == 1
     assert status.provider_preflight_failures == 0
-    assert len(session.statements) == 13
+    assert len(session.statements) == 14
     assert "agent_deployments.runtime_profile" in str(session.statements[0])
     assert "agent_deployments.model_profile" in str(session.statements[0])
     assert "agent_deployments.deployment_key" in str(session.statements[0])
     assert "agent_deployments.policy_version" in str(session.statements[0])
     assert "agent_deployments.state IN" in str(session.statements[0])
     assert "instruction_revisions.revision_key" in str(session.statements[0])
-    assert "alpha_usage_records.created_at" in str(session.statements[6])
-    assert "alpha_usage_records.state" in str(session.statements[6])
-    assert "workspaces.key" in str(session.statements[6])
-    assert "agent_installations" not in str(session.statements[6])
-    assert "agent_deployments" not in str(session.statements[6])
-    assert "alpha_model_preflights.created_at" in str(session.statements[7])
-    assert "alpha_model_preflights.state" in str(session.statements[8])
-    assert "alpha_model_preflights.updated_at" in str(session.statements[10])
-    assert "alpha_model_preflights.error_code" in str(session.statements[11])
-    assert "delivery_grants" in str(session.statements[12])
-    assert "agent_deployments.runtime_profile" in str(session.statements[12])
+    assert "agent_installations" in str(session.statements[1])
+    assert "agent_installations.state" in str(session.statements[1])
+    assert "agent_deployments.instruction_revision_id" in str(session.statements[1])
+    assert "alpha_usage_records.created_at" in str(session.statements[7])
+    assert "alpha_usage_records.state" in str(session.statements[7])
+    assert "workspaces.key" in str(session.statements[7])
+    assert "agent_installations" not in str(session.statements[7])
+    assert "agent_deployments" not in str(session.statements[7])
+    assert "alpha_model_preflights.created_at" in str(session.statements[8])
+    assert "alpha_model_preflights.state" in str(session.statements[9])
+    assert "alpha_model_preflights.updated_at" in str(session.statements[11])
+    assert "alpha_model_preflights.error_code" in str(session.statements[12])
+    assert "delivery_grants" in str(session.statements[13])
+    assert "delivery_grants.used_at IS NULL" in str(session.statements[13])
+    assert "delivery_grants.revoked_at IS NULL" in str(session.statements[13])
+    assert "agent_deployments.runtime_profile" in str(session.statements[13])
 
 
 @pytest.mark.anyio
 async def test_status_keeps_only_bounded_provider_error_code_for_categorization() -> None:
     session = FakeScalarSession(
         [
+            1,
             1,
             0,
             0,

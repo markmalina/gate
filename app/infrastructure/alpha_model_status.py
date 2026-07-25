@@ -38,6 +38,7 @@ _OPENAI_MODEL_PROFILE = "gpt-5.6-luna"
 @dataclass(frozen=True, slots=True)
 class AlphaModelOperationalStatus:
     staged_deployments: int
+    active_model_bindings: int
     model_turns: int
     proposed_turns: int
     failed_turns: int
@@ -98,6 +99,29 @@ async def alpha_model_operational_status(
             InstructionRevisionModel.revision_key
             == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
             InstructionRevisionModel.validation_state == "validated",
+        )
+    )
+    active_model_bindings = await session.scalar(
+        select(func.count())
+        .select_from(AgentInstallationModel)
+        .join(Workspace, Workspace.id == AgentInstallationModel.workspace_id)
+        .join(
+            AgentDeploymentModel,
+            (AgentDeploymentModel.id == AgentInstallationModel.deployment_id)
+            & (
+                AgentDeploymentModel.workspace_id
+                == AgentInstallationModel.workspace_id
+            ),
+        )
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            AgentInstallationModel.state == "active",
+            AgentInstallationModel.instruction_revision_id
+            == AgentDeploymentModel.instruction_revision_id,
+            AgentInstallationModel.deployment_id.in_(
+                _reviewed_model_deployment_ids(workspace_key)
+            ),
         )
     )
     model_turns = await _model_turn_count(
@@ -228,12 +252,15 @@ async def alpha_model_operational_status(
             AgentDeploymentModel.id.in_(
                 _reviewed_model_deployment_ids(workspace_key)
             ),
+            DeliveryGrantModel.used_at.is_(None),
+            DeliveryGrantModel.revoked_at.is_(None),
         )
     )
     token_count = int(reserved_tokens or 0) + int(preflight_reserved_tokens or 0)
     reserved_microusd = token_count * ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN
     return AlphaModelOperationalStatus(
         staged_deployments=int(staged or 0),
+        active_model_bindings=int(active_model_bindings or 0),
         model_turns=model_turns,
         proposed_turns=proposed_turns,
         failed_turns=failed_turns,
