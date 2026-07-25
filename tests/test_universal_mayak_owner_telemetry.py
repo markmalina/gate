@@ -101,6 +101,20 @@ def test_status_is_redacted_and_proves_terminal_replay_without_provider() -> Non
                 }
             ],
             [{"state": "sent", "error_code": None}],
+            [
+                {
+                    "task_present": True,
+                    "account_ready": True,
+                    "trigger_message_present": True,
+                    "projects_allowed": True,
+                    "canonical_ready": True,
+                    "private_inbound_ready": True,
+                    "actor_dialog_ready": True,
+                    "connector_ready": True,
+                    "business_connection_ready": True,
+                    "release_ready": True,
+                }
+            ],
         ]
     )
     settings = Settings(
@@ -120,6 +134,19 @@ def test_status_is_redacted_and_proves_terminal_replay_without_provider() -> Non
 
     assert status["state"] == "active_observed"
     assert status["installation"]["ready"] is True
+    assert status["owner_route_probe"] == {
+        "task_present": True,
+        "account_ready": True,
+        "trigger_message_present": True,
+        "projects_allowed": True,
+        "canonical_ready": True,
+        "private_inbound_ready": True,
+        "actor_dialog_ready": True,
+        "connector_ready": True,
+        "business_connection_ready": True,
+        "release_ready": True,
+        "ready": True,
+    }
     assert status["provider_free_replay_verifier"] == {
         "available": True,
         "input_digest_bound": True,
@@ -130,7 +157,7 @@ def test_status_is_redacted_and_proves_terminal_replay_without_provider() -> Non
     assert status["private_content_exposed"] is False
     assert status["provider_identifiers_exposed"] is False
     assert status["telegram_identifiers_exposed"] is False
-    assert len(session.statements) == 8
+    assert len(session.statements) == 9
 
     schema = GATE_STATUS_OUTPUT_SCHEMA["properties"]["universal_mayak"]
     Draft202012Validator.check_schema(schema)

@@ -336,6 +336,21 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "ready": {"type": "boolean"},
                         }
                     ),
+                    "owner_route_probe": _object(
+                        {
+                            "task_present": {"type": "boolean"},
+                            "account_ready": {"type": "boolean"},
+                            "trigger_message_present": {"type": "boolean"},
+                            "projects_allowed": {"type": "boolean"},
+                            "canonical_ready": {"type": "boolean"},
+                            "private_inbound_ready": {"type": "boolean"},
+                            "actor_dialog_ready": {"type": "boolean"},
+                            "connector_ready": {"type": "boolean"},
+                            "business_connection_ready": {"type": "boolean"},
+                            "release_ready": {"type": "boolean"},
+                            "ready": {"type": "boolean"},
+                        }
+                    ),
                     "sessions": _object(
                         {
                             "total": {"type": "integer", "minimum": 0},
