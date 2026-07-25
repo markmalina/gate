@@ -98,6 +98,7 @@ from app.infrastructure.alpha_canary import (
 )
 from app.models.domain import (
     Account,
+    GateEvent,
     Message,
     MessageDirection,
     Project,
@@ -106,7 +107,10 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
-from app.application.telegram_voice_transcription import TelegramVoiceError
+from app.application.telegram_voice_transcription import (
+    TelegramVoiceError,
+    TelegramVoiceReference,
+)
 from app.application.telegram_voice_update import extract_telegram_voice
 
 router = APIRouter()
@@ -614,7 +618,7 @@ async def _voice_reply_context_tool_result(
         )
 
     result = await session.execute(
-        select(Message, TelegramUpdate)
+        select(Message, TelegramUpdate, GateEvent)
         .outerjoin(
             TelegramUpdate,
             (
@@ -622,6 +626,7 @@ async def _voice_reply_context_tool_result(
                 & (TelegramUpdate.update_id == Message.telegram_update_id)
             ),
         )
+        .outerjoin(GateEvent, GateEvent.id == Message.gate_event_id)
         .where(
             Message.id == message_id,
             Message.account_id.in_(principal.access_scope.account_ids),
@@ -637,12 +642,13 @@ async def _voice_reply_context_tool_result(
             code="voice_message_not_found",
             message="Selected outbound Telegram message was not found",
         )
-    message, telegram_update = row
-    envelope = _extract_voice_from_linked_payloads(
+    message, telegram_update, gate_event = row
+    voice = _extract_voice_from_linked_payloads(
         telegram_update.payload if telegram_update is not None else None,
+        gate_event.payload if gate_event is not None else None,
         message.payload,
     )
-    if envelope is None:
+    if voice is None:
         return _tool_error_result(
             request_id=request_id,
             code="selected_message_is_not_voice",
@@ -662,7 +668,7 @@ async def _voice_reply_context_tool_result(
                     bot_token=settings.telegram_bot_token,
                 ),
                 http=http_client,
-            ).download(envelope.voice)
+            ).download(voice)
     except (TelegramVoiceError, ValueError):
         return _tool_error_result(
             request_id=request_id,
@@ -683,17 +689,79 @@ async def _voice_reply_context_tool_result(
     )
 
 
-def _extract_voice_from_linked_payloads(*payloads: JsonObject | None) -> Any:
+def _extract_voice_from_linked_payloads(
+    *payloads: JsonObject | None,
+) -> TelegramVoiceReference | None:
     for payload in payloads:
         if not isinstance(payload, dict):
             continue
         try:
             envelope = extract_telegram_voice(payload)
         except TelegramVoiceError:
-            continue
+            envelope = None
         if envelope is not None:
-            return envelope
+            return envelope.voice
+
+        for message in _telegram_audio_messages(payload):
+            for field in ("voice", "audio", "document"):
+                raw_media = message.get(field)
+                if not isinstance(raw_media, dict):
+                    continue
+                if field == "document":
+                    mime_type = raw_media.get("mime_type")
+                    if not isinstance(mime_type, str) or not mime_type.startswith(
+                        "audio/"
+                    ):
+                        continue
+                reference = _telegram_audio_reference(raw_media)
+                if reference is not None:
+                    return reference
     return None
+
+
+def _telegram_audio_messages(payload: JsonObject) -> tuple[JsonObject, ...]:
+    messages: list[JsonObject] = []
+    for key in (
+        "message",
+        "business_message",
+        "edited_message",
+        "edited_business_message",
+    ):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            messages.append(value)
+    result = payload.get("result")
+    if isinstance(result, dict):
+        messages.append(result)
+    if any(isinstance(payload.get(key), dict) for key in ("voice", "audio", "document")):
+        messages.append(payload)
+    return tuple(messages)
+
+
+def _telegram_audio_reference(raw_media: JsonObject) -> TelegramVoiceReference | None:
+    file_id = raw_media.get("file_id")
+    file_unique_id = raw_media.get("file_unique_id")
+    file_size = raw_media.get("file_size")
+    duration = raw_media.get("duration")
+    if (
+        not isinstance(file_id, str)
+        or not file_id.strip()
+        or not isinstance(file_unique_id, str)
+        or not file_unique_id.strip()
+        or (file_size is not None and (type(file_size) is not int or file_size <= 0))
+        or type(duration) is not int
+        or duration <= 0
+    ):
+        return None
+    try:
+        return TelegramVoiceReference(
+            file_id=file_id,
+            file_unique_id=file_unique_id,
+            declared_size_bytes=file_size,
+            duration_seconds=duration,
+        )
+    except TelegramVoiceError:
+        return None
 
 
 def _voice_audio_tool_result(
