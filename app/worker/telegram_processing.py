@@ -631,7 +631,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             "ownership_policy=%s ownership_authoritative=%s "
             "canonical_persisted=%s canonical_duplicate=%s "
             "voice_disposition=%s business_text_inbox=%s "
-            "business_text_parity=%s "
+            "universal_mayak=%s business_text_parity=%s "
             "alpha_canary_disposition=%s",
             decision.handler,
             decision.reason,
@@ -652,6 +652,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             canonical_duplicate,
             voice_disposition,
             business_text_inbox_disposition,
+            universal_mayak_disposition,
             business_text_parity_disposition,
             alpha_canary_disposition,
         )
@@ -670,6 +671,7 @@ async def run_telegram_worker_once(
     voice_archive: TelegramVoiceArchiver | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
     business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
+    universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -693,6 +695,7 @@ async def run_telegram_worker_once(
             voice_archive=voice_archive,
             business_text_parity=business_text_parity,
             business_text_inbox=business_text_inbox,
+            universal_mayak=universal_mayak,
             runtime_logger=runtime_logger,
         )
     result = await ProcessTelegramOutboxService(
