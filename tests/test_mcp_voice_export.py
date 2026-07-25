@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 from app.api.mcp_routes import (
     _extract_voice_from_linked_payloads,
+    _parse_latest_voice_selector,
     _parse_reply_context_selector,
     _same_telegram_message,
     _voice_audio_tool_result,
@@ -16,6 +17,24 @@ from app.api.mcp_routes import (
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")
 MESSAGE_ID = UUID("22222222-2222-2222-2222-222222222222")
+
+
+def test_latest_voice_selector_binds_one_account_alias() -> None:
+    assert _parse_latest_voice_selector("voice:latest:ru") == "ru"
+    assert _parse_latest_voice_selector(str(TASK_ID)) is None
+
+
+@pytest.mark.parametrize(
+    "selector",
+    (
+        "voice:latest:",
+        "voice:latest:RU",
+        "voice:latest:ru/account",
+    ),
+)
+def test_invalid_latest_voice_selector_fails_closed(selector: str) -> None:
+    with pytest.raises(ValueError):
+        _parse_latest_voice_selector(selector)
 
 
 def test_plain_reply_context_selector_preserves_existing_behavior() -> None:

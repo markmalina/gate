@@ -118,6 +118,10 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1",
         validation_alias="OPENAI_API_BASE_URL",
     )
+    gate_telegram_voice_archive_enabled: bool = Field(
+        default=True,
+        validation_alias="GATE_TELEGRAM_VOICE_ARCHIVE_ENABLED",
+    )
     gate_telegram_voice_transcription_enabled: bool = Field(
         default=False,
         validation_alias="GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED",

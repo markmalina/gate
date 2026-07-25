@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -770,6 +771,64 @@ class TelegramReceipt(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+class TelegramVoiceArchive(Base):
+    """Durable original audio for one scoped Telegram Business voice receipt."""
+
+    __tablename__ = "telegram_voice_archives"
+    __table_args__ = (
+        UniqueConstraint(
+            "receipt_id",
+            name="uq_telegram_voice_archives_receipt_id",
+        ),
+        UniqueConstraint(
+            "account_id",
+            "business_connection_id",
+            "chat_id",
+            "telegram_message_id",
+            name="uq_telegram_voice_archives_message_identity",
+        ),
+        Index(
+            "ix_telegram_voice_archives_account_received",
+            "account_id",
+            "received_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("telegram_receipts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    telegram_update_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    business_connection_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
 

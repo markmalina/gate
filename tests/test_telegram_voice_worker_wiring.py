@@ -11,6 +11,10 @@ from app.application.telegram_processing import (
     TelegramProcessingWorkItem,
     TelegramUpdateProcessingError,
 )
+from app.application.telegram_voice_archive import (
+    ArchiveTelegramVoiceCommand,
+    TelegramVoiceArchiveResult,
+)
 from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateCommand,
     ProcessTelegramVoiceUpdateResult,
@@ -39,7 +43,24 @@ class ResolvedIdentityReader:
             account_id="account-1",
             account_alias="ru",
             project_id="project-1",
-            owner_identity_ids=frozenset({"owner-identity"}),
+            owner_identity_ids=frozenset({"700000002"}),
+        )
+
+
+class RecordingVoiceArchive:
+    def __init__(self) -> None:
+        self.commands: list[ArchiveTelegramVoiceCommand] = []
+
+    async def archive(
+        self,
+        command: ArchiveTelegramVoiceCommand,
+    ) -> TelegramVoiceArchiveResult:
+        self.commands.append(command)
+        return TelegramVoiceArchiveResult(
+            archive_id="archive-1",
+            duplicate=False,
+            size_bytes=1024,
+            media_type="audio/ogg",
         )
 
 
@@ -98,7 +119,8 @@ def voice_item() -> TelegramProcessingWorkItem:
 def test_business_voice_fails_closed_without_runtime_composition() -> None:
     processor = ShadowClassifyingTelegramProcessor(
         settings=Settings(_env_file=None),
-        identity_reader=EmptyIdentityReader(),
+        identity_reader=ResolvedIdentityReader(),
+        voice_archive=RecordingVoiceArchive(),
         runtime_logger=logging.getLogger("gate.voice.not-configured"),
     )
 
@@ -110,6 +132,7 @@ def test_business_voice_fails_closed_without_runtime_composition() -> None:
 
 def test_business_voice_is_projected_before_downstream_processing() -> None:
     voice_updates = ProjectingVoiceUpdates()
+    voice_archive = RecordingVoiceArchive()
     processor = ShadowClassifyingTelegramProcessor(
         settings=Settings(
             _env_file=None,
@@ -117,11 +140,15 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
         ),
         identity_reader=ResolvedIdentityReader(),
         voice_updates=voice_updates,
+        voice_archive=voice_archive,
         runtime_logger=logging.getLogger("gate.voice.projected"),
     )
 
     asyncio.run(processor.process(voice_item()))
 
+    assert len(voice_archive.commands) == 1
+    archive_command = voice_archive.commands[0]
+    assert archive_command.direction.value == "inbound"
     assert len(voice_updates.commands) == 1
     command = voice_updates.commands[0]
     assert command.workspace_key == "mark-personal"
@@ -140,6 +167,7 @@ def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
         ),
         identity_reader=EmptyIdentityReader(),
         voice_updates=voice_updates,
+        voice_archive=RecordingVoiceArchive(),
         runtime_logger=logging.getLogger("gate.voice.identity-unresolved"),
     )
 
@@ -147,4 +175,27 @@ def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
         asyncio.run(processor.process(voice_item()))
 
     assert captured.value.error_code == "telegram_voice_identity_unresolved"
+    assert voice_updates.commands == []
+
+
+def test_outbound_business_voice_is_archived_without_transcription() -> None:
+    item = voice_item()
+    item.payload["business_message"]["from"]["id"] = 700000002
+    voice_updates = ProjectingVoiceUpdates()
+    voice_archive = RecordingVoiceArchive()
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=Settings(
+            _env_file=None,
+            GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED=True,
+        ),
+        identity_reader=ResolvedIdentityReader(),
+        voice_updates=voice_updates,
+        voice_archive=voice_archive,
+        runtime_logger=logging.getLogger("gate.voice.outbound-archive"),
+    )
+
+    asyncio.run(processor.process(item))
+
+    assert len(voice_archive.commands) == 1
+    assert voice_archive.commands[0].direction.value == "outbound"
     assert voice_updates.commands == []

@@ -105,6 +105,7 @@ from app.models.domain import (
     ReplyDraft,
     ReplyTask,
     TelegramUpdate,
+    TelegramVoiceArchive,
 )
 from app.services.telegram import TelegramClient
 from app.application.telegram_voice_transcription import (
@@ -551,6 +552,21 @@ async def _get_reply_context_tool_result(
             message="task_id is required",
         )
     try:
+        latest_voice_alias = _parse_latest_voice_selector(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="latest voice selector is invalid",
+        )
+    if latest_voice_alias is not None:
+        return await _latest_voice_archive_tool_result(
+            request_id=request_id,
+            account_alias=latest_voice_alias,
+            principal=principal,
+            session=session,
+        )
+    try:
         task_id, voice_message_id = _parse_reply_context_selector(raw_task_id)
     except ValueError:
         return _tool_error_result(
@@ -584,6 +600,89 @@ async def _get_reply_context_tool_result(
         context,
         _format_reply_context_text(context),
         request_id,
+    )
+
+
+def _parse_latest_voice_selector(raw_task_id: str) -> str | None:
+    prefix = "voice:latest:"
+    if not raw_task_id.startswith(prefix):
+        return None
+    alias = raw_task_id.removeprefix(prefix)
+    if (
+        not alias
+        or len(alias) > 64
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in alias)
+    ):
+        raise ValueError("invalid latest voice selector")
+    return alias
+
+
+async def _latest_voice_archive_tool_result(
+    *,
+    request_id: Any,
+    account_alias: str,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    result = await session.execute(
+        select(TelegramVoiceArchive, Account)
+        .join(Account, Account.id == TelegramVoiceArchive.account_id)
+        .where(
+            Account.alias == account_alias,
+            Account.id.in_(principal.access_scope.account_ids),
+            TelegramVoiceArchive.account_id.in_(
+                principal.access_scope.account_ids
+            ),
+            TelegramVoiceArchive.project_id.in_(
+                principal.access_scope.project_ids
+            ),
+        )
+        .order_by(
+            TelegramVoiceArchive.received_at.desc(),
+            TelegramVoiceArchive.id.desc(),
+        )
+        .limit(1)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_archive_empty",
+            message="No archived Telegram voice is available for this account",
+        )
+    archive, account = row
+    archive_id = str(archive.id)
+    context = {
+        "task_id": archive_id,
+        "task_ref": archive_id[:8],
+        "status": "archived_voice",
+        "reply_required": False,
+        "account": {
+            "id": str(account.id),
+            "alias": account.alias,
+            "label": account.alias.upper(),
+        },
+        "conversation": {
+            "id": archive_id,
+            "chat_id": "archived-voice",
+            "business_connection_id": None,
+        },
+        "counterparty": {
+            "platform": "telegram",
+            "platform_user_id": None,
+            "display_name": None,
+            "username": None,
+            "label": None,
+        },
+        "messages": [],
+        "count": 0,
+        "limit": 1,
+    }
+    return _voice_audio_tool_result(
+        request_id=request_id,
+        context=context,
+        data=archive.data,
+        media_type=archive.media_type,
     )
 
 

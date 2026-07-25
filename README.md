@@ -101,7 +101,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current release schema head is `0038_business_text_cutover`. Never point this
+   and `alembic upgrade head`. Current release schema head is `0039_voice_archive`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -191,7 +191,7 @@ Verified through Gate M and exact Railway production on 2026-07-18 at `f879fefde
 |---|---|
 | GitHub default branch | `main` |
 | Accepted merge / Railway fingerprint | `f879fefde08dbd1264829ce201808f726581eb1f` / `f879fefde08d` |
-| Release schema head | `0038_business_text_cutover` |
+| Release schema head | `0039_voice_archive` |
 | Environment / mode | `production` / `manual` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
 | Contact import | RU 90; BY 0 and intentionally deferred |
