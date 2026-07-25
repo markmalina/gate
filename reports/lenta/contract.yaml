@@ -1,0 +1,21 @@
+version: 1
+name: lenta
+selector: feed:day:YYYY-MM-DD
+timezone: Europe/Berlin
+sources:
+  - telegram_ru
+  - telegram_by
+  - telegram
+  - phone_call
+media:
+  - text
+  - voice
+  - call
+presentation:
+  semantic_summary_required: true
+  present_source_verbatim_by_default: false
+security:
+  oauth_scope: gate:inbox:read
+  provider_calls: false
+  telegram_mutation: false
+  delivery: false
