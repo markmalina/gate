@@ -90,6 +90,7 @@ class SessionFactoryApprovedPrivateBindingResolver(
                         InstructionRevisionModel,
                         AgentDefinitionModel,
                     )
+                    .select_from(Workspace)
                     .join(
                         Account,
                         Account.id == account_uuid,
