@@ -201,7 +201,7 @@ def test_successor_reconciles_after_reply_task_status_changes() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.revision == "0046_mayak_installation_reconcile"
+    assert module.revision == "0046_mayak_reconcile"
     assert module.down_revision == "0045_mayak_owner_route"
     source = path.read_text(encoding="utf-8")
     assert "rt.status = 'needs_reply'" not in source
