@@ -8,9 +8,12 @@ from datetime import UTC, datetime
 from app.application.telegram_voice_archive import (
     ArchiveTelegramVoiceCommand,
     ArchiveTelegramVoiceService,
+    PersistTelegramVoiceTranscriptCommand,
     TelegramVoiceArchiveDirection,
     TelegramVoiceArchiveRecord,
     TelegramVoiceArchiveResult,
+    TelegramVoiceTranscriptPersistenceResult,
+    TelegramVoiceTranscriptStatus,
 )
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
@@ -34,6 +37,7 @@ class FakeDownloader:
 class RecordingStore:
     def __init__(self) -> None:
         self.records: list[TelegramVoiceArchiveRecord] = []
+        self.transcripts: list[PersistTelegramVoiceTranscriptCommand] = []
 
     async def persist(
         self,
@@ -45,6 +49,17 @@ class RecordingStore:
             duplicate=False,
             size_bytes=record.size_bytes,
             media_type=record.media_type,
+        )
+
+    async def persist_transcript(
+        self,
+        command: PersistTelegramVoiceTranscriptCommand,
+    ) -> TelegramVoiceTranscriptPersistenceResult:
+        self.transcripts.append(command)
+        return TelegramVoiceTranscriptPersistenceResult(
+            archive_id=command.archive_id,
+            duplicate=False,
+            status=command.status,
         )
 
 
@@ -96,3 +111,31 @@ def test_business_voice_is_downloaded_and_persisted_as_original_audio() -> None:
     assert record.media_type == "audio/ogg"
     assert len(record.sha256) == 64
     assert record.received_at == received_at
+
+
+def test_transcript_is_persisted_beside_original_archive() -> None:
+    store = RecordingStore()
+    service = ArchiveTelegramVoiceService(
+        downloader=FakeDownloader(),
+        store=store,
+    )
+    transcribed_at = datetime(2026, 7, 25, 7, 30, tzinfo=UTC)
+
+    result = asyncio.run(
+        service.persist_transcript(
+            PersistTelegramVoiceTranscriptCommand(
+                archive_id="11111111-1111-1111-1111-111111111111",
+                status=TelegramVoiceTranscriptStatus.TRANSCRIBED,
+                transcribed_at=transcribed_at,
+                text="Прекрасное утро — прекрасная жизнь.",
+                language="ru",
+                model="gpt-4o-mini-transcribe",
+                reason_code="telegram_voice_transcribed",
+            )
+        )
+    )
+
+    assert result.duplicate is False
+    assert store.transcripts[0].text == (
+        "Прекрасное утро — прекрасная жизнь."
+    )
