@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import base64
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from app.api.mcp_routes import (
     _extract_voice_from_linked_payloads,
     _parse_reply_context_selector,
+    _same_telegram_message,
     _voice_audio_tool_result,
 )
 
@@ -102,6 +104,23 @@ def test_linked_audio_payload_accepts_durable_telegram_shapes(
 
     assert reference is not None
     assert reference.file_unique_id == "opaque-unique"
+
+
+def test_exact_telegram_identity_matches_message_and_chat() -> None:
+    message = SimpleNamespace(telegram_message_id=20, chat_id="30")
+
+    assert _same_telegram_message(
+        raw_message={"message_id": 20, "chat": {"id": 30}},
+        message=message,
+    )
+    assert not _same_telegram_message(
+        raw_message={"message_id": 21, "chat": {"id": 30}},
+        message=message,
+    )
+    assert not _same_telegram_message(
+        raw_message={"message_id": 20, "chat": {"id": 31}},
+        message=message,
+    )
 
 
 def test_linked_voice_payload_fails_closed_without_audio() -> None:

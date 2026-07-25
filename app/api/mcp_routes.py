@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import base64
 import httpx
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -649,10 +649,15 @@ async def _voice_reply_context_tool_result(
         message.payload,
     )
     if voice is None:
+        voice = await _find_voice_by_exact_telegram_identity(
+            session=session,
+            message=message,
+        )
+    if voice is None:
         return _tool_error_result(
             request_id=request_id,
             code="selected_message_is_not_voice",
-            message="Selected message has no linked Telegram voice payload",
+            message="Selected message has no retrievable Telegram audio reference",
         )
     if not settings.telegram_bot_token:
         return _tool_error_result(
@@ -717,6 +722,57 @@ def _extract_voice_from_linked_payloads(
                 if reference is not None:
                     return reference
     return None
+
+
+async def _find_voice_by_exact_telegram_identity(
+    *,
+    session: AsyncSession,
+    message: Message,
+) -> TelegramVoiceReference | None:
+    if message.telegram_message_id is None:
+        return None
+
+    event_result = await session.execute(
+        select(GateEvent.payload)
+        .where(
+            GateEvent.bot_id == message.bot_id,
+            GateEvent.chat_id == message.chat_id,
+            GateEvent.telegram_message_id == message.telegram_message_id,
+        )
+        .order_by(GateEvent.received_at.desc())
+        .limit(5)
+    )
+    voice = _extract_voice_from_linked_payloads(*event_result.scalars().all())
+    if voice is not None:
+        return voice
+
+    anchor = message.sent_at or message.received_at or message.created_at
+    update_result = await session.execute(
+        select(TelegramUpdate.payload)
+        .where(
+            TelegramUpdate.bot_id == message.bot_id,
+            TelegramUpdate.received_at >= anchor - timedelta(days=1),
+            TelegramUpdate.received_at <= anchor + timedelta(days=1),
+        )
+        .order_by(TelegramUpdate.received_at.desc())
+        .limit(1000)
+    )
+    for payload in update_result.scalars():
+        if not isinstance(payload, dict):
+            continue
+        for raw_message in _telegram_audio_messages(payload):
+            if _same_telegram_message(raw_message=raw_message, message=message):
+                return _extract_voice_from_linked_payloads(raw_message)
+    return None
+
+
+def _same_telegram_message(*, raw_message: JsonObject, message: Message) -> bool:
+    raw_chat = raw_message.get("chat")
+    return (
+        raw_message.get("message_id") == message.telegram_message_id
+        and isinstance(raw_chat, dict)
+        and str(raw_chat.get("id")) == message.chat_id
+    )
 
 
 def _telegram_audio_messages(payload: JsonObject) -> tuple[JsonObject, ...]:
