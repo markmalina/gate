@@ -110,8 +110,7 @@ class SessionFactoryApprovedPrivateBindingResolver(
                     )
                     .join(
                         TransportConnector,
-                        (TransportConnector.workspace_id == Workspace.id)
-                        & (TransportConnector.connector_key == Account.alias),
+                        TransportConnector.workspace_id == Workspace.id,
                     )
                     .join(
                         Dialog,
