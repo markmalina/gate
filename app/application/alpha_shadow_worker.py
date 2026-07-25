@@ -317,7 +317,7 @@ class ProcessAlphaShadowMessageService:
             session=session,
             trigger_message_id=prepared.trigger_message_id,
             user_text=prepared.user_text,
-            context=prepared.context,
+            context=(),
         )
         try:
             proposal = await runner.execute(agent_command)
