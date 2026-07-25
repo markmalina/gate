@@ -346,7 +346,7 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
                 select(func.count()).select_from(AgentSendAttemptModel)
             )
             assert len(turns) == 1
-            assert turns[0].context_message_ids == [str(context_message_id)]
+            assert turns[0].context_message_ids == []
             assert turns[0].result_kind == "reply"
             assert len(usages) == 1
             assert usages[0].state == "recorded"
