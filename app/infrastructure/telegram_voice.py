@@ -145,7 +145,7 @@ class TelegramVoiceNormalizer:
             raise TelegramVoiceError("telegram_voice_normalized_too_large")
         return NormalizedVoice(
             data=stdout,
-            filename="normalized-audio.wav",
+            filename="telegram-voice.wav",
             media_type="audio/wav",
         )
 
