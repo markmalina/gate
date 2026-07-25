@@ -1,4 +1,4 @@
-"""Content-free operational telemetry for the staged Alpha model path."""
+"""Content-free operational telemetry for the reviewed Alpha model path."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.application.alpha_shadow_worker import (
+    ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+    ALPHA_BOUNDED_LIVE_POLICY_VERSION,
     ALPHA_MODEL_MONTHLY_BUDGET_MICRO_USD,
     ALPHA_OPENAI_MAX_COST_MICRO_USD_PER_TOKEN,
 )
@@ -88,7 +90,13 @@ async def alpha_model_operational_status(
             AgentDefinitionModel.agent_key == "alpha_group",
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
-            AgentDeploymentModel.state == "staged",
+            AgentDeploymentModel.deployment_key
+            == ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+            AgentDeploymentModel.policy_version
+            == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+            AgentDeploymentModel.state.in_(("staged", "active")),
+            InstructionRevisionModel.revision_key
+            == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
             InstructionRevisionModel.validation_state == "validated",
         )
     )
@@ -151,7 +159,7 @@ async def alpha_model_operational_status(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
             AlphaModelPreflightModel.deployment_id.in_(
-                _staged_model_deployment_ids(workspace_key)
+                _reviewed_model_deployment_ids(workspace_key)
             ),
             AlphaModelPreflightModel.state == "succeeded",
         )
@@ -164,7 +172,7 @@ async def alpha_model_operational_status(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
             AlphaModelPreflightModel.deployment_id.in_(
-                _staged_model_deployment_ids(workspace_key)
+                _reviewed_model_deployment_ids(workspace_key)
             ),
             AlphaModelPreflightModel.state == "failed",
         )
@@ -177,7 +185,7 @@ async def alpha_model_operational_status(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
             AlphaModelPreflightModel.deployment_id.in_(
-                _staged_model_deployment_ids(workspace_key)
+                _reviewed_model_deployment_ids(workspace_key)
             ),
             AlphaModelPreflightModel.state == "reserved",
             AlphaModelPreflightModel.updated_at
@@ -191,7 +199,7 @@ async def alpha_model_operational_status(
             Workspace.key == workspace_key,
             Workspace.is_active.is_(True),
             AlphaModelPreflightModel.deployment_id.in_(
-                _staged_model_deployment_ids(workspace_key)
+                _reviewed_model_deployment_ids(workspace_key)
             ),
             AlphaModelPreflightModel.state == "failed",
         )
@@ -218,7 +226,7 @@ async def alpha_model_operational_status(
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
             AgentDeploymentModel.id.in_(
-                _staged_model_deployment_ids(workspace_key)
+                _reviewed_model_deployment_ids(workspace_key)
             ),
         )
     )
@@ -272,7 +280,7 @@ async def _model_turn_count(
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
             AgentSessionModel.deployment_id.in_(
-                _staged_model_deployment_ids(workspace_key)
+                _reviewed_model_deployment_ids(workspace_key)
             ),
         )
     )
@@ -282,10 +290,10 @@ async def _model_turn_count(
     return int(count or 0)
 
 
-def _staged_model_deployment_ids(
+def _reviewed_model_deployment_ids(
     workspace_key: str,
 ) -> Select[tuple[uuid.UUID]]:
-    """Select only the current staged Alpha model release for evidence counts."""
+    """Select the exact reviewed STAGED or ACTIVE Alpha model release."""
 
     return (
         select(AgentDeploymentModel.id)
@@ -306,7 +314,13 @@ def _staged_model_deployment_ids(
             AgentDefinitionModel.agent_key == "alpha_group",
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
-            AgentDeploymentModel.state == "staged",
+            AgentDeploymentModel.deployment_key
+            == ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+            AgentDeploymentModel.policy_version
+            == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+            AgentDeploymentModel.state.in_(("staged", "active")),
+            InstructionRevisionModel.revision_key
+            == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
             InstructionRevisionModel.validation_state == "validated",
         )
     )
