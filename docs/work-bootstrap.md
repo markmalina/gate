@@ -30,7 +30,7 @@ It stays silent when nothing material changed.
 - `blocked`: recheck dependencies; remain silent if unchanged.
 - `ready`: claim a unique lease/execution id, then begin.
 - `running`: continue that execution or inspect its single PR and CI.
-- `waiting_user`: stop at the human gate and notify once.
+- `waiting_user`: stop at a human gate not covered by standing authorization.
 - `done`: accept the receipt and follow the latest `next-work` pointer.
 - `standby` or `no_ready_work`: remain silent.
 
@@ -67,8 +67,8 @@ rehearsal passes only when steps 2 and 5 fail closed.
 
 ## Authority gates
 
-Heartbeat, lease, issue state, and CI never authorize an external effect. Exact
-owner authorization is required before:
+By default, heartbeat, lease, issue state, CI and merge never authorize an
+external effect. Exact owner authorization is required before:
 
 - production deployment or production/config mutation;
 - live provider or paid-resource call;
@@ -77,6 +77,25 @@ owner authorization is required before:
 - processing or exposing real-person data;
 - any other irreversible or externally visible action.
 
-When authorization is absent, set `waiting_user`, record the precise blocker
-once, and stop. After a bounded stage is complete, post its implementation
-receipt and follow the repository's latest `next-work` pointer.
+The repository-local pre-user standing authorization in `AGENTS.md` is the
+only exception. A worker may use it only after the current Work records and
+fresh redacted evidence prove all activation conditions. The execution claim
+must include:
+
+- `pre_user_mode: true` and `external_users: 0`;
+- the exact repository outcome and Production rollback revision;
+- for an owner-only live check, one exact installation plus hard provider and
+  delivery caps;
+- automatic stop conditions for any third-party participant, payload,
+  unexpected revision, duplicate delivery, health regression or unknown state.
+
+When those facts are proven, repository work, exact-head CI, merge, Production
+deployment, verification and rollback proceed without repeated confirmation.
+If any activation fact is absent or stale, set `waiting_user` and fail closed.
+
+Credentials, secrets, OAuth, payments, legal actions, publication, destructive
+history/data changes, external-user processing and effects beyond the recorded
+owner-only caps always remain exact owner gates.
+
+After a bounded stage is complete, post its implementation and runtime receipt,
+then follow the repository's latest `next-work` pointer.
