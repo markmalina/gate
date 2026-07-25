@@ -223,9 +223,13 @@ def test_explicit_command_calls_mock_provider_once_and_never_delivers() -> None:
         serialized = request.content.decode()
         assert payload["store"] is False
         assert payload["tools"] == []
-        assert payload["input"][0]["content"] == (
-            "Контекст только этой утверждённой группы."
-        )
+        assert payload["input"] == [
+            {
+                "role": "user",
+                "content": "/alpha@AlphaViaBot Сформулируй короткое приветствие",
+            }
+        ]
+        assert "Контекст только этой утверждённой группы." not in serialized
         assert "00000000-0000-0000-0000-000000000002" not in serialized
         return httpx.Response(
             200,

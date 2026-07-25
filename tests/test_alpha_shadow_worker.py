@@ -16,9 +16,11 @@ from app.application.agent_kernel import (
     AgentDeployment,
     AgentDeploymentState,
     AgentResultKind,
+    AgentRuntimeResult,
+    AgentTurnCommand,
     InstructionRevision,
 )
-from app.application.agent_shadow import AgentShadowProposal
+from app.application.agent_shadow import AgentShadowProposal, RunAgentShadowTurnService
 from app.application.alpha_group import (
     AlphaInstallation,
     AlphaInstallationState,
@@ -274,6 +276,35 @@ class MemoryAlphaPort:
         return self.turn
 
 
+class CapturingAlphaRuntime:
+    def __init__(self) -> None:
+        self.commands: list[AgentTurnCommand] = []
+
+    async def propose(self, command: AgentTurnCommand) -> AgentRuntimeResult:
+        self.commands.append(command)
+        return AgentRuntimeResult(
+            AgentResultKind.REPLY,
+            "captured_reply",
+            candidate_text="Stateless proposal",
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+class CapturingAlphaRuntimeFactory:
+    def __init__(self, runtime: CapturingAlphaRuntime) -> None:
+        self._runtime = runtime
+
+    def build(
+        self,
+        *,
+        bundle: Any,
+        deployment: AgentDeployment,
+    ) -> RunAgentShadowTurnService:
+        del bundle, deployment
+        return RunAgentShadowTurnService(self._runtime)
+
+
 def _command() -> ProcessAlphaShadowMessageCommand:
     return ProcessAlphaShadowMessageCommand(
         workspace_key="mark-personal",
@@ -421,6 +452,29 @@ def test_duplicate_trigger_runs_fixture_once_and_replays_proposal(tmp_path: Path
     assert port.complete_calls == 1
     assert not hasattr(first, "target")
     assert not hasattr(first, "delivery_grant")
+
+
+def test_alpha_runtime_receives_only_current_message_without_history(
+    tmp_path: Path,
+) -> None:
+    current = "/alpha@AlphaViaBot какая главная задача сегодня?"
+    prepared = _prepared(tmp_path, text=current)
+    assert prepared.context[0].content == "Prior group-only context"
+    port = MemoryAlphaPort(prepared)
+    runtime = CapturingAlphaRuntime()
+    service = ProcessAlphaShadowMessageService(
+        port=port,
+        bundle_loader=DeployedInstructionBundleLoader(tmp_path),
+        runtime_factory=CapturingAlphaRuntimeFactory(runtime),
+    )
+
+    result = asyncio.run(service.execute(_command()))
+
+    assert result.disposition is AlphaShadowDisposition.PROPOSED
+    assert result.result_kind is AgentResultKind.REPLY
+    assert len(runtime.commands) == 1
+    assert runtime.commands[0].user_text == current
+    assert runtime.commands[0].context == ()
 
 
 def test_prompt_injection_is_untrusted_fixture_input_and_fails_to_no_reply(

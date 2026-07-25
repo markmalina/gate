@@ -202,16 +202,6 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 message,
                 bot_username=command.bot_username,
             )
-            context = await _load_context(
-                session,
-                workspace_id=workspace.id,
-                dialog=dialog,
-                trigger=trigger,
-                trigger_received_at=receipt.received_at,
-                installation_id=installation.id,
-                connector_key=connector.connector_key,
-                bot_username=command.bot_username,
-            )
             if self._verified_model_shadow_enabled:
                 model_binding = await _verified_model_shadow_binding(
                     session,
@@ -256,7 +246,9 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 user_text=text,
                 sender_is_human=sender_is_human,
                 reply_to_bot=reply_to_bot,
-                context=context,
+                # Keep AlphaViaBot turns independent. Historical dialog context
+                # belongs to future explicitly stateful products, not this bot.
+                context=(),
                 max_tokens_per_turn=installation.max_tokens_per_turn,
             )
 
