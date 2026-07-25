@@ -12,10 +12,6 @@ from app.application.canonical_messaging import (
     WorkOwnershipDecision,
     WorkRoute,
 )
-from app.application.universal_mayak_private_ingress import (
-    PrivateIngressDisposition,
-    UniversalMayakPrivateIngressResult,
-)
 from app.application.telegram_business_text_inbox import (
     TelegramBusinessTextInboxCommand,
     TelegramBusinessTextInboxResult,
@@ -24,6 +20,10 @@ from app.application.telegram_ingress_identity import TelegramIngressIdentitySna
 from app.application.telegram_processing import (
     TelegramProcessingWorkItem,
     TelegramUpdateProcessingError,
+)
+from app.application.universal_mayak_private_ingress import (
+    PrivateIngressDisposition,
+    UniversalMayakPrivateIngressResult,
 )
 from app.application.work_ownership import AgentKey, WorkOwnershipState
 from app.core.config import Settings
