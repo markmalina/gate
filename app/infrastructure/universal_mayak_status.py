@@ -8,6 +8,7 @@ person identity, secret or candidate text is selected.
 from __future__ import annotations
 
 from typing import Any
+import uuid
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,16 +30,14 @@ async def universal_mayak_operational_status(
 ) -> dict[str, Any]:
     """Return one redacted snapshot scoped to the exact Oko agent definition."""
 
-    workspace_rows = (
-        await session.execute(
-            sa.text(
-                "SELECT id FROM workspaces "
-                "WHERE key = :workspace_key AND is_active IS TRUE"
-            ).bindparams(workspace_key=workspace_key),
-        )
-    ).scalars().all()
-    workspace_valid = len(workspace_rows) == 1
-    workspace_id = workspace_rows[0] if workspace_valid else None
+    workspace_value = await session.scalar(
+        sa.text(
+            "SELECT id FROM workspaces "
+            "WHERE key = :workspace_key AND is_active IS TRUE"
+        ).bindparams(workspace_key=workspace_key)
+    )
+    workspace_id = _uuid_or_none(workspace_value)
+    workspace_valid = workspace_id is not None
 
     installation = _zero_installation()
     sessions = _zero_states(("active", "paused", "completed", "handoff_required"))
@@ -110,7 +109,7 @@ async def universal_mayak_operational_status(
                     "WHERE turn.workspace_id = :workspace_id "
                     " AND definition.agent_key = :agent_key "
                     "ORDER BY turn.created_at DESC, turn.id DESC LIMIT 1"
-                ).bindparams(**parameters),
+                ).bindparams(**_agent_scope(parameters)),
             )
         ).mappings().one_or_none()
         last_turn = dict(last_turn_row) if last_turn_row is not None else None
@@ -132,7 +131,7 @@ async def universal_mayak_operational_status(
                     "WHERE attempt.workspace_id = :workspace_id "
                     " AND definition.agent_key = :agent_key "
                     "ORDER BY attempt.created_at DESC, attempt.id DESC LIMIT 1"
-                ).bindparams(**parameters),
+                ).bindparams(**_agent_scope(parameters)),
             )
         ).mappings().one_or_none()
         last_attempt = dict(last_attempt_row) if last_attempt_row is not None else None
@@ -239,7 +238,7 @@ async def _session_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE agent_session.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ).bindparams(**parameters),
+            ).bindparams(**_agent_scope(parameters)),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
@@ -268,7 +267,7 @@ async def _turn_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE turn.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ).bindparams(**parameters),
+            ).bindparams(**_agent_scope(parameters)),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
@@ -297,7 +296,7 @@ async def _grant_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE grant_row.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ).bindparams(**parameters),
+            ).bindparams(**_agent_scope(parameters)),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
@@ -329,10 +328,24 @@ async def _attempt_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE attempt.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ).bindparams(**parameters),
+            ).bindparams(**_agent_scope(parameters)),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
+
+
+def _agent_scope(parameters: dict[str, object]) -> dict[str, object]:
+    return {
+        "workspace_id": parameters["workspace_id"],
+        "agent_key": parameters["agent_key"],
+    }
+
+
+def _uuid_or_none(value: object) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except (AttributeError, TypeError, ValueError):
+        return None
 
 
 def _zero_installation() -> dict[str, int]:
