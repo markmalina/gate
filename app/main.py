@@ -16,6 +16,7 @@ import httpx
 
 from app.api.alpha_admin_routes import router as alpha_admin_router
 from app.api.contact_snapshot_routes import router as contact_snapshot_router
+from app.api.dropbox_call_routes import router as dropbox_call_router
 from app.api.health_routes import router as health_router
 from app.api.mcp_metadata_routes import router as mcp_metadata_router
 from app.api.mcp_routes import router as mcp_router
@@ -36,6 +37,7 @@ from app.services.telegram_alpha_webhook import (
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
+from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.telegram_processing import run_telegram_worker_loop
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         "gate_reply_sequence_worker_enabled",
         False,
     )
+    dropbox_call_worker_enabled = getattr(
+        settings,
+        "gate_dropbox_call_intake_enabled",
+        False,
+    )
     worker_health = WorkerHealthRegistry()
     worker_health.register(
         TELEGRAM_WORKER,
@@ -79,6 +86,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
                 reply_sequence_task: asyncio.Task[None] | None = None
+                dropbox_call_task: asyncio.Task[None] | None = None
                 try:
                     api_base_url = os.getenv(
                         "TELEGRAM_API_BASE_URL",
@@ -111,9 +119,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 health_reporter=worker_health,
                             )
                         )
+                    if dropbox_call_worker_enabled:
+                        dropbox_call_task = asyncio.create_task(
+                            run_dropbox_call_worker_loop(
+                                settings=settings,
+                                session_factory=database_runtime.session_factory,
+                            )
+                        )
                     yield
                 finally:
                     try:
+                        if dropbox_call_task is not None:
+                            if not dropbox_call_task.done():
+                                dropbox_call_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await dropbox_call_task
                         if reply_sequence_task is not None:
                             if not reply_sequence_task.done():
                                 reply_sequence_task.cancel()
@@ -238,6 +258,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, telegram_unhandled_exception_handler)
     app.include_router(health_router)
     app.include_router(contact_snapshot_router)
+    app.include_router(dropbox_call_router)
     app.include_router(mcp_metadata_router)
     app.include_router(mcp_router)
     app.include_router(alpha_admin_router)

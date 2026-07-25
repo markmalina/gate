@@ -108,6 +108,7 @@ from app.models.domain import (
     GateEvent,
     Message,
     MessageDirection,
+    PhoneCallRecording,
     Project,
     ReplyDraft,
     ReplyTask,
@@ -563,6 +564,22 @@ async def _get_reply_context_tool_result(
             message="task_id is required",
         )
     try:
+        call_selector = _parse_latest_call_selector(raw_task_id)
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="latest call selector is invalid",
+        )
+    if call_selector is not None:
+        return await _latest_phone_call_tool_result(
+            request_id=request_id,
+            principal=principal,
+            session=session,
+            settings=settings,
+            payload_kind=call_selector,
+        )
+    try:
         latest_voice_transcript_alias = _parse_latest_voice_transcript_selector(
             raw_task_id
         )
@@ -661,6 +678,110 @@ def _parse_latest_voice_selector(raw_task_id: str) -> str | None:
     ):
         raise ValueError("invalid latest voice selector")
     return alias
+
+
+def _parse_latest_call_selector(raw_task_id: str) -> str | None:
+    selectors = {
+        "call:latest": "audio",
+        "call:latest-file": "file",
+        "call:latest-transcript": "transcript",
+    }
+    if raw_task_id in selectors:
+        return selectors[raw_task_id]
+    if raw_task_id.startswith("call:latest"):
+        raise ValueError("invalid latest call selector")
+    return None
+
+
+async def _latest_phone_call_tool_result(
+    *,
+    request_id: Any,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+    payload_kind: str,
+) -> JsonObject:
+    recording = await session.scalar(
+        select(PhoneCallRecording)
+        .where(
+            PhoneCallRecording.workspace_key == settings.gate_workspace_id,
+            PhoneCallRecording.project_id.in_(principal.access_scope.project_ids),
+        )
+        .order_by(
+            PhoneCallRecording.received_at.desc(),
+            PhoneCallRecording.id.desc(),
+        )
+        .limit(1)
+    )
+    if recording is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="phone_call_archive_empty",
+            message="No archived mobile call is available in the allowed scope",
+        )
+    recording_id = str(recording.id)
+    context = {
+        "task_id": recording_id,
+        "task_ref": recording_id[:8],
+        "status": f"phone_call_{recording.transcription_status}",
+        "reply_required": False,
+        "account": {
+            "id": recording_id,
+            "alias": "phone_calls",
+            "label": "PHONE CALLS",
+        },
+        "conversation": {
+            "id": recording_id,
+            "chat_id": "phone-call",
+            "business_connection_id": None,
+        },
+        "counterparty": {
+            "platform": "phone_call_dropbox",
+            "platform_user_id": None,
+            "display_name": None,
+            "username": None,
+            "label": None,
+        },
+        "messages": [],
+        "count": 0,
+        "limit": 1,
+    }
+    if payload_kind == "transcript":
+        if (
+            recording.transcription_status != "transcribed"
+            or recording.transcript_text is None
+        ):
+            return _tool_error_result(
+                request_id=request_id,
+                code=(
+                    recording.transcription_reason_code
+                    or "phone_call_transcription_pending"
+                ),
+                message="The latest mobile call has no completed transcript",
+            )
+        return _jsonrpc_result(
+            request_id=request_id,
+            result={
+                "content": [{"type": "text", "text": recording.transcript_text}],
+                "structuredContent": context,
+                "isError": False,
+            },
+        )
+    if payload_kind == "file":
+        return _voice_file_tool_result(
+            request_id=request_id,
+            context=context,
+            archive_id=recording_id,
+            data=recording.data,
+            media_type=recording.media_type,
+            filename_prefix="phone-call",
+        )
+    return _voice_audio_tool_result(
+        request_id=request_id,
+        context=context,
+        data=recording.data,
+        media_type=recording.media_type,
+    )
 
 
 def _parse_latest_voice_file_selector(raw_task_id: str) -> str | None:
@@ -1197,13 +1318,14 @@ def _voice_file_tool_result(
     archive_id: str,
     data: bytes,
     media_type: str,
+    filename_prefix: str = "telegram-voice",
 ) -> JsonObject:
     if not data or not media_type.startswith("audio/"):
         raise ValueError("invalid audio content")
     extension = "ogg" if media_type in {"audio/ogg", "audio/opus"} else "audio"
     file_payload = {
         "version": 1,
-        "filename": f"telegram-voice-{archive_id}.{extension}",
+        "filename": f"{filename_prefix}-{archive_id}.{extension}",
         "mime_type": media_type,
         "data_base64": base64.b64encode(data).decode("ascii"),
     }
