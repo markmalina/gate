@@ -296,11 +296,11 @@ async def _owner_route_probe(
                 " AND bc.business_connection_id = m.business_connection_id"
             ).bindparams(
                 workspace_id=workspace_id,
-                task_id=_OWNER_ACCEPTANCE_TASK_ID,
-                account_id=_OWNER_ACCOUNT_ID,
+                task_id=uuid.UUID(_OWNER_ACCEPTANCE_TASK_ID),
+                account_id=uuid.UUID(_OWNER_ACCOUNT_ID),
                 account_alias=_OWNER_ACCOUNT_ALIAS,
-                source_project_id=_SOURCE_PROJECT_ID,
-                target_project_id=_TARGET_PROJECT_ID,
+                source_project_id=uuid.UUID(_SOURCE_PROJECT_ID),
+                target_project_id=uuid.UUID(_TARGET_PROJECT_ID),
                 deployment_key="universal-mayak-v1-openai",
                 agent_key=_AGENT_KEY,
                 revision_key=_REVISION_KEY,
