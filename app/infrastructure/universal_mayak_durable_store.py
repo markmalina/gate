@@ -12,10 +12,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.application.universal_mayak_demo import (
     MAX_CONTEXT_MESSAGES,
     DemoContextMessage,
@@ -43,6 +39,9 @@ from app.models.alpha import (
     DeliveryGrantModel,
 )
 from app.models.canonical import CanonicalMessage, Dialog, Workspace
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 _PROMPT_REVISION = "universal-mayak-v1"
 _DISCLOSURE = "Маяк отвечает с помощью ИИ."

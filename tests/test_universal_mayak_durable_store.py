@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
 from app.application.universal_mayak_demo import (
     DemoDeliveryReceipt,
     DemoDeliveryState,
