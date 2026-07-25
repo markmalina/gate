@@ -388,7 +388,10 @@ def _block_code(
         return "mayak_business_connector_disabled"
     if dialog.dialog_kind != "private":
         return "mayak_business_dialog_not_private"
-    if canonical.direction != "inbound" or canonical.provider_sender_id != dialog.provider_dialog_id:
+    if (
+        canonical.direction != "inbound"
+        or canonical.provider_sender_id != dialog.provider_dialog_id
+    ):
         return "mayak_business_trigger_invalid"
     if (
         legacy.direction != "inbound"
