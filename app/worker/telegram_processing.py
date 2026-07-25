@@ -446,6 +446,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 canonical_message_id = persisted.message_id
 
         business_text_inbox_disposition = "not_applicable"
+        universal_mayak_disposition = "not_applicable"
         business_text_parity_disposition = "not_applicable"
         if (
             connector.role is TelegramConnectorRole.BUSINESS
@@ -470,26 +471,91 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         "telegram_business_text_inbox_not_configured"
                     )
                 try:
-                    inbox_projection = await self._business_text_inbox.project(
-                        build_telegram_business_text_inbox_command(
-                            payload,
-                            account_id=identity.account_id,
-                            project_id=identity.project_id or "",
-                            canonical_message_id=canonical_message_id,
-                            bot_username=self._settings.telegram_bot_username,
-                            update_id=item.update_id,
-                            business_connection_id=(
-                                identity_command.business_connection_id
-                            ),
-                            projection=projection,
-                        )
+                    inbox_command = build_telegram_business_text_inbox_command(
+                        payload,
+                        account_id=identity.account_id,
+                        project_id=identity.project_id or "",
+                        canonical_message_id=canonical_message_id,
+                        bot_username=self._settings.telegram_bot_username,
+                        update_id=item.update_id,
+                        business_connection_id=(
+                            identity_command.business_connection_id
+                        ),
+                        projection=projection,
+                        route_override=(
+                            WorkRoute.AGENT_WORK
+                            if self._universal_mayak is not None
+                            and self._settings.gate_universal_mayak_runtime_enabled
+                            else None
+                        ),
                     )
+                    inbox_projection = await self._business_text_inbox.project(
+                        inbox_command
+                    )
+                    mayak_processed = False
+                    if (
+                        self._universal_mayak is not None
+                        and self._settings.gate_universal_mayak_runtime_enabled
+                    ):
+                        mayak_result = await self._universal_mayak.execute(
+                            ProcessUniversalMayakPrivateMessageCommand(
+                                account_id=identity.account_id,
+                                project_id=identity.project_id or "",
+                                canonical_message_id=canonical_message_id,
+                                business_connection_id=(
+                                    identity_command.business_connection_id
+                                ),
+                                provider_dialog_id=(
+                                    projection.dialog.provider_dialog_id
+                                ),
+                                provider_actor_id=(
+                                    projection.message.provider_sender_id or ""
+                                ),
+                                direction=projection.message.direction,
+                                current_route=projection.ownership.route,
+                                text=projection.message.text_content,
+                                runtime_enabled=(
+                                    self._settings.gate_universal_mayak_runtime_enabled
+                                ),
+                                connector_enabled=True,
+                                credentials_ready=bool(
+                                    self._settings.openai_api_key.get_secret_value()
+                                    and self._settings.telegram_bot_token
+                                ),
+                                now=item.received_at,
+                            )
+                        )
+                        universal_mayak_disposition = mayak_result.disposition.value
+                        mayak_processed = (
+                            mayak_result.disposition
+                            is PrivateIngressDisposition.PROCESSED
+                        )
+                    if (
+                        not mayak_processed
+                        and inbox_command.route is WorkRoute.AGENT_WORK
+                    ):
+                        inbox_projection = await self._business_text_inbox.project(
+                            build_telegram_business_text_inbox_command(
+                                payload,
+                                account_id=identity.account_id,
+                                project_id=identity.project_id or "",
+                                canonical_message_id=canonical_message_id,
+                                bot_username=self._settings.telegram_bot_username,
+                                update_id=item.update_id,
+                                business_connection_id=(
+                                    identity_command.business_connection_id
+                                ),
+                                projection=projection,
+                            )
+                        )
                 except Exception:
                     raise TelegramUpdateProcessingError(
                         "telegram_business_text_inbox_projection_failed"
                     ) from None
                 business_text_inbox_disposition = (
-                    "inbox_duplicate" if inbox_projection.duplicate else "inbox_projected"
+                    "inbox_duplicate"
+                    if inbox_projection.duplicate
+                    else "inbox_projected"
                 )
             if self._business_text_parity is not None:
                 try:
