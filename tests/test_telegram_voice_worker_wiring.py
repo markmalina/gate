@@ -119,7 +119,7 @@ def voice_item() -> TelegramProcessingWorkItem:
 def test_business_voice_fails_closed_without_runtime_composition() -> None:
     processor = ShadowClassifyingTelegramProcessor(
         settings=Settings(_env_file=None),
-        identity_reader=EmptyIdentityReader(),
+        identity_reader=ResolvedIdentityReader(),
         voice_archive=RecordingVoiceArchive(),
         runtime_logger=logging.getLogger("gate.voice.not-configured"),
     )
