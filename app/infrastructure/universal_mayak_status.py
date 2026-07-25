@@ -20,6 +20,23 @@ _REVISION_KEY = "universal-mayak-v1"
 _INSTALLATION_KEY = "universal-mayak-v1-owner-private"
 _TERMINAL_ATTEMPT_STATES = frozenset({"sent", "failed", "unknown", "blocked"})
 _INPUT_DIGEST_PREFIX = "mayak-input-sha256:"
+_OWNER_ACCEPTANCE_TASK_ID = "4f060e00-0bb5-4701-8f38-80b06da9fc8e"
+_OWNER_ACCOUNT_ID = "0f26e375-e470-5aa2-9a4e-c2f9ad9d24b2"
+_OWNER_ACCOUNT_ALIAS = "telegram_mark_by"
+_SOURCE_PROJECT_ID = "e12d3d85-6c5f-5f8a-a2fa-ac35f7ac80c0"
+_TARGET_PROJECT_ID = "f2659ed6-9a1d-5f72-8bf1-fe45420cfef7"
+_ROUTE_PROBE_FIELDS = (
+    "task_present",
+    "account_ready",
+    "trigger_message_present",
+    "projects_allowed",
+    "canonical_ready",
+    "private_inbound_ready",
+    "actor_dialog_ready",
+    "connector_ready",
+    "business_connection_ready",
+    "release_ready",
+)
 
 
 async def universal_mayak_operational_status(
@@ -48,6 +65,7 @@ async def universal_mayak_operational_status(
     )
     last_turn: dict[str, Any] | None = None
     last_attempt: dict[str, Any] | None = None
+    owner_route_probe = _zero_route_probe()
 
     if workspace_valid:
         parameters: dict[str, object] = {
@@ -135,6 +153,7 @@ async def universal_mayak_operational_status(
             )
         ).mappings().one_or_none()
         last_attempt = dict(last_attempt_row) if last_attempt_row is not None else None
+        owner_route_probe = await _owner_route_probe(session, workspace_id)
 
     gates = {
         "runtime_enabled": settings.gate_universal_mayak_runtime_enabled,
@@ -193,6 +212,7 @@ async def universal_mayak_operational_status(
             **installation,
             "ready": installation_ready,
         },
+        "owner_route_probe": owner_route_probe,
         "sessions": sessions,
         "turns": turns,
         "delivery_grants": grants,
@@ -212,6 +232,83 @@ async def universal_mayak_operational_status(
         "provider_identifiers_exposed": False,
         "telegram_identifiers_exposed": False,
     }
+
+
+def _zero_route_probe() -> dict[str, bool]:
+    return {**{field: False for field in _ROUTE_PROBE_FIELDS}, "ready": False}
+
+
+async def _owner_route_probe(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> dict[str, bool]:
+    """Evaluate exact route guards without selecting content or identifiers."""
+
+    row = (
+        await session.execute(
+            sa.text(
+                "SELECT "
+                "(rt.id IS NOT NULL) AS task_present, "
+                "(a.id = :account_id AND a.alias = :account_alias "
+                " AND a.is_active IS TRUE AND a.read_enabled IS TRUE "
+                " AND a.send_enabled IS TRUE "
+                " AND rt.account_id = :account_id "
+                " AND m.account_id = :account_id) AS account_ready, "
+                "(m.id IS NOT NULL) AS trigger_message_present, "
+                "(rt.project_id IN (:source_project_id, :target_project_id) "
+                " AND m.project_id IN "
+                " (:source_project_id, :target_project_id)) AS projects_allowed, "
+                "(cm.id IS NOT NULL AND cm.workspace_id = :workspace_id "
+                " AND d.workspace_id = :workspace_id "
+                " AND c.workspace_id = :workspace_id) AS canonical_ready, "
+                "(cm.direction = 'inbound' AND m.direction = 'inbound' "
+                " AND d.dialog_kind = 'private') AS private_inbound_ready, "
+                "(cm.provider_sender_id = d.provider_dialog_id "
+                " AND m.chat_id = d.provider_dialog_id "
+                " AND m.sender_id = d.provider_dialog_id) AS actor_dialog_ready, "
+                "(c.connector_key = a.alias "
+                " AND c.connector_kind = 'telegram_business' "
+                " AND c.is_enabled IS TRUE) AS connector_ready, "
+                "(bc.id IS NOT NULL "
+                " AND bc.is_enabled IS TRUE) AS business_connection_ready, "
+                "EXISTS (SELECT 1 FROM agent_deployments ad "
+                " JOIN agent_definitions definition "
+                " ON definition.id = ad.agent_definition_id "
+                " AND definition.workspace_id = ad.workspace_id "
+                " JOIN instruction_revisions ir "
+                " ON ir.id = ad.instruction_revision_id "
+                " AND ir.workspace_id = ad.workspace_id "
+                " WHERE ad.workspace_id = :workspace_id "
+                " AND ad.deployment_key = :deployment_key "
+                " AND ad.state IN ('staged', 'active') "
+                " AND definition.agent_key = :agent_key "
+                " AND ir.revision_key = :revision_key "
+                " AND ir.validation_state = 'validated') AS release_ready "
+                "FROM (SELECT 1) anchor "
+                "LEFT JOIN reply_tasks rt ON rt.id = :task_id "
+                "LEFT JOIN messages m ON m.id = rt.trigger_message_id "
+                "LEFT JOIN accounts a ON a.id = rt.account_id "
+                "LEFT JOIN canonical_messages cm ON cm.id = m.canonical_message_id "
+                "LEFT JOIN dialogs d ON d.id = cm.dialog_id "
+                "LEFT JOIN transport_connectors c ON c.id = d.connector_id "
+                "LEFT JOIN telegram_business_connections bc "
+                " ON bc.account_id = a.id "
+                " AND bc.business_connection_id = m.business_connection_id"
+            ).bindparams(
+                workspace_id=workspace_id,
+                task_id=_OWNER_ACCEPTANCE_TASK_ID,
+                account_id=_OWNER_ACCOUNT_ID,
+                account_alias=_OWNER_ACCOUNT_ALIAS,
+                source_project_id=_SOURCE_PROJECT_ID,
+                target_project_id=_TARGET_PROJECT_ID,
+                deployment_key="universal-mayak-v1-openai",
+                agent_key=_AGENT_KEY,
+                revision_key=_REVISION_KEY,
+            )
+        )
+    ).mappings().one()
+    probe = {field: bool(row.get(field)) for field in _ROUTE_PROBE_FIELDS}
+    return {**probe, "ready": all(probe.values())}
 
 
 async def _session_counts(
