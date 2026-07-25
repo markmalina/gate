@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+
 from app.application.telegram_voice_transcription import (
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
