@@ -123,6 +123,7 @@ class TranscribeTelegramVoiceCommand:
     occurred_at: datetime
     language: str | None = None
     enabled: bool = False
+    budget_scope_kind: str = "telegram_connector"
 
     def __post_init__(self) -> None:
         _token(self.workspace_key, "telegram_voice_workspace_invalid", 128)
@@ -135,6 +136,11 @@ class TranscribeTelegramVoiceCommand:
             raise TelegramVoiceError("telegram_voice_time_invalid")
         if self.language is not None:
             _token(self.language, "telegram_voice_language_invalid", 32)
+        _token(
+            self.budget_scope_kind,
+            "telegram_voice_budget_scope_invalid",
+            64,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,7 +264,7 @@ class TelegramVoiceTranscriptionService:
                 attribution=UsageAttribution(
                     workspace_key=command.workspace_key,
                     product=BillingProduct.GATE,
-                    scope_kind="telegram_connector",
+                    scope_kind=command.budget_scope_kind,
                     scope_ref=command.connector_ref,
                 ),
                 operation=UsageOperation.TRANSCRIPTION,
