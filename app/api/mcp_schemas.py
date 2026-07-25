@@ -302,6 +302,107 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     ),
                 }
             ),
+            "universal_mayak": _object(
+                {
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "workspace_unavailable",
+                            "disabled",
+                            "installation_not_ready",
+                            "reconciliation_required",
+                            "ready",
+                            "active_observed",
+                        ],
+                    },
+                    "workspace_ready": {"type": "boolean"},
+                    "gates": _object(
+                        {
+                            "runtime_enabled": {"type": "boolean"},
+                            "model_data_gate_approved": {"type": "boolean"},
+                            "delivery_enabled": {"type": "boolean"},
+                        }
+                    ),
+                    "configuration_ready": {"type": "boolean"},
+                    "installation": _object(
+                        {
+                            "total": {"type": "integer", "minimum": 0},
+                            "discovered": {"type": "integer", "minimum": 0},
+                            "pending_approval": {"type": "integer", "minimum": 0},
+                            "active": {"type": "integer", "minimum": 0},
+                            "paused": {"type": "integer", "minimum": 0},
+                            "revoked": {"type": "integer", "minimum": 0},
+                            "exact_active": {"type": "integer", "minimum": 0},
+                            "ready": {"type": "boolean"},
+                        }
+                    ),
+                    "sessions": _object(
+                        {
+                            "total": {"type": "integer", "minimum": 0},
+                            "active": {"type": "integer", "minimum": 0},
+                            "paused": {"type": "integer", "minimum": 0},
+                            "completed": {"type": "integer", "minimum": 0},
+                            "handoff_required": {"type": "integer", "minimum": 0},
+                        }
+                    ),
+                    "turns": _object(
+                        {
+                            "total": {"type": "integer", "minimum": 0},
+                            "queued": {"type": "integer", "minimum": 0},
+                            "running": {"type": "integer", "minimum": 0},
+                            "proposed": {"type": "integer", "minimum": 0},
+                            "failed": {"type": "integer", "minimum": 0},
+                        }
+                    ),
+                    "delivery_grants": _object(
+                        {
+                            "total": {"type": "integer", "minimum": 0},
+                            "open": {"type": "integer", "minimum": 0},
+                            "used": {"type": "integer", "minimum": 0},
+                            "revoked": {"type": "integer", "minimum": 0},
+                        }
+                    ),
+                    "send_attempts": _object(
+                        {
+                            "total": {"type": "integer", "minimum": 0},
+                            "reserved": {"type": "integer", "minimum": 0},
+                            "sending": {"type": "integer", "minimum": 0},
+                            "sent": {"type": "integer", "minimum": 0},
+                            "failed": {"type": "integer", "minimum": 0},
+                            "unknown": {"type": "integer", "minimum": 0},
+                            "blocked": {"type": "integer", "minimum": 0},
+                        }
+                    ),
+                    "last_result_code": _nullable("string"),
+                    "last_attempt_state": _nullable("string"),
+                    "last_attempt_error_code": _nullable("string"),
+                    "reconciliation_required": {"type": "boolean"},
+                    "provider_free_replay_verifier": _object(
+                        {
+                            "available": {"type": "boolean"},
+                            "input_digest_bound": {"type": "boolean"},
+                            "terminal_state": {"type": "boolean"},
+                            "verified": {"type": "boolean"},
+                            "provider_call_required": {
+                                "type": "boolean",
+                                "const": False,
+                            },
+                        }
+                    ),
+                    "private_content_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "provider_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "telegram_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
             "telegram_voice": _object(
                 {
                     "state": {

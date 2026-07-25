@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.application.canonical_messaging import ConnectorKind, DialogKind
 from app.application.universal_mayak_demo import (
@@ -74,12 +75,14 @@ class SessionFactoryApprovedPrivateBindingResolver(
             return None
 
         async with self._sessions() as session:
+            source_project = aliased(Project, name="source_project")
+            oko_project = aliased(Project, name="oko_project")
             rows = (
                 await session.execute(
                     select(
                         Workspace,
                         Account,
-                        Project,
+                        source_project,
                         TelegramBusinessConnection,
                         TransportConnector,
                         Dialog,
@@ -95,10 +98,11 @@ class SessionFactoryApprovedPrivateBindingResolver(
                         Account,
                         Account.id == account_uuid,
                     )
+                    .join(source_project, source_project.id == project_uuid)
                     .join(
-                        Project,
-                        (Project.id == project_uuid)
-                        & (Account.linked_project_id == Project.id),
+                        oko_project,
+                        (oko_project.alias == AgentKey.OKO.value)
+                        & (oko_project.is_active.is_(True)),
                     )
                     .join(
                         TelegramBusinessConnection,
@@ -123,7 +127,7 @@ class SessionFactoryApprovedPrivateBindingResolver(
                         Message,
                         (Message.canonical_message_id == CanonicalMessage.id)
                         & (Message.account_id == Account.id)
-                        & (Message.project_id == Project.id),
+                        & (Message.project_id == source_project.id),
                     )
                     .join(
                         AgentInstallationModel,
@@ -169,8 +173,11 @@ class SessionFactoryApprovedPrivateBindingResolver(
                         Account.is_active.is_(True),
                         Account.read_enabled.is_(True),
                         Account.send_enabled.is_(True),
-                        Project.id == project_uuid,
-                        Project.is_active.is_(True),
+                        source_project.id == project_uuid,
+                        source_project.alias.in_(("unclassified", AgentKey.OKO.value)),
+                        source_project.is_active.is_(True),
+                        oko_project.alias == AgentKey.OKO.value,
+                        oko_project.is_active.is_(True),
                         TelegramBusinessConnection.business_connection_id
                         == business_connection_id,
                         TelegramBusinessConnection.is_enabled.is_(True),
