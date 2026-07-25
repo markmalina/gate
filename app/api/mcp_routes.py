@@ -93,6 +93,9 @@ from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
     get_alpha_webhook_status,
 )
+from app.infrastructure.universal_mayak_status import (
+    universal_mayak_operational_status,
+)
 from app.infrastructure.telegram_business_text_parity import (
     telegram_business_text_parity_status,
 )
@@ -279,6 +282,11 @@ async def mcp_endpoint(
                 session=session,
                 settings=settings,
                 workspace_key=principal.access_scope.workspace_id,
+            )
+            snapshot["universal_mayak"] = await universal_mayak_operational_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                settings=settings,
             )
             snapshot["telegram_voice"] = (
                 await telegram_voice_operational_status(
