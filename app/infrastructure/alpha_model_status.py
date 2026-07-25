@@ -314,7 +314,13 @@ def _reviewed_model_deployment_ids(
             AgentDefinitionModel.agent_key == "alpha_group",
             AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
             AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
-            AgentDeploymentModel.state == "staged",
+            AgentDeploymentModel.deployment_key
+            == ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+            AgentDeploymentModel.policy_version
+            == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+            AgentDeploymentModel.state.in_(("staged", "active")),
+            InstructionRevisionModel.revision_key
+            == ALPHA_BOUNDED_LIVE_POLICY_VERSION,
             InstructionRevisionModel.validation_state == "validated",
         )
     )
