@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 from app.api.mcp_routes import (
+    _extract_voice_from_linked_payloads,
     _parse_reply_context_selector,
     _voice_audio_tool_result,
 )
@@ -36,6 +37,31 @@ def test_exact_voice_selector_binds_task_and_message() -> None:
 def test_invalid_voice_selector_fails_closed(selector: str) -> None:
     with pytest.raises(ValueError):
         _parse_reply_context_selector(selector)
+
+
+def test_linked_voice_payload_falls_back_to_the_exact_durable_update() -> None:
+    payload = {
+        "update_id": 10,
+        "business_message": {
+            "message_id": 20,
+            "voice": {
+                "file_id": "opaque-file",
+                "file_unique_id": "opaque-unique",
+                "file_size": 128,
+                "duration": 3,
+            },
+        },
+    }
+
+    envelope = _extract_voice_from_linked_payloads({}, payload)
+
+    assert envelope is not None
+    assert envelope.update_id == 10
+    assert envelope.message_id == 20
+
+
+def test_linked_voice_payload_fails_closed_without_voice() -> None:
+    assert _extract_voice_from_linked_payloads({}, None) is None
 
 
 def test_voice_audio_result_keeps_context_and_emits_mcp_audio() -> None:
