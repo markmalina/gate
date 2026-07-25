@@ -1,7 +1,6 @@
 """Bounded multi-group admission tests for the Alpha connector."""
 
 import pytest
-
 from app.core.config import Settings
 from app.infrastructure.alpha_canary import alpha_group_capacity_available
 
