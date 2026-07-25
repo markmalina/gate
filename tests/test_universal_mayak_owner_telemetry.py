@@ -229,3 +229,49 @@ def test_runtime_accepts_only_explicit_source_or_oko_project() -> None:
     assert "oko_project.alias == AgentKey.OKO.value" in source
     assert "Message.project_id == source_project.id" in source
     assert "Account.linked_project_id == Project.id" not in source
+def test_exact_identity_successor_allows_independent_legacy_projects() -> None:
+    path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0047_mayak_exact_identity_reconcile.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "mayak_exact_identity_reconcile",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0047_mayak_exact_route"
+    assert module.down_revision == "0046_mayak_reconcile"
+    source = path.read_text(encoding="utf-8")
+    for exact_identity in (
+        "0f26e375-e470-5aa2-9a4e-c2f9ad9d24b2",
+        "e12d3d85-6c5f-5f8a-a2fa-ac35f7ac80c0",
+        "f2659ed6-9a1d-5f72-8bf1-fe45420cfef7",
+        "4f060e00-0bb5-4701-8f38-80b06da9fc8e",
+    ):
+        assert exact_identity in source
+    for guard in (
+        "rt.account_id = :account_id",
+        "m.account_id = :account_id",
+        "rt.project_id IN (:source_project_id, :target_project_id)",
+        "m.project_id IN (:source_project_id, :target_project_id)",
+        "cm.provider_sender_id = d.provider_dialog_id",
+        "m.sender_id = d.provider_dialog_id",
+        "d.dialog_kind = 'private'",
+        "c.connector_kind = 'telegram_business'",
+        "bc.is_enabled IS TRUE",
+        "FOR UPDATE OF rt, m, d, c",
+        "UPDATE delivery_grants SET revoked_at = now()",
+        "state = 'paused'",
+    ):
+        assert guard in source
+    assert "m.project_id = rt.project_id" not in source
+    assert "a.owner =" not in source
+    assert "a.account_type =" not in source
+    assert "UPDATE accounts SET linked_project_id" not in source
+    assert callable(module.upgrade)
+    assert callable(module.downgrade)
