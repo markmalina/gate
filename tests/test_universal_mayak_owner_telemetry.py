@@ -302,3 +302,37 @@ def test_exact_identity_successor_allows_independent_legacy_projects() -> None:
     assert "UPDATE accounts SET linked_project_id" not in source
     assert callable(module.upgrade)
     assert callable(module.downgrade)
+def test_connector_successor_uses_exact_canonical_dialog_binding() -> None:
+    path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0048_mayak_connector_binding.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "mayak_connector_binding",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0048_mayak_connector"
+    assert module.down_revision == "0047_mayak_exact_route"
+    migration_source = path.read_text(encoding="utf-8")
+    assert "c.connector_key = a.alias" not in migration_source
+    assert "c.connector_kind = 'telegram_business'" in migration_source
+    assert "c.is_enabled IS TRUE" in migration_source
+    assert "d.id = cm.dialog_id" in migration_source
+    assert "c.id = d.connector_id" in migration_source
+
+    runtime_source = inspect.getsource(
+        SessionFactoryApprovedPrivateBindingResolver
+    )
+    assert "TransportConnector.connector_key == Account.alias" not in runtime_source
+    assert "Dialog.connector_id == TransportConnector.id" in runtime_source
+    assert "TransportConnector.connector_kind" in runtime_source
+    assert "ConnectorKind.TELEGRAM_BUSINESS.value" in runtime_source
+    assert "TransportConnector.is_enabled.is_(True)" in runtime_source
+    assert callable(module.upgrade)
+    assert callable(module.downgrade)
