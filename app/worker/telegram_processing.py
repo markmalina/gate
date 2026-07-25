@@ -20,14 +20,12 @@ from app.application.alpha_canary import (
 )
 from app.application.alpha_delivery import DeliverAlphaGrantService
 from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
-from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
-from app.application.instruction_bundles import DeployedInstructionBundleLoader
-from app.application.universal_mayak_demo import ProcessUniversalMayakDemoService
-from app.application.universal_mayak_private_ingress import (
-    PrivateIngressDisposition,
-    ProcessUniversalMayakPrivateMessageCommand,
-    ProcessUniversalMayakPrivateMessageService,
+from app.application.canonical_messaging import (
+    CanonicalIngressStore,
+    ConnectorKind,
+    WorkRoute,
 )
+from app.application.instruction_bundles import DeployedInstructionBundleLoader
 from app.application.telegram_business_text_inbox import (
     TelegramBusinessTextInboxProjector,
     build_telegram_business_text_inbox_command,
@@ -88,6 +86,12 @@ from app.application.telegram_work_ownership_shadow import (
     TelegramIngressRoutingView,
     evaluate_telegram_work_ownership_shadow,
 )
+from app.application.universal_mayak_demo import ProcessUniversalMayakDemoService
+from app.application.universal_mayak_private_ingress import (
+    PrivateIngressDisposition,
+    ProcessUniversalMayakPrivateMessageCommand,
+    ProcessUniversalMayakPrivateMessageService,
+)
 from app.application.worker_health import TELEGRAM_WORKER, WorkerHealthReporter
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import (
@@ -119,6 +123,14 @@ from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
+from app.infrastructure.telegram_voice import (
+    TelegramVoiceDownloadConfig,
+    TelegramVoiceDownloader,
+    TelegramVoiceNormalizer,
+)
+from app.infrastructure.telegram_voice_archive import (
+    SessionFactoryTelegramVoiceArchiveStore,
+)
 from app.infrastructure.universal_mayak_delivery import (
     TelegramBusinessUniversalMayakDelivery,
 )
@@ -130,14 +142,6 @@ from app.infrastructure.universal_mayak_model import (
 )
 from app.infrastructure.universal_mayak_private_runtime import (
     SessionFactoryApprovedPrivateBindingResolver,
-)
-from app.infrastructure.telegram_voice import (
-    TelegramVoiceDownloadConfig,
-    TelegramVoiceDownloader,
-    TelegramVoiceNormalizer,
-)
-from app.infrastructure.telegram_voice_archive import (
-    SessionFactoryTelegramVoiceArchiveStore,
 )
 from app.services.telegram import TelegramClient, build_telegram_http_client
 
