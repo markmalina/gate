@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.telegram_processing import (
+    ALPHA_GROUP_CAPACITY_ERROR_CODE,
     AcceptTelegramReceiptCommand,
     TelegramProcessingDisposition,
     TelegramProcessingPlan,
@@ -15,6 +16,7 @@ from app.application.telegram_processing import (
     TelegramProcessingWorkItem,
     TelegramReceiptAcceptance,
     TelegramReceiptStore,
+    is_alpha_membership_update,
 )
 from app.models.domain import (
     TelegramOutboxEvent,
@@ -88,6 +90,86 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 outbox_event_id=str(outbox_event_id),
                 duplicate=False,
             )
+        except Exception:
+            await self._session.rollback()
+            raise
+
+
+class SqlAlphaCapacityDeadLetterReplayer:
+    """Atomically requeue only exact Alpha membership capacity failures."""
+
+    _SCAN_MULTIPLIER = 8
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def requeue(
+        self,
+        *,
+        bot_key: str,
+        now: datetime,
+        limit: int,
+    ) -> int:
+        if not 1 <= limit <= 32:
+            raise ValueError("replay limit must be between 1 and 32")
+        if not bot_key.strip():
+            raise ValueError("bot_key is required")
+
+        try:
+            result = await self._session.execute(
+                select(TelegramOutboxEvent, TelegramReceipt)
+                .join(
+                    TelegramReceipt,
+                    TelegramReceipt.id == TelegramOutboxEvent.receipt_id,
+                )
+                .where(
+                    TelegramReceipt.bot_key == bot_key,
+                    TelegramReceipt.status == TelegramReceiptStatus.DEAD_LETTER.value,
+                    TelegramReceipt.last_error_code
+                    == ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.DEAD_LETTER.value,
+                    TelegramOutboxEvent.last_error_code
+                    == ALPHA_GROUP_CAPACITY_ERROR_CODE,
+                )
+                .order_by(
+                    TelegramReceipt.received_at,
+                    TelegramReceipt.created_at,
+                    TelegramReceipt.id,
+                )
+                .limit(limit * self._SCAN_MULTIPLIER)
+                .with_for_update(skip_locked=True)
+            )
+            requeued = 0
+            for event, receipt in result.all():
+                if not is_alpha_membership_update(
+                    receipt.payload,
+                    update_id=receipt.update_id,
+                ):
+                    continue
+
+                event.status = TelegramOutboxStatus.PENDING.value
+                event.attempt_count = 0
+                event.available_at = now
+                event.locked_at = None
+                event.delivered_at = None
+                event.last_error_code = None
+                event.last_error_at = None
+
+                receipt.status = TelegramReceiptStatus.RECEIVED.value
+                receipt.attempt_count = 0
+                receipt.processing_started_at = None
+                receipt.processed_at = None
+                receipt.next_attempt_at = None
+                receipt.last_error_code = None
+                receipt.last_error_at = None
+
+                requeued += 1
+                if requeued == limit:
+                    break
+
+            await self._session.commit()
+            return requeued
         except Exception:
             await self._session.rollback()
             raise
