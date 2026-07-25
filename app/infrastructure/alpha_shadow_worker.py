@@ -576,7 +576,7 @@ async def _verified_model_shadow_binding(
     if len(active_rows) > 1:
         raise AlphaShadowWorkerError("alpha_model_live_binding_ambiguous")
     if active_rows:
-        return active_rows[0]
+        return active_rows[0][0], active_rows[0][1]
 
     staged_rows = [
         row
@@ -585,7 +585,9 @@ async def _verified_model_shadow_binding(
     ]
     if len(staged_rows) > 1:
         raise AlphaShadowWorkerError("alpha_model_shadow_binding_ambiguous")
-    return staged_rows[0] if staged_rows else None
+    if staged_rows:
+        return staged_rows[0][0], staged_rows[0][1]
+    return None
 
 
 async def _locked_turn_binding(
