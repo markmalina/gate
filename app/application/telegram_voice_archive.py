@@ -24,6 +24,13 @@ class TelegramVoiceArchiveDirection(StrEnum):
     OUTBOUND = "outbound"
 
 
+class TelegramVoiceTranscriptStatus(StrEnum):
+    DISABLED = "disabled"
+    REJECTED = "rejected"
+    TRANSCRIBED = "transcribed"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class ArchiveTelegramVoiceCommand:
     receipt_id: str = field(repr=False)
@@ -59,6 +66,53 @@ class TelegramVoiceArchiveResult:
     duplicate: bool
     size_bytes: int
     media_type: str
+    transcription_status: TelegramVoiceTranscriptStatus | None = None
+    transcript_text: str | None = field(default=None, repr=False)
+    transcription_reason_code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PersistTelegramVoiceTranscriptCommand:
+    archive_id: str
+    status: TelegramVoiceTranscriptStatus
+    transcribed_at: datetime
+    text: str | None = field(default=None, repr=False)
+    language: str = "ru"
+    model: str = "gpt-4o-mini-transcribe"
+    reason_code: str = "telegram_voice_transcribed"
+
+    def __post_init__(self) -> None:
+        if not self.archive_id or len(self.archive_id) > 128:
+            raise TelegramVoiceError("telegram_voice_archive_id_invalid")
+        if self.status is TelegramVoiceTranscriptStatus.TRANSCRIBED:
+            if (
+                self.text is None
+                or not self.text.strip()
+                or self.text != self.text.strip()
+                or len(self.text) > 100_000
+            ):
+                raise TelegramVoiceError("telegram_voice_transcript_invalid")
+        elif self.text is not None:
+            raise TelegramVoiceError("telegram_voice_transcript_status_invalid")
+        for value, code, maximum in (
+            (self.language, "telegram_voice_transcript_language_invalid", 32),
+            (self.model, "telegram_voice_transcript_model_invalid", 64),
+            (self.reason_code, "telegram_voice_transcript_reason_invalid", 128),
+        ):
+            if not value or value != value.strip() or len(value) > maximum:
+                raise TelegramVoiceError(code)
+        if (
+            self.transcribed_at.tzinfo is None
+            or self.transcribed_at.utcoffset() is None
+        ):
+            raise TelegramVoiceError("telegram_voice_transcript_time_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class TelegramVoiceTranscriptPersistenceResult:
+    archive_id: str
+    duplicate: bool
+    status: TelegramVoiceTranscriptStatus
 
 
 class TelegramVoiceArchiveStore(Protocol):
@@ -67,12 +121,22 @@ class TelegramVoiceArchiveStore(Protocol):
         record: TelegramVoiceArchiveRecord,
     ) -> TelegramVoiceArchiveResult: ...
 
+    async def persist_transcript(
+        self,
+        command: PersistTelegramVoiceTranscriptCommand,
+    ) -> TelegramVoiceTranscriptPersistenceResult: ...
+
 
 class TelegramVoiceArchiver(Protocol):
     async def archive(
         self,
         command: ArchiveTelegramVoiceCommand,
     ) -> TelegramVoiceArchiveResult: ...
+
+    async def persist_transcript(
+        self,
+        command: PersistTelegramVoiceTranscriptCommand,
+    ) -> TelegramVoiceTranscriptPersistenceResult: ...
 
 
 class ArchiveTelegramVoiceService:
@@ -138,6 +202,12 @@ class ArchiveTelegramVoiceService:
             received_at=command.received_at,
         )
         return await self._store.persist(record)
+
+    async def persist_transcript(
+        self,
+        command: PersistTelegramVoiceTranscriptCommand,
+    ) -> TelegramVoiceTranscriptPersistenceResult:
+        return await self._store.persist_transcript(command)
 
 
 def _validate_download(downloaded: DownloadedVoice) -> None:
