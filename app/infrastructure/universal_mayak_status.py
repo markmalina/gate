@@ -7,8 +7,8 @@ person identity, secret or candidate text is selected.
 
 from __future__ import annotations
 
-from typing import Any
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
