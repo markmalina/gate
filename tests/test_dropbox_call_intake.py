@@ -8,14 +8,35 @@ from app.application.telegram_voice_transcription import (
     TranscribeTelegramVoiceCommand,
 )
 from app.core.config import Settings
-from app.worker.dropbox_calls import _is_supported_file
+from app.worker.dropbox_calls import (
+    DropboxCallWorkerError,
+    _is_supported_file,
+    _validate_settings,
+)
 
 
 def test_dropbox_call_intake_is_default_off() -> None:
     settings = Settings()
 
     assert settings.gate_dropbox_call_intake_enabled is False
-    assert settings.dropbox_call_inbox_path == ""
+    assert settings.dropbox_call_inbox_path == "/Alpha/Calls"
+
+
+def test_dropbox_call_intake_rejects_another_runtime_path() -> None:
+    settings = Settings(
+        DROPBOX_CALL_INBOX_PATH="/Alpha/Camera",
+        DROPBOX_CALL_APP_KEY="app-key",
+        DROPBOX_CALL_APP_SECRET="app-secret",
+        DROPBOX_CALL_REFRESH_TOKEN="refresh-token",
+        DROPBOX_CALL_ACCOUNT_ID="account-id",
+        OPENAI_API_KEY="openai-key",
+    )
+
+    with pytest.raises(
+        DropboxCallWorkerError,
+        match="dropbox_call_inbox_path_invalid",
+    ):
+        _validate_settings(settings)
 
 
 @pytest.mark.parametrize(
@@ -51,10 +72,29 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
     entry = {
         ".tag": "file",
         "name": "Call 2026-07-25.m4a",
+        "path_display": "/Alpha/Calls/Call 2026-07-25.m4a",
         "size": 42_000,
     }
 
     assert _is_supported_file(entry) is True
+    assert (
+        _is_supported_file(
+            {
+                **entry,
+                "path_display": "/Alpha/Camera/Call 2026-07-25.m4a",
+            }
+        )
+        is False
+    )
+    assert (
+        _is_supported_file(
+            {
+                **entry,
+                "path_display": "/Alpha/Calls-archive/Call 2026-07-25.m4a",
+            }
+        )
+        is False
+    )
     assert _is_supported_file({**entry, "name": "photo.jpg"}) is False
     assert _is_supported_file({**entry, "size": 20 * 1024 * 1024 + 1}) is False
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False

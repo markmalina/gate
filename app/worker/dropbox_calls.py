@@ -24,7 +24,7 @@ from app.application.telegram_voice_transcription import (
     TelegramVoiceTranscriptionService,
     TranscribeTelegramVoiceCommand,
 )
-from app.core.config import Settings
+from app.core.config import DROPBOX_CALL_INBOX_PATH, Settings
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
@@ -167,6 +167,8 @@ async def process_dropbox_call_changes(
 
 
 def _validate_settings(settings: Settings) -> None:
+    if settings.dropbox_call_inbox_path != DROPBOX_CALL_INBOX_PATH:
+        raise DropboxCallWorkerError("dropbox_call_inbox_path_invalid")
     if not settings.dropbox_call_app_key:
         raise DropboxCallWorkerError("dropbox_call_app_key_missing")
     if not settings.dropbox_call_app_secret.get_secret_value():
@@ -290,13 +292,20 @@ def _is_supported_file(entry: object) -> bool:
     if not isinstance(entry, dict) or entry.get(".tag") != "file":
         return False
     name = entry.get("name")
+    path = entry.get("path_display")
     size = entry.get("size")
     return (
         isinstance(name, str)
+        and isinstance(path, str)
+        and _is_in_call_inbox(path)
         and PurePosixPath(name).suffix.lower() in _SUPPORTED_SUFFIXES
         and isinstance(size, int)
         and 0 < size <= TELEGRAM_DOWNLOAD_LIMIT_BYTES
     )
+
+
+def _is_in_call_inbox(path: str) -> bool:
+    return path.casefold().startswith(f"{DROPBOX_CALL_INBOX_PATH.casefold()}/")
 
 
 async def _ingest_entry(
@@ -316,6 +325,8 @@ async def _ingest_entry(
         "dropbox_call_path_invalid",
         maximum=1024,
     )
+    if not _is_in_call_inbox(path):
+        raise DropboxCallWorkerError("dropbox_call_path_outside_inbox")
     size = entry.get("size")
     if not isinstance(size, int) or size <= 0 or size > TELEGRAM_DOWNLOAD_LIMIT_BYTES:
         raise DropboxCallWorkerError("dropbox_call_size_invalid")

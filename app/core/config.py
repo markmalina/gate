@@ -14,6 +14,8 @@ from app.core.telegram_connectors import (
     build_telegram_connector_registry,
 )
 
+DROPBOX_CALL_INBOX_PATH = "/Alpha/Calls"
+
 
 class Settings(BaseSettings):
     """Application settings sourced from environment variables."""
@@ -163,7 +165,7 @@ class Settings(BaseSettings):
         validation_alias="DROPBOX_CALL_ACCOUNT_ID",
     )
     dropbox_call_inbox_path: str = Field(
-        default="",
+        default=DROPBOX_CALL_INBOX_PATH,
         max_length=1024,
         validation_alias="DROPBOX_CALL_INBOX_PATH",
     )
