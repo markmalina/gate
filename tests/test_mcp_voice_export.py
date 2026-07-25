@@ -6,12 +6,10 @@ import base64
 from uuid import UUID
 
 import pytest
-
 from app.api.mcp_routes import (
     _parse_reply_context_selector,
     _voice_audio_tool_result,
 )
-
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")
 MESSAGE_ID = UUID("22222222-2222-2222-2222-222222222222")
