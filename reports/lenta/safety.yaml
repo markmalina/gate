@@ -1,0 +1,6 @@
+read_only: true
+new_oauth_scope: false
+provider_calls: 0
+telegram_deliveries: 0
+production_mutations: 0
+raw_content_in_git: false
