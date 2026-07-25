@@ -98,6 +98,12 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_ALPHA_CANARY_ENABLED",
     )
+    gate_alpha_group_capacity: int = Field(
+        default=1,
+        ge=1,
+        le=32,
+        validation_alias="GATE_ALPHA_GROUP_CAPACITY",
+    )
     gate_alpha_delivery_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_DELIVERY_ENABLED",

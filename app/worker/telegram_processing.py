@@ -746,7 +746,10 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         http_client=http_client,
                     )
                     alpha_canary = ProcessAlphaCanaryUpdateService(
-                        store=SessionFactoryAlphaCanaryStore(sessions),
+                        store=SessionFactoryAlphaCanaryStore(
+                            sessions,
+                            group_capacity=settings.gate_alpha_group_capacity,
+                        ),
                         shadow=ProcessAlphaShadowMessageService(
                             port=SessionFactoryAlphaShadowTurnRepository(
                                 sessions,

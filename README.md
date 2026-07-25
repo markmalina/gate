@@ -592,6 +592,8 @@ Eligible Work-managed PRs auto-merge under the standing authorization in Team Wo
 
 Configuration is supplied through environment variables. Safe variable names include:
 
+`GATE_ALPHA_GROUP_CAPACITY` defaults to `1`. Raising it only permits additional group identities to be discovered as `pending_approval`; message processing still requires an explicitly active installation.
+
 ```text
 DATABASE_URL
 TELEGRAM_BOT_TOKEN
@@ -606,6 +608,7 @@ GATE_TELEGRAM_WORKER_ENABLED
 GATE_ALPHA_CONNECTOR_ENABLED
 GATE_ALPHA_SHADOW_WORKER_ENABLED
 GATE_ALPHA_CANARY_ENABLED
+GATE_ALPHA_GROUP_CAPACITY
 GATE_ALPHA_DELIVERY_ENABLED
 GATE_ALPHA_PRIVACY_MODE_CONFIRMED
 GATE_ALPHA_MODEL_RUNTIME_ENABLED

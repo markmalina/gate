@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Collection
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -43,8 +44,16 @@ from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, W
 class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
     """Derive membership and delivery authority from exact workspace DB bindings."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        group_capacity: int = 1,
+    ) -> None:
+        if not 1 <= group_capacity <= 32:
+            raise ValueError("group_capacity must be between 1 and 32")
         self._sessions = sessions
+        self._group_capacity = group_capacity
 
     async def reconcile_membership(
         self, command: ReconcileAlphaMembershipCommand
@@ -95,19 +104,14 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                             Workspace.key == command.workspace_key,
                             TransportConnector.id == connector_id,
                         )
-                        .limit(2)
                     )
                 ).all()
-                if len(pinned_dialog_ids) > 1:
-                    raise AlphaCanaryError("alpha_canary_group_state_ambiguous")
-                pinned_dialog_id = (
-                    pinned_dialog_ids[0] if pinned_dialog_ids else None
-                )
-                if (
-                    pinned_dialog_id is not None
-                    and pinned_dialog_id != command.provider_dialog_id
+                if not alpha_group_capacity_available(
+                    existing_provider_dialog_ids=pinned_dialog_ids,
+                    provider_dialog_id=command.provider_dialog_id,
+                    capacity=self._group_capacity,
                 ):
-                    raise AlphaCanaryError("alpha_canary_group_already_pinned")
+                    raise AlphaCanaryError("alpha_canary_group_capacity_reached")
                 view = await repository.discover(
                     DiscoverAlphaInstallationCommand(
                         workspace_key=command.workspace_key,
@@ -498,6 +502,22 @@ async def alpha_canary_audit_counts(
         "delivery_grants": int(grants or 0),
         "send_attempts": int(attempts or 0),
     }
+
+
+def alpha_group_capacity_available(
+    *,
+    existing_provider_dialog_ids: Collection[str],
+    provider_dialog_id: str,
+    capacity: int,
+) -> bool:
+    """Allow idempotent replay or one new group inside the configured bound."""
+
+    if not 1 <= capacity <= 32:
+        raise ValueError("capacity must be between 1 and 32")
+    return (
+        provider_dialog_id in existing_provider_dialog_ids
+        or len(existing_provider_dialog_ids) < capacity
+    )
 
 
 def _stable_grant_key(*parts: str) -> str:
