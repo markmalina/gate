@@ -487,7 +487,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         ),
                         projection=projection,
                         route_override=(
-                            WorkRoute.AGENT_WORK
+                            WorkRoute.AGENT_TURN
                             if self._universal_mayak is not None
                             and self._settings.gate_universal_mayak_runtime_enabled
                             else None
@@ -536,7 +536,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         )
                     if (
                         not mayak_processed
-                        and inbox_command.route is WorkRoute.AGENT_WORK
+                        and inbox_command.route is WorkRoute.AGENT_TURN
                     ):
                         inbox_projection = await self._business_text_inbox.project(
                             build_telegram_business_text_inbox_command(
