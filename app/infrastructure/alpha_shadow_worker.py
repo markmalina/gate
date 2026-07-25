@@ -33,6 +33,8 @@ from app.application.alpha_lifecycle import (
     ReserveAlphaUsageCommand,
 )
 from app.application.alpha_shadow_worker import (
+    ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+    ALPHA_BOUNDED_LIVE_POLICY_VERSION,
     AlphaShadowPreparedTurn,
     AlphaShadowTurnPort,
     AlphaShadowWorkerError,
@@ -518,7 +520,7 @@ async def _verified_model_shadow_binding(
     workspace_id: uuid.UUID,
     definition_id: uuid.UUID,
 ) -> tuple[AgentDeploymentModel, InstructionRevisionModel] | None:
-    """Select one preflight-verified staged model without rebinding the installation."""
+    """Prefer one reviewed ACTIVE model, otherwise keep one STAGED shadow."""
 
     from app.models.alpha_preflight import AlphaModelPreflightModel
 
@@ -553,18 +555,39 @@ async def _verified_model_shadow_binding(
                 AgentDeploymentModel.agent_definition_id == definition_id,
                 AgentDeploymentModel.runtime_profile == _OPENAI_RUNTIME_PROFILE,
                 AgentDeploymentModel.model_profile == _OPENAI_MODEL_PROFILE,
-                AgentDeploymentModel.state == AgentDeploymentState.STAGED.value,
+                AgentDeploymentModel.state.in_(
+                    (
+                        AgentDeploymentState.STAGED.value,
+                        AgentDeploymentState.ACTIVE.value,
+                    )
+                ),
                 InstructionRevisionModel.validation_state == "validated",
                 AlphaModelPreflightModel.state == "succeeded",
             )
         )
     ).all()
-    if not rows:
-        return None
-    if len(rows) != 1:
+    active_rows = [
+        row
+        for row in rows
+        if row[0].state == AgentDeploymentState.ACTIVE.value
+        and row[0].deployment_key == ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY
+        and row[0].policy_version == ALPHA_BOUNDED_LIVE_POLICY_VERSION
+    ]
+    if len(active_rows) > 1:
+        raise AlphaShadowWorkerError("alpha_model_live_binding_ambiguous")
+    if active_rows:
+        return active_rows[0][0], active_rows[0][1]
+
+    staged_rows = [
+        row
+        for row in rows
+        if row[0].state == AgentDeploymentState.STAGED.value
+    ]
+    if len(staged_rows) > 1:
         raise AlphaShadowWorkerError("alpha_model_shadow_binding_ambiguous")
-    deployment, revision = rows[0]
-    return deployment, revision
+    if staged_rows:
+        return staged_rows[0][0], staged_rows[0][1]
+    return None
 
 
 async def _locked_turn_binding(

@@ -6,6 +6,9 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
+from uuid import uuid4
 
 import pytest
 from app.application.agent_kernel import (
@@ -44,7 +47,35 @@ from app.application.canonical_messaging import DialogKind
 from app.application.instruction_bundles import DeployedInstructionBundleLoader
 from app.application.work_ownership import AgentKey
 from app.core.config import Settings
+from app.infrastructure.alpha_shadow_worker import _verified_model_shadow_binding
 from app.worker.alpha_shadow import run_alpha_shadow_trigger
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class _BindingRows:
+    def __init__(self, rows: list[tuple[Any, Any]]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[tuple[Any, Any]]:
+        return self._rows
+
+
+class _BindingSession:
+    def __init__(self, rows: list[tuple[Any, Any]]) -> None:
+        self._rows = rows
+
+    async def execute(self, _statement: object) -> _BindingRows:
+        return _BindingRows(self._rows)
+
+
+async def _select_model_binding(
+    rows: list[tuple[Any, Any]],
+) -> tuple[Any, Any] | None:
+    return await _verified_model_shadow_binding(
+        cast(AsyncSession, _BindingSession(rows)),
+        workspace_id=uuid4(),
+        definition_id=uuid4(),
+    )
 
 
 def _digest(system: bytes, policy: bytes, evaluations: bytes) -> str:
@@ -317,6 +348,50 @@ def test_model_delivery_requires_active_explicit_bounded_live_policy(
         )
         is AlphaProposalDeliveryMode.BOUNDED_LIVE
     )
+
+
+@pytest.mark.anyio
+async def test_active_reviewed_model_binding_wins_over_staged_shadow() -> None:
+    revision = SimpleNamespace(revision_key="alpha-model-v2")
+    staged = SimpleNamespace(
+        state=AgentDeploymentState.STAGED.value,
+        deployment_key=ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+        policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+    )
+    active = SimpleNamespace(
+        state=AgentDeploymentState.ACTIVE.value,
+        deployment_key=ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+        policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+    )
+
+    selected = await _select_model_binding(
+        [(staged, revision), (active, revision)]
+    )
+
+    assert selected == (active, revision)
+
+
+@pytest.mark.anyio
+async def test_active_model_binding_fails_closed_when_ambiguous() -> None:
+    revision = SimpleNamespace(revision_key="alpha-model-v2")
+    first = SimpleNamespace(
+        state=AgentDeploymentState.ACTIVE.value,
+        deployment_key=ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+        policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+    )
+    second = SimpleNamespace(
+        state=AgentDeploymentState.ACTIVE.value,
+        deployment_key=ALPHA_BOUNDED_LIVE_DEPLOYMENT_KEY,
+        policy_version=ALPHA_BOUNDED_LIVE_POLICY_VERSION,
+    )
+
+    with pytest.raises(
+        AlphaShadowWorkerError,
+        match="alpha_model_live_binding_ambiguous",
+    ):
+        await _select_model_binding(
+            [(first, revision), (second, revision)]
+        )
 
 
 def test_uninvoked_group_text_creates_no_usage_turn_or_runtime(tmp_path: Path) -> None:
