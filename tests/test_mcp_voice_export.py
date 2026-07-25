@@ -39,9 +39,6 @@ def test_invalid_voice_selector_fails_closed(selector: str) -> None:
         _parse_reply_context_selector(selector)
 
 
-
-
-
 def test_linked_voice_payload_falls_back_to_the_exact_durable_update() -> None:
     payload = {
         "update_id": 10,
