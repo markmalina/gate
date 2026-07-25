@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.canonical_messaging import ConnectorKind, DialogKind
 from app.application.universal_mayak_demo import (
     UNIVERSAL_MAYAK_PROMPT_SHA256,
@@ -32,8 +35,6 @@ from app.models.domain import (
     Project,
     TelegramBusinessConnection,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 MAYAK_WORKSPACE_KEY = "mark-personal"
 MAYAK_REVISION_KEY = "universal-mayak-v1"
