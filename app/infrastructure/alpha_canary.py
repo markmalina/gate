@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Collection
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -505,7 +506,7 @@ async def alpha_canary_audit_counts(
 
 def alpha_group_capacity_available(
     *,
-    existing_provider_dialog_ids: list[str],
+    existing_provider_dialog_ids: Collection[str],
     provider_dialog_id: str,
     capacity: int,
 ) -> bool:
