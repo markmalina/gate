@@ -1,18 +1,23 @@
-"""Default-off private Telegram ingress for the universal Mayak demo.
+"""Owner-only Universal Mayak admission from canonical Telegram Business text.
 
-This boundary deliberately knows neither Telegram credentials nor database
-models. Provider identities are resolved to an approved opaque binding before
-the application service sees a message. The model never receives provider
-identifiers and cannot choose a recipient.
+The durable Telegram worker has already authenticated, classified and persisted
+the Business update before this boundary runs. Provider identifiers are used
+only to resolve one exact approved binding; the Mayak command receives opaque
+Gate UUIDs and cannot choose an account, connection, dialog or recipient.
 """
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Protocol
 
+from app.application.canonical_messaging import (
+    CanonicalMessageDirection,
+    WorkRoute,
+)
 from app.application.universal_mayak_demo import (
     DemoInvocation,
     DemoScope,
@@ -20,13 +25,9 @@ from app.application.universal_mayak_demo import (
     UniversalMayakDemoResult,
 )
 
-JsonObject = dict[str, Any]
-TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
-TELEGRAM_MESSAGE_ID_MAX = 9_223_372_036_854_775_807
-
 
 class UniversalMayakPrivateIngressError(RuntimeError):
-    """A stable, payload-free refusal at the private-dialog boundary."""
+    """A stable, payload-free refusal at the Business admission boundary."""
 
     def __init__(self, code: str) -> None:
         self.code = code.strip()[:128] or "mayak_private_ingress_error"
@@ -35,50 +36,85 @@ class UniversalMayakPrivateIngressError(RuntimeError):
 
 class PrivateIngressDisposition(StrEnum):
     DISABLED = "disabled"
-    NOT_APPLICABLE = "not_applicable"
     BLOCKED = "blocked"
     PROCESSED = "processed"
 
 
 @dataclass(frozen=True, slots=True)
 class ApprovedPrivateBinding:
-    """An explicit opaque installation binding resolved outside the model."""
+    """One exact database-authoritative owner-only Business installation."""
 
     scope: DemoScope
     actor_scope: str
     active: bool
+    account_id: str = field(repr=False)
+    project_id: str = field(repr=False)
+    business_connection_id: str = field(repr=False)
+    provider_dialog_id: str = field(repr=False)
+    provider_actor_id: str = field(repr=False)
 
     def __post_init__(self) -> None:
-        if (
-            not self.actor_scope
-            or self.actor_scope != self.actor_scope.strip()
-            or len(self.actor_scope) > 64
-        ):
-            raise ValueError("actor_scope must be a bounded token")
+        _uuid(self.account_id, "account_id")
+        _uuid(self.project_id, "project_id")
+        _token(self.actor_scope, "actor_scope", 64)
+        _token(self.business_connection_id, "business_connection_id", 255)
+        _token(self.provider_dialog_id, "provider_dialog_id", 255)
+        _token(self.provider_actor_id, "provider_actor_id", 255)
 
 
 @dataclass(frozen=True, slots=True)
-class ProcessUniversalMayakPrivateUpdateCommand:
-    update: JsonObject = field(repr=False)
+class ProcessUniversalMayakPrivateMessageCommand:
+    """Canonical Business message plus minimized exact binding evidence."""
+
+    account_id: str = field(repr=False)
+    project_id: str = field(repr=False)
+    canonical_message_id: str = field(repr=False)
+    business_connection_id: str = field(repr=False)
+    provider_dialog_id: str = field(repr=False)
+    provider_actor_id: str = field(repr=False)
+    direction: CanonicalMessageDirection
+    current_route: WorkRoute
+    text: str = field(repr=False)
     runtime_enabled: bool
     connector_enabled: bool
     credentials_ready: bool
     now: datetime
+
+    def __post_init__(self) -> None:
+        _uuid(self.account_id, "account_id")
+        _uuid(self.project_id, "project_id")
+        _uuid(self.canonical_message_id, "canonical_message_id")
+        _token(self.business_connection_id, "business_connection_id", 255)
+        _token(self.provider_dialog_id, "provider_dialog_id", 255)
+        _token(self.provider_actor_id, "provider_actor_id", 255)
+        _text(self.text, "text", 4_000)
+        if self.now.tzinfo is None or self.now.utcoffset() is None:
+            raise ValueError("now must be timezone-aware")
 
 
 @dataclass(frozen=True, slots=True)
 class UniversalMayakPrivateIngressResult:
     disposition: PrivateIngressDisposition
     code: str
+    suppress_human_reply_task: bool = False
     result: UniversalMayakDemoResult | None = None
+
+    def __post_init__(self) -> None:
+        if self.suppress_human_reply_task != (
+            self.disposition is PrivateIngressDisposition.PROCESSED
+        ):
+            raise ValueError("only a processed Mayak route suppresses human work")
 
 
 class ApprovedPrivateBindingResolver(Protocol):
-    """Resolve one provider pair to a pre-approved opaque installation."""
+    """Resolve one exact receiving-account-relative binding from SQL."""
 
     async def resolve(
         self,
         *,
+        account_id: str,
+        project_id: str,
+        business_connection_id: str,
         provider_dialog_id: str,
         provider_actor_id: str,
     ) -> ApprovedPrivateBinding | None: ...
@@ -92,8 +128,8 @@ class UniversalMayakCommandPort(Protocol):
     ) -> UniversalMayakDemoResult: ...
 
 
-class ProcessUniversalMayakPrivateUpdateService:
-    """Map one exact private text update into the universal Mayak service."""
+class ProcessUniversalMayakPrivateMessageService:
+    """Map one canonical inbound Business text to one exact Mayak command."""
 
     def __init__(
         self,
@@ -106,7 +142,7 @@ class ProcessUniversalMayakPrivateUpdateService:
 
     async def execute(
         self,
-        command: ProcessUniversalMayakPrivateUpdateCommand,
+        command: ProcessUniversalMayakPrivateMessageCommand,
     ) -> UniversalMayakPrivateIngressResult:
         readiness = _readiness_code(command)
         if readiness is not None:
@@ -114,31 +150,36 @@ class ProcessUniversalMayakPrivateUpdateService:
                 PrivateIngressDisposition.DISABLED,
                 readiness,
             )
-
-        normalized = _private_text(command.update)
-        if normalized is None:
+        if (
+            command.direction is not CanonicalMessageDirection.INBOUND
+            or command.current_route is not WorkRoute.HUMAN_REPLY_TASK
+        ):
             return UniversalMayakPrivateIngressResult(
-                PrivateIngressDisposition.NOT_APPLICABLE,
-                "mayak_private_non_text_ignored",
+                PrivateIngressDisposition.BLOCKED,
+                "mayak_private_route_not_eligible",
             )
-        update_id, message_id, dialog_id, actor_id, text = normalized
+
         binding = await self._bindings.resolve(
-            provider_dialog_id=dialog_id,
-            provider_actor_id=actor_id,
+            account_id=command.account_id,
+            project_id=command.project_id,
+            business_connection_id=command.business_connection_id,
+            provider_dialog_id=command.provider_dialog_id,
+            provider_actor_id=command.provider_actor_id,
         )
         if binding is None or not binding.active:
             return UniversalMayakPrivateIngressResult(
                 PrivateIngressDisposition.BLOCKED,
                 "mayak_private_binding_not_active",
             )
+        _require_exact_binding(binding, command)
 
         result = await self._mayak.execute(
             ProcessUniversalMayakCommand(
                 scope=binding.scope,
-                event_ref=f"telegram_update_{update_id}",
-                idempotency_key=f"telegram_message_{dialog_id}_{message_id}",
-                invocation=_invocation(text),
-                text=text,
+                event_ref=f"canonical_message_{command.canonical_message_id}",
+                idempotency_key=f"mayak_message_{command.canonical_message_id}",
+                invocation=_invocation(command.text),
+                text=command.text,
                 actor_scope=binding.actor_scope,
                 now=command.now,
             )
@@ -146,12 +187,13 @@ class ProcessUniversalMayakPrivateUpdateService:
         return UniversalMayakPrivateIngressResult(
             PrivateIngressDisposition.PROCESSED,
             "mayak_private_processed",
-            result,
+            suppress_human_reply_task=True,
+            result=result,
         )
 
 
 def _readiness_code(
-    command: ProcessUniversalMayakPrivateUpdateCommand,
+    command: ProcessUniversalMayakPrivateMessageCommand,
 ) -> str | None:
     if not command.connector_enabled:
         return "mayak_private_connector_disabled"
@@ -162,62 +204,28 @@ def _readiness_code(
     return None
 
 
-def _private_text(
-    update: JsonObject,
-) -> tuple[int, int, str, str, str] | None:
-    update_id = update.get("update_id")
-    if (
-        type(update_id) is not int
-        or update_id < 0
-        or update_id > TELEGRAM_UPDATE_ID_MAX
-    ):
+def _require_exact_binding(
+    binding: ApprovedPrivateBinding,
+    command: ProcessUniversalMayakPrivateMessageCommand,
+) -> None:
+    expected = (
+        command.account_id,
+        command.project_id,
+        command.business_connection_id,
+        command.provider_dialog_id,
+        command.provider_actor_id,
+    )
+    actual = (
+        binding.account_id,
+        binding.project_id,
+        binding.business_connection_id,
+        binding.provider_dialog_id,
+        binding.provider_actor_id,
+    )
+    if actual != expected:
         raise UniversalMayakPrivateIngressError(
-            "mayak_private_update_identity_invalid"
+            "mayak_private_binding_scope_mismatch"
         )
-    if [key for key in update if key != "update_id"] != ["message"]:
-        raise UniversalMayakPrivateIngressError("mayak_private_update_shape_invalid")
-    message = update.get("message")
-    if not isinstance(message, dict):
-        raise UniversalMayakPrivateIngressError("mayak_private_update_shape_invalid")
-    message_id = message.get("message_id")
-    if (
-        type(message_id) is not int
-        or message_id < 0
-        or message_id > TELEGRAM_MESSAGE_ID_MAX
-    ):
-        raise UniversalMayakPrivateIngressError(
-            "mayak_private_message_identity_invalid"
-        )
-    chat = message.get("chat")
-    actor = message.get("from")
-    if (
-        not isinstance(chat, dict)
-        or chat.get("type") != "private"
-        or not isinstance(actor, dict)
-        or actor.get("is_bot") is True
-    ):
-        raise UniversalMayakPrivateIngressError("mayak_private_scope_invalid")
-    dialog_id = _provider_id(chat.get("id"), "dialog")
-    actor_id = _provider_id(actor.get("id"), "actor")
-    text = message.get("text")
-    if text is None:
-        return None
-    if not isinstance(text, str) or not text.strip() or len(text) > 4_000:
-        raise UniversalMayakPrivateIngressError("mayak_private_text_invalid")
-    return update_id, message_id, dialog_id, actor_id, text.strip()
-
-
-def _provider_id(value: object, kind: str) -> str:
-    if not isinstance(value, (str, int)) or isinstance(value, bool):
-        raise UniversalMayakPrivateIngressError(
-            f"mayak_private_{kind}_identity_invalid"
-        )
-    normalized = str(value).strip()
-    if not normalized or len(normalized) > 128:
-        raise UniversalMayakPrivateIngressError(
-            f"mayak_private_{kind}_identity_invalid"
-        )
-    return normalized
 
 
 def _invocation(text: str) -> DemoInvocation:
@@ -228,3 +236,20 @@ def _invocation(text: str) -> DemoInvocation:
     if text == "/human":
         return DemoInvocation.HUMAN_TAKEOVER
     return DemoInvocation.DIRECT
+
+
+def _uuid(value: str, name: str) -> None:
+    try:
+        uuid.UUID(value)
+    except (AttributeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a UUID") from exc
+
+
+def _token(value: str, name: str, maximum: int) -> None:
+    if not value or value != value.strip() or len(value) > maximum:
+        raise ValueError(f"{name} must be bounded")
+
+
+def _text(value: str, name: str, maximum: int) -> None:
+    if not value or not value.strip() or value != value.strip() or len(value) > maximum:
+        raise ValueError(f"{name} must be bounded")
