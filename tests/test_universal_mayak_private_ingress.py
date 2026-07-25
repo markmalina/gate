@@ -123,6 +123,7 @@ async def test_canonical_business_text_maps_to_one_opaque_command() -> None:
         {
             "account_id": ACCOUNT_ID,
             "project_id": PROJECT_ID,
+            "canonical_message_id": MESSAGE_ID,
             "business_connection_id": CONNECTION_ID,
             "provider_dialog_id": DIALOG_ID,
             "provider_actor_id": ACTOR_ID,
