@@ -34,8 +34,7 @@ async def universal_mayak_operational_status(
             sa.text(
                 "SELECT id FROM workspaces "
                 "WHERE key = :workspace_key AND is_active IS TRUE"
-            ),
-            {"workspace_key": workspace_key},
+            ).bindparams(workspace_key=workspace_key),
         )
     ).scalars().all()
     workspace_valid = len(workspace_rows) == 1
@@ -86,8 +85,7 @@ async def universal_mayak_operational_status(
                         " AND ir.workspace_id = ai.workspace_id "
                         "WHERE ai.workspace_id = :workspace_id "
                         " AND ai.installation_key = :installation_key"
-                    ),
-                    parameters,
+                    ).bindparams(**parameters),
                 )
             ).mappings().one()
         )
@@ -112,8 +110,7 @@ async def universal_mayak_operational_status(
                     "WHERE turn.workspace_id = :workspace_id "
                     " AND definition.agent_key = :agent_key "
                     "ORDER BY turn.created_at DESC, turn.id DESC LIMIT 1"
-                ),
-                parameters,
+                ).bindparams(**parameters),
             )
         ).mappings().one_or_none()
         last_turn = dict(last_turn_row) if last_turn_row is not None else None
@@ -135,8 +132,7 @@ async def universal_mayak_operational_status(
                     "WHERE attempt.workspace_id = :workspace_id "
                     " AND definition.agent_key = :agent_key "
                     "ORDER BY attempt.created_at DESC, attempt.id DESC LIMIT 1"
-                ),
-                parameters,
+                ).bindparams(**parameters),
             )
         ).mappings().one_or_none()
         last_attempt = dict(last_attempt_row) if last_attempt_row is not None else None
@@ -243,8 +239,7 @@ async def _session_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE agent_session.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ),
-            parameters,
+            ).bindparams(**parameters),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
@@ -273,8 +268,7 @@ async def _turn_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE turn.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ),
-            parameters,
+            ).bindparams(**parameters),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
@@ -303,8 +297,7 @@ async def _grant_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE grant_row.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ),
-            parameters,
+            ).bindparams(**parameters),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
@@ -336,8 +329,7 @@ async def _attempt_counts(
                 " AND definition.workspace_id = ad.workspace_id "
                 "WHERE attempt.workspace_id = :workspace_id "
                 " AND definition.agent_key = :agent_key"
-            ),
-            parameters,
+            ).bindparams(**parameters),
         )
     ).mappings().one()
     return {key: int(value or 0) for key, value in row.items()}
