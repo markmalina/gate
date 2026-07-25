@@ -67,7 +67,7 @@ async def universal_mayak_operational_status(
     last_attempt: dict[str, Any] | None = None
     owner_route_probe = _zero_route_probe()
 
-    if workspace_valid:
+    if workspace_id is not None:
         parameters: dict[str, object] = {
             "workspace_id": workspace_id,
             "agent_key": _AGENT_KEY,
