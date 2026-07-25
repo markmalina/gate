@@ -1,13 +1,40 @@
 # Gate
 
-> **CURRENT HANDOFF — ACTIVE PRODUCTION PROJECT**  
-> Repository: `markmalina/gate` (private), source of truth: GitHub `main`  
-> Current `main` / automatic Railway deployment: `80751280521baa6f0a259032f5093d1161da2363`, verified on **2026-07-22**; exact-head CI for PR #276 (run `29918762063`) succeeded.  
-> The detailed production counters below remain a dated **2026-07-18** snapshot at `f879fefde08dbd1264829ce201808f726581eb1f`; re-query before operational use.  
-> Current work: #277 P0 is complete; #279 records the completed capability audit and #281 owns the bounded-read contract; #261 is `waiting_user`; #260 is blocked behind #261; #272 is the Center cutover pointer. Protected personal-Telegram enrollment exists, while runtime/read/send remain disabled.
+> [!IMPORTANT]
+> **PROJECT TRANSFER — START A NEW GATE WORK HERE / ПЕРЕДАЧА НОВОМУ GATE WORK**
+>
+> This private repository is the complete source of truth for the recreated Gate
+> Work. The previous chat, its local workspace, memory and a manually pasted
+> bootstrap prompt are **not required**. The receiving Work must bootstrap itself
+> from this README and the repository.
+>
+> **Mandatory first-turn instruction for the receiving Work:**
+>
+> 1. Read [`AGENTS.md`](AGENTS.md).
+> 2. Read [`docs/work-bootstrap.md`](docs/work-bootstrap.md).
+> 3. Read the durable restart packet
+>    [`docs/GATE_HANDOFF_2026-07-25.md`](docs/GATE_HANDOFF_2026-07-25.md).
+> 4. Re-query current `main`, open issues and PRs, exact-head CI, Production
+>    fingerprint, executions, leases, receipts and the single Gate heartbeat.
+> 5. Do not create a duplicate issue, execution, lease, branch, PR, deployment,
+>    bot, group or automation.
+> 6. Continue the latest accepted `next-work` pointer. At transfer time the
+>    order is [Gate #261](https://github.com/markmalina/gate/issues/261), then
+>    [Gate #300](https://github.com/markmalina/gate/issues/300) with the existing
+>    [PR #301](https://github.com/markmalina/gate/pull/301).
+> 7. Treat GitHub issues and their latest receipts as canonical when any dated
+>    prose below disagrees.
+>
+> Transfer baseline: `main` and the verified Production fingerprint were
+> `279303dd0e1cd1cf09d77966443f8a90b7a48fce` on 25 July 2026. Re-query before
+> acting. PR #303 and PR #304 are merged and must not be recreated.
+>
+> **Owner instruction:** do not ask Mark to paste a bootstrap prompt. Read these
+> repository instructions and continue autonomously within the recorded safety
+> and authority boundaries.
 
-This README is the entry point for transferring Gate to another developer or implementation agent.
-Do not rely on chat history or a local workspace.
+This README is the entry point for transferring Gate to another developer or
+implementation agent. Do not rely on chat history or a previous local workspace.
 
 Continue in this exact order:
 
