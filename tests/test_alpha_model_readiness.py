@@ -214,3 +214,39 @@ def test_status_payload_is_redacted_and_reports_exact_budget() -> None:
     }
     assert "api_key" not in payload
     assert "group_id" not in payload
+
+
+def test_bounded_live_phase_is_ready_without_fixture_stop() -> None:
+    facts = _facts(
+        fixture_binding_active=False,
+        telegram_delivery_blocked=False,
+        provider_preflight_successes=1,
+        model_turns=15,
+        proposed_turns=15,
+    )
+
+    readiness = evaluate_alpha_model_readiness(facts)
+    payload = alpha_model_readiness_payload(facts)
+    plan = payload["promotion_dry_run"]
+
+    assert readiness.state is AlphaModelReadinessState.SHADOW_OBSERVED
+    assert readiness.prerequisites_ready is True
+    assert readiness.alerts == ()
+    assert payload["fixture_binding_active"] is False
+    assert payload["telegram_delivery_blocked"] is False
+    assert isinstance(plan, dict)
+    assert plan["current_stage"] == "bounded_live"
+    assert plan["next_stage"] == "bounded_live_observation"
+    assert plan["blocked_by"] == []
+
+
+def test_mismatched_binding_and_delivery_phase_fails_closed() -> None:
+    readiness = evaluate_alpha_model_readiness(
+        _facts(
+            fixture_binding_active=False,
+            telegram_delivery_blocked=True,
+        )
+    )
+
+    assert readiness.state is AlphaModelReadinessState.CONFIGURATION_INCOMPLETE
+    assert readiness.prerequisites_ready is False

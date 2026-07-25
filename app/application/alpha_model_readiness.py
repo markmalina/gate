@@ -58,12 +58,18 @@ def evaluate_alpha_model_readiness(
 ) -> AlphaModelReadiness:
     """Derive one closed operational state without contacting a provider."""
 
+    shadow_phase = (
+        facts.telegram_delivery_blocked and facts.fixture_binding_active
+    )
+    bounded_live_phase = (
+        not facts.telegram_delivery_blocked
+        and not facts.fixture_binding_active
+    )
     configured = (
         facts.runtime_enabled
         and facts.data_gate_approved
         and facts.api_key_configured
-        and facts.telegram_delivery_blocked
-        and facts.fixture_binding_active
+        and (shadow_phase or bounded_live_phase)
     )
     exact_deployment = facts.staged_deployments == 1
     budget_available = (
@@ -196,14 +202,22 @@ def _promotion_dry_run(
     facts: AlphaModelReadinessFacts,
     readiness: AlphaModelReadiness,
 ) -> dict[str, object]:
-    if facts.proposed_turns > 0:
+    bounded_live_phase = (
+        not facts.telegram_delivery_blocked
+        and not facts.fixture_binding_active
+    )
+    if bounded_live_phase:
+        current_stage = "bounded_live"
+    elif facts.proposed_turns > 0:
         current_stage = "model_shadow"
     elif readiness.provider_preflight_verified:
         current_stage = "provider_preflight_verified"
     else:
         current_stage = "fixture_canary"
 
-    if not readiness.provider_preflight_verified:
+    if bounded_live_phase:
+        next_stage = "bounded_live_observation"
+    elif not readiness.provider_preflight_verified:
         next_stage = "provider_preflight"
     elif facts.proposed_turns < MIN_SHADOW_PROPOSALS_FOR_CANARY_REVIEW:
         next_stage = "model_shadow"
