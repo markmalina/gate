@@ -2744,6 +2744,7 @@ async def _build_alpha_canary_status(
             ),
             telegram_delivery_blocked=not (
                 settings.gate_alpha_delivery_enabled
+                and active_binding_count == 1
                 and model.active_model_bindings == 1
             ),
             provider_preflight_successes=model.provider_preflight_successes,
