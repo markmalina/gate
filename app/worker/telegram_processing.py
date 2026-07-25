@@ -22,6 +22,12 @@ from app.application.alpha_delivery import DeliverAlphaGrantService
 from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
 from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
 from app.application.instruction_bundles import DeployedInstructionBundleLoader
+from app.application.universal_mayak_demo import ProcessUniversalMayakDemoService
+from app.application.universal_mayak_private_ingress import (
+    PrivateIngressDisposition,
+    ProcessUniversalMayakPrivateMessageCommand,
+    ProcessUniversalMayakPrivateMessageService,
+)
 from app.application.telegram_business_text_inbox import (
     TelegramBusinessTextInboxProjector,
     build_telegram_business_text_inbox_command,
@@ -113,6 +119,18 @@ from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
+from app.infrastructure.universal_mayak_delivery import (
+    TelegramBusinessUniversalMayakDelivery,
+)
+from app.infrastructure.universal_mayak_durable_store import (
+    SessionFactoryUniversalMayakDemoStore,
+)
+from app.infrastructure.universal_mayak_model import (
+    build_configured_universal_mayak_model,
+)
+from app.infrastructure.universal_mayak_private_runtime import (
+    SessionFactoryApprovedPrivateBindingResolver,
+)
 from app.infrastructure.telegram_voice import (
     TelegramVoiceDownloadConfig,
     TelegramVoiceDownloader,
@@ -159,6 +177,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
         business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
+        universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
@@ -169,6 +188,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
         self._business_text_inbox = business_text_inbox
+        self._universal_mayak = universal_mayak
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
