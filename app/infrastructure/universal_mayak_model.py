@@ -7,6 +7,8 @@ responsible for the OpenAI Responses call and its data gates.
 
 from __future__ import annotations
 
+import httpx
+
 from app.application.agent_kernel import (
     AgentContextMessage,
     AgentDeployment,
@@ -95,7 +97,7 @@ class AgentRuntimeUniversalMayakModelAdapter(UniversalMayakModelPort):
 def build_configured_universal_mayak_model(
     *,
     bundle: LoadedInstructionBundle,
-    http_client: object,
+    http_client: httpx.AsyncClient,
     api_key: str,
     api_base_url: str,
     model_profile: str,
