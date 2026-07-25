@@ -16,8 +16,8 @@ from app.application.universal_mayak_demo import (
     UniversalMayakDemoError,
 )
 from app.infrastructure.universal_mayak_durable_store import (
-    _existing_reservation,
     _event_uuid,
+    _existing_reservation,
     _idempotency_uuid,
     _installation_state,
     _stored_input_digest,
