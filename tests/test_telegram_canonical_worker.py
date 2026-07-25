@@ -12,6 +12,10 @@ from app.application.canonical_messaging import (
     WorkOwnershipDecision,
     WorkRoute,
 )
+from app.application.universal_mayak_private_ingress import (
+    PrivateIngressDisposition,
+    UniversalMayakPrivateIngressResult,
+)
 from app.application.telegram_business_text_inbox import (
     TelegramBusinessTextInboxCommand,
     TelegramBusinessTextInboxResult,
@@ -228,3 +232,69 @@ def test_workspace_id_is_bounded_configuration_not_payload_data() -> None:
     assert settings.gate_workspace_id == "workspace-two"
     with pytest.raises(ValueError):
         Settings(_env_file=None, GATE_WORKSPACE_ID="")
+
+
+class CapturingUniversalMayak:
+    def __init__(self, disposition: PrivateIngressDisposition) -> None:
+        self.disposition = disposition
+        self.commands: list[object] = []
+
+    async def execute(self, command: object) -> UniversalMayakPrivateIngressResult:
+        self.commands.append(command)
+        return UniversalMayakPrivateIngressResult(
+            self.disposition,
+            f"mayak_private_{self.disposition.value}",
+            suppress_human_reply_task=(
+                self.disposition is PrivateIngressDisposition.PROCESSED
+            ),
+        )
+
+
+def _mayak_settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        GATE_UNIVERSAL_MAYAK_RUNTIME_ENABLED=True,
+        OPENAI_API_KEY="test-key",
+        TELEGRAM_BOT_TOKEN="test-token",
+    )
+
+
+def test_processed_mayak_route_never_creates_parallel_human_work() -> None:
+    store = CapturingCanonicalStore()
+    inbox = CapturingBusinessTextInbox()
+    mayak = CapturingUniversalMayak(PrivateIngressDisposition.PROCESSED)
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=_mayak_settings(),
+        identity_reader=FakeIdentityReader(),
+        canonical_store=store,
+        business_text_inbox=inbox,
+        universal_mayak=mayak,
+        runtime_logger=logging.getLogger("gate.mayak-route-test"),
+    )
+
+    asyncio.run(processor.process(_work_item()))
+
+    assert len(mayak.commands) == 1
+    assert [command.route for command in inbox.commands] == [WorkRoute.AGENT_WORK]
+
+
+def test_unclaimed_mayak_route_promotes_once_to_human_work() -> None:
+    store = CapturingCanonicalStore()
+    inbox = CapturingBusinessTextInbox()
+    mayak = CapturingUniversalMayak(PrivateIngressDisposition.BLOCKED)
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=_mayak_settings(),
+        identity_reader=FakeIdentityReader(),
+        canonical_store=store,
+        business_text_inbox=inbox,
+        universal_mayak=mayak,
+        runtime_logger=logging.getLogger("gate.mayak-fallback-test"),
+    )
+
+    asyncio.run(processor.process(_work_item()))
+
+    assert len(mayak.commands) == 1
+    assert [command.route for command in inbox.commands] == [
+        WorkRoute.AGENT_WORK,
+        WorkRoute.HUMAN_REPLY_TASK,
+    ]
