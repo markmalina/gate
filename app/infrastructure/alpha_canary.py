@@ -103,12 +103,12 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                             Workspace.key == command.workspace_key,
                             TransportConnector.id == connector_id,
                         )
-                        .limit(self._group_capacity)
                     )
                 ).all()
-                if (
-                    command.provider_dialog_id not in pinned_dialog_ids
-                    and len(pinned_dialog_ids) >= self._group_capacity
+                if not alpha_group_capacity_available(
+                    existing_provider_dialog_ids=pinned_dialog_ids,
+                    provider_dialog_id=command.provider_dialog_id,
+                    capacity=self._group_capacity,
                 ):
                     raise AlphaCanaryError("alpha_canary_group_capacity_reached")
                 view = await repository.discover(
@@ -501,6 +501,22 @@ async def alpha_canary_audit_counts(
         "delivery_grants": int(grants or 0),
         "send_attempts": int(attempts or 0),
     }
+
+
+def alpha_group_capacity_available(
+    *,
+    existing_provider_dialog_ids: list[str],
+    provider_dialog_id: str,
+    capacity: int,
+) -> bool:
+    """Allow idempotent replay or one new group inside the configured bound."""
+
+    if not 1 <= capacity <= 32:
+        raise ValueError("capacity must be between 1 and 32")
+    return (
+        provider_dialog_id in existing_provider_dialog_ids
+        or len(existing_provider_dialog_ids) < capacity
+    )
 
 
 def _stable_grant_key(*parts: str) -> str:
