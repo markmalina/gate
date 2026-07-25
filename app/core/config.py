@@ -104,6 +104,12 @@ class Settings(BaseSettings):
         le=32,
         validation_alias="GATE_ALPHA_GROUP_CAPACITY",
     )
+    gate_alpha_membership_replay_limit: int = Field(
+        default=0,
+        ge=0,
+        le=32,
+        validation_alias="GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT",
+    )
     gate_alpha_delivery_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_DELIVERY_ENABLED",
