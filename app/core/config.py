@@ -6,12 +6,13 @@ name only and must never be committed.
 
 from functools import lru_cache
 
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from app.core.telegram_connectors import (
     TelegramConnectorRegistry,
     build_telegram_connector_registry,
 )
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
