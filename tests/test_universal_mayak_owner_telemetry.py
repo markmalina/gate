@@ -42,6 +42,11 @@ class FakeSession:
         self._batches = batches
         self.statements: list[object] = []
 
+    async def scalar(self, statement: object) -> object | None:
+        self.statements.append(statement)
+        rows = self._batches.pop(0)
+        return rows[0] if rows else None
+
     async def execute(
         self,
         statement: object,
@@ -54,7 +59,7 @@ class FakeSession:
 def test_status_is_redacted_and_proves_terminal_replay_without_provider() -> None:
     session = FakeSession(
         [
-            ["workspace-id"],
+            ["11111111-1111-1111-1111-111111111111"],
             [
                 {
                     "total": 1,
