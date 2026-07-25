@@ -106,13 +106,13 @@ from app.infrastructure.telegram_ingress_identity import (
     SessionFactoryTelegramIngressIdentityReader,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
-from app.infrastructure.telegram_voice_archive import (
-    SessionFactoryTelegramVoiceArchiveStore,
-)
 from app.infrastructure.telegram_voice import (
     TelegramVoiceDownloadConfig,
     TelegramVoiceDownloader,
     TelegramVoiceNormalizer,
+)
+from app.infrastructure.telegram_voice_archive import (
+    SessionFactoryTelegramVoiceArchiveStore,
 )
 from app.services.telegram import TelegramClient, build_telegram_http_client
 
