@@ -9,7 +9,7 @@ def test_alpha_model_v2_installation_binding_is_exact_and_reversible() -> None:
         Path(__file__).parents[1]
         / "alembic"
         / "versions"
-        / "0041_alpha_model_v2_installation_binding.py"
+        / "0042_alpha_model_v2_installation_binding.py"
     )
     spec = importlib.util.spec_from_file_location(
         "alpha_model_v2_installation_binding",
@@ -19,8 +19,8 @@ def test_alpha_model_v2_installation_binding_is_exact_and_reversible() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.revision == "0041_alpha_model_v2_installation_binding"
-    assert module.down_revision == "0040_alpha_model_v2_bounded_live"
+    assert module.revision == "0042_alpha_model_v2_installation_binding"
+    assert module.down_revision == "0041_voice_transcript_store"
     assert module._WORKSPACE_KEY == "mark-personal"
     assert module._CONNECTOR_KEY == "telegram_alpha_group"
     assert module._AGENT_KEY == "alpha_group"
