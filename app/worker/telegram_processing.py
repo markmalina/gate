@@ -20,7 +20,11 @@ from app.application.alpha_canary import (
 )
 from app.application.alpha_delivery import DeliverAlphaGrantService
 from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
-from app.application.canonical_messaging import CanonicalIngressStore, ConnectorKind
+from app.application.canonical_messaging import (
+    CanonicalIngressStore,
+    ConnectorKind,
+    WorkRoute,
+)
 from app.application.instruction_bundles import DeployedInstructionBundleLoader
 from app.application.telegram_business_text_inbox import (
     TelegramBusinessTextInboxProjector,
@@ -82,6 +86,12 @@ from app.application.telegram_work_ownership_shadow import (
     TelegramIngressRoutingView,
     evaluate_telegram_work_ownership_shadow,
 )
+from app.application.universal_mayak_demo import ProcessUniversalMayakDemoService
+from app.application.universal_mayak_private_ingress import (
+    PrivateIngressDisposition,
+    ProcessUniversalMayakPrivateMessageCommand,
+    ProcessUniversalMayakPrivateMessageService,
+)
 from app.application.worker_health import TELEGRAM_WORKER, WorkerHealthReporter
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import (
@@ -121,6 +131,18 @@ from app.infrastructure.telegram_voice import (
 from app.infrastructure.telegram_voice_archive import (
     SessionFactoryTelegramVoiceArchiveStore,
 )
+from app.infrastructure.universal_mayak_delivery import (
+    TelegramBusinessUniversalMayakDelivery,
+)
+from app.infrastructure.universal_mayak_durable_store import (
+    SessionFactoryUniversalMayakDemoStore,
+)
+from app.infrastructure.universal_mayak_model import (
+    build_configured_universal_mayak_model,
+)
+from app.infrastructure.universal_mayak_private_runtime import (
+    SessionFactoryApprovedPrivateBindingResolver,
+)
 from app.services.telegram import TelegramClient, build_telegram_http_client
 
 logger = logging.getLogger(__name__)
@@ -159,6 +181,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
         business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
+        universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
     ) -> None:
         self._settings = settings
         self._connectors = settings.telegram_connectors
@@ -169,6 +192,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
         self._business_text_inbox = business_text_inbox
+        self._universal_mayak = universal_mayak
         self._logger = runtime_logger
 
     async def process(self, item: TelegramProcessingWorkItem) -> None:
@@ -426,6 +450,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 canonical_message_id = persisted.message_id
 
         business_text_inbox_disposition = "not_applicable"
+        universal_mayak_disposition = "not_applicable"
         business_text_parity_disposition = "not_applicable"
         if (
             connector.role is TelegramConnectorRole.BUSINESS
@@ -450,26 +475,91 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         "telegram_business_text_inbox_not_configured"
                     )
                 try:
-                    inbox_projection = await self._business_text_inbox.project(
-                        build_telegram_business_text_inbox_command(
-                            payload,
-                            account_id=identity.account_id,
-                            project_id=identity.project_id or "",
-                            canonical_message_id=canonical_message_id,
-                            bot_username=self._settings.telegram_bot_username,
-                            update_id=item.update_id,
-                            business_connection_id=(
-                                identity_command.business_connection_id
-                            ),
-                            projection=projection,
-                        )
+                    inbox_command = build_telegram_business_text_inbox_command(
+                        payload,
+                        account_id=identity.account_id,
+                        project_id=identity.project_id or "",
+                        canonical_message_id=canonical_message_id,
+                        bot_username=self._settings.telegram_bot_username,
+                        update_id=item.update_id,
+                        business_connection_id=(
+                            identity_command.business_connection_id
+                        ),
+                        projection=projection,
+                        route_override=(
+                            WorkRoute.AGENT_TURN
+                            if self._universal_mayak is not None
+                            and self._settings.gate_universal_mayak_runtime_enabled
+                            else None
+                        ),
                     )
+                    inbox_projection = await self._business_text_inbox.project(
+                        inbox_command
+                    )
+                    mayak_processed = False
+                    if (
+                        self._universal_mayak is not None
+                        and self._settings.gate_universal_mayak_runtime_enabled
+                    ):
+                        mayak_result = await self._universal_mayak.execute(
+                            ProcessUniversalMayakPrivateMessageCommand(
+                                account_id=identity.account_id,
+                                project_id=identity.project_id or "",
+                                canonical_message_id=canonical_message_id,
+                                business_connection_id=(
+                                    identity_command.business_connection_id
+                                ),
+                                provider_dialog_id=(
+                                    projection.dialog.provider_dialog_id
+                                ),
+                                provider_actor_id=(
+                                    projection.message.provider_sender_id or ""
+                                ),
+                                direction=projection.message.direction,
+                                current_route=projection.ownership.route,
+                                text=projection.message.text_content,
+                                runtime_enabled=(
+                                    self._settings.gate_universal_mayak_runtime_enabled
+                                ),
+                                connector_enabled=True,
+                                credentials_ready=bool(
+                                    self._settings.openai_api_key.get_secret_value()
+                                    and self._settings.telegram_bot_token
+                                ),
+                                now=item.received_at,
+                            )
+                        )
+                        universal_mayak_disposition = mayak_result.disposition.value
+                        mayak_processed = (
+                            mayak_result.disposition
+                            is PrivateIngressDisposition.PROCESSED
+                        )
+                    if (
+                        not mayak_processed
+                        and inbox_command.route is WorkRoute.AGENT_TURN
+                    ):
+                        inbox_projection = await self._business_text_inbox.project(
+                            build_telegram_business_text_inbox_command(
+                                payload,
+                                account_id=identity.account_id,
+                                project_id=identity.project_id or "",
+                                canonical_message_id=canonical_message_id,
+                                bot_username=self._settings.telegram_bot_username,
+                                update_id=item.update_id,
+                                business_connection_id=(
+                                    identity_command.business_connection_id
+                                ),
+                                projection=projection,
+                            )
+                        )
                 except Exception:
                     raise TelegramUpdateProcessingError(
                         "telegram_business_text_inbox_projection_failed"
                     ) from None
                 business_text_inbox_disposition = (
-                    "inbox_duplicate" if inbox_projection.duplicate else "inbox_projected"
+                    "inbox_duplicate"
+                    if inbox_projection.duplicate
+                    else "inbox_projected"
                 )
             if self._business_text_parity is not None:
                 try:
@@ -545,7 +635,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             "ownership_policy=%s ownership_authoritative=%s "
             "canonical_persisted=%s canonical_duplicate=%s "
             "voice_disposition=%s business_text_inbox=%s "
-            "business_text_parity=%s "
+            "universal_mayak=%s business_text_parity=%s "
             "alpha_canary_disposition=%s",
             decision.handler,
             decision.reason,
@@ -566,6 +656,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             canonical_duplicate,
             voice_disposition,
             business_text_inbox_disposition,
+            universal_mayak_disposition,
             business_text_parity_disposition,
             alpha_canary_disposition,
         )
@@ -584,6 +675,7 @@ async def run_telegram_worker_once(
     voice_archive: TelegramVoiceArchiver | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
     business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
+    universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -607,6 +699,7 @@ async def run_telegram_worker_once(
             voice_archive=voice_archive,
             business_text_parity=business_text_parity,
             business_text_inbox=business_text_inbox,
+            universal_mayak=universal_mayak,
             runtime_logger=runtime_logger,
         )
     result = await ProcessTelegramOutboxService(
@@ -638,6 +731,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     try:
         if (
             settings.gate_alpha_canary_enabled
+            or settings.gate_universal_mayak_runtime_enabled
             or settings.gate_telegram_voice_transcription_enabled
             or settings.gate_telegram_voice_archive_enabled
         ):
@@ -678,6 +772,57 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         delivery=DeliverAlphaGrantService(
                             store=SessionFactoryAlphaDeliveryStore(sessions),
                             telegram=TelegramClientAlphaTextAdapter(telegram),
+                        ),
+                    )
+                universal_mayak = None
+                if settings.gate_universal_mayak_runtime_enabled:
+                    bundle = DeployedInstructionBundleLoader(
+                        Path(settings.gate_agent_bundle_root)
+                    ).load("universal_mayak_v1")
+                    model = build_configured_universal_mayak_model(
+                        bundle=bundle,
+                        http_client=http_client,
+                        api_key=settings.openai_api_key.get_secret_value(),
+                        api_base_url=settings.openai_api_base_url,
+                        model_profile=(
+                            settings.gate_universal_mayak_model_profile
+                        ),
+                        runtime_enabled=(
+                            settings.gate_universal_mayak_runtime_enabled
+                        ),
+                        data_gate_approved=(
+                            settings.gate_universal_mayak_model_data_gate_approved
+                        ),
+                        max_output_tokens=(
+                            settings.gate_universal_mayak_max_output_tokens
+                        ),
+                        timeout_seconds=(
+                            settings.gate_universal_mayak_timeout_seconds
+                        ),
+                    )
+                    business_telegram = TelegramClient(
+                        credential=settings.telegram_bot_token,
+                        api_base_url=os.getenv(
+                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                        ),
+                        http_client=http_client,
+                    )
+                    universal_mayak = ProcessUniversalMayakPrivateMessageService(
+                        bindings=SessionFactoryApprovedPrivateBindingResolver(
+                            sessions
+                        ),
+                        mayak=ProcessUniversalMayakDemoService(
+                            store=SessionFactoryUniversalMayakDemoStore(
+                                sessions
+                            ),
+                            model=model,
+                            delivery=TelegramBusinessUniversalMayakDelivery(
+                                sessions=sessions,
+                                telegram=business_telegram,
+                                enabled=(
+                                    settings.gate_universal_mayak_delivery_enabled
+                                ),
+                            ),
                         ),
                     )
                 voice_downloader = None
@@ -735,6 +880,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         alpha_canary=alpha_canary,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
+                        universal_mayak=universal_mayak,
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
                     )

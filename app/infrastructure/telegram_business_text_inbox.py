@@ -177,15 +177,60 @@ class SqlTelegramBusinessTextInboxProjector(TelegramBusinessTextInboxProjector):
             is not None
         )
         expected_reply_task_count = int(command.route is WorkRoute.HUMAN_REPLY_TASK)
+        reply_task_created = False
         if reply_task_count != expected_reply_task_count:
-            raise TelegramBusinessTextInboxConflictError(
-                "telegram_business_text_inbox_reply_task_conflict"
-            )
+            if reply_task_count == 0 and expected_reply_task_count == 1:
+                await self._promote_to_human_reply(message, command=command)
+                reply_task_created = True
+            else:
+                raise TelegramBusinessTextInboxConflictError(
+                    "telegram_business_text_inbox_reply_task_conflict"
+                )
         return TelegramBusinessTextInboxResult(
             duplicate=True,
             message_created=False,
-            reply_task_created=False,
+            reply_task_created=reply_task_created,
         )
+
+    async def _promote_to_human_reply(
+        self,
+        message: Message,
+        *,
+        command: TelegramBusinessTextInboxCommand,
+    ) -> None:
+        conversation = await self._session.scalar(
+            select(Conversation).where(
+                Conversation.bot_id == message.bot_id,
+                Conversation.account_id == message.account_id,
+                Conversation.project_id == message.project_id,
+                Conversation.chat_id == command.provider_dialog_id,
+                Conversation.business_connection_id == command.business_connection_id,
+            )
+        )
+        if conversation is None:
+            raise TelegramBusinessTextInboxConflictError(
+                "telegram_business_text_inbox_conversation_missing"
+            )
+        conversation.status = ConversationStatus.OPEN.value
+        conversation.requires_reply = True
+        conversation.last_inbound_at = command.occurred_at
+        if (
+            conversation.last_message_at is None
+            or conversation.last_message_at < command.occurred_at
+        ):
+            conversation.last_message_at = command.occurred_at
+        self._session.add(
+            ReplyTask(
+                account_id=message.account_id,
+                project_id=message.project_id,
+                person_id=message.person_id,
+                conversation_id=conversation.id,
+                trigger_message_id=message.id,
+                status=ReplyTaskStatus.NEEDS_REPLY.value,
+                reason="inbound_human_text",
+            )
+        )
+        await self._session.flush()
 
     async def _require_scope(
         self,

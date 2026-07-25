@@ -120,6 +120,36 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1",
         validation_alias="OPENAI_API_BASE_URL",
     )
+    gate_universal_mayak_runtime_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_UNIVERSAL_MAYAK_RUNTIME_ENABLED",
+    )
+    gate_universal_mayak_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_UNIVERSAL_MAYAK_DELIVERY_ENABLED",
+    )
+    gate_universal_mayak_model_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_UNIVERSAL_MAYAK_MODEL_DATA_GATE_APPROVED",
+    )
+    gate_universal_mayak_model_profile: str = Field(
+        default="gpt-5.6-luna",
+        min_length=1,
+        max_length=128,
+        validation_alias="GATE_UNIVERSAL_MAYAK_MODEL_PROFILE",
+    )
+    gate_universal_mayak_max_output_tokens: int = Field(
+        default=512,
+        ge=64,
+        le=4096,
+        validation_alias="GATE_UNIVERSAL_MAYAK_MAX_OUTPUT_TOKENS",
+    )
+    gate_universal_mayak_timeout_seconds: float = Field(
+        default=30,
+        ge=1,
+        le=120,
+        validation_alias="GATE_UNIVERSAL_MAYAK_TIMEOUT_SECONDS",
+    )
     gate_telegram_voice_archive_enabled: bool = Field(
         default=True,
         validation_alias="GATE_TELEGRAM_VOICE_ARCHIVE_ENABLED",

@@ -145,3 +145,21 @@ def test_human_reply_route_rejects_outbound_direction() -> None:
             business_connection_id="private-connection",
             projection=outbound,
         )
+
+
+def test_inbox_command_allows_agent_route_without_changing_canonical_truth() -> None:
+    command = build_telegram_business_text_inbox_command(
+        _update(),
+        account_id="22222222-2222-2222-2222-222222222222",
+        project_id="33333333-3333-3333-3333-333333333333",
+        canonical_message_id="44444444-4444-4444-4444-444444444444",
+        bot_username="gate_m_bot",
+        update_id=42,
+        business_connection_id="private-connection",
+        projection=_projection(),
+        route_override=WorkRoute.AGENT_TURN,
+    )
+
+    assert command.direction is CanonicalMessageDirection.INBOUND
+    assert command.route is WorkRoute.AGENT_TURN
+    assert _projection().ownership.route is WorkRoute.HUMAN_REPLY_TASK
