@@ -61,16 +61,23 @@ from app.application.telegram_processing import (
 from app.application.telegram_voice_archive import (
     ArchiveTelegramVoiceCommand,
     ArchiveTelegramVoiceService,
+    PersistTelegramVoiceTranscriptCommand,
     TelegramVoiceArchiveDirection,
     TelegramVoiceArchiver,
+    TelegramVoiceTranscriptStatus,
 )
 from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateCommand,
     ProcessTelegramVoiceUpdateService,
     TelegramVoiceUpdateProcessor,
 )
-from app.application.telegram_voice_transcription import TelegramVoiceTranscriptionService
-from app.application.telegram_voice_update import extract_telegram_voice
+from app.application.telegram_voice_transcription import (
+    TelegramVoiceTranscriptionService,
+)
+from app.application.telegram_voice_update import (
+    extract_telegram_voice,
+    project_transcribed_voice,
+)
 from app.application.telegram_work_ownership_shadow import (
     TelegramIngressRoutingView,
     evaluate_telegram_work_ownership_shadow,
@@ -237,49 +244,102 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 voice_disposition = (
                     "archive_duplicate" if archived.duplicate else "archived"
                 )
+                if (
+                    archived.transcription_status
+                    is TelegramVoiceTranscriptStatus.TRANSCRIBED
+                    and archived.transcript_text is not None
+                ):
+                    payload = project_transcribed_voice(
+                        payload,
+                        envelope=voice,
+                        transcript=archived.transcript_text,
+                    )
+                    voice_disposition = (
+                        f"{voice_disposition}:persisted_transcript"
+                    )
+                elif archived.transcription_status is not None:
+                    raise TelegramUpdateProcessingError(
+                        archived.transcription_reason_code
+                        or "telegram_voice_transcription_blocked"
+                    )
+                else:
+                    if self._voice_updates is None:
+                        raise TelegramUpdateProcessingError(
+                            "telegram_voice_not_configured"
+                        )
+                    try:
+                        voice_result = await self._voice_updates.execute(
+                            ProcessTelegramVoiceUpdateCommand(
+                                update=payload,
+                                workspace_key=self._settings.gate_workspace_id,
+                                connector_ref=connector.key.value,
+                                period_key=item.received_at.strftime("%Y-%m"),
+                                requested_microusd=(
+                                    voice.voice.duration_seconds
+                                    * self._settings.gate_telegram_voice_reserve_microusd_per_second
+                                ),
+                                occurred_at=item.received_at,
+                                language=(
+                                    self._settings.gate_telegram_voice_language
+                                    or "ru"
+                                ),
+                                enabled=(
+                                    self._settings.gate_telegram_voice_transcription_enabled
+                                ),
+                            )
+                        )
+                    except Exception:
+                        raise TelegramUpdateProcessingError(
+                            "telegram_voice_processing_failed"
+                        ) from None
+                    transcription = voice_result.transcription
+                    if transcription is None:
+                        raise TelegramUpdateProcessingError(
+                            "telegram_voice_transcription_result_missing"
+                        )
+                    try:
+                        await self._voice_archive.persist_transcript(
+                            PersistTelegramVoiceTranscriptCommand(
+                                archive_id=archived.archive_id,
+                                status=TelegramVoiceTranscriptStatus(
+                                    transcription.outcome.value
+                                ),
+                                transcribed_at=item.received_at,
+                                text=transcription.alpha_input_text,
+                                language=(
+                                    self._settings.gate_telegram_voice_language
+                                    or "ru"
+                                ),
+                                model=(
+                                    self._settings.gate_telegram_voice_transcription_model
+                                ),
+                                reason_code=transcription.reason_code,
+                            )
+                        )
+                    except Exception:
+                        raise TelegramUpdateProcessingError(
+                            "telegram_voice_transcript_persist_failed"
+                        ) from None
+                    voice_disposition = (
+                        f"{voice_disposition}:{voice_result.disposition.value}"
+                    )
+                    if (
+                        not voice_result.downstream_allowed
+                        or voice_result.downstream_update is None
+                    ):
+                        raise TelegramUpdateProcessingError(
+                            voice_result.reason_code
+                        )
+                    payload = voice_result.downstream_update
+
                 if voice_identity.direction is TelegramIngressDirection.OUTBOUND:
                     self._logger.info(
-                        "Telegram Business voice archived: direction=outbound "
-                        "duplicate=%s size_bytes=%s",
+                        "Telegram Business voice archived and transcribed: "
+                        "direction=outbound duplicate=%s size_bytes=%s",
                         archived.duplicate,
                         archived.size_bytes,
                     )
                     return
-                if self._voice_updates is None:
-                    raise TelegramUpdateProcessingError(
-                        "telegram_voice_not_configured"
-                    )
-                try:
-                    voice_result = await self._voice_updates.execute(
-                        ProcessTelegramVoiceUpdateCommand(
-                            update=payload,
-                            workspace_key=self._settings.gate_workspace_id,
-                            connector_ref=connector.key.value,
-                            period_key=item.received_at.strftime("%Y-%m"),
-                            requested_microusd=(
-                                voice.voice.duration_seconds
-                                * self._settings.gate_telegram_voice_reserve_microusd_per_second
-                            ),
-                            occurred_at=item.received_at,
-                            language=self._settings.gate_telegram_voice_language or None,
-                            enabled=self._settings.gate_telegram_voice_transcription_enabled,
-                        )
-                    )
-                except Exception:
-                    raise TelegramUpdateProcessingError(
-                        "telegram_voice_processing_failed"
-                    ) from None
-                voice_disposition = (
-                    f"{voice_disposition}:{voice_result.disposition.value}"
-                )
-                if (
-                    not voice_result.downstream_allowed
-                    or voice_result.downstream_update is None
-                ):
-                    raise TelegramUpdateProcessingError(
-                        voice_result.reason_code
-                    )
-                payload = voice_result.downstream_update
 
         try:
             decision = classify_telegram_ingress(payload)

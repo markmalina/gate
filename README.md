@@ -101,7 +101,7 @@ The receiving owner performs these steps in order and records evidence:
    show Ruff, strict mypy, pytest, Alpha rehearsals, Alembic upgrade/schema-drift/downgrade,
    disposable PostgreSQL backup/restore and both Docker builds as successful.
 3. **Clean build from source.** In a disposable environment, follow §15 and run Ruff, mypy, pytest
-   and `alembic upgrade head`. Current release schema head is `0040_alpha_model_v2_bounded_live`. Never point this
+   and `alembic upgrade head`. Current release schema head is `0041_voice_transcript_store`. Never point this
    acceptance run at production.
 4. **Deployment identity.** Read Railway deployment metadata and Gate status. The production commit
    must equal the accepted `main` merge SHA. A healthy older deployment is not acceptance.
@@ -191,7 +191,7 @@ Verified through Gate M and exact Railway production on 2026-07-18 at `f879fefde
 |---|---|
 | GitHub default branch | `main` |
 | Accepted merge / Railway fingerprint | `f879fefde08dbd1264829ce201808f726581eb1f` / `f879fefde08d` |
-| Release schema head | `0040_alpha_model_v2_bounded_live` |
+| Release schema head | `0041_voice_transcript_store` |
 | Environment / mode | `production` / `manual` |
 | Telegram Business | RU and BY both `ready`, `can_reply=true` |
 | Contact import | RU 90; BY 0 and intentionally deferred |
@@ -412,7 +412,7 @@ Important locations:
 | `docs/TEAM_WORKFLOW.md` | Collaboration and deployment authority |
 | `docs/ALPHA_OPERATOR_RUNBOOK.md` | Alpha owner controls, provider activation, stop drills and rollback |
 
-Core persisted concepts currently include `Account`, `Project`, `TelegramBusinessConnection`, `TelegramUpdate`, `GateEvent`, `Person`, `PersonIdentity`, `Conversation`, `Message`, `ReplyTask`, `ReplyDraft`, `SendAttempt` and `AuditLog`.
+Core persisted concepts currently include `Account`, `Project`, `TelegramBusinessConnection`, `TelegramUpdate`, `GateEvent`, `Person`, `PersonIdentity`, `Conversation`, `Message`, `ReplyTask`, `ReplyDraft`, `SendAttempt`, `TelegramVoiceArchive` (bounded original audio plus automatic transcript metadata) and `AuditLog`.
 
 ## 11. Known architecture debt and risks
 

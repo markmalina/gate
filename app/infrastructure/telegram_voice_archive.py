@@ -9,9 +9,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.telegram_voice_archive import (
+    PersistTelegramVoiceTranscriptCommand,
     TelegramVoiceArchiveRecord,
     TelegramVoiceArchiveResult,
     TelegramVoiceArchiveStore,
+    TelegramVoiceTranscriptPersistenceResult,
+    TelegramVoiceTranscriptStatus,
 )
 from app.application.telegram_voice_transcription import TelegramVoiceError
 from app.models.domain import TelegramVoiceArchive
@@ -105,4 +108,70 @@ class SessionFactoryTelegramVoiceArchiveStore(TelegramVoiceArchiveStore):
                 duplicate=True,
                 size_bytes=existing.size_bytes,
                 media_type=existing.media_type,
+                transcription_status=(
+                    TelegramVoiceTranscriptStatus(existing.transcription_status)
+                    if existing.transcription_status is not None
+                    else None
+                ),
+                transcript_text=existing.transcript_text,
+                transcription_reason_code=existing.transcription_reason_code,
+            )
+
+    async def persist_transcript(
+        self,
+        command: PersistTelegramVoiceTranscriptCommand,
+    ) -> TelegramVoiceTranscriptPersistenceResult:
+        try:
+            archive_id = uuid.UUID(command.archive_id)
+        except ValueError as exc:
+            raise TelegramVoiceError(
+                "telegram_voice_archive_scope_invalid"
+            ) from exc
+
+        async with self._sessions.begin() as session:
+            archive = await session.scalar(
+                select(TelegramVoiceArchive)
+                .where(TelegramVoiceArchive.id == archive_id)
+                .with_for_update()
+            )
+            if archive is None:
+                raise TelegramVoiceError("telegram_voice_archive_not_found")
+
+            expected = (
+                command.status.value,
+                command.text,
+                command.language,
+                command.model,
+                command.reason_code,
+                command.transcribed_at,
+            )
+            if archive.transcription_status is not None:
+                actual = (
+                    archive.transcription_status,
+                    archive.transcript_text,
+                    archive.transcript_language,
+                    archive.transcription_model,
+                    archive.transcription_reason_code,
+                    archive.transcribed_at,
+                )
+                if actual != expected:
+                    raise TelegramVoiceError(
+                        "telegram_voice_transcript_replay_mismatch"
+                    )
+                return TelegramVoiceTranscriptPersistenceResult(
+                    archive_id=str(archive.id),
+                    duplicate=True,
+                    status=command.status,
+                )
+
+            archive.transcription_status = command.status.value
+            archive.transcript_text = command.text
+            archive.transcript_language = command.language
+            archive.transcription_model = command.model
+            archive.transcription_reason_code = command.reason_code
+            archive.transcribed_at = command.transcribed_at
+            return TelegramVoiceTranscriptPersistenceResult(
+                archive_id=str(archive.id),
+                duplicate=False,
+                status=command.status,
             )

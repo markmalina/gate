@@ -825,6 +825,27 @@ class TelegramVoiceArchive(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    transcription_status: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+    )
+    transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript_language: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+    transcription_model: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    transcription_reason_code: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    transcribed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
