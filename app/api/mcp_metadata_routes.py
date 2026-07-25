@@ -5,8 +5,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.communication_feed_mcp import router as communication_feed_router
+from app.api.communication_feed_mcp import (
+    FEED_REPLY_CONTEXT_OUTPUT_SCHEMA,
+    router as communication_feed_router,
+)
+from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.core.config import Settings, get_settings
+
+MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"] = FEED_REPLY_CONTEXT_OUTPUT_SCHEMA
 
 router = APIRouter()
 router.include_router(communication_feed_router)
