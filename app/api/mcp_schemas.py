@@ -327,9 +327,11 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "installation": _object(
                         {
                             "total": {"type": "integer", "minimum": 0},
+                            "discovered": {"type": "integer", "minimum": 0},
+                            "pending_approval": {"type": "integer", "minimum": 0},
                             "active": {"type": "integer", "minimum": 0},
                             "paused": {"type": "integer", "minimum": 0},
-                            "pending_approval": {"type": "integer", "minimum": 0},
+                            "revoked": {"type": "integer", "minimum": 0},
                             "exact_active": {"type": "integer", "minimum": 0},
                             "ready": {"type": "boolean"},
                         }
@@ -339,6 +341,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "total": {"type": "integer", "minimum": 0},
                             "active": {"type": "integer", "minimum": 0},
                             "paused": {"type": "integer", "minimum": 0},
+                            "completed": {"type": "integer", "minimum": 0},
                             "handoff_required": {"type": "integer", "minimum": 0},
                         }
                     ),
