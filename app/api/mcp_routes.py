@@ -648,7 +648,7 @@ async def _latest_voice_archive_tool_result(
         "archive_id": str(archive.id),
         "account": {
             "alias": account.alias,
-            "label": account.label,
+            "label": account.alias.upper(),
         },
         "direction": archive.direction,
         "received_at": archive.received_at.isoformat(),
