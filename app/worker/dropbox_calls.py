@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 
 _DROPBOX_API = "https://api.dropboxapi.com/2"
 _DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2"
+# Reuse the existing hard-limited Gate voice budget until billing scopes are generalized.
+_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
+_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
 _SUPPORTED_SUFFIXES = {
     ".3gp",
     ".aac",
@@ -484,7 +487,7 @@ async def _transcribe_recording(
                 duration_seconds=duration_seconds,
             ),
             workspace_key=settings.gate_workspace_id,
-            connector_ref=f"dropbox:{settings.dropbox_call_account_id}",
+            connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
             reservation_key=f"dropbox-call-v1:{recording.id}",
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
@@ -495,7 +498,7 @@ async def _transcribe_recording(
             occurred_at=occurred_at,
             language="ru",
             enabled=True,
-            budget_scope_kind="dropbox_account",
+            budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
         )
     )
     async with session_factory() as session:
