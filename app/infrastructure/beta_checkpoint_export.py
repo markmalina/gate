@@ -195,11 +195,14 @@ def _assert_contiguous_from_origin(events: Sequence[dict[str, Any]]) -> None:
     if not events:
         raise BetaCheckpointExportError("beta_checkpoint_context_empty")
     group_id = events[0].get("group_id")
-    for expected_sequence, event in enumerate(events, start=1):
+    sequence_start = events[0].get("sequence")
+    if not isinstance(sequence_start, int) or sequence_start < 1:
+        raise BetaCheckpointExportError("beta_checkpoint_context_not_contiguous")
+    for offset, event in enumerate(events):
         if (
             event.get("schema_version") != EVENT_VERSION
             or event.get("group_id") != group_id
-            or event.get("sequence") != expected_sequence
+            or event.get("sequence") != sequence_start + offset
         ):
             raise BetaCheckpointExportError(
                 "beta_checkpoint_context_not_contiguous"
