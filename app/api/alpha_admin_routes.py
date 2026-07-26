@@ -20,9 +20,11 @@ from app.application.alpha_lifecycle import (
 from app.application.alpha_model_readiness import (
     AlphaModelReadinessFacts,
     alpha_model_readiness_payload,
+    alpha_release_binding_readiness,
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.alpha_canary import (
+    alpha_canary_active_installation_count,
     alpha_canary_audit_counts,
     alpha_canary_binding_count,
     alpha_canary_installation_count,
@@ -71,6 +73,10 @@ async def get_alpha_canary_status(
         session,
         workspace_key=workspace_key,
     )
+    active_installation_count = await alpha_canary_active_installation_count(
+        session,
+        workspace_key=workspace_key,
+    )
     exact_binding_count = await alpha_canary_binding_count(
         session,
         workspace_key=workspace_key,
@@ -82,6 +88,13 @@ async def get_alpha_canary_status(
     model = await alpha_model_operational_status(
         session,
         workspace_key=workspace_key,
+    )
+    binding_readiness = alpha_release_binding_readiness(
+        discovered_installations=installation_count,
+        group_capacity=settings.gate_alpha_group_capacity,
+        active_installations=active_installation_count,
+        exact_active_bindings=exact_binding_count,
+        reviewed_model_bindings=model.active_model_bindings,
     )
     model_shadow = alpha_model_readiness_payload(
         AlphaModelReadinessFacts(
@@ -112,13 +125,22 @@ async def get_alpha_canary_status(
         "webhook_secret_configured": bool(
             settings.telegram_alpha_webhook_secret.get_secret_value()
         ),
-        "one_group_discovered": installation_count == 1,
-        "one_active_exact_revision": exact_binding_count == 1,
+        "groups_within_capacity": binding_readiness["groups_within_capacity"],
+        "all_active_bindings_exact": binding_readiness[
+            "all_active_bindings_exact"
+        ],
+        "reviewed_model_release_ready": binding_readiness[
+            "reviewed_model_release_ready"
+        ],
     }
     return {
         "code_ready": True,
         "activation_ready": all(checks.values()),
         "checks": checks,
+        "legacy_cardinality": {
+            "one_group_discovered": installation_count == 1,
+            "one_active_exact_revision": exact_binding_count == 1,
+        },
         "allowed_updates": ["message", "my_chat_member"],
         "disclosure_copy": ALPHA_DISCLOSURE_PREFIX.strip(),
         "active_installations": exact_binding_count,
