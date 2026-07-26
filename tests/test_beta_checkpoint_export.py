@@ -4,11 +4,11 @@ import base64
 import json
 from datetime import UTC, datetime
 
-import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+import pytest
 
 from app.infrastructure.beta_checkpoint_export import (
     EVENT_VERSION,
