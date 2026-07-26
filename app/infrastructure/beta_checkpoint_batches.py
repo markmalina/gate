@@ -59,6 +59,8 @@ async def next_beta_checkpoint_batch(
         expected_group_id=expected_group_id,
     )
     assert binding is not None
+    recipient_public_key = binding.checkpoint_recipient_pem
+    assert recipient_public_key is not None
 
     state = await session.scalar(
         select(BetaContextCheckpointStateModel)
@@ -117,9 +119,7 @@ async def next_beta_checkpoint_batch(
         checkpoint = _build_portable_checkpoint(
             group_id=binding.group_id,
             events=events,
-            recipient_public_key=binding.checkpoint_recipient_pem.encode(
-                "utf-8"
-            ),
+            recipient_public_key=recipient_public_key.encode("utf-8"),
             created_at=_iso_datetime(datetime.now(UTC)),
         )
     except BetaCheckpointExportError as exc:
