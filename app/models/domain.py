@@ -846,6 +846,18 @@ class TelegramVoiceArchive(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    transcription_recovery_authorized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    summary_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary_reason_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    summarized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -860,6 +872,12 @@ class DropboxCallInboxState(Base):
 
     account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    backfill_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     pending: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -950,6 +968,14 @@ class PhoneCallRecording(Base):
         nullable=True,
     )
     transcribed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    summary_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary_reason_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    summarized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

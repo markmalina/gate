@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -49,6 +49,7 @@ class TelegramVoiceOperationalStatus:
     retry_count: int = 0
     dead_letter_count: int = 0
     last_error_code: str | None = None
+    dead_letter_by_code: dict[str, int] = field(default_factory=dict)
 
     def payload(self) -> JsonObject:
         return {
@@ -73,6 +74,7 @@ class TelegramVoiceOperationalStatus:
             "retry_count": self.retry_count,
             "dead_letter_count": self.dead_letter_count,
             "last_error_code": self.last_error_code,
+            "dead_letter_by_code": dict(self.dead_letter_by_code),
         }
 
 
@@ -211,6 +213,7 @@ async def telegram_voice_operational_status(
         retry_count=queue.retry_count,
         dead_letter_count=queue.dead_letter_count,
         last_error_code=queue.last_error_code,
+        dead_letter_by_code=queue.dead_letter_by_code,
     )
 
 
@@ -222,6 +225,7 @@ class _TelegramVoiceQueueSummary:
     retry_count: int
     dead_letter_count: int
     last_error_code: str | None
+    dead_letter_by_code: dict[str, int]
 
 
 async def _telegram_voice_queue_summary(
@@ -271,6 +275,29 @@ async def _telegram_voice_queue_summary(
             .where(*base_filters)
         )
     ).one()
+    dead_letter_rows = (
+        await session.execute(
+            select(
+                TelegramOutboxEvent.last_error_code,
+                func.count(),
+            )
+            .select_from(TelegramOutboxEvent)
+            .join(
+                TelegramReceipt,
+                TelegramReceipt.id == TelegramOutboxEvent.receipt_id,
+            )
+            .where(
+                *base_filters,
+                TelegramOutboxEvent.status
+                == TelegramOutboxStatus.DEAD_LETTER.value,
+            )
+            .group_by(TelegramOutboxEvent.last_error_code)
+        )
+    ).all()
+    dead_letter_by_code = {
+        str(error_code or "unknown"): int(count or 0)
+        for error_code, count in dead_letter_rows
+    }
     last_error_code = (
         await session.execute(
             select(TelegramOutboxEvent.last_error_code)
@@ -297,6 +324,7 @@ async def _telegram_voice_queue_summary(
         retry_count=int(row[3] or 0),
         dead_letter_count=int(row[4] or 0),
         last_error_code=last_error_code,
+        dead_letter_by_code=dead_letter_by_code,
     )
 
 

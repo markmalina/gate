@@ -102,6 +102,11 @@ class _QueueSummary:
         return (3, 0, 1, 0, 2)
 
 
+class _DeadLetters:
+    def all(self) -> list[tuple[str, int]]:
+        return [("openai_transcription_rejected", 2)]
+
+
 class _LatestError:
     def scalar_one_or_none(self) -> str:
         return "openai_transcription_rejected"
@@ -138,13 +143,15 @@ class _StatusSession:
 
     async def execute(
         self, _statement: object
-    ) -> _Summary | _QueueSummary | _LatestError:
+    ) -> _Summary | _QueueSummary | _DeadLetters | _LatestError:
         self.execute_calls += 1
         if self.execute_calls == 1:
             return _Summary()
         if self.execute_calls == 2:
             return _QueueSummary()
         if self.execute_calls == 3:
+            return _DeadLetters()
+        if self.execute_calls == 4:
             return _LatestError()
         raise AssertionError("unexpected voice status query")
 
@@ -174,3 +181,4 @@ def test_operational_query_returns_only_aggregated_budget_state() -> None:
     assert status.retry_count == 0
     assert status.dead_letter_count == 2
     assert status.last_error_code == "openai_transcription_rejected"
+    assert status.dead_letter_by_code == {"openai_transcription_rejected": 2}
