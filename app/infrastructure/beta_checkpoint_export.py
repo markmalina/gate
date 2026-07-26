@@ -29,15 +29,6 @@ HKDF_INFO = b"beta.portable-checkpoint@1"
 MAX_EXPORT_EVENTS = 500
 MAX_PLAINTEXT_BYTES = 2_000_000
 
-_ALEXANDER_INSTALLATION_REF = "installation-7fbf02145be55011ae8307e57dd8216c"
-_ALEXANDER_USER_WORKSPACE_ID = "beta-user-mark-001"
-_ALEXANDER_GROUP_ID = "beta-group-stroi-alphav-001"
-_ALEXANDER_RECIPIENT_PEM = b"""-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VuAyEAJOsuz1/C1RbIFfazec4EdZlXFFWln8UdWPJ1jddC3Fo=
------END PUBLIC KEY-----
-"""
-
-
 class BetaCheckpointExportError(RuntimeError):
     """Fail-closed public error with no private context in its message."""
 
@@ -53,9 +44,6 @@ async def export_beta_space_checkpoint(
 ) -> dict[str, Any]:
     """Return one encrypted checkpoint without changing an export cursor."""
 
-    if installation_ref != _ALEXANDER_INSTALLATION_REF:
-        raise BetaCheckpointExportError("beta_checkpoint_export_not_allowed")
-
     binding = await session.scalar(
         select(BetaContextBindingModel).where(
             BetaContextBindingModel.installation_ref == installation_ref,
@@ -64,11 +52,8 @@ async def export_beta_space_checkpoint(
     )
     if binding is None:
         raise BetaCheckpointExportError("beta_checkpoint_binding_not_active")
-    if (
-        binding.user_workspace_id != _ALEXANDER_USER_WORKSPACE_ID
-        or binding.group_id != _ALEXANDER_GROUP_ID
-    ):
-        raise BetaCheckpointExportError("beta_checkpoint_binding_not_exact")
+    if not binding.checkpoint_recipient_pem:
+        raise BetaCheckpointExportError("beta_checkpoint_recipient_missing")
 
     rows = (
         await session.execute(
@@ -92,7 +77,7 @@ async def export_beta_space_checkpoint(
     checkpoint = _build_portable_checkpoint(
         group_id=binding.group_id,
         events=events,
-        recipient_public_key=_ALEXANDER_RECIPIENT_PEM,
+        recipient_public_key=binding.checkpoint_recipient_pem.encode("utf-8"),
         created_at=_iso_datetime(datetime.now(UTC)),
     )
     return {
@@ -210,11 +195,14 @@ def _assert_contiguous_from_origin(events: Sequence[dict[str, Any]]) -> None:
     if not events:
         raise BetaCheckpointExportError("beta_checkpoint_context_empty")
     group_id = events[0].get("group_id")
-    for expected_sequence, event in enumerate(events, start=1):
+    sequence_start = events[0].get("sequence")
+    if not isinstance(sequence_start, int) or sequence_start < 1:
+        raise BetaCheckpointExportError("beta_checkpoint_context_not_contiguous")
+    for offset, event in enumerate(events):
         if (
             event.get("schema_version") != EVENT_VERSION
             or event.get("group_id") != group_id
-            or event.get("sequence") != expected_sequence
+            or event.get("sequence") != sequence_start + offset
         ):
             raise BetaCheckpointExportError(
                 "beta_checkpoint_context_not_contiguous"
