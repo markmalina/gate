@@ -107,7 +107,7 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
         is False
     )
     assert _is_supported_file({**entry, "name": "photo.jpg"}) is False
-    assert _is_supported_file({**entry, "size": 20 * 1024 * 1024 + 1}) is False
+    assert _is_supported_file({**entry, "size": 25 * 1024 * 1024 + 1}) is False
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False
 
 
