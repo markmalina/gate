@@ -276,7 +276,7 @@ def alpha_release_binding_readiness(
     """
 
     groups_within_capacity = (
-        1 <= group_capacity <= 32
+        1 <= group_capacity <= 10_000
         and 0 <= discovered_installations <= group_capacity
     )
     all_active_bindings_exact = (
