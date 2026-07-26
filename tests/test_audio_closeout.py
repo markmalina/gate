@@ -14,9 +14,10 @@ from app.models.domain import DropboxCallInboxState
 from app.worker.dropbox_calls import _is_supported_file
 
 
-def test_audio_archive_limit_matches_provider_limit() -> None:
+def test_audio_archive_bound_can_exceed_provider_request_bound() -> None:
     assert TELEGRAM_DOWNLOAD_LIMIT_BYTES == 25 * 1024 * 1024
-    assert TELEGRAM_DOWNLOAD_LIMIT_BYTES == OPENAI_TRANSCRIPTION_LIMIT_BYTES
+    assert OPENAI_TRANSCRIPTION_LIMIT_BYTES == 25_000_000
+    assert TELEGRAM_DOWNLOAD_LIMIT_BYTES > OPENAI_TRANSCRIPTION_LIMIT_BYTES
 
 
 def test_dropbox_accepts_previously_skipped_irina_call_size() -> None:
