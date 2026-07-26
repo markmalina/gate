@@ -454,7 +454,7 @@ def test_duplicate_trigger_runs_fixture_once_and_replays_proposal(tmp_path: Path
     assert not hasattr(first, "delivery_grant")
 
 
-def test_alpha_runtime_receives_only_current_message_without_history(
+def test_alpha_runtime_receives_isolated_portable_group_context(
     tmp_path: Path,
 ) -> None:
     current = "/alpha@AlphaViaBot какая главная задача сегодня?"
@@ -474,7 +474,7 @@ def test_alpha_runtime_receives_only_current_message_without_history(
     assert result.result_kind is AgentResultKind.REPLY
     assert len(runtime.commands) == 1
     assert runtime.commands[0].user_text == current
-    assert runtime.commands[0].context == ()
+    assert runtime.commands[0].context == prepared.context
 
 
 def test_prompt_injection_is_untrusted_fixture_input_and_fails_to_no_reply(
