@@ -110,6 +110,39 @@ class Settings(BaseSettings):
         le=32,
         validation_alias="GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT",
     )
+    gate_beta_checkpoint_oidc_enabled: bool = Field(
+        default=True,
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_ENABLED",
+    )
+    gate_beta_checkpoint_oidc_audience: str = Field(
+        default="gate-beta-checkpoint-v1",
+        min_length=1,
+        max_length=256,
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_AUDIENCE",
+    )
+    gate_beta_checkpoint_oidc_repository: str = Field(
+        default="markmalina/beta",
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_REPOSITORY",
+    )
+    gate_beta_checkpoint_oidc_repository_id: str = Field(
+        default="1312239432",
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_ID",
+    )
+    gate_beta_checkpoint_oidc_repository_owner_id: str = Field(
+        default="23397294",
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_OWNER_ID",
+    )
+    gate_beta_checkpoint_oidc_ref: str = Field(
+        default="refs/heads/main",
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_REF",
+    )
+    gate_beta_checkpoint_oidc_workflow_ref: str = Field(
+        default=(
+            "markmalina/beta/.github/workflows/"
+            "checkpoint-context.yml@refs/heads/main"
+        ),
+        validation_alias="GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF",
+    )
     gate_alpha_delivery_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_DELIVERY_ENABLED",
