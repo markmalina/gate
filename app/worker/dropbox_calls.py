@@ -13,7 +13,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
@@ -548,8 +548,10 @@ async def _recover_authorized_telegram_voices(
                     .where(
                         TelegramVoiceArchive.transcription_recovery_authorized_at
                         .is_not(None),
-                        TelegramVoiceArchive.transcription_status.in_(
-                            (None, TelegramVoiceOutcome.UNKNOWN.value)
+                        or_(
+                            TelegramVoiceArchive.transcription_status.is_(None),
+                            TelegramVoiceArchive.transcription_status
+                            == TelegramVoiceOutcome.UNKNOWN.value,
                         ),
                     )
                     .order_by(TelegramVoiceArchive.received_at.asc())
