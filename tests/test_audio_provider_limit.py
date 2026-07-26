@@ -95,3 +95,28 @@ def test_compressed_audio_uses_low_bitrate_provider_headroom() -> None:
 
     assert '"32k"' in source
     assert '"64k"' not in source
+
+
+def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "app"
+        / "worker"
+        / "dropbox_calls.py"
+    ).read_text(encoding="utf-8")
+
+    assert ".with_for_update(skip_locked=True)" in source
+    assert 'claimed.transcription_status = "processing"' in source
+    assert 'reservation_key=f"dropbox-call-v5:' in source
+
+
+def test_concurrent_replay_is_requeued_by_claim_migration() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0057_dropbox_call_claim.py"
+    ).read_text(encoding="utf-8")
+
+    assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
+    assert "billing_reservation_replayed" in migration
