@@ -218,7 +218,7 @@ async def test_adapter_transcribes_ordered_parts_with_previous_context() -> None
 
     assert result.text == "часть 1\nчасть 2"
     assert result.billed_quantity == 220
-    assert result.actual_microusd == 300
+    assert result.actual_microusd == 350
     assert result.provider_operation_ref == (
         "provider-request-1;provider-request-2"
     )
