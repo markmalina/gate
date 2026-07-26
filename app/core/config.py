@@ -99,7 +99,7 @@ class Settings(BaseSettings):
         validation_alias="GATE_ALPHA_CANARY_ENABLED",
     )
     gate_alpha_group_capacity: int = Field(
-        default=100,
+        default=1,
         ge=1,
         le=10_000,
         validation_alias="GATE_ALPHA_GROUP_CAPACITY",
