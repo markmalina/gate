@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+import pytest
 
 from app.core.config import Settings
 from app.core.github_actions_oidc import GitHubOidcError, _authorize_claims
