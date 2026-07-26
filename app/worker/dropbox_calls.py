@@ -538,7 +538,7 @@ async def _recover_authorized_telegram_voices(
     session_factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
 ) -> None:
-    """Retry only the three archives explicitly authorized by migration 0052."""
+    """Retry only the three archives explicitly authorized by migration 0053."""
 
     async with session_factory() as session:
         archive_ids = list(
