@@ -121,18 +121,37 @@ _FFMPEG_AUDIO_SUFFIXES = {
 
 
 class TelegramVoiceNormalizer:
-    """Pass provider-native formats through and convert other bounded audio to WAV."""
+    """Pass bounded native audio through and compress provider-oversized sources."""
 
-    def __init__(self, runner: FfmpegRunner | None = None) -> None:
+    def __init__(
+        self,
+        runner: FfmpegRunner | None = None,
+        compressed_runner: FfmpegRunner | None = None,
+    ) -> None:
         self._runner = runner or _run_ffmpeg
+        self._compressed_runner = compressed_runner or _run_ffmpeg_compressed
 
     async def normalize(self, voice: DownloadedVoice) -> NormalizedVoice:
         suffix = PurePosixPath(voice.filename).suffix.lower()
-        if suffix in _OPENAI_NATIVE_SUFFIXES:
+        if (
+            suffix in _OPENAI_NATIVE_SUFFIXES
+            and len(voice.data) <= OPENAI_TRANSCRIPTION_LIMIT_BYTES
+        ):
             return NormalizedVoice(
                 data=voice.data,
                 filename=voice.filename,
                 media_type=voice.media_type,
+            )
+        if suffix in _OPENAI_NATIVE_SUFFIXES:
+            return_code, stdout, _stderr = await self._compressed_runner(voice.data)
+            if return_code != 0 or not stdout:
+                raise TelegramVoiceError("telegram_voice_compression_failed")
+            if len(stdout) > OPENAI_TRANSCRIPTION_LIMIT_BYTES:
+                raise TelegramVoiceError("telegram_voice_normalized_too_large")
+            return NormalizedVoice(
+                data=stdout,
+                filename="telegram-voice.mp3",
+                media_type="audio/mpeg",
             )
         if suffix not in _FFMPEG_AUDIO_SUFFIXES and not voice.media_type.startswith(
             "audio/"
@@ -166,6 +185,37 @@ async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
             "16000",
             "-f",
             "wav",
+            "pipe:1",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except OSError:
+        raise TelegramVoiceError("telegram_voice_normalizer_unavailable") from None
+    stdout, stderr = await process.communicate(data)
+    return process.returncode or 0, stdout, stderr[:4096]
+
+
+async def _run_ffmpeg_compressed(data: bytes) -> tuple[int, bytes, bytes]:
+    """Compress a provider-oversized native recording to bounded mono MP3."""
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-b:a",
+            "64k",
+            "-f",
+            "mp3",
             "pipe:1",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
