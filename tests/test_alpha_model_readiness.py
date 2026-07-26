@@ -8,6 +8,7 @@ from app.application.alpha_model_readiness import (
     AlphaModelReadinessFacts,
     AlphaModelReadinessState,
     alpha_model_readiness_payload,
+    alpha_release_binding_readiness,
     evaluate_alpha_model_readiness,
 )
 
@@ -250,3 +251,47 @@ def test_mismatched_binding_and_delivery_phase_fails_closed() -> None:
 
     assert readiness.state is AlphaModelReadinessState.CONFIGURATION_INCOMPLETE
     assert readiness.prerequisites_ready is False
+
+
+def test_multi_group_release_readiness_accepts_pending_groups_within_capacity() -> None:
+    readiness = alpha_release_binding_readiness(
+        discovered_installations=3,
+        group_capacity=3,
+        active_installations=2,
+        exact_active_bindings=2,
+        reviewed_model_bindings=2,
+    )
+    assert readiness == {
+        "groups_within_capacity": True,
+        "all_active_bindings_exact": True,
+        "reviewed_model_release_ready": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("active", "exact", "reviewed"),
+    [(3, 2, 2), (2, 2, 1), (0, 0, 0)],
+)
+def test_multi_group_release_readiness_fails_closed_on_binding_gap(
+    active: int, exact: int, reviewed: int,
+) -> None:
+    readiness = alpha_release_binding_readiness(
+        discovered_installations=3,
+        group_capacity=3,
+        active_installations=active,
+        exact_active_bindings=exact,
+        reviewed_model_bindings=reviewed,
+    )
+    assert readiness["reviewed_model_release_ready"] is False
+
+
+def test_multi_group_release_readiness_fails_closed_above_capacity() -> None:
+    readiness = alpha_release_binding_readiness(
+        discovered_installations=4,
+        group_capacity=3,
+        active_installations=2,
+        exact_active_bindings=2,
+        reviewed_model_bindings=2,
+    )
+    assert readiness["groups_within_capacity"] is False
+    assert readiness["reviewed_model_release_ready"] is False
