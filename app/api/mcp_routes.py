@@ -78,6 +78,10 @@ from app.infrastructure.alpha_owner_test_runtime import (
     verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
+from app.infrastructure.beta_checkpoint_export import (
+    BetaCheckpointExportError,
+    export_beta_space_checkpoint,
+)
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
@@ -160,6 +164,7 @@ MCP_TOOL_NAMES = [
     "gate_alpha_get_test_group_presence",
     "gate_alpha_send_review",
     "gate_alpha_verify_review_replay",
+    "gate_beta_export_space_checkpoint",
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -178,6 +183,7 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_get_test_group_presence": "gate:agents:manage",
     "gate_alpha_send_review": "gate:messages:send",
     "gate_alpha_verify_review_replay": "gate:status:read",
+    "gate_beta_export_space_checkpoint": "gate:agents:manage",
 }
 
 
@@ -238,6 +244,7 @@ async def mcp_endpoint(
                     _gate_alpha_get_test_group_presence_tool(settings),
                     _gate_alpha_send_review_tool(settings),
                     _gate_alpha_verify_review_replay_tool(settings),
+                    _gate_beta_export_space_checkpoint_tool(settings),
                 ]
             },
         )
@@ -347,6 +354,13 @@ async def mcp_endpoint(
             )
         if tool_name == "gate_alpha_verify_review_replay":
             return await _alpha_verify_review_replay_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+            )
+        if tool_name == "gate_beta_export_space_checkpoint":
+            return await _beta_export_space_checkpoint_tool_result(
                 request_id=request_id,
                 arguments=arguments,
                 principal=principal,
@@ -1372,6 +1386,76 @@ def _voice_file_tool_result(
     )
 
 
+async def _beta_export_space_checkpoint_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+) -> JsonObject:
+    raw_ref = arguments.get("installation_ref")
+    if (
+        not isinstance(raw_ref, str)
+        or not raw_ref
+        or len(raw_ref) > 128
+        or arguments.get("confirmed") is not True
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="installation_ref and confirmed=true are required",
+        )
+
+    service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
+    try:
+        installations = await service.list_status(
+            principal.access_scope.workspace_id
+        )
+    except AlphaLifecycleError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.message,
+        )
+    installation = next(
+        (
+            item
+            for item in installations
+            if item.installation_key == raw_ref
+        ),
+        None,
+    )
+    if (
+        installation is None
+        or installation.state != AlphaInstallationState.ACTIVE
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="beta_checkpoint_installation_not_active",
+            message="The exact Beta Space is not active",
+        )
+
+    try:
+        payload = await export_beta_space_checkpoint(
+            session,
+            installation_ref=raw_ref,
+        )
+    except BetaCheckpointExportError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message="Beta checkpoint export failed closed",
+        )
+    return _tool_result(
+        payload,
+        (
+            f"Encrypted Beta checkpoint: {payload['sequence_start']}-"
+            f"{payload['sequence_end']}; events={payload['event_count']}"
+        ),
+        request_id,
+    )
+
+
 async def _alpha_list_installations_tool_result(
     *,
     request_id: Any,
@@ -1776,6 +1860,41 @@ def _gate_status_tool(settings: Settings) -> JsonObject:
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(tool=tool, settings=settings, scope="gate:status:read")
+
+
+def _gate_beta_export_space_checkpoint_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_beta_export_space_checkpoint",
+        "title": "Export encrypted Beta Space checkpoint",
+        "description": (
+            "After exact owner confirmation, read one active Beta Space context "
+            "stream and return only its X25519/AES-256-GCM encrypted portable "
+            "checkpoint. It exposes no plaintext, Telegram IDs or identities "
+            "and does not advance the export cursor."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "installation_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": ["installation_ref", "confirmed"],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_beta_export_space_checkpoint"
+        ],
+        "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:agents:manage",
+    )
 
 
 def _gate_alpha_list_installations_tool(settings: Settings) -> JsonObject:

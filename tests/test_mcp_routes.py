@@ -566,6 +566,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_alpha_get_test_group_presence",
         "gate_alpha_send_review",
         "gate_alpha_verify_review_replay",
+        "gate_beta_export_space_checkpoint",
     ]
     for tool in tools:
         assert tool["outputSchema"] == MCP_TOOL_OUTPUT_SCHEMAS[tool["name"]]
@@ -582,6 +583,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_alpha_get_test_group_presence",
         "gate_alpha_send_review",
         "gate_alpha_verify_review_replay",
+        "gate_beta_export_space_checkpoint",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
     assert tools[0]["annotations"]["readOnlyHint"] is True
@@ -626,6 +628,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     }
     assert tools[10]["annotations"]["readOnlyHint"] is True
     assert tools[13]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[14]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,

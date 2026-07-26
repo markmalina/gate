@@ -538,10 +538,11 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_alpha_get_test_group_presence",
                                 "gate_alpha_send_review",
                                 "gate_alpha_verify_review_replay",
+                                "gate_beta_export_space_checkpoint",
                             ],
                         },
-                        "minItems": 14,
-                        "maxItems": 14,
+                        "minItems": 15,
+                        "maxItems": 15,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -920,6 +921,84 @@ ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+BETA_CHECKPOINT_EXPORT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "installation_ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+            },
+            "group_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+            },
+            "sequence_start": {"type": "integer", "minimum": 1},
+            "sequence_end": {"type": "integer", "minimum": 1},
+            "event_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 500,
+            },
+            "container_encoding": {"type": "string", "const": "base64"},
+            "container_base64": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4_000_000,
+            },
+            "manifest": _object(
+                {
+                    "schema_version": {
+                        "type": "string",
+                        "const": "beta.portable-checkpoint-manifest@1",
+                    },
+                    "group_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                    },
+                    "sequence_start": {
+                        "type": "integer",
+                        "minimum": 1,
+                    },
+                    "sequence_end": {
+                        "type": "integer",
+                        "minimum": 1,
+                    },
+                    "event_count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                    },
+                    "container": {
+                        "type": "string",
+                        "const": "beta.x25519-aes256gcm@1",
+                    },
+                    "ciphertext_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                    },
+                }
+            ),
+            "plaintext_context_exposed": {
+                "type": "boolean",
+                "const": False,
+            },
+            "telegram_private_data_exposed": {
+                "type": "boolean",
+                "const": False,
+            },
+        }
+    ),
+    {},
+)
+
+
 ALPHA_OWNER_TEST_PRESENCE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     _object(
         {
@@ -978,4 +1057,5 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_alpha_get_test_group_presence": ALPHA_OWNER_TEST_PRESENCE_OUTPUT_SCHEMA,
     "gate_alpha_send_review": ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA,
     "gate_alpha_verify_review_replay": ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA,
+    "gate_beta_export_space_checkpoint": BETA_CHECKPOINT_EXPORT_OUTPUT_SCHEMA,
 }
