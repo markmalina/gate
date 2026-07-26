@@ -17,8 +17,8 @@ from app.application.billing import (
     UsageUnit,
 )
 
-TELEGRAM_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024
 OPENAI_TRANSCRIPTION_LIMIT_BYTES = 25 * 1024 * 1024
+TELEGRAM_DOWNLOAD_LIMIT_BYTES = OPENAI_TRANSCRIPTION_LIMIT_BYTES
 
 
 class TelegramVoiceError(ValueError):
