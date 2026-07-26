@@ -1,6 +1,6 @@
 """Allow atomic processing claims for stored phone calls.
 
-Revision ID: 0060_phone_call_processing_status
+Revision ID: 0060_call_processing_status
 Revises: 0059_merge_audio_beta_heads
 """
 
@@ -11,7 +11,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0060_phone_call_processing_status"
+revision: str = "0060_call_processing_status"
 down_revision: str | None = "0059_merge_audio_beta_heads"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
