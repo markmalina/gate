@@ -99,9 +99,9 @@ class Settings(BaseSettings):
         validation_alias="GATE_ALPHA_CANARY_ENABLED",
     )
     gate_alpha_group_capacity: int = Field(
-        default=1,
+        default=100,
         ge=1,
-        le=32,
+        le=10_000,
         validation_alias="GATE_ALPHA_GROUP_CAPACITY",
     )
     gate_alpha_membership_replay_limit: int = Field(
