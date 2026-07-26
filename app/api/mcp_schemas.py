@@ -174,6 +174,9 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "webhook_credentials_configured": {"type": "boolean"},
                     "one_group_discovered": {"type": "boolean"},
                     "one_active_exact_revision": {"type": "boolean"},
+                    "groups_within_capacity": {"type": "boolean"},
+                    "all_active_bindings_exact": {"type": "boolean"},
+                    "reviewed_model_release_ready": {"type": "boolean"},
                     "audit": _object(
                         {
                             "canonical_messages": {"type": "integer", "minimum": 0},
