@@ -163,6 +163,7 @@ def mcp_context() -> Iterator[FakeMcpSession]:
             0,
             0,
             1,
+            1,
             0,
             1,
             0,
@@ -674,6 +675,9 @@ async def test_mcp_status_is_scoped(
     assert structured["contact_directory"] == []
     assert structured["alpha_canary"]["one_group_discovered"] is True
     assert structured["alpha_canary"]["one_active_exact_revision"] is False
+    assert structured["alpha_canary"]["groups_within_capacity"] is True
+    assert structured["alpha_canary"]["all_active_bindings_exact"] is False
+    assert structured["alpha_canary"]["reviewed_model_release_ready"] is False
     assert structured["alpha_canary"]["delivery_enabled"] is False
     assert structured["alpha_canary"]["audit"] == {
         "canonical_messages": 1,
@@ -709,7 +713,7 @@ async def test_mcp_status_is_scoped(
     assert "Telegram Business text parity:" in result["content"][0]["text"]
     assert "cutover_ready: False" in result["content"][0]["text"]
     assert "budget_remaining: $0.996900" in result["content"][0]["text"]
-    assert len(mcp_context.statements) == 32
+    assert len(mcp_context.statements) == 33
 
 
 @pytest.mark.anyio

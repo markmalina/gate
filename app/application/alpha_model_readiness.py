@@ -257,3 +257,39 @@ def _promotion_dry_run(
             "deployment_binding_not_exact",
         ],
     }
+
+
+
+def alpha_release_binding_readiness(
+    *,
+    discovered_installations: int,
+    group_capacity: int,
+    active_installations: int,
+    exact_active_bindings: int,
+    reviewed_model_bindings: int,
+) -> dict[str, bool]:
+    """Evaluate release readiness across all admitted Alpha group installations.
+
+    Pending installations inside the configured capacity do not disable exact
+    active groups. Any active binding gap, unreviewed model release, empty
+    active set, or capacity overflow fails closed.
+    """
+
+    groups_within_capacity = (
+        1 <= group_capacity <= 32
+        and 0 <= discovered_installations <= group_capacity
+    )
+    all_active_bindings_exact = (
+        active_installations > 0
+        and exact_active_bindings == active_installations
+    )
+    reviewed_model_release_ready = (
+        groups_within_capacity
+        and all_active_bindings_exact
+        and reviewed_model_bindings == exact_active_bindings
+    )
+    return {
+        "groups_within_capacity": groups_within_capacity,
+        "all_active_bindings_exact": all_active_bindings_exact,
+        "reviewed_model_release_ready": reviewed_model_release_ready,
+    }
