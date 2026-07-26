@@ -197,7 +197,7 @@ async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
 
 
 async def _run_ffmpeg_compressed(data: bytes) -> tuple[int, bytes, bytes]:
-    """Compress a provider-oversized native recording to bounded mono MP3."""
+    """Compress a provider-oversized native recording to low-bitrate mono MP3."""
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -213,7 +213,7 @@ async def _run_ffmpeg_compressed(data: bytes) -> tuple[int, bytes, bytes]:
             "-ar",
             "16000",
             "-b:a",
-            "64k",
+            "32k",
             "-f",
             "mp3",
             "pipe:1",
