@@ -13,7 +13,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
@@ -435,6 +435,7 @@ async def _resume_received_recordings(
 ) -> None:
     """Resume durable rows left incomplete by a prior worker failure or restart."""
 
+    stale_before = datetime.now(UTC) - timedelta(hours=1)
     async with session_factory() as session:
         recording_ids = list(
             (
@@ -444,8 +445,13 @@ async def _resume_received_recordings(
                         PhoneCallRecording.workspace_key == settings.gate_workspace_id,
                         PhoneCallRecording.source_account_id
                         == settings.dropbox_call_account_id,
-                        PhoneCallRecording.transcription_status
-                        == "received",
+                        or_(
+                            PhoneCallRecording.transcription_status == "received",
+                            and_(
+                                PhoneCallRecording.transcription_status == "processing",
+                                PhoneCallRecording.transcribed_at < stale_before,
+                            ),
+                        ),
                     )
                     .order_by(PhoneCallRecording.received_at.asc())
                     .limit(10)
@@ -455,7 +461,7 @@ async def _resume_received_recordings(
     for recording_id in recording_ids:
         async with session_factory() as session:
             recording = await session.get(PhoneCallRecording, recording_id)
-        if recording is None or recording.transcription_status != "received":
+        if recording is None:
             continue
         await _transcribe_recording(
             settings=settings,
@@ -472,6 +478,32 @@ async def _transcribe_recording(
     http: httpx.AsyncClient,
     recording: PhoneCallRecording,
 ) -> None:
+    claimed_at = datetime.now(UTC)
+    stale_before = claimed_at - timedelta(hours=1)
+    async with session_factory() as session:
+        claimed = await session.scalar(
+            select(PhoneCallRecording)
+            .where(
+                PhoneCallRecording.id == recording.id,
+                or_(
+                    PhoneCallRecording.transcription_status == "received",
+                    and_(
+                        PhoneCallRecording.transcription_status == "processing",
+                        PhoneCallRecording.transcribed_at < stale_before,
+                    ),
+                ),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if claimed is None:
+            return
+        claimed.transcription_status = "processing"
+        claimed.transcription_reason_code = "dropbox_call_processing"
+        claimed.transcribed_at = claimed_at
+        await session.commit()
+        await session.refresh(claimed)
+        recording = claimed
+
     duration_seconds = recording.duration_seconds
     if duration_seconds is None:
         raise DropboxCallWorkerError("dropbox_call_duration_unknown")
@@ -500,7 +532,7 @@ async def _transcribe_recording(
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=f"dropbox-call-v4:{recording.id}",
+            reservation_key=f"dropbox-call-v5:{recording.id}",
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
                 100,
