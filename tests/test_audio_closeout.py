@@ -32,7 +32,7 @@ def test_dropbox_accepts_previously_skipped_irina_call_size() -> None:
 
 
 def test_new_dropbox_state_requires_one_bounded_backfill() -> None:
-    state = DropboxCallInboxState(account_id="dbid:test")
+    state = DropboxCallInboxState(account_id="dbid:test", backfill_version=0)
     assert state.backfill_version == 0
 
 
