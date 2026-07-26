@@ -664,14 +664,22 @@ async def _summarize_ready_audio(
             ).all()
         )
         now = datetime.now(UTC)
-        for record in [*voice_rows, *call_rows]:
-            if record.transcript_text is None:
+        for archive in voice_rows:
+            if archive.transcript_text is None:
                 continue
-            record.summary_status = "summarized"
-            record.summary_text = build_audio_summary(record.transcript_text)
-            record.summary_model = AUDIO_SUMMARY_MODEL
-            record.summary_reason_code = "audio_summary_generated"
-            record.summarized_at = now
+            archive.summary_status = "summarized"
+            archive.summary_text = build_audio_summary(archive.transcript_text)
+            archive.summary_model = AUDIO_SUMMARY_MODEL
+            archive.summary_reason_code = "audio_summary_generated"
+            archive.summarized_at = now
+        for recording in call_rows:
+            if recording.transcript_text is None:
+                continue
+            recording.summary_status = "summarized"
+            recording.summary_text = build_audio_summary(recording.transcript_text)
+            recording.summary_model = AUDIO_SUMMARY_MODEL
+            recording.summary_reason_code = "audio_summary_generated"
+            recording.summarized_at = now
         await session.commit()
 
 
