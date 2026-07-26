@@ -3,11 +3,11 @@
 import importlib.util
 from pathlib import Path
 
+from app.application.instruction_bundles import DeployedInstructionBundleLoader
 from app.application.universal_mayak_demo import (
     UNIVERSAL_MAYAK_PROMPT_REF,
     UNIVERSAL_MAYAK_PROMPT_SHA256,
 )
-from app.application.instruction_bundles import DeployedInstructionBundleLoader
 
 
 def test_prompt_identity_uses_the_bundle_digest_seen_by_the_model() -> None:
