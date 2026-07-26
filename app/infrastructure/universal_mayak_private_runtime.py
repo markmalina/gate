@@ -38,7 +38,7 @@ from app.models.domain import (
 )
 
 MAYAK_WORKSPACE_KEY = "mark-personal"
-MAYAK_REVISION_KEY = "universal-mayak-v1"
+MAYAK_REVISION_KEY = "universal-mayak-oko-v2"
 MAYAK_RUNTIME_PROFILE = "openai-responses-v1"
 
 
