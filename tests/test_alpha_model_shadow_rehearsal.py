@@ -226,10 +226,14 @@ def test_explicit_command_calls_mock_provider_once_and_never_delivers() -> None:
         assert payload["input"] == [
             {
                 "role": "user",
+                "content": "Контекст только этой утверждённой группы.",
+            },
+            {
+                "role": "user",
                 "content": "/alpha@AlphaViaBot Сформулируй короткое приветствие",
-            }
+            },
         ]
-        assert "Контекст только этой утверждённой группы." not in serialized
+        assert "Контекст только этой утверждённой группы." in serialized
         assert "00000000-0000-0000-0000-000000000002" not in serialized
         return httpx.Response(
             200,
