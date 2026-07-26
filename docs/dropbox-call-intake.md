@@ -77,7 +77,7 @@ account ID, cursor, refresh token, app secret, and source path are not returned.
 
 ## Limits and failure handling
 
-- Original file size is limited to 20 MiB.
+- Original file size is limited to 25 MiB.
 - Supported extensions are `.3gp`, `.aac`, `.amr`, `.flac`, `.m4a`, `.mp3`, `.mp4`,
   `.mpeg`, `.mpga`, `.oga`, `.ogg`, `.opus`, `.wav`, and `.webm`.
 - File identity is `(Dropbox account, file ID, revision)`.
@@ -85,3 +85,12 @@ account ID, cursor, refresh token, app secret, and source path are not returned.
   durably handled.
 - OAuth, delta-list, and download failures retry with bounded exponential backoff.
 - An indeterminate provider result is stored as `unknown` and is not blindly replayed.
+
+
+## Closeout behavior
+
+Gate performs a one-time bounded rescan after migration 0052 so previously skipped
+recordings between 20 MiB and 25 MiB are ingested. Successful call and Telegram
+voice transcripts receive a stored, deterministic summary. Owner-only feed output
+exposes both transcript and summary status. Provider-unknown Telegram retries remain
+fail-closed unless the exact archive was explicitly authorized for one recovery attempt.
