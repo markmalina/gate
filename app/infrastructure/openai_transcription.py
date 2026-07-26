@@ -67,9 +67,50 @@ class OpenAITranscriptionClient:
                 outcome_unknown=False,
             )
 
+        parts = (voice, *voice.additional_parts)
+        transcripts: list[ProviderTranscript] = []
+        for index, part in enumerate(parts):
+            prompt = transcripts[-1].text[-1_000:] if transcripts else None
+            try:
+                transcripts.append(
+                    await self._transcribe_part(
+                        part,
+                        language=language,
+                        prompt=prompt,
+                    )
+                )
+            except TranscriptionProviderError as exc:
+                raise TranscriptionProviderError(
+                    exc.code,
+                    outcome_unknown=exc.outcome_unknown or index > 0,
+                ) from None
+
+        operation_refs = [
+            item.provider_operation_ref
+            for item in transcripts
+            if item.provider_operation_ref is not None
+        ]
+        return ProviderTranscript(
+            text="\n".join(item.text for item in transcripts),
+            provider_operation_ref=(
+                ";".join(operation_refs)[:255] if operation_refs else None
+            ),
+            billed_quantity=sum(item.billed_quantity for item in transcripts),
+            actual_microusd=sum(item.actual_microusd for item in transcripts),
+        )
+
+    async def _transcribe_part(
+        self,
+        voice: NormalizedVoice,
+        *,
+        language: str | None,
+        prompt: str | None,
+    ) -> ProviderTranscript:
         data = {"model": self._config.model, "response_format": "json"}
         if language is not None:
             data["language"] = language
+        if prompt is not None:
+            data["prompt"] = prompt
         try:
             response = await self._http.post(
                 f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
@@ -137,7 +178,6 @@ class OpenAITranscriptionClient:
                 output_tokens=output_tokens,
             ),
         )
-
 
 def _usage_count(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:

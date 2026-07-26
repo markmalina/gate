@@ -79,12 +79,17 @@ class NormalizedVoice:
     data: bytes = field(repr=False)
     filename: str
     media_type: str
+    additional_parts: tuple[NormalizedVoice, ...] = field(default=(), repr=False)
 
     def __post_init__(self) -> None:
         if not self.data:
             raise TelegramVoiceError("telegram_voice_normalized_empty")
         if len(self.data) > OPENAI_TRANSCRIPTION_LIMIT_BYTES:
             raise TelegramVoiceError("telegram_voice_normalized_too_large")
+        if len(self.additional_parts) > 9:
+            raise TelegramVoiceError("telegram_voice_too_many_parts")
+        if any(part.additional_parts for part in self.additional_parts):
+            raise TelegramVoiceError("telegram_voice_nested_parts")
         _token(self.filename, "telegram_voice_filename_invalid", 255)
         _token(self.media_type, "telegram_voice_media_type_invalid", 128)
 
