@@ -16,6 +16,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     DownloadedVoice,
@@ -35,6 +36,7 @@ from app.models.domain import (
     UNCLASSIFIED_PROJECT_ID,
     DropboxCallInboxState,
     PhoneCallRecording,
+    TelegramVoiceArchive,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,7 +87,10 @@ class DropboxCallWorkerError(RuntimeError):
 
 
 class _StoredCallDownloader:
-    def __init__(self, recording: PhoneCallRecording) -> None:
+    def __init__(
+        self,
+        recording: PhoneCallRecording | TelegramVoiceArchive,
+    ) -> None:
         self._recording = recording
 
     async def download(self, _reference: TelegramVoiceReference) -> DownloadedVoice:
@@ -148,12 +153,18 @@ async def process_dropbox_call_changes(
 
     access_token = await _refresh_access_token(settings, http)
     await _verify_account_id(settings, http, access_token)
+    await _recover_authorized_telegram_voices(
+        settings=settings,
+        session_factory=session_factory,
+        http=http,
+    )
     await _resume_received_recordings(
         settings=settings,
         session_factory=session_factory,
         http=http,
     )
-    cursor = state.cursor
+    await _summarize_ready_audio(session_factory=session_factory)
+    cursor = None if state.backfill_version < 1 else state.cursor
     while True:
         payload = await _list_changes(
             settings=settings,
@@ -187,6 +198,7 @@ async def process_dropbox_call_changes(
             pending=has_more,
         )
         if not has_more:
+            await _summarize_ready_audio(session_factory=session_factory)
             return
 
 
@@ -511,6 +523,153 @@ async def _transcribe_recording(
         stored.transcription_model = settings.gate_telegram_voice_transcription_model
         stored.transcription_reason_code = result.reason_code
         stored.transcribed_at = datetime.now(UTC)
+        if result.alpha_input_text:
+            stored.summary_status = "summarized"
+            stored.summary_text = build_audio_summary(result.alpha_input_text)
+            stored.summary_model = AUDIO_SUMMARY_MODEL
+            stored.summary_reason_code = "audio_summary_generated"
+            stored.summarized_at = datetime.now(UTC)
+        await session.commit()
+
+
+async def _recover_authorized_telegram_voices(
+    *,
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+) -> None:
+    """Retry only the three archives explicitly authorized by migration 0052."""
+
+    async with session_factory() as session:
+        archive_ids = list(
+            (
+                await session.scalars(
+                    select(TelegramVoiceArchive.id)
+                    .where(
+                        TelegramVoiceArchive.transcription_recovery_authorized_at
+                        .is_not(None),
+                        TelegramVoiceArchive.transcription_status.in_(
+                            (None, TelegramVoiceOutcome.UNKNOWN.value)
+                        ),
+                    )
+                    .order_by(TelegramVoiceArchive.received_at.asc())
+                    .limit(3)
+                )
+            ).all()
+        )
+    for archive_id in archive_ids:
+        async with session_factory() as session:
+            archive = await session.get(TelegramVoiceArchive, archive_id)
+        if archive is None or archive.transcription_recovery_authorized_at is None:
+            continue
+        now = datetime.now(UTC)
+        service = TelegramVoiceTranscriptionService(
+            downloader=_StoredCallDownloader(archive),
+            normalizer=TelegramVoiceNormalizer(),
+            budget=SqlBillingBudgetService(session_factory),
+            speech_to_text=OpenAITranscriptionClient(
+                config=OpenAITranscriptionConfig(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    enabled=True,
+                    model=settings.gate_telegram_voice_transcription_model,
+                    base_url=settings.openai_api_base_url,
+                ),
+                http=http,
+            ),
+        )
+        result = await service.transcribe(
+            TranscribeTelegramVoiceCommand(
+                voice=TelegramVoiceReference(
+                    file_id=str(archive.id),
+                    file_unique_id=archive.sha256,
+                    declared_size_bytes=archive.size_bytes,
+                    duration_seconds=archive.duration_seconds,
+                ),
+                workspace_key=settings.gate_workspace_id,
+                connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+                reservation_key=f"telegram-voice-recovery-v1:{archive.id}",
+                period_key=now.strftime("%Y-%m"),
+                requested_microusd=max(
+                    100,
+                    archive.duration_seconds
+                    * settings.gate_telegram_voice_reserve_microusd_per_second,
+                ),
+                occurred_at=now,
+                language="ru",
+                enabled=True,
+                budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
+            )
+        )
+        async with session_factory() as session:
+            stored = await session.get(
+                TelegramVoiceArchive,
+                archive.id,
+                with_for_update=True,
+            )
+            if stored is None:
+                raise DropboxCallWorkerError("telegram_voice_recovery_archive_missing")
+            stored.transcription_status = result.outcome.value
+            stored.transcript_text = result.alpha_input_text
+            stored.transcript_language = "ru"
+            stored.transcription_model = settings.gate_telegram_voice_transcription_model
+            stored.transcription_reason_code = result.reason_code
+            stored.transcribed_at = now
+            stored.transcription_recovery_authorized_at = None
+            if result.alpha_input_text:
+                stored.summary_status = "summarized"
+                stored.summary_text = build_audio_summary(result.alpha_input_text)
+                stored.summary_model = AUDIO_SUMMARY_MODEL
+                stored.summary_reason_code = "audio_summary_generated"
+                stored.summarized_at = now
+            await session.commit()
+
+
+async def _summarize_ready_audio(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Backfill bounded summaries for successful stored transcripts."""
+
+    async with session_factory() as session:
+        voice_rows = list(
+            (
+                await session.scalars(
+                    select(TelegramVoiceArchive)
+                    .where(
+                        TelegramVoiceArchive.transcription_status
+                        == TelegramVoiceOutcome.TRANSCRIBED.value,
+                        TelegramVoiceArchive.transcript_text.is_not(None),
+                        TelegramVoiceArchive.summary_status.is_(None),
+                    )
+                    .order_by(TelegramVoiceArchive.received_at.asc())
+                    .limit(10)
+                )
+            ).all()
+        )
+        call_rows = list(
+            (
+                await session.scalars(
+                    select(PhoneCallRecording)
+                    .where(
+                        PhoneCallRecording.transcription_status
+                        == TelegramVoiceOutcome.TRANSCRIBED.value,
+                        PhoneCallRecording.transcript_text.is_not(None),
+                        PhoneCallRecording.summary_status.is_(None),
+                    )
+                    .order_by(PhoneCallRecording.received_at.asc())
+                    .limit(10)
+                )
+            ).all()
+        )
+        now = datetime.now(UTC)
+        for record in [*voice_rows, *call_rows]:
+            if record.transcript_text is None:
+                continue
+            record.summary_status = "summarized"
+            record.summary_text = build_audio_summary(record.transcript_text)
+            record.summary_model = AUDIO_SUMMARY_MODEL
+            record.summary_reason_code = "audio_summary_generated"
+            record.summarized_at = now
         await session.commit()
 
 
@@ -606,6 +765,7 @@ async def _commit_cursor(
         if state is None:
             raise DropboxCallWorkerError("dropbox_call_state_missing")
         state.cursor = cursor
+        state.backfill_version = 1
         state.pending = pending
         state.attempt_count = 0
         state.next_attempt_at = None
