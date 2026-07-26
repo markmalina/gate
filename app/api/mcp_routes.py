@@ -23,6 +23,7 @@ from app.application.alpha_lifecycle import AlphaLifecycleError, AlphaLifecycleS
 from app.application.alpha_model_readiness import (
     AlphaModelReadinessFacts,
     alpha_model_readiness_payload,
+    alpha_release_binding_readiness,
 )
 from app.application.alpha_owner_control import (
     AlphaOwnerAction,
@@ -107,6 +108,7 @@ from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.infrastructure.alpha_canary import (
+    alpha_canary_active_installation_count,
     alpha_canary_audit_counts,
     alpha_canary_binding_count,
     alpha_canary_installation_count,
@@ -2763,6 +2765,12 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- one_group_discovered: {alpha['one_group_discovered']}",
             f"- one_active_exact_revision: "
             f"{alpha['one_active_exact_revision']}",
+            f"- groups_within_capacity: "
+            f"{alpha['groups_within_capacity']}",
+            f"- all_active_bindings_exact: "
+            f"{alpha['all_active_bindings_exact']}",
+            f"- reviewed_model_release_ready: "
+            f"{alpha['reviewed_model_release_ready']}",
             f"- delivery_enabled: {alpha['delivery_enabled']}",
             f"- accepted_messages: {alpha['audit']['canonical_messages']}",
             f"- agent_turns: {alpha['audit']['agent_turns']}",
@@ -2854,6 +2862,10 @@ async def _build_alpha_canary_status(
         session,
         workspace_key=workspace_key,
     )
+    active_installation_count = await alpha_canary_active_installation_count(
+        session,
+        workspace_key=workspace_key,
+    )
     active_binding_count = await alpha_canary_binding_count(
         session,
         workspace_key=workspace_key,
@@ -2865,6 +2877,13 @@ async def _build_alpha_canary_status(
     model = await alpha_model_operational_status(
         session,
         workspace_key=workspace_key,
+    )
+    binding_readiness = alpha_release_binding_readiness(
+        discovered_installations=installation_count,
+        group_capacity=settings.gate_alpha_group_capacity,
+        active_installations=active_installation_count,
+        exact_active_bindings=active_binding_count,
+        reviewed_model_bindings=model.active_model_bindings,
     )
     model_shadow = alpha_model_readiness_payload(
         AlphaModelReadinessFacts(
@@ -2883,13 +2902,12 @@ async def _build_alpha_canary_status(
             stuck_provider_preflights=model.stuck_provider_preflights,
             last_provider_error_code=model.last_provider_error_code,
             fixture_binding_active=(
-                active_binding_count == 1
+                binding_readiness["all_active_bindings_exact"]
                 and model.active_model_bindings == 0
             ),
             telegram_delivery_blocked=not (
                 settings.gate_alpha_delivery_enabled
-                and active_binding_count == 1
-                and model.active_model_bindings == 1
+                and binding_readiness["reviewed_model_release_ready"]
             ),
             provider_preflight_successes=model.provider_preflight_successes,
             provider_preflight_failures=model.provider_preflight_failures,
@@ -2909,6 +2927,13 @@ async def _build_alpha_canary_status(
         ),
         "one_group_discovered": installation_count == 1,
         "one_active_exact_revision": active_binding_count == 1,
+        "groups_within_capacity": binding_readiness["groups_within_capacity"],
+        "all_active_bindings_exact": binding_readiness[
+            "all_active_bindings_exact"
+        ],
+        "reviewed_model_release_ready": binding_readiness[
+            "reviewed_model_release_ready"
+        ],
         "audit": audit_counts,
         "model_shadow": model_shadow,
     }
