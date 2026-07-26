@@ -12,7 +12,9 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -44,6 +46,7 @@ class BetaContextBindingModel(Base):
     installation_ref: Mapped[str] = mapped_column(String(96), nullable=False)
     user_workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    checkpoint_recipient_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
     state: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'active'")
     )
@@ -180,4 +183,57 @@ class BetaContextCheckpointStateModel(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BetaContextCheckpointExportModel(Base):
+    """One deterministic encrypted checkpoint batch awaiting a Git commit ack."""
+
+    __tablename__ = "beta_context_checkpoint_exports"
+    __table_args__ = (
+        UniqueConstraint(
+            "installation_id",
+            "sequence_start",
+            name="uq_beta_checkpoint_export_start",
+        ),
+        CheckConstraint(
+            "sequence_end >= sequence_start",
+            name="ck_beta_checkpoint_export_range",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'acknowledged')",
+            name="ck_beta_checkpoint_export_state",
+        ),
+        Index(
+            "ix_beta_checkpoint_export_pending",
+            "installation_id",
+            "state",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    installation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("beta_context_bindings.installation_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sequence_start: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sequence_end: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    container: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    ciphertext_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'pending'")
+    )
+    github_commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
