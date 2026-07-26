@@ -532,7 +532,7 @@ async def _transcribe_recording(
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=f"dropbox-call-v5:{recording.id}",
+            reservation_key=f"dropbox-call-v6:{recording.id}",
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
                 100,
