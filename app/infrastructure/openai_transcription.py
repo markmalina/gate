@@ -85,9 +85,7 @@ class OpenAITranscriptionClient:
 
         if response.is_error:
             raise TranscriptionProviderError(
-                "openai_transcription_rejected"
-                if response.status_code < 500
-                else "openai_transcription_provider_unknown",
+                _provider_error_code(response),
                 outcome_unknown=response.status_code >= 500,
             )
         try:
@@ -156,3 +154,40 @@ def _token_cost_microusd(
     input_rate, output_rate = _TOKEN_RATES_HUNDREDTHS_MICROUSD[model]
     hundredths = input_tokens * input_rate + output_tokens * output_rate
     return (hundredths + 99) // 100
+
+
+def _provider_error_code(response: httpx.Response) -> str:
+    """Classify provider failures without persisting provider text or user content."""
+
+    if response.status_code >= 500:
+        return "openai_transcription_provider_unknown"
+    if response.status_code == 429:
+        return "openai_transcription_rate_limited"
+    try:
+        payload: Any = response.json()
+    except ValueError:
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    normalized = message.lower() if isinstance(message, str) else ""
+    if "maximum context length" in normalized or "context length" in normalized:
+        category = "context_limit"
+    elif "duration" in normalized and (
+        "limit" in normalized or "long" in normalized or "maximum" in normalized
+    ):
+        category = "duration_limit"
+    elif (
+        "file size" in normalized
+        or ("larger than" in normalized and "mb" in normalized)
+        or ("maximum" in normalized and "size" in normalized)
+    ):
+        category = "file_size_limit"
+    elif "format" in normalized and (
+        "unsupported" in normalized or "invalid" in normalized
+    ):
+        category = "unsupported_format"
+    elif "invalid audio" in normalized or "could not process" in normalized:
+        category = "invalid_audio"
+    else:
+        category = f"http_{response.status_code}"
+    return f"openai_transcription_rejected_{category}"

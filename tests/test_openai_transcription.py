@@ -132,3 +132,50 @@ def test_diarization_model_requires_a_separate_response_contract() -> None:
             model="gpt-4o-transcribe-diarize",
         )
 
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "This model's maximum context length was exceeded.",
+            "openai_transcription_rejected_context_limit",
+        ),
+        (
+            "Audio duration is longer than the maximum limit.",
+            "openai_transcription_rejected_duration_limit",
+        ),
+        (
+            "Maximum file size is 25 MB.",
+            "openai_transcription_rejected_file_size_limit",
+        ),
+        (
+            "Invalid audio format.",
+            "openai_transcription_rejected_unsupported_format",
+        ),
+    ],
+)
+async def test_provider_rejection_is_safely_classified(
+    message: str,
+    expected: str,
+) -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"error": {"message": message, "private": "must-not-leak"}},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="secret", enabled=True),
+            http=http,
+        )
+        with pytest.raises(TranscriptionProviderError) as caught:
+            await client.transcribe(
+                NormalizedVoice(b"wav", "voice.wav", "audio/wav"),
+                language="ru",
+            )
+
+    assert str(caught.value) == expected
+    assert "private" not in str(caught.value)
