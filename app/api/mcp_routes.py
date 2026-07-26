@@ -2695,6 +2695,7 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- delivered_count: {voice['delivered_count']}",
             f"- retry_count: {voice['retry_count']}",
             f"- dead_letter_count: {voice['dead_letter_count']}",
+            f"- dead_letter_by_code: {voice['dead_letter_by_code']}",
             f"- last_error_code: {voice['last_error_code'] or 'none'}",
             f"- budget_settled: $"
             f"{voice['settled_microusd'] / 1_000_000:.6f}",
