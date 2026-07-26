@@ -17,8 +17,10 @@ from app.application.billing import (
     UsageUnit,
 )
 
-OPENAI_TRANSCRIPTION_LIMIT_BYTES = 25 * 1024 * 1024
-TELEGRAM_DOWNLOAD_LIMIT_BYTES = OPENAI_TRANSCRIPTION_LIMIT_BYTES
+# The provider documents a decimal 25 MB request limit.
+OPENAI_TRANSCRIPTION_LIMIT_BYTES = 25_000_000
+# Gate may archive a slightly larger bounded source and compress it before upload.
+TELEGRAM_DOWNLOAD_LIMIT_BYTES = 25 * 1024 * 1024
 
 
 class TelegramVoiceError(ValueError):
