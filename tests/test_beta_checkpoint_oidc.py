@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 import pytest
-
 from app.core.config import Settings
 from app.core.github_actions_oidc import GitHubOidcError, _authorize_claims
 from app.infrastructure.beta_checkpoint_export import _build_portable_checkpoint
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 
 def _claims(settings: Settings) -> dict[str, object]:
