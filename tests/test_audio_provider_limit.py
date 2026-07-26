@@ -77,9 +77,21 @@ def test_exact_historical_call_is_requeued_by_migration() -> None:
         Path(__file__).parents[1]
         / "alembic"
         / "versions"
-        / "0054_audio_provider_limit.py"
+        / "0055_audio_provider_headroom.py"
     ).read_text(encoding="utf-8")
 
     assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
     assert "size_bytes = 25505021" in migration
     assert "openai_transcription_rejected" in migration
+
+
+def test_compressed_audio_uses_low_bitrate_provider_headroom() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "app"
+        / "infrastructure"
+        / "telegram_voice.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"32k"' in source
+    assert '"64k"' not in source
