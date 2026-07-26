@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.infrastructure.alpha_shadow_worker import (
     SessionFactoryAlphaShadowTurnRepository,
 )
+from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.models.agent import (
     AgentDefinitionModel,
     AgentDeploymentModel,
@@ -30,6 +31,11 @@ from app.models.alpha import (
     AgentSendAttemptModel,
     AlphaUsageRecordModel,
     DeliveryGrantModel,
+)
+from app.models.beta_context import (
+    BetaContextBindingModel,
+    BetaContextEventModel,
+    GateContextOutboxModel,
 )
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 from app.models.domain import Base, TelegramReceipt
@@ -237,6 +243,15 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
                     max_tokens_per_turn=128,
                 )
             )
+            seed.add(
+                BetaContextBindingModel(
+                    installation_id=installation_id,
+                    installation_ref=f"installation-{installation_id.hex}",
+                    user_workspace_id="beta-user-mark-001",
+                    group_id="beta-group-stroi-alphav-001",
+                    state="active",
+                )
+            )
             seed.add_all(
                 [
                     TelegramReceipt(
@@ -329,10 +344,12 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
         )
         first = await service.execute(command)
         duplicate = await service.execute(command)
+        accepted = await SessionFactoryBetaContextTransfer(sessions).drain_once()
 
         assert first.disposition is AlphaShadowDisposition.PROPOSED
         assert first.result_kind is AgentResultKind.REPLY
         assert duplicate.disposition is AlphaShadowDisposition.REPLAYED
+        assert accepted == 1
 
         async with sessions() as verification:
             turns = (await verification.execute(select(AgentTurnModel))).scalars().all()
@@ -346,12 +363,34 @@ async def test_postgres_shadow_turn_is_group_scoped_idempotent_and_delivery_free
                 select(func.count()).select_from(AgentSendAttemptModel)
             )
             assert len(turns) == 1
-            assert turns[0].context_message_ids == []
+            assert turns[0].context_message_ids == [str(context_message_id)]
             assert turns[0].result_kind == "reply"
             assert len(usages) == 1
             assert usages[0].state == "recorded"
             assert grant_count == 0
             assert attempt_count == 0
+            outbox = (
+                await verification.execute(
+                    select(GateContextOutboxModel).order_by(
+                        GateContextOutboxModel.created_at,
+                        GateContextOutboxModel.id,
+                    )
+                )
+            ).scalars().all()
+            portable_events = (
+                await verification.execute(
+                    select(BetaContextEventModel).order_by(
+                        BetaContextEventModel.sequence
+                    )
+                )
+            ).scalars().all()
+            assert len(outbox) == 1
+            assert all(item.state == "accepted" for item in outbox)
+            assert [item.sequence for item in portable_events] == [1]
+            assert [item.kind for item in portable_events] == ["message.inbound"]
+            assert portable_events[0].content["text"] == (
+                "/alpha@AlphaViaBot fixture hello"
+            )
 
         cross_group = ProcessAlphaShadowMessageCommand(
             workspace_key="mark-personal",
