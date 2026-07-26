@@ -212,7 +212,7 @@ def upgrade() -> None:
             "INSERT INTO beta_context_bindings "
             "(installation_id, installation_ref, user_workspace_id, group_id, state) "
             "SELECT id, :installation_ref, :user_workspace_id, :group_id, 'active' "
-            "FROM agent_installations WHERE id = :installation_id "
+            "FROM agent_installations WHERE id = CAST(:installation_id AS uuid) "
             "ON CONFLICT (installation_id) DO NOTHING"
         ).bindparams(
             installation_id=_STROI_INSTALLATION_ID,
