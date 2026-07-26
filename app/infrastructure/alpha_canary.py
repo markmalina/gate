@@ -415,6 +415,33 @@ async def _alpha_canary_binding_count(
     return int(count or 0)
 
 
+async def alpha_canary_active_installation_count(
+    session: AsyncSession,
+    *,
+    workspace_key: str,
+) -> int:
+    """Count active Alpha group installations without assuming exact bindings."""
+
+    count = await session.scalar(
+        select(func.count())
+        .select_from(AgentInstallationModel)
+        .join(Workspace, Workspace.id == AgentInstallationModel.workspace_id)
+        .join(
+            TransportConnector,
+            (TransportConnector.id == AgentInstallationModel.connector_id)
+            & (TransportConnector.workspace_id == AgentInstallationModel.workspace_id),
+        )
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            TransportConnector.connector_key == "telegram_alpha_group",
+            TransportConnector.connector_kind == "telegram_bot",
+            AgentInstallationModel.state == AlphaInstallationState.ACTIVE.value,
+        )
+    )
+    return int(count or 0)
+
+
 async def alpha_canary_installation_count(
     session: AsyncSession,
     *,
