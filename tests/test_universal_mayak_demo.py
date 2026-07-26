@@ -188,7 +188,7 @@ async def test_start_uses_one_prompt_and_one_opaque_delivery() -> None:
     assert len(model.calls) == 1
     assert model.calls[0].prompt_ref == "universal-mayak-oko-v2"
     assert model.calls[0].prompt_sha256 == (
-        "84937bfe6638429babdf8c10946f1eeb7896be3e20c03b82d7149593b9330eb2"
+        "11f94e09de0f4b4b2e60ed69d2ca0ec9da89bc3f07f1ff4b5a7e479e1711ae77"
     )
     assert model.calls[0].user_text == "/start"
     assert delivery.calls == ["delivery_turn_1"]
