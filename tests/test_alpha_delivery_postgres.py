@@ -13,6 +13,7 @@ from app.application.alpha_delivery import (
 from app.application.alpha_group import AgentSendAttemptState
 from app.core.config import get_settings
 from app.infrastructure.alpha_delivery import SessionFactoryAlphaDeliveryStore
+from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.models.agent import (
     AgentDefinitionModel,
     AgentDeploymentModel,
@@ -24,6 +25,11 @@ from app.models.alpha import (
     AgentInstallationModel,
     AgentSendAttemptModel,
     DeliveryGrantModel,
+)
+from app.models.beta_context import (
+    BetaContextBindingModel,
+    BetaContextEventModel,
+    GateContextOutboxModel,
 )
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 from app.models.domain import Base
@@ -156,6 +162,15 @@ async def test_postgres_grant_binds_target_consumes_once_and_never_retries_unkno
                     max_tokens_per_turn=128,
                 )
             )
+            seed.add(
+                BetaContextBindingModel(
+                    installation_id=installation_id,
+                    installation_ref=f"installation-{installation_id.hex}",
+                    user_workspace_id="beta-user-mark-001",
+                    group_id="beta-group-stroi-alphav-001",
+                    state="active",
+                )
+            )
             seed.add_all(
                 [
                     CanonicalMessage(
@@ -238,9 +253,11 @@ async def test_postgres_grant_binds_target_consumes_once_and_never_retries_unkno
         )
         first = await service.execute(first_command)
         replay = await service.execute(first_command)
+        accepted = await SessionFactoryBetaContextTransfer(sessions).drain_once()
 
         assert first.state is AgentSendAttemptState.SENT
         assert replay.idempotent_replay is True
+        assert accepted == 1
         assert provider.calls == [
             ("-100730000001", "Database-bound exact candidate")
         ]
@@ -309,6 +326,16 @@ async def test_postgres_grant_binds_target_consumes_once_and_never_retries_unkno
                 )
                 == 3
             )
+            outbound = (
+                await verification.execute(select(BetaContextEventModel))
+            ).scalar_one()
+            assert outbound.sequence == 1
+            assert outbound.kind == "message.outbound"
+            assert outbound.content["text"] == candidate
+            outbox = (
+                await verification.execute(select(GateContextOutboxModel))
+            ).scalar_one()
+            assert outbox.state == "accepted"
     finally:
         await engine.dispose()
         async with admin_engine.begin() as connection:
