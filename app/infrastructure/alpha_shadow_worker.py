@@ -47,6 +47,11 @@ from app.application.alpha_shadow_worker import (
 from app.application.canonical_messaging import DialogKind
 from app.application.work_ownership import AgentKey
 from app.infrastructure.alpha_lifecycle import SqlAlphaLifecycleRepository
+from app.infrastructure.beta_context import (
+    enqueue_context_event,
+    load_beta_context_binding,
+    scoped_actor_ref,
+)
 from app.models.agent import (
     AgentDefinitionModel,
     AgentDeploymentModel,
@@ -237,6 +242,22 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 instruction_content_sha256=installation_revision.content_sha256,
                 state=AlphaInstallationState(installation.state),
             )
+            beta_binding = await load_beta_context_binding(
+                session,
+                installation_id=installation.id,
+            )
+            context: tuple[AgentContextMessage, ...] = ()
+            if beta_binding is not None:
+                context = await _load_context(
+                    session,
+                    workspace_id=workspace.id,
+                    dialog=dialog,
+                    trigger=trigger,
+                    trigger_received_at=receipt.received_at,
+                    installation_id=installation.id,
+                    connector_key=connector.connector_key,
+                    bot_username=command.bot_username,
+                )
             return AlphaShadowPreparedTurn(
                 workspace_key=workspace.key,
                 installation=installation_value,
@@ -246,9 +267,7 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 user_text=text,
                 sender_is_human=sender_is_human,
                 reply_to_bot=reply_to_bot,
-                # Keep AlphaViaBot turns independent. Historical dialog context
-                # belongs to future explicitly stateful products, not this bot.
-                context=(),
+                context=context,
                 max_tokens_per_turn=installation.max_tokens_per_turn,
             )
 
@@ -372,12 +391,63 @@ class SessionFactoryAlphaShadowTurnRepository(AlphaShadowTurnPort):
                 )
                 if existing_turn is None:
                     raise AlphaShadowWorkerError("alpha_turn_reservation_failed")
+                await self._enqueue_inbound_context(
+                    session,
+                    prepared=prepared,
+                )
                 return _snapshot(existing_turn, session_key=session_key)
 
             created = await session.get(AgentTurnModel, turn_id)
             if created is None:
                 raise AlphaShadowWorkerError("alpha_turn_reservation_failed")
+            await self._enqueue_inbound_context(
+                session,
+                prepared=prepared,
+            )
             return _snapshot(created, session_key=session_key)
+
+    async def _enqueue_inbound_context(
+        self,
+        session: AsyncSession,
+        *,
+        prepared: AlphaShadowPreparedTurn,
+    ) -> None:
+        installation_id = await session.scalar(
+            select(AgentInstallationModel.id).where(
+                AgentInstallationModel.workspace_id
+                == _uuid(prepared.installation.workspace_id, "workspace_id"),
+                AgentInstallationModel.dialog_id
+                == _uuid(prepared.installation.dialog_id, "dialog_id"),
+                AgentInstallationModel.installation_key
+                == prepared.installation.installation_key,
+            )
+        )
+        if installation_id is None:
+            raise AlphaShadowWorkerError("alpha_context_installation_missing")
+        binding = await load_beta_context_binding(
+            session,
+            installation_id=installation_id,
+        )
+        if binding is None:
+            return
+        trigger = await session.get(
+            CanonicalMessage,
+            _uuid(prepared.trigger_message_id, "trigger_message_id"),
+        )
+        if trigger is None:
+            raise AlphaShadowWorkerError("alpha_context_trigger_missing")
+        if trigger.provider_sender_id is None:
+            raise AlphaShadowWorkerError("alpha_context_actor_missing")
+        await enqueue_context_event(
+            session,
+            binding=binding,
+            source_key=f"inbound:{trigger.id.hex}",
+            direction="inbound",
+            kind="message.inbound",
+            occurred_at=trigger.occurred_at,
+            actor_ref=scoped_actor_ref(binding, trigger.provider_sender_id),
+            text_value=prepared.user_text,
+        )
 
     async def claim_turn(self, turn_key: str) -> bool:
         turn_id = _turn_id(turn_key)

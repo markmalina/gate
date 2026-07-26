@@ -24,6 +24,11 @@ from app.application.alpha_group import (
     AlphaInstallationState,
 )
 from app.application.canonical_messaging import DialogKind
+from app.infrastructure.beta_context import (
+    enqueue_context_event,
+    load_beta_context_binding,
+    scoped_actor_ref,
+)
 from app.models.agent import AgentSessionModel, AgentTurnModel
 from app.models.alpha import (
     AgentInstallationModel,
@@ -205,6 +210,53 @@ class SessionFactoryAlphaDeliveryStore(AlphaDeliveryStore):
             attempt.provider_message_id = provider_message_id
             attempt.error_code = error_code
             attempt.updated_at = finished_at
+            if state is AgentSendAttemptState.SENT:
+                delivery = (
+                    await session.execute(
+                        select(DeliveryGrantModel, AgentInstallationModel)
+                        .join(
+                            AgentInstallationModel,
+                            (
+                                AgentInstallationModel.id
+                                == DeliveryGrantModel.installation_id
+                            )
+                            & (
+                                AgentInstallationModel.workspace_id
+                                == DeliveryGrantModel.workspace_id
+                            ),
+                        )
+                        .where(DeliveryGrantModel.id == attempt.grant_id)
+                    )
+                ).one_or_none()
+                if delivery is None:
+                    raise AlphaDeliveryError(
+                        "alpha_delivery_context_binding_missing"
+                    )
+                grant, installation = delivery
+                binding = await load_beta_context_binding(
+                    session,
+                    installation_id=installation.id,
+                )
+                if binding is not None:
+                    candidate_text = await _candidate_text(
+                        session,
+                        grant=grant,
+                        installation=installation,
+                    )
+                    if candidate_text is None:
+                        raise AlphaDeliveryError(
+                            "alpha_delivery_context_candidate_missing"
+                        )
+                    await enqueue_context_event(
+                        session,
+                        binding=binding,
+                        source_key=f"outbound:{attempt.id.hex}",
+                        direction="outbound",
+                        kind="message.outbound",
+                        occurred_at=finished_at,
+                        actor_ref=scoped_actor_ref(binding, "alpha-agent"),
+                        text_value=candidate_text,
+                    )
             await session.flush()
             return _terminal_reservation(attempt, idempotent_replay=False)
 
