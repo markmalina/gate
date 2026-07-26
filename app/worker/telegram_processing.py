@@ -107,6 +107,7 @@ from app.infrastructure.alpha_delivery import (
 from app.infrastructure.alpha_shadow_worker import (
     SessionFactoryAlphaShadowTurnRepository,
 )
+from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
 from app.infrastructure.openai_agent_runtime import ConfiguredAlphaRuntimeFactory
@@ -901,7 +902,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         )
                     )
                 async with sessions() as session:
-                    return await run_telegram_worker_once(
+                    result = await run_telegram_worker_once(
                         settings=settings,
                         session=session,
                         identity_reader=identity_reader,
@@ -913,8 +914,10 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
                     )
+                await _drain_beta_context(sessions)
+                return result
         async with sessions() as session:
-            return await run_telegram_worker_once(
+            result = await run_telegram_worker_once(
                 settings=settings,
                 session=session,
                 identity_reader=identity_reader,
@@ -922,8 +925,29 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                 business_text_parity=business_text_parity,
                 business_text_inbox=business_text_inbox,
             )
+        await _drain_beta_context(sessions)
+        return result
     finally:
         await engine.dispose()
+
+
+async def _drain_beta_context(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Retry pending Beta events without blocking Telegram delivery."""
+
+    try:
+        accepted = await SessionFactoryBetaContextTransfer(sessions).drain_once()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Beta context transfer deferred: error_type=%s",
+            exc.__class__.__name__,
+        )
+        return
+    if accepted:
+        logger.info("Beta context transfer accepted: count=%s", accepted)
 
 
 async def run_telegram_worker_loop(
