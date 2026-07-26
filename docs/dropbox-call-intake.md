@@ -89,7 +89,7 @@ account ID, cursor, refresh token, app secret, and source path are not returned.
 
 ## Closeout behavior
 
-Gate performs a one-time bounded rescan after migration 0052 so previously skipped
+Gate performs a one-time bounded rescan after migration 0053 so previously skipped
 recordings between 20 MiB and 25 MiB are ingested. Successful call and Telegram
 voice transcripts receive a stored, deterministic summary. Owner-only feed output
 exposes both transcript and summary status. Provider-unknown Telegram retries remain
