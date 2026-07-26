@@ -186,7 +186,7 @@ async def test_start_uses_one_prompt_and_one_opaque_delivery() -> None:
     assert result.disposition is DemoDisposition.SENT
     assert result.replay is False
     assert len(model.calls) == 1
-    assert model.calls[0].prompt_ref == "universal-mayak-v1"
+    assert model.calls[0].prompt_ref == "universal-mayak-oko-v2"
     assert model.calls[0].prompt_sha256 == (
         "84937bfe6638429babdf8c10946f1eeb7896be3e20c03b82d7149593b9330eb2"
     )
