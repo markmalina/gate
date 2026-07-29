@@ -449,6 +449,39 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "reconciliation_required": {"type": "boolean"},
                     "received_count": {"type": "integer", "minimum": 0},
                     "processing_count": {"type": "integer", "minimum": 0},
+                    "pending_count": {"type": "integer", "minimum": 0},
+                    "active_processing_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "stale_processing_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "nonterminal_archive_missing_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "nonterminal_archive_pending_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "nonterminal_archive_transcribed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "nonterminal_archive_other_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "nonterminal_transcript_complete_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "nonterminal_summary_complete_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
                     "delivered_count": {"type": "integer", "minimum": 0},
                     "retry_count": {"type": "integer", "minimum": 0},
                     "dead_letter_count": {"type": "integer", "minimum": 0},
