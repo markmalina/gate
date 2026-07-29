@@ -33,7 +33,7 @@ def test_reconciliation_scope_is_exact_and_content_free() -> None:
     )
 
     assert migration.down_revision == "0060_call_processing_status"
-    assert migration._CUTOFF == "2026-07-29T10:20:00+00:00"
+    assert migration._CUTOFF.isoformat() == "2026-07-29T10:20:00+00:00"
 
 
 def test_reconciliation_stops_on_count_or_archive_state_drift() -> None:
