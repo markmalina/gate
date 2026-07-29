@@ -664,6 +664,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                             privacy_mode_confirmed=privacy_mode_confirmed,
                             credentials_ready=credentials_ready,
                             invocation_command="beta" if beta_connector else "alpha",
+                            allow_untargeted_command=beta_connector,
                             now=datetime.now(UTC),
                         )
                     )
