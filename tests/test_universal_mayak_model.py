@@ -51,17 +51,17 @@ def _deployment() -> AgentDeployment:
     revision = InstructionRevision(
         revision_key=UNIVERSAL_MAYAK_PROMPT_REF,
         source_repository="markmalina/Gate",
-        source_path="universal_mayak_v1",
+        source_path="lms/oko-vozrozhdeniya",
         source_commit_sha="a" * 40,
         content_sha256=UNIVERSAL_MAYAK_PROMPT_SHA256,
     )
     return AgentDeployment(
-        deployment_key="universal-mayak-v1-openai",
+        deployment_key="universal-mayak-oko-v2-openai",
         agent_key=AgentKey.OKO,
         instruction=revision,
         runtime_profile="openai-responses-v1",
         model_profile="gpt-5.6-luna",
-        policy_version="universal-mayak-v1",
+        policy_version="universal-mayak-oko-v2",
         state=AgentDeploymentState.ACTIVE,
     )
 
