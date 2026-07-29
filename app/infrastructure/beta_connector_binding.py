@@ -61,6 +61,12 @@ async def reconcile_beta_connector_binding(
     installation_key = settings.gate_beta_installation_key.strip()
     if not installation_key or len(installation_key) > 128:
         raise BetaConnectorBindingError("beta_installation_key_required")
+    if not (
+        settings.telegram_beta_bot_token.get_secret_value()
+        and settings.telegram_beta_bot_username.strip()
+        and settings.telegram_beta_webhook_secret.get_secret_value()
+    ):
+        raise BetaConnectorBindingError("beta_credentials_incomplete")
 
     async with sessions.begin() as session:
         workspace = await session.scalar(

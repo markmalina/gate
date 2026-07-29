@@ -89,11 +89,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.worker_health_registry = worker_health
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
-        await reconcile_beta_connector_binding(
-            settings,
-            database_runtime.session_factory,
-        )
         try:
+            await reconcile_beta_connector_binding(
+                settings,
+                database_runtime.session_factory,
+            )
             async with build_telegram_http_client() as http_client:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
