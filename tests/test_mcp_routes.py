@@ -55,6 +55,10 @@ def _voice_status_payload() -> dict[str, Any]:
         "nonterminal_archive_other_count": 0,
         "nonterminal_transcript_complete_count": 0,
         "nonterminal_summary_complete_count": 0,
+        "transport_unknown_archive_missing_count": 1,
+        "transport_unknown_archive_present_count": 1,
+        "transport_unknown_transcript_complete_count": 1,
+        "transport_unknown_summary_complete_count": 0,
         "delivered_count": 1,
         "retry_count": 0,
         "dead_letter_count": 2,
@@ -723,6 +727,8 @@ async def test_mcp_status_is_scoped(
     assert "active_processing_count: 0" in result["content"][0]["text"]
     assert "stale_processing_count: 0" in result["content"][0]["text"]
     assert "nonterminal_archive_pending_count: 1" in result["content"][0]["text"]
+    assert "transport_unknown_archive_missing_count: 1" in result["content"][0]["text"]
+    assert "transport_unknown_transcript_complete_count: 1" in result["content"][0]["text"]
     assert "Telegram Business text parity:" in result["content"][0]["text"]
     assert "cutover_ready: False" in result["content"][0]["text"]
     assert "budget_remaining: $0.996900" in result["content"][0]["text"]
