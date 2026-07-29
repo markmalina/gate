@@ -140,6 +140,7 @@ async def test_health_and_recovery_are_bounded_and_redacted() -> None:
             "max_attempts": 5,
             "limit": 100,
             "persisted_voice_transcript_required": False,
+            "missing_voice_archive_required": False,
         }
         assert "payload" not in audit.metadata_
     finally:
@@ -310,6 +311,174 @@ async def test_persisted_voice_recovery_is_exact_and_provider_free() -> None:
             "worker_lease_expired_transcript_persisted"
         )
         assert audit.metadata_["persisted_voice_transcript_required"] is True
+        assert "payload" not in audit.metadata_
+    finally:
+        await engine.dispose()
+        async with admin_engine.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        await admin_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_missing_archive_voice_recovery_is_exact_and_bounded() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for PostgreSQL voice recovery test")
+
+    schema = f"voice_missing_archive_recovery_{uuid4().hex}"
+    admin_engine = create_async_engine(database_url)
+    async with admin_engine.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(
+        database_url,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        now = datetime(2026, 7, 29, 12, 30, tzinfo=UTC)
+        project_id = uuid4()
+        account_id = uuid4()
+        receipt_ids = [uuid4(), uuid4()]
+
+        async with sessions() as session:
+            session.add_all(
+                [
+                    Project(
+                        id=project_id,
+                        alias="voice-missing-archive-recovery",
+                        name="Voice missing archive recovery",
+                        adapter_type="test",
+                    ),
+                    Account(
+                        id=account_id,
+                        alias="voice-missing-archive-recovery-account",
+                        owner="owner",
+                        account_type="telegram_business",
+                        linked_project_id=project_id,
+                    ),
+                ]
+            )
+            for index, receipt_id in enumerate(receipt_ids, start=1):
+                session.add(
+                    TelegramReceipt(
+                        id=receipt_id,
+                        bot_key="telegram_business",
+                        update_id=index,
+                        payload={
+                            "update_id": index,
+                            "business_message": {"voice": {"duration": 3}},
+                        },
+                        status=TelegramReceiptStatus.PROCESSING.value,
+                        attempt_count=1,
+                        received_at=now - timedelta(minutes=10),
+                        processing_started_at=now - timedelta(minutes=9),
+                    )
+                )
+                session.add(
+                    TelegramOutboxEvent(
+                        id=uuid4(),
+                        receipt_id=receipt_id,
+                        status=TelegramOutboxStatus.PROCESSING.value,
+                        attempt_count=1,
+                        available_at=now - timedelta(minutes=10),
+                        locked_at=(
+                            now - timedelta(minutes=9)
+                            if index == 1
+                            else None
+                        ),
+                    )
+                )
+            await session.commit()
+
+        command = RecoverStaleTelegramClaimsCommand(
+            stale_before=now - timedelta(minutes=5),
+            recovered_at=now,
+            max_attempts=5,
+            limit=1,
+            require_missing_voice_archive=True,
+        )
+        async with sessions() as session:
+            with pytest.raises(
+                RuntimeError,
+                match="telegram_stale_missing_archive_voice_scope_ambiguous",
+            ):
+                await SqlTelegramQueueMaintenance(session).recover_stale(command)
+
+        async with sessions() as session:
+            session.add(
+                TelegramVoiceArchive(
+                    id=uuid4(),
+                    receipt_id=receipt_ids[0],
+                    account_id=account_id,
+                    project_id=project_id,
+                    direction="outbound",
+                    telegram_update_id=1,
+                    telegram_message_id=1,
+                    chat_id="test-chat-1",
+                    business_connection_id="test-connection-1",
+                    duration_seconds=3,
+                    filename="voice-1.ogg",
+                    media_type="audio/ogg",
+                    size_bytes=5,
+                    sha256=f"{1:064x}",
+                    data=b"audio",
+                    transcription_status="unknown",
+                    transcript_text=None,
+                    transcription_reason_code="test_unknown",
+                    received_at=now - timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        async with sessions() as session:
+            recovery = await SqlTelegramQueueMaintenance(session).recover_stale(
+                command
+            )
+        assert recovery == TelegramStaleClaimRecovery(
+            recovered=1,
+            retry_scheduled=1,
+            dead_lettered=0,
+        )
+
+        async with sessions() as session:
+            receipts = (
+                await session.execute(
+                    select(TelegramReceipt).order_by(TelegramReceipt.update_id)
+                )
+            ).scalars().all()
+            events = (
+                await session.execute(
+                    select(TelegramOutboxEvent)
+                    .join(
+                        TelegramReceipt,
+                        TelegramReceipt.id == TelegramOutboxEvent.receipt_id,
+                    )
+                    .order_by(TelegramReceipt.update_id)
+                )
+            ).scalars().all()
+            audit = (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action
+                        == "telegram_queue_stale_claims_recovered"
+                    )
+                )
+            ).scalar_one()
+        assert [receipt.status for receipt in receipts] == [
+            TelegramReceiptStatus.PROCESSING.value,
+            TelegramReceiptStatus.RECEIVED.value,
+        ]
+        assert [event.status for event in events] == [
+            TelegramOutboxStatus.PROCESSING.value,
+            TelegramOutboxStatus.RETRY_SCHEDULED.value,
+        ]
+        assert receipts[1].last_error_code == (
+            "worker_lease_expired_archive_missing"
+        )
+        assert audit.metadata_["missing_voice_archive_required"] is True
+        assert audit.metadata_["persisted_voice_transcript_required"] is False
         assert "payload" not in audit.metadata_
     finally:
         await engine.dispose()
