@@ -97,54 +97,54 @@ def _requeue(
     error_code: str,
     archive_predicate: str,
 ) -> int:
-    parameters = {"cutoff": _CUTOFF, "error_code": error_code}
-    eligible = f"""
-        SELECT r.id
-        FROM telegram_receipts AS r
-        JOIN telegram_outbox_events AS e ON e.receipt_id = r.id
-        WHERE {_BASE_FILTER}
-          AND ({archive_predicate})
-    """
-    event_result = bind.execute(
+    row = bind.execute(
         sa.text(
             f"""
-            WITH eligible AS ({eligible})
-            UPDATE telegram_outbox_events AS e
-            SET status = 'pending',
-                attempt_count = 0,
-                available_at = now(),
-                locked_at = NULL,
-                delivered_at = NULL,
-                last_error_code = NULL,
-                last_error_at = NULL
-            FROM eligible
-            WHERE e.receipt_id = eligible.id
+            WITH eligible AS MATERIALIZED (
+                SELECT r.id
+                FROM telegram_receipts AS r
+                JOIN telegram_outbox_events AS e ON e.receipt_id = r.id
+                WHERE {_BASE_FILTER}
+                  AND ({archive_predicate})
+            ),
+            updated_events AS (
+                UPDATE telegram_outbox_events AS e
+                SET status = 'pending',
+                    attempt_count = 0,
+                    available_at = now(),
+                    locked_at = NULL,
+                    delivered_at = NULL,
+                    last_error_code = NULL,
+                    last_error_at = NULL
+                FROM eligible
+                WHERE e.receipt_id = eligible.id
+                RETURNING e.receipt_id
+            ),
+            updated_receipts AS (
+                UPDATE telegram_receipts AS r
+                SET status = 'received',
+                    attempt_count = 0,
+                    processing_started_at = NULL,
+                    processed_at = NULL,
+                    next_attempt_at = NULL,
+                    last_error_code = NULL,
+                    last_error_at = NULL
+                FROM eligible
+                WHERE r.id = eligible.id
+                RETURNING r.id
+            )
+            SELECT
+                (SELECT count(*) FROM updated_events),
+                (SELECT count(*) FROM updated_receipts)
             """
         ),
-        parameters,
-    )
-    receipt_result = bind.execute(
-        sa.text(
-            f"""
-            WITH eligible AS ({eligible})
-            UPDATE telegram_receipts AS r
-            SET status = 'received',
-                attempt_count = 0,
-                processing_started_at = NULL,
-                processed_at = NULL,
-                next_attempt_at = NULL,
-                last_error_code = NULL,
-                last_error_at = NULL
-            FROM eligible
-            WHERE r.id = eligible.id
-            """
-        ),
-        parameters,
-    )
-    if event_result.rowcount != receipt_result.rowcount:
+        {"cutoff": _CUTOFF, "error_code": error_code},
+    ).one()
+    event_count = int(row[0] or 0)
+    receipt_count = int(row[1] or 0)
+    if event_count != receipt_count:
         raise RuntimeError("voice_dead_letter_reconciliation_transition_mismatch")
-    return int(event_result.rowcount or 0)
-
+    return event_count
 
 def upgrade() -> None:
     bind = op.get_bind()
