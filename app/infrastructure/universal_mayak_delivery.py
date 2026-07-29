@@ -168,8 +168,7 @@ class TelegramBusinessUniversalMayakDelivery(UniversalMayakDeliveryPort):
                     )
                     .join(
                         Account,
-                        (Account.id == Message.account_id)
-                        & (Account.alias == TransportConnector.connector_key),
+                        Account.id == Message.account_id,
                     )
                     .join(
                         TelegramBusinessConnection,
