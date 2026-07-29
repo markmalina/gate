@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import case, func, or_, select
@@ -19,6 +19,7 @@ from app.models.domain import (
     TelegramOutboxEvent,
     TelegramOutboxStatus,
     TelegramReceipt,
+    TelegramVoiceArchive,
 )
 
 JsonObject = dict[str, Any]
@@ -45,6 +46,15 @@ class TelegramVoiceOperationalStatus:
     telegram_delivery_allowed: bool = False
     received_count: int = 0
     processing_count: int = 0
+    pending_count: int = 0
+    active_processing_count: int = 0
+    stale_processing_count: int = 0
+    nonterminal_archive_missing_count: int = 0
+    nonterminal_archive_pending_count: int = 0
+    nonterminal_archive_transcribed_count: int = 0
+    nonterminal_archive_other_count: int = 0
+    nonterminal_transcript_complete_count: int = 0
+    nonterminal_summary_complete_count: int = 0
     delivered_count: int = 0
     retry_count: int = 0
     dead_letter_count: int = 0
@@ -70,6 +80,21 @@ class TelegramVoiceOperationalStatus:
             "telegram_delivery_allowed": self.telegram_delivery_allowed,
             "received_count": self.received_count,
             "processing_count": self.processing_count,
+            "pending_count": self.pending_count,
+            "active_processing_count": self.active_processing_count,
+            "stale_processing_count": self.stale_processing_count,
+            "nonterminal_archive_missing_count": self.nonterminal_archive_missing_count,
+            "nonterminal_archive_pending_count": self.nonterminal_archive_pending_count,
+            "nonterminal_archive_transcribed_count": (
+                self.nonterminal_archive_transcribed_count
+            ),
+            "nonterminal_archive_other_count": self.nonterminal_archive_other_count,
+            "nonterminal_transcript_complete_count": (
+                self.nonterminal_transcript_complete_count
+            ),
+            "nonterminal_summary_complete_count": (
+                self.nonterminal_summary_complete_count
+            ),
             "delivered_count": self.delivered_count,
             "retry_count": self.retry_count,
             "dead_letter_count": self.dead_letter_count,
@@ -183,6 +208,7 @@ async def telegram_voice_operational_status(
     queue = await _telegram_voice_queue_summary(
         session,
         period_start=period_start,
+        now=now,
     )
     state = classify_telegram_voice_status(
         enabled=enabled,
@@ -209,6 +235,21 @@ async def telegram_voice_operational_status(
         reconciliation_required=unknown_count > 0,
         received_count=queue.received_count,
         processing_count=queue.processing_count,
+        pending_count=queue.pending_count,
+        active_processing_count=queue.active_processing_count,
+        stale_processing_count=queue.stale_processing_count,
+        nonterminal_archive_missing_count=queue.nonterminal_archive_missing_count,
+        nonterminal_archive_pending_count=queue.nonterminal_archive_pending_count,
+        nonterminal_archive_transcribed_count=(
+            queue.nonterminal_archive_transcribed_count
+        ),
+        nonterminal_archive_other_count=queue.nonterminal_archive_other_count,
+        nonterminal_transcript_complete_count=(
+            queue.nonterminal_transcript_complete_count
+        ),
+        nonterminal_summary_complete_count=(
+            queue.nonterminal_summary_complete_count
+        ),
         delivered_count=queue.delivered_count,
         retry_count=queue.retry_count,
         dead_letter_count=queue.dead_letter_count,
@@ -221,6 +262,15 @@ async def telegram_voice_operational_status(
 class _TelegramVoiceQueueSummary:
     received_count: int
     processing_count: int
+    pending_count: int
+    active_processing_count: int
+    stale_processing_count: int
+    nonterminal_archive_missing_count: int
+    nonterminal_archive_pending_count: int
+    nonterminal_archive_transcribed_count: int
+    nonterminal_archive_other_count: int
+    nonterminal_transcript_complete_count: int
+    nonterminal_summary_complete_count: int
     delivered_count: int
     retry_count: int
     dead_letter_count: int
@@ -232,6 +282,7 @@ async def _telegram_voice_queue_summary(
     session: AsyncSession,
     *,
     period_start: datetime,
+    now: datetime,
 ) -> _TelegramVoiceQueueSummary:
     voice_payload = or_(
         TelegramReceipt.payload["business_message"]["voice"].is_not(None),
@@ -242,17 +293,35 @@ async def _telegram_voice_queue_summary(
         TelegramReceipt.received_at >= period_start,
         voice_payload,
     )
+    nonterminal_status = TelegramOutboxEvent.status.in_(
+        (
+            TelegramOutboxStatus.PENDING.value,
+            TelegramOutboxStatus.PROCESSING.value,
+        )
+    )
+    stale_before = now - timedelta(minutes=5)
     row = (
         await session.execute(
             select(
                 func.count(),
+                func.count().filter(nonterminal_status),
                 func.count().filter(
-                    TelegramOutboxEvent.status.in_(
-                        (
-                            TelegramOutboxStatus.PENDING.value,
-                            TelegramOutboxStatus.PROCESSING.value,
-                        )
-                    )
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.PENDING.value
+                ),
+                func.count().filter(
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.PROCESSING.value,
+                    TelegramOutboxEvent.locked_at.is_not(None),
+                    TelegramOutboxEvent.locked_at > stale_before,
+                ),
+                func.count().filter(
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.PROCESSING.value,
+                    or_(
+                        TelegramOutboxEvent.locked_at.is_(None),
+                        TelegramOutboxEvent.locked_at <= stale_before,
+                    ),
                 ),
                 func.count().filter(
                     TelegramOutboxEvent.status
@@ -266,11 +335,44 @@ async def _telegram_voice_queue_summary(
                     TelegramOutboxEvent.status
                     == TelegramOutboxStatus.DEAD_LETTER.value
                 ),
+                func.count().filter(
+                    nonterminal_status,
+                    TelegramVoiceArchive.id.is_(None),
+                ),
+                func.count().filter(
+                    nonterminal_status,
+                    TelegramVoiceArchive.id.is_not(None),
+                    TelegramVoiceArchive.transcription_status.is_(None),
+                ),
+                func.count().filter(
+                    nonterminal_status,
+                    TelegramVoiceArchive.transcription_status == "transcribed",
+                ),
+                func.count().filter(
+                    nonterminal_status,
+                    TelegramVoiceArchive.id.is_not(None),
+                    TelegramVoiceArchive.transcription_status.is_not(None),
+                    TelegramVoiceArchive.transcription_status != "transcribed",
+                ),
+                func.count().filter(
+                    nonterminal_status,
+                    TelegramVoiceArchive.transcription_status == "transcribed",
+                    TelegramVoiceArchive.transcript_text.is_not(None),
+                ),
+                func.count().filter(
+                    nonterminal_status,
+                    TelegramVoiceArchive.summary_status == "summarized",
+                    TelegramVoiceArchive.summary_text.is_not(None),
+                ),
             )
             .select_from(TelegramReceipt)
             .join(
                 TelegramOutboxEvent,
                 TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
+            )
+            .outerjoin(
+                TelegramVoiceArchive,
+                TelegramVoiceArchive.receipt_id == TelegramReceipt.id,
             )
             .where(*base_filters)
         )
@@ -320,9 +422,18 @@ async def _telegram_voice_queue_summary(
     return _TelegramVoiceQueueSummary(
         received_count=int(row[0] or 0),
         processing_count=int(row[1] or 0),
-        delivered_count=int(row[2] or 0),
-        retry_count=int(row[3] or 0),
-        dead_letter_count=int(row[4] or 0),
+        pending_count=int(row[2] or 0),
+        active_processing_count=int(row[3] or 0),
+        stale_processing_count=int(row[4] or 0),
+        delivered_count=int(row[5] or 0),
+        retry_count=int(row[6] or 0),
+        dead_letter_count=int(row[7] or 0),
+        nonterminal_archive_missing_count=int(row[8] or 0),
+        nonterminal_archive_pending_count=int(row[9] or 0),
+        nonterminal_archive_transcribed_count=int(row[10] or 0),
+        nonterminal_archive_other_count=int(row[11] or 0),
+        nonterminal_transcript_complete_count=int(row[12] or 0),
+        nonterminal_summary_complete_count=int(row[13] or 0),
         last_error_code=last_error_code,
         dead_letter_by_code=dead_letter_by_code,
     )
