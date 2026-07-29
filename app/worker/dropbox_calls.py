@@ -568,10 +568,13 @@ async def _transcribe_recording(
         await session.commit()
 
 
+_TELEGRAM_VOICE_RECOVERY_GENERATION = 2
+
+
 async def _claim_authorized_telegram_voice(
     *,
     session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[TelegramVoiceArchive, datetime] | None:
+) -> tuple[TelegramVoiceArchive, int] | None:
     """Atomically consume one exact dead-letter recovery grant before provider I/O."""
 
     expected_error = "openai_transcription_transport_unknown"
@@ -589,8 +592,10 @@ async def _claim_authorized_telegram_voice(
                         TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
                     )
                     .where(
+                        TelegramVoiceArchive.transcription_recovery_generation
+                        == _TELEGRAM_VOICE_RECOVERY_GENERATION,
                         TelegramVoiceArchive.transcription_recovery_authorized_at
-                        .is_not(None),
+                        .is_(None),
                         TelegramVoiceArchive.transcription_status
                         == TelegramVoiceOutcome.UNKNOWN.value,
                         TelegramVoiceArchive.transcript_text.is_(None),
@@ -619,8 +624,8 @@ async def _claim_authorized_telegram_voice(
         if not archives:
             return None
         archive = archives[0]
-        authorized_at = archive.transcription_recovery_authorized_at
-        if authorized_at is None:
+        generation = archive.transcription_recovery_generation
+        if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
             return None
         if (
             not archive.data
@@ -632,26 +637,25 @@ async def _claim_authorized_telegram_voice(
                 "telegram_voice_recovery_archive_invalid"
             )
 
-        # Commit the grant consumption before provider I/O. A crash now fails closed:
-        # the exact archive cannot be retried again without a new owner authorization.
-        archive.transcription_recovery_authorized_at = None
+        # Commit the generation consumption before provider I/O. A crash now
+        # fails closed: a new owner authorization is required for another try.
+        archive.transcription_recovery_generation = None
         await session.commit()
         await session.refresh(archive)
-        return archive, authorized_at
+        return archive, generation
 
 
 def _telegram_voice_recovery_reservation_key(
     archive_id: object,
-    authorized_at: datetime,
+    generation: int,
 ) -> str:
-    """Bind one recovery reservation to one durable authorization generation."""
+    """Bind one recovery reservation to one isolated authorization generation."""
 
-    if authorized_at.tzinfo is None or authorized_at.utcoffset() is None:
+    if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
         raise DropboxCallWorkerError(
-            "telegram_voice_recovery_authorization_time_invalid"
+            "telegram_voice_recovery_generation_invalid"
         )
-    generation = authorized_at.astimezone(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    return f"telegram-voice-recovery-v2:{archive_id}:{generation}"
+    return f"telegram-voice-recovery-v{generation}:{archive_id}"
 
 
 async def _recover_authorized_telegram_voices(
@@ -667,7 +671,7 @@ async def _recover_authorized_telegram_voices(
     )
     if claimed is None:
         return
-    archive, authorized_at = claimed
+    archive, generation = claimed
     now = datetime.now(UTC)
     service = TelegramVoiceTranscriptionService(
         downloader=_StoredCallDownloader(archive),
@@ -695,7 +699,7 @@ async def _recover_authorized_telegram_voices(
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
             reservation_key=_telegram_voice_recovery_reservation_key(
                 archive.id,
-                authorized_at,
+                generation,
             ),
             period_key=now.strftime("%Y-%m"),
             requested_microusd=max(
