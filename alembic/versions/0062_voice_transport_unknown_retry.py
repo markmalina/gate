@@ -17,7 +17,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _TRANSPORT_UNKNOWN = "openai_transcription_transport_unknown"
-_BASE_FILTER = """
+_SCOPE_FILTER = """
 r.bot_key = 'telegram_business'
 AND r.status = 'dead_letter'
 AND r.last_error_code = :error_code
@@ -30,7 +30,6 @@ AND a.transcription_status = 'unknown'
 AND a.transcript_text IS NULL
 AND a.summary_text IS NULL
 AND COALESCE(a.summary_status, '') <> 'summarized'
-AND a.transcription_recovery_authorized_at IS NULL
 AND a.size_bytes > 0
 AND a.duration_seconds > 0
 AND length(a.sha256) = 64
@@ -57,7 +56,8 @@ def _authorize_exact_retry(bind: sa.Connection) -> tuple[int, int]:
                 FROM telegram_voice_archives AS a
                 JOIN telegram_receipts AS r ON r.id = a.receipt_id
                 JOIN telegram_outbox_events AS e ON e.receipt_id = r.id
-                WHERE {_BASE_FILTER}
+                WHERE {_SCOPE_FILTER}
+                  AND a.transcription_recovery_authorized_at IS NULL
                 FOR UPDATE OF a
             ),
             scope AS (
@@ -104,7 +104,7 @@ def downgrade() -> None:
             SET transcription_recovery_authorized_at = NULL
             FROM telegram_receipts AS r
             JOIN telegram_outbox_events AS e ON e.receipt_id = r.id
-            WHERE {_BASE_FILTER}
+            WHERE {_SCOPE_FILTER}
               AND a.transcription_recovery_authorized_at IS NOT NULL
             """
         ),
