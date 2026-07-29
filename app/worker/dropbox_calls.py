@@ -36,6 +36,10 @@ from app.models.domain import (
     UNCLASSIFIED_PROJECT_ID,
     DropboxCallInboxState,
     PhoneCallRecording,
+    TelegramOutboxEvent,
+    TelegramOutboxStatus,
+    TelegramReceipt,
+    TelegramReceiptStatus,
     TelegramVoiceArchive,
 )
 
@@ -570,7 +574,7 @@ async def _recover_authorized_telegram_voices(
     session_factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
 ) -> None:
-    """Retry only the three archives explicitly authorized by migration 0053."""
+    """Retry at most three explicitly authorized archives per worker run."""
 
     async with session_factory() as session:
         archive_ids = list(
@@ -655,7 +659,61 @@ async def _recover_authorized_telegram_voices(
                 stored.summary_model = AUDIO_SUMMARY_MODEL
                 stored.summary_reason_code = "audio_summary_generated"
                 stored.summarized_at = now
+            if result.outcome is TelegramVoiceOutcome.TRANSCRIBED:
+                await _requeue_recovered_telegram_voice(
+                    session=session,
+                    archive=stored,
+                    now=now,
+                )
             await session.commit()
+
+
+async def _requeue_recovered_telegram_voice(
+    *,
+    session: AsyncSession,
+    archive: TelegramVoiceArchive,
+    now: datetime,
+) -> None:
+    """Requeue only the exact dead letter whose archived transcript recovered."""
+
+    row = (
+        await session.execute(
+            select(TelegramReceipt, TelegramOutboxEvent)
+            .join(
+                TelegramOutboxEvent,
+                TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
+            )
+            .where(TelegramReceipt.id == archive.receipt_id)
+            .with_for_update()
+        )
+    ).one_or_none()
+    if row is None:
+        return
+    receipt, event = row
+    expected_error = "openai_transcription_transport_unknown"
+    if (
+        receipt.status != TelegramReceiptStatus.DEAD_LETTER.value
+        or event.status != TelegramOutboxStatus.DEAD_LETTER.value
+        or receipt.last_error_code != expected_error
+        or event.last_error_code != expected_error
+    ):
+        return
+
+    event.status = TelegramOutboxStatus.PENDING.value
+    event.attempt_count = 0
+    event.available_at = now
+    event.locked_at = None
+    event.delivered_at = None
+    event.last_error_code = None
+    event.last_error_at = None
+
+    receipt.status = TelegramReceiptStatus.RECEIVED.value
+    receipt.attempt_count = 0
+    receipt.processing_started_at = None
+    receipt.processed_at = None
+    receipt.next_attempt_at = None
+    receipt.last_error_code = None
+    receipt.last_error_at = None
 
 
 async def _summarize_ready_audio(
