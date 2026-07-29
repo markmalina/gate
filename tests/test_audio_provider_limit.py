@@ -31,11 +31,11 @@ def test_provider_oversized_native_audio_is_split_into_ordered_parts() -> None:
 
     assert calls == [OPENAI_TRANSCRIPTION_LIMIT_BYTES + 1]
     assert result.data == b"part-one"
-    assert result.filename == "telegram-voice-part-001.mp3"
-    assert result.media_type == "audio/mpeg"
+    assert result.filename == "telegram-voice-part-001.wav"
+    assert result.media_type == "audio/wav"
     assert len(result.additional_parts) == 1
     assert result.additional_parts[0].data == b"part-two"
-    assert result.additional_parts[0].filename == "telegram-voice-part-002.mp3"
+    assert result.additional_parts[0].filename == "telegram-voice-part-002.wav"
 
 
 def test_native_audio_at_provider_limit_is_not_reencoded() -> None:
@@ -80,7 +80,7 @@ def test_historical_call_fits_archive_but_requires_chunking() -> None:
     assert OPENAI_TRANSCRIPTION_LIMIT_BYTES < size <= TELEGRAM_DOWNLOAD_LIMIT_BYTES
 
 
-def test_chunking_uses_bounded_duration_and_low_bitrate() -> None:
+def test_chunking_uses_bounded_duration_and_pcm_wav() -> None:
     source = (
         Path(__file__).parents[1]
         / "app"
@@ -88,9 +88,10 @@ def test_chunking_uses_bounded_duration_and_low_bitrate() -> None:
         / "telegram_voice.py"
     ).read_text(encoding="utf-8")
 
-    assert '"32k"' in source
+    assert '"pcm_s16le"' in source
     assert '"600"' in source
     assert '"segment"' in source
+    assert '"wav"' in source
 
 
 def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
@@ -103,7 +104,7 @@ def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
 
     assert ".with_for_update(skip_locked=True)" in source
     assert 'claimed.transcription_status = "processing"' in source
-    assert 'reservation_key=f"dropbox-call-v6:' in source
+    assert 'reservation_key=f"dropbox-call-v7:' in source
 
 
 def test_long_call_is_requeued_by_chunking_migration() -> None:
@@ -117,3 +118,20 @@ def test_long_call_is_requeued_by_chunking_migration() -> None:
     assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
     assert "openai_transcription_rejected_http_400" in migration
     assert "size_bytes = 25505021" in migration
+
+
+
+def test_rejected_long_call_is_requeued_by_wav_recovery_migration() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0063_rejected_long_call_wav_retry.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision: str = "0064_long_call_wav_retry"' in migration
+    assert 'down_revision: str | None = "0063_voice_unknown_retry"' in migration
+    assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
+    assert "openai_transcription_rejected_http_400" in migration
+    assert "_EXPECTED_SIZE = 25_505_021" in migration
+    assert "octet_length(data) = :expected_size" in migration
