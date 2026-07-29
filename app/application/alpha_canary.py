@@ -81,6 +81,7 @@ class ProcessAlphaCanaryUpdateCommand:
     privacy_mode_confirmed: bool = False
     credentials_ready: bool = False
     invocation_command: str = "alpha"
+    allow_untargeted_command: bool = False
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
@@ -236,6 +237,7 @@ class ProcessAlphaCanaryUpdateService:
                 bot_username=command.bot_username,
                 now=command.now,
                 invocation_command=command.invocation_command,
+                allow_untargeted_command=command.allow_untargeted_command,
             )
         )
         if shadow.disposition is AlphaShadowDisposition.NOT_INVOKED:
