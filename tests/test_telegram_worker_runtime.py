@@ -35,6 +35,7 @@ from app.application.telegram_processing import (
 )
 from app.application.telegram_queue_maintenance import (
     RecoverStaleTelegramClaimsCommand,
+    RecoverStaleTelegramClaimsService,
     TelegramStaleClaimRecovery,
 )
 from app.core.config import Settings
@@ -83,7 +84,7 @@ class EmptyQueue:
         raise AssertionError("empty queue cannot record failure")
 
 
-class RecordingStaleRecovery:
+class RecordingStaleRecovery(RecoverStaleTelegramClaimsService):
     def __init__(self) -> None:
         self.commands: list[RecoverStaleTelegramClaimsCommand] = []
 
@@ -205,7 +206,7 @@ def test_enabled_worker_recovers_only_stale_persisted_voice_before_claim() -> No
             settings=settings,
             queue=queue,
             identity_reader=FakeIdentityReader(),
-            stale_recovery=recovery,  # type: ignore[arg-type]
+            stale_recovery=recovery,
             now=now,
         )
     )
