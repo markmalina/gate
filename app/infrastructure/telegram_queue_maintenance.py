@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.telegram_queue_maintenance import (
@@ -94,7 +94,6 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     == TelegramOutboxStatus.PROCESSING.value,
                     TelegramReceipt.status
                     == TelegramReceiptStatus.PROCESSING.value,
-                    TelegramOutboxEvent.locked_at <= command.stale_before,
                 )
             )
             query_limit = command.limit
@@ -104,10 +103,35 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     TelegramVoiceArchive.receipt_id == TelegramReceipt.id,
                 ).where(
                     TelegramReceipt.bot_key == "telegram_business",
+                    TelegramOutboxEvent.locked_at <= command.stale_before,
                     TelegramVoiceArchive.transcription_status == "transcribed",
                     TelegramVoiceArchive.transcript_text.is_not(None),
                 )
                 query_limit += 1
+            elif command.require_missing_voice_archive:
+                voice_payload = or_(
+                    TelegramReceipt.payload["business_message"]["voice"].is_not(
+                        None
+                    ),
+                    TelegramReceipt.payload["message"]["voice"].is_not(None),
+                )
+                query = query.outerjoin(
+                    TelegramVoiceArchive,
+                    TelegramVoiceArchive.receipt_id == TelegramReceipt.id,
+                ).where(
+                    TelegramReceipt.bot_key == "telegram_business",
+                    voice_payload,
+                    or_(
+                        TelegramOutboxEvent.locked_at.is_(None),
+                        TelegramOutboxEvent.locked_at <= command.stale_before,
+                    ),
+                    TelegramVoiceArchive.id.is_(None),
+                )
+                query_limit += 1
+            else:
+                query = query.where(
+                    TelegramOutboxEvent.locked_at <= command.stale_before
+                )
             result = await self._session.execute(
                 query.order_by(
                     TelegramOutboxEvent.locked_at,
@@ -117,13 +141,15 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                 .with_for_update(skip_locked=True)
             )
             rows = result.all()
-            if (
-                command.require_persisted_voice_transcript
-                and len(rows) > command.limit
-            ):
-                raise RuntimeError(
-                    "telegram_stale_transcribed_voice_scope_ambiguous"
-                )
+            if len(rows) > command.limit:
+                if command.require_persisted_voice_transcript:
+                    raise RuntimeError(
+                        "telegram_stale_transcribed_voice_scope_ambiguous"
+                    )
+                if command.require_missing_voice_archive:
+                    raise RuntimeError(
+                        "telegram_stale_missing_archive_voice_scope_ambiguous"
+                    )
             retried = 0
             dead_lettered = 0
             for event, receipt in rows:
@@ -138,7 +164,11 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     else (
                         "worker_lease_expired_transcript_persisted"
                         if command.require_persisted_voice_transcript
-                        else "worker_lease_expired"
+                        else (
+                            "worker_lease_expired_archive_missing"
+                            if command.require_missing_voice_archive
+                            else "worker_lease_expired"
+                        )
                     )
                 )
                 event.last_error_code = error_code
@@ -178,6 +208,9 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                             "limit": command.limit,
                             "persisted_voice_transcript_required": (
                                 command.require_persisted_voice_transcript
+                            ),
+                            "missing_voice_archive_required": (
+                                command.require_missing_voice_archive
                             ),
                         },
                     )
