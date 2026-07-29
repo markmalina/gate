@@ -71,6 +71,38 @@ def test_alpha_definition_is_separate_and_runtime_dormant() -> None:
     assert connector.worker_enabled is False
 
 
+def test_beta_definition_is_separate_and_runtime_dormant() -> None:
+    connector = _registry().beta_group
+
+    assert connector.key is TelegramConnectorKey.BETA_GROUP
+    assert connector.role is TelegramConnectorRole.ALPHA_GROUP
+    assert connector.activation is TelegramConnectorActivation.DORMANT
+    assert connector.bot_identity is None
+    assert connector.bot_identity_ref == "TELEGRAM_BETA_BOT_USERNAME"
+    assert connector.bot_token_secret_ref == "TELEGRAM_BETA_BOT_TOKEN"
+    assert connector.webhook_secret_ref == "TELEGRAM_BETA_WEBHOOK_SECRET"
+    assert connector.webhook_path == "/telegram/beta/webhook"
+    assert connector.allowed_updates == ALPHA_GROUP_ALLOWED_UPDATES
+    assert connector.send_authorizations == frozenset()
+    assert connector.worker_enabled is False
+
+
+def test_enabled_beta_resolves_only_its_own_identity_and_key() -> None:
+    registry = build_telegram_connector_registry(
+        business_bot_username="gate_m_bot",
+        beta_enabled=True,
+        beta_bot_username="BetaViaBot",
+    )
+
+    assert registry.require_worker_connector("BetaViaBot").key is TelegramConnectorKey.BETA_GROUP
+    assert (
+        registry.require_worker_connector("telegram_beta_group").key
+        is TelegramConnectorKey.BETA_GROUP
+    )
+    with pytest.raises(TelegramConnectorResolutionError):
+        registry.require_worker_connector("AlphaViaBot")
+
+
 def test_future_alpha_environment_cannot_activate_or_project_into_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -124,6 +156,7 @@ def test_custom_business_identity_replaces_the_legacy_username() -> None:
     [
         ("unknown_bot", "unknown_telegram_connector"),
         ("telegram_alpha_group", "telegram_connector_disabled"),
+        ("telegram_beta_group", "telegram_connector_disabled"),
     ],
 )
 def test_worker_resolution_fails_closed_for_unknown_or_dormant_connector(
@@ -204,6 +237,7 @@ def test_registry_rejects_shared_connector_boundaries(attribute: str) -> None:
         TelegramConnectorRegistry(
             business=registry.business,
             alpha_group=duplicated_alpha,
+            beta_group=registry.beta_group,
         )
 
 
@@ -219,4 +253,7 @@ def test_repr_and_safe_snapshot_omit_identity_and_secret_references() -> None:
     assert "TELEGRAM_ALPHA_BOT_USERNAME" not in wire
     assert "TELEGRAM_ALPHA_BOT_TOKEN" not in wire
     assert "TELEGRAM_ALPHA_WEBHOOK_SECRET" not in wire
+    assert "TELEGRAM_BETA_BOT_USERNAME" not in wire
+    assert "TELEGRAM_BETA_BOT_TOKEN" not in wire
+    assert "TELEGRAM_BETA_WEBHOOK_SECRET" not in wire
     assert "/telegram/webhook" not in wire
