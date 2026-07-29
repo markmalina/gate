@@ -45,7 +45,10 @@ from app.models.alpha import (
 from app.models.canonical import CanonicalMessage, Dialog, Workspace
 
 _PROMPT_REVISION = "universal-mayak-oko-v2"
-_DISCLOSURE = "Маяк отвечает с помощью ИИ."
+_DISCLOSURE = (
+    "Продолжая диалог, вы соглашаетесь, что в нём работает автоматизация "
+    "с использованием ИИ."
+)
 _INPUT_DIGEST_PREFIX = "mayak-input-sha256:"
 
 
@@ -75,6 +78,19 @@ class SessionFactoryUniversalMayakDemoStore:
                 installation_id=installation_id,
                 dialog_id=dialog_id,
             )
+            prior_sent_attempt = await session.scalar(
+                select(AgentSendAttemptModel.id)
+                .join(
+                    DeliveryGrantModel,
+                    DeliveryGrantModel.id == AgentSendAttemptModel.grant_id,
+                )
+                .where(
+                    DeliveryGrantModel.workspace_id == workspace_id,
+                    DeliveryGrantModel.installation_id == installation_id,
+                    AgentSendAttemptModel.state == "sent",
+                )
+                .limit(1)
+            )
             session_state = await session.scalar(
                 select(AgentSessionModel.state).where(
                     AgentSessionModel.workspace_id == workspace_id,
@@ -90,6 +106,7 @@ class SessionFactoryUniversalMayakDemoStore:
             scope=scope,
             public_label=row.dialog_label,
             disclosure_text=_DISCLOSURE,
+            disclosure_required=prior_sent_attempt is None,
             state=state,
             owner_only=True,
             dialog_kind="private",
