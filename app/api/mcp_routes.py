@@ -2819,6 +2819,21 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"{voice['reconciliation_required']}",
             f"- received_count: {voice['received_count']}",
             f"- processing_count: {voice['processing_count']}",
+            f"- pending_count: {voice['pending_count']}",
+            f"- active_processing_count: {voice['active_processing_count']}",
+            f"- stale_processing_count: {voice['stale_processing_count']}",
+            f"- nonterminal_archive_missing_count: "
+            f"{voice['nonterminal_archive_missing_count']}",
+            f"- nonterminal_archive_pending_count: "
+            f"{voice['nonterminal_archive_pending_count']}",
+            f"- nonterminal_archive_transcribed_count: "
+            f"{voice['nonterminal_archive_transcribed_count']}",
+            f"- nonterminal_archive_other_count: "
+            f"{voice['nonterminal_archive_other_count']}",
+            f"- nonterminal_transcript_complete_count: "
+            f"{voice['nonterminal_transcript_complete_count']}",
+            f"- nonterminal_summary_complete_count: "
+            f"{voice['nonterminal_summary_complete_count']}",
             f"- delivered_count: {voice['delivered_count']}",
             f"- retry_count: {voice['retry_count']}",
             f"- dead_letter_count: {voice['dead_letter_count']}",
