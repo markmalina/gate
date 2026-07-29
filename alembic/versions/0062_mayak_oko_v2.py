@@ -1,7 +1,7 @@
 """Release the accepted Oko LMS copy on the exact owner-private route.
 
 Revision ID: 0062_mayak_oko_v2
-Revises: 0061_voice_dead_letter_reconciliation
+Revises: 0061_voice_reconcile
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0062_mayak_oko_v2"
-down_revision: str | None = "0061_voice_dead_letter_reconciliation"
+down_revision: str | None = "0061_voice_reconcile"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
