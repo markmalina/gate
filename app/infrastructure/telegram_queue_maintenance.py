@@ -18,6 +18,7 @@ from app.models.domain import (
     TelegramOutboxStatus,
     TelegramReceipt,
     TelegramReceiptStatus,
+    TelegramVoiceArchive,
 )
 
 
@@ -82,7 +83,7 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
         command: RecoverStaleTelegramClaimsCommand,
     ) -> TelegramStaleClaimRecovery:
         try:
-            result = await self._session.execute(
+            query = (
                 select(TelegramOutboxEvent, TelegramReceipt)
                 .join(
                     TelegramReceipt,
@@ -95,14 +96,34 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     == TelegramReceiptStatus.PROCESSING.value,
                     TelegramOutboxEvent.locked_at <= command.stale_before,
                 )
-                .order_by(
+            )
+            query_limit = command.limit
+            if command.require_persisted_voice_transcript:
+                query = query.join(
+                    TelegramVoiceArchive,
+                    TelegramVoiceArchive.receipt_id == TelegramReceipt.id,
+                ).where(
+                    TelegramReceipt.bot_key == "telegram_business",
+                    TelegramVoiceArchive.transcription_status == "transcribed",
+                    TelegramVoiceArchive.transcript_text.is_not(None),
+                )
+                query_limit += 1
+            result = await self._session.execute(
+                query.order_by(
                     TelegramOutboxEvent.locked_at,
                     TelegramOutboxEvent.id,
                 )
-                .limit(command.limit)
+                .limit(query_limit)
                 .with_for_update(skip_locked=True)
             )
             rows = result.all()
+            if (
+                command.require_persisted_voice_transcript
+                and len(rows) > command.limit
+            ):
+                raise RuntimeError(
+                    "telegram_stale_transcribed_voice_scope_ambiguous"
+                )
             retried = 0
             dead_lettered = 0
             for event, receipt in rows:
@@ -114,7 +135,11 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                 error_code = (
                     "worker_claim_inconsistent"
                     if inconsistent_attempt
-                    else "worker_lease_expired"
+                    else (
+                        "worker_lease_expired_transcript_persisted"
+                        if command.require_persisted_voice_transcript
+                        else "worker_lease_expired"
+                    )
                 )
                 event.last_error_code = error_code
                 event.last_error_at = command.recovered_at
@@ -140,19 +165,23 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                 retry_scheduled=retried,
                 dead_lettered=dead_lettered,
             )
-            self._session.add(
-                AuditLog(
-                    actor="gate-telegram-worker",
-                    action="telegram_queue_stale_claims_recovered",
-                    metadata_={
-                        "recovered": recovery.recovered,
-                        "retry_scheduled": recovery.retry_scheduled,
-                        "dead_lettered": recovery.dead_lettered,
-                        "max_attempts": command.max_attempts,
-                        "limit": command.limit,
-                    },
+            if recovery.recovered:
+                self._session.add(
+                    AuditLog(
+                        actor="gate-telegram-worker",
+                        action="telegram_queue_stale_claims_recovered",
+                        metadata_={
+                            "recovered": recovery.recovered,
+                            "retry_scheduled": recovery.retry_scheduled,
+                            "dead_lettered": recovery.dead_lettered,
+                            "max_attempts": command.max_attempts,
+                            "limit": command.limit,
+                            "persisted_voice_transcript_required": (
+                                command.require_persisted_voice_transcript
+                            ),
+                        },
+                    )
                 )
-            )
             await self._session.commit()
             return recovery
         except Exception:
