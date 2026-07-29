@@ -494,8 +494,8 @@ async def _transcribe_recording(
                 PhoneCallRecording.id == recording.id,
                 or_(
                     PhoneCallRecording.transcription_status == "received",
-                            PhoneCallRecording.transcription_status
-                            == _LONG_CALL_RECOVERY_STATUS,
+                    PhoneCallRecording.transcription_status
+                    == _LONG_CALL_RECOVERY_STATUS,
                     and_(
                         PhoneCallRecording.transcription_status == "processing",
                         PhoneCallRecording.transcribed_at < stale_before,
