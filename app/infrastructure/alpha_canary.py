@@ -44,7 +44,6 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-
 MAX_ALPHA_GROUP_CAPACITY = 10_000
 
 
