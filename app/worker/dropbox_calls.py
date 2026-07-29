@@ -50,6 +50,7 @@ _DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2"
 # Reuse the existing hard-limited Gate voice budget until billing scopes are generalized.
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
+_LONG_CALL_RECOVERY_STATUS = "recovery_v8"
 _SUPPORTED_SUFFIXES = {
     ".3gp",
     ".aac",
@@ -451,6 +452,8 @@ async def _resume_received_recordings(
                         == settings.dropbox_call_account_id,
                         or_(
                             PhoneCallRecording.transcription_status == "received",
+                            PhoneCallRecording.transcription_status
+                            == _LONG_CALL_RECOVERY_STATUS,
                             and_(
                                 PhoneCallRecording.transcription_status == "processing",
                                 PhoneCallRecording.transcribed_at < stale_before,
@@ -491,6 +494,8 @@ async def _transcribe_recording(
                 PhoneCallRecording.id == recording.id,
                 or_(
                     PhoneCallRecording.transcription_status == "received",
+                    PhoneCallRecording.transcription_status
+                    == _LONG_CALL_RECOVERY_STATUS,
                     and_(
                         PhoneCallRecording.transcription_status == "processing",
                         PhoneCallRecording.transcribed_at < stale_before,
@@ -536,7 +541,7 @@ async def _transcribe_recording(
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=f"dropbox-call-v7:{recording.id}",
+            reservation_key=f"dropbox-call-v8:{recording.id}",
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
                 100,

@@ -104,7 +104,8 @@ def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
 
     assert ".with_for_update(skip_locked=True)" in source
     assert 'claimed.transcription_status = "processing"' in source
-    assert 'reservation_key=f"dropbox-call-v7:' in source
+    assert 'reservation_key=f"dropbox-call-v8:' in source
+    assert source.count("== _LONG_CALL_RECOVERY_STATUS") == 2
 
 
 def test_long_call_is_requeued_by_chunking_migration() -> None:
@@ -135,3 +136,20 @@ def test_rejected_long_call_is_requeued_by_wav_recovery_migration() -> None:
     assert "openai_transcription_rejected_http_400" in migration
     assert "_EXPECTED_SIZE = 25_505_021" in migration
     assert "octet_length(data) = :expected_size" in migration
+
+
+
+def test_long_call_recovery_uses_deploy_safe_claim_status() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0064_long_call_claim_v8.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision: str = "0065_long_call_claim_v8"' in migration
+    assert 'down_revision: str | None = "0064_long_call_wav_retry"' in migration
+    assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
+    assert "recovery_v8" in migration
+    assert "billing_reservation_replayed" in migration
+    assert "_EXPECTED_SIZE = 25_505_021" in migration
