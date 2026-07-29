@@ -376,6 +376,7 @@ async def test_missing_archive_voice_recovery_is_exact_and_bounded() -> None:
                         processing_started_at=now - timedelta(minutes=9),
                     )
                 )
+                await session.flush()
                 session.add(
                     TelegramOutboxEvent(
                         id=uuid4(),
