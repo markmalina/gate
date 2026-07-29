@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     telegram_alpha_webhook_secret: SecretStr = Field(
         default=SecretStr(""), validation_alias="TELEGRAM_ALPHA_WEBHOOK_SECRET"
     )
+    telegram_beta_bot_token: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_BETA_BOT_TOKEN"
+    )
+    telegram_beta_bot_username: str = Field(
+        default="", validation_alias="TELEGRAM_BETA_BOT_USERNAME"
+    )
+    telegram_beta_webhook_secret: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_BETA_WEBHOOK_SECRET"
+    )
     gate_env: str = Field(default="development", validation_alias="GATE_ENV")
     gate_default_mode: str = Field(default="manual", validation_alias="GATE_DEFAULT_MODE")
     action_bearer_token: str = Field(default="", validation_alias="ACTION_BEARER_TOKEN")
@@ -89,6 +98,34 @@ class Settings(BaseSettings):
     )
     gate_alpha_connector_enabled: bool = Field(
         default=False, validation_alias="GATE_ALPHA_CONNECTOR_ENABLED"
+    )
+    gate_beta_connector_enabled: bool = Field(
+        default=False, validation_alias="GATE_BETA_CONNECTOR_ENABLED"
+    )
+    gate_beta_installation_key: str = Field(
+        default="", validation_alias="GATE_BETA_INSTALLATION_KEY"
+    )
+    gate_beta_shadow_worker_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_SHADOW_WORKER_ENABLED",
+    )
+    gate_beta_canary_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_CANARY_ENABLED",
+    )
+    gate_beta_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_DELIVERY_ENABLED",
+    )
+    gate_beta_privacy_mode_confirmed: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_PRIVACY_MODE_CONFIRMED",
+    )
+    gate_beta_group_capacity: int = Field(
+        default=1,
+        ge=1,
+        le=10_000,
+        validation_alias="GATE_BETA_GROUP_CAPACITY",
     )
     gate_alpha_shadow_worker_enabled: bool = Field(
         default=False,
@@ -311,6 +348,8 @@ class Settings(BaseSettings):
             business_bot_username=self.telegram_bot_username,
             alpha_enabled=self.gate_alpha_connector_enabled,
             alpha_bot_username=self.telegram_alpha_bot_username,
+            beta_enabled=self.gate_beta_connector_enabled,
+            beta_bot_username=self.telegram_beta_bot_username,
         )
 
 

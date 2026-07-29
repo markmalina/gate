@@ -30,11 +30,17 @@ from app.application.worker_health import (
     WorkerHealthRegistry,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.beta_connector_binding import (
+    reconcile_beta_connector_binding,
+)
 from app.infrastructure.database import database_runtime_lifespan
 from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.services.telegram_alpha_webhook import (
     reconcile_alpha_telegram_webhook_with_retries,
+)
+from app.services.telegram_beta_webhook import (
+    reconcile_beta_telegram_webhook_with_retries,
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
@@ -51,6 +57,7 @@ async def _reconcile_all_telegram_webhooks(
     await asyncio.gather(
         reconcile_telegram_webhook_with_retries(settings, http_client),
         reconcile_alpha_telegram_webhook_with_retries(settings, http_client),
+        reconcile_beta_telegram_webhook_with_retries(settings, http_client),
     )
 
 
@@ -82,6 +89,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.worker_health_registry = worker_health
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
+        await reconcile_beta_connector_binding(
+            settings,
+            database_runtime.session_factory,
+        )
         try:
             async with build_telegram_http_client() as http_client:
                 reconciliation_task: asyncio.Task[None] | None = None

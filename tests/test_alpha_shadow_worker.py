@@ -347,6 +347,28 @@ def test_invocation_requires_exact_command_mention_or_verified_reply(
     )
 
 
+def test_beta_command_is_exact_and_cannot_trigger_alpha() -> None:
+    text = "/beta@BetaViaBot разберём задачу"
+
+    assert (
+        recognize_alpha_invocation(
+            text,
+            bot_username="BetaViaBot",
+            reply_to_bot=False,
+            command_name="beta",
+        )
+        is AlphaInvocationKind.COMMAND
+    )
+    assert (
+        recognize_alpha_invocation(
+            text,
+            bot_username="BetaViaBot",
+            reply_to_bot=False,
+        )
+        is AlphaInvocationKind.NONE
+    )
+
+
 def test_model_delivery_requires_active_explicit_bounded_live_policy(
     tmp_path: Path,
 ) -> None:

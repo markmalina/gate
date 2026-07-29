@@ -1,8 +1,8 @@
 """Typed, secret-free definitions for Telegram transport connectors.
 
 The registry is trusted application configuration. Telegram payloads cannot select
-their connector, role, capabilities or send authorization. Alpha is deliberately
-dormant until its own webhook, credentials and delivery path are implemented.
+their connector, role, capabilities or send authorization. Group connectors remain
+isolated by stable key, webhook, credentials and worker policy.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ class TelegramConnectorKey(StrEnum):
 
     BUSINESS = "telegram_business"
     ALPHA_GROUP = "telegram_alpha_group"
+    BETA_GROUP = "telegram_beta_group"
 
 
 class TelegramConnectorRole(StrEnum):
@@ -119,17 +120,20 @@ class TelegramConnectorDefinition:
                 raise ValueError("the Business connector cannot host the Alpha group agent")
             if TelegramSendAuthorization.AGENT_DELIVERY_GRANT in self.send_authorizations:
                 raise ValueError("the Business connector has no agent delivery authority")
-        elif self.key is TelegramConnectorKey.ALPHA_GROUP:
+        elif self.key in {
+            TelegramConnectorKey.ALPHA_GROUP,
+            TelegramConnectorKey.BETA_GROUP,
+        }:
             if self.role is not TelegramConnectorRole.ALPHA_GROUP:
-                raise ValueError("the Alpha connector requires the Alpha group role")
+                raise ValueError("a group connector requires the Alpha group role")
             if self.allowed_updates != ALPHA_GROUP_ALLOWED_UPDATES:
-                raise ValueError("the Alpha connector update allowlist is release-pinned")
+                raise ValueError("the group connector update allowlist is release-pinned")
             if self.declared_capabilities != frozenset(
                 {TelegramConnectorCapability.GROUP_MESSAGES}
             ):
-                raise ValueError("the Alpha connector capabilities are release-pinned")
+                raise ValueError("the group connector capabilities are release-pinned")
             if self.send_authorizations:
-                raise ValueError("the dormant Alpha connector cannot authorize sends")
+                raise ValueError("a group connector cannot authorize sends directly")
 
     @property
     def effective_capabilities(self) -> frozenset[TelegramConnectorCapability]:
@@ -174,10 +178,11 @@ class TelegramConnectorDefinition:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class TelegramConnectorRegistry:
-    """Closed registry for the current Business and future Alpha connectors."""
+    """Closed registry for Business, personal Alpha and product Beta connectors."""
 
     business: TelegramConnectorDefinition
     alpha_group: TelegramConnectorDefinition
+    beta_group: TelegramConnectorDefinition
 
     def __post_init__(self) -> None:
         """Require exact connector identities and unique isolation boundaries."""
@@ -186,7 +191,9 @@ class TelegramConnectorRegistry:
             raise ValueError("registry Business slot has the wrong connector")
         if self.alpha_group.key is not TelegramConnectorKey.ALPHA_GROUP:
             raise ValueError("registry Alpha slot has the wrong connector")
-        connectors = (self.business, self.alpha_group)
+        if self.beta_group.key is not TelegramConnectorKey.BETA_GROUP:
+            raise ValueError("registry Beta slot has the wrong connector")
+        connectors = (self.business, self.alpha_group, self.beta_group)
         for attribute in (
             "bot_identity_ref",
             "bot_token_secret_ref",
@@ -212,7 +219,7 @@ class TelegramConnectorRegistry:
 
         matched = [
             connector
-            for connector in (self.business, self.alpha_group)
+            for connector in (self.business, self.alpha_group, self.beta_group)
             if connector.matches_work_item_key(bot_key)
         ]
         if len(matched) != 1:
@@ -232,6 +239,7 @@ class TelegramConnectorRegistry:
             "connectors": [
                 self.business.safe_snapshot(),
                 self.alpha_group.safe_snapshot(),
+                self.beta_group.safe_snapshot(),
             ]
         }
 
@@ -240,7 +248,8 @@ class TelegramConnectorRegistry:
 
         return (
             "TelegramConnectorRegistry("
-            f"business={self.business!r}, alpha_group={self.alpha_group!r})"
+            f"business={self.business!r}, alpha_group={self.alpha_group!r}, "
+            f"beta_group={self.beta_group!r})"
         )
 
 
@@ -249,8 +258,10 @@ def build_telegram_connector_registry(
     business_bot_username: str,
     alpha_enabled: bool = False,
     alpha_bot_username: str = "",
+    beta_enabled: bool = False,
+    beta_bot_username: str = "",
 ) -> TelegramConnectorRegistry:
-    """Build isolated Business and explicitly enabled Alpha definitions."""
+    """Build isolated Business, Alpha and Beta connector definitions."""
 
     return TelegramConnectorRegistry(
         business=TelegramConnectorDefinition(
@@ -296,6 +307,24 @@ def build_telegram_connector_registry(
             declared_capabilities=frozenset({TelegramConnectorCapability.GROUP_MESSAGES}),
             send_authorizations=frozenset(),
             worker_enabled=alpha_enabled,
+        ),
+        beta_group=TelegramConnectorDefinition(
+            key=TelegramConnectorKey.BETA_GROUP,
+            role=TelegramConnectorRole.ALPHA_GROUP,
+            activation=(
+                TelegramConnectorActivation.ACTIVE
+                if beta_enabled
+                else TelegramConnectorActivation.DORMANT
+            ),
+            bot_identity=(beta_bot_username or None) if beta_enabled else None,
+            bot_identity_ref="TELEGRAM_BETA_BOT_USERNAME",
+            bot_token_secret_ref="TELEGRAM_BETA_BOT_TOKEN",
+            webhook_secret_ref="TELEGRAM_BETA_WEBHOOK_SECRET",
+            webhook_path="/telegram/beta/webhook",
+            allowed_updates=ALPHA_GROUP_ALLOWED_UPDATES,
+            declared_capabilities=frozenset({TelegramConnectorCapability.GROUP_MESSAGES}),
+            send_authorizations=frozenset(),
+            worker_enabled=beta_enabled,
         ),
     )
 
