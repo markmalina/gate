@@ -2,7 +2,11 @@
 
 import pytest
 from app.core.config import Settings
-from app.infrastructure.alpha_canary import alpha_group_capacity_available
+from app.infrastructure.alpha_canary import (
+    MAX_ALPHA_GROUP_CAPACITY,
+    SessionFactoryAlphaCanaryStore,
+    alpha_group_capacity_available,
+)
 
 
 def test_alpha_group_capacity_defaults_to_single_group() -> None:
@@ -47,9 +51,28 @@ def test_alpha_group_capacity_is_bounded_and_idempotent(
     )
 
 
-@pytest.mark.parametrize("capacity", [0, 33])
+def test_alpha_runtime_accepts_the_settings_upper_bound() -> None:
+    store = SessionFactoryAlphaCanaryStore(
+        object(),  # type: ignore[arg-type]
+        group_capacity=MAX_ALPHA_GROUP_CAPACITY,
+    )
+
+    assert store is not None
+    assert alpha_group_capacity_available(
+        existing_provider_dialog_ids=["group-a"],
+        provider_dialog_id="group-b",
+        capacity=MAX_ALPHA_GROUP_CAPACITY,
+    )
+
+
+@pytest.mark.parametrize("capacity", [0, MAX_ALPHA_GROUP_CAPACITY + 1])
 def test_alpha_group_capacity_rejects_invalid_bounds(capacity: int) -> None:
-    with pytest.raises(ValueError, match="between 1 and 32"):
+    with pytest.raises(ValueError, match="between 1 and 10000"):
+        SessionFactoryAlphaCanaryStore(
+            object(),  # type: ignore[arg-type]
+            group_capacity=capacity,
+        )
+    with pytest.raises(ValueError, match="between 1 and 10000"):
         alpha_group_capacity_available(
             existing_provider_dialog_ids=[],
             provider_dialog_id="group-a",
