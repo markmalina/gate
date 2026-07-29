@@ -71,6 +71,8 @@ def test_reconciliation_uses_one_atomic_queue_transition_and_one_recovery_grant(
         encoding="utf-8"
     )
 
+    assert 'SELECT count(*) FROM telegram_receipts' in migration
+    assert "if not classified and _is_fresh_database(bind)" in migration
     assert "WITH eligible AS MATERIALIZED" in migration
     assert "jsonb_typeof(r.payload -> 'business_message' -> 'voice')" in migration
     assert "transcription_recovery_authorized_at = COALESCE" in migration
