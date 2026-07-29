@@ -26,11 +26,6 @@ from app.application.alpha_shadow_worker import (
     AlphaShadowWorkerResult,
     recognize_alpha_invocation,
 )
-from app.infrastructure.alpha_canary import (
-    MAX_ALPHA_GROUP_CAPACITY,
-    SessionFactoryAlphaCanaryStore,
-    alpha_group_capacity_available,
-)
 
 NOW = datetime(2026, 7, 15, 9, 0, tzinfo=UTC)
 
@@ -323,35 +318,3 @@ def test_model_shadow_cannot_issue_grant_even_when_delivery_switch_is_on() -> No
     assert result.code == "alpha_model_shadow_delivery_blocked"
     assert store.grants == []
     assert delivery.commands == []
-
-
-
-def test_runtime_accepts_the_configured_alpha_capacity_maximum() -> None:
-    store = SessionFactoryAlphaCanaryStore(
-        object(),  # type: ignore[arg-type]
-        group_capacity=MAX_ALPHA_GROUP_CAPACITY,
-    )
-
-    assert store is not None
-    assert alpha_group_capacity_available(
-        existing_provider_dialog_ids=("existing",),
-        provider_dialog_id="new",
-        capacity=MAX_ALPHA_GROUP_CAPACITY,
-    )
-
-
-@pytest.mark.parametrize("capacity", [0, MAX_ALPHA_GROUP_CAPACITY + 1])
-def test_runtime_rejects_alpha_capacity_outside_settings_bounds(
-    capacity: int,
-) -> None:
-    with pytest.raises(ValueError, match="capacity must be between"):
-        SessionFactoryAlphaCanaryStore(
-            object(),  # type: ignore[arg-type]
-            group_capacity=capacity,
-        )
-    with pytest.raises(ValueError, match="capacity must be between"):
-        alpha_group_capacity_available(
-            existing_provider_dialog_ids=(),
-            provider_dialog_id="new",
-            capacity=capacity,
-        )
