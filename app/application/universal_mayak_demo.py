@@ -86,6 +86,7 @@ class UniversalMayakInstallation:
     public_label: str
     disclosure_text: str
     state: DemoInstallationState = DemoInstallationState.PAUSED
+    disclosure_required: bool = True
     owner_only: bool = True
     dialog_kind: str = "private"
     context_message_limit: int = MAX_CONTEXT_MESSAGES
@@ -518,8 +519,12 @@ def _visible_reply(
     installation: UniversalMayakInstallation,
     model_text: str,
 ) -> str:
-    prefix = f"{installation.public_label} · {installation.disclosure_text}"
-    candidate = f"{prefix}\n\n{model_text.strip()}"
+    candidate = model_text.strip()
+    if installation.disclosure_required:
+        candidate = (
+            f"{installation.public_label}\n\n"
+            f"{installation.disclosure_text}\n\n{candidate}"
+        )
     if len(candidate) > MAX_REPLY_TEXT_CHARS:
         raise UniversalMayakDemoError("mayak_demo_reply_too_long")
     return candidate
