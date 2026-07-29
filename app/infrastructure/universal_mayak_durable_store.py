@@ -44,7 +44,7 @@ from app.models.alpha import (
 )
 from app.models.canonical import CanonicalMessage, Dialog, Workspace
 
-_PROMPT_REVISION = "universal-mayak-v1"
+_PROMPT_REVISION = "universal-mayak-oko-v2"
 _DISCLOSURE = "Маяк отвечает с помощью ИИ."
 _INPUT_DIGEST_PREFIX = "mayak-input-sha256:"
 
