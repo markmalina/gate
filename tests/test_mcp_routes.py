@@ -45,7 +45,16 @@ def _voice_status_payload() -> dict[str, Any]:
         "unknown_count": 0,
         "reconciliation_required": False,
         "received_count": 3,
-        "processing_count": 0,
+        "processing_count": 1,
+        "pending_count": 1,
+        "active_processing_count": 0,
+        "stale_processing_count": 0,
+        "nonterminal_archive_missing_count": 0,
+        "nonterminal_archive_pending_count": 1,
+        "nonterminal_archive_transcribed_count": 0,
+        "nonterminal_archive_other_count": 0,
+        "nonterminal_transcript_complete_count": 0,
+        "nonterminal_summary_complete_count": 0,
         "delivered_count": 1,
         "retry_count": 0,
         "dead_letter_count": 2,
@@ -710,6 +719,10 @@ async def test_mcp_status_is_scoped(
     assert "budget_remaining: $50.000000" in result["content"][0]["text"]
     assert "promotion_next: provider_preflight" in result["content"][0]["text"]
     assert "Telegram voice transcription:" in result["content"][0]["text"]
+    assert "pending_count: 1" in result["content"][0]["text"]
+    assert "active_processing_count: 0" in result["content"][0]["text"]
+    assert "stale_processing_count: 0" in result["content"][0]["text"]
+    assert "nonterminal_archive_pending_count: 1" in result["content"][0]["text"]
     assert "Telegram Business text parity:" in result["content"][0]["text"]
     assert "cutover_ready: False" in result["content"][0]["text"]
     assert "budget_remaining: $0.996900" in result["content"][0]["text"]
