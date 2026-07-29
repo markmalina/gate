@@ -39,6 +39,7 @@ class RecoverStaleTelegramClaimsCommand:
     max_attempts: int = 5
     limit: int = 100
     require_persisted_voice_transcript: bool = False
+    require_missing_voice_archive: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,4 +77,9 @@ class RecoverStaleTelegramClaimsService:
             raise ValueError("max_attempts must be positive")
         if not 1 <= command.limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
+        if (
+            command.require_persisted_voice_transcript
+            and command.require_missing_voice_archive
+        ):
+            raise ValueError("voice recovery predicates are mutually exclusive")
         return await self._maintenance.recover_stale(command)
