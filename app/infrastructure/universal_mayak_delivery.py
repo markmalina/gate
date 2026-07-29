@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.universal_mayak_demo import (
@@ -50,7 +50,7 @@ class _BusinessSendReservation:
     text: str
 
 
-def _business_binding_query():
+def _business_binding_query() -> Select[tuple[\n    DeliveryGrantModel,\n    AgentSendAttemptModel,\n    AgentInstallationModel,\n    Dialog,\n    TransportConnector,\n    CanonicalMessage,\n    Message,\n    Account,\n    TelegramBusinessConnection,\n    AgentTurnModel,\n]]:
     return (
         select(
             DeliveryGrantModel,
