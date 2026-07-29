@@ -193,7 +193,7 @@ async def test_start_uses_one_prompt_and_one_opaque_delivery() -> None:
     assert model.calls[0].user_text == "/start"
     assert delivery.calls == ["delivery_turn_1"]
     assert store.staged["delivery_turn_1"] == (
-        "Маяк · цифровой помощник\n\nЧем я могу помочь?"
+        "Маяк\n\nцифровой помощник\n\nЧем я могу помочь?"
     )
 
 
@@ -249,6 +249,7 @@ async def test_changed_payload_under_same_key_fails_closed() -> None:
 @pytest.mark.anyio
 async def test_continuation_receives_only_same_dialog_bounded_context() -> None:
     store = Store()
+    store.installation = replace(store.installation, disclosure_required=False)
     store.context_by_dialog[SCOPE.dialog_ref] = (
         DemoContextMessage(
             SCOPE,
@@ -268,6 +269,7 @@ async def test_continuation_receives_only_same_dialog_bounded_context() -> None:
     )
 
     assert [item.text for item in model.calls[0].context] == ["Предыдущий ответ"]
+    assert store.staged["delivery_turn_1"] == "Чем я могу помочь?"
 
 
 @pytest.mark.anyio
