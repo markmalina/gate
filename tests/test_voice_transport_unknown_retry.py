@@ -40,7 +40,7 @@ def test_exact_retry_scope_fails_closed() -> None:
         ):
             migration._require_exact_scope(candidate_count)
 
-    assert migration.down_revision == "0061_voice_reconcile"
+    assert migration.down_revision == "0062_mayak_oko_v2"
     assert migration._TRANSPORT_UNKNOWN == (
         "openai_transcription_transport_unknown"
     )
