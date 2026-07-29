@@ -59,6 +59,10 @@ def test_valid_recovery_is_delegated_once() -> None:
         _command(max_attempts=0),
         _command(limit=0),
         _command(limit=1001),
+        _command(
+            require_persisted_voice_transcript=True,
+            require_missing_voice_archive=True,
+        ),
     ],
 )
 def test_invalid_recovery_bounds_fail_before_adapter(
