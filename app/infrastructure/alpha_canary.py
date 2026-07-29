@@ -38,7 +38,12 @@ from app.models.alpha import (
     AgentSendAttemptModel,
     DeliveryGrantModel,
 )
-from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
+from app.models.canonical import (
+    CanonicalMessage,
+    Dialog,
+    TransportConnector,
+    Workspace,
+)
 
 
 MAX_ALPHA_GROUP_CAPACITY = 10_000
