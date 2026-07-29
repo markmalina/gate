@@ -348,11 +348,12 @@ def test_invocation_requires_exact_command_mention_or_verified_reply(
 
 
 def test_beta_command_is_exact_and_cannot_trigger_alpha() -> None:
-    text = "/beta@BetaViaBot разберём задачу"
+    targeted = "/beta@BetaViaBot разберём задачу"
+    short = "/beta разберём задачу"
 
     assert (
         recognize_alpha_invocation(
-            text,
+            targeted,
             bot_username="BetaViaBot",
             reply_to_bot=False,
             command_name="beta",
@@ -361,7 +362,44 @@ def test_beta_command_is_exact_and_cannot_trigger_alpha() -> None:
     )
     assert (
         recognize_alpha_invocation(
-            text,
+            short,
+            bot_username="BetaViaBot",
+            reply_to_bot=False,
+            command_name="beta",
+            allow_untargeted_command=True,
+        )
+        is AlphaInvocationKind.COMMAND
+    )
+    assert (
+        recognize_alpha_invocation(
+            short,
+            bot_username="BetaViaBot",
+            reply_to_bot=False,
+            command_name="beta",
+        )
+        is AlphaInvocationKind.NONE
+    )
+    assert (
+        recognize_alpha_invocation(
+            "/alpha разберём задачу",
+            bot_username="AlphaViaBot",
+            reply_to_bot=False,
+        )
+        is AlphaInvocationKind.NONE
+    )
+    assert (
+        recognize_alpha_invocation(
+            "/beta@OtherBot разберём задачу",
+            bot_username="BetaViaBot",
+            reply_to_bot=False,
+            command_name="beta",
+            allow_untargeted_command=True,
+        )
+        is AlphaInvocationKind.NONE
+    )
+    assert (
+        recognize_alpha_invocation(
+            targeted,
             bot_username="BetaViaBot",
             reply_to_bot=False,
         )
