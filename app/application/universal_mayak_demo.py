@@ -85,8 +85,8 @@ class UniversalMayakInstallation:
     scope: DemoScope
     public_label: str
     disclosure_text: str
-    disclosure_required: bool = True
     state: DemoInstallationState = DemoInstallationState.PAUSED
+    disclosure_required: bool = True
     owner_only: bool = True
     dialog_kind: str = "private"
     context_message_limit: int = MAX_CONTEXT_MESSAGES
