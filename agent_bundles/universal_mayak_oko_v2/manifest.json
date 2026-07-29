@@ -1,0 +1,9 @@
+{
+  "schema_version": "agent-bundle-v1",
+  "agent_key": "oko",
+  "revision_key": "universal-mayak-oko-v2",
+  "source_repository": "markmalina/mayaki",
+  "source_path": "lms/oko-vozrozhdeniya",
+  "source_commit_sha": "0a638b580fc514f73cfb166c60c57531875e4887",
+  "content_sha256": "11f94e09de0f4b4b2e60ed69d2ca0ec9da89bc3f07f1ff4b5a7e479e1711ae77"
+}

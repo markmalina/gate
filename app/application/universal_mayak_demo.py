@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Protocol
 
-UNIVERSAL_MAYAK_PROMPT_REF = "universal-mayak-v1"
+UNIVERSAL_MAYAK_PROMPT_REF = "universal-mayak-oko-v2"
 UNIVERSAL_MAYAK_PROMPT_SHA256 = (
-    "84937bfe6638429babdf8c10946f1eeb7896be3e20c03b82d7149593b9330eb2"
+    "11f94e09de0f4b4b2e60ed69d2ca0ec9da89bc3f07f1ff4b5a7e479e1711ae77"
 )
 MAX_USER_TEXT_CHARS = 4_000
 MAX_REPLY_TEXT_CHARS = 4_096

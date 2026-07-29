@@ -116,12 +116,12 @@ def build_configured_universal_mayak_model(
         raise UniversalMayakDemoError("mayak_model_bundle_agent_mismatch")
 
     deployment = AgentDeployment(
-        deployment_key="universal-mayak-v1-openai",
+        deployment_key="universal-mayak-oko-v2-openai",
         agent_key=AgentKey.OKO,
         instruction=bundle.revision,
         runtime_profile="openai-responses-v1",
         model_profile=model_profile,
-        policy_version="universal-mayak-v1",
+        policy_version="universal-mayak-oko-v2",
         state=AgentDeploymentState.ACTIVE,
     )
     runtime = OpenAIResponsesAgentRuntime(
