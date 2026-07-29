@@ -93,9 +93,10 @@ class RecordingStaleRecovery(RecoverStaleTelegramClaimsService):
         command: RecoverStaleTelegramClaimsCommand,
     ) -> TelegramStaleClaimRecovery:
         self.commands.append(command)
+        recovered = int(command.require_missing_voice_archive)
         return TelegramStaleClaimRecovery(
-            recovered=1,
-            retry_scheduled=1,
+            recovered=recovered,
+            retry_scheduled=recovered,
             dead_lettered=0,
         )
 
@@ -223,7 +224,7 @@ def test_enabled_worker_checks_exact_mayak_recovery_before_new_claim() -> None:
     assert queue.claim_count == 1
 
 
-def test_enabled_worker_recovers_only_stale_persisted_voice_before_claim() -> None:
+def test_enabled_worker_recovers_one_safe_stale_voice_before_claim() -> None:
     settings = Settings(_env_file=None, GATE_TELEGRAM_WORKER_ENABLED=True)
     queue = EmptyQueue()
     recovery = RecordingStaleRecovery()
@@ -248,7 +249,14 @@ def test_enabled_worker_recovers_only_stale_persisted_voice_before_claim() -> No
             max_attempts=5,
             limit=1,
             require_persisted_voice_transcript=True,
-        )
+        ),
+        RecoverStaleTelegramClaimsCommand(
+            stale_before=datetime(2026, 7, 29, 10, 55, tzinfo=UTC),
+            recovered_at=now,
+            max_attempts=5,
+            limit=1,
+            require_missing_voice_archive=True,
+        ),
     ]
 
 
