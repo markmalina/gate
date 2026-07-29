@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.api.communication_feed_mcp import _call_feed_item, _voice_feed_item
+from app.api.mcp_routes import _voice_account_selector_scope
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
@@ -89,3 +90,12 @@ def test_voice_feed_exposes_persisted_summary() -> None:
     )
     assert item["summary"] == "Краткий итог голосового."
     assert item["summary_status"] == "summarized"
+
+
+def test_voice_latest_selector_resolves_documented_country_suffixes() -> None:
+    assert _voice_account_selector_scope("ru") == ("ru", "ru")
+    assert _voice_account_selector_scope("by") == ("by", "by")
+    assert _voice_account_selector_scope("telegram_mark_ru") == (
+        "telegram_mark_ru",
+        None,
+    )
