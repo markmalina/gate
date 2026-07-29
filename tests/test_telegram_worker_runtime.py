@@ -100,6 +100,15 @@ class RecordingStaleRecovery(RecoverStaleTelegramClaimsService):
         )
 
 
+class RecordingMayakDeliveryRecovery:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def recover_one_binding_block(self):
+        self.calls += 1
+        return None
+
+
 class FakeIdentityReader:
     def __init__(
         self,
@@ -192,6 +201,25 @@ def test_explicitly_enabled_worker_runs_at_most_one_claim() -> None:
 
     assert result.enabled is True
     assert result.disposition == "idle"
+    assert queue.claim_count == 1
+
+
+def test_enabled_worker_checks_exact_mayak_recovery_before_new_claim() -> None:
+    settings = Settings(_env_file=None, GATE_TELEGRAM_WORKER_ENABLED=True)
+    queue = EmptyQueue()
+    recovery = RecordingMayakDeliveryRecovery()
+
+    result = asyncio.run(
+        run_telegram_worker_once(
+            settings=settings,
+            queue=queue,
+            identity_reader=FakeIdentityReader(),
+            mayak_delivery_recovery=recovery,  # type: ignore[arg-type]
+        )
+    )
+
+    assert result.disposition == "idle"
+    assert recovery.calls == 1
     assert queue.claim_count == 1
 
 
