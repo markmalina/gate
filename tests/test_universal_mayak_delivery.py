@@ -1,5 +1,6 @@
 """Safety tests for the exact Telegram Business Mayak delivery adapter."""
 
+import asyncio
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -7,6 +8,7 @@ import httpx
 import pytest
 from app.application.universal_mayak_demo import DemoDeliveryState
 from app.infrastructure.universal_mayak_delivery import (
+    TelegramBusinessUniversalMayakDelivery,
     _grant_id,
     _provider_failure,
     _provider_message_id,
@@ -64,3 +66,53 @@ def test_nonterminal_attempt_does_not_project_a_receipt() -> None:
         )
         is None
     )
+
+
+class _EmptyRows:
+    def all(self):
+        return []
+
+
+class _DeliverySession:
+    def __init__(self) -> None:
+        self.statements = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return _EmptyRows()
+
+
+class _DeliverySessions:
+    def __init__(self) -> None:
+        self.session = _DeliverySession()
+
+    def begin(self):
+        return self.session
+
+
+class _TelegramMustNotRun:
+    async def send_plain_message(self, **_kwargs):
+        raise AssertionError("provider call is outside this query regression test")
+
+
+def test_delivery_binds_account_through_message_not_shared_connector_label() -> None:
+    sessions = _DeliverySessions()
+    adapter = TelegramBusinessUniversalMayakDelivery(
+        sessions=sessions,  # type: ignore[arg-type]
+        telegram=_TelegramMustNotRun(),  # type: ignore[arg-type]
+        enabled=True,
+    )
+
+    receipt = asyncio.run(adapter._reserve(GRANT_ID))
+
+    assert receipt.state is DemoDeliveryState.BLOCKED
+    assert receipt.error_code == "mayak_business_binding_invalid"
+    statement = str(sessions.session.statements[0])
+    assert "accounts.id = messages.account_id" in statement
+    assert "accounts.alias = transport_connectors.connector_key" not in statement
