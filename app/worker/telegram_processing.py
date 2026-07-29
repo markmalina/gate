@@ -808,7 +808,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                 if settings.gate_universal_mayak_runtime_enabled:
                     bundle = DeployedInstructionBundleLoader(
                         Path(settings.gate_agent_bundle_root)
-                    ).load("universal_mayak_v1")
+                    ).load("universal_mayak_oko_v2")
                     model = build_configured_universal_mayak_model(
                         bundle=bundle,
                         http_client=http_client,
