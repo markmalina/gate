@@ -33,6 +33,10 @@ from app.application.telegram_processing import (
     TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
 )
+from app.application.telegram_queue_maintenance import (
+    RecoverStaleTelegramClaimsCommand,
+    TelegramStaleClaimRecovery,
+)
 from app.core.config import Settings
 from app.worker import telegram_processing as worker_module
 from app.worker.telegram_processing import (
@@ -77,6 +81,22 @@ class EmptyQueue:
 
     async def record_failure(self, *args: object, **kwargs: object) -> None:
         raise AssertionError("empty queue cannot record failure")
+
+
+class RecordingStaleRecovery:
+    def __init__(self) -> None:
+        self.commands: list[RecoverStaleTelegramClaimsCommand] = []
+
+    async def execute(
+        self,
+        command: RecoverStaleTelegramClaimsCommand,
+    ) -> TelegramStaleClaimRecovery:
+        self.commands.append(command)
+        return TelegramStaleClaimRecovery(
+            recovered=1,
+            retry_scheduled=1,
+            dead_lettered=0,
+        )
 
 
 class FakeIdentityReader:
@@ -172,6 +192,35 @@ def test_explicitly_enabled_worker_runs_at_most_one_claim() -> None:
     assert result.enabled is True
     assert result.disposition == "idle"
     assert queue.claim_count == 1
+
+
+def test_enabled_worker_recovers_only_stale_persisted_voice_before_claim() -> None:
+    settings = Settings(_env_file=None, GATE_TELEGRAM_WORKER_ENABLED=True)
+    queue = EmptyQueue()
+    recovery = RecordingStaleRecovery()
+    now = datetime(2026, 7, 29, 11, 0, tzinfo=UTC)
+
+    result = asyncio.run(
+        run_telegram_worker_once(
+            settings=settings,
+            queue=queue,
+            identity_reader=FakeIdentityReader(),
+            stale_recovery=recovery,  # type: ignore[arg-type]
+            now=now,
+        )
+    )
+
+    assert result.disposition == "idle"
+    assert queue.claim_count == 1
+    assert recovery.commands == [
+        RecoverStaleTelegramClaimsCommand(
+            stale_before=datetime(2026, 7, 29, 10, 55, tzinfo=UTC),
+            recovered_at=now,
+            max_attempts=5,
+            limit=1,
+            require_persisted_voice_transcript=True,
+        )
+    ]
 
 
 def test_disabled_worker_loop_never_runs_an_iteration() -> None:
