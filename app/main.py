@@ -90,10 +90,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
         try:
-            await reconcile_beta_connector_binding(
-                settings,
-                database_runtime.session_factory,
-            )
+            if getattr(settings, "gate_beta_connector_enabled", False):
+                await reconcile_beta_connector_binding(
+                    settings,
+                    database_runtime.session_factory,
+                )
             async with build_telegram_http_client() as http_client:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
