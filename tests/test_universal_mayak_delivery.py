@@ -114,5 +114,5 @@ def test_delivery_binds_account_through_message_not_shared_connector_label() -> 
     assert receipt.state is DemoDeliveryState.BLOCKED
     assert receipt.error_code == "mayak_business_binding_invalid"
     statement = str(sessions.session.statements[0])
-    assert "messages.account_id = accounts.id" in statement
+    assert "accounts.id = messages.account_id" in statement
     assert "accounts.alias = transport_connectors.connector_key" not in statement
