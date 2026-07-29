@@ -80,6 +80,31 @@ class RecordingVoiceArchive:
         )
 
 
+class PersistedTranscriptVoiceArchive(RecordingVoiceArchive):
+    async def archive(
+        self,
+        command: ArchiveTelegramVoiceCommand,
+    ) -> TelegramVoiceArchiveResult:
+        self.commands.append(command)
+        return TelegramVoiceArchiveResult(
+            archive_id="archive-1",
+            duplicate=True,
+            size_bytes=1024,
+            media_type="audio/ogg",
+            transcription_status=TelegramVoiceTranscriptStatus.TRANSCRIBED,
+            transcript_text="already stored transcript",
+            transcription_reason_code="telegram_voice_transcribed",
+        )
+
+
+class ExplodingVoiceUpdates:
+    async def execute(
+        self,
+        _command: ProcessTelegramVoiceUpdateCommand,
+    ) -> ProcessTelegramVoiceUpdateResult:
+        raise AssertionError("persisted transcript must bypass provider orchestration")
+
+
 class ProjectingVoiceUpdates:
     def __init__(self) -> None:
         self.commands: list[ProcessTelegramVoiceUpdateCommand] = []
@@ -182,6 +207,25 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
         TelegramVoiceTranscriptStatus.TRANSCRIBED
     )
     assert voice_archive.transcripts[0].text == "расшифрованный текст"
+
+
+def test_persisted_transcript_replay_bypasses_provider_orchestration() -> None:
+    archive = PersistedTranscriptVoiceArchive()
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=Settings(
+            _env_file=None,
+            GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED=True,
+        ),
+        identity_reader=ResolvedIdentityReader(),
+        voice_updates=ExplodingVoiceUpdates(),
+        voice_archive=archive,
+        runtime_logger=logging.getLogger("gate.voice.persisted-replay"),
+    )
+
+    asyncio.run(processor.process(voice_item()))
+
+    assert len(archive.commands) == 1
+    assert archive.transcripts == []
 
 
 def test_unresolved_business_voice_never_reaches_provider_boundary() -> None:
