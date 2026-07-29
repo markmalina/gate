@@ -688,6 +688,7 @@ async def run_telegram_worker_once(
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
     business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
     universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
+    mayak_delivery_recovery: TelegramBusinessUniversalMayakDelivery | None = None,
     stale_recovery: RecoverStaleTelegramClaimsService | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
@@ -714,6 +715,13 @@ async def run_telegram_worker_once(
                 recovery.recovered,
                 recovery.retry_scheduled,
                 recovery.dead_lettered,
+            )
+    if mayak_delivery_recovery is not None:
+        receipt = await mayak_delivery_recovery.recover_one_binding_block()
+        if receipt is not None:
+            runtime_logger.info(
+                "Recovered exact owner Mayak delivery: state=%s",
+                receipt.state.value,
             )
     if queue is None:
         if session is None:
@@ -832,6 +840,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         ),
                     )
                 universal_mayak = None
+                universal_mayak_delivery = None
                 if settings.gate_universal_mayak_runtime_enabled:
                     bundle = DeployedInstructionBundleLoader(
                         Path(settings.gate_agent_bundle_root)
@@ -864,6 +873,13 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         ),
                         http_client=http_client,
                     )
+                    universal_mayak_delivery = (
+                        TelegramBusinessUniversalMayakDelivery(
+                            sessions=sessions,
+                            telegram=business_telegram,
+                            enabled=settings.gate_universal_mayak_delivery_enabled,
+                        )
+                    )
                     universal_mayak = ProcessUniversalMayakPrivateMessageService(
                         bindings=SessionFactoryApprovedPrivateBindingResolver(
                             sessions
@@ -873,13 +889,8 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 sessions
                             ),
                             model=model,
-                            delivery=TelegramBusinessUniversalMayakDelivery(
-                                sessions=sessions,
-                                telegram=business_telegram,
-                                enabled=(
-                                    settings.gate_universal_mayak_delivery_enabled
-                                ),
-                            ),
+                            delivery=universal_mayak_delivery,
+
                         ),
                     )
                 voice_downloader = None
@@ -938,6 +949,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
                         universal_mayak=universal_mayak,
+                        mayak_delivery_recovery=universal_mayak_delivery,
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
                         stale_recovery=(
