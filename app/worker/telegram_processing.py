@@ -940,8 +940,15 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         universal_mayak=universal_mayak,
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
-                        stale_recovery=RecoverStaleTelegramClaimsService(
-                            SqlTelegramQueueMaintenance(session)
+                        stale_recovery=(
+                            RecoverStaleTelegramClaimsService(
+                                SqlTelegramQueueMaintenance(session)
+                            )
+                            if (
+                                settings.gate_telegram_voice_archive_enabled
+                                and settings.gate_telegram_voice_transcription_enabled
+                            )
+                            else None
                         ),
                     )
                 await _drain_beta_context(sessions)
