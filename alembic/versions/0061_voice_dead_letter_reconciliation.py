@@ -76,6 +76,11 @@ def _classify(bind: sa.Connection) -> dict[tuple[str, str], int]:
     }
 
 
+def _is_fresh_database(bind: sa.Connection) -> bool:
+    receipt_count = bind.scalar(sa.text("SELECT count(*) FROM telegram_receipts"))
+    return int(receipt_count or 0) == 0
+
+
 def _require_exact_scope(classified: dict[tuple[str, str], int]) -> None:
     totals = {
         error_code: sum(
@@ -151,6 +156,8 @@ def _requeue(
 def upgrade() -> None:
     bind = op.get_bind()
     classified = _classify(bind)
+    if not classified and _is_fresh_database(bind):
+        return
     _require_exact_scope(classified)
 
     not_inbound_requeued = _requeue(
