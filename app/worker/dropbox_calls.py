@@ -568,104 +568,180 @@ async def _transcribe_recording(
         await session.commit()
 
 
+_TELEGRAM_VOICE_RECOVERY_GENERATION = 2
+
+
+async def _claim_authorized_telegram_voice(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[TelegramVoiceArchive, int] | None:
+    """Atomically consume one exact dead-letter recovery grant before provider I/O."""
+
+    expected_error = "openai_transcription_transport_unknown"
+    async with session_factory() as session:
+        archives = list(
+            (
+                await session.scalars(
+                    select(TelegramVoiceArchive)
+                    .join(
+                        TelegramReceipt,
+                        TelegramReceipt.id == TelegramVoiceArchive.receipt_id,
+                    )
+                    .join(
+                        TelegramOutboxEvent,
+                        TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
+                    )
+                    .where(
+                        TelegramVoiceArchive.transcription_recovery_generation
+                        == _TELEGRAM_VOICE_RECOVERY_GENERATION,
+                        TelegramVoiceArchive.transcription_recovery_authorized_at
+                        .is_(None),
+                        TelegramVoiceArchive.transcription_status
+                        == TelegramVoiceOutcome.UNKNOWN.value,
+                        TelegramVoiceArchive.transcript_text.is_(None),
+                        TelegramVoiceArchive.summary_text.is_(None),
+                        TelegramReceipt.bot_key == "telegram_business",
+                        TelegramReceipt.status
+                        == TelegramReceiptStatus.DEAD_LETTER.value,
+                        TelegramReceipt.last_error_code == expected_error,
+                        TelegramOutboxEvent.status
+                        == TelegramOutboxStatus.DEAD_LETTER.value,
+                        TelegramOutboxEvent.last_error_code == expected_error,
+                    )
+                    .order_by(TelegramVoiceArchive.received_at.asc())
+                    .limit(2)
+                    .with_for_update(
+                        of=(TelegramVoiceArchive,),
+                        skip_locked=True,
+                    )
+                )
+            ).all()
+        )
+        if len(archives) > 1:
+            raise DropboxCallWorkerError(
+                "telegram_voice_recovery_scope_ambiguous"
+            )
+        if not archives:
+            return None
+        archive = archives[0]
+        generation = archive.transcription_recovery_generation
+        if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
+            return None
+        if (
+            not archive.data
+            or archive.size_bytes <= 0
+            or archive.duration_seconds <= 0
+            or len(archive.sha256) != 64
+        ):
+            raise DropboxCallWorkerError(
+                "telegram_voice_recovery_archive_invalid"
+            )
+
+        # Commit the generation consumption before provider I/O. A crash now
+        # fails closed: a new owner authorization is required for another try.
+        archive.transcription_recovery_generation = None
+        await session.commit()
+        await session.refresh(archive)
+        return archive, generation
+
+
+def _telegram_voice_recovery_reservation_key(
+    archive_id: object,
+    generation: int,
+) -> str:
+    """Bind one recovery reservation to one isolated authorization generation."""
+
+    if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
+        raise DropboxCallWorkerError(
+            "telegram_voice_recovery_generation_invalid"
+        )
+    return f"telegram-voice-recovery-v{generation}:{archive_id}"
+
+
 async def _recover_authorized_telegram_voices(
     *,
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
 ) -> None:
-    """Retry at most three explicitly authorized archives per worker run."""
+    """Consume and run at most one exact transport-unknown recovery grant."""
 
-    async with session_factory() as session:
-        archive_ids = list(
-            (
-                await session.scalars(
-                    select(TelegramVoiceArchive.id)
-                    .where(
-                        TelegramVoiceArchive.transcription_recovery_authorized_at
-                        .is_not(None),
-                        or_(
-                            TelegramVoiceArchive.transcription_status.is_(None),
-                            TelegramVoiceArchive.transcription_status
-                            == TelegramVoiceOutcome.UNKNOWN.value,
-                        ),
-                    )
-                    .order_by(TelegramVoiceArchive.received_at.asc())
-                    .limit(3)
-                )
-            ).all()
-        )
-    for archive_id in archive_ids:
-        async with session_factory() as session:
-            archive = await session.get(TelegramVoiceArchive, archive_id)
-        if archive is None or archive.transcription_recovery_authorized_at is None:
-            continue
-        now = datetime.now(UTC)
-        service = TelegramVoiceTranscriptionService(
-            downloader=_StoredCallDownloader(archive),
-            normalizer=TelegramVoiceNormalizer(),
-            budget=SqlBillingBudgetService(session_factory),
-            speech_to_text=OpenAITranscriptionClient(
-                config=OpenAITranscriptionConfig(
-                    api_key=settings.openai_api_key.get_secret_value(),
-                    enabled=True,
-                    model=settings.gate_telegram_voice_transcription_model,
-                    base_url=settings.openai_api_base_url,
-                ),
-                http=http,
-            ),
-        )
-        result = await service.transcribe(
-            TranscribeTelegramVoiceCommand(
-                voice=TelegramVoiceReference(
-                    file_id=str(archive.id),
-                    file_unique_id=archive.sha256,
-                    declared_size_bytes=archive.size_bytes,
-                    duration_seconds=archive.duration_seconds,
-                ),
-                workspace_key=settings.gate_workspace_id,
-                connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-                reservation_key=f"telegram-voice-recovery-v1:{archive.id}",
-                period_key=now.strftime("%Y-%m"),
-                requested_microusd=max(
-                    100,
-                    archive.duration_seconds
-                    * settings.gate_telegram_voice_reserve_microusd_per_second,
-                ),
-                occurred_at=now,
-                language="ru",
+    claimed = await _claim_authorized_telegram_voice(
+        session_factory=session_factory,
+    )
+    if claimed is None:
+        return
+    archive, generation = claimed
+    now = datetime.now(UTC)
+    service = TelegramVoiceTranscriptionService(
+        downloader=_StoredCallDownloader(archive),
+        normalizer=TelegramVoiceNormalizer(),
+        budget=SqlBillingBudgetService(session_factory),
+        speech_to_text=OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(
+                api_key=settings.openai_api_key.get_secret_value(),
                 enabled=True,
-                budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
-            )
-        )
-        async with session_factory() as session:
-            stored = await session.get(
-                TelegramVoiceArchive,
+                model=settings.gate_telegram_voice_transcription_model,
+                base_url=settings.openai_api_base_url,
+            ),
+            http=http,
+        ),
+    )
+    result = await service.transcribe(
+        TranscribeTelegramVoiceCommand(
+            voice=TelegramVoiceReference(
+                file_id=str(archive.id),
+                file_unique_id=archive.sha256,
+                declared_size_bytes=archive.size_bytes,
+                duration_seconds=archive.duration_seconds,
+            ),
+            workspace_key=settings.gate_workspace_id,
+            connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+            reservation_key=_telegram_voice_recovery_reservation_key(
                 archive.id,
-                with_for_update=True,
+                generation,
+            ),
+            period_key=now.strftime("%Y-%m"),
+            requested_microusd=max(
+                100,
+                archive.duration_seconds
+                * settings.gate_telegram_voice_reserve_microusd_per_second,
+            ),
+            occurred_at=now,
+            language="ru",
+            enabled=True,
+            budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
+        )
+    )
+    async with session_factory() as session:
+        stored = await session.get(
+            TelegramVoiceArchive,
+            archive.id,
+            with_for_update=True,
+        )
+        if stored is None:
+            raise DropboxCallWorkerError(
+                "telegram_voice_recovery_archive_missing"
             )
-            if stored is None:
-                raise DropboxCallWorkerError("telegram_voice_recovery_archive_missing")
-            stored.transcription_status = result.outcome.value
-            stored.transcript_text = result.alpha_input_text
-            stored.transcript_language = "ru"
-            stored.transcription_model = settings.gate_telegram_voice_transcription_model
-            stored.transcription_reason_code = result.reason_code
-            stored.transcribed_at = now
-            stored.transcription_recovery_authorized_at = None
-            if result.alpha_input_text:
-                stored.summary_status = "summarized"
-                stored.summary_text = build_audio_summary(result.alpha_input_text)
-                stored.summary_model = AUDIO_SUMMARY_MODEL
-                stored.summary_reason_code = "audio_summary_generated"
-                stored.summarized_at = now
-            if result.outcome is TelegramVoiceOutcome.TRANSCRIBED:
-                await _requeue_recovered_telegram_voice(
-                    session=session,
-                    archive=stored,
-                    now=now,
-                )
-            await session.commit()
+        stored.transcription_status = result.outcome.value
+        stored.transcript_text = result.alpha_input_text
+        stored.transcript_language = "ru"
+        stored.transcription_model = settings.gate_telegram_voice_transcription_model
+        stored.transcription_reason_code = result.reason_code
+        stored.transcribed_at = now
+        if result.alpha_input_text:
+            stored.summary_status = "summarized"
+            stored.summary_text = build_audio_summary(result.alpha_input_text)
+            stored.summary_model = AUDIO_SUMMARY_MODEL
+            stored.summary_reason_code = "audio_summary_generated"
+            stored.summarized_at = now
+        if result.outcome is TelegramVoiceOutcome.TRANSCRIBED:
+            await _requeue_recovered_telegram_voice(
+                session=session,
+                archive=stored,
+                now=now,
+            )
+        await session.commit()
 
 
 async def _requeue_recovered_telegram_voice(
