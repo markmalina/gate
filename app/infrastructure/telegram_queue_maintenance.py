@@ -138,7 +138,10 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     TelegramOutboxEvent.id,
                 )
                 .limit(query_limit)
-                .with_for_update(skip_locked=True)
+                .with_for_update(
+                    of=(TelegramOutboxEvent, TelegramReceipt),
+                    skip_locked=True,
+                )
             )
             rows = result.all()
             if len(rows) > command.limit:
