@@ -764,6 +764,24 @@ async def run_telegram_worker_once(
                 recovery.retry_scheduled,
                 recovery.dead_lettered,
             )
+        else:
+            recovery = await stale_recovery.execute(
+                RecoverStaleTelegramClaimsCommand(
+                    stale_before=iteration_at - timedelta(minutes=5),
+                    recovered_at=iteration_at,
+                    max_attempts=5,
+                    limit=1,
+                    require_missing_voice_archive=True,
+                )
+            )
+            if recovery.recovered:
+                runtime_logger.info(
+                    "Recovered stale missing-archive voice claim: "
+                    "recovered=%s retry_scheduled=%s dead_lettered=%s",
+                    recovery.recovered,
+                    recovery.retry_scheduled,
+                    recovery.dead_lettered,
+                )
     if mayak_delivery_recovery is not None:
         receipt = await mayak_delivery_recovery.recover_one_binding_block()
         if receipt is not None:
