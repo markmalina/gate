@@ -104,8 +104,8 @@ class _TelegramMustNotRun:
 def test_delivery_binds_account_through_message_not_shared_connector_label() -> None:
     sessions = _DeliverySessions()
     adapter = TelegramBusinessUniversalMayakDelivery(
-        sessions=sessions,
-        telegram=_TelegramMustNotRun(),
+        sessions=sessions,  # type: ignore[arg-type]
+        telegram=_TelegramMustNotRun(),  # type: ignore[arg-type]
         enabled=True,
     )
 
