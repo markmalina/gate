@@ -65,7 +65,16 @@ def test_payload_contains_no_operation_or_provider_references() -> None:
         unknown_count=0,
         reconciliation_required=False,
         received_count=3,
-        processing_count=0,
+        processing_count=1,
+        pending_count=1,
+        active_processing_count=0,
+        stale_processing_count=0,
+        nonterminal_archive_missing_count=0,
+        nonterminal_archive_pending_count=1,
+        nonterminal_archive_transcribed_count=0,
+        nonterminal_archive_other_count=0,
+        nonterminal_transcript_complete_count=0,
+        nonterminal_summary_complete_count=0,
         delivered_count=1,
         retry_count=0,
         dead_letter_count=2,
@@ -75,6 +84,13 @@ def test_payload_contains_no_operation_or_provider_references() -> None:
     payload = status.payload()
 
     assert payload["received_count"] == 3
+    assert payload["processing_count"] == 1
+    assert payload["pending_count"] == 1
+    assert payload["active_processing_count"] == 0
+    assert payload["stale_processing_count"] == 0
+    assert payload["nonterminal_archive_pending_count"] == 1
+    assert payload["nonterminal_transcript_complete_count"] == 0
+    assert payload["nonterminal_summary_complete_count"] == 0
     assert payload["delivered_count"] == 1
     assert payload["dead_letter_count"] == 2
     assert payload["last_error_code"] == "openai_transcription_rejected"
@@ -82,6 +98,16 @@ def test_payload_contains_no_operation_or_provider_references() -> None:
     assert "provider_operation_ref" not in payload
     assert "reservation_key" not in payload
     assert "scope_ref" not in payload
+    for private_key in (
+        "payload",
+        "transcript_text",
+        "summary_text",
+        "receipt_id",
+        "telegram_message_id",
+        "business_connection_id",
+        "provider_operation_ref",
+    ):
+        assert private_key not in payload
 
 
 class _Entitlements:
@@ -98,8 +124,8 @@ class _Summary:
 
 
 class _QueueSummary:
-    def one(self) -> tuple[int, int, int, int, int]:
-        return (3, 0, 1, 0, 2)
+    def one(self) -> tuple[int, ...]:
+        return (4, 1, 1, 0, 0, 1, 0, 2, 0, 1, 0, 0, 0, 0)
 
 
 class _DeadLetters:
@@ -175,8 +201,17 @@ def test_operational_query_returns_only_aggregated_budget_state() -> None:
     assert status.remaining_microusd == 996_900
     assert status.open_count == 1
     assert status.unknown_count == 0
-    assert status.received_count == 3
-    assert status.processing_count == 0
+    assert status.received_count == 4
+    assert status.processing_count == 1
+    assert status.pending_count == 1
+    assert status.active_processing_count == 0
+    assert status.stale_processing_count == 0
+    assert status.nonterminal_archive_missing_count == 0
+    assert status.nonterminal_archive_pending_count == 1
+    assert status.nonterminal_archive_transcribed_count == 0
+    assert status.nonterminal_archive_other_count == 0
+    assert status.nonterminal_transcript_complete_count == 0
+    assert status.nonterminal_summary_complete_count == 0
     assert status.delivered_count == 1
     assert status.retry_count == 0
     assert status.dead_letter_count == 2
