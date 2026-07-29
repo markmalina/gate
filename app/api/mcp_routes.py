@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select, union_all
+from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import get_db_session
@@ -852,6 +852,24 @@ def _parse_latest_voice_transcript_selector(raw_task_id: str) -> str | None:
     return alias
 
 
+def _voice_account_selector_scope(
+    account_selector: str,
+) -> tuple[str, str | None]:
+    country_code = account_selector if account_selector in {"ru", "by"} else None
+    return account_selector, country_code
+
+
+def _voice_account_selector_filter(account_selector: str) -> Any:
+    exact_alias, country_code = _voice_account_selector_scope(account_selector)
+    if country_code is None:
+        return Account.alias == exact_alias
+    return or_(
+        Account.alias == exact_alias,
+        Account.country_code == country_code,
+        Account.alias.endswith(f"_{country_code}"),
+    )
+
+
 async def _latest_voice_archive_tool_result(
     *,
     request_id: Any,
@@ -866,7 +884,7 @@ async def _latest_voice_archive_tool_result(
         select(TelegramVoiceArchive, Account)
         .join(Account, Account.id == TelegramVoiceArchive.account_id)
         .where(
-            Account.alias == account_alias,
+            _voice_account_selector_filter(account_alias),
             Account.id.in_(principal.access_scope.account_ids),
             TelegramVoiceArchive.account_id.in_(
                 principal.access_scope.account_ids
