@@ -64,11 +64,15 @@ def test_call_feed_exposes_persisted_summary() -> None:
             transcription_status="transcribed",
             summary_text="Краткий итог звонка.",
             summary_status="summarized",
+            transcription_reason_code="phone_call_transcribed",
+            summary_reason_code=None,
         ),
         UTC,
     )
     assert item["summary"] == "Краткий итог звонка."
     assert item["summary_status"] == "summarized"
+    assert item["transcription_reason_code"] == "phone_call_transcribed"
+    assert item["summary_reason_code"] is None
     assert item["semantic_input_private"] == "Полный текст звонка."
 
 
@@ -83,6 +87,8 @@ def test_voice_feed_exposes_persisted_summary() -> None:
             transcription_status="transcribed",
             summary_text="Краткий итог голосового.",
             summary_status="summarized",
+            transcription_reason_code=None,
+            summary_reason_code="audio_summary_complete",
         ),
         SimpleNamespace(alias="telegram_ru", country_code="ru"),
         None,
@@ -90,6 +96,8 @@ def test_voice_feed_exposes_persisted_summary() -> None:
     )
     assert item["summary"] == "Краткий итог голосового."
     assert item["summary_status"] == "summarized"
+    assert item["transcription_reason_code"] is None
+    assert item["summary_reason_code"] == "audio_summary_complete"
 
 
 def test_voice_latest_selector_resolves_documented_country_suffixes() -> None:

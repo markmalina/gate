@@ -66,6 +66,14 @@ FEED_ITEM_SCHEMA: JsonObject = {
         },
         "original_available": {"type": "boolean"},
         "transcript_status": {"type": ["string", "null"], "maxLength": 32},
+        "transcription_reason_code": {
+            "type": ["string", "null"],
+            "maxLength": 128,
+        },
+        "summary_reason_code": {
+            "type": ["string", "null"],
+            "maxLength": 128,
+        },
     },
     "required": [
         "source_ref",
@@ -83,6 +91,8 @@ FEED_ITEM_SCHEMA: JsonObject = {
         "semantic_status",
         "original_available",
         "transcript_status",
+        "transcription_reason_code",
+        "summary_reason_code",
     ],
     "additionalProperties": False,
 }
@@ -434,6 +444,8 @@ def _message_feed_item(
         semantic_status="source_ready" if semantic_input else "transcript_pending",
         original_available=False,
         transcript_status=None,
+        transcription_reason_code=None,
+        summary_reason_code=None,
         owner_timezone=owner_timezone,
     )
 
@@ -463,6 +475,10 @@ def _voice_feed_item(
         semantic_status="source_ready" if semantic_input else "transcript_pending",
         original_available=True,
         transcript_status=archive.transcription_status,
+        transcription_reason_code=getattr(
+            archive, "transcription_reason_code", None
+        ),
+        summary_reason_code=getattr(archive, "summary_reason_code", None),
         owner_timezone=owner_timezone,
     )
 
@@ -484,6 +500,10 @@ def _call_feed_item(recording: Any, owner_timezone: ZoneInfo) -> JsonObject:
         semantic_status="source_ready" if semantic_input else "transcript_pending",
         original_available=True,
         transcript_status=recording.transcription_status,
+        transcription_reason_code=getattr(
+            recording, "transcription_reason_code", None
+        ),
+        summary_reason_code=getattr(recording, "summary_reason_code", None),
         owner_timezone=owner_timezone,
     )
 
@@ -504,6 +524,8 @@ def _feed_item(
     semantic_status: str,
     original_available: bool,
     transcript_status: str | None,
+    transcription_reason_code: str | None,
+    summary_reason_code: str | None,
     owner_timezone: ZoneInfo,
 ) -> JsonObject:
     return {
@@ -522,6 +544,8 @@ def _feed_item(
         "semantic_status": semantic_status,
         "original_available": original_available,
         "transcript_status": transcript_status,
+        "transcription_reason_code": transcription_reason_code,
+        "summary_reason_code": summary_reason_code,
     }
 
 
