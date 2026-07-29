@@ -7,7 +7,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -61,6 +61,10 @@ from app.application.telegram_processing import (
     TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
     TelegramUpdateProcessor,
+)
+from app.application.telegram_queue_maintenance import (
+    RecoverStaleTelegramClaimsCommand,
+    RecoverStaleTelegramClaimsService,
 )
 from app.application.telegram_voice_archive import (
     ArchiveTelegramVoiceCommand,
@@ -127,6 +131,9 @@ from app.infrastructure.telegram_ingress_identity import (
 from app.infrastructure.telegram_processing import (
     SqlAlphaCapacityDeadLetterReplayer,
     SqlTelegramProcessingQueue,
+)
+from app.infrastructure.telegram_queue_maintenance import (
+    SqlTelegramQueueMaintenance,
 )
 from app.infrastructure.telegram_voice import (
     TelegramVoiceDownloadConfig,
@@ -681,6 +688,7 @@ async def run_telegram_worker_once(
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
     business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
     universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
+    stale_recovery: RecoverStaleTelegramClaimsService | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
 ) -> TelegramWorkerRuntimeResult:
@@ -688,6 +696,25 @@ async def run_telegram_worker_once(
 
     if not settings.gate_telegram_worker_enabled:
         return TelegramWorkerRuntimeResult(enabled=False, disposition="disabled")
+    iteration_at = now or datetime.now(UTC)
+    if stale_recovery is not None:
+        recovery = await stale_recovery.execute(
+            RecoverStaleTelegramClaimsCommand(
+                stale_before=iteration_at - timedelta(minutes=5),
+                recovered_at=iteration_at,
+                max_attempts=5,
+                limit=1,
+                require_persisted_voice_transcript=True,
+            )
+        )
+        if recovery.recovered:
+            runtime_logger.info(
+                "Recovered stale persisted-transcript voice claim: "
+                "recovered=%s retry_scheduled=%s dead_lettered=%s",
+                recovery.recovered,
+                recovery.retry_scheduled,
+                recovery.dead_lettered,
+            )
     if queue is None:
         if session is None:
             raise RuntimeError("An enabled Telegram worker requires a database session")
@@ -710,7 +737,7 @@ async def run_telegram_worker_once(
     result = await ProcessTelegramOutboxService(
         queue=queue,
         processor=processor,
-    ).run_once(now=now or datetime.now(UTC))
+    ).run_once(now=iteration_at)
     return TelegramWorkerRuntimeResult(
         enabled=True,
         disposition=result.disposition.value,
@@ -913,6 +940,9 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         universal_mayak=universal_mayak,
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
+                        stale_recovery=RecoverStaleTelegramClaimsService(
+                            SqlTelegramQueueMaintenance(session)
+                        ),
                     )
                 await _drain_beta_context(sessions)
                 return result
