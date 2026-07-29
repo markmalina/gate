@@ -85,6 +85,7 @@ class ProcessAlphaShadowMessageCommand:
     bot_username: str
     now: datetime
     invocation_command: str = _ALPHA_COMMAND
+    allow_untargeted_command: bool = False
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
@@ -237,6 +238,7 @@ class ProcessAlphaShadowMessageService:
             bot_username=command.bot_username,
             reply_to_bot=prepared.reply_to_bot,
             command_name=command.invocation_command,
+            allow_untargeted_command=command.allow_untargeted_command,
         )
         decision = evaluate_alpha_invocation(
             AlphaInvocationFacts(
@@ -432,8 +434,9 @@ def recognize_alpha_invocation(
     bot_username: str,
     reply_to_bot: bool,
     command_name: str = _ALPHA_COMMAND,
+    allow_untargeted_command: bool = False,
 ) -> AlphaInvocationKind:
-    """Recognize one targeted command, exact mention, or verified reply."""
+    """Recognize one scoped command, exact mention, or verified reply."""
 
     if reply_to_bot:
         return AlphaInvocationKind.REPLY_TO_BOT
@@ -444,6 +447,8 @@ def recognize_alpha_invocation(
     )
     if command is not None and command.group("command").casefold() == command_name.casefold():
         target = command.group("target")
+        if target is None and allow_untargeted_command:
+            return AlphaInvocationKind.COMMAND
         if target is not None and target.casefold() == bot_username.casefold():
             return AlphaInvocationKind.COMMAND
     mention = re.compile(
