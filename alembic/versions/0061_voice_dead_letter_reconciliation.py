@@ -146,6 +146,7 @@ def _requeue(
         raise RuntimeError("voice_dead_letter_reconciliation_transition_mismatch")
     return event_count
 
+
 def upgrade() -> None:
     bind = op.get_bind()
     classified = _classify(bind)
