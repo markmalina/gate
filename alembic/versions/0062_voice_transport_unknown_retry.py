@@ -1,7 +1,7 @@
 """Authorize one exact isolated retry for the remaining transport-unknown voice.
 
-Revision ID: 0062_voice_unknown_retry
-Revises: 0061_voice_reconcile
+Revision ID: 0063_voice_unknown_retry
+Revises: 0062_mayak_oko_v2
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0062_voice_unknown_retry"
-down_revision: str | None = "0061_voice_reconcile"
+revision: str = "0063_voice_unknown_retry"
+down_revision: str | None = "0062_mayak_oko_v2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
