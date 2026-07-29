@@ -116,3 +116,29 @@ def test_delivery_binds_account_through_message_not_shared_connector_label() -> 
     statement = str(sessions.session.statements[0])
     assert "accounts.id = messages.account_id" in statement
     assert "accounts.alias = transport_connectors.connector_key" not in statement
+
+
+def test_provider_free_recovery_requires_one_exact_blocked_binding() -> None:
+    sessions = _DeliverySessions()
+    adapter = TelegramBusinessUniversalMayakDelivery(
+        sessions=sessions,  # type: ignore[arg-type]
+        telegram=_TelegramMustNotRun(),  # type: ignore[arg-type]
+        enabled=True,
+    )
+
+    receipt = asyncio.run(adapter.recover_one_binding_block())
+
+    assert receipt is None
+    statement = str(sessions.session.statements[0])
+    for required in (
+        "agent_installations.installation_key",
+        "agent_installations.state",
+        "delivery_grants.used_at IS NULL",
+        "delivery_grants.revoked_at IS NOT NULL",
+        "agent_send_attempts.state",
+        "agent_send_attempts.provider_message_id IS NULL",
+        "agent_send_attempts.error_code",
+        "agent_turns.status",
+        "agent_turns.result_code",
+    ):
+        assert required in statement

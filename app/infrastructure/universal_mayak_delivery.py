@@ -10,10 +10,10 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.universal_mayak_demo import (
@@ -50,6 +50,121 @@ class _BusinessSendReservation:
     text: str
 
 
+def _business_binding_query() -> Select[
+    tuple[
+        DeliveryGrantModel,
+        AgentSendAttemptModel,
+        AgentInstallationModel,
+        Dialog,
+        TransportConnector,
+        CanonicalMessage,
+        Message,
+        Account,
+        TelegramBusinessConnection,
+        AgentTurnModel,
+    ]
+]:
+    return (
+        select(
+            DeliveryGrantModel,
+            AgentSendAttemptModel,
+            AgentInstallationModel,
+            Dialog,
+            TransportConnector,
+            CanonicalMessage,
+            Message,
+            Account,
+            TelegramBusinessConnection,
+            AgentTurnModel,
+        )
+        .select_from(DeliveryGrantModel)
+        .join(
+            AgentSendAttemptModel,
+            (AgentSendAttemptModel.grant_id == DeliveryGrantModel.id)
+            & (
+                AgentSendAttemptModel.workspace_id
+                == DeliveryGrantModel.workspace_id
+            ),
+        )
+        .join(
+            AgentInstallationModel,
+            (AgentInstallationModel.id == DeliveryGrantModel.installation_id)
+            & (
+                AgentInstallationModel.workspace_id
+                == DeliveryGrantModel.workspace_id
+            ),
+        )
+        .join(
+            Dialog,
+            (Dialog.id == AgentInstallationModel.dialog_id)
+            & (Dialog.workspace_id == DeliveryGrantModel.workspace_id),
+        )
+        .join(
+            TransportConnector,
+            (TransportConnector.id == AgentInstallationModel.connector_id)
+            & (
+                TransportConnector.workspace_id
+                == DeliveryGrantModel.workspace_id
+            ),
+        )
+        .join(Workspace, Workspace.id == DeliveryGrantModel.workspace_id)
+        .join(
+            CanonicalMessage,
+            (CanonicalMessage.id == DeliveryGrantModel.trigger_message_id)
+            & (
+                CanonicalMessage.workspace_id
+                == DeliveryGrantModel.workspace_id
+            )
+            & (CanonicalMessage.dialog_id == Dialog.id),
+        )
+        .join(
+            Message,
+            Message.canonical_message_id == CanonicalMessage.id,
+        )
+        .join(
+            Account,
+            Account.id == Message.account_id,
+        )
+        .join(
+            TelegramBusinessConnection,
+            (TelegramBusinessConnection.account_id == Account.id)
+            & (
+                TelegramBusinessConnection.business_connection_id
+                == Message.business_connection_id
+            ),
+        )
+        .join(
+            AgentTurnModel,
+            (AgentTurnModel.workspace_id == DeliveryGrantModel.workspace_id)
+            & (
+                AgentTurnModel.trigger_message_id
+                == DeliveryGrantModel.trigger_message_id
+            )
+            & (
+                AgentTurnModel.candidate_sha256
+                == DeliveryGrantModel.candidate_sha256
+            ),
+        )
+        .join(
+            AgentSessionModel,
+            (AgentSessionModel.id == AgentTurnModel.session_id)
+            & (
+                AgentSessionModel.workspace_id
+                == DeliveryGrantModel.workspace_id
+            )
+            & (AgentSessionModel.dialog_id == Dialog.id)
+            & (
+                AgentSessionModel.deployment_id
+                == AgentInstallationModel.deployment_id
+            )
+            & (
+                AgentSessionModel.instruction_revision_id
+                == AgentInstallationModel.instruction_revision_id
+            ),
+        )
+    )
+
+
 class TelegramBusinessUniversalMayakDelivery(UniversalMayakDeliveryPort):
     """Use one exact durable Business target and never retry an unknown send."""
 
@@ -77,11 +192,27 @@ class TelegramBusinessUniversalMayakDelivery(UniversalMayakDeliveryPort):
         if isinstance(reserved, DemoDeliveryReceipt):
             return reserved
 
+        return await self._send_and_finalize(reserved)
+
+    async def recover_one_binding_block(self) -> DemoDeliveryReceipt | None:
+        """Recover one exact pre-send binding block without invoking the model."""
+
+        if not self._enabled:
+            return None
+        reservation = await self._reserve_recoverable_binding_block()
+        if reservation is None:
+            return None
+        return await self._send_and_finalize(reservation)
+
+    async def _send_and_finalize(
+        self,
+        reservation: _BusinessSendReservation,
+    ) -> DemoDeliveryReceipt:
         try:
             response = await self._telegram.send_plain_message(
-                chat_id=reserved.chat_id,
-                text=reserved.text,
-                business_connection_id=reserved.business_connection_id,
+                chat_id=reservation.chat_id,
+                text=reservation.text,
+                business_connection_id=reservation.business_connection_id,
             )
             provider_message_id = _provider_message_id(response)
             if provider_message_id is None:
@@ -96,11 +227,92 @@ class TelegramBusinessUniversalMayakDelivery(UniversalMayakDeliveryPort):
             provider_message_id = None
 
         return await self._finalize(
-            reserved,
+            reservation,
             state=state,
             provider_message_id=provider_message_id,
             error_code=error_code,
         )
+
+    async def _reserve_recoverable_binding_block(
+        self,
+    ) -> _BusinessSendReservation | None:
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    _business_binding_query()
+                    .where(
+                        AgentInstallationModel.installation_key
+                        == "universal-mayak-v1-owner-private",
+                        AgentInstallationModel.state == "paused",
+                        DeliveryGrantModel.used_at.is_(None),
+                        DeliveryGrantModel.revoked_at.is_not(None),
+                        AgentSendAttemptModel.state == "blocked",
+                        AgentSendAttemptModel.provider_message_id.is_(None),
+                        AgentSendAttemptModel.error_code
+                        == "mayak_business_binding_invalid",
+                        AgentTurnModel.status == "failed",
+                        AgentTurnModel.result_code
+                        == "mayak_demo_delivery_blocked",
+                    )
+                    .limit(2)
+                    .with_for_update(
+                        of=(
+                            DeliveryGrantModel,
+                            AgentSendAttemptModel,
+                            AgentTurnModel,
+                        )
+                    )
+                )
+            ).all()
+            if not rows:
+                return None
+            if len(rows) != 1:
+                raise RuntimeError("mayak_business_recovery_scope_ambiguous")
+            (
+                grant,
+                attempt,
+                installation,
+                dialog,
+                connector,
+                canonical,
+                legacy,
+                account,
+                connection,
+                turn,
+            ) = rows[0]
+            block_code = _recovery_block_code(
+                grant=grant,
+                attempt=attempt,
+                installation=installation,
+                dialog=dialog,
+                connector=connector,
+                canonical=canonical,
+                legacy=legacy,
+                account=account,
+                connection=connection,
+                turn=turn,
+            )
+            if block_code is not None:
+                raise RuntimeError(block_code)
+
+            grant.revoked_at = None
+            grant.used_at = now
+            grant.expires_at = now + timedelta(minutes=5)
+            attempt.state = "sending"
+            attempt.error_code = None
+            attempt.updated_at = now
+            turn.status = "proposed"
+            turn.result_code = "mayak_demo_delivery_recovery_sending"
+            assert turn.candidate_text is not None
+            return _BusinessSendReservation(
+                grant_id=grant.id,
+                attempt_id=attempt.id,
+                turn_id=turn.id,
+                chat_id=dialog.provider_dialog_id,
+                business_connection_id=connection.business_connection_id,
+                text=turn.candidate_text,
+            )
 
     async def _reserve(
         self,
@@ -110,103 +322,7 @@ class TelegramBusinessUniversalMayakDelivery(UniversalMayakDeliveryPort):
         async with self._sessions.begin() as session:
             rows = (
                 await session.execute(
-                    select(
-                        DeliveryGrantModel,
-                        AgentSendAttemptModel,
-                        AgentInstallationModel,
-                        Dialog,
-                        TransportConnector,
-                        CanonicalMessage,
-                        Message,
-                        Account,
-                        TelegramBusinessConnection,
-                        AgentTurnModel,
-                    )
-                    .select_from(DeliveryGrantModel)
-                    .join(
-                        AgentSendAttemptModel,
-                        (AgentSendAttemptModel.grant_id == DeliveryGrantModel.id)
-                        & (
-                            AgentSendAttemptModel.workspace_id
-                            == DeliveryGrantModel.workspace_id
-                        ),
-                    )
-                    .join(
-                        AgentInstallationModel,
-                        (AgentInstallationModel.id == DeliveryGrantModel.installation_id)
-                        & (
-                            AgentInstallationModel.workspace_id
-                            == DeliveryGrantModel.workspace_id
-                        ),
-                    )
-                    .join(
-                        Dialog,
-                        (Dialog.id == AgentInstallationModel.dialog_id)
-                        & (Dialog.workspace_id == DeliveryGrantModel.workspace_id),
-                    )
-                    .join(
-                        TransportConnector,
-                        (TransportConnector.id == AgentInstallationModel.connector_id)
-                        & (
-                            TransportConnector.workspace_id
-                            == DeliveryGrantModel.workspace_id
-                        ),
-                    )
-                    .join(Workspace, Workspace.id == DeliveryGrantModel.workspace_id)
-                    .join(
-                        CanonicalMessage,
-                        (CanonicalMessage.id == DeliveryGrantModel.trigger_message_id)
-                        & (
-                            CanonicalMessage.workspace_id
-                            == DeliveryGrantModel.workspace_id
-                        )
-                        & (CanonicalMessage.dialog_id == Dialog.id),
-                    )
-                    .join(
-                        Message,
-                        Message.canonical_message_id == CanonicalMessage.id,
-                    )
-                    .join(
-                        Account,
-                        Account.id == Message.account_id,
-                    )
-                    .join(
-                        TelegramBusinessConnection,
-                        (TelegramBusinessConnection.account_id == Account.id)
-                        & (
-                            TelegramBusinessConnection.business_connection_id
-                            == Message.business_connection_id
-                        ),
-                    )
-                    .join(
-                        AgentTurnModel,
-                        (AgentTurnModel.workspace_id == DeliveryGrantModel.workspace_id)
-                        & (
-                            AgentTurnModel.trigger_message_id
-                            == DeliveryGrantModel.trigger_message_id
-                        )
-                        & (
-                            AgentTurnModel.candidate_sha256
-                            == DeliveryGrantModel.candidate_sha256
-                        ),
-                    )
-                    .join(
-                        AgentSessionModel,
-                        (AgentSessionModel.id == AgentTurnModel.session_id)
-                        & (
-                            AgentSessionModel.workspace_id
-                            == DeliveryGrantModel.workspace_id
-                        )
-                        & (AgentSessionModel.dialog_id == Dialog.id)
-                        & (
-                            AgentSessionModel.deployment_id
-                            == AgentInstallationModel.deployment_id
-                        )
-                        & (
-                            AgentSessionModel.instruction_revision_id
-                            == AgentInstallationModel.instruction_revision_id
-                        ),
-                    )
+                    _business_binding_query()
                     .where(DeliveryGrantModel.id == grant_id)
                     .with_for_update(
                         of=(
@@ -362,6 +478,62 @@ class TelegramBusinessUniversalMayakDelivery(UniversalMayakDeliveryPort):
                 provider_message_ref=provider_message_id,
                 error_code=error_code,
             )
+
+
+def _recovery_block_code(
+    *,
+    grant: DeliveryGrantModel,
+    attempt: AgentSendAttemptModel,
+    installation: AgentInstallationModel,
+    dialog: Dialog,
+    connector: TransportConnector,
+    canonical: CanonicalMessage,
+    legacy: Message,
+    account: Account,
+    connection: TelegramBusinessConnection,
+    turn: AgentTurnModel,
+) -> str | None:
+    if (
+        grant.used_at is not None
+        or grant.revoked_at is None
+        or attempt.state != "blocked"
+        or attempt.provider_message_id is not None
+        or attempt.error_code != "mayak_business_binding_invalid"
+        or installation.installation_key != "universal-mayak-v1-owner-private"
+        or installation.state != "paused"
+    ):
+        return "mayak_business_recovery_state_invalid"
+    if connector.connector_kind != "telegram_business" or not connector.is_enabled:
+        return "mayak_business_recovery_connector_invalid"
+    if dialog.dialog_kind != "private":
+        return "mayak_business_recovery_dialog_invalid"
+    if (
+        canonical.direction != "inbound"
+        or canonical.provider_sender_id != dialog.provider_dialog_id
+        or legacy.direction != "inbound"
+        or legacy.chat_id != dialog.provider_dialog_id
+        or legacy.sender_id != dialog.provider_dialog_id
+        or legacy.business_connection_id != connection.business_connection_id
+    ):
+        return "mayak_business_recovery_trigger_invalid"
+    if not account.is_active or not account.send_enabled:
+        return "mayak_business_recovery_account_invalid"
+    rights = connection.rights if isinstance(connection.rights, dict) else {}
+    if not connection.is_enabled or rights.get("can_reply") is not True:
+        return "mayak_business_recovery_connection_invalid"
+    candidate = turn.candidate_text
+    if (
+        turn.status != "failed"
+        or turn.result_kind != "reply"
+        or turn.result_code != "mayak_demo_delivery_blocked"
+        or candidate is None
+        or not candidate.strip()
+        or len(candidate) > _MAX_TELEGRAM_TEXT_CHARS
+        or hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+        != grant.candidate_sha256
+    ):
+        return "mayak_business_recovery_candidate_invalid"
+    return None
 
 
 def _block_code(
