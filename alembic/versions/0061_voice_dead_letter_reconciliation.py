@@ -7,6 +7,7 @@ Revises: 0060_call_processing_status
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from alembic import op
@@ -16,7 +17,7 @@ down_revision: str | None = "0060_call_processing_status"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_CUTOFF = "2026-07-29T10:20:00+00:00"
+_CUTOFF = datetime(2026, 7, 29, 10, 20, tzinfo=UTC)
 _NOT_INBOUND = "telegram_voice_not_inbound"
 _TRANSPORT_UNKNOWN = "openai_transcription_transport_unknown"
 _EXPECTED_COUNTS = {_NOT_INBOUND: 9, _TRANSPORT_UNKNOWN: 3}
