@@ -7,10 +7,6 @@ import uuid
 from collections.abc import Collection
 from datetime import timedelta
 
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.application.alpha_canary import (
     AlphaCanaryError,
     AlphaCanaryStore,
@@ -44,6 +40,9 @@ from app.models.canonical import (
     TransportConnector,
     Workspace,
 )
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 MAX_ALPHA_GROUP_CAPACITY = 10_000
