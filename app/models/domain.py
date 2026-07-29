@@ -850,6 +850,10 @@ class TelegramVoiceArchive(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    transcription_recovery_generation: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
     summary_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
