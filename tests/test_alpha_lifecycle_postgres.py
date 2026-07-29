@@ -267,6 +267,11 @@ async def test_discovery_approval_gating_and_usage_are_transactional() -> None:
                         expected_state=AlphaInstallationState.ACTIVE,
                     )
                 )
+            private_dialog = await session.get(Dialog, dialog_id)
+            assert private_dialog is not None
+            private_dialog.dialog_kind = DialogKind.PRIVATE.value
+            await session.commit()
+
             resumed = await service.resume(
                 AlphaInstallationActionCommand(
                     workspace_key="mark-personal",
