@@ -229,6 +229,7 @@ class SqlAlphaLifecycleRepository:
             or dialog is None
             or dialog.workspace_id != workspace_id
             or dialog.dialog_kind not in {
+                DialogKind.PRIVATE.value,
                 DialogKind.GROUP.value,
                 DialogKind.SUPERGROUP.value,
             }
