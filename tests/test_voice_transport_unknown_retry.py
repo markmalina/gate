@@ -6,10 +6,9 @@ from types import ModuleType
 from uuid import uuid4
 
 import pytest
-
 from app.worker.dropbox_calls import (
-    _telegram_voice_recovery_reservation_key,
     DropboxCallWorkerError,
+    _telegram_voice_recovery_reservation_key,
 )
 
 
