@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 
 _AGENT_KEY = "oko"
-_REVISION_KEY = "universal-mayak-v1"
+_REVISION_KEY = "universal-mayak-oko-v2"
 _INSTALLATION_KEY = "universal-mayak-v1-owner-private"
 _TERMINAL_ATTEMPT_STATES = frozenset({"sent", "failed", "unknown", "blocked"})
 _INPUT_DIGEST_PREFIX = "mayak-input-sha256:"
@@ -300,7 +300,7 @@ async def _owner_route_probe(
                 account_alias=_OWNER_ACCOUNT_ALIAS,
                 source_project_id=uuid.UUID(_SOURCE_PROJECT_ID),
                 target_project_id=uuid.UUID(_TARGET_PROJECT_ID),
-                deployment_key="universal-mayak-v1-openai",
+                deployment_key="universal-mayak-oko-v2-openai",
                 agent_key=_AGENT_KEY,
                 revision_key=_REVISION_KEY,
             )
