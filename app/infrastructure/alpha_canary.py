@@ -41,6 +41,9 @@ from app.models.alpha import (
 from app.models.canonical import CanonicalMessage, Dialog, TransportConnector, Workspace
 
 
+MAX_ALPHA_GROUP_CAPACITY = 10_000
+
+
 class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
     """Derive membership and delivery authority from exact workspace DB bindings."""
 
@@ -50,8 +53,11 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
         *,
         group_capacity: int = 1,
     ) -> None:
-        if not 1 <= group_capacity <= 32:
-            raise ValueError("group_capacity must be between 1 and 32")
+        if not 1 <= group_capacity <= MAX_ALPHA_GROUP_CAPACITY:
+            raise ValueError(
+                "group_capacity must be between 1 and "
+                f"{MAX_ALPHA_GROUP_CAPACITY}"
+            )
         self._sessions = sessions
         self._group_capacity = group_capacity
 
@@ -539,8 +545,10 @@ def alpha_group_capacity_available(
 ) -> bool:
     """Allow idempotent replay or one new group inside the configured bound."""
 
-    if not 1 <= capacity <= 32:
-        raise ValueError("capacity must be between 1 and 32")
+    if not 1 <= capacity <= MAX_ALPHA_GROUP_CAPACITY:
+        raise ValueError(
+            f"capacity must be between 1 and {MAX_ALPHA_GROUP_CAPACITY}"
+        )
     return (
         provider_dialog_id in existing_provider_dialog_ids
         or len(existing_provider_dialog_ids) < capacity
