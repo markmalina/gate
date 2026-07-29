@@ -606,8 +606,18 @@ GATE_DEFAULT_MODE
 TELEGRAM_ALPHA_BOT_TOKEN
 TELEGRAM_ALPHA_BOT_USERNAME
 TELEGRAM_ALPHA_WEBHOOK_SECRET
+TELEGRAM_BETA_BOT_TOKEN
+TELEGRAM_BETA_BOT_USERNAME
+TELEGRAM_BETA_WEBHOOK_SECRET
 GATE_TELEGRAM_WORKER_ENABLED
 GATE_ALPHA_CONNECTOR_ENABLED
+GATE_BETA_CONNECTOR_ENABLED
+GATE_BETA_INSTALLATION_KEY
+GATE_BETA_SHADOW_WORKER_ENABLED
+GATE_BETA_CANARY_ENABLED
+GATE_BETA_DELIVERY_ENABLED
+GATE_BETA_PRIVACY_MODE_CONFIRMED
+GATE_BETA_GROUP_CAPACITY
 GATE_ALPHA_SHADOW_WORKER_ENABLED
 GATE_ALPHA_CANARY_ENABLED
 GATE_ALPHA_GROUP_CAPACITY
@@ -652,10 +662,16 @@ RAILWAY_SERVICE_NAME
 Some legacy Business connection configuration names still exist in `app/core/config.py`; dynamic database/Telegram state is the intended authority.
 
 The isolated Alpha connector uses `TELEGRAM_ALPHA_BOT_TOKEN`,
-`TELEGRAM_ALPHA_BOT_USERNAME` and `TELEGRAM_ALPHA_WEBHOOK_SECRET`. New groups are discovered
-automatically but remain pending until the owner explicitly approves the opaque installation in
-Gate M. Model provider configuration is a separate gate; the API key may exist while billing and
-provider preflight remain unavailable.
+`TELEGRAM_ALPHA_BOT_USERNAME` and `TELEGRAM_ALPHA_WEBHOOK_SECRET`. The product Beta connector
+uses distinct `TELEGRAM_BETA_BOT_TOKEN`, `TELEGRAM_BETA_BOT_USERNAME` and
+`TELEGRAM_BETA_WEBHOOK_SECRET` values and the distinct `/telegram/beta/webhook` path.
+`GATE_BETA_INSTALLATION_KEY` pins the cutover to one reviewed existing installation; startup
+atomically rebinds that installation and its existing dialog to the Beta connector without
+creating a duplicate installation or Space. Receipt keys, webhook secrets and delivery
+credentials must never be shared. New groups are
+discovered automatically but remain pending until the owner explicitly approves the opaque
+installation in Gate M. Model provider configuration is a separate gate; the API key may exist
+while billing and provider preflight remain unavailable.
 
 Rules:
 

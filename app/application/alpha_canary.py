@@ -25,6 +25,9 @@ JsonObject = dict[str, Any]
 ALPHA_DISCLOSURE_PREFIX = (
     "AlphaViaBot — цифровой помощник. Ответ может содержать ошибки.\n\n"
 )
+BETA_DISCLOSURE_PREFIX = (
+    "Бета — цифровой помощник. Ответ может содержать ошибки.\n\n"
+)
 
 
 def compose_alpha_delivery_text(*, candidate: str, disclosure_prefix: str) -> str:
@@ -77,9 +80,11 @@ class ProcessAlphaCanaryUpdateCommand:
     delivery_enabled: bool = False
     privacy_mode_confirmed: bool = False
     credentials_ready: bool = False
+    invocation_command: str = "alpha"
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
+        _require_token(self.invocation_command, "invocation_command", 32)
         if self.now.tzinfo is None:
             raise ValueError("now must be timezone-aware")
 
@@ -164,11 +169,13 @@ class ProcessAlphaCanaryUpdateService:
         shadow: AlphaCanaryShadowPort,
         delivery: AlphaCanaryDeliveryPort,
         connector_key: str = "telegram_alpha_group",
+        disclosure_prefix: str = ALPHA_DISCLOSURE_PREFIX,
     ) -> None:
         self._store = store
         self._shadow = shadow
         self._delivery = delivery
         self._connector_key = connector_key
+        self._disclosure_prefix = disclosure_prefix
 
     async def execute(
         self, command: ProcessAlphaCanaryUpdateCommand
@@ -228,6 +235,7 @@ class ProcessAlphaCanaryUpdateService:
                 trigger_message_id=command.canonical_message_id,
                 bot_username=command.bot_username,
                 now=command.now,
+                invocation_command=command.invocation_command,
             )
         )
         if shadow.disposition is AlphaShadowDisposition.NOT_INVOKED:
@@ -266,7 +274,7 @@ class ProcessAlphaCanaryUpdateService:
                 turn_key=shadow.turn_key,
                 trigger_message_id=command.canonical_message_id,
                 provider_dialog_id=dialog_id,
-                disclosure_prefix=ALPHA_DISCLOSURE_PREFIX,
+                disclosure_prefix=self._disclosure_prefix,
                 now=command.now,
             )
         )

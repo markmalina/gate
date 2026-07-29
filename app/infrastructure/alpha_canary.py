@@ -56,14 +56,20 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
         sessions: async_sessionmaker[AsyncSession],
         *,
         group_capacity: int = 1,
+        pinned_installation_key: str | None = None,
     ) -> None:
         if not 1 <= group_capacity <= MAX_ALPHA_GROUP_CAPACITY:
             raise ValueError(
                 "group_capacity must be between 1 and "
                 f"{MAX_ALPHA_GROUP_CAPACITY}"
             )
+        if pinned_installation_key is not None:
+            pinned_installation_key = pinned_installation_key.strip()
+            if not pinned_installation_key or len(pinned_installation_key) > 128:
+                raise ValueError("pinned_installation_key must be a bounded token")
         self._sessions = sessions
         self._group_capacity = group_capacity
+        self._pinned_installation_key = pinned_installation_key
 
     async def reconcile_membership(
         self, command: ReconcileAlphaMembershipCommand
@@ -79,11 +85,46 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                         Workspace.is_active.is_(True),
                         TransportConnector.connector_key == command.connector_key,
                         TransportConnector.connector_kind == "telegram_bot",
+                        TransportConnector.is_enabled.is_(True),
                     )
                     .with_for_update(of=TransportConnector)
                 )
                 if connector_id is None:
                     raise AlphaCanaryError("alpha_canary_connector_unavailable")
+                if self._pinned_installation_key is not None:
+                    pinned_key = await session.scalar(
+                        select(AgentInstallationModel.installation_key)
+                        .join(
+                            Dialog,
+                            (Dialog.id == AgentInstallationModel.dialog_id)
+                            & (
+                                Dialog.workspace_id
+                                == AgentInstallationModel.workspace_id
+                            ),
+                        )
+                        .where(
+                            AgentInstallationModel.workspace_id
+                            == Dialog.workspace_id,
+                            AgentInstallationModel.connector_id == connector_id,
+                            AgentInstallationModel.installation_key
+                            == self._pinned_installation_key,
+                            AgentInstallationModel.state
+                            != AlphaInstallationState.REVOKED.value,
+                            Dialog.connector_id == connector_id,
+                            Dialog.provider_dialog_id
+                            == command.provider_dialog_id,
+                            Dialog.dialog_kind == command.dialog_kind.value,
+                        )
+                    )
+                    if pinned_key != self._pinned_installation_key:
+                        raise AlphaCanaryError(
+                            "alpha_canary_pinned_installation_mismatch"
+                        )
+                    return AlphaMembershipResult(
+                        action=command.action,
+                        installation_key=pinned_key,
+                        idempotent_replay=True,
+                    )
                 pinned_dialog_ids = (
                     await session.scalars(
                         select(Dialog.provider_dialog_id)

@@ -84,11 +84,15 @@ class ProcessAlphaShadowMessageCommand:
     trigger_message_id: str = field(repr=False)
     bot_username: str
     now: datetime
+    invocation_command: str = _ALPHA_COMMAND
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
         _require_token(self.trigger_message_id, "trigger_message_id", 128)
         _require_token(self.bot_username, "bot_username", 64)
+        _require_token(self.invocation_command, "invocation_command", 32)
+        if not re.fullmatch(r"[A-Za-z0-9_]+", self.invocation_command):
+            raise ValueError("invocation_command must be a Telegram command")
         if self.bot_username.startswith("@"):
             raise ValueError("bot_username must not include @")
         if self.now.tzinfo is None:
@@ -232,6 +236,7 @@ class ProcessAlphaShadowMessageService:
             prepared.user_text,
             bot_username=command.bot_username,
             reply_to_bot=prepared.reply_to_bot,
+            command_name=command.invocation_command,
         )
         decision = evaluate_alpha_invocation(
             AlphaInvocationFacts(
@@ -426,8 +431,9 @@ def recognize_alpha_invocation(
     *,
     bot_username: str,
     reply_to_bot: bool,
+    command_name: str = _ALPHA_COMMAND,
 ) -> AlphaInvocationKind:
-    """Recognize only targeted /alpha@bot, an exact mention, or a verified reply."""
+    """Recognize one targeted command, exact mention, or verified reply."""
 
     if reply_to_bot:
         return AlphaInvocationKind.REPLY_TO_BOT
@@ -436,7 +442,7 @@ def recognize_alpha_invocation(
         r"^/(?P<command>[A-Za-z0-9_]+)(?:@(?P<target>[A-Za-z0-9_]{5,64}))?(?=\s|$)",
         stripped,
     )
-    if command is not None and command.group("command").casefold() == _ALPHA_COMMAND:
+    if command is not None and command.group("command").casefold() == command_name.casefold():
         target = command.group("target")
         if target is not None and target.casefold() == bot_username.casefold():
             return AlphaInvocationKind.COMMAND
