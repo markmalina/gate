@@ -50,7 +50,20 @@ class _BusinessSendReservation:
     text: str
 
 
-def _business_binding_query() -> Select[tuple[\n    DeliveryGrantModel,\n    AgentSendAttemptModel,\n    AgentInstallationModel,\n    Dialog,\n    TransportConnector,\n    CanonicalMessage,\n    Message,\n    Account,\n    TelegramBusinessConnection,\n    AgentTurnModel,\n]]:
+def _business_binding_query() -> Select[
+    tuple[
+        DeliveryGrantModel,
+        AgentSendAttemptModel,
+        AgentInstallationModel,
+        Dialog,
+        TransportConnector,
+        CanonicalMessage,
+        Message,
+        Account,
+        TelegramBusinessConnection,
+        AgentTurnModel,
+    ]
+]:
     return (
         select(
             DeliveryGrantModel,
