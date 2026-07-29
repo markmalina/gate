@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from app.application.telegram_queue_maintenance import (
     RecoverStaleTelegramClaimsCommand,
+    TelegramStaleClaimRecovery,
 )
 from app.core.config import get_settings
 from app.infrastructure.telegram_queue_maintenance import (
@@ -281,9 +282,12 @@ async def test_persisted_voice_recovery_is_exact_and_provider_free() -> None:
             ).scalars().all()
             events = (
                 await session.execute(
-                    select(TelegramOutboxEvent).order_by(
-                        TelegramOutboxEvent.created_at
+                    select(TelegramOutboxEvent)
+                    .join(
+                        TelegramReceipt,
+                        TelegramReceipt.id == TelegramOutboxEvent.receipt_id,
                     )
+                    .order_by(TelegramReceipt.update_id)
                 )
             ).scalars().all()
             audit = (
