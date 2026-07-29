@@ -38,6 +38,7 @@ class RecoverStaleTelegramClaimsCommand:
     recovered_at: datetime
     max_attempts: int = 5
     limit: int = 100
+    require_persisted_voice_transcript: bool = False
 
 
 @dataclass(frozen=True)
