@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.billing import BillingProduct, BudgetReservationState
@@ -55,6 +55,10 @@ class TelegramVoiceOperationalStatus:
     nonterminal_archive_other_count: int = 0
     nonterminal_transcript_complete_count: int = 0
     nonterminal_summary_complete_count: int = 0
+    transport_unknown_archive_missing_count: int = 0
+    transport_unknown_archive_present_count: int = 0
+    transport_unknown_transcript_complete_count: int = 0
+    transport_unknown_summary_complete_count: int = 0
     delivered_count: int = 0
     retry_count: int = 0
     dead_letter_count: int = 0
@@ -94,6 +98,18 @@ class TelegramVoiceOperationalStatus:
             ),
             "nonterminal_summary_complete_count": (
                 self.nonterminal_summary_complete_count
+            ),
+            "transport_unknown_archive_missing_count": (
+                self.transport_unknown_archive_missing_count
+            ),
+            "transport_unknown_archive_present_count": (
+                self.transport_unknown_archive_present_count
+            ),
+            "transport_unknown_transcript_complete_count": (
+                self.transport_unknown_transcript_complete_count
+            ),
+            "transport_unknown_summary_complete_count": (
+                self.transport_unknown_summary_complete_count
             ),
             "delivered_count": self.delivered_count,
             "retry_count": self.retry_count,
@@ -250,6 +266,18 @@ async def telegram_voice_operational_status(
         nonterminal_summary_complete_count=(
             queue.nonterminal_summary_complete_count
         ),
+        transport_unknown_archive_missing_count=(
+            queue.transport_unknown_archive_missing_count
+        ),
+        transport_unknown_archive_present_count=(
+            queue.transport_unknown_archive_present_count
+        ),
+        transport_unknown_transcript_complete_count=(
+            queue.transport_unknown_transcript_complete_count
+        ),
+        transport_unknown_summary_complete_count=(
+            queue.transport_unknown_summary_complete_count
+        ),
         delivered_count=queue.delivered_count,
         retry_count=queue.retry_count,
         dead_letter_count=queue.dead_letter_count,
@@ -271,6 +299,10 @@ class _TelegramVoiceQueueSummary:
     nonterminal_archive_other_count: int
     nonterminal_transcript_complete_count: int
     nonterminal_summary_complete_count: int
+    transport_unknown_archive_missing_count: int
+    transport_unknown_archive_present_count: int
+    transport_unknown_transcript_complete_count: int
+    transport_unknown_summary_complete_count: int
     delivered_count: int
     retry_count: int
     dead_letter_count: int
@@ -300,6 +332,11 @@ async def _telegram_voice_queue_summary(
         )
     )
     stale_before = now - timedelta(minutes=5)
+    transport_unknown_dead = and_(
+        TelegramOutboxEvent.status == TelegramOutboxStatus.DEAD_LETTER.value,
+        TelegramOutboxEvent.last_error_code
+        == "openai_transcription_transport_unknown",
+    )
     row = (
         await session.execute(
             select(
@@ -361,6 +398,24 @@ async def _telegram_voice_queue_summary(
                 ),
                 func.count().filter(
                     nonterminal_status,
+                    TelegramVoiceArchive.summary_status == "summarized",
+                    TelegramVoiceArchive.summary_text.is_not(None),
+                ),
+                func.count().filter(
+                    transport_unknown_dead,
+                    TelegramVoiceArchive.id.is_(None),
+                ),
+                func.count().filter(
+                    transport_unknown_dead,
+                    TelegramVoiceArchive.id.is_not(None),
+                ),
+                func.count().filter(
+                    transport_unknown_dead,
+                    TelegramVoiceArchive.transcription_status == "transcribed",
+                    TelegramVoiceArchive.transcript_text.is_not(None),
+                ),
+                func.count().filter(
+                    transport_unknown_dead,
                     TelegramVoiceArchive.summary_status == "summarized",
                     TelegramVoiceArchive.summary_text.is_not(None),
                 ),
@@ -434,6 +489,10 @@ async def _telegram_voice_queue_summary(
         nonterminal_archive_other_count=int(row[11] or 0),
         nonterminal_transcript_complete_count=int(row[12] or 0),
         nonterminal_summary_complete_count=int(row[13] or 0),
+        transport_unknown_archive_missing_count=int(row[14] or 0),
+        transport_unknown_archive_present_count=int(row[15] or 0),
+        transport_unknown_transcript_complete_count=int(row[16] or 0),
+        transport_unknown_summary_complete_count=int(row[17] or 0),
         last_error_code=last_error_code,
         dead_letter_by_code=dead_letter_by_code,
     )

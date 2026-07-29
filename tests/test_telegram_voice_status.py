@@ -75,6 +75,10 @@ def test_payload_contains_no_operation_or_provider_references() -> None:
         nonterminal_archive_other_count=0,
         nonterminal_transcript_complete_count=0,
         nonterminal_summary_complete_count=0,
+        transport_unknown_archive_missing_count=1,
+        transport_unknown_archive_present_count=1,
+        transport_unknown_transcript_complete_count=1,
+        transport_unknown_summary_complete_count=0,
         delivered_count=1,
         retry_count=0,
         dead_letter_count=2,
@@ -91,6 +95,10 @@ def test_payload_contains_no_operation_or_provider_references() -> None:
     assert payload["nonterminal_archive_pending_count"] == 1
     assert payload["nonterminal_transcript_complete_count"] == 0
     assert payload["nonterminal_summary_complete_count"] == 0
+    assert payload["transport_unknown_archive_missing_count"] == 1
+    assert payload["transport_unknown_archive_present_count"] == 1
+    assert payload["transport_unknown_transcript_complete_count"] == 1
+    assert payload["transport_unknown_summary_complete_count"] == 0
     assert payload["delivered_count"] == 1
     assert payload["dead_letter_count"] == 2
     assert payload["last_error_code"] == "openai_transcription_rejected"
@@ -125,7 +133,7 @@ class _Summary:
 
 class _QueueSummary:
     def one(self) -> tuple[int, ...]:
-        return (4, 1, 1, 0, 0, 1, 0, 2, 0, 1, 0, 0, 0, 0)
+        return (4, 1, 1, 0, 0, 1, 0, 2, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0)
 
 
 class _DeadLetters:
@@ -212,6 +220,10 @@ def test_operational_query_returns_only_aggregated_budget_state() -> None:
     assert status.nonterminal_archive_other_count == 0
     assert status.nonterminal_transcript_complete_count == 0
     assert status.nonterminal_summary_complete_count == 0
+    assert status.transport_unknown_archive_missing_count == 1
+    assert status.transport_unknown_archive_present_count == 1
+    assert status.transport_unknown_transcript_complete_count == 1
+    assert status.transport_unknown_summary_complete_count == 0
     assert status.delivered_count == 1
     assert status.retry_count == 0
     assert status.dead_letter_count == 2

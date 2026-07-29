@@ -2834,6 +2834,14 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"{voice['nonterminal_transcript_complete_count']}",
             f"- nonterminal_summary_complete_count: "
             f"{voice['nonterminal_summary_complete_count']}",
+            f"- transport_unknown_archive_missing_count: "
+            f"{voice['transport_unknown_archive_missing_count']}",
+            f"- transport_unknown_archive_present_count: "
+            f"{voice['transport_unknown_archive_present_count']}",
+            f"- transport_unknown_transcript_complete_count: "
+            f"{voice['transport_unknown_transcript_complete_count']}",
+            f"- transport_unknown_summary_complete_count: "
+            f"{voice['transport_unknown_summary_complete_count']}",
             f"- delivered_count: {voice['delivered_count']}",
             f"- retry_count: {voice['retry_count']}",
             f"- dead_letter_count: {voice['dead_letter_count']}",

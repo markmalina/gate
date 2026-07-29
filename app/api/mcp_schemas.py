@@ -482,6 +482,22 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
+                    "transport_unknown_archive_missing_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "transport_unknown_archive_present_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "transport_unknown_transcript_complete_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "transport_unknown_summary_complete_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
                     "delivered_count": {"type": "integer", "minimum": 0},
                     "retry_count": {"type": "integer", "minimum": 0},
                     "dead_letter_count": {"type": "integer", "minimum": 0},
