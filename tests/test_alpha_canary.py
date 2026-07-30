@@ -7,6 +7,7 @@ import pytest
 from app.application.agent_kernel import AgentResultKind
 from app.application.alpha_canary import (
     ALPHA_DISCLOSURE_PREFIX,
+    BETA_DISCLOSURE_PREFIX,
     AlphaCanaryDisposition,
     AlphaCanaryError,
     AlphaGrantResult,
@@ -14,6 +15,7 @@ from app.application.alpha_canary import (
     AlphaMembershipResult,
     ProcessAlphaCanaryUpdateCommand,
     ProcessAlphaCanaryUpdateService,
+    compose_alpha_delivery_text,
 )
 from app.application.alpha_delivery import AlphaDeliveryResult
 from app.application.alpha_group import (
@@ -113,6 +115,23 @@ def _service(shadow_result: AlphaShadowWorkerResult):
         delivery=delivery,
     )
     return service, store, shadow, delivery
+
+
+def test_beta_delivery_has_no_repeated_disclosure_prefix() -> None:
+    candidate = "Короткий полезный ответ."
+
+    assert BETA_DISCLOSURE_PREFIX == ""
+    assert (
+        compose_alpha_delivery_text(
+            candidate=candidate,
+            disclosure_prefix=BETA_DISCLOSURE_PREFIX,
+        )
+        == candidate
+    )
+    assert compose_alpha_delivery_text(
+        candidate=candidate,
+        disclosure_prefix=ALPHA_DISCLOSURE_PREFIX,
+    ).startswith(ALPHA_DISCLOSURE_PREFIX)
 
 
 def test_privacy_mode_canary_command_targets_the_exact_bot() -> None:
