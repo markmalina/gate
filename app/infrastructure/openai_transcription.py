@@ -209,8 +209,26 @@ def _provider_error_code(response: httpx.Response) -> str:
         payload = None
     error = payload.get("error") if isinstance(payload, dict) else None
     message = error.get("message") if isinstance(error, dict) else None
-    normalized = message.lower() if isinstance(message, str) else ""
-    if "maximum context length" in normalized or "context length" in normalized:
+    safe_fields = (
+        message,
+        error.get("code") if isinstance(error, dict) else None,
+        error.get("type") if isinstance(error, dict) else None,
+        error.get("param") if isinstance(error, dict) else None,
+    )
+    normalized = " ".join(
+        value.lower() for value in safe_fields if isinstance(value, str)
+    )
+    if any(
+        marker in normalized
+        for marker in (
+            "maximum context length",
+            "context length",
+            "context_length_exceeded",
+            "input token",
+            "too many token",
+            "token limit",
+        )
+    ):
         category = "context_limit"
     elif "duration" in normalized and (
         "limit" in normalized or "long" in normalized or "maximum" in normalized
@@ -222,11 +240,27 @@ def _provider_error_code(response: httpx.Response) -> str:
         or ("maximum" in normalized and "size" in normalized)
     ):
         category = "file_size_limit"
-    elif "format" in normalized and (
-        "unsupported" in normalized or "invalid" in normalized
+    elif (
+        ("format" in normalized or "file type" in normalized)
+        and (
+            "unsupported" in normalized
+            or "invalid" in normalized
+            or "not supported" in normalized
+        )
     ):
         category = "unsupported_format"
-    elif "invalid audio" in normalized or "could not process" in normalized:
+    elif any(
+        marker in normalized
+        for marker in (
+            "invalid audio",
+            "could not process",
+            "failed to decode",
+            "decode audio",
+            "audio decode",
+            "audio_decode",
+            "invalid_audio",
+        )
+    ):
         category = "invalid_audio"
     else:
         category = f"http_{response.status_code}"
