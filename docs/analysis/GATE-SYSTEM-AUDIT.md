@@ -10,7 +10,8 @@
 > **Source revision:** [`cca4eeb91c2d7ea6f0160c6690a849319ad1a0db`](https://github.com/markmalina/gate/commit/cca4eeb91c2d7ea6f0160c6690a849319ad1a0db)  
 > **Main commit time:** `2026-07-30T05:54:03Z`  
 > **Source captured:** `2026-07-30T05:59:00Z` (`2026-07-30T07:59:00+02:00`)  
-> **Production fingerprint observed:** `cca4eeb91c2d`  
+> **Fresh main/runtime observation:** [`27fa336648e4c5aadf02fa3f001c5fffe47fee9c`](https://github.com/markmalina/gate/commit/27fa336648e4c5aadf02fa3f001c5fffe47fee9c), production `27fa336648e4`, captured `2026-07-30T06:10:16Z`  
+> **Freshness note:** полный source audit pinned к `cca4eeb…`; последующий bounded delta #393 и его live fingerprint проверены отдельно  
 > **Audit prepared:** `2026-07-30`  
 > **Режим аудита:** read-only; без GitHub mutation, deploy, provider call,
 > отправки, публикации, OAuth, credentials, чтения частных payload и
@@ -37,8 +38,8 @@ control plane с:
 - дисциплиной «один issue → один execution → одна lease → одна branch → один
   PR».
 
-**[уверен] `main` и production сейчас снова совпадают на
-`cca4eeb91c2d...`.** До этого
+**[уверен] `main` и production сейчас совпадают на
+`27fa336648e4...`.** До этого
 [`PR #391`](https://github.com/markmalina/gate/pull/391) прошёл полный CI, но
 Railway pre-deploy migration упала на production check constraint:
 `recovery_v8` записывался раньше, чем становился допустимым значением
@@ -47,13 +48,17 @@ production правильно остался на `7456d064fc48`.
 
 [`PR #392`](https://github.com/markmalina/gate/pull/392) исправил порядок
 constraint/update, прошёл exact-head CI #1330 и развёрнут как
-`cca4eeb91c2d`. Это закрывает release drift, но ещё не доказывает terminal
-runtime outcome самого длинного звонка.
+`cca4eeb91c2d`. Затем
+[`PR #393`](https://github.com/markmalina/gate/pull/393) сократил bounded PCM
+WAV parts с десяти до пяти минут, прошёл exact-head CI #1332, merged как
+`27fa336…` и уже наблюдается в production. Это закрывает release drift, но
+ещё не доказывает terminal runtime outcome самого длинного звонка: отдельный
+redacted acceptance receipt после v9 на момент свежего наблюдения отсутствует.
 
 **[уверен] Первой демонстрации BECOME NOW QUEST мешает не отсутствие большого
 нового backend, а четыре конкретных транспортных риска:**
 
-1. четыре несовпадения Business text parity (`995/999`, статус blocked);
+1. четыре несовпадения Business text parity (`996/1000`, статус blocked);
 2. общий Telegram worker как единый failure domain для разных миссий;
 3. ошибка handoff-семантики Universal Mayak: terminal `FAILED`/`UNKNOWN`
    нижележащего сервиса сейчас всё равно проецируется как `PROCESSED` и
@@ -235,22 +240,18 @@ Gate не становится памятью Марка. Long-term meaning, п�
 | Health routes | [`app/api/health_routes.py`](https://github.com/markmalina/gate/blob/cca4eeb91c2d7ea6f0160c6690a849319ad1a0db/app/api/health_routes.py), blob `3228a9afa092118c0118f4e226b94ccc37eb0ef5` | public DB/migration readiness и owner-only worker health |
 | Current recovery migration | [`alembic/versions/0064_long_call_claim_v8.py`](https://github.com/markmalina/gate/blob/cca4eeb91c2d7ea6f0160c6690a849319ad1a0db/alembic/versions/0064_long_call_claim_v8.py), blob `76a3d21f73c1fb27ba9d66bdc3705a01a3ba71de` | constraint расширяется до bounded update; downgrade возвращает state до сужения |
 | Migration regression | [`tests/test_audio_provider_limit.py`](https://github.com/markmalina/gate/blob/cca4eeb91c2d7ea6f0160c6690a849319ad1a0db/tests/test_audio_provider_limit.py), blob `8d53053dd9fa13725ac008f51d8cf5cb3887fea8` | проверяет upgrade/downgrade operation order |
+| Fresh bounded delta | [`PR #393`](https://github.com/markmalina/gate/pull/393), merge `27fa336…` | five-minute PCM WAV parts, isolated `recovery_v9`; full source table выше остаётся pinned к `cca4eeb…` |
 
 ### 4.3. PR и CI
 
 - Последний merged change:
-  [`PR #392 — Allow the deploy-safe recovery status`](https://github.com/markmalina/gate/pull/392).
-- Проверенный exact head:
-  [`d5e0e9f2ca232aaa92b91523b34d2619c1c43db2`](https://github.com/markmalina/gate/commit/d5e0e9f2ca232aaa92b91523b34d2619c1c43db2).
+  [`PR #393 — Retry the long call as five-minute WAV parts`](https://github.com/markmalina/gate/pull/393).
 - Merge commit/current `main`:
-  [`cca4eeb91c2d7ea6f0160c6690a849319ad1a0db`](https://github.com/markmalina/gate/commit/cca4eeb91c2d7ea6f0160c6690a849319ad1a0db).
-- Exact-head Actions run:
-  [`30517722685`, CI run #1330](https://github.com/markmalina/gate/actions/runs/30517722685),
-  `completed/success`.
-- GitHub deployment context `gate-backend - gate` на merge commit:
-  `success`.
-- Fresh Gate status сообщает production `cca4eeb91c2d`.
-- На момент аудита open PR нет.
+  [`27fa336648e4c5aadf02fa3f001c5fffe47fee9c`](https://github.com/markmalina/gate/commit/27fa336648e4c5aadf02fa3f001c5fffe47fee9c).
+- Commit receipt сообщает exact-head CI #1332 `success`.
+- Fresh Gate status сообщает production `27fa336648e4`.
+- Open draft PR #394 содержит только этот системный аудит и не является
+  вторым product execution.
 
 Проверенный run включал sensitive literal scan, Ruff, Mypy, Pytest, Alpha
 rehearsals/evidence, Alembic upgrade/schema drift/downgrade, disposable
@@ -260,11 +261,10 @@ Windows DPAPI round-trip.
 **[уверен] Green CI доказывает exact-head build/test contract. Он не доказывает
 production deployment или пользовательский runtime.**
 
-Разница между исходной audited base `ba63ff34...` и текущим `main`
-`cca4eeb9...` — один merge: изменены только
-`alembic/versions/0064_long_call_claim_v8.py` и
-`tests/test_audio_provider_limit.py`. Все перечисленные application/runtime
-blobs остались теми же; migration delta проверена отдельно.
+Полная source-таблица выше pinned к `cca4eeb…`. Последующий delta до
+`27fa336…` ограничен recovery v9 из PR #393 и проверен по merge/CI/runtime
+receipts; этот документ не переинтерпретирует старые blob proofs как будто они
+были сняты с нового commit.
 
 ---
 
@@ -320,20 +320,20 @@ exact owner gates. При любом сомнении состояние — `wa
 
 ## 6. Текущее runtime-состояние
 
-### 6.1. Снимок `2026-07-30T05:59:00Z`
+### 6.1. Снимок `2026-07-30T06:10:16Z`
 
 | Контур | Свежий факт | Оценка |
 |---|---|---|
-| Release | production `cca4eeb91c2d`, main `cca4eeb91c2d...` | fingerprint aligned; long-call runtime acceptance pending |
+| Release | production `27fa336648e4`, main `27fa336648e4...` | fingerprint aligned; v9 long-call terminal receipt pending |
 | Telegram accounts | 2 | наблюдаются |
 | Business connections | RU и BY — `ready`, `can_reply=true` | транспорт готов |
-| Canonical messaging | 69 conversations, 2332 messages | используется |
-| Human workflow | 1038 reply tasks; 30 unanswered; 742 answered; 75 drafts | существенный live state |
+| Canonical messaging | 69 conversations, 2333 messages | используется |
+| Human workflow | 1038 reply tasks; 29 unanswered; 743 answered; 75 drafts | существенный live state |
 | Universal Mayak | `active_observed`; 1 active installation; 1 active session | live canary существует |
 | Universal Mayak effects | 5 proposals, 5 grants, 5 sends `sent`, 0 failed, 0 unknown | ограниченный положительный runtime proof |
 | Telegram voice queue | 84 received, 84 delivered, 0 processing/retry/dead-letter | очередь чиста |
 | Voice accounting | 126 settled, 0 open, 5 unknown | reconciliation required |
-| Business text parity | 999 total, 995 matched, 4 mismatches | `cutover_ready=false` |
+| Business text parity | 1000 total, 996 matched, 4 mismatches | `cutover_ready=false` |
 | Alpha delivery | top-level delivery enabled, но model delivery blocked/config incomplete | status semantics требуют прояснения |
 | MCP surface | live 15 tools | README говорит 11: documentation drift |
 
@@ -349,7 +349,7 @@ exact owner gates. При любом сомнении состояние — `wa
 - **[уверен]** Voice ledger содержит пять provider-unknown outcomes и требует
   reconciliation.
 - **[уверен]** Business parity не готова к cutover из-за четырёх mismatch.
-- **[уверен]** Production содержит последний merged constraint repair.
+- **[уверен]** Production содержит последний merged recovery v9.
 - **[уверен]** Сам terminal result длинного звонка свежим status snapshot не
   доказан.
 
@@ -383,9 +383,11 @@ transaction rolled back
 
 PR #392 расширил constraint до bounded update и был развёрнут автоматически.
 GitHub deployment context и свежий Gate status согласованы на
-`cca4eeb91c2d`.
+`cca4eeb91c2d`. PR #393 затем ввёл materially different five-minute v9 и
+свежий Gate status уже согласован с его merge `27fa336648e4`.
 
 **[уверен]** Причина release failure установлена и deploy восстановлен.
+**[уверен]** V9 deployed; terminal long-call result отдельно ещё не принят.
 **[уверен]** Этот аудит не обходил Railway reauthentication, не запускал manual
 deploy и не делал provider call. Evidence получено из issue receipt, GitHub
 status и redacted runtime status.
@@ -1478,11 +1480,11 @@ occurred_at
 Это архитектурная последовательность после единственного текущего указателя,
 не новые executions и не дубликат BECOME roadmap.
 
-### Фаза 0 — завершить runtime acceptance восстановленного release
+### Фаза 0 — завершить runtime acceptance recovery v9
 
 - Railway root-cause evidence получено;
-- exact production fingerprint `cca4eeb91c2d` получен;
-- осталось выполнить bounded acceptance long-call recovery;
+- exact production fingerprint `27fa336648e4` получен;
+- осталось записать redacted terminal acceptance long-call recovery v9;
 - не касаться response-unknown calls без отдельной authority;
 - сохранить deploy/acceptance либо rollback receipt.
 
@@ -1684,10 +1686,10 @@ page-level role enforcement.
 ```yaml
 repository: markmalina/gate
 issue: https://github.com/markmalina/gate/issues/354
-source_receipt: https://github.com/markmalina/gate/issues/354#issuecomment-5123063601
-stage: deploy-safe-long-call-claim
+source_receipt: https://github.com/markmalina/gate/pull/393
+stage: five-minute-wav-recovery
 execution_id: gate-voice-deploy-safe-long-call-claim-20260729T191800Z
-latest_issue_receipt_state: blocked
+latest_issue_receipt_state: stale_blocked_before_repairs
 failed_pr: https://github.com/markmalina/gate/pull/391
 failed_merge_revision: ba63ff34ec5b41c71797cf75ad1c5975de2239c8
 failed_deployment: 071fb019-b73b-4551-be35-4dd74bf2ab08
@@ -1696,11 +1698,14 @@ repair_pr: https://github.com/markmalina/gate/pull/392
 repair_exact_head: d5e0e9f2ca232aaa92b91523b34d2619c1c43db2
 repair_ci: 1330 / success
 repair_merge_revision: cca4eeb91c2d7ea6f0160c6690a849319ad1a0db
-observed_production_revision: cca4eeb91c2d
-fresh_evidence_state: repair_deployed_awaiting_runtime_acceptance
+v9_pull_request: https://github.com/markmalina/gate/pull/393
+v9_merge_revision: 27fa336648e4c5aadf02fa3f001c5fffe47fee9c
+v9_ci: 1332 / success
+observed_production_revision: 27fa336648e4
+fresh_evidence_state: v9_deployed_awaiting_terminal_runtime_receipt
 exact_action: >
-  Continue the same issue #354 execution from the now deployed repair. Observe
-  and record only redacted runtime evidence for the exact bounded long-call:
+  Continue the same issue #354 execution from deployed recovery v9. Observe
+  and record only redacted terminal runtime evidence for the exact bounded long-call:
   terminal recording state, voice queue, settled/open/unknown accounting and
   worker health. Keep the separate response-unknown call excluded; do not make
   a manual or blind provider retry; do not create a new issue, execution,
