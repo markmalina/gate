@@ -89,7 +89,7 @@ def test_chunking_uses_bounded_duration_and_pcm_wav() -> None:
     ).read_text(encoding="utf-8")
 
     assert '"pcm_s16le"' in source
-    assert '"600"' in source
+    assert '"300"' in source
     assert '"segment"' in source
     assert '"wav"' in source
 
@@ -104,7 +104,7 @@ def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
 
     assert ".with_for_update(skip_locked=True)" in source
     assert 'claimed.transcription_status = "processing"' in source
-    assert 'reservation_key=f"dropbox-call-v8:' in source
+    assert 'reservation_key=f"dropbox-call-v9:' in source
     assert source.count("== _LONG_CALL_RECOVERY_STATUS") == 2
 
 
@@ -165,3 +165,27 @@ def test_long_call_recovery_uses_deploy_safe_claim_status() -> None:
     assert downgrade.index("bind.execute") < downgrade.index("op.drop_constraint(_CONSTRAINT")
     assert "billing_reservation_replayed" in migration
     assert "_EXPECTED_SIZE = 25_505_021" in migration
+
+
+
+def test_five_minute_long_call_recovery_uses_isolated_v9_claim() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0065_long_call_claim_v9.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision: str = "0066_long_call_claim_v9"' in migration
+    assert 'down_revision: str | None = "0065_long_call_claim_v8"' in migration
+    assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
+    assert "recovery_v9" in migration
+    assert "recovery_v8" in migration
+    assert "openai_transcription_rejected_http_400" in migration
+    assert "ck_phone_call_recordings_transcription_status" in migration
+    upgrade = migration.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+    downgrade = migration.split("def downgrade() -> None:", 1)[1]
+    assert upgrade.index("op.create_check_constraint(") < upgrade.index("result = bind.execute")
+    assert downgrade.index("bind.execute") < downgrade.index("op.drop_constraint(_CONSTRAINT")
