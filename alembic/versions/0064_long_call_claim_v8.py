@@ -20,6 +20,22 @@ _RECORDING_ID = "a1a82247-434e-4f43-8974-35a972ba9dc2"
 _EXPECTED_REASON = "billing_reservation_replayed"
 _EXPECTED_SIZE = 25_505_021
 _RECOVERY_STATUS = "recovery_v8"
+_CONSTRAINT = "ck_phone_call_recordings_transcription_status"
+_TABLE = "phone_call_recordings"
+_PRE_RECOVERY_STATUSES = (
+    "received",
+    "disabled",
+    "rejected",
+    "transcribed",
+    "unknown",
+    "processing",
+)
+_RECOVERY_STATUSES = (*_PRE_RECOVERY_STATUSES, _RECOVERY_STATUS)
+
+
+def _status_check(statuses: tuple[str, ...]) -> str:
+    values = ", ".join(f"'{status}'" for status in statuses)
+    return f"transcription_status IN ({values})"
 
 
 def _is_fresh_database(bind: sa.Connection) -> bool:
@@ -28,6 +44,13 @@ def _is_fresh_database(bind: sa.Connection) -> bool:
 
 
 def upgrade() -> None:
+    op.drop_constraint(_CONSTRAINT, _TABLE, type_="check")
+    op.create_check_constraint(
+        _CONSTRAINT,
+        _TABLE,
+        _status_check(_RECOVERY_STATUSES),
+    )
+
     bind = op.get_bind()
     result = bind.execute(
         sa.text(
@@ -94,4 +117,10 @@ def downgrade() -> None:
             "expected_size": _EXPECTED_SIZE,
             "recovery_status": _RECOVERY_STATUS,
         },
+    )
+    op.drop_constraint(_CONSTRAINT, _TABLE, type_="check")
+    op.create_check_constraint(
+        _CONSTRAINT,
+        _TABLE,
+        _status_check(_PRE_RECOVERY_STATUSES),
     )
