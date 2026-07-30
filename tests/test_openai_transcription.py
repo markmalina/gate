@@ -1,5 +1,7 @@
 """OpenAI transcription HTTP adapter remains explicit and dormant by default."""
 
+import logging
+
 import httpx
 import pytest
 from app.application.telegram_voice_transcription import (
@@ -214,6 +216,46 @@ async def test_structured_provider_rejection_is_safely_classified() -> None:
 
     assert str(caught.value) == "openai_transcription_rejected_invalid_audio"
     assert "private" not in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_provider_rejection_logs_only_allowlisted_diagnostics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "private transcript fragment must not leak",
+                    "type": "invalid_request_error",
+                    "code": "invalid_audio",
+                    "param": "file",
+                    "private": "must-not-leak",
+                }
+            },
+            headers={"x-request-id": "req_voice_diagnostic_400"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="secret", enabled=True),
+            http=http,
+        )
+        with caplog.at_level(logging.WARNING), pytest.raises(TranscriptionProviderError):
+            await client.transcribe(
+                NormalizedVoice(b"mp3", "voice.mp3", "audio/mpeg"),
+                language="ru",
+            )
+
+    assert "status=400" in caplog.text
+    assert "model=gpt-4o-mini-transcribe" in caplog.text
+    assert "request_id=req_voice_diagnostic_400" in caplog.text
+    assert "type=invalid_request_error" in caplog.text
+    assert "code=invalid_audio" in caplog.text
+    assert "param=file" in caplog.text
+    assert "private transcript fragment" not in caplog.text
+    assert "must-not-leak" not in caplog.text
 
 
 @pytest.mark.anyio
