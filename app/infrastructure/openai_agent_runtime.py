@@ -26,7 +26,7 @@ from app.application.instruction_bundles import LoadedInstructionBundle
 _OPENAI_RUNTIME_PROFILE = "openai-responses-v1"
 _MAX_PROVIDER_BODY_BYTES = 1_000_000
 _BETA_COMMAND_PREFIX = re.compile(
-    r"^/beta(?:@[A-Za-z0-9_]+)?(?=\\s|$)",
+    r"^/beta(?:@[A-Za-z0-9_]+)?(?=\s|$)",
     re.IGNORECASE,
 )
 _RESULT_SCHEMA: dict[str, object] = {
