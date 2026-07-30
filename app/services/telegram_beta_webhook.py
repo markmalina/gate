@@ -31,7 +31,7 @@ async def reconcile_beta_telegram_webhook(
     settings: Settings,
     http_client: httpx.AsyncClient,
 ) -> str:
-    """Configure only the dedicated Alpha credential, endpoint and update types."""
+    """Configure only the dedicated Beta credential, endpoint and update types."""
 
     if not settings.gate_beta_connector_enabled:
         return "skipped_connector_disabled"
@@ -80,21 +80,61 @@ async def reconcile_beta_telegram_webhook(
 async def reconcile_beta_telegram_webhook_with_retries(
     settings: Settings,
     http_client: httpx.AsyncClient,
+    *,
+    retry_delays: tuple[int, ...] = (0, 3, 10, 60, 300),
+    healthy_interval_seconds: int = 300,
 ) -> None:
-    for attempt, delay_seconds in enumerate((0, 3, 10), start=1):
+    """Keep the one global Beta webhook current until application shutdown."""
+
+    if not retry_delays or retry_delays[0] != 0:
+        raise ValueError("retry_delays must start with zero")
+    if healthy_interval_seconds < 1:
+        raise ValueError("healthy_interval_seconds must be positive")
+
+    failed_attempts = 0
+    while True:
+        delay_seconds = retry_delays[min(failed_attempts, len(retry_delays) - 1)]
         if delay_seconds:
             await asyncio.sleep(delay_seconds)
         try:
             result = await reconcile_beta_telegram_webhook(settings, http_client)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
+            failed_attempts += 1
+            reason, status_code = beta_webhook_failure_details(exc)
             logger.warning(
-                "Beta Telegram webhook reconciliation failed on attempt %s: %s",
-                attempt,
-                exc.__class__.__name__,
+                "Beta Telegram webhook reconciliation failed: "
+                "attempt=%s reason=%s status_code=%s",
+                failed_attempts,
+                reason,
+                status_code if status_code is not None else "none",
             )
             continue
         logger.info("Beta Telegram webhook reconciliation result: %s", result)
-        return
+        failed_attempts = 0
+        await asyncio.sleep(healthy_interval_seconds)
+
+
+def beta_webhook_failure_details(exc: Exception) -> tuple[str, int | None]:
+    """Return redacted diagnostics that never include credentials or response bodies."""
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        if status_code in {401, 403}:
+            return "http_authentication_failed", status_code
+        if status_code == 429:
+            return "http_rate_limited", status_code
+        if status_code >= 500:
+            return "http_server_error", status_code
+        return "http_client_error", status_code
+    if isinstance(exc, httpx.TimeoutException):
+        return "transport_timeout", None
+    if isinstance(exc, httpx.RequestError):
+        return "transport_error", None
+    if isinstance(exc, RuntimeError):
+        return "telegram_rejected_or_invalid_response", None
+    return "unexpected_error", None
 
 
 def _telegram_result(payload: Any, *, require_result: bool = True) -> dict[str, Any]:
