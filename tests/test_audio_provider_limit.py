@@ -104,8 +104,11 @@ def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
 
     assert ".with_for_update(skip_locked=True)" in source
     assert 'claimed.transcription_status = "processing"' in source
-    assert 'reservation_key=f"dropbox-call-v11:' in source
-    assert source.count("== _LONG_CALL_RECOVERY_STATUS") == 2
+    assert 'reservation_key=f"dropbox-call-v12:' in source
+    assert source.count("== _LONG_CALL_RECOVERY_STATUS") == 3
+    assert '_LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"' in source
+    assert "model=transcription_model" in source
+    assert "stored.transcription_model = transcription_model" in source
 
 
 def test_long_call_is_requeued_by_chunking_migration() -> None:
@@ -229,6 +232,30 @@ def test_three_minute_mp3_long_call_recovery_uses_isolated_v11_claim() -> None:
     assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
     assert "recovery_v11" in migration
     assert "recovery_v10" in migration
+    assert "openai_transcription_rejected_http_400" in migration
+    assert "ck_phone_call_recordings_transcription_status" in migration
+    upgrade = migration.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+    downgrade = migration.split("def downgrade() -> None:", 1)[1]
+    assert upgrade.index("op.create_check_constraint(") < upgrade.index("result = bind.execute")
+    assert downgrade.index("bind.execute") < downgrade.index("op.drop_constraint(_CONSTRAINT")
+
+
+
+def test_full_model_long_call_recovery_uses_isolated_v12_claim() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "0068_long_call_claim_v12.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision: str = "0069_long_call_claim_v12"' in migration
+    assert 'down_revision: str | None = "0068_long_call_claim_v11"' in migration
+    assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
+    assert "recovery_v12" in migration
+    assert "recovery_v11" in migration
     assert "openai_transcription_rejected_http_400" in migration
     assert "ck_phone_call_recordings_transcription_status" in migration
     upgrade = migration.split("def upgrade() -> None:", 1)[1].split(
