@@ -1,9 +1,15 @@
 """Contract tests for the isolated Beta Telegram webhook reconciler."""
 
+import asyncio
+import logging
+
+import httpx
 import pytest
 from app.core.config import Settings
+from app.services import telegram_beta_webhook
 from app.services.telegram_beta_webhook import (
     BETA_ALLOWED_UPDATES,
+    beta_webhook_failure_details,
     build_beta_public_webhook_url,
     reconcile_beta_telegram_webhook,
 )
@@ -91,3 +97,71 @@ async def test_disabled_beta_connector_makes_no_telegram_call() -> None:
 
     assert result == "skipped_connector_disabled"
     assert telegram.calls == []
+
+
+@pytest.mark.parametrize(
+    ("status_code", "reason"),
+    [
+        (401, "http_authentication_failed"),
+        (403, "http_authentication_failed"),
+        (429, "http_rate_limited"),
+        (500, "http_server_error"),
+        (400, "http_client_error"),
+    ],
+)
+def test_beta_webhook_http_failure_is_redacted(
+    status_code: int,
+    reason: str,
+) -> None:
+    request = httpx.Request("POST", "https://api.telegram.org/redacted")
+    response = httpx.Response(status_code, request=request)
+    exc = httpx.HTTPStatusError("sensitive-body", request=request, response=response)
+
+    assert beta_webhook_failure_details(exc) == (reason, status_code)
+
+
+@pytest.mark.anyio
+async def test_beta_webhook_recovers_after_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    calls = 0
+    sleeps: list[int] = []
+
+    async def _reconcile(_settings: Settings, _client: object) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            request = httpx.Request("POST", "https://api.telegram.org/redacted")
+            response = httpx.Response(401, request=request)
+            raise httpx.HTTPStatusError(
+                "secret-must-not-be-logged",
+                request=request,
+                response=response,
+            )
+        return "already_current"
+
+    async def _sleep(seconds: int) -> None:
+        sleeps.append(seconds)
+        if seconds == 300:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        telegram_beta_webhook,
+        "reconcile_beta_telegram_webhook",
+        _reconcile,
+    )
+    monkeypatch.setattr(telegram_beta_webhook.asyncio, "sleep", _sleep)
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(asyncio.CancelledError):
+        await telegram_beta_webhook.reconcile_beta_telegram_webhook_with_retries(
+            _settings(),
+            object(),  # type: ignore[arg-type]
+        )
+
+    assert calls == 2
+    assert sleeps == [3, 300]
+    assert "reason=http_authentication_failed status_code=401" in caplog.text
+    assert "secret-must-not-be-logged" not in caplog.text
+    assert "synthetic-beta-token" not in caplog.text
