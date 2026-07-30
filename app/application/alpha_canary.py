@@ -25,9 +25,7 @@ JsonObject = dict[str, Any]
 ALPHA_DISCLOSURE_PREFIX = (
     "AlphaViaBot — цифровой помощник. Ответ может содержать ошибки.\n\n"
 )
-BETA_DISCLOSURE_PREFIX = (
-    "Бета — цифровой помощник. Ответ может содержать ошибки.\n\n"
-)
+BETA_DISCLOSURE_PREFIX = ""
 
 
 def compose_alpha_delivery_text(*, candidate: str, disclosure_prefix: str) -> str:
