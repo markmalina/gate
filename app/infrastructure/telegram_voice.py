@@ -217,7 +217,7 @@ async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
 async def _run_ffmpeg_chunked(
     data: bytes,
 ) -> tuple[int, tuple[bytes, ...], bytes]:
-    """Encode bounded five-minute mono PCM WAV parts for the provider."""
+    """Encode bounded three-minute mono PCM WAV parts for the provider."""
 
     with tempfile.TemporaryDirectory(prefix="gate-audio-") as directory:
         output_pattern = str(Path(directory) / "part-%03d.wav")
@@ -241,7 +241,7 @@ async def _run_ffmpeg_chunked(
                 "-f",
                 "segment",
                 "-segment_time",
-                "300",
+                "180",
                 "-reset_timestamps",
                 "1",
                 "-segment_format",
