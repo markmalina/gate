@@ -153,7 +153,15 @@ def test_long_call_recovery_uses_deploy_safe_claim_status() -> None:
     assert "recovery_v8" in migration
     assert "ck_phone_call_recordings_transcription_status" in migration
     assert "_RECOVERY_STATUSES = (*_PRE_RECOVERY_STATUSES, _RECOVERY_STATUS)" in migration
-    assert migration.count("op.drop_constraint(_CONSTRAINT") == 2
-    assert migration.count("op.create_check_constraint(") == 2
+    upgrade = migration.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+    downgrade = migration.split("def downgrade() -> None:", 1)[1]
+    assert upgrade.count("op.drop_constraint(_CONSTRAINT") == 1
+    assert upgrade.count("op.create_check_constraint(") == 1
+    assert upgrade.index("op.create_check_constraint(") < upgrade.index("result = bind.execute")
+    assert downgrade.count("op.drop_constraint(_CONSTRAINT") == 1
+    assert downgrade.count("op.create_check_constraint(") == 1
+    assert downgrade.index("bind.execute") < downgrade.index("op.drop_constraint(_CONSTRAINT")
     assert "billing_reservation_replayed" in migration
     assert "_EXPECTED_SIZE = 25_505_021" in migration
