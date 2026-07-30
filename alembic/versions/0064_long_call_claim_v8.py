@@ -85,12 +85,6 @@ def upgrade() -> None:
             "recovery_status": _RECOVERY_STATUS,
         },
     )
-    op.drop_constraint(_CONSTRAINT, _TABLE, type_="check")
-    op.create_check_constraint(
-        _CONSTRAINT,
-        _TABLE,
-        _status_check(_PRE_RECOVERY_STATUSES),
-    )
     if result.rowcount == 1 or (result.rowcount == 0 and _is_fresh_database(bind)):
         return
     raise RuntimeError("long_call_claim_v8_scope_mismatch")
@@ -123,4 +117,10 @@ def downgrade() -> None:
             "expected_size": _EXPECTED_SIZE,
             "recovery_status": _RECOVERY_STATUS,
         },
+    )
+    op.drop_constraint(_CONSTRAINT, _TABLE, type_="check")
+    op.create_check_constraint(
+        _CONSTRAINT,
+        _TABLE,
+        _status_check(_PRE_RECOVERY_STATUSES),
     )
