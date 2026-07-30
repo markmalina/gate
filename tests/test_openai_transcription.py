@@ -154,6 +154,10 @@ def test_diarization_model_requires_a_separate_response_contract() -> None:
             "Invalid audio format.",
             "openai_transcription_rejected_unsupported_format",
         ),
+        (
+            "The audio file failed to decode.",
+            "openai_transcription_rejected_invalid_audio",
+        ),
     ],
 )
 async def test_provider_rejection_is_safely_classified(
@@ -178,6 +182,37 @@ async def test_provider_rejection_is_safely_classified(
             )
 
     assert str(caught.value) == expected
+    assert "private" not in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_structured_provider_rejection_is_safely_classified() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "Request rejected.",
+                    "type": "invalid_request_error",
+                    "code": "audio_decode_error",
+                    "param": "file",
+                    "private": "must-not-leak",
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="secret", enabled=True),
+            http=http,
+        )
+        with pytest.raises(TranscriptionProviderError) as caught:
+            await client.transcribe(
+                NormalizedVoice(b"mp3", "voice.mp3", "audio/mpeg"),
+                language="ru",
+            )
+
+    assert str(caught.value) == "openai_transcription_rejected_invalid_audio"
     assert "private" not in str(caught.value)
 
 

@@ -160,8 +160,8 @@ class TelegramVoiceNormalizer:
             parts = tuple(
                 NormalizedVoice(
                     data=chunk,
-                    filename=f"telegram-voice-part-{index:03d}.wav",
-                    media_type="audio/wav",
+                    filename=f"telegram-voice-part-{index:03d}.mp3",
+                    media_type="audio/mpeg",
                 )
                 for index, chunk in enumerate(chunks, start=1)
             )
@@ -217,10 +217,10 @@ async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
 async def _run_ffmpeg_chunked(
     data: bytes,
 ) -> tuple[int, tuple[bytes, ...], bytes]:
-    """Encode bounded three-minute mono PCM WAV parts for the provider."""
+    """Encode bounded three-minute mono MP3 parts for the provider."""
 
     with tempfile.TemporaryDirectory(prefix="gate-audio-") as directory:
-        output_pattern = str(Path(directory) / "part-%03d.wav")
+        output_pattern = str(Path(directory) / "part-%03d.mp3")
         try:
             process = await asyncio.create_subprocess_exec(
                 "ffmpeg",
@@ -236,8 +236,8 @@ async def _run_ffmpeg_chunked(
                 "1",
                 "-ar",
                 "16000",
-                "-c:a",
-                "pcm_s16le",
+                "-b:a",
+                "32k",
                 "-f",
                 "segment",
                 "-segment_time",
@@ -245,7 +245,7 @@ async def _run_ffmpeg_chunked(
                 "-reset_timestamps",
                 "1",
                 "-segment_format",
-                "wav",
+                "mp3",
                 output_pattern,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
@@ -256,7 +256,7 @@ async def _run_ffmpeg_chunked(
         _stdout, stderr = await process.communicate(data)
         chunks = tuple(
             path.read_bytes()
-            for path in sorted(Path(directory).glob("part-*.wav"))
+            for path in sorted(Path(directory).glob("part-*.mp3"))
             if path.stat().st_size > 0
         )
         return process.returncode or 0, chunks, stderr[:4096]
