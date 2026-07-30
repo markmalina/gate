@@ -137,7 +137,10 @@ async def test_beta_webhook_recovers_after_transient_failure(
         nonlocal calls
         calls += 1
         if calls == 1:
-            request = httpx.Request("POST", "https://api.telegram.org/redacted")
+            request = httpx.Request(
+                "POST",
+                "https://api.telegram.org/redacted/getWebhookInfo",
+            )
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError(
                 "secret-must-not-be-logged",
