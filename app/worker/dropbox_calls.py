@@ -50,7 +50,8 @@ _DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2"
 # Reuse the existing hard-limited Gate voice budget until billing scopes are generalized.
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
-_LONG_CALL_RECOVERY_STATUS = "recovery_v11"
+_LONG_CALL_RECOVERY_STATUS = "recovery_v12"
+_LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"
 _SUPPORTED_SUFFIXES = {
     ".3gp",
     ".aac",
@@ -506,6 +507,11 @@ async def _transcribe_recording(
         )
         if claimed is None:
             return
+        transcription_model = (
+            _LONG_CALL_RECOVERY_MODEL
+            if claimed.transcription_status == _LONG_CALL_RECOVERY_STATUS
+            else settings.gate_telegram_voice_transcription_model
+        )
         claimed.transcription_status = "processing"
         claimed.transcription_reason_code = "dropbox_call_processing"
         claimed.transcribed_at = claimed_at
@@ -525,7 +531,7 @@ async def _transcribe_recording(
             config=OpenAITranscriptionConfig(
                 api_key=settings.openai_api_key.get_secret_value(),
                 enabled=True,
-                model=settings.gate_telegram_voice_transcription_model,
+                model=transcription_model,
                 base_url=settings.openai_api_base_url,
             ),
             http=http,
@@ -541,7 +547,7 @@ async def _transcribe_recording(
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=f"dropbox-call-v11:{recording.id}",
+            reservation_key=f"dropbox-call-v12:{recording.id}",
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
                 100,
@@ -561,7 +567,7 @@ async def _transcribe_recording(
         stored.transcription_status = result.outcome.value
         stored.transcript_text = result.alpha_input_text
         stored.transcript_language = "ru"
-        stored.transcription_model = settings.gate_telegram_voice_transcription_model
+        stored.transcription_model = transcription_model
         stored.transcription_reason_code = result.reason_code
         stored.transcribed_at = datetime.now(UTC)
         if result.alpha_input_text:
