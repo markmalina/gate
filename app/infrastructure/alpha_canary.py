@@ -48,6 +48,26 @@ from app.models.canonical import (
 MAX_ALPHA_GROUP_CAPACITY = 10_000
 
 
+def pinned_installation_membership_transition(
+    *,
+    state: AlphaInstallationState,
+    action: AlphaMembershipAction,
+) -> str:
+    """Choose the reversible membership transition for one pinned connector."""
+
+    if action is AlphaMembershipAction.PRESENT:
+        if state is AlphaInstallationState.ACTIVE:
+            return "unchanged"
+        if state is AlphaInstallationState.PAUSED:
+            return "resume"
+        raise AlphaCanaryError("alpha_canary_pinned_installation_not_resumable")
+    if state is AlphaInstallationState.ACTIVE:
+        return "pause"
+    if state in {AlphaInstallationState.PAUSED, AlphaInstallationState.REVOKED}:
+        return "unchanged"
+    raise AlphaCanaryError("alpha_canary_pinned_installation_not_pausable")
+
+
 class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
     """Derive membership and delivery authority from exact workspace DB bindings."""
 
@@ -92,38 +112,59 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                 if connector_id is None:
                     raise AlphaCanaryError("alpha_canary_connector_unavailable")
                 if self._pinned_installation_key is not None:
-                    pinned_key = await session.scalar(
-                        select(AgentInstallationModel.installation_key)
-                        .join(
-                            Dialog,
-                            (Dialog.id == AgentInstallationModel.dialog_id)
-                            & (
-                                Dialog.workspace_id
-                                == AgentInstallationModel.workspace_id
-                            ),
+                    pinned = (
+                        await session.execute(
+                            select(
+                                AgentInstallationModel.installation_key,
+                                AgentInstallationModel.state,
+                            )
+                            .join(
+                                Dialog,
+                                (Dialog.id == AgentInstallationModel.dialog_id)
+                                & (
+                                    Dialog.workspace_id
+                                    == AgentInstallationModel.workspace_id
+                                ),
+                            )
+                            .where(
+                                AgentInstallationModel.workspace_id
+                                == Dialog.workspace_id,
+                                AgentInstallationModel.connector_id == connector_id,
+                                AgentInstallationModel.installation_key
+                                == self._pinned_installation_key,
+                                Dialog.connector_id == connector_id,
+                                Dialog.provider_dialog_id
+                                == command.provider_dialog_id,
+                                Dialog.dialog_kind == command.dialog_kind.value,
+                            )
+                            .with_for_update(of=AgentInstallationModel)
                         )
-                        .where(
-                            AgentInstallationModel.workspace_id
-                            == Dialog.workspace_id,
-                            AgentInstallationModel.connector_id == connector_id,
-                            AgentInstallationModel.installation_key
-                            == self._pinned_installation_key,
-                            AgentInstallationModel.state
-                            != AlphaInstallationState.REVOKED.value,
-                            Dialog.connector_id == connector_id,
-                            Dialog.provider_dialog_id
-                            == command.provider_dialog_id,
-                            Dialog.dialog_kind == command.dialog_kind.value,
-                        )
-                    )
-                    if pinned_key != self._pinned_installation_key:
+                    ).one_or_none()
+                    if (
+                        pinned is None
+                        or pinned.installation_key
+                        != self._pinned_installation_key
+                    ):
                         raise AlphaCanaryError(
                             "alpha_canary_pinned_installation_mismatch"
                         )
+                    transition = pinned_installation_membership_transition(
+                        state=AlphaInstallationState(pinned.state),
+                        action=command.action,
+                    )
+                    installation_key = pinned.installation_key
+                    if transition == "resume":
+                        view = await repository.resume(
+                            AlphaInstallationActionCommand(
+                                workspace_key=command.workspace_key,
+                                installation_key=installation_key,
+                            )
+                        )
+                        installation_key = view.installation_key
                     return AlphaMembershipResult(
                         action=command.action,
-                        installation_key=pinned_key,
-                        idempotent_replay=True,
+                        installation_key=installation_key,
+                        idempotent_replay=transition == "unchanged",
                     )
                 pinned_dialog_ids = (
                     await session.scalars(
@@ -180,33 +221,65 @@ class SessionFactoryAlphaCanaryStore(AlphaCanaryStore):
                     is not AlphaInstallationState.PENDING_APPROVAL,
                 )
 
-            installation_key = await session.scalar(
-                select(AgentInstallationModel.installation_key)
-                .join(
-                    Workspace,
-                    Workspace.id == AgentInstallationModel.workspace_id,
+            membership = (
+                await session.execute(
+                    select(
+                        AgentInstallationModel.installation_key,
+                        AgentInstallationModel.state,
+                    )
+                    .join(
+                        Workspace,
+                        Workspace.id == AgentInstallationModel.workspace_id,
+                    )
+                    .join(
+                        TransportConnector,
+                        (TransportConnector.id == AgentInstallationModel.connector_id)
+                        & (
+                            TransportConnector.workspace_id
+                            == AgentInstallationModel.workspace_id
+                        ),
+                    )
+                    .join(
+                        Dialog,
+                        (Dialog.id == AgentInstallationModel.dialog_id)
+                        & (Dialog.workspace_id == AgentInstallationModel.workspace_id),
+                    )
+                    .where(
+                        Workspace.key == command.workspace_key,
+                        TransportConnector.connector_key == command.connector_key,
+                        Dialog.provider_dialog_id == command.provider_dialog_id,
+                    )
+                    .with_for_update(of=AgentInstallationModel)
                 )
-                .join(
-                    TransportConnector,
-                    (TransportConnector.id == AgentInstallationModel.connector_id)
-                    & (TransportConnector.workspace_id == AgentInstallationModel.workspace_id),
-                )
-                .join(
-                    Dialog,
-                    (Dialog.id == AgentInstallationModel.dialog_id)
-                    & (Dialog.workspace_id == AgentInstallationModel.workspace_id),
-                )
-                .where(
-                    Workspace.key == command.workspace_key,
-                    TransportConnector.connector_key == command.connector_key,
-                    Dialog.provider_dialog_id == command.provider_dialog_id,
-                )
-            )
-            if installation_key is None:
+            ).one_or_none()
+            if membership is None:
                 return AlphaMembershipResult(
                     action=command.action,
                     installation_key=None,
                     idempotent_replay=True,
+                )
+            installation_key = membership.installation_key
+            if self._pinned_installation_key is not None:
+                if installation_key != self._pinned_installation_key:
+                    raise AlphaCanaryError(
+                        "alpha_canary_pinned_installation_mismatch"
+                    )
+                transition = pinned_installation_membership_transition(
+                    state=AlphaInstallationState(membership.state),
+                    action=command.action,
+                )
+                if transition == "pause":
+                    view = await repository.pause(
+                        AlphaInstallationActionCommand(
+                            workspace_key=command.workspace_key,
+                            installation_key=installation_key,
+                        )
+                    )
+                    installation_key = view.installation_key
+                return AlphaMembershipResult(
+                    action=command.action,
+                    installation_key=installation_key,
+                    idempotent_replay=transition == "unchanged",
                 )
             view = await repository.revoke(
                 AlphaInstallationActionCommand(
