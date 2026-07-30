@@ -31,11 +31,11 @@ def test_provider_oversized_native_audio_is_split_into_ordered_parts() -> None:
 
     assert calls == [OPENAI_TRANSCRIPTION_LIMIT_BYTES + 1]
     assert result.data == b"part-one"
-    assert result.filename == "telegram-voice-part-001.wav"
-    assert result.media_type == "audio/wav"
+    assert result.filename == "telegram-voice-part-001.mp3"
+    assert result.media_type == "audio/mpeg"
     assert len(result.additional_parts) == 1
     assert result.additional_parts[0].data == b"part-two"
-    assert result.additional_parts[0].filename == "telegram-voice-part-002.wav"
+    assert result.additional_parts[0].filename == "telegram-voice-part-002.mp3"
 
 
 def test_native_audio_at_provider_limit_is_not_reencoded() -> None:
