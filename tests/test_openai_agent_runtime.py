@@ -21,6 +21,7 @@ from app.infrastructure.openai_agent_runtime import (
     ConfiguredAlphaRuntimeFactory,
     OpenAIAgentRuntimeError,
     OpenAIResponsesAgentRuntime,
+    _model_input,
 )
 
 
@@ -53,7 +54,11 @@ def _deployment(bundle: LoadedInstructionBundle) -> AgentDeployment:
     )
 
 
-def _command(bundle: LoadedInstructionBundle) -> AgentTurnCommand:
+def _command(
+    bundle: LoadedInstructionBundle,
+    *,
+    user_text: str = "/alpha Сформулируй короткое приветствие",
+) -> AgentTurnCommand:
     deployment = _deployment(bundle)
     return AgentTurnCommand(
         turn_key="turn-private-id",
@@ -64,7 +69,7 @@ def _command(bundle: LoadedInstructionBundle) -> AgentTurnCommand:
             deployment=deployment,
         ),
         trigger_message_id="message-private-id",
-        user_text="/alpha Сформулируй короткое приветствие",
+        user_text=user_text,
         context=(
             AgentContextMessage(
                 message_id="context-private-id",
@@ -124,6 +129,9 @@ def test_openai_runtime_sends_minimized_non_stored_structured_request() -> None:
     assert payload["store"] is False
     assert payload["tools"] == []
     assert payload["model"] == "gpt-5.6-luna"
+    assert "Gate has already verified that the final user message invokes" in payload[
+        "instructions"
+    ]
     assert payload["text"]["format"]["type"] == "json_schema"
     assert payload["text"]["format"]["strict"] is True
     serialized = request.content.decode()
@@ -132,6 +140,29 @@ def test_openai_runtime_sends_minimized_non_stored_structured_request() -> None:
     assert "dialog-private-id" not in serialized
     assert "message-private-id" not in serialized
     assert "context-private-id" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("user_text", "expected"),
+    [
+        ("/beta проверка связи", "проверка связи"),
+        ("/beta@BetaViaBot кратко ответь", "кратко ответь"),
+        ("/BETA@betaviabot   сохрани регистр запроса", "сохрани регистр запроса"),
+        ("/beta", ""),
+        (
+            "/alpha Сформулируй короткое приветствие",
+            "/alpha Сформулируй короткое приветствие",
+        ),
+        ("обычный текст", "обычный текст"),
+    ],
+)
+def test_model_input_strips_only_beta_transport_command(
+    user_text: str,
+    expected: str,
+) -> None:
+    messages = _model_input(_command(_bundle(), user_text=user_text))
+
+    assert messages[-1] == {"role": "user", "content": expected}
 
 
 def test_model_data_gate_blocks_before_any_provider_call() -> None:
