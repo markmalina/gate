@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,6 +19,9 @@ _SUPPORTED_MODELS = {
     "gpt-4o-mini-transcribe",
     "gpt-4o-transcribe",
 }
+_logger = logging.getLogger(__name__)
+_SAFE_DIAGNOSTIC_TOKEN = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
+
 _TOKEN_RATES_HUNDREDTHS_MICROUSD = {
     "gpt-4o-mini-transcribe": (125, 500),
     "gpt-4o-transcribe": (250, 1000),
@@ -125,6 +130,7 @@ class OpenAITranscriptionClient:
             ) from None
 
         if response.is_error:
+            _log_provider_error(response, model=self._config.model)
             raise TranscriptionProviderError(
                 _provider_error_code(response),
                 outcome_unknown=response.status_code >= 500,
@@ -194,6 +200,34 @@ def _token_cost_microusd(
     input_rate, output_rate = _TOKEN_RATES_HUNDREDTHS_MICROUSD[model]
     hundredths = input_tokens * input_rate + output_tokens * output_rate
     return (hundredths + 99) // 100
+
+
+def _safe_diagnostic_token(value: Any) -> str:
+    if isinstance(value, str) and _SAFE_DIAGNOSTIC_TOKEN.fullmatch(value):
+        return value
+    return "absent"
+
+
+def _log_provider_error(response: httpx.Response, *, model: str) -> None:
+    """Log only support-safe provider metadata; never the provider message or payload."""
+
+    try:
+        payload: Any = response.json()
+    except ValueError:
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    error_type = error.get("type") if isinstance(error, dict) else None
+    error_code = error.get("code") if isinstance(error, dict) else None
+    error_param = error.get("param") if isinstance(error, dict) else None
+    _logger.warning(
+        "openai_transcription_error status=%s model=%s request_id=%s type=%s code=%s param=%s",
+        response.status_code,
+        model,
+        _safe_diagnostic_token(response.headers.get("x-request-id")),
+        _safe_diagnostic_token(error_type),
+        _safe_diagnostic_token(error_code),
+        _safe_diagnostic_token(error_param),
+    )
 
 
 def _provider_error_code(response: httpx.Response) -> str:
