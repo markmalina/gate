@@ -151,5 +151,9 @@ def test_long_call_recovery_uses_deploy_safe_claim_status() -> None:
     assert 'down_revision: str | None = "0064_long_call_wav_retry"' in migration
     assert "a1a82247-434e-4f43-8974-35a972ba9dc2" in migration
     assert "recovery_v8" in migration
+    assert "ck_phone_call_recordings_transcription_status" in migration
+    assert "_RECOVERY_STATUSES = (*_PRE_RECOVERY_STATUSES, _RECOVERY_STATUS)" in migration
+    assert migration.count("op.drop_constraint(_CONSTRAINT") == 2
+    assert migration.count("op.create_check_constraint(") == 2
     assert "billing_reservation_replayed" in migration
     assert "_EXPECTED_SIZE = 25_505_021" in migration
