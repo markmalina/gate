@@ -35,8 +35,8 @@ async def reconcile_beta_telegram_webhook(
 
     if not settings.gate_beta_connector_enabled:
         return "skipped_connector_disabled"
-    token = settings.telegram_beta_bot_token.get_secret_value()
-    secret = settings.telegram_beta_webhook_secret.get_secret_value()
+    token = settings.telegram_beta_bot_token.get_secret_value().strip()
+    secret = settings.telegram_beta_webhook_secret.get_secret_value().strip()
     webhook_url = build_beta_public_webhook_url(os.environ)
     if not token:
         return "skipped_missing_bot_token"
@@ -102,11 +102,12 @@ async def reconcile_beta_telegram_webhook_with_retries(
             raise
         except Exception as exc:
             failed_attempts += 1
-            reason, status_code = beta_webhook_failure_details(exc)
+            reason, status_code, operation = beta_webhook_failure_details(exc)
             logger.warning(
                 "Beta Telegram webhook reconciliation failed: "
-                "attempt=%s reason=%s status_code=%s",
+                "attempt=%s operation=%s reason=%s status_code=%s",
                 failed_attempts,
+                operation,
                 reason,
                 status_code if status_code is not None else "none",
             )
@@ -116,25 +117,71 @@ async def reconcile_beta_telegram_webhook_with_retries(
         await asyncio.sleep(healthy_interval_seconds)
 
 
-def beta_webhook_failure_details(exc: Exception) -> tuple[str, int | None]:
-    """Return redacted diagnostics that never include credentials or response bodies."""
+def beta_webhook_failure_details(
+    exc: Exception,
+) -> tuple[str, int | None, str]:
+    """Return redacted diagnostics without credentials, hosts or response bodies."""
 
+    operation = _telegram_operation(exc)
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code
         if status_code in {401, 403}:
-            return "http_authentication_failed", status_code
+            return "http_authentication_failed", status_code, operation
+        if status_code == 400:
+            return _beta_bad_request_reason(exc.response, operation), 400, operation
         if status_code == 429:
-            return "http_rate_limited", status_code
+            return "http_rate_limited", status_code, operation
         if status_code >= 500:
-            return "http_server_error", status_code
-        return "http_client_error", status_code
+            return "http_server_error", status_code, operation
+        return "http_client_error", status_code, operation
     if isinstance(exc, httpx.TimeoutException):
-        return "transport_timeout", None
+        return "transport_timeout", None, operation
     if isinstance(exc, httpx.RequestError):
-        return "transport_error", None
+        return "transport_error", None, operation
     if isinstance(exc, RuntimeError):
-        return "telegram_rejected_or_invalid_response", None
-    return "unexpected_error", None
+        return "telegram_rejected_or_invalid_response", None, operation
+    return "unexpected_error", None, operation
+
+
+def _telegram_operation(exc: Exception) -> str:
+    if not isinstance(exc, httpx.HTTPError) or exc.request is None:
+        return "unknown"
+    path = exc.request.url.path
+    if path.endswith("/getWebhookInfo"):
+        return "get_webhook_info"
+    if path.endswith("/setWebhook"):
+        return "set_webhook"
+    return "telegram_api"
+
+
+def _beta_bad_request_reason(
+    response: httpx.Response,
+    operation: str,
+) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    description = (
+        payload.get("description", "").lower()
+        if isinstance(payload, dict)
+        and isinstance(payload.get("description"), str)
+        else ""
+    )
+    if operation == "set_webhook":
+        if "secret token" in description:
+            return "webhook_secret_invalid"
+        if any(
+            marker in description
+            for marker in ("bad webhook", "webhook url", "https url", "resolve host")
+        ):
+            return "webhook_url_invalid"
+        if "allowed_updates" in description:
+            return "allowed_updates_invalid"
+        return "set_webhook_rejected"
+    if operation == "get_webhook_info":
+        return "get_webhook_info_rejected"
+    return "http_bad_request"
 
 
 def _telegram_result(payload: Any, *, require_result: bool = True) -> dict[str, Any]:

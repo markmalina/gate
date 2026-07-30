@@ -113,11 +113,16 @@ def test_beta_webhook_http_failure_is_redacted(
     status_code: int,
     reason: str,
 ) -> None:
-    request = httpx.Request("POST", "https://api.telegram.org/redacted")
+    request = httpx.Request("POST", "https://api.telegram.org/redacted/getWebhookInfo")
     response = httpx.Response(status_code, request=request)
     exc = httpx.HTTPStatusError("sensitive-body", request=request, response=response)
 
-    assert beta_webhook_failure_details(exc) == (reason, status_code)
+    expected_reason = "get_webhook_info_rejected" if status_code == 400 else reason
+    assert beta_webhook_failure_details(exc) == (
+        expected_reason,
+        status_code,
+        "get_webhook_info",
+    )
 
 
 @pytest.mark.anyio
@@ -132,7 +137,10 @@ async def test_beta_webhook_recovers_after_transient_failure(
         nonlocal calls
         calls += 1
         if calls == 1:
-            request = httpx.Request("POST", "https://api.telegram.org/redacted")
+            request = httpx.Request(
+                "POST",
+                "https://api.telegram.org/redacted/getWebhookInfo",
+            )
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError(
                 "secret-must-not-be-logged",
@@ -162,6 +170,36 @@ async def test_beta_webhook_recovers_after_transient_failure(
 
     assert calls == 2
     assert sleeps == [3, 300]
-    assert "reason=http_authentication_failed status_code=401" in caplog.text
+    assert (
+        "operation=get_webhook_info reason=http_authentication_failed "
+        "status_code=401"
+        in caplog.text
+    )
     assert "secret-must-not-be-logged" not in caplog.text
     assert "synthetic-beta-token" not in caplog.text
+
+
+def test_beta_set_webhook_rejection_is_safely_classified() -> None:
+    request = httpx.Request(
+        "POST",
+        "https://api.telegram.org/redacted/setWebhook",
+    )
+    response = httpx.Response(
+        400,
+        request=request,
+        json={
+            "ok": False,
+            "description": "Bad Request: bad webhook: failed to resolve host",
+        },
+    )
+    exc = httpx.HTTPStatusError(
+        "must-not-be-logged",
+        request=request,
+        response=response,
+    )
+
+    assert beta_webhook_failure_details(exc) == (
+        "webhook_url_invalid",
+        400,
+        "set_webhook",
+    )
