@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "SIMULATED",
+  "positive": [
+    {"id": "telegram-message-reserved", "kind": "delivery", "provider": "telegram_bot", "operation": "message", "state": "reserved", "attempt": 1, "automatic_retry": false},
+    {"id": "telegram-group-preflight", "kind": "delivery", "provider": "telegram_bot", "operation": "membership_check", "state": "in_flight", "attempt": 1, "automatic_retry": false},
+    {"id": "meta-private-reply-unavailable", "kind": "capability", "provider": "meta_instagram", "capability": "private_reply", "availability": "UNAVAILABLE", "provider_calls_allowed": false},
+    {"id": "stars-invoice-after-result", "kind": "payment", "provider": "telegram_stars", "state": "invoice_reserved", "result_receipt_ref": "result_synthetic_001", "automatic_retry": false},
+    {"id": "stars-declined-keeps-proof", "kind": "payment", "provider": "telegram_stars", "state": "declined", "result_receipt_ref": "result_synthetic_001", "automatic_retry": false},
+    {"id": "delivery-unknown-reconcile", "kind": "delivery", "provider": "telegram_business", "operation": "message", "state": "unknown", "attempt": 1, "automatic_retry": false, "reconciliation_required": true}
+  ],
+  "fail_closed": [
+    {"id": "reject-live-in-w0", "reason": "mode_not_simulated", "candidate": {"mode": "LIVE"}},
+    {"id": "reject-media-without-consent", "reason": "consent_receipt_missing", "candidate": {"kind": "delivery", "media_ref": "payload_synthetic"}},
+    {"id": "reject-payment-before-result", "reason": "result_receipt_missing", "candidate": {"kind": "payment", "state": "invoice_reserved"}},
+    {"id": "reject-blind-retry", "reason": "automatic_retry_forbidden", "candidate": {"state": "unknown", "automatic_retry": true}}
+  ]
+}
