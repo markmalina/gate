@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphacenter.dev/contracts/proof-loop/v1/gate/delivery-receipt.schema.json",
+  "title": "BECOME Proof Loop Gate delivery receipt",
+  "type": "object",
+  "required": [
+    "schema_version", "effect_id", "correlation_id", "idempotency_key", "mode",
+    "provider", "operation", "state", "attempt", "retry_policy", "payload_ref"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "effect_id": {"type": "string", "pattern": "^effect_[A-Za-z0-9_-]+$"},
+    "correlation_id": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 8},
+    "mode": {"enum": ["LIVE", "TEST", "CONTROLLED", "SIMULATED"]},
+    "provider": {"enum": ["telegram_bot", "telegram_business", "meta_instagram"]},
+    "operation": {"enum": ["message", "private_reply", "content_publish", "group_invite", "group_pin", "membership_check"]},
+    "state": {"enum": ["reserved", "in_flight", "settled", "unknown"]},
+    "attempt": {"type": "integer", "const": 1},
+    "payload_ref": {"type": "string", "pattern": "^payload_[A-Za-z0-9_-]+$"},
+    "consent_receipt_ref": {"type": "string", "pattern": "^consent_[A-Za-z0-9_-]+$"},
+    "provider_receipt_ref": {"type": "string", "pattern": "^provider_[A-Za-z0-9_-]+$"},
+    "retry_policy": {
+      "type": "object",
+      "required": ["automatic_retry", "reconciliation_required"],
+      "properties": {
+        "automatic_retry": {"const": false},
+        "reconciliation_required": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "settled"}}, "required": ["state"]},
+      "then": {"required": ["provider_receipt_ref"]}
+    },
+    {
+      "if": {"properties": {"state": {"const": "unknown"}}, "required": ["state"]},
+      "then": {"properties": {"retry_policy": {"properties": {"reconciliation_required": {"const": true}}}}}
+    },
+    {
+      "if": {"properties": {"mode": {"const": "SIMULATED"}}, "required": ["mode"]},
+      "then": {"not": {"required": ["provider_receipt_ref"]}}
+    }
+  ],
+  "additionalProperties": false
+}
