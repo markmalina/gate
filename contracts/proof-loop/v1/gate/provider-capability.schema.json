@@ -3,9 +3,10 @@
   "$id": "https://alphacenter.dev/contracts/proof-loop/v1/gate/provider-capability.schema.json",
   "title": "BECOME Proof Loop Gate provider capability",
   "type": "object",
-  "required": ["schema_version", "provider", "capability", "mode", "availability", "effect_policy"],
+  "required": ["schema_version", "receipt_type", "provider", "capability", "mode", "availability", "effect_policy"],
   "properties": {
     "schema_version": {"const": "1.0.0"},
+    "receipt_type": {"const": "gate.provider_capability"},
     "provider": {"enum": ["telegram_bot", "telegram_business", "meta_instagram"]},
     "capability": {
       "enum": [
