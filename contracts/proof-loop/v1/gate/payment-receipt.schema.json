@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphacenter.dev/contracts/proof-loop/v1/gate/payment-receipt.schema.json",
+  "title": "BECOME Proof Loop Telegram Stars payment receipt",
+  "type": "object",
+  "required": [
+    "schema_version", "payment_id", "correlation_id", "idempotency_key", "mode",
+    "provider", "currency", "amount", "result_receipt_ref", "state", "retry_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "payment_id": {"type": "string", "pattern": "^payment_[A-Za-z0-9_-]+$"},
+    "correlation_id": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 8},
+    "mode": {"enum": ["LIVE", "TEST", "CONTROLLED", "SIMULATED"]},
+    "provider": {"const": "telegram_stars"},
+    "currency": {"const": "XTR"},
+    "amount": {"type": "integer", "minimum": 1},
+    "result_receipt_ref": {"type": "string", "pattern": "^result_[A-Za-z0-9_-]+$"},
+    "state": {"enum": ["invoice_reserved", "pre_checkout_confirmed", "declined", "settled", "refunded", "unknown"]},
+    "provider_receipt_ref": {"type": "string", "pattern": "^provider_[A-Za-z0-9_-]+$"},
+    "retry_policy": {
+      "type": "object",
+      "required": ["automatic_retry", "reconciliation_required"],
+      "properties": {
+        "automatic_retry": {"const": false},
+        "reconciliation_required": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"enum": ["settled", "refunded"]}}, "required": ["state"]},
+      "then": {"required": ["provider_receipt_ref"]}
+    },
+    {
+      "if": {"properties": {"state": {"const": "unknown"}}, "required": ["state"]},
+      "then": {"properties": {"retry_policy": {"properties": {"reconciliation_required": {"const": true}}}}}
+    },
+    {
+      "if": {"properties": {"mode": {"const": "SIMULATED"}}, "required": ["mode"]},
+      "then": {"not": {"required": ["provider_receipt_ref"]}}
+    }
+  ],
+  "additionalProperties": false
+}
