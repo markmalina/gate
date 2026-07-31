@@ -27,20 +27,25 @@ def test_six_simulated_positive_cases_obey_effect_fences() -> None:
     for case in pack["positive"]:
         assert case.get("automatic_retry") is not True
         assert case.get("provider_calls_allowed") is not True
-        if case.get("state") == "unknown":
+        assert case.get("receipt_type", "").startswith("gate.")
+        assert "state" not in case
+        if case.get("effect_state") == "unknown":
             assert case.get("reconciliation_required") is True
-        if case.get("kind") == "payment":
+            assert case.get("delivery_outcome", case.get("payment_outcome")) == "pending"
+        if case.get("receipt_type") == "gate.payment_receipt":
             assert case.get("result_receipt_ref", "").startswith("result_")
+            assert case.get("payment_outcome") in {"pending", "declined", "paid", "refunded", "not_attempted"}
 
 
-def test_four_negative_cases_are_declared_fail_closed() -> None:
+def test_five_negative_cases_are_declared_fail_closed() -> None:
     pack = _load(PACK / "fixtures/gate-transport-w0.json")
     expected = {
         "mode_not_simulated",
         "consent_receipt_missing",
         "result_receipt_missing",
         "automatic_retry_forbidden",
+        "effect_state_outcome_mixed",
     }
-    assert len(pack["fail_closed"]) == 4
+    assert len(pack["fail_closed"]) == 5
     assert {case["reason"] for case in pack["fail_closed"]} == expected
     assert all(case["candidate"] for case in pack["fail_closed"])
