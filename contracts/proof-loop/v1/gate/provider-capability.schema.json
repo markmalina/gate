@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphacenter.dev/contracts/proof-loop/v1/gate/provider-capability.schema.json",
+  "title": "BECOME Proof Loop Gate provider capability",
+  "type": "object",
+  "required": ["schema_version", "provider", "capability", "mode", "availability", "effect_policy"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "provider": {"enum": ["telegram_bot", "telegram_business", "meta_instagram"]},
+    "capability": {
+      "enum": [
+        "message_delivery",
+        "private_reply",
+        "content_publish",
+        "stars_invoice",
+        "stars_pre_checkout",
+        "stars_payment_receipt",
+        "group_membership_check",
+        "group_invite",
+        "group_pin"
+      ]
+    },
+    "mode": {"enum": ["LIVE", "TEST", "CONTROLLED", "SIMULATED"]},
+    "availability": {"enum": ["SUPPORTED", "UNAVAILABLE", "OWNER_GATE", "UNKNOWN"]},
+    "effect_policy": {
+      "type": "object",
+      "required": ["provider_calls_allowed", "deliveries_allowed", "reconciliation_required"],
+      "properties": {
+        "provider_calls_allowed": {"type": "boolean"},
+        "deliveries_allowed": {"type": "boolean"},
+        "reconciliation_required": {"type": "boolean"},
+        "owner_gate_ref": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "fallback": {"enum": ["NONE", "PRIVATE_LINK", "MANUAL_REVIEW", "EXPLICIT_UNAVAILABLE"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"mode": {"const": "SIMULATED"}}, "required": ["mode"]},
+      "then": {
+        "properties": {
+          "effect_policy": {
+            "properties": {
+              "provider_calls_allowed": {"const": false},
+              "deliveries_allowed": {"const": false}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"availability": {"const": "OWNER_GATE"}}, "required": ["availability"]},
+      "then": {"properties": {"effect_policy": {"required": ["owner_gate_ref"]}}}
+    }
+  ],
+  "additionalProperties": false
+}
