@@ -4,11 +4,13 @@
   "title": "BECOME Proof Loop Telegram Stars payment receipt",
   "type": "object",
   "required": [
-    "schema_version", "payment_id", "correlation_id", "idempotency_key", "mode",
-    "provider", "currency", "amount", "result_receipt_ref", "state", "retry_policy"
+    "schema_version", "receipt_type", "payment_id", "correlation_id", "idempotency_key", "mode",
+    "provider", "currency", "amount", "result_receipt_ref", "payment_stage",
+    "effect_state", "payment_outcome", "retry_policy"
   ],
   "properties": {
     "schema_version": {"const": "1.0.0"},
+    "receipt_type": {"const": "gate.payment_receipt"},
     "payment_id": {"type": "string", "pattern": "^payment_[A-Za-z0-9_-]+$"},
     "correlation_id": {"type": "string", "minLength": 1},
     "idempotency_key": {"type": "string", "minLength": 8},
@@ -17,7 +19,9 @@
     "currency": {"const": "XTR"},
     "amount": {"type": "integer", "minimum": 1},
     "result_receipt_ref": {"type": "string", "pattern": "^result_[A-Za-z0-9_-]+$"},
-    "state": {"enum": ["invoice_reserved", "pre_checkout_confirmed", "declined", "settled", "refunded", "unknown"]},
+    "payment_stage": {"enum": ["invoice", "pre_checkout", "payment", "refund"]},
+    "effect_state": {"enum": ["reserved", "in_flight", "settled", "unknown"]},
+    "payment_outcome": {"enum": ["pending", "declined", "paid", "refunded", "not_attempted"]},
     "provider_receipt_ref": {"type": "string", "pattern": "^provider_[A-Za-z0-9_-]+$"},
     "retry_policy": {
       "type": "object",
@@ -31,12 +35,20 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"state": {"enum": ["settled", "refunded"]}}, "required": ["state"]},
-      "then": {"required": ["provider_receipt_ref"]}
+      "if": {"properties": {"payment_outcome": {"enum": ["paid", "refunded"]}}, "required": ["payment_outcome"]},
+      "then": {
+        "properties": {"effect_state": {"const": "settled"}},
+        "required": ["provider_receipt_ref"]
+      }
     },
     {
-      "if": {"properties": {"state": {"const": "unknown"}}, "required": ["state"]},
-      "then": {"properties": {"retry_policy": {"properties": {"reconciliation_required": {"const": true}}}}}
+      "if": {"properties": {"effect_state": {"const": "unknown"}}, "required": ["effect_state"]},
+      "then": {
+        "properties": {
+          "payment_outcome": {"const": "pending"},
+          "retry_policy": {"properties": {"reconciliation_required": {"const": true}}}
+        }
+      }
     },
     {
       "if": {"properties": {"mode": {"const": "SIMULATED"}}, "required": ["mode"]},
