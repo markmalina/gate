@@ -11,7 +11,8 @@ This pack freezes Gate's W0 provider capability, delivery and Telegram Stars
 payment contracts. It defines Telegram Bot, Telegram Business and Meta
 Instagram capability states; message/private-reply/publication/group
 operations; and effect-ledger states `reserved`, `in_flight`, `settled` and
-`unknown`.
+`unknown`. Every record has an explicit `receipt_type`. Provider
+`effect_state` is separate from `delivery_outcome` or `payment_outcome`.
 
 `unknown` is terminal for automatic delivery: every contract sets
 `automatic_retry: false` and requires reconciliation. The payment contract
@@ -21,18 +22,19 @@ requires a prior `ResultReceipt`, preserving free-result-before-paid.
 
 | File | SHA-256 |
 | --- | --- |
-| `provider-capability.schema.json` | `8ff48d925e813e3c39b2117e28a59bae3ed031d7662f598c6890ace5b9415721` |
-| `delivery-receipt.schema.json` | `b76b203a9fd1a0b2ab0794aadbc6833dbc01973d55dc2963d1ba6faccaea1d10` |
-| `payment-receipt.schema.json` | `2a15a2db3ef89721ad3766cec13bc9909036347fe91740e9f0cc6b2a8e45ad72` |
-| `gate-transport-w0.json` | `9500fcc2da1bb6102c7af82cec729464f1ae8681795468d31929f008a52f9ec2` |
+| `provider-capability.schema.json` | `a8ca71fa92596bf1c2abff9dfe18dee90d901a20695a9a51e3be66f831b5a45c` |
+| `delivery-receipt.schema.json` | `705bd13c50335883b346e78119dd007060ffa803cbb3dad919311cc450edb226` |
+| `payment-receipt.schema.json` | `d86f98ea1f2bb9a5d71eefb31831b8b9afe5723c1d02fc468aa4f153e1720cac` |
+| `gate-transport-w0.json` | `70e2ace5cefc8ba42d3ba1053e938b0ad33031fe01df4f718cdf89450b3e6b2c` |
 
 ## Verification receipt
 
 - strict JSON parse: 4/4 files;
 - synthetic positive cases: 6/6;
-- declared fail-closed cases: 4/4;
+- declared fail-closed cases: 5/5;
 - checks: simulated-only fence, result-before-payment, no blind retry,
-  reconciliation on unknown, no provider receipt claim in synthetic mode;
+  reconciliation on unknown, no provider receipt claim in synthetic mode,
+  and rejection when a business outcome is supplied as `effect_state`;
 - local command: execute the three `test_*` functions in
   `tests/test_become_w0_transport_contracts.py` (pytest will discover them in
   repository CI);
