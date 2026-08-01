@@ -1,0 +1,15 @@
+{
+  "schema": "become.i4-service-request@1",
+  "contract_digest": "91c3a210709c63738358bd0c512d11a9668acabd0997afcd68ba240bed38f573",
+  "mode": "TEST",
+  "quest_ref": "synthetic://become/quest/i4-gate",
+  "correlation_ref": "synthetic://become/correlation/i4-gate",
+  "subject_ref": "synthetic://relations/subject/i4-gate",
+  "input": {
+    "result_receipt_ref": "synthetic://become/result/i4-gate",
+    "delivery_ref": "synthetic://gate/delivery/i4-gate",
+    "continuation": "PAID_TEST",
+    "amount": 1,
+    "currency": "XTR"
+  }
+}
