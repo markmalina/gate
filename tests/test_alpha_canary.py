@@ -105,7 +105,11 @@ def _command(**changes) -> ProcessAlphaCanaryUpdateCommand:
     return ProcessAlphaCanaryUpdateCommand(**values)
 
 
-def _service(shadow_result: AlphaShadowWorkerResult):
+def _service(
+    shadow_result: AlphaShadowWorkerResult,
+    *,
+    connector_key: str = "telegram_alpha_group",
+):
     store = RecordingStore()
     shadow = FixedShadow(shadow_result)
     delivery = RecordingDelivery()
@@ -113,6 +117,7 @@ def _service(shadow_result: AlphaShadowWorkerResult):
         store=store,
         shadow=shadow,
         delivery=delivery,
+        connector_key=connector_key,
     )
     return service, store, shadow, delivery
 
@@ -200,6 +205,46 @@ def test_membership_discovery_requires_exact_bot_and_records_group() -> None:
 
     assert result.disposition is AlphaCanaryDisposition.DISCOVERED
     assert store.memberships[0].action is AlphaMembershipAction.PRESENT
+    assert shadow.commands == []
+    assert delivery.commands == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "/become register",
+        "/become@BecomeNowBot REGISTER",
+    ],
+)
+def test_exact_become_register_bootstraps_pending_install_provider_disabled(
+    text: str,
+) -> None:
+    service, store, shadow, delivery = _service(
+        AlphaShadowWorkerResult(AlphaShadowDisposition.PROPOSED, "unused"),
+        connector_key="telegram_become_group",
+    )
+    store.active_group = False
+    update = _message_update()
+    update["message"]["text"] = text
+
+    result = asyncio.run(
+        service.execute(
+            _command(
+                update=update,
+                bot_username="BecomeNowBot",
+                invocation_command="become",
+                allow_registration_command=True,
+                shadow_worker_enabled=False,
+                delivery_enabled=False,
+            )
+        )
+    )
+
+    assert result.disposition is AlphaCanaryDisposition.DISCOVERED
+    assert result.code == "alpha_registration_command_present"
+    assert store.memberships[0].action is AlphaMembershipAction.PRESENT
+    assert store.memberships[0].connector_key == "telegram_become_group"
+    assert store.grants == []
     assert shadow.commands == []
     assert delivery.commands == []
 
