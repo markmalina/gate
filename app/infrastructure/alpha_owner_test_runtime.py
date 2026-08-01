@@ -24,10 +24,17 @@ from app.models.alpha import (
     AgentSendAttemptModel,
     DeliveryGrantModel,
 )
-from app.models.canonical import CanonicalMessage, Dialog, Workspace
+from app.models.canonical import (
+    CanonicalMessage,
+    Dialog,
+    TransportConnector,
+    Workspace,
+)
 
 JsonObject = dict[str, Any]
 ALLOWED_OWNER_TEST_GROUPS = frozenset({"Alpha Group", "Строй αV", "Майя Альфа"})
+_ALPHA_CONNECTOR_KEY = "telegram_alpha_group"
+_BECOME_CONNECTOR_KEY = "telegram_become_group"
 
 
 class AlphaOwnerTestRuntimeError(RuntimeError):
@@ -50,11 +57,16 @@ async def observe_owner_test_presence(
 
     row = (
         await session.execute(
-            select(AgentInstallationModel, Dialog)
+            select(AgentInstallationModel, Dialog, TransportConnector)
             .join(
                 Dialog,
                 (Dialog.id == AgentInstallationModel.dialog_id)
                 & (Dialog.workspace_id == AgentInstallationModel.workspace_id),
+            )
+            .join(
+                TransportConnector,
+                (TransportConnector.id == Dialog.connector_id)
+                & (TransportConnector.workspace_id == Dialog.workspace_id),
             )
             .join(Workspace, Workspace.id == AgentInstallationModel.workspace_id)
             .where(
@@ -67,13 +79,17 @@ async def observe_owner_test_presence(
     ).one_or_none()
     if row is None:
         raise AlphaOwnerTestRuntimeError("alpha_owner_test_installation_not_found")
-    installation, dialog = row
-    if installation.dialog_label not in ALLOWED_OWNER_TEST_GROUPS:
-        raise AlphaOwnerTestRuntimeError("alpha_owner_test_group_not_authorized")
+    installation, dialog, connector = row
+    bot_token = _presence_bot_token(
+        settings=settings,
+        installation_ref=installation.installation_key,
+        group_label=installation.dialog_label,
+        connector_key=connector.connector_key,
+    )
 
     observed_at = datetime.now(UTC)
     count = await _telegram_member_count(
-        settings=settings,
+        bot_token=bot_token,
         http_client=http_client,
         provider_dialog_id=dialog.provider_dialog_id,
     )
@@ -359,16 +375,46 @@ async def verify_owner_test_review_replay(
     )
 
 
-async def _telegram_member_count(
+def _presence_bot_token(
     *,
     settings: Settings,
+    installation_ref: str,
+    group_label: str,
+    connector_key: str,
+) -> str:
+    """Resolve only the token owned by an authorized owner-test connector."""
+
+    if connector_key == _ALPHA_CONNECTOR_KEY:
+        if group_label not in ALLOWED_OWNER_TEST_GROUPS:
+            raise AlphaOwnerTestRuntimeError(
+                "alpha_owner_test_group_not_authorized"
+            )
+        return settings.telegram_alpha_bot_token.get_secret_value().strip()
+
+    if connector_key != _BECOME_CONNECTOR_KEY:
+        raise AlphaOwnerTestRuntimeError("alpha_owner_test_group_not_authorized")
+    if not (
+        settings.gate_become_connector_enabled
+        and settings.gate_become_canary_enabled
+        and settings.gate_become_privacy_mode_confirmed
+        and settings.gate_become_group_capacity == 1
+    ):
+        raise AlphaOwnerTestRuntimeError("become_owner_test_gates_incomplete")
+    pinned = settings.gate_become_installation_key.strip()
+    if pinned and pinned != installation_ref:
+        raise AlphaOwnerTestRuntimeError("become_owner_test_installation_not_pinned")
+    return settings.telegram_become_bot_token.get_secret_value().strip()
+
+
+async def _telegram_member_count(
+    *,
+    bot_token: str,
     http_client: httpx.AsyncClient,
     provider_dialog_id: str,
 ) -> int | None:
-    token = settings.telegram_alpha_bot_token.get_secret_value().strip()
-    if not token:
+    if not bot_token:
         return None
-    endpoint = f"https://api.telegram.org/bot{token}/getChatMemberCount"
+    endpoint = f"https://api.telegram.org/bot{bot_token}/getChatMemberCount"
     try:
         response = await http_client.post(
             endpoint,
