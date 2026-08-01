@@ -1,0 +1,26 @@
+{
+  "schema": "gate.become.stars-test-fixtures@7",
+  "mode": "SIMULATED",
+  "provider_mode": "TEST",
+  "frozen_digest": "48992e08ea18296f6bb07c15c98c2e1288f0bde0ca3d1b088380419dbcdb0213",
+  "order": {
+    "order_ref": "stars_order_fixture",
+    "idempotency_key": "idempotency_stars_order_fixture",
+    "payer_ref": "payer_fixture",
+    "result_receipt_ref": "result_receipt_fake_mayaki_fixture",
+    "currency": "XTR",
+    "amount": 1,
+    "provider_mode": "TEST",
+    "preauthorized": true
+  },
+  "precheckout_query_ref": "precheckout_query_fixture",
+  "webhook_ref": "webhook_successful_payment_fixture",
+  "successful_payment_ref": "successful_payment_test_fixture",
+  "refund_ref": "refund_fixture",
+  "support_ref": "support_case_fixture",
+  "expected_order_receipt_sha256": "87bf08fbc4fb054a22dfda2a24e6b9386dd99b57c81f287ffce61fce1faec655",
+  "become_sync_dependency": false,
+  "telegram_client": false,
+  "real_stars_charge": false,
+  "external_effects": 0
+}
