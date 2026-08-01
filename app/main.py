@@ -30,6 +30,9 @@ from app.application.worker_health import (
     WorkerHealthRegistry,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.become_connector_binding import (
+    reconcile_become_connector_binding,
+)
 from app.infrastructure.beta_connector_binding import (
     reconcile_beta_connector_binding,
 )
@@ -94,6 +97,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
         try:
+            if getattr(settings, "gate_become_connector_enabled", False):
+                await reconcile_become_connector_binding(
+                    settings,
+                    database_runtime.session_factory,
+                )
             if getattr(settings, "gate_beta_connector_enabled", False):
                 await reconcile_beta_connector_binding(
                     settings,
