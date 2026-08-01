@@ -171,7 +171,8 @@ class GateTransportStore:
                 """
                 SELECT o.claim_ref, c.callback_ref, c.effect_ref, c.provider_state
                 FROM become_transport_outbox o JOIN become_effect_claim c USING (claim_ref)
-                WHERE o.status = 'queued' OR (o.status = 'leased' AND o.lease_until <= ?)
+                WHERE c.provider_state = 'reserved'
+                  AND (o.status = 'queued' OR (o.status = 'leased' AND o.lease_until <= ?))
                 ORDER BY c.created_at, o.claim_ref LIMIT 1
                 """,
                 (stamp,),
@@ -183,13 +184,58 @@ class GateTransportStore:
                 "UPDATE become_transport_outbox SET status='leased', lease_owner=?, lease_until=?, attempts=attempts+1, updated_at=? WHERE claim_ref=?",
                 (owner, expires, stamp, row["claim_ref"]),
             )
-            self._db.execute(
-                "UPDATE become_effect_claim SET provider_state='in_flight' WHERE claim_ref=? AND provider_state='reserved'",
-                (row["claim_ref"],),
-            )
-            state = "in_flight" if row["provider_state"] == "reserved" else row["provider_state"]
             self._db.execute("COMMIT")
-            return Claim(row["claim_ref"], row["callback_ref"], row["effect_ref"], state, owner, expires)
+            return Claim(row["claim_ref"], row["callback_ref"], row["effect_ref"], "reserved", owner, expires)
+        except Exception:
+            self._db.execute("ROLLBACK")
+            raise
+
+    def begin_effect(self, claim_ref: str, owner: str, at: datetime | None = None) -> None:
+        """Cross the local/provider seam only for the current lease owner."""
+        stamp = _iso(_now(at))
+        changed = self._db.execute(
+            """
+            UPDATE become_effect_claim SET provider_state='in_flight'
+            WHERE claim_ref=? AND provider_state='reserved' AND EXISTS (
+              SELECT 1 FROM become_transport_outbox o
+              WHERE o.claim_ref=become_effect_claim.claim_ref
+                AND o.status='leased' AND o.lease_owner=? AND o.lease_until>?
+            )
+            """,
+            (claim_ref, owner, stamp),
+        ).rowcount
+        if changed != 1:
+            raise ValueError("active owned lease required before in_flight")
+
+    def reconcile_expired_in_flight(self, at: datetime | None = None) -> int:
+        """Turn uncertain expired effects into reconciliation work, never retry."""
+        stamp = _iso(_now(at))
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            rows = self._db.execute(
+                """
+                SELECT o.claim_ref FROM become_transport_outbox o
+                JOIN become_effect_claim c USING (claim_ref)
+                WHERE o.status='leased' AND o.lease_until<=? AND c.provider_state='in_flight'
+                """,
+                (stamp,),
+            ).fetchall()
+            for row in rows:
+                claim_ref = row["claim_ref"]
+                self._db.execute(
+                    "UPDATE become_effect_claim SET provider_state='unknown', reconciliation_required=1 WHERE claim_ref=?",
+                    (claim_ref,),
+                )
+                self._db.execute(
+                    "UPDATE become_transport_outbox SET status='unknown', updated_at=? WHERE claim_ref=?",
+                    (stamp, claim_ref),
+                )
+                self._db.execute(
+                    "INSERT OR REPLACE INTO become_reconciliation VALUES (?, 'expired_in_flight_lease', 'required', ?)",
+                    (claim_ref, stamp),
+                )
+            self._db.execute("COMMIT")
+            return len(rows)
         except Exception:
             self._db.execute("ROLLBACK")
             raise
@@ -250,4 +296,3 @@ class GateTransportStore:
                 "become_reconciliation",
             )
         }
-
