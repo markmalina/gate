@@ -80,6 +80,7 @@ class ProcessAlphaCanaryUpdateCommand:
     credentials_ready: bool = False
     invocation_command: str = "alpha"
     allow_untargeted_command: bool = False
+    allow_registration_command: bool = False
 
     def __post_init__(self) -> None:
         _require_token(self.workspace_key, "workspace_key", 128)
@@ -180,9 +181,18 @@ class ProcessAlphaCanaryUpdateService:
         self, command: ProcessAlphaCanaryUpdateCommand
     ) -> AlphaCanaryResult:
         kind, payload = _closed_update(command.update)
+        registration_command = (
+            kind == "message"
+            and command.allow_registration_command
+            and _is_registration_command(
+                payload,
+                invocation_command=command.invocation_command,
+                bot_username=command.bot_username,
+            )
+        )
         readiness_code = (
             _membership_readiness_code(command)
-            if kind == "my_chat_member"
+            if kind == "my_chat_member" or registration_command
             else _readiness_code(command)
         )
         if readiness_code is not None:
@@ -194,6 +204,23 @@ class ProcessAlphaCanaryUpdateService:
             return AlphaCanaryResult(disposition, readiness_code)
 
         dialog_id, dialog_kind, dialog_label = _group(payload)
+        if registration_command:
+            membership = await self._store.reconcile_membership(
+                ReconcileAlphaMembershipCommand(
+                    workspace_key=command.workspace_key,
+                    connector_key=self._connector_key,
+                    provider_dialog_id=dialog_id,
+                    dialog_kind=dialog_kind,
+                    dialog_label=dialog_label,
+                    action=AlphaMembershipAction.PRESENT,
+                    now=command.now,
+                )
+            )
+            return AlphaCanaryResult(
+                AlphaCanaryDisposition.DISCOVERED,
+                "alpha_registration_command_present",
+            )
+
         if kind == "message" and not await self._store.is_active_group(
             workspace_key=command.workspace_key,
             connector_key=self._connector_key,
@@ -377,6 +404,30 @@ def _membership_action(payload: JsonObject, *, bot_username: str) -> AlphaMember
     if status in {"left", "kicked"}:
         return AlphaMembershipAction.REMOVED
     raise AlphaCanaryError("alpha_membership_status_invalid")
+
+
+def _is_registration_command(
+    payload: JsonObject,
+    *,
+    invocation_command: str,
+    bot_username: str,
+) -> bool:
+    """Match only the exact opt-in registration command for this bot."""
+
+    text = payload.get("text")
+    if not isinstance(text, str):
+        return False
+    parts = text.strip().split()
+    if len(parts) != 2 or parts[1].casefold() != "register":
+        return False
+    command = invocation_command.strip().lstrip("/").casefold()
+    username = bot_username.strip().lstrip("@").casefold()
+    if not command or not username:
+        return False
+    return parts[0].casefold() in {
+        f"/{command}",
+        f"/{command}@{username}",
+    }
 
 
 def _has_nonblank_text(payload: JsonObject) -> bool:
