@@ -656,6 +656,7 @@ def test_become_update_uses_its_isolated_provider_disabled_canary() -> None:
     command = canary.commands[0]
     assert command.invocation_command == "become"
     assert command.allow_untargeted_command is False
+    assert command.allow_registration_command is True
     assert command.connector_enabled is True
     assert command.shadow_worker_enabled is False
     assert command.delivery_enabled is False

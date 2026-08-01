@@ -668,6 +668,9 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                             credentials_ready=credentials_ready,
                             invocation_command=invocation_command,
                             allow_untargeted_command=allow_untargeted_command,
+                            allow_registration_command=(
+                                connector.key is TelegramConnectorKey.BECOME_GROUP
+                            ),
                             now=datetime.now(UTC),
                         )
                     )
