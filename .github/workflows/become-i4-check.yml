@@ -1,0 +1,32 @@
+name: BECOME I4 internal service
+
+on:
+  pull_request:
+    paths:
+      - "app/become_i4_service.py"
+      - "tests/test_become_i4_service.py"
+      - "contracts/proof-loop/i4/fixtures/gate-service-request.json"
+      - ".github/workflows/become-i4-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gate-i4:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prove exact PR head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - name: Compile internal service
+        run: python -m py_compile app/become_i4_service.py tests/test_become_i4_service.py
+      - name: Run frozen I4 contract tests
+        run: python -m unittest tests/test_become_i4_service.py -v
+      - name: Validate synthetic fixture JSON
+        run: python -m json.tool contracts/proof-loop/i4/fixtures/gate-service-request.json >/dev/null
