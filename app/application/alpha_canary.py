@@ -179,7 +179,12 @@ class ProcessAlphaCanaryUpdateService:
     async def execute(
         self, command: ProcessAlphaCanaryUpdateCommand
     ) -> AlphaCanaryResult:
-        readiness_code = _readiness_code(command)
+        kind, payload = _closed_update(command.update)
+        readiness_code = (
+            _membership_readiness_code(command)
+            if kind == "my_chat_member"
+            else _readiness_code(command)
+        )
         if readiness_code is not None:
             disposition = (
                 AlphaCanaryDisposition.DISABLED
@@ -188,7 +193,6 @@ class ProcessAlphaCanaryUpdateService:
             )
             return AlphaCanaryResult(disposition, readiness_code)
 
-        kind, payload = _closed_update(command.update)
         dialog_id, dialog_kind, dialog_label = _group(payload)
         if kind == "message" and not await self._store.is_active_group(
             workspace_key=command.workspace_key,
@@ -293,6 +297,24 @@ class ProcessAlphaCanaryUpdateService:
             shadow=shadow,
             delivery=delivery,
         )
+
+
+def _membership_readiness_code(
+    command: ProcessAlphaCanaryUpdateCommand,
+) -> str | None:
+    """Gate connector membership without enabling model or delivery effects."""
+
+    if not command.connector_enabled:
+        return "alpha_connector_disabled"
+    if not command.canary_enabled:
+        return "alpha_canary_disabled"
+    if not command.privacy_mode_confirmed:
+        return "alpha_privacy_mode_not_confirmed"
+    if not command.credentials_ready:
+        return "alpha_canary_credentials_incomplete"
+    if not command.bot_username:
+        return "alpha_canary_scope_incomplete"
+    return None
 
 
 def _readiness_code(command: ProcessAlphaCanaryUpdateCommand) -> str | None:

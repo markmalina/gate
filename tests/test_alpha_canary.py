@@ -188,11 +188,40 @@ def test_membership_discovery_requires_exact_bot_and_records_group() -> None:
     }
 
     result = asyncio.run(
-        service.execute(_command(update=update, canonical_message_id=None))
+        service.execute(
+            _command(
+                update=update,
+                canonical_message_id=None,
+                shadow_worker_enabled=False,
+                delivery_enabled=False,
+            )
+        )
     )
 
     assert result.disposition is AlphaCanaryDisposition.DISCOVERED
     assert store.memberships[0].action is AlphaMembershipAction.PRESENT
+    assert shadow.commands == []
+    assert delivery.commands == []
+
+
+def test_provider_disabled_membership_mode_blocks_text_before_runtime() -> None:
+    service, store, shadow, delivery = _service(
+        AlphaShadowWorkerResult(AlphaShadowDisposition.PROPOSED, "unused")
+    )
+
+    result = asyncio.run(
+        service.execute(
+            _command(
+                shadow_worker_enabled=False,
+                delivery_enabled=False,
+            )
+        )
+    )
+
+    assert result.disposition is AlphaCanaryDisposition.DISABLED
+    assert result.code == "alpha_shadow_worker_disabled"
+    assert store.memberships == []
+    assert store.grants == []
     assert shadow.commands == []
     assert delivery.commands == []
 
