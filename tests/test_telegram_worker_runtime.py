@@ -48,6 +48,21 @@ from app.worker.telegram_processing import (
 )
 
 
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("", None),
+        ("   ", None),
+        (" installation-owner-pilot ", "installation-owner-pilot"),
+    ],
+)
+def test_optional_installation_key_preserves_discovery_and_normalizes_pin(
+    raw_value: str,
+    expected: str | None,
+) -> None:
+    assert worker_module._optional_installation_key(raw_value) == expected
+
+
 class ExplodingQueue:
     async def claim_due(self, *, now: datetime) -> TelegramProcessingWorkItem | None:
         raise AssertionError("disabled runtime must not access the queue")
