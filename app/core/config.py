@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     telegram_beta_webhook_secret: SecretStr = Field(
         default=SecretStr(""), validation_alias="TELEGRAM_BETA_WEBHOOK_SECRET"
     )
+    telegram_become_bot_token: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_BECOME_BOT_TOKEN"
+    )
+    telegram_become_bot_username: str = Field(
+        default="", validation_alias="TELEGRAM_BECOME_BOT_USERNAME"
+    )
+    telegram_become_webhook_secret: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_BECOME_WEBHOOK_SECRET"
+    )
     gate_env: str = Field(default="development", validation_alias="GATE_ENV")
     gate_default_mode: str = Field(default="manual", validation_alias="GATE_DEFAULT_MODE")
     action_bearer_token: str = Field(default="", validation_alias="ACTION_BEARER_TOKEN")
@@ -102,6 +111,9 @@ class Settings(BaseSettings):
     gate_beta_connector_enabled: bool = Field(
         default=False, validation_alias="GATE_BETA_CONNECTOR_ENABLED"
     )
+    gate_become_connector_enabled: bool = Field(
+        default=False, validation_alias="GATE_BECOME_CONNECTOR_ENABLED"
+    )
     gate_beta_installation_key: str = Field(
         default="", validation_alias="GATE_BETA_INSTALLATION_KEY"
     )
@@ -126,6 +138,31 @@ class Settings(BaseSettings):
         ge=1,
         le=10_000,
         validation_alias="GATE_BETA_GROUP_CAPACITY",
+    )
+    gate_become_installation_key: str = Field(
+        default="", validation_alias="GATE_BECOME_INSTALLATION_KEY"
+    )
+    gate_become_shadow_worker_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_SHADOW_WORKER_ENABLED",
+    )
+    gate_become_canary_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_CANARY_ENABLED",
+    )
+    gate_become_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_DELIVERY_ENABLED",
+    )
+    gate_become_privacy_mode_confirmed: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PRIVACY_MODE_CONFIRMED",
+    )
+    gate_become_group_capacity: int = Field(
+        default=1,
+        ge=1,
+        le=1,
+        validation_alias="GATE_BECOME_GROUP_CAPACITY",
     )
     gate_alpha_shadow_worker_enabled: bool = Field(
         default=False,
@@ -350,6 +387,8 @@ class Settings(BaseSettings):
             alpha_bot_username=self.telegram_alpha_bot_username,
             beta_enabled=self.gate_beta_connector_enabled,
             beta_bot_username=self.telegram_beta_bot_username,
+            become_enabled=self.gate_become_connector_enabled,
+            become_bot_username=self.telegram_become_bot_username,
         )
 
 

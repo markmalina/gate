@@ -191,6 +191,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         canonical_store: CanonicalIngressStore | None = None,
         alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
         beta_canary: ProcessAlphaCanaryUpdateService | None = None,
+        become_canary: ProcessAlphaCanaryUpdateService | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -203,6 +204,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._canonical_store = canonical_store
         self._alpha_canary = alpha_canary
         self._beta_canary = beta_canary
+        self._become_canary = become_canary
         self._voice_updates = voice_updates
         self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
@@ -604,52 +606,53 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
 
         alpha_canary_disposition = "not_applicable"
         if connector.role is TelegramConnectorRole.ALPHA_GROUP:
-            beta_connector = connector.key is TelegramConnectorKey.BETA_GROUP
-            group_canary = self._beta_canary if beta_connector else self._alpha_canary
-            canary_enabled = (
-                self._settings.gate_beta_canary_enabled
-                if beta_connector
-                else self._settings.gate_alpha_canary_enabled
-            )
+            if connector.key is TelegramConnectorKey.BETA_GROUP:
+                group_canary = self._beta_canary
+                canary_enabled = self._settings.gate_beta_canary_enabled
+                bot_username = self._settings.telegram_beta_bot_username
+                connector_enabled = self._settings.gate_beta_connector_enabled
+                shadow_worker_enabled = self._settings.gate_beta_shadow_worker_enabled
+                delivery_enabled = self._settings.gate_beta_delivery_enabled
+                privacy_mode_confirmed = self._settings.gate_beta_privacy_mode_confirmed
+                credentials_ready = bool(
+                    self._settings.telegram_beta_bot_token.get_secret_value()
+                    and self._settings.telegram_beta_webhook_secret.get_secret_value()
+                )
+                invocation_command = "beta"
+                allow_untargeted_command = True
+            elif connector.key is TelegramConnectorKey.BECOME_GROUP:
+                group_canary = self._become_canary
+                canary_enabled = self._settings.gate_become_canary_enabled
+                bot_username = self._settings.telegram_become_bot_username
+                connector_enabled = self._settings.gate_become_connector_enabled
+                shadow_worker_enabled = self._settings.gate_become_shadow_worker_enabled
+                delivery_enabled = self._settings.gate_become_delivery_enabled
+                privacy_mode_confirmed = (
+                    self._settings.gate_become_privacy_mode_confirmed
+                )
+                credentials_ready = bool(
+                    self._settings.telegram_become_bot_token.get_secret_value()
+                    and self._settings.telegram_become_webhook_secret.get_secret_value()
+                )
+                invocation_command = "become"
+                allow_untargeted_command = False
+            else:
+                group_canary = self._alpha_canary
+                canary_enabled = self._settings.gate_alpha_canary_enabled
+                bot_username = self._settings.telegram_alpha_bot_username
+                connector_enabled = self._settings.gate_alpha_connector_enabled
+                shadow_worker_enabled = self._settings.gate_alpha_shadow_worker_enabled
+                delivery_enabled = self._settings.gate_alpha_delivery_enabled
+                privacy_mode_confirmed = self._settings.gate_alpha_privacy_mode_confirmed
+                credentials_ready = bool(
+                    self._settings.telegram_alpha_bot_token.get_secret_value()
+                    and self._settings.telegram_alpha_webhook_secret.get_secret_value()
+                )
+                invocation_command = "alpha"
+                allow_untargeted_command = False
             if canary_enabled and group_canary is None:
                 raise TelegramUpdateProcessingError("alpha_canary_not_configured")
             if group_canary is not None:
-                bot_username = (
-                    self._settings.telegram_beta_bot_username
-                    if beta_connector
-                    else self._settings.telegram_alpha_bot_username
-                )
-                connector_enabled = (
-                    self._settings.gate_beta_connector_enabled
-                    if beta_connector
-                    else self._settings.gate_alpha_connector_enabled
-                )
-                shadow_worker_enabled = (
-                    self._settings.gate_beta_shadow_worker_enabled
-                    if beta_connector
-                    else self._settings.gate_alpha_shadow_worker_enabled
-                )
-                delivery_enabled = (
-                    self._settings.gate_beta_delivery_enabled
-                    if beta_connector
-                    else self._settings.gate_alpha_delivery_enabled
-                )
-                privacy_mode_confirmed = (
-                    self._settings.gate_beta_privacy_mode_confirmed
-                    if beta_connector
-                    else self._settings.gate_alpha_privacy_mode_confirmed
-                )
-                credentials_ready = bool(
-                    (
-                        self._settings.telegram_beta_bot_token.get_secret_value()
-                        and self._settings.telegram_beta_webhook_secret.get_secret_value()
-                    )
-                    if beta_connector
-                    else (
-                        self._settings.telegram_alpha_bot_token.get_secret_value()
-                        and self._settings.telegram_alpha_webhook_secret.get_secret_value()
-                    )
-                )
                 try:
                     canary = await group_canary.execute(
                         ProcessAlphaCanaryUpdateCommand(
@@ -663,8 +666,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                             delivery_enabled=delivery_enabled,
                             privacy_mode_confirmed=privacy_mode_confirmed,
                             credentials_ready=credentials_ready,
-                            invocation_command="beta" if beta_connector else "alpha",
-                            allow_untargeted_command=beta_connector,
+                            invocation_command=invocation_command,
+                            allow_untargeted_command=allow_untargeted_command,
                             now=datetime.now(UTC),
                         )
                     )
@@ -731,6 +734,7 @@ async def run_telegram_worker_once(
     canonical_store: CanonicalIngressStore | None = None,
     alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
     beta_canary: ProcessAlphaCanaryUpdateService | None = None,
+    become_canary: ProcessAlphaCanaryUpdateService | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     voice_archive: TelegramVoiceArchiver | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -802,6 +806,7 @@ async def run_telegram_worker_once(
             canonical_store=canonical_store,
             alpha_canary=alpha_canary,
             beta_canary=beta_canary,
+            become_canary=become_canary,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
             business_text_parity=business_text_parity,
@@ -861,6 +866,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         if (
             settings.gate_alpha_canary_enabled
             or settings.gate_beta_canary_enabled
+            or settings.gate_become_canary_enabled
             or settings.gate_universal_mayak_runtime_enabled
             or settings.gate_telegram_voice_transcription_enabled
             or settings.gate_telegram_voice_archive_enabled
@@ -952,6 +958,47 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         ),
                         connector_key=TelegramConnectorKey.BETA_GROUP.value,
                         disclosure_prefix=BETA_DISCLOSURE_PREFIX,
+                    )
+                become_canary = None
+                if settings.gate_become_canary_enabled:
+                    become_telegram = TelegramClient(
+                        credential=settings.telegram_become_bot_token.get_secret_value(),
+                        api_base_url=os.getenv(
+                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                        ),
+                        http_client=http_client,
+                    )
+                    become_canary = ProcessAlphaCanaryUpdateService(
+                        store=SessionFactoryAlphaCanaryStore(
+                            sessions,
+                            group_capacity=settings.gate_become_group_capacity,
+                            pinned_installation_key=(
+                                settings.gate_become_installation_key
+                            ),
+                        ),
+                        shadow=ProcessAlphaShadowMessageService(
+                            port=SessionFactoryAlphaShadowTurnRepository(
+                                sessions,
+                                verified_model_shadow_enabled=False,
+                            ),
+                            bundle_loader=DeployedInstructionBundleLoader(
+                                Path(settings.gate_agent_bundle_root)
+                            ),
+                            runtime_factory=ConfiguredAlphaRuntimeFactory(
+                                http_client=http_client,
+                                api_key="",
+                                api_base_url=settings.openai_api_base_url,
+                                model_runtime_enabled=False,
+                                model_data_gate_approved=False,
+                                max_output_tokens=1,
+                                timeout_seconds=settings.gate_alpha_model_timeout_seconds,
+                            ),
+                        ),
+                        delivery=DeliverAlphaGrantService(
+                            store=SessionFactoryAlphaDeliveryStore(sessions),
+                            telegram=TelegramClientAlphaTextAdapter(become_telegram),
+                        ),
+                        connector_key=TelegramConnectorKey.BECOME_GROUP.value,
                     )
                 universal_mayak = None
                 universal_mayak_delivery = None
@@ -1061,6 +1108,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         canonical_store=canonical_store,
                         alpha_canary=alpha_canary,
                         beta_canary=beta_canary,
+                        become_canary=become_canary,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
                         universal_mayak=universal_mayak,

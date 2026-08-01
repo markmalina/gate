@@ -597,6 +597,57 @@ def test_rate_limited_alpha_update_is_deferred_instead_of_marked_processed() -> 
     assert len(canary.commands) == 1
 
 
+def test_become_update_uses_its_isolated_provider_disabled_canary() -> None:
+    canonical = CapturingCanonicalStore()
+    canary = RateLimitedAlphaCanary()
+    settings = Settings(
+        _env_file=None,
+        GATE_BECOME_CONNECTOR_ENABLED=True,
+        GATE_BECOME_SHADOW_WORKER_ENABLED=False,
+        GATE_BECOME_CANARY_ENABLED=True,
+        GATE_BECOME_DELIVERY_ENABLED=False,
+        GATE_BECOME_PRIVACY_MODE_CONFIRMED=True,
+        TELEGRAM_BECOME_BOT_TOKEN="private-become-token",
+        TELEGRAM_BECOME_WEBHOOK_SECRET="private-become-secret",
+        TELEGRAM_BECOME_BOT_USERNAME="BecomeNowBot",
+    )
+    item = replace(
+        _work_item(bot_key="telegram_become_group"),
+        payload={
+            "update_id": 42,
+            "message": {
+                "message_id": 7,
+                "chat": {
+                    "id": -1007002,
+                    "type": "supergroup",
+                    "title": "BECOME owner pilot",
+                },
+                "from": {"id": 700000001, "is_bot": False},
+                "text": "/become register",
+            },
+        },
+    )
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=settings,
+        identity_reader=FakeIdentityReader(),
+        canonical_store=canonical,
+        become_canary=canary,
+        runtime_logger=logging.getLogger("gate.worker.become-isolation-test"),
+    )
+
+    with pytest.raises(TelegramUpdateDeferred):
+        asyncio.run(processor.process(item))
+
+    command = canary.commands[0]
+    assert command.invocation_command == "become"
+    assert command.allow_untargeted_command is False
+    assert command.connector_enabled is True
+    assert command.shadow_worker_enabled is False
+    assert command.delivery_enabled is False
+    assert command.privacy_mode_confirmed is True
+    assert command.credentials_ready is True
+
+
 class CapturingBusinessTextParity:
     def __init__(self) -> None:
         self.commands: list[TelegramBusinessTextParityCommand] = []
