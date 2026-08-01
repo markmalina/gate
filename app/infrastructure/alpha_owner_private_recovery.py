@@ -10,12 +10,10 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.alpha_delivery import (
-    AlphaProviderDeliveryError,
-    AlphaTelegramTextPort,
-)
+from app.application.alpha_delivery import AlphaProviderDeliveryError, AlphaTelegramTextPort
 from app.application.alpha_group import AgentSendAttemptState
 from app.models.domain import (
+    TELEGRAM_MARK_BY_ACCOUNT_ID,
     Account,
     Message,
     ReplyDraft,
@@ -23,7 +21,6 @@ from app.models.domain import (
     ReplyTask,
     SendAttempt,
     SendAttemptStatus,
-    TELEGRAM_MARK_BY_ACCOUNT_ID,
     TelegramOutboxEvent,
     TelegramOutboxStatus,
     TelegramReceipt,
