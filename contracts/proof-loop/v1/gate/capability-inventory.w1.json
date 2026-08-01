@@ -1,0 +1,20 @@
+{
+  "schema": "gate.become.capability-inventory@1",
+  "mode": "SIMULATED",
+  "frozen_digest": "0303067fb38d33292a255bd6ee0dcd38ea749a5b89a1c5823fa3e8a47480f834",
+  "capabilities": [
+    {"name": "local_inbox", "enabled": true, "external_effect": false},
+    {"name": "local_outbox", "enabled": true, "external_effect": false},
+    {"name": "effect_claim", "enabled": true, "external_effect": false},
+    {"name": "lease_expiry_recovery", "enabled": true, "external_effect": false},
+    {"name": "reconciliation_ledger", "enabled": true, "external_effect": false},
+    {"name": "telegram_provider", "enabled": false, "external_effect": true},
+    {"name": "instagram_provider", "enabled": false, "external_effect": true},
+    {"name": "stars_payment_provider", "enabled": false, "external_effect": true},
+    {"name": "group_delivery_provider", "enabled": false, "external_effect": true}
+  ],
+  "provider_states": ["reserved", "in_flight", "settled", "unknown"],
+  "unknown_policy": "manual_reconciliation_required; blind_retry_forbidden",
+  "fixture_class": "synthetic_opaque_refs_only"
+}
+
