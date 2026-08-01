@@ -10,7 +10,10 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.alpha_delivery import AlphaProviderDeliveryError, AlphaTelegramTextPort
+from app.application.alpha_delivery import (
+    AlphaProviderDeliveryError,
+    AlphaTelegramTextPort,
+)
 from app.application.alpha_group import AgentSendAttemptState
 from app.models.domain import (
     Account,
