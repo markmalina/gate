@@ -826,6 +826,13 @@ async def run_telegram_worker_once(
     )
 
 
+def _optional_installation_key(raw_value: str) -> str | None:
+    """Treat a blank optional pin as discovery while normalizing a real token."""
+
+    normalized = raw_value.strip()
+    return normalized or None
+
+
 async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     if not settings.gate_telegram_worker_enabled:
         return await run_telegram_worker_once(settings=settings)
@@ -926,7 +933,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         store=SessionFactoryAlphaCanaryStore(
                             sessions,
                             group_capacity=settings.gate_beta_group_capacity,
-                            pinned_installation_key=(
+                            pinned_installation_key=_optional_installation_key(
                                 settings.gate_beta_installation_key
                             ),
                         ),
@@ -972,7 +979,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         store=SessionFactoryAlphaCanaryStore(
                             sessions,
                             group_capacity=settings.gate_become_group_capacity,
-                            pinned_installation_key=(
+                            pinned_installation_key=_optional_installation_key(
                                 settings.gate_become_installation_key
                             ),
                         ),
