@@ -60,10 +60,20 @@ class GateTransportStoreTest(unittest.TestCase):
     def test_unknown_requires_reconciliation_and_forbids_retry(self):
         claim, _ = self.store.record_callback("callback_fixture_d", {"mode": "SIMULATED"}, T0)
         self.store.claim_next("worker_fixture_a", T0)
+        self.store.begin_effect(claim, "worker_fixture_a", T0)
         self.store.record_outcome(claim, "unknown", T0)
         with self.assertRaises(BlindRetryForbidden):
             self.store.retry(claim, T0)
         self.assertEqual(self.store.counts()["become_reconciliation"], 1)
+
+    def test_expired_in_flight_is_unknown_not_reclaimed(self):
+        claim, _ = self.store.record_callback("callback_fixture_e", {"mode": "SIMULATED"}, T0)
+        self.store.claim_next("worker_fixture_a", T0, lease_seconds=10)
+        self.store.begin_effect(claim, "worker_fixture_a", T0)
+        self.assertEqual(self.store.reconcile_expired_in_flight(T0 + timedelta(seconds=11)), 1)
+        self.assertIsNone(self.store.claim_next("worker_fixture_b", T0 + timedelta(seconds=12)))
+        with self.assertRaises(BlindRetryForbidden):
+            self.store.retry(claim, T0 + timedelta(seconds=12))
 
     def test_raw_or_provider_identity_fields_are_rejected(self):
         for field in ("transcript_text", "signed_url", "provider_identity", "media_bytes"):
@@ -73,4 +83,3 @@ class GateTransportStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
