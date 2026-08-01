@@ -1,0 +1,12 @@
+# Select this custom config only for the private provider-disabled I4 staging service.
+# The production service continues to use /railway.toml and /Dockerfile.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.i4"
+
+[deploy]
+startCommand = "python -m app.become_i4_service"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
