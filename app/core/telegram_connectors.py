@@ -17,6 +17,7 @@ class TelegramConnectorKey(StrEnum):
     BUSINESS = "telegram_business"
     ALPHA_GROUP = "telegram_alpha_group"
     BETA_GROUP = "telegram_beta_group"
+    BECOME_GROUP = "telegram_become_group"
 
 
 class TelegramConnectorRole(StrEnum):
@@ -123,6 +124,7 @@ class TelegramConnectorDefinition:
         elif self.key in {
             TelegramConnectorKey.ALPHA_GROUP,
             TelegramConnectorKey.BETA_GROUP,
+            TelegramConnectorKey.BECOME_GROUP,
         }:
             if self.role is not TelegramConnectorRole.ALPHA_GROUP:
                 raise ValueError("a group connector requires the Alpha group role")
@@ -178,11 +180,12 @@ class TelegramConnectorDefinition:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class TelegramConnectorRegistry:
-    """Closed registry for Business, personal Alpha and product Beta connectors."""
+    """Closed registry for Business, Alpha, Beta and BECOME connectors."""
 
     business: TelegramConnectorDefinition
     alpha_group: TelegramConnectorDefinition
     beta_group: TelegramConnectorDefinition
+    become_group: TelegramConnectorDefinition
 
     def __post_init__(self) -> None:
         """Require exact connector identities and unique isolation boundaries."""
@@ -193,7 +196,14 @@ class TelegramConnectorRegistry:
             raise ValueError("registry Alpha slot has the wrong connector")
         if self.beta_group.key is not TelegramConnectorKey.BETA_GROUP:
             raise ValueError("registry Beta slot has the wrong connector")
-        connectors = (self.business, self.alpha_group, self.beta_group)
+        if self.become_group.key is not TelegramConnectorKey.BECOME_GROUP:
+            raise ValueError("registry BECOME slot has the wrong connector")
+        connectors = (
+            self.business,
+            self.alpha_group,
+            self.beta_group,
+            self.become_group,
+        )
         for attribute in (
             "bot_identity_ref",
             "bot_token_secret_ref",
@@ -219,7 +229,12 @@ class TelegramConnectorRegistry:
 
         matched = [
             connector
-            for connector in (self.business, self.alpha_group, self.beta_group)
+            for connector in (
+                self.business,
+                self.alpha_group,
+                self.beta_group,
+                self.become_group,
+            )
             if connector.matches_work_item_key(bot_key)
         ]
         if len(matched) != 1:
@@ -240,6 +255,7 @@ class TelegramConnectorRegistry:
                 self.business.safe_snapshot(),
                 self.alpha_group.safe_snapshot(),
                 self.beta_group.safe_snapshot(),
+                self.become_group.safe_snapshot(),
             ]
         }
 
@@ -249,7 +265,7 @@ class TelegramConnectorRegistry:
         return (
             "TelegramConnectorRegistry("
             f"business={self.business!r}, alpha_group={self.alpha_group!r}, "
-            f"beta_group={self.beta_group!r})"
+            f"beta_group={self.beta_group!r}, become_group={self.become_group!r})"
         )
 
 
@@ -260,8 +276,10 @@ def build_telegram_connector_registry(
     alpha_bot_username: str = "",
     beta_enabled: bool = False,
     beta_bot_username: str = "",
+    become_enabled: bool = False,
+    become_bot_username: str = "",
 ) -> TelegramConnectorRegistry:
-    """Build isolated Business, Alpha and Beta connector definitions."""
+    """Build isolated Business, Alpha, Beta and BECOME connector definitions."""
 
     return TelegramConnectorRegistry(
         business=TelegramConnectorDefinition(
@@ -325,6 +343,24 @@ def build_telegram_connector_registry(
             declared_capabilities=frozenset({TelegramConnectorCapability.GROUP_MESSAGES}),
             send_authorizations=frozenset(),
             worker_enabled=beta_enabled,
+        ),
+        become_group=TelegramConnectorDefinition(
+            key=TelegramConnectorKey.BECOME_GROUP,
+            role=TelegramConnectorRole.ALPHA_GROUP,
+            activation=(
+                TelegramConnectorActivation.ACTIVE
+                if become_enabled
+                else TelegramConnectorActivation.DORMANT
+            ),
+            bot_identity=(become_bot_username or None) if become_enabled else None,
+            bot_identity_ref="TELEGRAM_BECOME_BOT_USERNAME",
+            bot_token_secret_ref="TELEGRAM_BECOME_BOT_TOKEN",
+            webhook_secret_ref="TELEGRAM_BECOME_WEBHOOK_SECRET",
+            webhook_path="/telegram/become/webhook",
+            allowed_updates=ALPHA_GROUP_ALLOWED_UPDATES,
+            declared_capabilities=frozenset({TelegramConnectorCapability.GROUP_MESSAGES}),
+            send_authorizations=frozenset(),
+            worker_enabled=become_enabled,
         ),
     )
 
