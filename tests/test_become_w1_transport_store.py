@@ -1,20 +1,19 @@
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from become_w1.transport_store import (  # noqa: E402
-    BlindRetryForbidden,
     FROZEN_DIGEST,
+    BlindRetryForbidden,
     GateTransportStore,
     ReplayMutation,
 )
 
-
-T0 = datetime(2026, 8, 1, 1, 30, tzinfo=timezone.utc)
+T0 = datetime(2026, 8, 1, 1, 30, tzinfo=UTC)
 
 
 class GateTransportStoreTest(unittest.TestCase):
@@ -28,18 +27,25 @@ class GateTransportStoreTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_duplicate_callback_has_at_most_one_effect_claim(self):
-        payload = {"mode": "SIMULATED", "frozen_digest": FROZEN_DIGEST, "touchpoint_ref": "touchpoint_fixture_a"}
+        payload = {
+            "mode": "SIMULATED",
+            "frozen_digest": FROZEN_DIGEST,
+            "touchpoint_ref": "touchpoint_fixture_a",
+        }
         first, created = self.store.record_callback("callback_fixture_a", payload, T0)
         second, duplicate_created = self.store.record_callback("callback_fixture_a", payload, T0)
         self.assertEqual(first, second)
         self.assertTrue(created)
         self.assertFalse(duplicate_created)
-        self.assertEqual(self.store.counts(), {
-            "become_transport_inbox": 1,
-            "become_effect_claim": 1,
-            "become_transport_outbox": 1,
-            "become_reconciliation": 0,
-        })
+        self.assertEqual(
+            self.store.counts(),
+            {
+                "become_transport_inbox": 1,
+                "become_effect_claim": 1,
+                "become_transport_outbox": 1,
+                "become_reconciliation": 0,
+            },
+        )
 
     def test_mutated_replay_fails_closed(self):
         self.store.record_callback("callback_fixture_b", {"mode": "SIMULATED", "n": 1}, T0)
@@ -78,7 +84,9 @@ class GateTransportStoreTest(unittest.TestCase):
     def test_raw_or_provider_identity_fields_are_rejected(self):
         for field in ("transcript_text", "signed_url", "provider_identity", "media_bytes"):
             with self.subTest(field=field), self.assertRaises(ValueError):
-                self.store.record_callback(f"callback_{field}", {"mode": "SIMULATED", field: "forbidden"}, T0)
+                self.store.record_callback(
+                    f"callback_{field}", {"mode": "SIMULATED", field: "forbidden"}, T0
+                )
 
 
 if __name__ == "__main__":

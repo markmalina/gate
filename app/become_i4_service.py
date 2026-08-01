@@ -12,7 +12,6 @@ from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-
 CONTRACT_DIGEST = "91c3a210709c63738358bd0c512d11a9668acabd0997afcd68ba240bed38f573"
 IC9_DIGEST = "e8b30118dbd754a841e575b0bc3cb8681461381b1b138d2fa1b3a75c28e2a5e7"
 REQUEST_SCHEMA = "become.i4-service-request@1"
@@ -29,21 +28,47 @@ _INPUT_FIELDS = frozenset(
 )
 _RECEIPT_FIELDS = frozenset(
     {
-        "schema", "service", "source_sha", "contract_digest", "mode", "quest_ref",
-        "correlation_ref", "subject_ref", "external_effects", "output", "receipt_digest",
+        "schema",
+        "service",
+        "source_sha",
+        "contract_digest",
+        "mode",
+        "quest_ref",
+        "correlation_ref",
+        "subject_ref",
+        "external_effects",
+        "output",
+        "receipt_digest",
     }
 )
 _OUTPUT_FIELDS = frozenset(
     {
-        "delivery_receipt_ref", "payment_receipt_ref", "entitlement_receipt_ref",
-        "group_delivery_receipt_ref", "referral_delivery_receipt_ref", "amount", "currency",
-        "successful_payment", "result_before_payment", "provider_states", "blind_retry_attempts",
+        "delivery_receipt_ref",
+        "payment_receipt_ref",
+        "entitlement_receipt_ref",
+        "group_delivery_receipt_ref",
+        "referral_delivery_receipt_ref",
+        "amount",
+        "currency",
+        "successful_payment",
+        "result_before_payment",
+        "provider_states",
+        "blind_retry_attempts",
     }
 )
 _SENSITIVE_KEYS = frozenset(
     {
-        "media_bytes", "media_content", "pii", "provider_id", "provider_payload",
-        "raw_transcript", "secret", "signed_url", "telegram_id", "token", "transcript_text",
+        "media_bytes",
+        "media_content",
+        "pii",
+        "provider_id",
+        "provider_payload",
+        "raw_transcript",
+        "secret",
+        "signed_url",
+        "telegram_id",
+        "token",
+        "transcript_text",
     }
 )
 _DISABLED_ENV = {
@@ -61,9 +86,7 @@ _DISABLED_ENV = {
 
 
 def canonical_digest(value: object) -> str:
-    encoded = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode()
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -130,7 +153,12 @@ def validate_request(value: object) -> dict[str, Any]:
 
 def _receipt_ref(kind: str, request: Mapping[str, object]) -> str:
     identity = canonical_digest(
-        {"kind": kind, "request": request, "contract_digest": CONTRACT_DIGEST, "ic9_digest": IC9_DIGEST}
+        {
+            "kind": kind,
+            "request": request,
+            "contract_digest": CONTRACT_DIGEST,
+            "ic9_digest": IC9_DIGEST,
+        }
     )
     return f"synthetic://gate/{kind}/{identity[:24]}"
 
@@ -203,9 +231,17 @@ class Handler(BaseHTTPRequestHandler):
         except (RuntimeError, ValueError):
             self._json(503, {"error": "runtime_not_provider_disabled"})
             return
-        self._json(200, {"status": "ok", "service": SERVICE, "source_sha": source_sha,
-                         "contract_digest": CONTRACT_DIGEST, "mode": "SIMULATED_TEST",
-                         "external_effects": 0})
+        self._json(
+            200,
+            {
+                "status": "ok",
+                "service": SERVICE,
+                "source_sha": source_sha,
+                "contract_digest": CONTRACT_DIGEST,
+                "mode": "SIMULATED_TEST",
+                "external_effects": 0,
+            },
+        )
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/internal/become/i4":

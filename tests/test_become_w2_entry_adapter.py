@@ -15,7 +15,6 @@ from become_w2.entry_adapter import (  # noqa: E402
     sign_synthetic_webhook,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "contracts" / "proof-loop" / "v2" / "fixtures" / "gate-entry-w2.json"
 
@@ -46,7 +45,11 @@ class GateEntryAdapterTest(unittest.TestCase):
         payload = fixture["payload"]
         self.assertEqual(fixture["signature"], sign_synthetic_webhook(payload))
         return self.adapter.ingest_signed_entry(
-            fixture["webhook_ref"], fixture["channel"], fixture["binding_ref"], payload, fixture["signature"]
+            fixture["webhook_ref"],
+            fixture["channel"],
+            fixture["binding_ref"],
+            payload,
+            fixture["signature"],
         )
 
     def test_two_signed_entry_fixtures_create_one_intent(self):
@@ -67,14 +70,22 @@ class GateEntryAdapterTest(unittest.TestCase):
         changed = {**fixture["payload"], "touchpoint_ref": "touchpoint_changed_fixture"}
         with self.assertRaises(ReplayMutation):
             self.adapter.ingest_signed_entry(
-                fixture["webhook_ref"], fixture["channel"], fixture["binding_ref"], changed, sign_synthetic_webhook(changed)
+                fixture["webhook_ref"],
+                fixture["channel"],
+                fixture["binding_ref"],
+                changed,
+                sign_synthetic_webhook(changed),
             )
 
     def test_invalid_signature_and_sensitive_payload_fail_closed(self):
         fixture = self.fixtures["entries"][0]
         with self.assertRaises(ValueError):
             self.adapter.ingest_signed_entry(
-                fixture["webhook_ref"], fixture["channel"], fixture["binding_ref"], fixture["payload"], "0" * 64
+                fixture["webhook_ref"],
+                fixture["channel"],
+                fixture["binding_ref"],
+                fixture["payload"],
+                "0" * 64,
             )
         for field in ("provider_user_id", "signed_url", "transcript_text", "media_bytes"):
             payload = {**fixture["payload"], field: "forbidden"}
@@ -93,7 +104,9 @@ class GateEntryAdapterTest(unittest.TestCase):
     def test_no_consent_means_no_download_claim(self):
         intent = self._ingest(self.fixtures["entries"][0]).intent_ref
         with self.assertRaises(ConsentRequired):
-            self.adapter.preflight_voice_media_download("download_request_missing_fixture", intent, None)
+            self.adapter.preflight_voice_media_download(
+                "download_request_missing_fixture", intent, None
+            )
         denied = self.adapter.preflight_voice_media_download(
             "download_request_denied_fixture", intent, "consent_receipt_denied_fixture"
         )
@@ -114,4 +127,3 @@ class GateEntryAdapterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

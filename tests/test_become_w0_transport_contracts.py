@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PACK = ROOT / "contracts" / "proof-loop" / "v1"
 
@@ -34,7 +33,13 @@ def test_six_simulated_positive_cases_obey_effect_fences() -> None:
             assert case.get("delivery_outcome", case.get("payment_outcome")) == "pending"
         if case.get("receipt_type") == "gate.payment_receipt":
             assert case.get("result_receipt_ref", "").startswith("result_")
-            assert case.get("payment_outcome") in {"pending", "declined", "paid", "refunded", "not_attempted"}
+            assert case.get("payment_outcome") in {
+                "pending",
+                "declined",
+                "paid",
+                "refunded",
+                "not_attempted",
+            }
 
 
 def test_five_negative_cases_are_declared_fail_closed() -> None:

@@ -11,10 +11,9 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 FROZEN_DIGEST = "af767a200a3dc20396814c1c36fafacd9ae871e4273bf0b04b5fe53056b502f6"
 PROVIDER_STATES = frozenset({"reserved", "in_flight", "settled", "unknown"})
@@ -73,10 +72,10 @@ def _reject_sensitive(value: Any) -> None:
 
 
 def _iso(value: datetime | None = None) -> str:
-    current = value or datetime.now(timezone.utc)
+    current = value or datetime.now(UTC)
     if current.tzinfo is None:
         raise ValueError("timezone-aware timestamp required")
-    return current.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return current.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _opaque(value: str, prefix: str) -> None:
@@ -116,7 +115,9 @@ class VoiceTextIntakeStore:
     def close(self) -> None:
         self._db.close()
 
-    def record_text(self, intake_ref: str, quest_ref: str, synthetic_text: str, at: datetime | None = None) -> IntakeReceipt:
+    def record_text(
+        self, intake_ref: str, quest_ref: str, synthetic_text: str, at: datetime | None = None
+    ) -> IntakeReceipt:
         _opaque(intake_ref, "intake_")
         _opaque(quest_ref, "quest_")
         if not synthetic_text.startswith("SYNTHETIC:"):
@@ -143,7 +144,9 @@ class VoiceTextIntakeStore:
         ):
             _opaque(value, prefix)
         content_sha = hashlib.sha256(telegram_file_ref.encode()).hexdigest()
-        asset_ref = "asset_" + hashlib.sha256((FROZEN_DIGEST + telegram_file_ref).encode()).hexdigest()[:32]
+        asset_ref = (
+            "asset_" + hashlib.sha256((FROZEN_DIGEST + telegram_file_ref).encode()).hexdigest()[:32]
+        )
         receipt = self._record(intake_ref, quest_ref, "voice", content_sha, asset_ref, at)
         stamp = _iso(at)
         existing = self._db.execute(
@@ -161,9 +164,18 @@ class VoiceTextIntakeStore:
             )
         return receipt
 
-    def _record(self, intake_ref: str, quest_ref: str, kind: str, content_sha: str, asset_ref: str | None, at: datetime | None) -> IntakeReceipt:
+    def _record(
+        self,
+        intake_ref: str,
+        quest_ref: str,
+        kind: str,
+        content_sha: str,
+        asset_ref: str | None,
+        at: datetime | None,
+    ) -> IntakeReceipt:
         existing = self._db.execute(
-            "SELECT quest_ref, kind, payload_sha256, asset_ref FROM become_w3_intake WHERE intake_ref=?", (intake_ref,)
+            "SELECT quest_ref, kind, payload_sha256, asset_ref FROM become_w3_intake WHERE intake_ref=?",
+            (intake_ref,),
         ).fetchone()
         expected = (quest_ref, kind, content_sha, asset_ref)
         if existing:
@@ -223,6 +235,7 @@ class VoiceTextIntakeStore:
     def counts(self) -> dict[str, int]:
         return {
             "intakes": self._db.execute("SELECT count(*) FROM become_w3_intake").fetchone()[0],
-            "assets": self._db.execute("SELECT count(*) FROM become_w3_asset_quarantine").fetchone()[0],
+            "assets": self._db.execute(
+                "SELECT count(*) FROM become_w3_asset_quarantine"
+            ).fetchone()[0],
         }
-

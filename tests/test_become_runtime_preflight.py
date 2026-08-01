@@ -1,5 +1,5 @@
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 from app.become.runtime_preflight import LIVE_FLAGS, MODULES, build_runtime_preflight
 
@@ -20,8 +20,9 @@ class RuntimePreflightTests(unittest.TestCase):
 
     def test_every_live_effect_flag_fails_closed(self) -> None:
         for flag in LIVE_FLAGS:
-            with self.subTest(flag=flag), self.assertRaisesRegex(
-                RuntimeError, "live_flags_must_remain_disabled"
+            with (
+                self.subTest(flag=flag),
+                self.assertRaisesRegex(RuntimeError, "live_flags_must_remain_disabled"),
             ):
                 build_runtime_preflight(importer=_importer, environ={flag: "true"})
 

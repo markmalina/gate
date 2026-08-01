@@ -6,10 +6,9 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 FROZEN_DIGEST = "418bb1d0e49abc1239addd0bc03502c42f6c2d5524c852b912221f3763b15487"
 OPERATIONS = frozenset({"exercise_delivery", "result_receipt_delivery"})
@@ -45,7 +44,7 @@ def _sha(value: Any) -> str:
 def _iso(value: datetime) -> str:
     if value.tzinfo is None:
         raise ValueError("timezone-aware timestamp required")
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _opaque(value: str, prefix: str) -> None:
@@ -90,21 +89,32 @@ class LearnerDeliveryStore:
 
     def reserve(self, envelope: dict[str, str], at: datetime) -> DeliveryClaim:
         required = {
-            "delivery_ref", "idempotency_key", "operation", "learner_ref", "signed_link_sha256",
-            "exercise_version_ref", "session_ref", "payload_ref", "mode",
+            "delivery_ref",
+            "idempotency_key",
+            "operation",
+            "learner_ref",
+            "signed_link_sha256",
+            "exercise_version_ref",
+            "session_ref",
+            "payload_ref",
+            "mode",
         }
         if set(envelope) != required or envelope["mode"] != "SIMULATED":
             raise ValueError("exact SIMULATED delivery envelope required")
         for field, prefix in (
-            ("delivery_ref", "delivery_"), ("idempotency_key", "idempotency_"),
-            ("learner_ref", "learner_"), ("exercise_version_ref", "exercise_version_"),
+            ("delivery_ref", "delivery_"),
+            ("idempotency_key", "idempotency_"),
+            ("learner_ref", "learner_"),
+            ("exercise_version_ref", "exercise_version_"),
             ("session_ref", "exercise_session_"),
         ):
             _opaque(envelope[field], prefix)
         operation = envelope["operation"]
         if operation not in OPERATIONS or len(envelope["signed_link_sha256"]) != 64:
             raise ValueError("version-pinned signed delivery required")
-        payload_prefix = "exercise_delivery_payload_" if operation == "exercise_delivery" else "result_receipt_"
+        payload_prefix = (
+            "exercise_delivery_payload_" if operation == "exercise_delivery" else "result_receipt_"
+        )
         _opaque(envelope["payload_ref"], payload_prefix)
         body = {"schema": "gate.learner-delivery@1", "frozen_digest": FROZEN_DIGEST, **envelope}
         receipt_sha = _sha(body)
@@ -116,27 +126,52 @@ class LearnerDeliveryStore:
             (envelope["idempotency_key"],),
         ).fetchone()
         expected = (
-            envelope["delivery_ref"], operation, envelope["learner_ref"], envelope["signed_link_sha256"],
-            envelope["exercise_version_ref"], envelope["session_ref"], envelope["payload_ref"],
-            "SIMULATED", receipt_sha,
+            envelope["delivery_ref"],
+            operation,
+            envelope["learner_ref"],
+            envelope["signed_link_sha256"],
+            envelope["exercise_version_ref"],
+            envelope["session_ref"],
+            envelope["payload_ref"],
+            "SIMULATED",
+            receipt_sha,
         )
         if existing:
             if tuple(existing)[:9] != expected:
                 raise ReplayMutation("mutated duplicate delivery rejected")
             return DeliveryClaim(
-                existing["delivery_ref"], envelope["idempotency_key"], operation,
-                existing["provider_state"], existing["delivery_receipt_sha256"], False,
+                existing["delivery_ref"],
+                envelope["idempotency_key"],
+                operation,
+                existing["provider_state"],
+                existing["delivery_receipt_sha256"],
+                False,
             )
         self._db.execute(
             """INSERT INTO become_learner_delivery VALUES
                (?, ?, ?, ?, ?, ?, ?, ?, 'SIMULATED', 'reserved', 0, ?, NULL, ?, ?)""",
             (
-                envelope["delivery_ref"], envelope["idempotency_key"], operation, envelope["learner_ref"],
-                envelope["signed_link_sha256"], envelope["exercise_version_ref"], envelope["session_ref"],
-                envelope["payload_ref"], receipt_sha, FROZEN_DIGEST, _iso(at),
+                envelope["delivery_ref"],
+                envelope["idempotency_key"],
+                operation,
+                envelope["learner_ref"],
+                envelope["signed_link_sha256"],
+                envelope["exercise_version_ref"],
+                envelope["session_ref"],
+                envelope["payload_ref"],
+                receipt_sha,
+                FROZEN_DIGEST,
+                _iso(at),
             ),
         )
-        return DeliveryClaim(envelope["delivery_ref"], envelope["idempotency_key"], operation, "reserved", receipt_sha, True)
+        return DeliveryClaim(
+            envelope["delivery_ref"],
+            envelope["idempotency_key"],
+            operation,
+            "reserved",
+            receipt_sha,
+            True,
+        )
 
     def begin_mock(self, delivery_ref: str) -> None:
         changed = self._db.execute(
@@ -147,7 +182,9 @@ class LearnerDeliveryStore:
             raise ValueError("reserved delivery required")
 
     def settle_mock(self, delivery_ref: str) -> str:
-        receipt_ref = "delivery_mock_receipt_" + hashlib.sha256(delivery_ref.encode()).hexdigest()[:24]
+        receipt_ref = (
+            "delivery_mock_receipt_" + hashlib.sha256(delivery_ref.encode()).hexdigest()[:24]
+        )
         changed = self._db.execute(
             "UPDATE become_learner_delivery SET provider_state='settled', mock_receipt_ref=? WHERE delivery_ref=? AND provider_state='in_flight'",
             (receipt_ref, delivery_ref),
@@ -170,17 +207,21 @@ class LearnerDeliveryStore:
 
     def retry(self, delivery_ref: str) -> None:
         row = self._db.execute(
-            "SELECT provider_state FROM become_learner_delivery WHERE delivery_ref=?", (delivery_ref,)
+            "SELECT provider_state FROM become_learner_delivery WHERE delivery_ref=?",
+            (delivery_ref,),
         ).fetchone()
         if not row:
             raise KeyError(delivery_ref)
         if row["provider_state"] in {"in_flight", "settled", "unknown"}:
             raise BlindRetryForbidden(f"cannot blindly retry {row['provider_state']} delivery")
 
-    def reconcile(self, delivery_ref: str, receipt_ref: str, no_effect_proven: bool, at: datetime) -> None:
+    def reconcile(
+        self, delivery_ref: str, receipt_ref: str, no_effect_proven: bool, at: datetime
+    ) -> None:
         _opaque(receipt_ref, "reconciliation_receipt_")
         row = self._db.execute(
-            "SELECT provider_state FROM become_learner_delivery WHERE delivery_ref=?", (delivery_ref,)
+            "SELECT provider_state FROM become_learner_delivery WHERE delivery_ref=?",
+            (delivery_ref,),
         ).fetchone()
         if not row or row["provider_state"] != "unknown":
             raise ValueError("unknown delivery required")
@@ -196,6 +237,10 @@ class LearnerDeliveryStore:
 
     def counts(self) -> dict[str, int]:
         return {
-            "deliveries": self._db.execute("SELECT count(*) FROM become_learner_delivery").fetchone()[0],
-            "reconciliation": self._db.execute("SELECT count(*) FROM become_delivery_reconciliation").fetchone()[0],
+            "deliveries": self._db.execute(
+                "SELECT count(*) FROM become_learner_delivery"
+            ).fetchone()[0],
+            "reconciliation": self._db.execute(
+                "SELECT count(*) FROM become_delivery_reconciliation"
+            ).fetchone()[0],
         }

@@ -13,7 +13,6 @@ from become_w3.voice_text_intake import (  # noqa: E402
     VoiceTextIntakeStore,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "contracts" / "proof-loop" / "v3" / "fixtures" / "gate-intake-w3.json"
 
@@ -75,4 +74,3 @@ class VoiceTextIntakeStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -11,10 +11,9 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-
 
 FROZEN_DIGEST = "0303067fb38d33292a255bd6ee0dcd38ea749a5b89a1c5823fa3e8a47480f834"
 PROVIDER_STATES = frozenset({"reserved", "in_flight", "settled", "unknown"})
@@ -52,14 +51,14 @@ class Claim:
 
 
 def _now(value: datetime | None = None) -> datetime:
-    current = value or datetime.now(timezone.utc)
+    current = value or datetime.now(UTC)
     if current.tzinfo is None:
         raise ValueError("timezone-aware timestamp required")
-    return current.astimezone(timezone.utc)
+    return current.astimezone(UTC)
 
 
 def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _canonical(value: Any) -> bytes:
@@ -123,19 +122,24 @@ class GateTransportStore:
     def close(self) -> None:
         self._db.close()
 
-    def record_callback(self, callback_ref: str, payload: dict[str, Any], at: datetime | None = None) -> tuple[str, bool]:
+    def record_callback(
+        self, callback_ref: str, payload: dict[str, Any], at: datetime | None = None
+    ) -> tuple[str, bool]:
         if not callback_ref.startswith("callback_"):
             raise ValueError("synthetic opaque callback_ref required")
         stamp = _iso(_now(at))
         payload_sha = hashlib.sha256(_canonical(payload)).hexdigest()
         suffix = hashlib.sha256(callback_ref.encode()).hexdigest()[:24]
         claim_ref, effect_ref = f"claim_{suffix}", f"effect_{suffix}"
-        envelope_sha = hashlib.sha256((FROZEN_DIGEST + callback_ref + payload_sha).encode()).hexdigest()
+        envelope_sha = hashlib.sha256(
+            (FROZEN_DIGEST + callback_ref + payload_sha).encode()
+        ).hexdigest()
 
         self._db.execute("BEGIN IMMEDIATE")
         try:
             existing = self._db.execute(
-                "SELECT payload_sha256 FROM become_transport_inbox WHERE callback_ref = ?", (callback_ref,)
+                "SELECT payload_sha256 FROM become_transport_inbox WHERE callback_ref = ?",
+                (callback_ref,),
             ).fetchone()
             if existing:
                 if existing["payload_sha256"] != payload_sha:
@@ -160,7 +164,9 @@ class GateTransportStore:
             self._db.execute("ROLLBACK")
             raise
 
-    def claim_next(self, owner: str, at: datetime | None = None, lease_seconds: int = 30) -> Claim | None:
+    def claim_next(
+        self, owner: str, at: datetime | None = None, lease_seconds: int = 30
+    ) -> Claim | None:
         if not owner.startswith("worker_") or lease_seconds <= 0:
             raise ValueError("synthetic worker and positive lease required")
         current = _now(at)
@@ -185,7 +191,9 @@ class GateTransportStore:
                 (owner, expires, stamp, row["claim_ref"]),
             )
             self._db.execute("COMMIT")
-            return Claim(row["claim_ref"], row["callback_ref"], row["effect_ref"], "reserved", owner, expires)
+            return Claim(
+                row["claim_ref"], row["callback_ref"], row["effect_ref"], "reserved", owner, expires
+            )
         except Exception:
             self._db.execute("ROLLBACK")
             raise
@@ -258,7 +266,9 @@ class GateTransportStore:
                 "UPDATE become_effect_claim SET provider_state=?, reconciliation_required=? WHERE claim_ref=?",
                 (state, reconciliation, claim_ref),
             )
-            status = "settled" if state == "settled" else "unknown" if state == "unknown" else "leased"
+            status = (
+                "settled" if state == "settled" else "unknown" if state == "unknown" else "leased"
+            )
             self._db.execute(
                 "UPDATE become_transport_outbox SET status=?, updated_at=? WHERE claim_ref=?",
                 (status, stamp, claim_ref),

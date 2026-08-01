@@ -11,10 +11,9 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
-
 
 FROZEN_DIGEST = "7afe6218f2d81c3c603541154b36f46a550db25377f6cc9a94697823ca597189"
 PROVIDER_STATES = frozenset({"reserved", "in_flight", "settled", "unknown"})
@@ -114,10 +113,10 @@ def verify_synthetic_webhook(payload: dict[str, Any], signature: str) -> bool:
 
 
 def _utc_iso(value: datetime | None = None) -> str:
-    current = value or datetime.now(timezone.utc)
+    current = value or datetime.now(UTC)
     if current.tzinfo is None:
         raise ValueError("timezone-aware timestamp required")
-    return current.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return current.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _opaque(value: str, prefix: str) -> None:
@@ -219,9 +218,12 @@ class GateEntryAdapter:
         if payload.get("entry_subject_ref") != binding["entry_subject_ref"]:
             raise ValueError("webhook subject does not match binding")
         payload_sha = hashlib.sha256(_canonical(payload)).hexdigest()
-        intent_ref = "intent_" + hashlib.sha256(
-            (FROZEN_DIGEST + binding["entry_subject_ref"]).encode()
-        ).hexdigest()[:32]
+        intent_ref = (
+            "intent_"
+            + hashlib.sha256((FROZEN_DIGEST + binding["entry_subject_ref"]).encode()).hexdigest()[
+                :32
+            ]
+        )
         stamp = _utc_iso(at)
 
         self._db.execute("BEGIN IMMEDIATE")
@@ -234,7 +236,12 @@ class GateEntryAdapter:
                 if existing_webhook["payload_sha256"] != payload_sha:
                     raise ReplayMutation("mutated signed webhook replay rejected")
                 self._db.execute("COMMIT")
-                return EntryReceipt(webhook_ref, existing_webhook["intent_ref"], False, existing_webhook["provider_state"])
+                return EntryReceipt(
+                    webhook_ref,
+                    existing_webhook["intent_ref"],
+                    False,
+                    existing_webhook["provider_state"],
+                )
             existing_intent = self._db.execute(
                 "SELECT intent_ref FROM become_entry_intent WHERE entry_subject_ref=?",
                 (binding["entry_subject_ref"],),
@@ -268,7 +275,10 @@ class GateEntryAdapter:
             raise BlindRetryForbidden("unknown private-reply outcome requires reconciliation")
         if row["provider_state"] != "reserved":
             raise ValueError("private reply is not reservable")
-        return "reply_claim_" + hashlib.sha256((webhook_ref + row["intent_ref"]).encode()).hexdigest()[:24]
+        return (
+            "reply_claim_"
+            + hashlib.sha256((webhook_ref + row["intent_ref"]).encode()).hexdigest()[:24]
+        )
 
     def record_provider_state(self, webhook_ref: str, state: str) -> None:
         if state not in PROVIDER_STATES:
@@ -296,7 +306,9 @@ class GateEntryAdapter:
         if not consent_receipt_ref:
             raise ConsentRequired("consent receipt required before download claim")
         _opaque(consent_receipt_ref, "consent_receipt_")
-        if not self._db.execute("SELECT 1 FROM become_entry_intent WHERE intent_ref=?", (intent_ref,)).fetchone():
+        if not self._db.execute(
+            "SELECT 1 FROM become_entry_intent WHERE intent_ref=?", (intent_ref,)
+        ).fetchone():
             raise KeyError(intent_ref)
         decision = self._relations.eligibility(consent_receipt_ref, "voice_media_download")
         permitted = decision == "ALLOWED"
@@ -324,7 +336,10 @@ class GateEntryAdapter:
         if not row or row["decision"] != "ALLOWED" or not row["download_permitted"]:
             raise ConsentRequired("download claim fails closed without allowed consent")
         # This is only an opaque local claim; there is intentionally no URL or downloader.
-        return "download_claim_" + hashlib.sha256((request_ref + row["intent_ref"]).encode()).hexdigest()[:24]
+        return (
+            "download_claim_"
+            + hashlib.sha256((request_ref + row["intent_ref"]).encode()).hexdigest()[:24]
+        )
 
     def counts(self) -> dict[str, int]:
         return {
@@ -336,4 +351,3 @@ class GateEntryAdapter:
                 "become_consent_preflight",
             )
         }
-

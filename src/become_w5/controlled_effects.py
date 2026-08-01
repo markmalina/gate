@@ -6,10 +6,9 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 FROZEN_DIGEST = "f47de6ca0a085ccc17c50c269d94b86d009972abaeab6ae9ef1c1d4b306d6419"
 PROVIDER_STATES = frozenset({"reserved", "in_flight", "settled", "unknown"})
@@ -48,7 +47,7 @@ def _sha(value: Any) -> str:
 def _iso(value: datetime) -> str:
     if value.tzinfo is None:
         raise ValueError("timezone-aware timestamp required")
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _opaque(value: str, prefix: str) -> None:
@@ -123,7 +122,15 @@ class ControlledEffectStore:
         self._db.close()
 
     def register_grant(self, grant: dict[str, Any], at: datetime) -> bool:
-        expected_keys = {"grant_ref", "account_ref", "render_digest", "caption_digest", "mode", "operations", "group_ref"}
+        expected_keys = {
+            "grant_ref",
+            "account_ref",
+            "render_digest",
+            "caption_digest",
+            "mode",
+            "operations",
+            "group_ref",
+        }
         if set(grant) != expected_keys or grant["mode"] != "SIMULATED":
             raise ValueError("exact SIMULATED grant required")
         _opaque(grant["grant_ref"], "mode_grant_")
@@ -140,14 +147,29 @@ class ControlledEffectStore:
             "SELECT account_ref, render_digest, caption_digest, mode, operations_json, group_ref FROM become_effect_grant WHERE grant_ref=?",
             (grant["grant_ref"],),
         ).fetchone()
-        expected = (grant["account_ref"], grant["render_digest"], grant["caption_digest"], "SIMULATED", packed, grant["group_ref"])
+        expected = (
+            grant["account_ref"],
+            grant["render_digest"],
+            grant["caption_digest"],
+            "SIMULATED",
+            packed,
+            grant["group_ref"],
+        )
         if existing:
             if tuple(existing) != expected:
                 raise ReplayMutation("mutated grant rejected")
             return False
         self._db.execute(
             "INSERT INTO become_effect_grant VALUES (?, ?, ?, ?, 'SIMULATED', ?, ?, ?)",
-            (grant["grant_ref"], grant["account_ref"], grant["render_digest"], grant["caption_digest"], packed, grant["group_ref"], _iso(at)),
+            (
+                grant["grant_ref"],
+                grant["account_ref"],
+                grant["render_digest"],
+                grant["caption_digest"],
+                packed,
+                grant["group_ref"],
+                _iso(at),
+            ),
         )
         return True
 
@@ -164,18 +186,30 @@ class ControlledEffectStore:
         _opaque(idempotency_key, "idempotency_")
         if operation not in OPERATIONS or not verify_staging_receipt(staging_receipt):
             raise ValueError("valid controlled effect and staging receipt required")
-        if staging_receipt["frozen_digest"] != FROZEN_DIGEST or staging_receipt["mode"] != "SIMULATED":
+        if (
+            staging_receipt["frozen_digest"] != FROZEN_DIGEST
+            or staging_receipt["mode"] != "SIMULATED"
+        ):
             raise ValueError("frozen SIMULATED staging required")
         if staging_receipt["expires_at"] <= _iso(at):
             raise MissingPermission("staging lease expired")
-        grant = self._db.execute("SELECT * FROM become_effect_grant WHERE grant_ref=?", (grant_ref,)).fetchone()
-        required_match = grant and all(
-            grant[field] == staging_receipt[field]
-            for field in ("account_ref", "render_digest", "caption_digest")
-        ) and grant["mode"] == staging_receipt["mode"] and grant_ref == staging_receipt["mode_grant_ref"]
+        grant = self._db.execute(
+            "SELECT * FROM become_effect_grant WHERE grant_ref=?", (grant_ref,)
+        ).fetchone()
+        required_match = (
+            grant
+            and all(
+                grant[field] == staging_receipt[field]
+                for field in ("account_ref", "render_digest", "caption_digest")
+            )
+            and grant["mode"] == staging_receipt["mode"]
+            and grant_ref == staging_receipt["mode_grant_ref"]
+        )
         operations = set(json.loads(grant["operations_json"])) if grant else set()
         if not required_match or operation not in operations:
-            blocker_ref = "blocker_" + hashlib.sha256((idempotency_key + operation).encode()).hexdigest()[:24]
+            blocker_ref = (
+                "blocker_" + hashlib.sha256((idempotency_key + operation).encode()).hexdigest()[:24]
+            )
             self._db.execute(
                 "INSERT OR IGNORE INTO become_effect_blocker VALUES (?, ?, 'missing_exact_permission', ?)",
                 (blocker_ref, operation, _iso(at)),
@@ -183,13 +217,6 @@ class ControlledEffectStore:
             raise MissingPermission(blocker_ref)
         if operation.startswith("group_") and not grant["group_ref"]:
             raise MissingPermission("group_rights_missing")
-        payload_sha = _sha(
-            {
-                "operation": operation,
-                "grant_ref": grant_ref,
-                "staging_receipt_sha256": staging_receipt["staging_receipt_sha256"],
-            }
-        )
         existing = self._db.execute(
             "SELECT effect_ref, operation, grant_ref, staging_receipt_sha256, provider_state FROM become_controlled_effect WHERE idempotency_key=?",
             (idempotency_key,),
@@ -198,10 +225,19 @@ class ControlledEffectStore:
         if existing:
             if tuple(existing)[:4] != expected:
                 raise ReplayMutation("mutated effect replay rejected")
-            return EffectClaim(effect_ref, idempotency_key, operation, existing["provider_state"], False)
+            return EffectClaim(
+                effect_ref, idempotency_key, operation, existing["provider_state"], False
+            )
         self._db.execute(
             "INSERT INTO become_controlled_effect VALUES (?, ?, ?, ?, ?, 'reserved', 0, NULL, ?)",
-            (effect_ref, idempotency_key, operation, grant_ref, staging_receipt["staging_receipt_sha256"], _iso(at)),
+            (
+                effect_ref,
+                idempotency_key,
+                operation,
+                grant_ref,
+                staging_receipt["staging_receipt_sha256"],
+                _iso(at),
+            ),
         )
         return EffectClaim(effect_ref, idempotency_key, operation, "reserved", True)
 
@@ -236,15 +272,21 @@ class ControlledEffectStore:
         )
 
     def retry(self, effect_ref: str) -> None:
-        row = self._db.execute("SELECT provider_state FROM become_controlled_effect WHERE effect_ref=?", (effect_ref,)).fetchone()
+        row = self._db.execute(
+            "SELECT provider_state FROM become_controlled_effect WHERE effect_ref=?", (effect_ref,)
+        ).fetchone()
         if not row:
             raise KeyError(effect_ref)
         if row["provider_state"] in {"in_flight", "settled", "unknown"}:
             raise BlindRetryForbidden(f"cannot blindly retry {row['provider_state']} effect")
 
-    def reconcile(self, effect_ref: str, receipt_ref: str, no_effect_proven: bool, at: datetime) -> None:
+    def reconcile(
+        self, effect_ref: str, receipt_ref: str, no_effect_proven: bool, at: datetime
+    ) -> None:
         _opaque(receipt_ref, "reconciliation_receipt_")
-        row = self._db.execute("SELECT provider_state FROM become_controlled_effect WHERE effect_ref=?", (effect_ref,)).fetchone()
+        row = self._db.execute(
+            "SELECT provider_state FROM become_controlled_effect WHERE effect_ref=?", (effect_ref,)
+        ).fetchone()
         if not row or row["provider_state"] != "unknown":
             raise ValueError("unknown effect required")
         next_state = "reserved" if no_effect_proven else "settled"
@@ -259,8 +301,13 @@ class ControlledEffectStore:
 
     def counts(self) -> dict[str, int]:
         return {
-            "effects": self._db.execute("SELECT count(*) FROM become_controlled_effect").fetchone()[0],
-            "blockers": self._db.execute("SELECT count(*) FROM become_effect_blocker").fetchone()[0],
-            "reconciliation": self._db.execute("SELECT count(*) FROM become_effect_reconciliation").fetchone()[0],
+            "effects": self._db.execute("SELECT count(*) FROM become_controlled_effect").fetchone()[
+                0
+            ],
+            "blockers": self._db.execute("SELECT count(*) FROM become_effect_blocker").fetchone()[
+                0
+            ],
+            "reconciliation": self._db.execute(
+                "SELECT count(*) FROM become_effect_reconciliation"
+            ).fetchone()[0],
         }
-
