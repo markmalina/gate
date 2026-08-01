@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "SIMULATED",
+  "positive": [
+    {"id": "telegram-message-reserved", "receipt_type": "gate.delivery_receipt", "provider": "telegram_bot", "operation": "message", "effect_state": "reserved", "delivery_outcome": "pending", "attempt": 1, "automatic_retry": false},
+    {"id": "telegram-group-preflight", "receipt_type": "gate.delivery_receipt", "provider": "telegram_bot", "operation": "membership_check", "effect_state": "in_flight", "delivery_outcome": "pending", "attempt": 1, "automatic_retry": false},
+    {"id": "meta-private-reply-unavailable", "receipt_type": "gate.provider_capability", "provider": "meta_instagram", "capability": "private_reply", "availability": "UNAVAILABLE", "provider_calls_allowed": false},
+    {"id": "stars-invoice-after-result", "receipt_type": "gate.payment_receipt", "provider": "telegram_stars", "payment_stage": "invoice", "effect_state": "reserved", "payment_outcome": "pending", "result_receipt_ref": "result_synthetic_001", "automatic_retry": false},
+    {"id": "stars-declined-keeps-proof", "receipt_type": "gate.payment_receipt", "provider": "telegram_stars", "payment_stage": "payment", "effect_state": "settled", "payment_outcome": "declined", "result_receipt_ref": "result_synthetic_001", "automatic_retry": false},
+    {"id": "delivery-unknown-reconcile", "receipt_type": "gate.delivery_receipt", "provider": "telegram_business", "operation": "message", "effect_state": "unknown", "delivery_outcome": "pending", "attempt": 1, "automatic_retry": false, "reconciliation_required": true}
+  ],
+  "fail_closed": [
+    {"id": "reject-live-in-w0", "reason": "mode_not_simulated", "candidate": {"mode": "LIVE"}},
+    {"id": "reject-media-without-consent", "reason": "consent_receipt_missing", "candidate": {"receipt_type": "gate.delivery_receipt", "media_ref": "payload_synthetic"}},
+    {"id": "reject-payment-before-result", "reason": "result_receipt_missing", "candidate": {"receipt_type": "gate.payment_receipt", "effect_state": "reserved", "payment_outcome": "pending"}},
+    {"id": "reject-blind-retry", "reason": "automatic_retry_forbidden", "candidate": {"effect_state": "unknown", "automatic_retry": true}},
+    {"id": "reject-outcome-as-effect-state", "reason": "effect_state_outcome_mixed", "candidate": {"receipt_type": "gate.payment_receipt", "effect_state": "declined"}}
+  ]
+}

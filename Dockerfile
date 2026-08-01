@@ -2,13 +2,15 @@ FROM python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app:/app/src
 
 WORKDIR /app
 
 COPY pyproject.toml alembic.ini ./
 COPY constraints ./constraints
 COPY app ./app
+COPY src ./src
 COPY alembic ./alembic
 COPY agent_bundles ./agent_bundles
 

@@ -1,0 +1,42 @@
+{
+  "schema": "gate.referral-fixture@8",
+  "frozen_digest": "099f8b5bca93a3558ce9fa9b1ec4019304b126810c06b65384e3e71cd09c24e5",
+  "reserve": {
+    "delivery_ref": "referral_delivery_fixture",
+    "idempotency_key": "idempotency_fixture",
+    "attribution": {
+      "schema": "relations.referral-attribution-projection@1.0.0",
+      "referral_edge_ref": "referral_edge_fixture",
+      "edge_revision": 1,
+      "edge_state": "ACTIVE",
+      "referrer_person_ref": "person_referrer_fixture",
+      "candidate_person_ref": "person_candidate_fixture",
+      "supersedes_ref": null,
+      "projection_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contract_digest": "099f8b5bca93a3558ce9fa9b1ec4019304b126810c06b65384e3e71cd09c24e5",
+      "mode": "SIMULATED"
+    },
+    "link": {
+      "schema": "become.next-cycle-link-fixture@1.0.0",
+      "link_ref": "next_cycle_link_fixture",
+      "referral_edge_ref": "referral_edge_fixture",
+      "referrer_person_ref": "person_referrer_fixture",
+      "candidate_person_ref": "person_candidate_fixture",
+      "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expires_at": "2026-08-02T04:40:00Z",
+      "signature_receipt_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "contract_digest": "099f8b5bca93a3558ce9fa9b1ec4019304b126810c06b65384e3e71cd09c24e5",
+      "mode": "SIMULATED"
+    },
+    "contract_digest": "099f8b5bca93a3558ce9fa9b1ec4019304b126810c06b65384e3e71cd09c24e5",
+    "mode": "SIMULATED"
+  },
+  "acceptance_allowlist": [
+    "schema", "delivery_ref", "referral_edge_ref", "edge_revision",
+    "referrer_person_ref", "candidate_person_ref", "attribution_projection_sha256",
+    "link_payload_sha256", "effect_state", "delivery_outcome", "status",
+    "status_revision", "reconciliation_required", "status_receipt_sha256",
+    "contract_digest", "mode"
+  ],
+  "external_effects": 0
+}

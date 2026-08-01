@@ -1,0 +1,31 @@
+{
+  "schema": "gate.become.learner-delivery-fixtures@6",
+  "mode": "SIMULATED",
+  "frozen_digest": "418bb1d0e49abc1239addd0bc03502c42f6c2d5524c852b912221f3763b15487",
+  "exercise_delivery": {
+    "delivery_ref": "delivery_exercise_fixture",
+    "idempotency_key": "idempotency_delivery_exercise_fixture",
+    "operation": "exercise_delivery",
+    "learner_ref": "learner_fixture",
+    "signed_link_sha256": "c9585e65bc44b7a34f1bea61016a5d1a469fca82da849622c16c3ca04ffc0eab",
+    "exercise_version_ref": "exercise_version_fake_mayaki_fixture",
+    "session_ref": "exercise_session_fake_mayaki_fixture",
+    "payload_ref": "exercise_delivery_payload_fixture",
+    "mode": "SIMULATED"
+  },
+  "result_delivery": {
+    "delivery_ref": "delivery_result_fixture",
+    "idempotency_key": "idempotency_delivery_result_fixture",
+    "operation": "result_receipt_delivery",
+    "learner_ref": "learner_fixture",
+    "signed_link_sha256": "c9585e65bc44b7a34f1bea61016a5d1a469fca82da849622c16c3ca04ffc0eab",
+    "exercise_version_ref": "exercise_version_fake_mayaki_fixture",
+    "session_ref": "exercise_session_fake_mayaki_fixture",
+    "payload_ref": "result_receipt_fake_mayaki_fixture",
+    "mode": "SIMULATED"
+  },
+  "expected_exercise_delivery_sha256": "f284172f6f4c232dda717c59b98cb838c5ec035ea2f1a560bce0ae44a115cd7c",
+  "provider_mock": true,
+  "external_effects": 0,
+  "invoice_created": false
+}

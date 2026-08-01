@@ -32,6 +32,7 @@ gate-contact-sync = "app.contact_sync.cli:main"
 gate-personal-telegram-enroll = "app.personal_telegram.cli:main"
 gate-reply-send-recovery = "app.worker.reply_send_recovery:main"
 gate-telegram-worker = "app.worker.telegram_processing:main"
+gate-become-preflight = "app.become.runtime_preflight:main"
 
 [tool.ruff]
 target-version = "py312"
@@ -47,6 +48,13 @@ select = ["E", "F", "I", "UP", "B"]
 "app/api/sprint11b_routes.py" = ["E501", "I001"]
 "tests/test_sprint11b_inline_actions.py" = ["E501", "I001"]
 "alembic/versions/0005_multi_account_routing.py" = ["E501"]
+"src/become_w1/transport_store.py" = ["E501"]
+"src/become_w2/entry_adapter.py" = ["E501"]
+"src/become_w3/voice_text_intake.py" = ["E501"]
+"src/become_w5/controlled_effects.py" = ["E501"]
+"src/become_w6/learner_delivery.py" = ["E501"]
+"src/become_w7/stars_test_order.py" = ["E501"]
+"src/become_w8/referral_delivery.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

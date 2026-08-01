@@ -1,0 +1,22 @@
+{
+  "schema": "gate.become.intake-fixtures@3",
+  "mode": "SIMULATED",
+  "frozen_digest": "af767a200a3dc20396814c1c36fafacd9ae871e4273bf0b04b5fe53056b502f6",
+  "text": {
+    "intake_ref": "intake_text_fixture",
+    "quest_ref": "quest_fixture",
+    "synthetic_text": "SYNTHETIC: profile interview answer"
+  },
+  "voice": {
+    "intake_ref": "intake_voice_fixture",
+    "quest_ref": "quest_fixture",
+    "telegram_file_ref": "telegram_file_fixture_opaque",
+    "download_claim_ref": "download_claim_fixture",
+    "consent_receipt_ref": "consent_receipt_allowed_fixture"
+  },
+  "quarantine": "pending_until_explicit_release",
+  "transcriber": "TAKE",
+  "media_bytes": false,
+  "external_effects": 0
+}
+

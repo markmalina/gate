@@ -1,0 +1,30 @@
+{
+  "schema": "gate.become.controlled-effects-fixtures@5",
+  "mode": "SIMULATED",
+  "frozen_digest": "f47de6ca0a085ccc17c50c269d94b86d009972abaeab6ae9ef1c1d4b306d6419",
+  "staging_receipt": {
+    "schema": "take.staging-receipt@1",
+    "mode": "SIMULATED",
+    "frozen_digest": "f47de6ca0a085ccc17c50c269d94b86d009972abaeab6ae9ef1c1d4b306d6419",
+    "lease_ref": "staging_lease_fixture",
+    "staging_ref": "staging_fixture",
+    "account_ref": "account_instagram_fixture",
+    "render_digest": "6c9674075940f16584ad214ceafb0f08fdbe32d204a19a8f4a910957e5f11d7a",
+    "caption_digest": "17d4bcbb7a3862bb12a84db08271db2b59b656df3e1030465f7cd7070cfd9dc2",
+    "approval_package_ref": "render_approval_package_d191d58b9789895ef571dbbde929dce3",
+    "mode_grant_ref": "mode_grant_fixture",
+    "expires_at": "2026-08-01T04:03:00Z",
+    "staging_receipt_sha256": "1af9d4760a5128267e83e6095bb2a5fca7f1aba664e66303ae75909cfbb41cd6"
+  },
+  "grant": {
+    "grant_ref": "mode_grant_fixture",
+    "account_ref": "account_instagram_fixture",
+    "render_digest": "6c9674075940f16584ad214ceafb0f08fdbe32d204a19a8f4a910957e5f11d7a",
+    "caption_digest": "17d4bcbb7a3862bb12a84db08271db2b59b656df3e1030465f7cd7070cfd9dc2",
+    "mode": "SIMULATED",
+    "operations": ["instagram_publish", "group_invite", "group_welcome", "group_pin"],
+    "group_ref": "group_fixture"
+  },
+  "provider_mock": true,
+  "external_effects": 0
+}

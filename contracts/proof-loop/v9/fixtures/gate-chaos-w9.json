@@ -1,0 +1,1 @@
+{"schema":"gate.chaos@9","mode":"SIMULATED_TEST","frozen_digest":"eb934dbafad99831091d9170f46da78c33b25ab00011bf6fd49bab8210a0aff6","cases":["duplicate_webhook","provider_unknown","lost_test_payment","deploy_parity"],"blind_retry":false,"live":false,"effects":0}
