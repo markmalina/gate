@@ -57,7 +57,13 @@ class _DeliverySession:
                 return _Result(None)
             return _Result((self.ledger.grant, self.ledger.attempt))
         if self.execute_count == 3:
-            return _Result((self.fixtures.installation, self.fixtures.dialog))
+            return _Result(
+                (
+                    self.fixtures.installation,
+                    self.fixtures.dialog,
+                    self.fixtures.connector,
+                )
+            )
         raise AssertionError("unexpected database query")
 
     def add(self, value: Any) -> None:
@@ -106,7 +112,13 @@ class _PresenceSession:
         self.commits = 0
 
     async def execute(self, _statement: object) -> _Result:
-        return _Result((self.fixtures.installation, self.fixtures.dialog))
+        return _Result(
+            (
+                self.fixtures.installation,
+                self.fixtures.dialog,
+                self.fixtures.connector,
+            )
+        )
 
     async def flush(self) -> None:
         return None
@@ -131,6 +143,7 @@ class _HttpClient:
         self.ledger = ledger
         self.member_count = member_count
         self.send_count = 0
+        self.endpoints: list[str] = []
 
     async def post(
         self,
@@ -139,6 +152,7 @@ class _HttpClient:
         json: dict[str, object],
         timeout: float,
     ) -> _Response:
+        self.endpoints.append(endpoint)
         assert json["chat_id"] == "-100"
         assert timeout == 10.0
         if endpoint.endswith("/getChatMemberCount"):
@@ -164,6 +178,22 @@ def _settings() -> SimpleNamespace:
     )
 
 
+def _become_settings(
+    *,
+    installation_key: str = "",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        telegram_become_bot_token=SimpleNamespace(
+            get_secret_value=lambda: "become-test-token"
+        ),
+        gate_become_connector_enabled=True,
+        gate_become_canary_enabled=True,
+        gate_become_privacy_mode_confirmed=True,
+        gate_become_group_capacity=1,
+        gate_become_installation_key=installation_key,
+    )
+
+
 def _fixtures() -> SimpleNamespace:
     candidate = "Альфа на связи."
     digest = sha256(candidate.encode()).hexdigest()
@@ -182,6 +212,7 @@ def _fixtures() -> SimpleNamespace:
             updated_at=None,
         ),
         dialog=SimpleNamespace(provider_dialog_id="-100"),
+        connector=SimpleNamespace(connector_key="telegram_alpha_group"),
         turn=SimpleNamespace(
             id=turn_id,
             trigger_message_id=trigger_id,
@@ -307,6 +338,61 @@ async def test_non_active_installation_blocks_before_provider(
     assert ledger.grant is None
     assert ledger.attempt is None
     assert http_client.send_count == 0
+
+
+@pytest.mark.anyio
+async def test_become_presence_uses_only_isolated_token_while_paused() -> None:
+    fixtures = _fixtures()
+    fixtures.installation.dialog_label = "BECOME — Лёша · пилот"
+    fixtures.installation.state = "paused"
+    fixtures.connector.connector_key = "telegram_become_group"
+    ledger = _Ledger()
+    session = _PresenceSession(fixtures=fixtures)
+    http_client = _HttpClient(ledger=ledger, member_count=2)
+
+    presence = await observe_owner_test_presence(
+        session=session,  # type: ignore[arg-type]
+        settings=_become_settings(),  # type: ignore[arg-type]
+        http_client=http_client,  # type: ignore[arg-type]
+        workspace_key="mark-personal",
+        installation_ref="installation-test",
+    )
+
+    assert presence.state.value == "owner_only"
+    assert fixtures.installation.state == "paused"
+    assert session.commits == 0
+    assert len(http_client.endpoints) == 1
+    assert "/botbecome-test-token/getChatMemberCount" in http_client.endpoints[0]
+    assert "test-token" not in http_client.endpoints[0].replace(
+        "become-test-token",
+        "",
+    )
+
+
+@pytest.mark.anyio
+async def test_become_presence_rejects_a_different_configured_pin() -> None:
+    fixtures = _fixtures()
+    fixtures.installation.dialog_label = "BECOME — Лёша · пилот"
+    fixtures.installation.state = "paused"
+    fixtures.connector.connector_key = "telegram_become_group"
+    ledger = _Ledger()
+    http_client = _HttpClient(ledger=ledger)
+
+    with pytest.raises(
+        AlphaOwnerTestRuntimeError,
+        match="become_owner_test_installation_not_pinned",
+    ):
+        await observe_owner_test_presence(
+            session=_PresenceSession(fixtures=fixtures),  # type: ignore[arg-type]
+            settings=_become_settings(
+                installation_key="installation-other",
+            ),  # type: ignore[arg-type]
+            http_client=http_client,  # type: ignore[arg-type]
+            workspace_key="mark-personal",
+            installation_ref="installation-test",
+        )
+
+    assert http_client.endpoints == []
 
 
 @pytest.mark.anyio
