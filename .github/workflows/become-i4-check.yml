@@ -56,5 +56,13 @@ jobs:
             --env BECOME_IC9_DIGEST=e8b30118dbd754a841e575b0bc3cb8681461381b1b138d2fa1b3a75c28e2a5e7 \
             --env BECOME_SOURCE_SHA=${{ github.event.pull_request.head.sha }} \
             gate-i4:test
-          curl --fail --retry 20 --retry-delay 1 --retry-connrefused \
-            http://127.0.0.1:18080/healthz | grep --fixed-strings '"service":"gate"'
+          for attempt in $(seq 1 20); do
+            if response=$(curl --fail --silent --show-error \
+              http://127.0.0.1:18080/healthz 2>/dev/null); then
+              echo "$response" | grep --fixed-strings '"service":"gate"'
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs gate-i4-test
+          exit 1
