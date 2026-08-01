@@ -32,6 +32,7 @@ gate-contact-sync = "app.contact_sync.cli:main"
 gate-personal-telegram-enroll = "app.personal_telegram.cli:main"
 gate-reply-send-recovery = "app.worker.reply_send_recovery:main"
 gate-telegram-worker = "app.worker.telegram_processing:main"
+gate-become-preflight = "app.become.runtime_preflight:main"
 
 [tool.ruff]
 target-version = "py312"
