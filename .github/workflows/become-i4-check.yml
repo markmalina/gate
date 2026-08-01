@@ -6,6 +6,9 @@ on:
       - "app/become_i4_service.py"
       - "tests/test_become_i4_service.py"
       - "contracts/proof-loop/i4/fixtures/gate-service-request.json"
+      - "railway.i4.toml"
+      - "Dockerfile.i4"
+      - "docs/evidence/BECOME-I4-GATE-STAGING.md"
       - ".github/workflows/become-i4-check.yml"
 
 permissions:
@@ -30,3 +33,28 @@ jobs:
         run: python -m unittest tests/test_become_i4_service.py -v
       - name: Validate synthetic fixture JSON
         run: python -m json.tool contracts/proof-loop/i4/fixtures/gate-service-request.json >/dev/null
+      - name: Validate dedicated Railway config and image isolation
+        run: python -m unittest tests.test_become_i4_service.TestGateI4Service.test_dedicated_railway_image_cannot_start_production_app -v
+      - name: Build and probe the isolated I4 image
+        run: |
+          docker build --file Dockerfile.i4 --tag gate-i4:test .
+          test "$(docker image inspect gate-i4:test --format '{{json .Config.Cmd}}')" = '["python","-m","app.become_i4_service"]'
+          trap 'docker rm --force gate-i4-test >/dev/null 2>&1 || true' EXIT
+          docker run --detach --name gate-i4-test \
+            --publish 127.0.0.1:18080:8000 \
+            --env PORT=8000 \
+            --env HOST=0.0.0.0 \
+            --env BECOME_INTERNAL_ONLY=true \
+            --env BECOME_RUNTIME_MODE=SIMULATED_TEST \
+            --env BECOME_LIVE_ENABLED=false \
+            --env BECOME_PROVIDER_SEND_ENABLED=false \
+            --env BECOME_PAYMENT_ENABLED=false \
+            --env BECOME_PUBLICATION_ENABLED=false \
+            --env BECOME_MEDIA_DOWNLOAD_ENABLED=false \
+            --env BECOME_EXTERNAL_EFFECTS_ENABLED=false \
+            --env BECOME_I4_CONTRACT_DIGEST=91c3a210709c63738358bd0c512d11a9668acabd0997afcd68ba240bed38f573 \
+            --env BECOME_IC9_DIGEST=e8b30118dbd754a841e575b0bc3cb8681461381b1b138d2fa1b3a75c28e2a5e7 \
+            --env BECOME_SOURCE_SHA=${{ github.event.pull_request.head.sha }} \
+            gate-i4:test
+          curl --fail --retry 20 --retry-delay 1 --retry-connrefused \
+            http://127.0.0.1:18080/healthz | grep --fixed-strings '"service":"gate"'
