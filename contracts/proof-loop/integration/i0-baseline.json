@@ -1,0 +1,20 @@
+{
+  "$schema": "become.integration-baseline@1",
+  "repository": "AlphaCenter/gate",
+  "phase": "I0",
+  "mode": "SIMULATED",
+  "base_main_sha": "5acc305ca268bd5a089c39d7093e3b9da62b32b3",
+  "prior_ic9_head_sha": "dc6a7a4dfb08bb8a35c6e7746853bd55a746ac40",
+  "prior_ic9_digest": "8720bdcea0239760da2b34d11378a5cacf691a9dca72a2aebac0967bf8eaf81f",
+  "runtime_connected": false,
+  "purpose": "aggregate-pr-main-base-ci-and-integration-audit",
+  "safety": {
+    "merge": 0,
+    "deploy": 0,
+    "migration_apply": 0,
+    "provider_calls": 0,
+    "payments": 0,
+    "sends": 0,
+    "publications": 0
+  }
+}
