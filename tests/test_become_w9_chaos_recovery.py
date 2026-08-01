@@ -7,9 +7,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from become_w9.chaos_recovery import (  # noqa: E402
+    FROZEN,
     BlindRetry,
     ChaosStore,
-    FROZEN,
     Mutation,
     build_reconciliation_receipt,
     sha,
@@ -26,7 +26,11 @@ class TestChaos(unittest.TestCase):
         self.store.close()
         self.tempdir.cleanup()
 
-    def _unknown(self, effect_ref: str = "chaos_effect_fixture", event_ref: str = "event_fixture") -> dict[str, str]:
+    def _unknown(
+        self,
+        effect_ref: str = "chaos_effect_fixture",
+        event_ref: str = "event_fixture",
+    ) -> dict[str, str]:
         payload = {
             "mode": "SIMULATED",
             "status": "unknown",
@@ -192,7 +196,9 @@ class TestChaos(unittest.TestCase):
         receipt = self._receipt(payload)
         self.assertEqual(FROZEN, receipt["frozen_digest"])
         receipt["source_event_digest"] = "f" * 64
-        receipt["receipt_digest"] = sha({key: value for key, value in receipt.items() if key != "receipt_digest"})
+        receipt["receipt_digest"] = sha(
+            {key: value for key, value in receipt.items() if key != "receipt_digest"}
+        )
         with self.assertRaisesRegex(ValueError, "source evidence mismatch"):
             self.store.reconcile(receipt)
 
