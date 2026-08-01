@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import threading
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,10 +24,63 @@ ENV = {
     "BECOME_MEDIA_DOWNLOAD_ENABLED": "false", "BECOME_EXTERNAL_EFFECTS_ENABLED": "false",
     "BECOME_I4_CONTRACT_DIGEST": CONTRACT_DIGEST, "BECOME_IC9_DIGEST": IC9_DIGEST,
     "BECOME_SOURCE_SHA": SOURCE_SHA,
+    "HOST": "0.0.0.0",
 }
 
 
 class TestGateI4Service(unittest.TestCase):
+    def test_dedicated_railway_image_cannot_start_production_app(self):
+        staging = tomllib.loads((ROOT / "railway.i4.toml").read_text())
+        production = tomllib.loads((ROOT / "railway.toml").read_text())
+        staging_image = (ROOT / "Dockerfile.i4").read_text()
+        production_image = (ROOT / "Dockerfile").read_text()
+
+        self.assertEqual(staging["build"], {
+            "builder": "DOCKERFILE", "dockerfilePath": "Dockerfile.i4"
+        })
+        self.assertEqual(staging["deploy"], {
+            "startCommand": "python -m app.become_i4_service",
+            "healthcheckPath": "/healthz",
+            "healthcheckTimeout": 30,
+            "restartPolicyType": "ON_FAILURE",
+            "restartPolicyMaxRetries": 3,
+        })
+        self.assertNotIn("preDeployCommand", staging["deploy"])
+        self.assertEqual(production["deploy"]["preDeployCommand"], "alembic upgrade head")
+        self.assertIn("uvicorn app.main:app", production["deploy"]["startCommand"])
+        self.assertIn('CMD ["python", "-m", "app.become_i4_service"]', staging_image)
+        self.assertIn("COPY app/become_i4_service.py", staging_image)
+        for forbidden in ("app.main", "alembic", "DATABASE_URL", "pip install"):
+            self.assertNotIn(forbidden, staging_image)
+        self.assertIn('CMD ["uvicorn", "app.main:app"', production_image)
+
+    def test_provider_disabled_environment_contract_is_documented_exactly(self):
+        expected = {
+            "BECOME_INTERNAL_ONLY": "true",
+            "BECOME_RUNTIME_MODE": "SIMULATED_TEST",
+            "BECOME_LIVE_ENABLED": "false",
+            "BECOME_PROVIDER_SEND_ENABLED": "false",
+            "BECOME_PAYMENT_ENABLED": "false",
+            "BECOME_PUBLICATION_ENABLED": "false",
+            "BECOME_MEDIA_DOWNLOAD_ENABLED": "false",
+            "BECOME_EXTERNAL_EFFECTS_ENABLED": "false",
+            "BECOME_I4_CONTRACT_DIGEST": CONTRACT_DIGEST,
+            "BECOME_IC9_DIGEST": IC9_DIGEST,
+            "BECOME_SOURCE_SHA": SOURCE_SHA,
+            "HOST": "0.0.0.0",
+        }
+        self.assertEqual(ENV, expected)
+        evidence = (ROOT / "docs/evidence/BECOME-I4-GATE-STAGING.md").read_text()
+        for key, value in expected.items():
+            documented = (
+                f"{key}=<exact-deployed-head-sha>"
+                if key == "BECOME_SOURCE_SHA"
+                else f"{key}={value}"
+            )
+            self.assertIn(documented, evidence)
+        self.assertIn("PORT=<Railway-injected>", evidence)
+        self.assertIn("No `DATABASE_URL` is required or consumed.", evidence)
+
     def test_common_request_and_response_contract(self):
         receipt = build_receipt(REQUEST, source_sha=SOURCE_SHA)
         self.assertEqual(set(receipt), {"schema", "service", "source_sha", "contract_digest",
