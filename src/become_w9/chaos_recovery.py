@@ -129,7 +129,9 @@ class ReconciliationReceipt:
             reconciliation_ref=_require_ref(value["reconciliation_ref"], "reconciliation_"),
             effect_ref=_require_ref(value["effect_ref"], "chaos_effect_"),
             source_event_ref=_require_ref(value["source_event_ref"], "event_"),
-            source_event_digest=_require_digest(value["source_event_digest"], "source_event_digest"),
+            source_event_digest=_require_digest(
+                value["source_event_digest"], "source_event_digest"
+            ),
             evidence_digest=_require_digest(value["evidence_digest"], "evidence_digest"),
             mode=mode,
             outcome=outcome,
@@ -224,7 +226,10 @@ class ChaosStore:
         self.db.execute("BEGIN IMMEDIATE")
         try:
             existing = self.db.execute(
-                "SELECT effect_ref,payload_sha,mode,status,receipt_ref FROM event WHERE event_ref=?",
+                """
+                SELECT effect_ref,payload_sha,mode,status,receipt_ref
+                FROM event WHERE event_ref=?
+                """,
                 (event_ref,),
             ).fetchone()
             expected = (effect_ref, payload_digest, mode.value, status.value, receipt_ref)
@@ -358,5 +363,9 @@ class ChaosStore:
             self.db.execute("ROLLBACK")
             raise
 
-    def deploy_parity(self, test_config: Mapping[str, object], deploy_config: Mapping[str, object]) -> bool:
+    def deploy_parity(
+        self,
+        test_config: Mapping[str, object],
+        deploy_config: Mapping[str, object],
+    ) -> bool:
         return sha(dict(test_config)) == sha(dict(deploy_config))
