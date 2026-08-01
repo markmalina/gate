@@ -42,6 +42,9 @@ from app.services.telegram_alpha_webhook import (
 from app.services.telegram_beta_webhook import (
     reconcile_beta_telegram_webhook_with_retries,
 )
+from app.services.telegram_become_webhook import (
+    reconcile_become_telegram_webhook_with_retries,
+)
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
@@ -58,6 +61,7 @@ async def _reconcile_all_telegram_webhooks(
         reconcile_telegram_webhook_with_retries(settings, http_client),
         reconcile_alpha_telegram_webhook_with_retries(settings, http_client),
         reconcile_beta_telegram_webhook_with_retries(settings, http_client),
+        reconcile_become_telegram_webhook_with_retries(settings, http_client),
     )
 
 
