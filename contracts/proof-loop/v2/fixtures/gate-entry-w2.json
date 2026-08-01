@@ -1,0 +1,39 @@
+{
+  "schema": "gate.become.entry-fixtures@2",
+  "mode": "SIMULATED",
+  "frozen_digest": "7afe6218f2d81c3c603541154b36f46a550db25377f6cc9a94697823ca597189",
+  "signature_algorithm": "fixture-sha256-v1",
+  "entries": [
+    {
+      "webhook_ref": "webhook_become_bot_fixture",
+      "channel": "become_bot",
+      "binding_ref": "binding_become_fixture",
+      "payload": {
+        "mode": "SIMULATED",
+        "entry_subject_ref": "entry_subject_become_fixture",
+        "profile_link_ref": "profile_link_become_fixture",
+        "touchpoint_ref": "touchpoint_bot_fixture"
+      },
+      "signature": "f602a6cc8cc18f7cfe5adc64d78be80c3bfdb21e72c33ddf68a5ab33157dce26"
+    },
+    {
+      "webhook_ref": "webhook_instagram_fixture",
+      "channel": "instagram_private_reply",
+      "binding_ref": "binding_become_fixture",
+      "payload": {
+        "mode": "SIMULATED",
+        "entry_subject_ref": "entry_subject_become_fixture",
+        "profile_link_ref": "profile_link_become_fixture",
+        "touchpoint_ref": "touchpoint_instagram_fixture"
+      },
+      "signature": "3aac545218fd5d686342fb1723fc74fb61b13b0397bf2e7073cec6953733bb07"
+    }
+  ],
+  "consent": {
+    "purpose": "voice_media_download",
+    "allowed": "consent_receipt_allowed_fixture",
+    "denied": "consent_receipt_denied_fixture",
+    "missing_result": "no_download_claim"
+  },
+  "external_effects": 0
+}
