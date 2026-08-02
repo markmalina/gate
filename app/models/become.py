@@ -736,20 +736,36 @@ class BecomeVoiceChainSlotModel(Base):
             "("
             "state IN ('blocked', 'ready') "
             "AND request_digest IS NULL "
+            "AND request_payload IS NULL "
             "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND source_sha IS NULL "
             "AND terminal_at IS NULL"
             ") OR ("
             "state = 'requested' "
             "AND char_length(request_digest) = 64 "
+            "AND request_payload IS NOT NULL "
             "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND char_length(source_sha) = 40 "
             "AND terminal_at IS NULL"
             ") OR ("
             "state IN ('completed', 'failed', 'unknown') "
             "AND char_length(request_digest) = 64 "
+            "AND request_payload IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
+            "AND receipt_payload IS NOT NULL "
+            "AND char_length(source_sha) = 40 "
             "AND terminal_at IS NOT NULL"
             ")",
             name="ck_become_voice_chain_slot_outcome",
+        ),
+        CheckConstraint(
+            "(stage = 'take' AND state NOT IN ('blocked', 'ready') "
+            "AND char_length(mapping_digest) = 64) OR "
+            "((stage != 'take' OR state IN ('blocked', 'ready')) "
+            "AND mapping_digest IS NULL)",
+            name="ck_become_voice_chain_take_mapping",
         ),
         Index(
             "ix_become_voice_chain_workspace_state",
@@ -780,7 +796,23 @@ class BecomeVoiceChainSlotModel(Base):
         String(64),
         nullable=True,
     )
+    request_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
     receipt_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    receipt_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    source_sha: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+    mapping_digest: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
     )
