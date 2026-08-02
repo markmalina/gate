@@ -143,6 +143,9 @@ from app.infrastructure.become_controlled_intake import (
     SessionFactoryBecomeRegistrationReplayer,
     TelegramBecomeOwnerPresence,
 )
+from app.infrastructure.become_i4_execution import (
+    SessionFactoryBecomeI4Executor,
+)
 from app.infrastructure.become_media_intake import (
     SessionFactoryBecomeMediaRetention,
     SessionFactoryBecomeMediaStore,
@@ -1358,6 +1361,43 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 ),
                                 transcription_result.disposition,
                                 transcription_result.reconciliation_required,
+                            )
+                    try:
+                        chain_result = await SessionFactoryBecomeI4Executor(
+                            sessions,
+                            http_client=http_client,
+                            enabled=(
+                                settings.gate_become_i4_chain_execution_enabled
+                            ),
+                        ).run_once(
+                            workspace_key=settings.gate_workspace_id,
+                            now=datetime.now(UTC),
+                        )
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME I4 chain blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "BECOME I4 chain deferred: error_type=%s",
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if chain_result.disposition != "disabled":
+                            logger.info(
+                                (
+                                    "BECOME I4 chain state: disposition=%s "
+                                    "stage=%s attempted=%s reconciliation=%s"
+                                ),
+                                chain_result.disposition,
+                                (
+                                    chain_result.stage.value
+                                    if chain_result.stage is not None
+                                    else "none"
+                                ),
+                                chain_result.attempted,
+                                chain_result.reconciliation_required,
                             )
                     try:
                         prompt_result = await (

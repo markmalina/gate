@@ -317,6 +317,9 @@ async def mcp_endpoint(
                     transcription_api_key_configured=bool(
                         settings.openai_api_key.get_secret_value()
                     ),
+                    chain_execution_enabled=(
+                        settings.gate_become_i4_chain_execution_enabled
+                    ),
                     now=datetime.now(UTC),
                 )
             )

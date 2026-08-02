@@ -164,6 +164,10 @@ class Settings(BaseSettings):
         le=1,
         validation_alias="GATE_BECOME_GROUP_CAPACITY",
     )
+    gate_become_i4_chain_execution_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_I4_CHAIN_EXECUTION_ENABLED",
+    )
     gate_become_voice_transcription_enabled: bool = Field(
         default=False,
         validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_ENABLED",
