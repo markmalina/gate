@@ -119,6 +119,7 @@ from app.infrastructure.alpha_shadow_worker import (
 )
 from app.infrastructure.become_controlled_intake import (
     SessionFactoryBecomeControlledIntakeStore,
+    SessionFactoryBecomeRegistrationReplayer,
     TelegramBecomeOwnerPresence,
 )
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
@@ -886,6 +887,19 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    if (
+        settings.gate_become_connector_enabled
+        and settings.gate_become_canary_enabled
+        and settings.gate_become_privacy_mode_confirmed
+        and settings.gate_become_group_capacity == 1
+    ):
+        recovered_registration = await SessionFactoryBecomeRegistrationReplayer(
+            sessions
+        ).requeue_latest(now=datetime.now(UTC))
+        if recovered_registration:
+            logger.info(
+                "Requeued one durable BECOME registration for controlled intake"
+            )
     if settings.gate_alpha_membership_replay_limit:
         if (
             not settings.gate_alpha_connector_enabled
