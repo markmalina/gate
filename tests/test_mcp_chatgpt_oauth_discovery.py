@@ -297,6 +297,26 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             }
         )
 
+    async def become_intake_status(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        return {
+            "schema": "gate.become-controlled-intake@1",
+            "receipt_count": 0,
+            "registration_confirmed_count": 0,
+            "owner_only_count": 0,
+            "registration_ready": False,
+            "external_effects": 0,
+            "provider_calls": 0,
+            "messages_or_publications": 0,
+            "media_bytes": 0,
+            "real_payments": 0,
+            "private_content_exposed": False,
+            "provider_identifiers_exposed": False,
+            "telegram_identifiers_exposed": False,
+        }
+
     app.dependency_overrides[get_db_session] = override_session
     monkeypatch.setattr("app.api.mcp_routes.authenticate_mcp_oauth", authenticate)
     monkeypatch.setattr(
@@ -306,6 +326,10 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     monkeypatch.setattr(
         "app.api.mcp_routes.telegram_business_text_parity_status",
         parity_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.become_controlled_intake_status",
+        become_intake_status,
     )
     response = await _post(
         {
