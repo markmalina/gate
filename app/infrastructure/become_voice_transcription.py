@@ -6,7 +6,6 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta
-from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
