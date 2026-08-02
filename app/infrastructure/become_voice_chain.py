@@ -169,6 +169,46 @@ class SessionFactoryBecomeVoiceChainStore:
                 duplicate=duplicate,
             )
 
+    async def reconcile_one(
+        self,
+        *,
+        workspace_key: str,
+        prepared_at: datetime,
+    ) -> PreparedBecomeVoiceCorrelation | None:
+        """Materialize one archived voice missed before this projector existed."""
+
+        async with self._sessions() as session:
+            intake_key = await session.scalar(
+                select(BecomeMediaIntakeModel.intake_key)
+                .join(
+                    Workspace,
+                    Workspace.id == BecomeMediaIntakeModel.workspace_id,
+                )
+                .outerjoin(
+                    BecomeVoiceCorrelationModel,
+                    BecomeVoiceCorrelationModel.media_intake_id
+                    == BecomeMediaIntakeModel.id,
+                )
+                .where(
+                    Workspace.key == workspace_key,
+                    Workspace.is_active.is_(True),
+                    BecomeMediaIntakeModel.kind == "voice",
+                    BecomeMediaIntakeModel.status.in_(
+                        ("archived", "raw_purged")
+                    ),
+                    BecomeVoiceCorrelationModel.id.is_(None),
+                )
+                .order_by(BecomeMediaIntakeModel.received_at)
+                .limit(1)
+            )
+        if intake_key is None:
+            return None
+        return await self.prepare(
+            workspace_key=workspace_key,
+            intake_key=str(intake_key),
+            prepared_at=prepared_at,
+        )
+
     async def confirm_transcript(
         self,
         *,
