@@ -36,6 +36,9 @@ from app.application.become_media_intake import (
     ProcessBecomeMediaService,
     is_become_media_update,
 )
+from app.application.become_media_prompt import (
+    DeliverBecomeMediaPromptService,
+)
 from app.application.canonical_messaging import (
     CanonicalIngressStore,
     ConnectorKind,
@@ -141,6 +144,10 @@ from app.infrastructure.become_media_intake import (
     SessionFactoryBecomeMediaRetention,
     SessionFactoryBecomeMediaStore,
     TelegramBecomeMediaDownloader,
+)
+from app.infrastructure.become_media_prompt import (
+    SessionFactoryBecomeMediaPromptStore,
+    TelegramClientBecomeMediaPromptAdapter,
 )
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
@@ -1225,6 +1232,45 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         presence=become_presence,
                         subject_pepper=subject_pepper,
                     )
+                    try:
+                        prompt_result = await (
+                            DeliverBecomeMediaPromptService(
+                                store=SessionFactoryBecomeMediaPromptStore(
+                                    sessions
+                                ),
+                                presence=become_presence,
+                                telegram=(
+                                    TelegramClientBecomeMediaPromptAdapter(
+                                        become_telegram
+                                    )
+                                ),
+                            ).execute(
+                                workspace_key=settings.gate_workspace_id,
+                                now=datetime.now(UTC),
+                            )
+                        )
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME media prompt blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            (
+                                "BECOME media prompt deferred: "
+                                "error_type=%s"
+                            ),
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if prompt_result.sent:
+                            logger.info(
+                                (
+                                    "BECOME media reply prompt ready: "
+                                    "duplicate=%s"
+                                ),
+                                prompt_result.duplicate,
+                            )
                 else:
                     become_intake = None
                     become_consent = None
