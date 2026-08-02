@@ -982,9 +982,6 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         store=SessionFactoryAlphaCanaryStore(
                             sessions,
                             group_capacity=settings.gate_become_group_capacity,
-                            pinned_installation_key=_optional_installation_key(
-                                settings.gate_become_installation_key
-                            ),
                         ),
                         shadow=ProcessAlphaShadowMessageService(
                             port=SessionFactoryAlphaShadowTurnRepository(

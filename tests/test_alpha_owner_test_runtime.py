@@ -370,29 +370,27 @@ async def test_become_presence_uses_only_isolated_token_while_paused() -> None:
 
 
 @pytest.mark.anyio
-async def test_become_presence_rejects_a_different_configured_pin() -> None:
+async def test_become_presence_uses_database_binding_not_legacy_config_pin() -> None:
     fixtures = _fixtures()
     fixtures.installation.dialog_label = "BECOME — Лёша · пилот"
     fixtures.installation.state = "paused"
     fixtures.connector.connector_key = "telegram_become_group"
     ledger = _Ledger()
-    http_client = _HttpClient(ledger=ledger)
+    http_client = _HttpClient(ledger=ledger, member_count=2)
 
-    with pytest.raises(
-        AlphaOwnerTestRuntimeError,
-        match="become_owner_test_installation_not_pinned",
-    ):
-        await observe_owner_test_presence(
-            session=_PresenceSession(fixtures=fixtures),  # type: ignore[arg-type]
-            settings=_become_settings(
-                installation_key="installation-other",
-            ),  # type: ignore[arg-type]
-            http_client=http_client,  # type: ignore[arg-type]
-            workspace_key="mark-personal",
-            installation_ref="installation-test",
-        )
+    presence = await observe_owner_test_presence(
+        session=_PresenceSession(fixtures=fixtures),  # type: ignore[arg-type]
+        settings=_become_settings(
+            installation_key="installation-other",
+        ),  # type: ignore[arg-type]
+        http_client=http_client,  # type: ignore[arg-type]
+        workspace_key="mark-personal",
+        installation_ref="installation-test",
+    )
 
-    assert http_client.endpoints == []
+    assert presence.state.value == "owner_only"
+    assert len(http_client.endpoints) == 1
+    assert "/botbecome-test-token/getChatMemberCount" in http_client.endpoints[0]
 
 
 @pytest.mark.anyio
