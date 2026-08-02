@@ -416,7 +416,7 @@ async def _eligible_rows(
         statement = statement.with_for_update(
             of=BecomeRelationsConsentHandoffModel
         )
-    return list((await session.execute(statement)).all())
+    return list((await session.execute(statement)).tuples().all())
 
 
 def _candidate_key(
