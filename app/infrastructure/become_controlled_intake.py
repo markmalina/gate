@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,6 +20,55 @@ from app.models.alpha import AgentInstallationModel
 from app.models.become import BecomeControlledIntakeReceiptModel
 from app.models.canonical import Dialog, TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
+
+
+class TelegramBecomeOwnerPresence:
+    """Read only aggregate group size; never enumerate or expose participants."""
+
+    def __init__(
+        self,
+        *,
+        bot_token: str,
+        http_client: httpx.AsyncClient,
+    ) -> None:
+        self._bot_token = bot_token.strip()
+        self._http_client = http_client
+
+    async def member_count(
+        self,
+        *,
+        installation_ref: str,
+        provider_dialog_id: str,
+    ) -> int | None:
+        if (
+            not self._bot_token
+            or not installation_ref.startswith("installation-")
+            or not provider_dialog_id
+        ):
+            return None
+        endpoint = (
+            f"https://api.telegram.org/bot{self._bot_token}/getChatMemberCount"
+        )
+        try:
+            response = await self._http_client.post(
+                endpoint,
+                json={"chat_id": provider_dialog_id},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        result = payload.get("result") if isinstance(payload, dict) else None
+        if (
+            not isinstance(payload, dict)
+            or payload.get("ok") is not True
+            or not isinstance(result, int)
+            or isinstance(result, bool)
+            or result < 0
+        ):
+            return None
+        return result
 
 
 class SessionFactoryBecomeControlledIntakeStore:
