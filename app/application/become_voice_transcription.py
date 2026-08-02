@@ -113,6 +113,13 @@ class BecomeVoiceTranscriptionStore(Protocol):
         confirmed_at: datetime,
     ) -> BecomeVoiceTranscriptionWork: ...
 
+    async def confirm_success(
+        self,
+        *,
+        attempt_id: str,
+        now: datetime,
+    ) -> None: ...
+
     async def mark_terminal(
         self,
         *,
@@ -290,10 +297,8 @@ class ProcessBecomeVoiceTranscriptionService:
                     "settlement_unknown",
                     reconciliation_required=True,
                 )
-            await self._store.mark_terminal(
+            await self._store.confirm_success(
                 attempt_id=work.attempt_id,
-                state=BecomeVoiceTranscriptionState.CONFIRMED,
-                reason_code=None,
                 now=now,
             )
             return BecomeVoiceTranscriptionRun(
@@ -436,10 +441,8 @@ class ProcessBecomeVoiceTranscriptionService:
             provider_operation_ref=transcript.provider_operation_ref,
             occurred_at=now,
         )
-        await self._store.mark_terminal(
+        await self._store.confirm_success(
             attempt_id=work.attempt_id,
-            state=BecomeVoiceTranscriptionState.CONFIRMED,
-            reason_code=None,
             now=now,
         )
         return BecomeVoiceTranscriptionRun(
