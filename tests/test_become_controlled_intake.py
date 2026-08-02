@@ -8,10 +8,27 @@ from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
     PersistBecomeControlledIntakeCommand,
     PersistedBecomeControlledIntake,
+    ProcessBecomeRegistrationCommand,
+    ProcessBecomeRegistrationService,
     build_registration_receipt,
     opaque_subject_ref,
     registration_evidence,
 )
+
+
+class _Presence:
+    def __init__(self, member_count: int | None) -> None:
+        self._member_count = member_count
+        self.calls: list[tuple[str, str]] = []
+
+    async def member_count(
+        self,
+        *,
+        installation_ref: str,
+        provider_dialog_id: str,
+    ) -> int | None:
+        self.calls.append((installation_ref, provider_dialog_id))
+        return self._member_count
 
 
 class _MemoryStore:
@@ -192,6 +209,64 @@ def test_exact_replay_is_idempotent_and_mutation_is_rejected() -> None:
                     source_receipt_id=command.source_receipt_id,
                     provider_dialog_id=command.provider_dialog_id,
                     receipt=mutated,
+                )
+            )
+        )
+
+
+def test_registration_service_observes_presence_and_persists_content_free_receipt() -> None:
+    store = _MemoryStore()
+    presence = _Presence(2)
+    service = ProcessBecomeRegistrationService(
+        store=store,
+        presence=presence,
+        subject_pepper="fixture-private-pepper",
+    )
+
+    result = asyncio.run(
+        service.execute(
+            ProcessBecomeRegistrationCommand(
+                workspace_key="mark-personal",
+                source_receipt_id="00000000-0000-0000-0000-000000000042",
+                installation_ref="installation-fixture-owner",
+                update=_update(),
+                received_at=datetime(2026, 8, 2, 4, 0, tzinfo=UTC),
+            )
+        )
+    )
+
+    assert result.duplicate is False
+    assert presence.calls == [
+        ("installation-fixture-owner", "-1007002"),
+    ]
+    stored_payload = next(iter(store._rows.values()))[1]
+    assert stored_payload["group_state"] == "owner_only"
+    assert stored_payload["member_count"] == 2
+    assert stored_payload["external_effects"] == 0
+    assert stored_payload["provider_calls"] == 0
+    assert "700000001" not in str(stored_payload)
+    assert "-1007002" not in str(stored_payload)
+
+
+def test_registration_service_fails_closed_when_presence_is_not_owner_only() -> None:
+    service = ProcessBecomeRegistrationService(
+        store=_MemoryStore(),
+        presence=_Presence(3),
+        subject_pepper="fixture-private-pepper",
+    )
+
+    with pytest.raises(
+        BecomeControlledIntakeError,
+        match="become_registration_owner_only_required",
+    ):
+        asyncio.run(
+            service.execute(
+                ProcessBecomeRegistrationCommand(
+                    workspace_key="mark-personal",
+                    source_receipt_id="00000000-0000-0000-0000-000000000042",
+                    installation_ref="installation-fixture-owner",
+                    update=_update(),
+                    received_at=datetime(2026, 8, 2, 4, 0, tzinfo=UTC),
                 )
             )
         )
