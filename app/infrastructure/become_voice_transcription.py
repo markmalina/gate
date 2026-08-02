@@ -26,7 +26,10 @@ from app.application.become_voice_transcription import (
 )
 from app.application.billing import BillingProduct, BudgetReservationState
 from app.application.telegram_voice_transcription import ProviderTranscript
+from app.models.alpha import AgentInstallationModel
 from app.models.become import (
+    BecomeControlledConsentReceiptModel,
+    BecomeControlledIntakeReceiptModel,
     BecomeMediaIntakeModel,
     BecomeRelationsConsentHandoffModel,
     BecomeVoiceChainSlotModel,
@@ -37,7 +40,7 @@ from app.models.billing import (
     BillingBudgetReservationModel,
     BillingEntitlementModel,
 )
-from app.models.canonical import Workspace
+from app.models.canonical import TransportConnector, Workspace
 
 
 class SessionFactoryBecomeVoiceTranscriptionStore:
@@ -105,20 +108,86 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                         == BecomeVoiceCorrelationModel.media_intake_id,
                     )
                     .join(
+                        AgentInstallationModel,
+                        (
+                            AgentInstallationModel.id
+                            == BecomeMediaIntakeModel.installation_id
+                        )
+                        & (
+                            AgentInstallationModel.workspace_id
+                            == BecomeMediaIntakeModel.workspace_id
+                        ),
+                    )
+                    .join(
+                        TransportConnector,
+                        (
+                            TransportConnector.id
+                            == AgentInstallationModel.connector_id
+                        )
+                        & (
+                            TransportConnector.workspace_id
+                            == AgentInstallationModel.workspace_id
+                        ),
+                    )
+                    .join(
+                        BecomeControlledIntakeReceiptModel,
+                        BecomeControlledIntakeReceiptModel.id
+                        == BecomeMediaIntakeModel.registration_receipt_id,
+                    )
+                    .join(
+                        BecomeControlledConsentReceiptModel,
+                        BecomeControlledConsentReceiptModel.id
+                        == BecomeMediaIntakeModel.consent_receipt_id,
+                    )
+                    .join(
                         BecomeRelationsConsentHandoffModel,
-                        BecomeRelationsConsentHandoffModel.id
-                        == BecomeMediaIntakeModel.relations_handoff_id,
+                        (
+                            BecomeRelationsConsentHandoffModel.id
+                            == BecomeMediaIntakeModel.relations_handoff_id
+                        )
+                        & (
+                            BecomeRelationsConsentHandoffModel.consent_receipt_id
+                            == BecomeControlledConsentReceiptModel.id
+                        ),
                     )
                     .where(
                         BecomeVoiceCorrelationModel.workspace_id
                         == workspace.id,
+                        BecomeVoiceCorrelationModel.media_intake_id
+                        == BecomeMediaIntakeModel.id,
                         BecomeMediaIntakeModel.workspace_id == workspace.id,
+                        AgentInstallationModel.state == "active",
+                        TransportConnector.connector_key
+                        == BECOME_TRANSCRIPTION_SCOPE_REF,
+                        TransportConnector.is_enabled.is_(True),
+                        BecomeControlledIntakeReceiptModel.workspace_id
+                        == workspace.id,
+                        BecomeControlledIntakeReceiptModel.installation_id
+                        == AgentInstallationModel.id,
+                        BecomeControlledIntakeReceiptModel.intent
+                        == "registration_confirmed",
+                        BecomeControlledIntakeReceiptModel.group_state
+                        == "owner_only",
+                        BecomeControlledIntakeReceiptModel.member_count == 2,
+                        BecomeControlledConsentReceiptModel.workspace_id
+                        == workspace.id,
+                        BecomeControlledConsentReceiptModel.installation_id
+                        == AgentInstallationModel.id,
+                        BecomeControlledConsentReceiptModel.intent
+                        == "consent_accepted",
+                        BecomeControlledConsentReceiptModel.group_state
+                        == "owner_only",
+                        BecomeControlledConsentReceiptModel.member_count == 2,
                         BecomeMediaIntakeModel.kind == "voice",
                         BecomeMediaIntakeModel.status == "archived",
                         BecomeMediaIntakeModel.raw_data.is_not(None),
                         BecomeMediaIntakeModel.raw_expires_at > now,
                         BecomeMediaIntakeModel.transcript_state == "none",
                         BecomeRelationsConsentHandoffModel.status == "executed",
+                        BecomeRelationsConsentHandoffModel.execution_digest
+                        .is_not(None),
+                        BecomeRelationsConsentHandoffModel.executed_at
+                        .is_not(None),
                     )
                     .order_by(BecomeMediaIntakeModel.received_at)
                     .limit(2)
@@ -126,6 +195,10 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                         of=(
                             BecomeVoiceCorrelationModel,
                             BecomeMediaIntakeModel,
+                            AgentInstallationModel,
+                            TransportConnector,
+                            BecomeControlledIntakeReceiptModel,
+                            BecomeControlledConsentReceiptModel,
                             BecomeRelationsConsentHandoffModel,
                         )
                     )
