@@ -439,7 +439,6 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
         now: datetime,
     ) -> None:
         if state not in {
-            BecomeVoiceTranscriptionState.CONFIRMED,
             BecomeVoiceTranscriptionState.REJECTED,
             BecomeVoiceTranscriptionState.UNKNOWN,
         }:
@@ -459,7 +458,6 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                     BecomeVoiceTranscriptionState.UNKNOWN,
                 },
                 BecomeVoiceTranscriptionState.SUCCEEDED_UNSETTLED: {
-                    BecomeVoiceTranscriptionState.CONFIRMED,
                     BecomeVoiceTranscriptionState.UNKNOWN,
                 },
             }
