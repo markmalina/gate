@@ -461,6 +461,28 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "relations_consent_executed_ready": {
                         "type": "boolean",
                     },
+                    "media_prompt_gate_ready": {"type": "boolean"},
+                    "media_prompt_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "media_prompt_sent_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "media_prompt_unknown_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "media_prompt_failed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "media_prompt_ready": {"type": "boolean"},
+                    "media_prompt_reply_required": {"type": "boolean"},
+                    "media_prompt_reconciliation_required": {
+                        "type": "boolean",
+                    },
                     "media_intake_gate_ready": {"type": "boolean"},
                     "media_intake_ready": {"type": "boolean"},
                     "media_intake_count": {
@@ -514,7 +536,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "provider_calls": {"type": "integer", "const": 0},
                     "messages_or_publications": {
                         "type": "integer",
-                        "const": 0,
+                        "minimum": 0,
                     },
                     "media_bytes": {"type": "integer", "minimum": 0},
                     "real_payments": {"type": "integer", "const": 0},
