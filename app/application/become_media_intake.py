@@ -9,7 +9,6 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from app.application.become_controlled_intake import (
-    BECOME_CONNECTOR_KEY,
     BecomeControlledIntakeError,
     opaque_subject_ref,
     opaque_update_ref,
