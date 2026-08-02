@@ -590,7 +590,7 @@ def _correlation_ref(
     intake_digest: str,
 ) -> str:
     digest = hashlib.sha256(
-        f"{workspace_id}:{intake_id}:{intake_digest}".encode("utf-8")
+        f"{workspace_id}:{intake_id}:{intake_digest}".encode()
     ).hexdigest()
     return f"voice_corr_{digest[:32]}"
 
