@@ -287,12 +287,6 @@ class ProcessBecomeVoiceTranscriptionService:
                     occurred_at=now,
                 )
             elif reservation.state is not BudgetReservationState.SETTLED:
-                await self._store.mark_terminal(
-                    attempt_id=work.attempt_id,
-                    state=BecomeVoiceTranscriptionState.UNKNOWN,
-                    reason_code="become_transcription_settlement_unknown",
-                    now=now,
-                )
                 return BecomeVoiceTranscriptionRun(
                     "settlement_unknown",
                     reconciliation_required=True,
@@ -342,14 +336,13 @@ class ProcessBecomeVoiceTranscriptionService:
                     )
                     return BecomeVoiceTranscriptionRun("blocked")
             elif reservation.state is not BudgetReservationState.RESERVED:
-                await self._store.mark_terminal(
+                await self._store.mark_blocked(
                     attempt_id=work.attempt_id,
-                    state=BecomeVoiceTranscriptionState.UNKNOWN,
                     reason_code="become_transcription_budget_not_reserved",
                     now=now,
                 )
                 return BecomeVoiceTranscriptionRun(
-                    "budget_unknown",
+                    "budget_blocked",
                     reconciliation_required=True,
                 )
             work = await self._store.mark_reserved(
@@ -377,14 +370,13 @@ class ProcessBecomeVoiceTranscriptionService:
             period_key=work.period_key,
         )
         if reservation is None or reservation.state is not BudgetReservationState.RESERVED:
-            await self._store.mark_terminal(
+            await self._store.mark_blocked(
                 attempt_id=work.attempt_id,
-                state=BecomeVoiceTranscriptionState.UNKNOWN,
                 reason_code="become_transcription_reservation_missing",
                 now=now,
             )
             return BecomeVoiceTranscriptionRun(
-                "reservation_unknown",
+                "reservation_blocked",
                 reconciliation_required=True,
             )
 
