@@ -157,6 +157,34 @@ class SqlBillingBudgetService:
                 reservation=_reservation(row, command),
             )
 
+    async def get_exact(
+        self,
+        command: ReserveBudgetCommand,
+        *,
+        period_key: str,
+    ) -> BudgetReservation | None:
+        _period(period_key)
+        async with self._sessions() as session:
+            workspace = await session.scalar(
+                select(Workspace).where(
+                    Workspace.key == command.attribution.workspace_key,
+                    Workspace.is_active.is_(True),
+                )
+            )
+            if workspace is None:
+                raise BillingDomainError("billing_workspace_not_active")
+            row = await session.scalar(
+                select(BillingBudgetReservationModel).where(
+                    BillingBudgetReservationModel.workspace_id == workspace.id,
+                    BillingBudgetReservationModel.reservation_key
+                    == command.reservation_key,
+                )
+            )
+            if row is None:
+                return None
+            _require_exact_replay(row, command, period_key=period_key)
+            return _reservation(row, command)
+
     async def settle(
         self,
         reservation: BudgetReservation,
