@@ -413,7 +413,6 @@ class SessionFactoryBecomeVoiceChainStore:
                 slot.state != state.value
                 or slot.receipt_digest != receipt_digest
                 or slot.receipt_payload != receipt_payload
-                or slot.terminal_at != finished_at
             ):
                 raise BecomeControlledIntakeError(
                     "become_chain_mutated_receipt_replay"
@@ -593,7 +592,7 @@ def _correlation_ref(
     digest = hashlib.sha256(
         f"{workspace_id}:{intake_id}:{intake_digest}".encode()
     ).hexdigest()
-    return f"voice_corr_{digest[:32]}"
+    return f"synthetic://correlation/voice/{digest[:32]}"
 
 
 def _validate_slot_identity(
