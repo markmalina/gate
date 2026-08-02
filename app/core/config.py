@@ -164,18 +164,19 @@ class Settings(BaseSettings):
         le=1,
         validation_alias="GATE_BECOME_GROUP_CAPACITY",
     )
+    # Owner-authorized one-shot activation; revert after terminal receipt.
     gate_become_voice_transcription_enabled: bool = Field(
-        default=False,
+        default=True,
         validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_ENABLED",
     )
     gate_become_voice_transcription_data_gate_approved: bool = Field(
-        default=False,
+        default=True,
         validation_alias=(
             "GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED"
         ),
     )
     gate_become_voice_transcription_max_calls: int = Field(
-        default=0,
+        default=1,
         ge=0,
         le=1,
         validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_MAX_CALLS",
