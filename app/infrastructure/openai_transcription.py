@@ -34,6 +34,7 @@ class OpenAITranscriptionConfig:
     enabled: bool = False
     model: str = "gpt-4o-mini-transcribe"
     base_url: str = "https://api.openai.com/v1"
+    timeout_seconds: float = 60
 
     def __post_init__(self) -> None:
         if self.model not in _SUPPORTED_MODELS:
@@ -42,6 +43,8 @@ class OpenAITranscriptionConfig:
             raise ValueError("openai_transcription_api_key_required")
         if not self.base_url.startswith("https://"):
             raise ValueError("openai_transcription_base_url_invalid")
+        if not 5 <= self.timeout_seconds <= 120:
+            raise ValueError("openai_transcription_timeout_invalid")
 
 
 class OpenAITranscriptionClient:
@@ -122,6 +125,7 @@ class OpenAITranscriptionClient:
                 headers={"Authorization": f"Bearer {self._config.api_key}"},
                 data=data,
                 files={"file": (voice.filename, voice.data, voice.media_type)},
+                timeout=self._config.timeout_seconds,
             )
         except httpx.HTTPError:
             raise TranscriptionProviderError(

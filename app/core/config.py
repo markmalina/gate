@@ -164,6 +164,48 @@ class Settings(BaseSettings):
         le=1,
         validation_alias="GATE_BECOME_GROUP_CAPACITY",
     )
+    gate_become_voice_transcription_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_ENABLED",
+    )
+    gate_become_voice_transcription_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias=(
+            "GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED"
+        ),
+    )
+    gate_become_voice_transcription_max_calls: int = Field(
+        default=0,
+        ge=0,
+        le=1,
+        validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_MAX_CALLS",
+    )
+    gate_become_voice_transcription_model: str = Field(
+        default="gpt-4o-mini-transcribe",
+        validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_MODEL",
+    )
+    gate_become_voice_transcription_language: str = Field(
+        default="ru",
+        min_length=1,
+        max_length=32,
+        validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_LANGUAGE",
+    )
+    gate_become_voice_transcription_reserve_microusd_per_second: int = Field(
+        default=100,
+        ge=100,
+        le=10_000,
+        validation_alias=(
+            "GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND"
+        ),
+    )
+    gate_become_voice_transcription_timeout_seconds: float = Field(
+        default=60,
+        ge=5,
+        le=120,
+        validation_alias=(
+            "GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS"
+        ),
+    )
     gate_alpha_shadow_worker_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_SHADOW_WORKER_ENABLED",

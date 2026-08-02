@@ -580,11 +580,66 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
+                    "voice_transcription_enabled": {
+                        "type": "boolean",
+                    },
+                    "voice_transcription_data_gate_approved": {
+                        "type": "boolean",
+                    },
+                    "voice_transcription_max_calls": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "voice_transcription_eligible_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_prerequisites_ready": {
+                        "type": "boolean",
+                    },
+                    "voice_transcription_gate_ready": {
+                        "type": "boolean",
+                    },
+                    "voice_transcription_attempt_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_call_boundary_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_confirmed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_rejected_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_unknown_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_blocked_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_settlement_pending_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_transcription_ready": {
+                        "type": "boolean",
+                    },
+                    "voice_transcription_reconciliation_required": {
+                        "type": "boolean",
+                    },
                     "external_effects": {
                         "type": "integer",
                         "minimum": 0,
                     },
-                    "provider_calls": {"type": "integer", "const": 0},
+                    "provider_calls": {"type": "integer", "minimum": 0},
                     "messages_or_publications": {
                         "type": "integer",
                         "minimum": 0,

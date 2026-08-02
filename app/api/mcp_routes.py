@@ -304,6 +304,20 @@ async def mcp_endpoint(
                 await become_controlled_intake_status(
                     session,
                     workspace_key=principal.access_scope.workspace_id,
+                    transcription_enabled=(
+                        settings.gate_become_voice_transcription_enabled
+                    ),
+                    transcription_data_gate_approved=(
+                        settings
+                        .gate_become_voice_transcription_data_gate_approved
+                    ),
+                    transcription_max_calls=(
+                        settings.gate_become_voice_transcription_max_calls
+                    ),
+                    transcription_api_key_configured=bool(
+                        settings.openai_api_key.get_secret_value()
+                    ),
+                    now=datetime.now(UTC),
                 )
             )
             snapshot["telegram_voice"] = (

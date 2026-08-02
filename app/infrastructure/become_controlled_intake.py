@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -24,6 +24,9 @@ from app.infrastructure.become_media_prompt import (
 )
 from app.infrastructure.become_voice_chain import (
     become_voice_chain_status,
+)
+from app.infrastructure.become_voice_transcription import (
+    become_voice_transcription_status,
 )
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
@@ -304,6 +307,11 @@ async def become_controlled_intake_status(
     session: AsyncSession,
     *,
     workspace_key: str,
+    transcription_enabled: bool = False,
+    transcription_data_gate_approved: bool = False,
+    transcription_max_calls: int = 0,
+    transcription_api_key_configured: bool = False,
+    now: datetime | None = None,
 ) -> dict[str, object]:
     """Return aggregate receipt proof without content or provider identifiers."""
 
@@ -421,6 +429,23 @@ async def become_controlled_intake_status(
     correlation_count = int(voice_chain["voice_correlation_count"])
     chain_slot_count = int(voice_chain["chain_slot_count"])
     chain_unknown_count = int(voice_chain["chain_unknown_count"])
+    transcription = await become_voice_transcription_status(
+        session,
+        workspace_key=workspace_key,
+        enabled=transcription_enabled,
+        data_gate_approved=transcription_data_gate_approved,
+        max_calls=transcription_max_calls,
+        api_key_configured=transcription_api_key_configured,
+        now=now or datetime.now(UTC),
+    )
+    provider_calls_value = transcription[
+        "voice_transcription_call_boundary_count"
+    ]
+    if type(provider_calls_value) is not int:
+        raise BecomeControlledIntakeError(
+            "become_transcription_status_invalid"
+        )
+    provider_calls = provider_calls_value
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -507,8 +532,9 @@ async def become_controlled_intake_status(
         "confirmed_transcript_purged_count": int(
             media["confirmed_transcript_purged_count"]
         ),
-        "external_effects": media_count + prompt_sent,
-        "provider_calls": 0,
+        **transcription,
+        "external_effects": media_count + prompt_sent + provider_calls,
+        "provider_calls": provider_calls,
         "messages_or_publications": prompt_sent,
         "media_bytes": int(media["raw_media_retained_bytes"]),
         "real_payments": 0,
