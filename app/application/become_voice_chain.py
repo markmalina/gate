@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -16,6 +17,12 @@ from app.application.become_controlled_intake import (
 BECOME_VOICE_CORRELATION_SCHEMA = "gate.become-voice-correlation@1"
 BECOME_CHAIN_SLOT_SCHEMA = "gate.become-chain-slot@1"
 BECOME_CHAIN_STAGES = ("relations", "mayaki", "oko", "take")
+_SENSITIVE_KEY = re.compile(
+    r"(^|_)(email|phone|username|token|secret|credential|"
+    r"provider_payload|raw_text|transcript_text|media_bytes|pii|"
+    r"personal_data)($|_)",
+    re.IGNORECASE,
+)
 
 
 class BecomeChainStage(StrEnum):
@@ -331,21 +338,13 @@ def _is_digest(value: str) -> bool:
 
 
 def _assert_content_free_payload(payload: JsonObject) -> None:
-    forbidden = {
-        "audio",
-        "content",
-        "media",
-        "raw",
-        "text",
-        "transcript",
-        "video",
-    }
     pending: list[object] = [payload]
     while pending:
         value = pending.pop()
         if isinstance(value, dict):
             for key, nested in value.items():
-                if key.lower() in forbidden:
+                normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+                if _SENSITIVE_KEY.search(normalized):
                     raise BecomeControlledIntakeError(
                         "become_chain_payload_contains_private_content"
                     )
