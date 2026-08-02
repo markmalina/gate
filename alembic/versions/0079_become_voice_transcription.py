@@ -70,7 +70,8 @@ def upgrade() -> None:
             name="ck_become_voice_transcription_grant",
         ),
         sa.CheckConstraint(
-            "requested_microusd > 0 AND billed_quantity IS NULL OR billed_quantity >= 0",
+            "requested_microusd > 0 AND "
+            "(billed_quantity IS NULL OR billed_quantity >= 0)",
             name="ck_become_voice_transcription_amounts",
         ),
         sa.CheckConstraint(
@@ -86,10 +87,21 @@ def upgrade() -> None:
             name="ck_become_voice_transcription_call_boundary",
         ),
         sa.CheckConstraint(
-            "(state IN ('succeeded_unsettled', 'confirmed') "
+            "(state = 'succeeded_unsettled' "
+            "AND staged_transcript IS NOT NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND provider_succeeded_at IS NOT NULL "
+            "AND billed_quantity IS NOT NULL AND actual_microusd IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 AND reason_code IS NULL) OR "
+            "(state = 'confirmed' "
+            "AND staged_transcript IS NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND provider_succeeded_at IS NOT NULL "
             "AND billed_quantity IS NOT NULL AND actual_microusd IS NOT NULL "
             "AND char_length(receipt_digest) = 64 AND reason_code IS NULL) OR "
             "(state NOT IN ('succeeded_unsettled', 'confirmed') "
+            "AND staged_transcript IS NULL AND transcript_digest IS NULL "
+            "AND provider_succeeded_at IS NULL "
             "AND billed_quantity IS NULL AND actual_microusd IS NULL "
             "AND receipt_digest IS NULL)",
             name="ck_become_voice_transcription_success",
