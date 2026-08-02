@@ -34,7 +34,7 @@ class OpenAITranscriptionConfig:
     enabled: bool = False
     model: str = "gpt-4o-mini-transcribe"
     base_url: str = "https://api.openai.com/v1"
-    timeout_seconds: float | None = None
+    timeout_seconds: float = 60
 
     def __post_init__(self) -> None:
         if self.model not in _SUPPORTED_MODELS:
@@ -43,9 +43,7 @@ class OpenAITranscriptionConfig:
             raise ValueError("openai_transcription_api_key_required")
         if not self.base_url.startswith("https://"):
             raise ValueError("openai_transcription_base_url_invalid")
-        if self.timeout_seconds is not None and not (
-            5 <= self.timeout_seconds <= 120
-        ):
+        if not 5 <= self.timeout_seconds <= 120:
             raise ValueError("openai_transcription_timeout_invalid")
 
 
