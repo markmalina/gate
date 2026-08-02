@@ -100,6 +100,8 @@ async def _become_intake_status(
         "registration_confirmed_count": 1,
         "owner_only_count": 1,
         "registration_ready": True,
+        "consent_accepted_count": 0,
+        "consent_ready": False,
         "external_effects": 0,
         "provider_calls": 0,
         "messages_or_publications": 0,
