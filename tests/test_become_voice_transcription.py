@@ -24,6 +24,7 @@ from app.application.billing import (
 from app.application.telegram_voice_transcription import (
     NormalizedVoice,
     ProviderTranscript,
+    SpeechToTextPort,
     TranscriptionProviderError,
 )
 
@@ -230,7 +231,7 @@ def service(
             normalizer or FakeNormalizer(),
         ),
         budget=cast(BecomeTranscriptionBudget, budget),
-        speech_to_text=speech,
+        speech_to_text=cast(SpeechToTextPort, speech),
         workspace_key="workspace-test",
         model="gpt-4o-mini-transcribe",
         language="ru",
