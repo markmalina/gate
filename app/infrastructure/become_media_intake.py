@@ -631,9 +631,9 @@ class SessionFactoryBecomeMediaRetention:
                 )
             )
             return BecomeMediaRetentionResult(
-                raw_purged=int(raw_result.rowcount or 0),
+                raw_purged=int(getattr(raw_result, "rowcount", 0) or 0),
                 transcripts_purged=int(
-                    transcript_result.rowcount or 0
+                    getattr(transcript_result, "rowcount", 0) or 0
                 ),
             )
 
