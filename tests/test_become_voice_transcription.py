@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-
 from app.application.become_voice_transcription import (
     BecomeTranscriptionBudget,
     BecomeVoiceNormalizer,
