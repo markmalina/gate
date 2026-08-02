@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.become_i4_chain import (
     BecomeI4CorrelationEvidence,
     BecomeI4Stage,
@@ -39,8 +42,6 @@ from app.models.become import (
     BecomeVoiceCorrelationModel,
 )
 from app.models.canonical import Workspace
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 _MAX_CHAIN_ATTEMPTS = 4
 
