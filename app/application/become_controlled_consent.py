@@ -345,6 +345,67 @@ RELATIONS_CONSENT_COMMAND_SCHEMA = "relations.controlled-consent-command@1"
 RELATIONS_CONSENT_PURPOSE_REF = "BECOME_NOW_QUEST"
 
 
+def parse_controlled_consent_receipt(
+    value: object,
+) -> BecomeControlledConsentReceipt:
+    """Rehydrate only an exact previously validated consent receipt."""
+
+    if not isinstance(value, dict) or set(value) != _CONSENT_KEYS:
+        raise BecomeControlledIntakeError("become_consent_receipt_shape_invalid")
+    expected_strings = (
+        "schema",
+        "connector_key",
+        "installation_ref",
+        "group_state",
+        "quest_ref",
+        "correlation_ref",
+        "subject_ref",
+        "action_ref",
+        "accepted_at",
+        "intent",
+        "policy_version",
+        "policy_digest",
+    )
+    if any(not isinstance(value.get(key), str) for key in expected_strings):
+        raise BecomeControlledIntakeError("become_consent_receipt_type_invalid")
+    if (
+        value["schema"] != CONTROLLED_CONSENT_INTAKE_SCHEMA
+        or value["connector_key"] != BECOME_CONNECTOR_KEY
+        or value["group_state"] != "owner_only"
+        or value["member_count"] != 2
+        or value["intent"] != CONSENT_INTENT
+        or value["policy_version"] != BECOME_CONSENT_POLICY_VERSION
+        or value["policy_digest"]
+        != hashlib.sha256(APPROVED_BECOME_CONSENT_COPY.encode("utf-8")).hexdigest()
+        or any(
+            value[key] != 0
+            for key in (
+                "external_effects",
+                "provider_calls",
+                "messages_or_publications",
+                "media_bytes",
+                "real_payments",
+            )
+        )
+    ):
+        raise BecomeControlledIntakeError("become_consent_receipt_invalid")
+    return BecomeControlledConsentReceipt(
+        schema=str(value["schema"]),
+        connector_key=str(value["connector_key"]),
+        installation_ref=str(value["installation_ref"]),
+        group_state=str(value["group_state"]),
+        member_count=2,
+        quest_ref=str(value["quest_ref"]),
+        correlation_ref=str(value["correlation_ref"]),
+        subject_ref=str(value["subject_ref"]),
+        action_ref=str(value["action_ref"]),
+        accepted_at=str(value["accepted_at"]),
+        intent=str(value["intent"]),
+        policy_version=str(value["policy_version"]),
+        policy_digest=str(value["policy_digest"]),
+    )
+
+
 def project_relations_consent_command(
     receipt: BecomeControlledConsentReceipt,
 ) -> JsonObject:
