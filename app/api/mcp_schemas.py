@@ -513,7 +513,6 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "chain_slots_initialized_ready": {"type": "boolean"},
                     "chain_execution_enabled": {
                         "type": "boolean",
-                        "const": False,
                     },
                     "chain_ready_count": {
                         "type": "integer",
