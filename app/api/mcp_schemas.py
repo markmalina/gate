@@ -421,6 +421,44 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                 }
             ),
+            "become_controlled_intake": _object(
+                {
+                    "schema": {
+                        "type": "string",
+                        "const": "gate.become-controlled-intake@1",
+                    },
+                    "receipt_count": {"type": "integer", "minimum": 0},
+                    "registration_confirmed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "owner_only_count": {"type": "integer", "minimum": 0},
+                    "registration_ready": {"type": "boolean"},
+                    "external_effects": {
+                        "type": "integer",
+                        "const": 0,
+                    },
+                    "provider_calls": {"type": "integer", "const": 0},
+                    "messages_or_publications": {
+                        "type": "integer",
+                        "const": 0,
+                    },
+                    "media_bytes": {"type": "integer", "const": 0},
+                    "real_payments": {"type": "integer", "const": 0},
+                    "private_content_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "provider_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "telegram_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
             "telegram_voice": _object(
                 {
                     "state": {
