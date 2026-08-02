@@ -311,6 +311,7 @@ async def become_controlled_intake_status(
     transcription_data_gate_approved: bool = False,
     transcription_max_calls: int = 0,
     transcription_api_key_configured: bool = False,
+    chain_execution_enabled: bool = False,
     now: datetime | None = None,
 ) -> dict[str, object]:
     """Return aggregate receipt proof without content or provider identifiers."""
@@ -494,13 +495,16 @@ async def become_controlled_intake_status(
             correlation_count > 0
             and chain_slot_count == correlation_count * 4
         ),
-        "chain_execution_enabled": False,
+        "chain_execution_enabled": chain_execution_enabled,
         "chain_ready_count": int(voice_chain["chain_ready_count"]),
         "chain_requested_count": int(
             voice_chain["chain_requested_count"]
         ),
         "chain_unknown_count": chain_unknown_count,
-        "chain_reconciliation_required": chain_unknown_count > 0,
+        "chain_reconciliation_required": (
+            chain_unknown_count > 0
+            or int(voice_chain["chain_requested_count"]) > 0
+        ),
         "relations_chain_completed_count": int(
             voice_chain["relations_chain_completed_count"]
         ),
