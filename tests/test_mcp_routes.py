@@ -105,6 +105,8 @@ async def _become_intake_status(
         "relations_handoff_count": 0,
         "relations_handoff_ready": False,
         "relations_delivery_enabled": False,
+        "relations_delivered_count": 0,
+        "relations_delivery_ready": False,
         "relations_delivery_attempts": 0,
         "external_effects": 0,
         "provider_calls": 0,
