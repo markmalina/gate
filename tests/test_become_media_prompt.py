@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.application import become_media_prompt as prompt
+import app.application.become_media_prompt as prompt
 
 
 NOW = datetime(2026, 8, 2, tzinfo=UTC)
