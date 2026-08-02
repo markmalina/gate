@@ -28,7 +28,7 @@ from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
 )
 from app.application.become_relations_delivery import (
-    parse_relations_consent_acceptance,
+    parse_relations_consent_execution,
 )
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
@@ -397,8 +397,9 @@ class SessionFactoryBecomeRelationsHandoffDeliverer:
                 )
                 .where(
                     Workspace.is_active.is_(True),
-                    BecomeRelationsConsentHandoffModel.status
-                    == "pending_delivery",
+                    BecomeRelationsConsentHandoffModel.status.in_(
+                        ("pending_delivery", "pending_execution")
+                    ),
                 )
                 .order_by(
                     BecomeRelationsConsentHandoffModel.created_at.asc(),
@@ -421,7 +422,7 @@ class SessionFactoryBecomeRelationsHandoffDeliverer:
                     timeout=10.0,
                 )
                 response.raise_for_status()
-                raw_acceptance = response.json()
+                raw_execution = response.json()
             except httpx.HTTPStatusError as exc:
                 handoff.last_error_code = (
                     f"relations_http_{exc.response.status_code}"
@@ -436,18 +437,22 @@ class SessionFactoryBecomeRelationsHandoffDeliverer:
                 handoff.last_error_code = "relations_command_invalid"
                 return False
             try:
-                acceptance = parse_relations_consent_acceptance(
-                    raw_acceptance,
+                execution = parse_relations_consent_execution(
+                    raw_execution,
                     expected_command_digest=handoff.command_digest,
                     expected_idempotency_key=expected_idempotency_key,
                 )
             except BecomeControlledIntakeError:
-                handoff.last_error_code = "relations_acceptance_invalid"
+                handoff.last_error_code = "relations_execution_invalid"
                 return False
 
-            handoff.status = "delivered"
-            handoff.acceptance_digest = str(acceptance["receipt_digest"])
-            handoff.acceptance_payload = acceptance
+            handoff.status = "executed"
+            handoff.execution_digest = str(execution["receipt_digest"])
+            handoff.execution_payload = execution
+            handoff.domain_event_id = str(execution["domain_event_id"])
+            handoff.domain_event_digest = str(
+                execution["domain_event_digest"]
+            )
             handoff.last_error_code = None
-            handoff.delivered_at = datetime.now(UTC)
+            handoff.executed_at = datetime.now(UTC)
             return True
