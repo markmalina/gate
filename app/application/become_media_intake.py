@@ -116,6 +116,13 @@ class ProcessedBecomeMedia:
 
 
 class BecomeMediaStore(Protocol):
+    async def installation_ref(
+        self,
+        *,
+        workspace_key: str,
+        provider_dialog_id: str,
+    ) -> str | None: ...
+
     async def authorize(
         self,
         command: AuthorizeBecomeMediaCommand,
@@ -154,21 +161,15 @@ class ProcessBecomeMediaService:
         downloader: BecomeMediaDownloader,
         presence: BecomeMediaPresenceReader,
         subject_pepper: str,
-        installation_ref: str,
     ) -> None:
         if not subject_pepper:
             raise BecomeControlledIntakeError(
                 "become_media_subject_scope_incomplete"
             )
-        if not installation_ref.startswith("installation-"):
-            raise BecomeControlledIntakeError(
-                "become_media_installation_invalid"
-            )
         self._store = store
         self._downloader = downloader
         self._presence = presence
         self._subject_pepper = subject_pepper
-        self._installation_ref = installation_ref
 
     async def execute(
         self,
@@ -177,8 +178,19 @@ class ProcessBecomeMediaService:
         if command.received_at.tzinfo is None:
             raise BecomeControlledIntakeError("become_media_timestamp_invalid")
         evidence = media_evidence(command.update)
+        installation_ref = await self._store.installation_ref(
+            workspace_key=command.workspace_key,
+            provider_dialog_id=evidence.provider_dialog_id,
+        )
+        if (
+            installation_ref is None
+            or not installation_ref.startswith("installation-")
+        ):
+            raise BecomeControlledIntakeError(
+                "become_media_installation_invalid"
+            )
         member_count = await self._presence.member_count(
-            installation_ref=self._installation_ref,
+            installation_ref=installation_ref,
             provider_dialog_id=evidence.provider_dialog_id,
         )
         if member_count != 2:
