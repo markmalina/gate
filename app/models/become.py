@@ -209,8 +209,26 @@ class BecomeRelationsConsentHandoffModel(Base):
             name="ck_become_relations_handoff_schema",
         ),
         CheckConstraint(
-            "status = 'pending_delivery'",
+            "status IN ('pending_delivery', 'delivered')",
             name="ck_become_relations_handoff_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_become_relations_handoff_attempts",
+        ),
+        CheckConstraint(
+            "("
+            "status = 'pending_delivery' "
+            "AND acceptance_digest IS NULL "
+            "AND acceptance_payload IS NULL "
+            "AND delivered_at IS NULL"
+            ") OR ("
+            "status = 'delivered' "
+            "AND char_length(acceptance_digest) = 64 "
+            "AND acceptance_payload IS NOT NULL "
+            "AND delivered_at IS NOT NULL"
+            ")",
+            name="ck_become_relations_handoff_acceptance",
         ),
         CheckConstraint(
             "char_length(command_digest) = 64",
@@ -244,6 +262,27 @@ class BecomeRelationsConsentHandoffModel(Base):
     schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    acceptance_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    acceptance_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    last_error_code: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
