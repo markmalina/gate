@@ -4,7 +4,6 @@ from collections.abc import Mapping
 
 import httpx
 import pytest
-
 from app.application.become_i4_chain import (
     I4_CONTRACT_DIGEST,
     BecomeI4ContractError,
