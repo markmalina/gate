@@ -3,9 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from app.application.become_controlled_intake import (
-    BecomeControlledIntakeError,
-)
 from app.application.become_media_prompt import (
     BECOME_MEDIA_PROMPT_TEXT,
     BecomeMediaPromptCandidate,
@@ -157,7 +154,7 @@ async def test_non_owner_only_candidate_fails_before_reservation() -> None:
     store = FakeStore(candidate=candidate(), reservation=sending())
     telegram = FakeTelegram()
     with pytest.raises(
-        BecomeControlledIntakeError,
+        ValueError,
         match="become_media_prompt_owner_only_required",
     ):
         await DeliverBecomeMediaPromptService(
