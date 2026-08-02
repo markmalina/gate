@@ -46,7 +46,7 @@ def upgrade() -> None:
             name="ck_become_voice_correlation_schema",
         ),
         sa.CheckConstraint(
-            "correlation_ref LIKE 'voice_corr_%' "
+            "correlation_ref LIKE 'synthetic://correlation/voice/%' "
             "AND char_length(intake_digest) = 64",
             name="ck_become_voice_correlation_identity",
         ),
