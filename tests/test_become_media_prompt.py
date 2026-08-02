@@ -4,9 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.application.become_controlled_intake import (
-    BecomeControlledIntakeError,
-)
+from app.application.become_controlled_intake import BecomeControlledIntakeError
 from app.application.become_media_prompt import (
     BECOME_MEDIA_PROMPT_TEXT,
     BecomeMediaPromptCandidate,
