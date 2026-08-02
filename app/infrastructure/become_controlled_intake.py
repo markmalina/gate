@@ -55,14 +55,15 @@ class SessionFactoryBecomeRegistrationReplayer:
 
             result = await session.execute(
                 select(TelegramOutboxEvent, TelegramReceipt)
+                .select_from(TelegramReceipt)
+                .join(
+                    TelegramOutboxEvent,
+                    TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
+                )
                 .outerjoin(
                     BecomeControlledIntakeReceiptModel,
                     BecomeControlledIntakeReceiptModel.source_receipt_id
                     == TelegramReceipt.id,
-                )
-                .join(
-                    TelegramOutboxEvent,
-                    TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
                 )
                 .where(
                     TelegramReceipt.bot_key == BECOME_CONNECTOR_KEY,
