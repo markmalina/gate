@@ -24,6 +24,7 @@ from app.models.become import (
     BecomeControlledIntakeReceiptModel,
     BecomeRelationsConsentHandoffModel,
 )
+from app.infrastructure.become_media_intake import become_media_status
 from app.models.canonical import Dialog, TransportConnector, Workspace
 from app.models.domain import (
     TelegramOutboxEvent,
@@ -386,6 +387,18 @@ async def become_controlled_intake_status(
     delivered_count = int(handoff_row[1] or 0)
     executed_count = int(handoff_row[2] or 0)
     delivery_attempts = int(handoff_row[3] or 0)
+    relations_executed_ready = (
+        consent_count == 1
+        and handoff_count == 1
+        and delivered_count == 1
+        and executed_count == 1
+    )
+    media = await become_media_status(
+        session,
+        workspace_key=workspace_key,
+    )
+    media_pending = int(media["media_pending_download_count"])
+    media_count = int(media["media_intake_count"])
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -405,16 +418,37 @@ async def become_controlled_intake_status(
         "relations_delivery_ready": delivered_count == 1,
         "relations_delivery_attempts": delivery_attempts,
         "relations_consent_executed_count": executed_count,
-        "relations_consent_executed_ready": (
-            consent_count == 1
-            and handoff_count == 1
-            and delivered_count == 1
-            and executed_count == 1
+        "relations_consent_executed_ready": relations_executed_ready,
+        "media_intake_gate_ready": relations_executed_ready,
+        "media_intake_ready": (
+            relations_executed_ready
+            and media_pending == 0
         ),
-        "external_effects": 0,
+        "media_intake_count": media_count,
+        "media_pending_download_count": media_pending,
+        "voice_intake_count": int(media["voice_intake_count"]),
+        "video_intake_count": int(media["video_intake_count"]),
+        "raw_media_retention_days": 7,
+        "raw_media_retained_count": int(
+            media["raw_media_retained_count"]
+        ),
+        "raw_media_purged_count": int(
+            media["raw_media_purged_count"]
+        ),
+        "raw_media_retained_bytes": int(
+            media["raw_media_retained_bytes"]
+        ),
+        "confirmed_transcript_retention_days": 30,
+        "confirmed_transcript_retained_count": int(
+            media["confirmed_transcript_retained_count"]
+        ),
+        "confirmed_transcript_purged_count": int(
+            media["confirmed_transcript_purged_count"]
+        ),
+        "external_effects": media_count,
         "provider_calls": 0,
         "messages_or_publications": 0,
-        "media_bytes": 0,
+        "media_bytes": int(media["raw_media_retained_bytes"]),
         "real_payments": 0,
         "private_content_exposed": False,
         "provider_identifiers_exposed": False,
