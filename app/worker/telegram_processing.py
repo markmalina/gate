@@ -39,6 +39,9 @@ from app.application.become_media_intake import (
 from app.application.become_media_prompt import (
     DeliverBecomeMediaPromptService,
 )
+from app.application.become_voice_transcription import (
+    ProcessBecomeVoiceTranscriptionService,
+)
 from app.application.canonical_messaging import (
     CanonicalIngressStore,
     ConnectorKind,
