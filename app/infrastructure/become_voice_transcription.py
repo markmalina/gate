@@ -8,11 +8,10 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.become_controlled_intake import (
-    BECOME_CONNECTOR_KEY,
     BecomeControlledIntakeError,
 )
 from app.application.become_media_intake import CONFIRMED_TRANSCRIPT_RETENTION
