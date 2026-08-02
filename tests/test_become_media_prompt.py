@@ -199,4 +199,4 @@ async def test_ambiguous_provider_outcome_is_durable_unknown() -> None:
     assert result.state is prompt.BecomeMediaPromptState.UNKNOWN
     assert result.sent is False
     assert result.error_code == "telegram_outcome_unknown"
-    assert store.finalized[0]["provider_message_id"] is None
+    assert store.finalized[0].get("provider_message_id") is None
