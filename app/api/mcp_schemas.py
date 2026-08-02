@@ -591,6 +591,10 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "minimum": 0,
                         "maximum": 1,
                     },
+                    "voice_transcription_eligible_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
                     "voice_transcription_prerequisites_ready": {
                         "type": "boolean",
                     },
