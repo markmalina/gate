@@ -6,7 +6,7 @@ from datetime import datetime
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -286,3 +286,60 @@ class SessionFactoryBecomeControlledIntakeStore:
                 receipt_digest=existing.receipt_digest,
                 duplicate=True,
             )
+
+
+async def become_controlled_intake_status(
+    session: AsyncSession,
+    *,
+    workspace_key: str,
+) -> dict[str, object]:
+    """Return aggregate receipt proof without content or provider identifiers."""
+
+    row = (
+        await session.execute(
+            select(
+                func.count(BecomeControlledIntakeReceiptModel.id),
+                func.count(BecomeControlledIntakeReceiptModel.id).filter(
+                    BecomeControlledIntakeReceiptModel.intent
+                    == "registration_confirmed"
+                ),
+                func.count(BecomeControlledIntakeReceiptModel.id).filter(
+                    BecomeControlledIntakeReceiptModel.group_state == "owner_only",
+                    BecomeControlledIntakeReceiptModel.member_count == 2,
+                ),
+            )
+            .join(
+                Workspace,
+                Workspace.id
+                == BecomeControlledIntakeReceiptModel.workspace_id,
+            )
+            .where(
+                Workspace.key == workspace_key,
+                Workspace.is_active.is_(True),
+                BecomeControlledIntakeReceiptModel.connector_key
+                == BECOME_CONNECTOR_KEY,
+            )
+        )
+    ).one()
+    total = int(row[0] or 0)
+    registrations = int(row[1] or 0)
+    owner_only = int(row[2] or 0)
+    return {
+        "schema": CONTROLLED_INTAKE_SCHEMA,
+        "receipt_count": total,
+        "registration_confirmed_count": registrations,
+        "owner_only_count": owner_only,
+        "registration_ready": (
+            total == 1
+            and registrations == 1
+            and owner_only == 1
+        ),
+        "external_effects": 0,
+        "provider_calls": 0,
+        "messages_or_publications": 0,
+        "media_bytes": 0,
+        "real_payments": 0,
+        "private_content_exposed": False,
+        "provider_identifiers_exposed": False,
+        "telegram_identifiers_exposed": False,
+    }
