@@ -501,6 +501,8 @@ async def become_controlled_intake_status(
             voice_chain["chain_requested_count"]
         ),
         "chain_unknown_count": chain_unknown_count,
+        "chain_failed_count": int(voice_chain["chain_failed_count"]),
+        "chain_last_failure_code": voice_chain["chain_last_failure_code"],
         "chain_reconciliation_required": (
             chain_unknown_count > 0
             or int(voice_chain["chain_requested_count"]) > 0

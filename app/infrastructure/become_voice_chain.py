@@ -6,6 +6,7 @@ import hashlib
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import TypedDict
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -37,6 +38,20 @@ from app.models.become import (
     BecomeVoiceCorrelationModel,
 )
 from app.models.canonical import Workspace
+
+
+class BecomeVoiceChainStatus(TypedDict):
+    voice_correlation_count: int
+    chain_slot_count: int
+    chain_ready_count: int
+    chain_requested_count: int
+    chain_unknown_count: int
+    chain_failed_count: int
+    chain_last_failure_code: str | None
+    relations_chain_completed_count: int
+    mayaki_chain_completed_count: int
+    oko_chain_completed_count: int
+    take_chain_completed_count: int
 
 
 class SessionFactoryBecomeVoiceChainStore:
@@ -431,7 +446,7 @@ async def become_voice_chain_status(
     session: AsyncSession,
     *,
     workspace_key: str,
-) -> dict[str, int]:
+) -> BecomeVoiceChainStatus:
     root_count = int(
         (
             await session.scalar(
@@ -474,7 +489,27 @@ async def become_voice_chain_status(
         (str(stage), str(state)): int(count)
         for stage, state, count in rows
     }
-    result = {
+    failure_payload = await session.scalar(
+        select(BecomeVoiceChainSlotModel.receipt_payload)
+        .join(
+            Workspace,
+            Workspace.id == BecomeVoiceChainSlotModel.workspace_id,
+        )
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            BecomeVoiceChainSlotModel.state
+            == BecomeChainSlotState.FAILED.value,
+        )
+        .order_by(BecomeVoiceChainSlotModel.terminal_at.desc())
+        .limit(1)
+    )
+    failure_code: str | None = None
+    if isinstance(failure_payload, dict):
+        value = failure_payload.get("error_code")
+        if isinstance(value, str):
+            failure_code = value
+    result: BecomeVoiceChainStatus = {
         "voice_correlation_count": root_count,
         "chain_slot_count": sum(counts.values()),
         "chain_ready_count": sum(
@@ -492,12 +527,29 @@ async def become_voice_chain_status(
             for (stage, state), count in counts.items()
             if state == BecomeChainSlotState.UNKNOWN.value
         ),
-    }
-    for stage in BECOME_CHAIN_STAGES:
-        result[f"{stage}_chain_completed_count"] = counts.get(
-            (stage, BecomeChainSlotState.COMPLETED.value),
+        "chain_failed_count": sum(
+            count
+            for (stage, state), count in counts.items()
+            if state == BecomeChainSlotState.FAILED.value
+        ),
+        "chain_last_failure_code": failure_code,
+        "relations_chain_completed_count": counts.get(
+            ("relations", BecomeChainSlotState.COMPLETED.value),
             0,
-        )
+        ),
+        "mayaki_chain_completed_count": counts.get(
+            ("mayaki", BecomeChainSlotState.COMPLETED.value),
+            0,
+        ),
+        "oko_chain_completed_count": counts.get(
+            ("oko", BecomeChainSlotState.COMPLETED.value),
+            0,
+        ),
+        "take_chain_completed_count": counts.get(
+            ("take", BecomeChainSlotState.COMPLETED.value),
+            0,
+        ),
+    }
     return result
 
 

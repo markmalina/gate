@@ -526,6 +526,11 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
+                    "chain_failed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_last_failure_code": _nullable("string"),
                     "chain_reconciliation_required": {"type": "boolean"},
                     "relations_chain_completed_count": {
                         "type": "integer",
