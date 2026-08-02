@@ -28,6 +28,7 @@ from app.application.telegram_voice_transcription import (
     TranscriptionProviderError,
 )
 
+# Revalidated against the concurrently merged bounded I4 contracts.
 NOW = datetime(2026, 8, 2, 12, tzinfo=UTC)
 
 
