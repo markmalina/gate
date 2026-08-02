@@ -172,6 +172,9 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 language=language,
                 provider_call_started_at=None,
                 provider_operation_ref=None,
+                staged_transcript=None,
+                transcript_digest=None,
+                provider_succeeded_at=None,
                 billed_quantity=None,
                 actual_microusd=None,
                 reason_code=None,
@@ -271,6 +274,99 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 raise BecomeControlledIntakeError(
                     "become_transcription_settlement_exceeds_reservation"
                 )
+            correlation = await session.scalar(
+                select(BecomeVoiceCorrelationModel)
+                .where(
+                    BecomeVoiceCorrelationModel.id
+                    == attempt.correlation_id
+                )
+                .with_for_update()
+            )
+            intake = await session.scalar(
+                select(BecomeMediaIntakeModel)
+                .where(
+                    BecomeMediaIntakeModel.id == attempt.media_intake_id
+                )
+                .with_for_update()
+            )
+            if (
+                correlation is None
+                or intake is None
+                or correlation.media_intake_id != intake.id
+                or correlation.workspace_id != attempt.workspace_id
+                or intake.workspace_id != attempt.workspace_id
+                or intake.status != "archived"
+                or intake.raw_data is None
+                or intake.raw_expires_at <= confirmed_at
+                or intake.transcript_state != "none"
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_transcription_binding_invalid"
+                )
+            expires_at = confirmed_at + CONFIRMED_TRANSCRIPT_RETENTION
+            receipt_payload = {
+                "schema": BECOME_TRANSCRIPTION_SCHEMA,
+                "correlation_ref": correlation.correlation_ref,
+                "grant_key": attempt.grant_key,
+                "model": attempt.model,
+                "transcript_digest": digest,
+                "transcript_expires_at": expires_at.isoformat(),
+                "billed_quantity": transcript.billed_quantity,
+                "actual_microusd": transcript.actual_microusd,
+            }
+            attempt.state = (
+                BecomeVoiceTranscriptionState.SUCCEEDED_UNSETTLED.value
+            )
+            attempt.provider_operation_ref = (
+                transcript.provider_operation_ref
+            )
+            attempt.staged_transcript = normalized
+            attempt.transcript_digest = digest
+            attempt.provider_succeeded_at = confirmed_at
+            attempt.billed_quantity = transcript.billed_quantity
+            attempt.actual_microusd = transcript.actual_microusd
+            attempt.reason_code = None
+            attempt.receipt_digest = hashlib.sha256(
+                json.dumps(
+                    receipt_payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            attempt.updated_at = confirmed_at
+            workspace_key = await _workspace_key(
+                session,
+                attempt.workspace_id,
+            )
+            await session.flush()
+            return _make_work(
+                attempt,
+                workspace_key=workspace_key,
+                correlation_ref=correlation.correlation_ref,
+                intake=intake,
+            )
+
+    async def confirm_success(
+        self,
+        *,
+        attempt_id: str,
+        now: datetime,
+    ) -> None:
+        async with self._sessions.begin() as session:
+            attempt = await _attempt(session, attempt_id)
+            if attempt.state == BecomeVoiceTranscriptionState.CONFIRMED.value:
+                return
+            if (
+                attempt.state
+                != BecomeVoiceTranscriptionState.SUCCEEDED_UNSETTLED.value
+                or attempt.staged_transcript is None
+                or attempt.transcript_digest is None
+                or attempt.provider_succeeded_at is None
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_transcription_confirmation_not_ready"
+                )
             intake = await session.scalar(
                 select(BecomeMediaIntakeModel)
                 .where(
@@ -286,27 +382,26 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 )
                 .with_for_update()
             )
-            if intake is None or correlation is None:
-                raise BecomeControlledIntakeError(
-                    "become_transcription_binding_missing"
-                )
             if (
-                intake.status != "archived"
-                or intake.raw_data is None
-                or intake.raw_expires_at <= confirmed_at
+                intake is None
+                or correlation is None
+                or correlation.media_intake_id != intake.id
+                or correlation.workspace_id != attempt.workspace_id
+                or intake.workspace_id != attempt.workspace_id
+                or intake.status not in {"archived", "raw_purged"}
                 or intake.transcript_state != "none"
             ):
                 raise BecomeControlledIntakeError(
-                    "become_transcription_raw_archive_invalid"
+                    "become_transcription_confirmation_binding_invalid"
                 )
+            confirmed_at = attempt.provider_succeeded_at
             expires_at = confirmed_at + CONFIRMED_TRANSCRIPT_RETENTION
             intake.transcript_state = "confirmed"
-            intake.confirmed_transcript = normalized
-            intake.transcript_digest = digest
+            intake.confirmed_transcript = attempt.staged_transcript
+            intake.transcript_digest = attempt.transcript_digest
             intake.transcript_confirmed_at = confirmed_at
             intake.transcript_expires_at = expires_at
-            intake.updated_at = confirmed_at
-
+            intake.updated_at = now
             relations = await session.scalar(
                 select(BecomeVoiceChainSlotModel)
                 .where(
@@ -329,48 +424,11 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                     "become_transcription_relations_slot_invalid"
                 )
             relations.state = BecomeChainSlotState.READY.value
-            relations.updated_at = confirmed_at
-
-            receipt_payload = {
-                "schema": BECOME_TRANSCRIPTION_SCHEMA,
-                "correlation_ref": correlation.correlation_ref,
-                "grant_key": attempt.grant_key,
-                "model": attempt.model,
-                "transcript_digest": digest,
-                "transcript_expires_at": expires_at.isoformat(),
-                "billed_quantity": transcript.billed_quantity,
-                "actual_microusd": transcript.actual_microusd,
-            }
-            receipt_digest = hashlib.sha256(
-                json.dumps(
-                    receipt_payload,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
-            attempt.state = (
-                BecomeVoiceTranscriptionState.SUCCEEDED_UNSETTLED.value
-            )
-            attempt.provider_operation_ref = (
-                transcript.provider_operation_ref
-            )
-            attempt.billed_quantity = transcript.billed_quantity
-            attempt.actual_microusd = transcript.actual_microusd
+            relations.updated_at = now
+            attempt.state = BecomeVoiceTranscriptionState.CONFIRMED.value
+            attempt.staged_transcript = None
             attempt.reason_code = None
-            attempt.receipt_digest = receipt_digest
-            attempt.updated_at = confirmed_at
-            workspace_key = await _workspace_key(
-                session,
-                attempt.workspace_id,
-            )
-            await session.flush()
-            return _make_work(
-                attempt,
-                workspace_key=workspace_key,
-                correlation_ref=correlation.correlation_ref,
-                intake=intake,
-            )
+            attempt.updated_at = now
 
     async def mark_terminal(
         self,
