@@ -8,6 +8,8 @@ from app.application.become_controlled_consent import (
     CONSENT_INTENT,
     CONTROLLED_CONSENT_INTAKE_SCHEMA,
     QUEST_REF,
+    RELATIONS_CONSENT_COMMAND_SCHEMA,
+    RELATIONS_CONSENT_PURPOSE_REF,
     BecomeConsentContext,
     PersistBecomeControlledConsentCommand,
     PersistedBecomeControlledConsent,
@@ -16,6 +18,8 @@ from app.application.become_controlled_consent import (
     build_consent_receipt,
     consent_correlation_ref,
     consent_evidence,
+    parse_controlled_consent_receipt,
+    project_relations_consent_command,
 )
 from app.application.become_controlled_intake import (
     BECOME_CONNECTOR_KEY,
@@ -236,3 +240,82 @@ def test_consent_service_persists_only_content_free_receipt() -> None:
     assert payload["external_effects"] == 0
     assert "700000001" not in str(payload)
     assert "-1007002" not in str(payload)
+
+
+
+def test_relations_handoff_command_matches_canonical_contract() -> None:
+    receipt = _receipt()
+    command = project_relations_consent_command(receipt)
+
+    assert set(command) == {
+        "schema",
+        "command",
+        "mode",
+        "quest_ref",
+        "correlation_ref",
+        "person_ref",
+        "purpose_ref",
+        "policy_version",
+        "policy_digest",
+        "evidence_ref",
+        "effective_at",
+        "valid_until",
+        "prior_receipt_ref",
+        "idempotency_key",
+        "next_event",
+        "execution_state",
+        "external_effects",
+        "provider_calls",
+        "messages_or_publications",
+        "media_bytes",
+        "real_payments",
+        "contains_pii",
+        "command_digest",
+    }
+    assert command["schema"] == RELATIONS_CONSENT_COMMAND_SCHEMA
+    assert command["command"] == "grant_consent"
+    assert command["mode"] == "CONTROLLED"
+    assert command["quest_ref"] == receipt.quest_ref
+    assert command["correlation_ref"] == receipt.correlation_ref
+    assert command["person_ref"] == receipt.subject_ref
+    assert command["purpose_ref"] == RELATIONS_CONSENT_PURPOSE_REF
+    assert command["policy_version"] == receipt.policy_version
+    assert command["policy_digest"] == receipt.policy_digest
+    assert command["effective_at"] == receipt.accepted_at
+    assert command["valid_until"] is None
+    assert command["prior_receipt_ref"] is None
+    assert command["next_event"] == "consent.granted"
+    assert command["execution_state"] == "projected_not_executed"
+    assert command["external_effects"] == 0
+    assert command["provider_calls"] == 0
+    assert command["messages_or_publications"] == 0
+    assert command["media_bytes"] == 0
+    assert command["real_payments"] == 0
+    assert command["contains_pii"] is False
+    assert len(str(command["command_digest"])) == 64
+    wire = str(command)
+    assert APPROVED_BECOME_CONSENT_COPY not in wire
+    assert "700000001" not in wire
+    assert "-1007002" not in wire
+
+
+def test_stored_consent_receipt_round_trips_before_handoff() -> None:
+    receipt = _receipt()
+
+    parsed = parse_controlled_consent_receipt(receipt.payload())
+
+    assert parsed == receipt
+    assert project_relations_consent_command(parsed) == (
+        project_relations_consent_command(receipt)
+    )
+
+
+def test_stored_consent_receipt_rejects_mutation() -> None:
+    payload = _receipt().payload()
+    payload["provider_calls"] = 1
+
+    with pytest.raises(
+        BecomeControlledIntakeError,
+        match="become_consent_receipt_invalid",
+    ):
+        parse_controlled_consent_receipt(payload)
