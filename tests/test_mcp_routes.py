@@ -108,6 +108,8 @@ async def _become_intake_status(
         "relations_delivered_count": 0,
         "relations_delivery_ready": False,
         "relations_delivery_attempts": 0,
+        "relations_consent_executed_count": 0,
+        "relations_consent_executed_ready": False,
         "external_effects": 0,
         "provider_calls": 0,
         "messages_or_publications": 0,
