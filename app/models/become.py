@@ -830,3 +830,141 @@ class BecomeVoiceChainSlotModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+class BecomeVoiceTranscriptionAttemptModel(Base):
+    """One durable provider-call grant for one BECOME voice correlation."""
+
+    __tablename__ = "become_voice_transcription_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "correlation_id",
+            name="uq_become_voice_transcription_correlation",
+        ),
+        UniqueConstraint(
+            "media_intake_id",
+            name="uq_become_voice_transcription_media",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "grant_key",
+            name="uq_become_voice_transcription_workspace_grant",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "reservation_key",
+            name="uq_become_voice_transcription_workspace_reservation",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-voice-transcription@1'",
+            name="ck_become_voice_transcription_schema",
+        ),
+        CheckConstraint(
+            "state IN ('reserving', 'reserved', 'calling', "
+            "'succeeded_unsettled', 'confirmed', 'rejected', "
+            "'unknown', 'blocked')",
+            name="ck_become_voice_transcription_state",
+        ),
+        CheckConstraint(
+            "grant_key = 'become-investor-demo-transcription-v1'",
+            name="ck_become_voice_transcription_grant",
+        ),
+        CheckConstraint(
+            "requested_microusd > 0 AND "
+            "(billed_quantity IS NULL OR billed_quantity >= 0)",
+            name="ck_become_voice_transcription_amounts",
+        ),
+        CheckConstraint(
+            "actual_microusd IS NULL OR "
+            "(actual_microusd >= 0 "
+            "AND actual_microusd <= requested_microusd)",
+            name="ck_become_voice_transcription_cost",
+        ),
+        CheckConstraint(
+            "(state IN ('reserving', 'reserved', 'blocked') "
+            "AND provider_call_started_at IS NULL) OR "
+            "(state IN ('calling', 'succeeded_unsettled', 'confirmed', "
+            "'rejected', 'unknown') "
+            "AND provider_call_started_at IS NOT NULL)",
+            name="ck_become_voice_transcription_call_boundary",
+        ),
+        CheckConstraint(
+            "(state IN ('succeeded_unsettled', 'confirmed') "
+            "AND billed_quantity IS NOT NULL "
+            "AND actual_microusd IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND reason_code IS NULL) OR "
+            "(state NOT IN ('succeeded_unsettled', 'confirmed') "
+            "AND billed_quantity IS NULL "
+            "AND actual_microusd IS NULL "
+            "AND receipt_digest IS NULL)",
+            name="ck_become_voice_transcription_success",
+        ),
+        Index(
+            "ix_become_voice_transcription_workspace_state",
+            "workspace_id",
+            "state",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    correlation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_voice_correlations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    media_intake_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_media_intakes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    grant_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reservation_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    period_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_microusd: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+    )
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    language: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_call_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    provider_operation_ref: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    billed_quantity: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )
+    actual_microusd: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )
+    reason_code: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    receipt_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
