@@ -434,6 +434,11 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "owner_only_count": {"type": "integer", "minimum": 0},
                     "registration_ready": {"type": "boolean"},
+                    "consent_accepted_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "consent_ready": {"type": "boolean"},
                     "external_effects": {
                         "type": "integer",
                         "const": 0,

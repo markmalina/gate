@@ -19,7 +19,10 @@ from app.application.become_controlled_intake import (
     registration_evidence,
 )
 from app.models.alpha import AgentInstallationModel
-from app.models.become import BecomeControlledIntakeReceiptModel
+from app.models.become import (
+    BecomeControlledConsentReceiptModel,
+    BecomeControlledIntakeReceiptModel,
+)
 from app.models.canonical import Dialog, TransportConnector, Workspace
 from app.models.domain import (
     TelegramOutboxEvent,
@@ -325,6 +328,27 @@ async def become_controlled_intake_status(
     total = int(row[0] or 0)
     registrations = int(row[1] or 0)
     owner_only = int(row[2] or 0)
+    consent_count = int(
+        (
+            await session.execute(
+                select(func.count(BecomeControlledConsentReceiptModel.id))
+                .join(
+                    Workspace,
+                    Workspace.id
+                    == BecomeControlledConsentReceiptModel.workspace_id,
+                )
+                .where(
+                    Workspace.key == workspace_key,
+                    Workspace.is_active.is_(True),
+                    BecomeControlledConsentReceiptModel.connector_key
+                    == BECOME_CONNECTOR_KEY,
+                    BecomeControlledConsentReceiptModel.intent
+                    == "consent_accepted",
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -335,6 +359,8 @@ async def become_controlled_intake_status(
             and registrations == 1
             and owner_only == 1
         ),
+        "consent_accepted_count": consent_count,
+        "consent_ready": consent_count == 1,
         "external_effects": 0,
         "provider_calls": 0,
         "messages_or_publications": 0,
