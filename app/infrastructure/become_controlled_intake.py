@@ -350,27 +350,36 @@ async def become_controlled_intake_status(
         ).scalar_one()
         or 0
     )
-    handoff_count = int(
-        (
-            await session.execute(
-                select(func.count(BecomeRelationsConsentHandoffModel.id))
-                .join(
-                    Workspace,
-                    Workspace.id
-                    == BecomeRelationsConsentHandoffModel.workspace_id,
-                )
-                .where(
-                    Workspace.key == workspace_key,
-                    Workspace.is_active.is_(True),
-                    BecomeRelationsConsentHandoffModel.schema_name
-                    == "relations.controlled-consent-command@1",
-                    BecomeRelationsConsentHandoffModel.status
-                    == "pending_delivery",
-                )
+    handoff_row = (
+        await session.execute(
+            select(
+                func.count(BecomeRelationsConsentHandoffModel.id),
+                func.count(BecomeRelationsConsentHandoffModel.id).filter(
+                    BecomeRelationsConsentHandoffModel.status == "delivered"
+                ),
+                func.coalesce(
+                    func.sum(
+                        BecomeRelationsConsentHandoffModel.attempt_count
+                    ),
+                    0,
+                ),
             )
-        ).scalar_one()
-        or 0
-    )
+            .join(
+                Workspace,
+                Workspace.id
+                == BecomeRelationsConsentHandoffModel.workspace_id,
+            )
+            .where(
+                Workspace.key == workspace_key,
+                Workspace.is_active.is_(True),
+                BecomeRelationsConsentHandoffModel.schema_name
+                == "relations.controlled-consent-command@1",
+            )
+        )
+    ).one()
+    handoff_count = int(handoff_row[0] or 0)
+    delivered_count = int(handoff_row[1] or 0)
+    delivery_attempts = int(handoff_row[2] or 0)
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -385,8 +394,10 @@ async def become_controlled_intake_status(
         "consent_ready": consent_count == 1,
         "relations_handoff_count": handoff_count,
         "relations_handoff_ready": consent_count == 1 and handoff_count == 1,
-        "relations_delivery_enabled": False,
-        "relations_delivery_attempts": 0,
+        "relations_delivery_enabled": True,
+        "relations_delivered_count": delivered_count,
+        "relations_delivery_ready": delivered_count == 1,
+        "relations_delivery_attempts": delivery_attempts,
         "external_effects": 0,
         "provider_calls": 0,
         "messages_or_publications": 0,

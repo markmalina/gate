@@ -125,6 +125,7 @@ from app.infrastructure.alpha_shadow_worker import (
 from app.infrastructure.become_controlled_consent import (
     SessionFactoryBecomeControlledConsentStore,
     SessionFactoryBecomeRelationsHandoffBackfiller,
+    SessionFactoryBecomeRelationsHandoffDeliverer,
 )
 from app.infrastructure.become_controlled_intake import (
     SessionFactoryBecomeControlledIntakeStore,
@@ -990,6 +991,22 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
             or settings.gate_telegram_voice_archive_enabled
         ):
             async with build_telegram_http_client() as http_client:
+                if (
+                    settings.gate_become_connector_enabled
+                    and settings.gate_become_canary_enabled
+                    and settings.gate_become_privacy_mode_confirmed
+                    and settings.gate_become_group_capacity == 1
+                ):
+                    delivered_consent = (
+                        await SessionFactoryBecomeRelationsHandoffDeliverer(
+                            sessions,
+                            http_client=http_client,
+                        ).deliver_one()
+                    )
+                    if delivered_consent:
+                        logger.info(
+                            "Delivered one BECOME consent handoff to Relations"
+                        )
                 alpha_canary = None
                 if settings.gate_alpha_canary_enabled:
                     telegram = TelegramClient(

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,6 +26,9 @@ from app.application.become_controlled_consent import (
 from app.application.become_controlled_intake import (
     BECOME_CONNECTOR_KEY,
     BecomeControlledIntakeError,
+)
+from app.application.become_relations_delivery import (
+    parse_relations_consent_acceptance,
 )
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
@@ -359,3 +363,91 @@ class SessionFactoryBecomeRelationsHandoffBackfiller:
                 consent_receipt_id=consent.id,
                 receipt=parse_controlled_consent_receipt(consent.payload),
             )
+
+
+
+BECOME_RELATIONS_CONSENT_ENDPOINT = (
+    "http://become-relations-controlled.railway.internal:3000"
+    "/internal/become/controlled-consent"
+)
+
+
+class SessionFactoryBecomeRelationsHandoffDeliverer:
+    """Deliver one content-free handoff over Railway private networking."""
+
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        http_client: httpx.AsyncClient,
+        endpoint: str = BECOME_RELATIONS_CONSENT_ENDPOINT,
+    ) -> None:
+        self._sessions = sessions
+        self._http_client = http_client
+        self._endpoint = endpoint
+
+    async def deliver_one(self) -> bool:
+        async with self._sessions.begin() as session:
+            handoff = await session.scalar(
+                select(BecomeRelationsConsentHandoffModel)
+                .join(
+                    Workspace,
+                    Workspace.id
+                    == BecomeRelationsConsentHandoffModel.workspace_id,
+                )
+                .where(
+                    Workspace.is_active.is_(True),
+                    BecomeRelationsConsentHandoffModel.status
+                    == "pending_delivery",
+                )
+                .order_by(
+                    BecomeRelationsConsentHandoffModel.created_at.asc(),
+                    BecomeRelationsConsentHandoffModel.id.asc(),
+                )
+                .limit(1)
+                .with_for_update(
+                    of=BecomeRelationsConsentHandoffModel,
+                    skip_locked=True,
+                )
+            )
+            if handoff is None:
+                return False
+
+            handoff.attempt_count += 1
+            try:
+                response = await self._http_client.post(
+                    self._endpoint,
+                    json=handoff.payload,
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                raw_acceptance = response.json()
+            except httpx.HTTPStatusError as exc:
+                handoff.last_error_code = (
+                    f"relations_http_{exc.response.status_code}"
+                )
+                return False
+            except (httpx.HTTPError, ValueError):
+                handoff.last_error_code = "relations_transport_or_json_error"
+                return False
+
+            expected_idempotency_key = handoff.payload.get("idempotency_key")
+            if not isinstance(expected_idempotency_key, str):
+                handoff.last_error_code = "relations_command_invalid"
+                return False
+            try:
+                acceptance = parse_relations_consent_acceptance(
+                    raw_acceptance,
+                    expected_command_digest=handoff.command_digest,
+                    expected_idempotency_key=expected_idempotency_key,
+                )
+            except BecomeControlledIntakeError:
+                handoff.last_error_code = "relations_acceptance_invalid"
+                return False
+
+            handoff.status = "delivered"
+            handoff.acceptance_digest = str(acceptance["receipt_digest"])
+            handoff.acceptance_payload = acceptance
+            handoff.last_error_code = None
+            handoff.delivered_at = datetime.now(UTC)
+            return True

@@ -444,13 +444,15 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "minimum": 0,
                     },
                     "relations_handoff_ready": {"type": "boolean"},
-                    "relations_delivery_enabled": {
-                        "type": "boolean",
-                        "const": False,
+                    "relations_delivery_enabled": {"type": "boolean"},
+                    "relations_delivered_count": {
+                        "type": "integer",
+                        "minimum": 0,
                     },
+                    "relations_delivery_ready": {"type": "boolean"},
                     "relations_delivery_attempts": {
                         "type": "integer",
-                        "const": 0,
+                        "minimum": 0,
                     },
                     "external_effects": {
                         "type": "integer",
