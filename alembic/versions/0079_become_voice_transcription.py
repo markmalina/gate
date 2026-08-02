@@ -40,6 +40,13 @@ def upgrade() -> None:
         sa.Column("language", sa.String(length=32), nullable=False),
         sa.Column("provider_call_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("provider_operation_ref", sa.String(length=255), nullable=True),
+        sa.Column("staged_transcript", sa.Text(), nullable=True),
+        sa.Column("transcript_digest", sa.String(length=64), nullable=True),
+        sa.Column(
+            "provider_succeeded_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
         sa.Column("billed_quantity", sa.BigInteger(), nullable=True),
         sa.Column("actual_microusd", sa.BigInteger(), nullable=True),
         sa.Column("reason_code", sa.String(length=128), nullable=True),
