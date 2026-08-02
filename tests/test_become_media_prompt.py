@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from importlib import import_module
 
-import app.application.become_media_prompt as prompt
 import pytest
 
 
+prompt = import_module("app.application.become_media_prompt")
 NOW = datetime(2026, 8, 2, tzinfo=UTC)
 
 
