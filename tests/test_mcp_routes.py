@@ -132,6 +132,8 @@ async def _become_intake_status(
         "chain_ready_count": 0,
         "chain_requested_count": 0,
         "chain_unknown_count": 0,
+        "chain_failed_count": 0,
+        "chain_last_failure_code": None,
         "chain_reconciliation_required": False,
         "relations_chain_completed_count": 0,
         "mayaki_chain_completed_count": 0,
