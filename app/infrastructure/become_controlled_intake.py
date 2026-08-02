@@ -18,13 +18,13 @@ from app.application.become_controlled_intake import (
     PersistedBecomeControlledIntake,
     registration_evidence,
 )
+from app.infrastructure.become_media_intake import become_media_status
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
     BecomeControlledIntakeReceiptModel,
     BecomeRelationsConsentHandoffModel,
 )
-from app.infrastructure.become_media_intake import become_media_status
 from app.models.canonical import Dialog, TransportConnector, Workspace
 from app.models.domain import (
     TelegramOutboxEvent,
