@@ -164,9 +164,8 @@ class Settings(BaseSettings):
         le=1,
         validation_alias="GATE_BECOME_GROUP_CAPACITY",
     )
-    # Owner-authorized four-slot activation; revert after terminal receipts.
     gate_become_i4_chain_execution_enabled: bool = Field(
-        default=True,
+        default=False,
         validation_alias="GATE_BECOME_I4_CHAIN_EXECUTION_ENABLED",
     )
     gate_become_voice_transcription_enabled: bool = Field(
