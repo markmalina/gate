@@ -104,8 +104,11 @@ def downgrade() -> None:
         type_="check",
     )
     op.execute(
-        "UPDATE become_relations_consent_handoffs "
-        "SET status = 'delivered' "
+        "UPDATE become_relations_consent_handoffs SET "
+        "acceptance_digest = COALESCE(acceptance_digest, execution_digest), "
+        "acceptance_payload = COALESCE(acceptance_payload, execution_payload), "
+        "delivered_at = COALESCE(delivered_at, executed_at), "
+        "status = 'delivered' "
         "WHERE status IN ('pending_execution', 'executed')"
     )
     op.drop_column("become_relations_consent_handoffs", "executed_at")
