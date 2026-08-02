@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -596,7 +597,7 @@ def _correlation_ref(
 
 
 def _validate_slot_identity(
-    slots: list[BecomeVoiceChainSlotModel],
+    slots: Sequence[BecomeVoiceChainSlotModel],
 ) -> None:
     identities = [
         (slot.stage, slot.position, slot.schema_name)
