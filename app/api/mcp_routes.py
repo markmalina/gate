@@ -79,6 +79,9 @@ from app.infrastructure.alpha_owner_test_runtime import (
     verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
+from app.infrastructure.become_controlled_intake import (
+    become_controlled_intake_status,
+)
 from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
@@ -296,6 +299,12 @@ async def mcp_endpoint(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
                 settings=settings,
+            )
+            snapshot["become_controlled_intake"] = (
+                await become_controlled_intake_status(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                )
             )
             snapshot["telegram_voice"] = (
                 await telegram_voice_operational_status(

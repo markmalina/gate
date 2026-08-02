@@ -90,6 +90,27 @@ async def _parity_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
     return SimpleNamespace(payload=_parity_status_payload)
 
 
+async def _become_intake_status(
+    *_args: object,
+    **_kwargs: object,
+) -> dict[str, object]:
+    return {
+        "schema": "gate.become-controlled-intake@1",
+        "receipt_count": 1,
+        "registration_confirmed_count": 1,
+        "owner_only_count": 1,
+        "registration_ready": True,
+        "external_effects": 0,
+        "provider_calls": 0,
+        "messages_or_publications": 0,
+        "media_bytes": 0,
+        "real_payments": 0,
+        "private_content_exposed": False,
+        "provider_identifiers_exposed": False,
+        "telegram_identifiers_exposed": False,
+    }
+
+
 class UnexpectedTelegramClient:
     """Fail if a read-only MCP test reaches the Telegram provider."""
 
@@ -668,6 +689,10 @@ async def test_mcp_status_is_scoped(
         "app.api.mcp_routes.telegram_business_text_parity_status",
         _parity_status,
     )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.become_controlled_intake_status",
+        _become_intake_status,
+    )
     response = await _post(
         {
             "jsonrpc": "2.0",
@@ -715,6 +740,17 @@ async def test_mcp_status_is_scoped(
         "reserved_microusd": 0,
         "remaining_microusd": 50_000_000,
     }
+    assert structured["become_controlled_intake"]["receipt_count"] == 1
+    assert structured["become_controlled_intake"]["registration_ready"] is True
+    assert structured["become_controlled_intake"]["private_content_exposed"] is False
+    assert (
+        structured["become_controlled_intake"]["provider_identifiers_exposed"]
+        is False
+    )
+    assert (
+        structured["become_controlled_intake"]["telegram_identifiers_exposed"]
+        is False
+    )
     assert structured["telegram_voice"] == _voice_status_payload()
     assert structured["telegram_business_text_parity"] == _parity_status_payload()
     assert "Contact directory:" in result["content"][0]["text"]
