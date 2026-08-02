@@ -144,7 +144,7 @@ async def test_reserve_rejects_private_content() -> None:
             workspace_key="workspace-test",
             correlation_ref="synthetic://correlation/voice/123",
             stage=chain.BecomeChainStage.RELATIONS,
-            request_payload={"raw_text": "private words"},
+            request_payload={"transcript": "private words"},
             source_sha=SOURCE_SHA,
             requested_at=NOW,
         )
