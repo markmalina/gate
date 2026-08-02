@@ -533,12 +533,23 @@ async def become_voice_chain_status(
             if state == BecomeChainSlotState.FAILED.value
         ),
         "chain_last_failure_code": failure_code,
-    }
-    for stage in BECOME_CHAIN_STAGES:
-        result[f"{stage}_chain_completed_count"] = counts.get(
-            (stage, BecomeChainSlotState.COMPLETED.value),
+        "relations_chain_completed_count": counts.get(
+            ("relations", BecomeChainSlotState.COMPLETED.value),
             0,
-        )
+        ),
+        "mayaki_chain_completed_count": counts.get(
+            ("mayaki", BecomeChainSlotState.COMPLETED.value),
+            0,
+        ),
+        "oko_chain_completed_count": counts.get(
+            ("oko", BecomeChainSlotState.COMPLETED.value),
+            0,
+        ),
+        "take_chain_completed_count": counts.get(
+            ("take", BecomeChainSlotState.COMPLETED.value),
+            0,
+        ),
+    }
     return result
 
 
