@@ -438,9 +438,14 @@ async def become_controlled_intake_status(
         api_key_configured=transcription_api_key_configured,
         now=now or datetime.now(UTC),
     )
-    provider_calls = int(
-        transcription["voice_transcription_call_boundary_count"]
-    )
+    provider_calls_value = transcription[
+        "voice_transcription_call_boundary_count"
+    ]
+    if type(provider_calls_value) is not int:
+        raise BecomeControlledIntakeError(
+            "become_transcription_status_invalid"
+        )
+    provider_calls = provider_calls_value
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
