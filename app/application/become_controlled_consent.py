@@ -261,6 +261,23 @@ def consent_evidence(
     return BecomeConsentEvidence(str(chat_id), str(actor_id))
 
 
+def is_consent_command(
+    update: JsonObject,
+    *,
+    invocation_command: str,
+    bot_username: str,
+) -> bool:
+    try:
+        consent_evidence(
+            update,
+            invocation_command=invocation_command,
+            bot_username=bot_username,
+        )
+    except BecomeControlledIntakeError:
+        return False
+    return True
+
+
 def build_consent_receipt(
     *,
     context: BecomeConsentContext,
