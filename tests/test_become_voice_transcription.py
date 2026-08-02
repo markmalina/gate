@@ -145,6 +145,12 @@ class FakeStore:
         self.events.append(state.value)
 
 
+class RevokedStore(FakeStore):
+    async def begin_call(self, **_: object) -> BecomeVoiceTranscriptionWork | None:
+        self.events.append("pre_call_gate_revoked")
+        return None
+
+
 class FakeBudget:
     def __init__(self, current: BudgetReservation | None = None) -> None:
         self.current = current
@@ -335,3 +341,16 @@ async def test_succeeded_unsettled_recovers_without_provider_call() -> None:
     assert speech.calls == 0
     assert budget.events == ["settle"]
     assert store.events == ["claim", "confirmed"]
+
+@pytest.mark.anyio
+async def test_reserved_resume_revalidates_gate_before_provider_call() -> None:
+    store = RevokedStore(work(BecomeVoiceTranscriptionState.RESERVED))
+    budget = FakeBudget(reservation())
+    speech = FakeSpeech()
+
+    result = await service(store, budget, speech).run_once(now=NOW)
+
+    assert result.disposition == "call_not_claimed"
+    assert result.reconciliation_required is True
+    assert store.events == ["claim", "pre_call_gate_revoked"]
+    assert speech.calls == 0
