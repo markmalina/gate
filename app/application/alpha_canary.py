@@ -129,6 +129,7 @@ class AlphaCanaryResult:
     code: str
     shadow: AlphaShadowWorkerResult | None = None
     delivery: AlphaDeliveryResult | None = None
+    membership: AlphaMembershipResult | None = None
 
 
 class AlphaCanaryStore(Protocol):
@@ -219,6 +220,7 @@ class ProcessAlphaCanaryUpdateService:
             return AlphaCanaryResult(
                 AlphaCanaryDisposition.DISCOVERED,
                 "alpha_registration_command_present",
+                membership=membership,
             )
 
         if kind == "message" and not await self._store.is_active_group(
@@ -249,7 +251,11 @@ class ProcessAlphaCanaryUpdateService:
                 if membership.action is AlphaMembershipAction.PRESENT
                 else AlphaCanaryDisposition.REVOKED
             )
-            return AlphaCanaryResult(disposition, f"alpha_membership_{action.value}")
+            return AlphaCanaryResult(
+                disposition,
+                f"alpha_membership_{action.value}",
+                membership=membership,
+            )
 
         if not _has_nonblank_text(payload):
             return AlphaCanaryResult(

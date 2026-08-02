@@ -21,6 +21,11 @@ from app.application.alpha_canary import (
 )
 from app.application.alpha_delivery import DeliverAlphaGrantService
 from app.application.alpha_shadow_worker import ProcessAlphaShadowMessageService
+from app.application.become_controlled_intake import (
+    BecomeControlledIntakeError,
+    ProcessBecomeRegistrationCommand,
+    ProcessBecomeRegistrationService,
+)
 from app.application.canonical_messaging import (
     CanonicalIngressStore,
     ConnectorKind,
@@ -112,6 +117,11 @@ from app.infrastructure.alpha_delivery import (
 from app.infrastructure.alpha_shadow_worker import (
     SessionFactoryAlphaShadowTurnRepository,
 )
+from app.infrastructure.become_controlled_intake import (
+    SessionFactoryBecomeControlledIntakeStore,
+    SessionFactoryBecomeRegistrationReplayer,
+    TelegramBecomeOwnerPresence,
+)
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
@@ -192,6 +202,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
         beta_canary: ProcessAlphaCanaryUpdateService | None = None,
         become_canary: ProcessAlphaCanaryUpdateService | None = None,
+        become_intake: ProcessBecomeRegistrationService | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -205,6 +216,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._alpha_canary = alpha_canary
         self._beta_canary = beta_canary
         self._become_canary = become_canary
+        self._become_intake = become_intake
         self._voice_updates = voice_updates
         self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
@@ -681,6 +693,35 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         "alpha_canary_processing_failed"
                     ) from None
                 if (
+                    connector.key is TelegramConnectorKey.BECOME_GROUP
+                    and canary.code == "alpha_registration_command_present"
+                ):
+                    if self._become_intake is None:
+                        raise TelegramUpdateProcessingError(
+                            "become_registration_intake_not_configured"
+                        )
+                    membership = canary.membership
+                    if membership is None or membership.installation_key is None:
+                        raise TelegramUpdateProcessingError(
+                            "become_registration_installation_missing"
+                        )
+                    try:
+                        await self._become_intake.execute(
+                            ProcessBecomeRegistrationCommand(
+                                workspace_key=self._settings.gate_workspace_id,
+                                source_receipt_id=item.receipt_id,
+                                installation_ref=membership.installation_key,
+                                update=payload,
+                                received_at=item.received_at,
+                            )
+                        )
+                    except BecomeControlledIntakeError as exc:
+                        raise TelegramUpdateProcessingError(exc.code) from None
+                    except Exception:
+                        raise TelegramUpdateProcessingError(
+                            "become_registration_intake_failed"
+                        ) from None
+                if (
                     canary.disposition is AlphaCanaryDisposition.BLOCKED
                     and canary.code == "rate_limited"
                 ):
@@ -738,6 +779,7 @@ async def run_telegram_worker_once(
     alpha_canary: ProcessAlphaCanaryUpdateService | None = None,
     beta_canary: ProcessAlphaCanaryUpdateService | None = None,
     become_canary: ProcessAlphaCanaryUpdateService | None = None,
+    become_intake: ProcessBecomeRegistrationService | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     voice_archive: TelegramVoiceArchiver | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -810,6 +852,7 @@ async def run_telegram_worker_once(
             alpha_canary=alpha_canary,
             beta_canary=beta_canary,
             become_canary=become_canary,
+            become_intake=become_intake,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
             business_text_parity=business_text_parity,
@@ -844,6 +887,19 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    if (
+        settings.gate_become_connector_enabled
+        and settings.gate_become_canary_enabled
+        and settings.gate_become_privacy_mode_confirmed
+        and settings.gate_become_group_capacity == 1
+    ):
+        recovered_registration = await SessionFactoryBecomeRegistrationReplayer(
+            sessions
+        ).requeue_latest(now=datetime.now(UTC))
+        if recovered_registration:
+            logger.info(
+                "Requeued one durable BECOME registration for controlled intake"
+            )
     if settings.gate_alpha_membership_replay_limit:
         if (
             not settings.gate_alpha_connector_enabled
@@ -1007,6 +1063,20 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         ),
                         connector_key=TelegramConnectorKey.BECOME_GROUP.value,
                     )
+                    become_intake = ProcessBecomeRegistrationService(
+                        store=SessionFactoryBecomeControlledIntakeStore(sessions),
+                        presence=TelegramBecomeOwnerPresence(
+                            bot_token=(
+                                settings.telegram_become_bot_token.get_secret_value()
+                            ),
+                            http_client=http_client,
+                        ),
+                        subject_pepper=(
+                            settings.telegram_become_webhook_secret.get_secret_value()
+                        ),
+                    )
+                else:
+                    become_intake = None
                 universal_mayak = None
                 universal_mayak_delivery = None
                 if settings.gate_universal_mayak_runtime_enabled:
@@ -1116,6 +1186,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         alpha_canary=alpha_canary,
                         beta_canary=beta_canary,
                         become_canary=become_canary,
+                        become_intake=become_intake,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
                         universal_mayak=universal_mayak,

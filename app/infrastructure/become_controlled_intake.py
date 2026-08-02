@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -18,7 +20,142 @@ from app.application.become_controlled_intake import (
 from app.models.alpha import AgentInstallationModel
 from app.models.become import BecomeControlledIntakeReceiptModel
 from app.models.canonical import Dialog, TransportConnector, Workspace
-from app.models.domain import TelegramReceipt
+from app.models.domain import (
+    TelegramOutboxEvent,
+    TelegramOutboxStatus,
+    TelegramReceipt,
+    TelegramReceiptStatus,
+)
+
+
+class SessionFactoryBecomeRegistrationReplayer:
+    """Requeue one previously processed registration when no intake receipt exists."""
+
+    _SCAN_LIMIT = 16
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def requeue_latest(self, *, now: datetime) -> bool:
+        if now.tzinfo is None:
+            raise ValueError("become_registration_replay_time_invalid")
+        async with self._sessions.begin() as session:
+            existing = await session.scalar(
+                select(BecomeControlledIntakeReceiptModel.id)
+                .where(
+                    BecomeControlledIntakeReceiptModel.connector_key
+                    == BECOME_CONNECTOR_KEY,
+                    BecomeControlledIntakeReceiptModel.intent
+                    == "registration_confirmed",
+                )
+                .limit(1)
+            )
+            if existing is not None:
+                return False
+
+            result = await session.execute(
+                select(TelegramOutboxEvent, TelegramReceipt)
+                .select_from(TelegramReceipt)
+                .join(
+                    TelegramOutboxEvent,
+                    TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
+                )
+                .outerjoin(
+                    BecomeControlledIntakeReceiptModel,
+                    BecomeControlledIntakeReceiptModel.source_receipt_id
+                    == TelegramReceipt.id,
+                )
+                .where(
+                    TelegramReceipt.bot_key == BECOME_CONNECTOR_KEY,
+                    TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
+                    TelegramOutboxEvent.status
+                    == TelegramOutboxStatus.DELIVERED.value,
+                    BecomeControlledIntakeReceiptModel.id.is_(None),
+                )
+                .order_by(
+                    TelegramReceipt.received_at.desc(),
+                    TelegramReceipt.created_at.desc(),
+                    TelegramReceipt.id.desc(),
+                )
+                .limit(self._SCAN_LIMIT)
+                .with_for_update(of=TelegramOutboxEvent, skip_locked=True)
+            )
+            for event, receipt in result.all():
+                try:
+                    registration_evidence(
+                        receipt.payload,
+                        invocation_command="become",
+                        bot_username="BecomeNowBot",
+                    )
+                except BecomeControlledIntakeError:
+                    continue
+
+                event.status = TelegramOutboxStatus.PENDING.value
+                event.attempt_count = 0
+                event.available_at = now
+                event.locked_at = None
+                event.delivered_at = None
+                event.last_error_code = None
+                event.last_error_at = None
+
+                receipt.status = TelegramReceiptStatus.RECEIVED.value
+                receipt.attempt_count = 0
+                receipt.processing_started_at = None
+                receipt.processed_at = None
+                receipt.next_attempt_at = None
+                receipt.last_error_code = None
+                receipt.last_error_at = None
+                return True
+            return False
+
+
+class TelegramBecomeOwnerPresence:
+    """Read only aggregate group size; never enumerate or expose participants."""
+
+    def __init__(
+        self,
+        *,
+        bot_token: str,
+        http_client: httpx.AsyncClient,
+    ) -> None:
+        self._bot_token = bot_token.strip()
+        self._http_client = http_client
+
+    async def member_count(
+        self,
+        *,
+        installation_ref: str,
+        provider_dialog_id: str,
+    ) -> int | None:
+        if (
+            not self._bot_token
+            or not installation_ref.startswith("installation-")
+            or not provider_dialog_id
+        ):
+            return None
+        endpoint = (
+            f"https://api.telegram.org/bot{self._bot_token}/getChatMemberCount"
+        )
+        try:
+            response = await self._http_client.post(
+                endpoint,
+                json={"chat_id": provider_dialog_id},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        result = payload.get("result") if isinstance(payload, dict) else None
+        if (
+            not isinstance(payload, dict)
+            or payload.get("ok") is not True
+            or not isinstance(result, int)
+            or isinstance(result, bool)
+            or result < 0
+        ):
+            return None
+        return result
 
 
 class SessionFactoryBecomeControlledIntakeStore:
