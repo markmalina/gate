@@ -52,10 +52,11 @@ class DownloadedBecomeMedia:
             raise BecomeControlledIntakeError("become_media_download_empty")
         if len(self.data) > TELEGRAM_BOT_DOWNLOAD_LIMIT_BYTES:
             raise BecomeControlledIntakeError("become_media_download_limit_exceeded")
-        expected_prefix = (
-            "audio/" if self.media_type.startswith("audio/") else "video/"
-        )
-        if not self.media_type.startswith(expected_prefix):
+        if (
+            not self.media_type
+            or self.media_type != self.media_type.strip()
+            or len(self.media_type) > 128
+        ):
             raise BecomeControlledIntakeError("become_media_type_invalid")
 
 
