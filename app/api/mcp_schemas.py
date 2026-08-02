@@ -454,6 +454,13 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
+                    "relations_consent_executed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "relations_consent_executed_ready": {
+                        "type": "boolean",
+                    },
                     "external_effects": {
                         "type": "integer",
                         "const": 0,
