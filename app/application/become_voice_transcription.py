@@ -350,13 +350,21 @@ class ProcessBecomeVoiceTranscriptionService:
                 now=now,
             )
         else:
-            normalized = await self._normalizer.normalize(
-                DownloadedVoice(
-                    data=work.raw_data,
-                    filename=_filename(work.raw_media_type),
-                    media_type=work.raw_media_type,
+            try:
+                normalized = await self._normalizer.normalize(
+                    DownloadedVoice(
+                        data=work.raw_data,
+                        filename=_filename(work.raw_media_type),
+                        media_type=work.raw_media_type,
+                    )
                 )
-            )
+            except Exception:
+                await self._store.mark_blocked(
+                    attempt_id=work.attempt_id,
+                    reason_code="become_transcription_normalization_failed",
+                    now=now,
+                )
+                return BecomeVoiceTranscriptionRun("blocked")
             if normalized.additional_parts:
                 await self._store.mark_blocked(
                     attempt_id=work.attempt_id,
