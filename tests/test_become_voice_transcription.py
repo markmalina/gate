@@ -6,7 +6,10 @@ from datetime import UTC, datetime
 import pytest
 
 from app.application.become_voice_transcription import (
+    BecomeTranscriptionBudget,
+    BecomeVoiceNormalizer,
     BecomeVoiceTranscriptionState,
+    BecomeVoiceTranscriptionStore,
     BecomeVoiceTranscriptionWork,
     ProcessBecomeVoiceTranscriptionService,
 )
@@ -221,9 +224,12 @@ def service(
     enabled: bool = True,
 ) -> ProcessBecomeVoiceTranscriptionService:
     return ProcessBecomeVoiceTranscriptionService(
-        store=store,
-        normalizer=normalizer or FakeNormalizer(),
-        budget=budget,
+        store=cast(BecomeVoiceTranscriptionStore, store),
+        normalizer=cast(
+            BecomeVoiceNormalizer,
+            normalizer or FakeNormalizer(),
+        ),
+        budget=cast(BecomeTranscriptionBudget, budget),
         speech_to_text=speech,
         workspace_key="workspace-test",
         model="gpt-4o-mini-transcribe",
