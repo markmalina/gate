@@ -461,16 +461,62 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     "relations_consent_executed_ready": {
                         "type": "boolean",
                     },
+                    "media_intake_gate_ready": {"type": "boolean"},
+                    "media_intake_ready": {"type": "boolean"},
+                    "media_intake_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "media_pending_download_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_intake_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "video_intake_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "raw_media_retention_days": {
+                        "type": "integer",
+                        "const": 7,
+                    },
+                    "raw_media_retained_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "raw_media_purged_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "raw_media_retained_bytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "confirmed_transcript_retention_days": {
+                        "type": "integer",
+                        "const": 30,
+                    },
+                    "confirmed_transcript_retained_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "confirmed_transcript_purged_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
                     "external_effects": {
                         "type": "integer",
-                        "const": 0,
+                        "minimum": 0,
                     },
                     "provider_calls": {"type": "integer", "const": 0},
                     "messages_or_publications": {
                         "type": "integer",
                         "const": 0,
                     },
-                    "media_bytes": {"type": "integer", "const": 0},
+                    "media_bytes": {"type": "integer", "minimum": 0},
                     "real_payments": {"type": "integer", "const": 0},
                     "private_content_exposed": {
                         "type": "boolean",
