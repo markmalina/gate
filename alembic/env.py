@@ -10,6 +10,7 @@ from app.models import (  # noqa: F401
     alpha_preflight,
     alpha_voice,
     beta_context,
+    become,
     billing,
     canonical,
     relationship_crm,
