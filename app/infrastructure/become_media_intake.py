@@ -594,6 +594,9 @@ async def become_media_status(
             select(
                 func.count(BecomeMediaIntakeModel.id),
                 func.count(BecomeMediaIntakeModel.id).filter(
+                    BecomeMediaIntakeModel.status == "pending_download"
+                ),
+                func.count(BecomeMediaIntakeModel.id).filter(
                     BecomeMediaIntakeModel.status == "archived"
                 ),
                 func.count(BecomeMediaIntakeModel.id).filter(
@@ -612,6 +615,12 @@ async def become_media_status(
                 func.count(BecomeMediaIntakeModel.id).filter(
                     BecomeMediaIntakeModel.transcript_state == "purged"
                 ),
+                func.count(BecomeMediaIntakeModel.id).filter(
+                    BecomeMediaIntakeModel.kind == "voice"
+                ),
+                func.count(BecomeMediaIntakeModel.id).filter(
+                    BecomeMediaIntakeModel.kind == "video"
+                ),
             )
             .join(
                 Workspace,
@@ -625,9 +634,12 @@ async def become_media_status(
     ).one()
     return {
         "media_intake_count": int(row[0] or 0),
-        "raw_media_retained_count": int(row[1] or 0),
-        "raw_media_purged_count": int(row[2] or 0),
-        "raw_media_retained_bytes": int(row[3] or 0),
-        "confirmed_transcript_retained_count": int(row[4] or 0),
-        "confirmed_transcript_purged_count": int(row[5] or 0),
+        "media_pending_download_count": int(row[1] or 0),
+        "raw_media_retained_count": int(row[2] or 0),
+        "raw_media_purged_count": int(row[3] or 0),
+        "raw_media_retained_bytes": int(row[4] or 0),
+        "confirmed_transcript_retained_count": int(row[5] or 0),
+        "confirmed_transcript_purged_count": int(row[6] or 0),
+        "voice_intake_count": int(row[7] or 0),
+        "video_intake_count": int(row[8] or 0),
     }
