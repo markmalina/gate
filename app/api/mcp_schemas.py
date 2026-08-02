@@ -439,6 +439,19 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "minimum": 0,
                     },
                     "consent_ready": {"type": "boolean"},
+                    "relations_handoff_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "relations_handoff_ready": {"type": "boolean"},
+                    "relations_delivery_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "relations_delivery_attempts": {
+                        "type": "integer",
+                        "const": 0,
+                    },
                     "external_effects": {
                         "type": "integer",
                         "const": 0,

@@ -187,3 +187,65 @@ class BecomeControlledConsentReceiptModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+
+class BecomeRelationsConsentHandoffModel(Base):
+    """Provider-disabled Relations command projected from one consent receipt."""
+
+    __tablename__ = "become_relations_consent_handoffs"
+    __table_args__ = (
+        UniqueConstraint(
+            "consent_receipt_id",
+            name="uq_become_relations_handoff_consent",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "handoff_key",
+            name="uq_become_relations_handoff_workspace_key",
+        ),
+        CheckConstraint(
+            "schema_name = 'relations.controlled-consent-command@1'",
+            name="ck_become_relations_handoff_schema",
+        ),
+        CheckConstraint(
+            "status = 'pending_delivery'",
+            name="ck_become_relations_handoff_status",
+        ),
+        CheckConstraint(
+            "char_length(command_digest) = 64",
+            name="ck_become_relations_handoff_digest",
+        ),
+        Index(
+            "ix_become_relations_handoff_workspace_created",
+            "workspace_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    consent_receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_controlled_consent_receipts.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    handoff_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    command_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )

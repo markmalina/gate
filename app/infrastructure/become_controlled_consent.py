@@ -12,11 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.become_controlled_consent import (
     CONSENT_INTENT,
     QUEST_REF,
+    RELATIONS_CONSENT_COMMAND_SCHEMA,
     BecomeConsentContext,
+    BecomeControlledConsentReceipt,
     PersistBecomeControlledConsentCommand,
     PersistedBecomeControlledConsent,
     consent_correlation_ref,
     consent_evidence,
+    parse_controlled_consent_receipt,
+    project_relations_consent_command,
 )
 from app.application.become_controlled_intake import (
     BECOME_CONNECTOR_KEY,
@@ -26,6 +30,7 @@ from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
     BecomeControlledIntakeReceiptModel,
+    BecomeRelationsConsentHandoffModel,
 )
 from app.models.canonical import Dialog, TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
@@ -229,6 +234,12 @@ class SessionFactoryBecomeControlledConsentStore:
                 .returning(BecomeControlledConsentReceiptModel.id)
             )
             if inserted is not None:
+                await _ensure_relations_handoff(
+                    session,
+                    workspace_id=workspace.id,
+                    consent_receipt_id=inserted,
+                    receipt=command.receipt,
+                )
                 return PersistedBecomeControlledConsent(
                     receipt_key=command.receipt.receipt_key,
                     receipt_digest=command.receipt.digest,
@@ -250,8 +261,101 @@ class SessionFactoryBecomeControlledConsentStore:
                 raise BecomeControlledIntakeError(
                     "become_consent_persistence_conflict"
                 )
+            if (
+                existing.receipt_digest != command.receipt.digest
+                or existing.payload != payload
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_consent_mutated_replay"
+                )
+            await _ensure_relations_handoff(
+                session,
+                workspace_id=workspace.id,
+                consent_receipt_id=existing.id,
+                receipt=parse_controlled_consent_receipt(existing.payload),
+            )
             return PersistedBecomeControlledConsent(
                 receipt_key=existing.receipt_key,
                 receipt_digest=existing.receipt_digest,
                 duplicate=True,
+            )
+
+
+async def _ensure_relations_handoff(
+    session: AsyncSession,
+    *,
+    workspace_id: UUID,
+    consent_receipt_id: UUID,
+    receipt: BecomeControlledConsentReceipt,
+) -> bool:
+    """Persist one exact Relations command without attempting delivery."""
+
+    command = project_relations_consent_command(receipt)
+    command_digest = str(command["command_digest"])
+    inserted = await session.scalar(
+        insert(BecomeRelationsConsentHandoffModel)
+        .values(
+            workspace_id=workspace_id,
+            consent_receipt_id=consent_receipt_id,
+            handoff_key=f"become_relations_{command_digest[:24]}",
+            command_digest=command_digest,
+            schema_name=RELATIONS_CONSENT_COMMAND_SCHEMA,
+            status="pending_delivery",
+            payload=command,
+        )
+        .on_conflict_do_nothing(
+            constraint="uq_become_relations_handoff_consent",
+        )
+        .returning(BecomeRelationsConsentHandoffModel.id)
+    )
+    return inserted is not None
+
+
+class SessionFactoryBecomeRelationsHandoffBackfiller:
+    """Project one existing consent after a deployment adds the handoff table."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def ensure_one(self) -> bool:
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    select(
+                        BecomeControlledConsentReceiptModel,
+                        Workspace.id,
+                    )
+                    .join(
+                        Workspace,
+                        Workspace.id
+                        == BecomeControlledConsentReceiptModel.workspace_id,
+                    )
+                    .outerjoin(
+                        BecomeRelationsConsentHandoffModel,
+                        BecomeRelationsConsentHandoffModel.consent_receipt_id
+                        == BecomeControlledConsentReceiptModel.id,
+                    )
+                    .where(
+                        Workspace.is_active.is_(True),
+                        BecomeRelationsConsentHandoffModel.id.is_(None),
+                    )
+                    .order_by(
+                        BecomeControlledConsentReceiptModel.created_at.asc(),
+                        BecomeControlledConsentReceiptModel.id.asc(),
+                    )
+                    .limit(1)
+                    .with_for_update(
+                        of=BecomeControlledConsentReceiptModel,
+                        skip_locked=True,
+                    )
+                )
+            ).one_or_none()
+            if row is None:
+                return False
+            consent, workspace_id = row
+            return await _ensure_relations_handoff(
+                session,
+                workspace_id=workspace_id,
+                consent_receipt_id=consent.id,
+                receipt=parse_controlled_consent_receipt(consent.payload),
             )

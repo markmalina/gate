@@ -124,6 +124,7 @@ from app.infrastructure.alpha_shadow_worker import (
 )
 from app.infrastructure.become_controlled_consent import (
     SessionFactoryBecomeControlledConsentStore,
+    SessionFactoryBecomeRelationsHandoffBackfiller,
 )
 from app.infrastructure.become_controlled_intake import (
     SessionFactoryBecomeControlledIntakeStore,
@@ -943,6 +944,13 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         if recovered_registration:
             logger.info(
                 "Requeued one durable BECOME registration for controlled intake"
+            )
+        projected_consent = await SessionFactoryBecomeRelationsHandoffBackfiller(
+            sessions
+        ).ensure_one()
+        if projected_consent:
+            logger.info(
+                "Projected one durable BECOME consent for Relations handoff"
             )
     if settings.gate_alpha_membership_replay_limit:
         if (
