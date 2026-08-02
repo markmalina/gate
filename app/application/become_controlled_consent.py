@@ -338,3 +338,59 @@ def _digest_object(value: JsonObject) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+
+RELATIONS_CONSENT_COMMAND_SCHEMA = "relations.controlled-consent-command@1"
+RELATIONS_CONSENT_PURPOSE_REF = "BECOME_NOW_QUEST"
+
+
+def project_relations_consent_command(
+    receipt: BecomeControlledConsentReceipt,
+) -> JsonObject:
+    """Project the exact content-free command accepted by Relations."""
+
+    payload = receipt.payload()
+    command: JsonObject = {
+        "schema": RELATIONS_CONSENT_COMMAND_SCHEMA,
+        "command": "grant_consent",
+        "mode": "CONTROLLED",
+        "quest_ref": payload["quest_ref"],
+        "correlation_ref": payload["correlation_ref"],
+        "person_ref": payload["subject_ref"],
+        "purpose_ref": RELATIONS_CONSENT_PURPOSE_REF,
+        "policy_version": payload["policy_version"],
+        "policy_digest": payload["policy_digest"],
+        "evidence_ref": _derived_object_ref(
+            "consent_evidence",
+            {
+                "installation_ref": payload["installation_ref"],
+                "action_ref": payload["action_ref"],
+            },
+        ),
+        "effective_at": payload["accepted_at"],
+        "valid_until": None,
+        "prior_receipt_ref": None,
+        "idempotency_key": _derived_object_ref(
+            "idem_consent",
+            {
+                "quest_ref": payload["quest_ref"],
+                "action_ref": payload["action_ref"],
+                "policy_digest": payload["policy_digest"],
+            },
+        ),
+        "next_event": "consent.granted",
+        "execution_state": "projected_not_executed",
+        "external_effects": 0,
+        "provider_calls": 0,
+        "messages_or_publications": 0,
+        "media_bytes": 0,
+        "real_payments": 0,
+        "contains_pii": False,
+    }
+    command["command_digest"] = _digest_object(command)
+    return command
+
+
+def _derived_object_ref(prefix: str, value: JsonObject) -> str:
+    return f"{prefix}_{_digest_object(value)[:24]}"
