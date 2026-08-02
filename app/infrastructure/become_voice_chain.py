@@ -431,7 +431,7 @@ async def become_voice_chain_status(
     session: AsyncSession,
     *,
     workspace_key: str,
-) -> dict[str, int]:
+) -> dict[str, object]:
     root_count = int(
         (
             await session.scalar(
@@ -474,7 +474,27 @@ async def become_voice_chain_status(
         (str(stage), str(state)): int(count)
         for stage, state, count in rows
     }
-    result = {
+    failure_payload = await session.scalar(
+        select(BecomeVoiceChainSlotModel.receipt_payload)
+        .join(
+            Workspace,
+            Workspace.id == BecomeVoiceChainSlotModel.workspace_id,
+        )
+        .where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+            BecomeVoiceChainSlotModel.state
+            == BecomeChainSlotState.FAILED.value,
+        )
+        .order_by(BecomeVoiceChainSlotModel.terminal_at.desc())
+        .limit(1)
+    )
+    failure_code: str | None = None
+    if isinstance(failure_payload, dict):
+        value = failure_payload.get("error_code")
+        if isinstance(value, str):
+            failure_code = value
+    result: dict[str, object] = {
         "voice_correlation_count": root_count,
         "chain_slot_count": sum(counts.values()),
         "chain_ready_count": sum(
@@ -492,6 +512,12 @@ async def become_voice_chain_status(
             for (stage, state), count in counts.items()
             if state == BecomeChainSlotState.UNKNOWN.value
         ),
+        "chain_failed_count": sum(
+            count
+            for (stage, state), count in counts.items()
+            if state == BecomeChainSlotState.FAILED.value
+        ),
+        "chain_last_failure_code": failure_code,
     }
     for stage in BECOME_CHAIN_STAGES:
         result[f"{stage}_chain_completed_count"] = counts.get(
