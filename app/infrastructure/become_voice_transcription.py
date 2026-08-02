@@ -310,6 +310,17 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
             attempt = await _attempt(session, attempt_id)
             if attempt.state != BecomeVoiceTranscriptionState.RESERVED.value:
                 return None
+            if not await _eligible_existing_attempt(
+                session,
+                attempt=attempt,
+                now=now,
+            ):
+                attempt.state = BecomeVoiceTranscriptionState.BLOCKED.value
+                attempt.reason_code = (
+                    "become_transcription_pre_call_gate_revoked"
+                )
+                attempt.updated_at = now
+                return None
             attempt.state = BecomeVoiceTranscriptionState.CALLING.value
             attempt.provider_call_started_at = now
             attempt.updated_at = now
@@ -561,6 +572,11 @@ async def become_voice_transcription_status(
     )
     if workspace is None:
         raise ValueError("become_transcription_status_workspace_not_active")
+    eligible_count = await _eligible_voice_count(
+        session,
+        workspace_id=workspace.id,
+        now=now,
+    )
     attempts = (
         await session.execute(
             select(
@@ -662,9 +678,13 @@ async def become_voice_transcription_status(
         "voice_transcription_enabled": enabled,
         "voice_transcription_data_gate_approved": data_gate_approved,
         "voice_transcription_max_calls": max_calls,
-        "voice_transcription_prerequisites_ready": prerequisites,
+        "voice_transcription_eligible_count": eligible_count,
+        "voice_transcription_prerequisites_ready": (
+            prerequisites and eligible_count == 1
+        ),
         "voice_transcription_gate_ready": (
             prerequisites
+            and eligible_count == 1
             and enabled
             and data_gate_approved
             and max_calls == 1
@@ -680,6 +700,204 @@ async def become_voice_transcription_status(
         "voice_transcription_ready": confirmed == 1,
         "voice_transcription_reconciliation_required": reconciliation,
     }
+
+
+async def _eligible_voice_count(
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    now: datetime,
+) -> int:
+    return int(
+        await session.scalar(
+            select(func.count(BecomeVoiceCorrelationModel.id))
+            .select_from(BecomeVoiceCorrelationModel)
+            .join(
+                BecomeMediaIntakeModel,
+                BecomeMediaIntakeModel.id
+                == BecomeVoiceCorrelationModel.media_intake_id,
+            )
+            .join(
+                AgentInstallationModel,
+                (
+                    AgentInstallationModel.id
+                    == BecomeMediaIntakeModel.installation_id
+                )
+                & (
+                    AgentInstallationModel.workspace_id
+                    == BecomeMediaIntakeModel.workspace_id
+                ),
+            )
+            .join(
+                TransportConnector,
+                (
+                    TransportConnector.id
+                    == AgentInstallationModel.connector_id
+                )
+                & (
+                    TransportConnector.workspace_id
+                    == AgentInstallationModel.workspace_id
+                ),
+            )
+            .join(
+                BecomeControlledIntakeReceiptModel,
+                BecomeControlledIntakeReceiptModel.id
+                == BecomeMediaIntakeModel.registration_receipt_id,
+            )
+            .join(
+                BecomeControlledConsentReceiptModel,
+                BecomeControlledConsentReceiptModel.id
+                == BecomeMediaIntakeModel.consent_receipt_id,
+            )
+            .join(
+                BecomeRelationsConsentHandoffModel,
+                (
+                    BecomeRelationsConsentHandoffModel.id
+                    == BecomeMediaIntakeModel.relations_handoff_id
+                )
+                & (
+                    BecomeRelationsConsentHandoffModel.consent_receipt_id
+                    == BecomeControlledConsentReceiptModel.id
+                ),
+            )
+            .where(
+                BecomeVoiceCorrelationModel.workspace_id == workspace_id,
+                BecomeMediaIntakeModel.workspace_id == workspace_id,
+                AgentInstallationModel.state == "active",
+                TransportConnector.connector_key
+                == BECOME_TRANSCRIPTION_SCOPE_REF,
+                TransportConnector.is_enabled.is_(True),
+                BecomeControlledIntakeReceiptModel.workspace_id
+                == workspace_id,
+                BecomeControlledIntakeReceiptModel.installation_id
+                == AgentInstallationModel.id,
+                BecomeControlledIntakeReceiptModel.intent
+                == "registration_confirmed",
+                BecomeControlledIntakeReceiptModel.group_state
+                == "owner_only",
+                BecomeControlledIntakeReceiptModel.member_count == 2,
+                BecomeControlledConsentReceiptModel.workspace_id
+                == workspace_id,
+                BecomeControlledConsentReceiptModel.installation_id
+                == AgentInstallationModel.id,
+                BecomeControlledConsentReceiptModel.intent
+                == "consent_accepted",
+                BecomeControlledConsentReceiptModel.group_state
+                == "owner_only",
+                BecomeControlledConsentReceiptModel.member_count == 2,
+                BecomeRelationsConsentHandoffModel.status == "executed",
+                BecomeRelationsConsentHandoffModel.execution_digest
+                .is_not(None),
+                BecomeRelationsConsentHandoffModel.executed_at.is_not(None),
+                BecomeMediaIntakeModel.kind == "voice",
+                BecomeMediaIntakeModel.status == "archived",
+                BecomeMediaIntakeModel.raw_data.is_not(None),
+                BecomeMediaIntakeModel.raw_expires_at > now,
+                BecomeMediaIntakeModel.transcript_state == "none",
+            )
+        )
+        or 0
+    )
+
+
+async def _eligible_existing_attempt(
+    session: AsyncSession,
+    *,
+    attempt: BecomeVoiceTranscriptionAttemptModel,
+    now: datetime,
+) -> bool:
+    match_count = int(
+        await session.scalar(
+            select(func.count(BecomeVoiceCorrelationModel.id))
+            .select_from(BecomeVoiceCorrelationModel)
+            .join(
+                BecomeMediaIntakeModel,
+                BecomeMediaIntakeModel.id
+                == BecomeVoiceCorrelationModel.media_intake_id,
+            )
+            .join(
+                AgentInstallationModel,
+                (
+                    AgentInstallationModel.id
+                    == BecomeMediaIntakeModel.installation_id
+                )
+                & (
+                    AgentInstallationModel.workspace_id
+                    == BecomeMediaIntakeModel.workspace_id
+                ),
+            )
+            .join(
+                TransportConnector,
+                TransportConnector.id
+                == AgentInstallationModel.connector_id,
+            )
+            .join(
+                BecomeControlledIntakeReceiptModel,
+                BecomeControlledIntakeReceiptModel.id
+                == BecomeMediaIntakeModel.registration_receipt_id,
+            )
+            .join(
+                BecomeControlledConsentReceiptModel,
+                BecomeControlledConsentReceiptModel.id
+                == BecomeMediaIntakeModel.consent_receipt_id,
+            )
+            .join(
+                BecomeRelationsConsentHandoffModel,
+                (
+                    BecomeRelationsConsentHandoffModel.id
+                    == BecomeMediaIntakeModel.relations_handoff_id
+                )
+                & (
+                    BecomeRelationsConsentHandoffModel.consent_receipt_id
+                    == BecomeControlledConsentReceiptModel.id
+                ),
+            )
+            .where(
+                BecomeVoiceCorrelationModel.id == attempt.correlation_id,
+                BecomeVoiceCorrelationModel.workspace_id
+                == attempt.workspace_id,
+                BecomeVoiceCorrelationModel.media_intake_id
+                == attempt.media_intake_id,
+                BecomeMediaIntakeModel.id == attempt.media_intake_id,
+                BecomeMediaIntakeModel.workspace_id
+                == attempt.workspace_id,
+                AgentInstallationModel.state == "active",
+                TransportConnector.workspace_id == attempt.workspace_id,
+                TransportConnector.connector_key
+                == BECOME_TRANSCRIPTION_SCOPE_REF,
+                TransportConnector.is_enabled.is_(True),
+                BecomeControlledIntakeReceiptModel.workspace_id
+                == attempt.workspace_id,
+                BecomeControlledIntakeReceiptModel.installation_id
+                == AgentInstallationModel.id,
+                BecomeControlledIntakeReceiptModel.intent
+                == "registration_confirmed",
+                BecomeControlledIntakeReceiptModel.group_state
+                == "owner_only",
+                BecomeControlledIntakeReceiptModel.member_count == 2,
+                BecomeControlledConsentReceiptModel.workspace_id
+                == attempt.workspace_id,
+                BecomeControlledConsentReceiptModel.installation_id
+                == AgentInstallationModel.id,
+                BecomeControlledConsentReceiptModel.intent
+                == "consent_accepted",
+                BecomeControlledConsentReceiptModel.group_state
+                == "owner_only",
+                BecomeControlledConsentReceiptModel.member_count == 2,
+                BecomeRelationsConsentHandoffModel.status == "executed",
+                BecomeRelationsConsentHandoffModel.execution_digest
+                .is_not(None),
+                BecomeRelationsConsentHandoffModel.executed_at.is_not(None),
+                BecomeMediaIntakeModel.kind == "voice",
+                BecomeMediaIntakeModel.status == "archived",
+                BecomeMediaIntakeModel.raw_data.is_not(None),
+                BecomeMediaIntakeModel.raw_expires_at > now,
+                BecomeMediaIntakeModel.transcript_state == "none",
+            )
+        )
+        or 0
+    )
+    return match_count == 1
 
 
 async def _attempt(
