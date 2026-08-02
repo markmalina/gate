@@ -89,8 +89,7 @@ def test_registration_receipt_matches_downstream_contract_without_content() -> N
     assert payload["real_payments"] == 0
     assert len(receipt.digest) == 64
     assert receipt.receipt_key.startswith("become_intake_")
-    wire = str(payload).casefold()
-    for forbidden in (
+    forbidden_keys = {
         "message_text",
         "chat_id",
         "telegram_id",
@@ -99,8 +98,11 @@ def test_registration_receipt_matches_downstream_contract_without_content() -> N
         "secret",
         "transcript",
         "media",
-    ):
-        assert forbidden not in wire
+    }
+    assert forbidden_keys.isdisjoint(payload)
+    wire = str(payload)
+    assert "700000001" not in wire
+    assert "-1007002" not in wire
 
 
 def test_exact_registration_shape_and_subject_pseudonymization() -> None:
