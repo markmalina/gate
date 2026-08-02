@@ -297,7 +297,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     "become_media_intake_not_configured"
                 )
             try:
-                result = await self._become_media.execute(
+                media_result = await self._become_media.execute(
                     ProcessBecomeMediaCommand(
                         workspace_key=self._settings.gate_workspace_id,
                         source_receipt_id=item.receipt_id,
@@ -316,8 +316,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     "BECOME controlled media archived: "
                     "kind=%s duplicate=%s"
                 ),
-                result.kind.value,
-                result.duplicate,
+                media_result.kind.value,
+                media_result.duplicate,
             )
             return
         voice_disposition = "not_applicable"
