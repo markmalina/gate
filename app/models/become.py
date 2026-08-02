@@ -209,7 +209,7 @@ class BecomeRelationsConsentHandoffModel(Base):
             name="ck_become_relations_handoff_schema",
         ),
         CheckConstraint(
-            "status IN ('pending_delivery', 'delivered')",
+            "status IN ('pending_delivery', 'pending_execution', 'executed')",
             name="ck_become_relations_handoff_status",
         ),
         CheckConstraint(
@@ -219,16 +219,28 @@ class BecomeRelationsConsentHandoffModel(Base):
         CheckConstraint(
             "("
             "status = 'pending_delivery' "
-            "AND acceptance_digest IS NULL "
-            "AND acceptance_payload IS NULL "
-            "AND delivered_at IS NULL"
+            "AND execution_digest IS NULL "
+            "AND execution_payload IS NULL "
+            "AND domain_event_id IS NULL "
+            "AND domain_event_digest IS NULL "
+            "AND executed_at IS NULL"
             ") OR ("
-            "status = 'delivered' "
+            "status = 'pending_execution' "
             "AND char_length(acceptance_digest) = 64 "
             "AND acceptance_payload IS NOT NULL "
-            "AND delivered_at IS NOT NULL"
+            "AND delivered_at IS NOT NULL "
+            "AND execution_digest IS NULL "
+            "AND execution_payload IS NULL "
+            "AND executed_at IS NULL"
+            ") OR ("
+            "status = 'executed' "
+            "AND char_length(execution_digest) = 64 "
+            "AND execution_payload IS NOT NULL "
+            "AND domain_event_id LIKE 'consent_evt_%' "
+            "AND char_length(domain_event_digest) = 64 "
+            "AND executed_at IS NOT NULL"
             ")",
-            name="ck_become_relations_handoff_acceptance",
+            name="ck_become_relations_handoff_execution",
         ),
         CheckConstraint(
             "char_length(command_digest) = 64",
@@ -280,6 +292,26 @@ class BecomeRelationsConsentHandoffModel(Base):
         nullable=True,
     )
     delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    execution_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    execution_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    domain_event_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    domain_event_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
