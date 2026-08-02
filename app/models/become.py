@@ -12,7 +12,9 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -316,6 +318,221 @@ class BecomeRelationsConsentHandoffModel(Base):
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+
+class BecomeMediaIntakeModel(Base):
+    """Consent-bound BECOME raw media with enforced 7/30-day retention."""
+
+    __tablename__ = "become_media_intakes"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["installation_id", "workspace_id"],
+            ["agent_installations.id", "agent_installations.workspace_id"],
+            name="fk_become_media_installation_workspace",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "source_receipt_id",
+            name="uq_become_media_source_receipt",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "intake_key",
+            name="uq_become_media_workspace_key",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-media-intake@1'",
+            name="ck_become_media_schema",
+        ),
+        CheckConstraint(
+            "kind IN ('voice', 'video')",
+            name="ck_become_media_kind",
+        ),
+        CheckConstraint(
+            "status IN ('pending_download', 'archived', 'raw_purged')",
+            name="ck_become_media_status",
+        ),
+        CheckConstraint(
+            "transcript_state IN ('none', 'confirmed', 'purged')",
+            name="ck_become_media_transcript_state",
+        ),
+        CheckConstraint(
+            "char_length(file_unique_digest) = 64",
+            name="ck_become_media_file_digest",
+        ),
+        CheckConstraint(
+            "declared_size_bytes IS NULL OR "
+            "(declared_size_bytes > 0 AND declared_size_bytes <= 20000000)",
+            name="ck_become_media_declared_size",
+        ),
+        CheckConstraint(
+            "("
+            "status = 'pending_download' "
+            "AND raw_data IS NULL "
+            "AND raw_sha256 IS NULL "
+            "AND raw_size_bytes IS NULL "
+            "AND raw_media_type IS NULL "
+            "AND raw_purged_at IS NULL"
+            ") OR ("
+            "status = 'archived' "
+            "AND raw_data IS NOT NULL "
+            "AND char_length(raw_sha256) = 64 "
+            "AND raw_size_bytes > 0 "
+            "AND raw_size_bytes <= 20000000 "
+            "AND raw_media_type IS NOT NULL "
+            "AND raw_purged_at IS NULL"
+            ") OR ("
+            "status = 'raw_purged' "
+            "AND raw_data IS NULL "
+            "AND char_length(raw_sha256) = 64 "
+            "AND raw_size_bytes > 0 "
+            "AND raw_media_type IS NOT NULL "
+            "AND raw_purged_at IS NOT NULL"
+            ")",
+            name="ck_become_media_raw_state",
+        ),
+        CheckConstraint(
+            "("
+            "transcript_state = 'none' "
+            "AND confirmed_transcript IS NULL "
+            "AND transcript_digest IS NULL "
+            "AND transcript_confirmed_at IS NULL "
+            "AND transcript_expires_at IS NULL "
+            "AND transcript_purged_at IS NULL"
+            ") OR ("
+            "transcript_state = 'confirmed' "
+            "AND confirmed_transcript IS NOT NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND transcript_confirmed_at IS NOT NULL "
+            "AND transcript_expires_at IS NOT NULL "
+            "AND transcript_purged_at IS NULL"
+            ") OR ("
+            "transcript_state = 'purged' "
+            "AND confirmed_transcript IS NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND transcript_confirmed_at IS NOT NULL "
+            "AND transcript_expires_at IS NOT NULL "
+            "AND transcript_purged_at IS NOT NULL"
+            ")",
+            name="ck_become_media_transcript_retention",
+        ),
+        Index(
+            "ix_become_media_raw_expiry",
+            "status",
+            "raw_expires_at",
+        ),
+        Index(
+            "ix_become_media_transcript_expiry",
+            "transcript_state",
+            "transcript_expires_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    installation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    source_receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("telegram_receipts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    registration_receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_controlled_intake_receipts.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    consent_receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_controlled_consent_receipts.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    relations_handoff_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_relations_consent_handoffs.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    intake_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    subject_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    update_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    file_unique_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    declared_size_bytes: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    raw_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    raw_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_media_type: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    raw_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    raw_purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    transcript_state: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default="none",
+    )
+    confirmed_transcript: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    transcript_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    transcript_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    transcript_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    transcript_purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),

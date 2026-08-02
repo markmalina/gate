@@ -31,6 +31,11 @@ from app.application.become_controlled_intake import (
     ProcessBecomeRegistrationCommand,
     ProcessBecomeRegistrationService,
 )
+from app.application.become_media_intake import (
+    ProcessBecomeMediaCommand,
+    ProcessBecomeMediaService,
+    is_become_media_update,
+)
 from app.application.canonical_messaging import (
     CanonicalIngressStore,
     ConnectorKind,
@@ -132,6 +137,11 @@ from app.infrastructure.become_controlled_intake import (
     SessionFactoryBecomeRegistrationReplayer,
     TelegramBecomeOwnerPresence,
 )
+from app.infrastructure.become_media_intake import (
+    SessionFactoryBecomeMediaRetention,
+    SessionFactoryBecomeMediaStore,
+    TelegramBecomeMediaDownloader,
+)
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
@@ -214,6 +224,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         become_canary: ProcessAlphaCanaryUpdateService | None = None,
         become_intake: ProcessBecomeRegistrationService | None = None,
         become_consent: ProcessBecomeConsentService | None = None,
+        become_media: ProcessBecomeMediaService | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -229,6 +240,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._become_canary = become_canary
         self._become_intake = become_intake
         self._become_consent = become_consent
+        self._become_media = become_media
         self._voice_updates = voice_updates
         self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
@@ -274,6 +286,38 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             self._logger.info(
                 "BECOME controlled consent persisted: duplicate=%s",
                 result.duplicate,
+            )
+            return
+        if (
+            connector.key is TelegramConnectorKey.BECOME_GROUP
+            and is_become_media_update(payload)
+        ):
+            if self._become_media is None:
+                raise TelegramUpdateProcessingError(
+                    "become_media_intake_not_configured"
+                )
+            try:
+                media_result = await self._become_media.execute(
+                    ProcessBecomeMediaCommand(
+                        workspace_key=self._settings.gate_workspace_id,
+                        source_receipt_id=item.receipt_id,
+                        update=payload,
+                        received_at=item.received_at,
+                    )
+                )
+            except BecomeControlledIntakeError as exc:
+                raise TelegramUpdateProcessingError(exc.code) from None
+            except Exception:
+                raise TelegramUpdateProcessingError(
+                    "become_media_intake_failed"
+                ) from None
+            self._logger.info(
+                (
+                    "BECOME controlled media archived: "
+                    "kind=%s duplicate=%s"
+                ),
+                media_result.kind.value,
+                media_result.duplicate,
             )
             return
         voice_disposition = "not_applicable"
@@ -825,6 +869,7 @@ async def run_telegram_worker_once(
     become_canary: ProcessAlphaCanaryUpdateService | None = None,
     become_intake: ProcessBecomeRegistrationService | None = None,
     become_consent: ProcessBecomeConsentService | None = None,
+    become_media: ProcessBecomeMediaService | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     voice_archive: TelegramVoiceArchiver | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -899,6 +944,7 @@ async def run_telegram_worker_once(
             become_canary=become_canary,
             become_intake=become_intake,
             become_consent=become_consent,
+            become_media=become_media,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
             business_text_parity=business_text_parity,
@@ -952,6 +998,18 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         if projected_consent:
             logger.info(
                 "Projected one durable BECOME consent for Relations handoff"
+            )
+        retention = await SessionFactoryBecomeMediaRetention(
+            sessions
+        ).purge_expired(now=datetime.now(UTC))
+        if retention.raw_purged or retention.transcripts_purged:
+            logger.info(
+                (
+                    "Purged expired BECOME content: "
+                    "raw=%s transcripts=%s"
+                ),
+                retention.raw_purged,
+                retention.transcripts_purged,
             )
     if settings.gate_alpha_membership_replay_limit:
         if (
@@ -1151,9 +1209,26 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         presence=become_presence,
                         subject_pepper=subject_pepper,
                     )
+                    become_media = ProcessBecomeMediaService(
+                        store=SessionFactoryBecomeMediaStore(sessions),
+                        downloader=TelegramBecomeMediaDownloader(
+                            bot_token=(
+                                settings.telegram_become_bot_token
+                                .get_secret_value()
+                            ),
+                            http_client=http_client,
+                            api_base_url=os.getenv(
+                                "TELEGRAM_API_BASE_URL",
+                                "https://api.telegram.org",
+                            ),
+                        ),
+                        presence=become_presence,
+                        subject_pepper=subject_pepper,
+                    )
                 else:
                     become_intake = None
                     become_consent = None
+                    become_media = None
                 universal_mayak = None
                 universal_mayak_delivery = None
                 if settings.gate_universal_mayak_runtime_enabled:
@@ -1265,6 +1340,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         become_canary=become_canary,
                         become_intake=become_intake,
                         become_consent=become_consent,
+                        become_media=become_media,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
                         universal_mayak=universal_mayak,
