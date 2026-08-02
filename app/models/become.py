@@ -650,3 +650,183 @@ class BecomeMediaPromptModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+
+class BecomeVoiceCorrelationModel(Base):
+    """Content-free root for one consent-bound BECOME voice intake."""
+
+    __tablename__ = "become_voice_correlations"
+    __table_args__ = (
+        UniqueConstraint(
+            "media_intake_id",
+            name="uq_become_voice_correlation_media",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "correlation_ref",
+            name="uq_become_voice_correlation_workspace_ref",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-voice-correlation@1'",
+            name="ck_become_voice_correlation_schema",
+        ),
+        CheckConstraint(
+            "correlation_ref LIKE 'synthetic://correlation/voice/%' "
+            "AND char_length(intake_digest) = 64",
+            name="ck_become_voice_correlation_identity",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    media_intake_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_media_intakes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    correlation_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    intake_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class BecomeVoiceChainSlotModel(Base):
+    """Provider-disabled receipt slot for one BECOME chain stage."""
+
+    __tablename__ = "become_voice_chain_slots"
+    __table_args__ = (
+        UniqueConstraint(
+            "correlation_id",
+            "stage",
+            name="uq_become_voice_chain_slot_stage",
+        ),
+        UniqueConstraint(
+            "correlation_id",
+            "position",
+            name="uq_become_voice_chain_slot_position",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-chain-slot@1'",
+            name="ck_become_voice_chain_slot_schema",
+        ),
+        CheckConstraint(
+            "(stage = 'relations' AND position = 1) OR "
+            "(stage = 'mayaki' AND position = 2) OR "
+            "(stage = 'oko' AND position = 3) OR "
+            "(stage = 'take' AND position = 4)",
+            name="ck_become_voice_chain_slot_position",
+        ),
+        CheckConstraint(
+            "state IN "
+            "('blocked', 'ready', 'requested', 'completed', 'failed', 'unknown')",
+            name="ck_become_voice_chain_slot_state",
+        ),
+        CheckConstraint(
+            "("
+            "state IN ('blocked', 'ready') "
+            "AND request_digest IS NULL "
+            "AND request_payload IS NULL "
+            "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND source_sha IS NULL "
+            "AND terminal_at IS NULL"
+            ") OR ("
+            "state = 'requested' "
+            "AND char_length(request_digest) = 64 "
+            "AND request_payload IS NOT NULL "
+            "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND char_length(source_sha) = 40 "
+            "AND terminal_at IS NULL"
+            ") OR ("
+            "state IN ('completed', 'failed', 'unknown') "
+            "AND char_length(request_digest) = 64 "
+            "AND request_payload IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND receipt_payload IS NOT NULL "
+            "AND char_length(source_sha) = 40 "
+            "AND terminal_at IS NOT NULL"
+            ")",
+            name="ck_become_voice_chain_slot_outcome",
+        ),
+        CheckConstraint(
+            "(stage = 'take' AND state NOT IN ('blocked', 'ready') "
+            "AND char_length(mapping_digest) = 64) OR "
+            "((stage != 'take' OR state IN ('blocked', 'ready')) "
+            "AND mapping_digest IS NULL)",
+            name="ck_become_voice_chain_take_mapping",
+        ),
+        Index(
+            "ix_become_voice_chain_workspace_state",
+            "workspace_id",
+            "stage",
+            "state",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    correlation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_voice_correlations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    stage: Mapped[str] = mapped_column(String(16), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    request_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    request_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    receipt_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    receipt_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    source_sha: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+    mapping_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )

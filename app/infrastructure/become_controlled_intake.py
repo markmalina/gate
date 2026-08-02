@@ -22,6 +22,9 @@ from app.infrastructure.become_media_intake import become_media_status
 from app.infrastructure.become_media_prompt import (
     become_media_prompt_status,
 )
+from app.infrastructure.become_voice_chain import (
+    become_voice_chain_status,
+)
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
@@ -410,6 +413,14 @@ async def become_controlled_intake_status(
     prompt_sent = int(prompt["media_prompt_sent_count"])
     prompt_unknown = int(prompt["media_prompt_unknown_count"])
     prompt_failed = int(prompt["media_prompt_failed_count"])
+    voice_chain = await become_voice_chain_status(
+        session,
+        workspace_key=workspace_key,
+    )
+    voice_count = int(media["voice_intake_count"])
+    correlation_count = int(voice_chain["voice_correlation_count"])
+    chain_slot_count = int(voice_chain["chain_slot_count"])
+    chain_unknown_count = int(voice_chain["chain_unknown_count"])
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -447,8 +458,38 @@ async def become_controlled_intake_status(
         ),
         "media_intake_count": media_count,
         "media_pending_download_count": media_pending,
-        "voice_intake_count": int(media["voice_intake_count"]),
+        "voice_intake_count": voice_count,
         "video_intake_count": int(media["video_intake_count"]),
+        "voice_correlation_count": correlation_count,
+        "voice_correlation_ready": (
+            voice_count > 0 and correlation_count == voice_count
+        ),
+        "chain_slot_count": chain_slot_count,
+        "chain_slots_initialized_ready": (
+            correlation_count > 0
+            and chain_slot_count == correlation_count * 4
+        ),
+        "chain_execution_enabled": False,
+        "chain_ready_count": int(voice_chain["chain_ready_count"]),
+        "chain_requested_count": int(
+            voice_chain["chain_requested_count"]
+        ),
+        "chain_unknown_count": chain_unknown_count,
+        "chain_reconciliation_required": chain_unknown_count > 0,
+        "relations_chain_completed_count": int(
+            voice_chain["relations_chain_completed_count"]
+        ),
+        "mayaki_chain_completed_count": int(
+            voice_chain["mayaki_chain_completed_count"]
+        ),
+        "oko_chain_completed_count": int(
+            voice_chain["oko_chain_completed_count"]
+        ),
+        "take_chain_completed_count": int(
+            voice_chain["take_chain_completed_count"]
+        ),
+        "free_result_delivery_enabled": False,
+        "controlled_test_payment_enabled": False,
         "raw_media_retention_days": 7,
         "raw_media_retained_count": int(
             media["raw_media_retained_count"]
