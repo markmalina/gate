@@ -164,6 +164,60 @@ class SessionFactoryBecomeMediaStore:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
+    async def installation_ref(
+        self,
+        *,
+        workspace_key: str,
+        provider_dialog_id: str,
+    ) -> str | None:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(AgentInstallationModel.installation_key)
+                    .select_from(Workspace)
+                    .join(
+                        TransportConnector,
+                        TransportConnector.workspace_id == Workspace.id,
+                    )
+                    .join(
+                        Dialog,
+                        (Dialog.workspace_id == Workspace.id)
+                        & (
+                            Dialog.connector_id
+                            == TransportConnector.id
+                        ),
+                    )
+                    .join(
+                        AgentInstallationModel,
+                        (
+                            AgentInstallationModel.workspace_id
+                            == Workspace.id
+                        )
+                        & (
+                            AgentInstallationModel.connector_id
+                            == TransportConnector.id
+                        )
+                        & (
+                            AgentInstallationModel.dialog_id
+                            == Dialog.id
+                        ),
+                    )
+                    .where(
+                        Workspace.key == workspace_key,
+                        Workspace.is_active.is_(True),
+                        TransportConnector.connector_key
+                        == BECOME_CONNECTOR_KEY,
+                        TransportConnector.is_enabled.is_(True),
+                        Dialog.provider_dialog_id == provider_dialog_id,
+                        AgentInstallationModel.state == "active",
+                    )
+                    .limit(2)
+                )
+            ).all()
+        if len(rows) != 1:
+            return None
+        return str(rows[0])
+
     async def authorize(
         self,
         command: AuthorizeBecomeMediaCommand,
