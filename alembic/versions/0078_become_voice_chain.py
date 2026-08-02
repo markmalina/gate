@@ -91,7 +91,11 @@ def upgrade() -> None:
         sa.Column("schema_name", sa.String(length=128), nullable=False),
         sa.Column("state", sa.String(length=32), nullable=False),
         sa.Column("request_digest", sa.String(length=64), nullable=True),
+        sa.Column("request_payload", postgresql.JSONB(), nullable=True),
         sa.Column("receipt_digest", sa.String(length=64), nullable=True),
+        sa.Column("receipt_payload", postgresql.JSONB(), nullable=True),
+        sa.Column("source_sha", sa.String(length=40), nullable=True),
+        sa.Column("mapping_digest", sa.String(length=64), nullable=True),
         sa.Column(
             "terminal_at",
             sa.DateTime(timezone=True),
@@ -129,20 +133,36 @@ def upgrade() -> None:
             "("
             "state IN ('blocked', 'ready') "
             "AND request_digest IS NULL "
+            "AND request_payload IS NULL "
             "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND source_sha IS NULL "
             "AND terminal_at IS NULL"
             ") OR ("
             "state = 'requested' "
             "AND char_length(request_digest) = 64 "
+            "AND request_payload IS NOT NULL "
             "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND char_length(source_sha) = 40 "
             "AND terminal_at IS NULL"
             ") OR ("
             "state IN ('completed', 'failed', 'unknown') "
             "AND char_length(request_digest) = 64 "
+            "AND request_payload IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
+            "AND receipt_payload IS NOT NULL "
+            "AND char_length(source_sha) = 40 "
             "AND terminal_at IS NOT NULL"
             ")",
             name="ck_become_voice_chain_slot_outcome",
+        ),
+        sa.CheckConstraint(
+            "(stage = 'take' AND state NOT IN ('blocked', 'ready') "
+            "AND char_length(mapping_digest) = 64) OR "
+            "((stage != 'take' OR state IN ('blocked', 'ready')) "
+            "AND mapping_digest IS NULL)",
+            name="ck_become_voice_chain_take_mapping",
         ),
         sa.ForeignKeyConstraint(
             ["workspace_id"],
