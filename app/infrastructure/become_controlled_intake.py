@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.become_controlled_intake import (
     BECOME_CONNECTOR_KEY,
+    CONTROLLED_INTAKE_SCHEMA,
     BecomeControlledIntakeError,
     PersistBecomeControlledIntakeCommand,
     PersistedBecomeControlledIntake,
