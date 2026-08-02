@@ -22,6 +22,7 @@ from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
     BecomeControlledIntakeReceiptModel,
+    BecomeRelationsConsentHandoffModel,
 )
 from app.models.canonical import Dialog, TransportConnector, Workspace
 from app.models.domain import (
@@ -349,6 +350,27 @@ async def become_controlled_intake_status(
         ).scalar_one()
         or 0
     )
+    handoff_count = int(
+        (
+            await session.execute(
+                select(func.count(BecomeRelationsConsentHandoffModel.id))
+                .join(
+                    Workspace,
+                    Workspace.id
+                    == BecomeRelationsConsentHandoffModel.workspace_id,
+                )
+                .where(
+                    Workspace.key == workspace_key,
+                    Workspace.is_active.is_(True),
+                    BecomeRelationsConsentHandoffModel.schema_name
+                    == "relations.controlled-consent-command@1",
+                    BecomeRelationsConsentHandoffModel.status
+                    == "pending_delivery",
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -361,6 +383,10 @@ async def become_controlled_intake_status(
         ),
         "consent_accepted_count": consent_count,
         "consent_ready": consent_count == 1,
+        "relations_handoff_count": handoff_count,
+        "relations_handoff_ready": consent_count == 1 and handoff_count == 1,
+        "relations_delivery_enabled": False,
+        "relations_delivery_attempts": 0,
         "external_effects": 0,
         "provider_calls": 0,
         "messages_or_publications": 0,
