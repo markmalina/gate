@@ -17,7 +17,7 @@ class FakeStore:
     async def prepare(self, **values: object) -> object:
         self.calls.append(("prepare", values))
         return chain.PreparedBecomeVoiceCorrelation(
-            correlation_ref="voice_corr_123",
+            correlation_ref="synthetic://correlation/voice/123",
             slot_count=4,
             duplicate=False,
         )
@@ -25,7 +25,7 @@ class FakeStore:
     async def confirm_transcript(self, **values: object) -> object:
         self.calls.append(("confirm", values))
         return chain.ConfirmedBecomeTranscriptReceipt(
-            correlation_ref="voice_corr_123",
+            correlation_ref="synthetic://correlation/voice/123",
             transcript_digest="b" * 64,
             transcript_expires_at=datetime(2026, 9, 1, tzinfo=UTC),
             relations_slot_state=chain.BecomeChainSlotState.READY,
@@ -37,7 +37,7 @@ class FakeStore:
         payload = values["request_payload"]
         assert isinstance(payload, dict)
         return chain.ReservedBecomeChainStage(
-            correlation_ref="voice_corr_123",
+            correlation_ref="synthetic://correlation/voice/123",
             stage=chain.BecomeChainStage.RELATIONS,
             state=chain.BecomeChainSlotState.REQUESTED,
             request_digest=chain.canonical_payload_digest(payload),
@@ -50,7 +50,7 @@ class FakeStore:
     async def finalize_stage(self, **values: object) -> object:
         self.calls.append(("finalize", values))
         return chain.FinalizedBecomeChainStage(
-            correlation_ref="voice_corr_123",
+            correlation_ref="synthetic://correlation/voice/123",
             stage=chain.BecomeChainStage.RELATIONS,
             state=chain.BecomeChainSlotState.COMPLETED,
             request_digest="c" * 64,
@@ -70,7 +70,7 @@ async def test_prepare_creates_content_free_root_contract() -> None:
         prepared_at=NOW,
     )
     assert result.slot_count == 4
-    assert result.correlation_ref.startswith("voice_corr_")
+    assert result.correlation_ref.startswith("synthetic://correlation/voice/")
     assert store.calls[0][0] == "prepare"
 
 
@@ -79,7 +79,7 @@ async def test_confirm_returns_no_transcript_content() -> None:
     store = FakeStore()
     result = await chain.ConfirmBecomeTranscriptService(store).execute(
         workspace_key="workspace-test",
-        correlation_ref="voice_corr_123",
+        correlation_ref="synthetic://correlation/voice/123",
         transcript="confirmed private words",
         confirmed_at=NOW,
     )
@@ -94,12 +94,43 @@ def test_content_free_receipt_rejects_transcript() -> None:
         match="become_transcript_receipt_must_be_content_free",
     ):
         chain.ConfirmedBecomeTranscriptReceipt(
-            correlation_ref="voice_corr_123",
+            correlation_ref="synthetic://correlation/voice/123",
             transcript_digest="b" * 64,
             transcript_expires_at=NOW,
             relations_slot_state=chain.BecomeChainSlotState.READY,
             duplicate=False,
             transcript="private words",
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "sensitive_key",
+    [
+        "raw_text",
+        "transcript_text",
+        "provider_payload",
+        "media_bytes",
+        "auth_token",
+        "customer_email",
+        "personal-data",
+        "nested_pii_value",
+    ],
+)
+async def test_reserve_rejects_normalized_sensitive_keys(
+    sensitive_key: str,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="become_chain_payload_contains_private_content",
+    ):
+        await chain.ReserveBecomeChainStageService(FakeStore()).execute(
+            workspace_key="workspace-test",
+            correlation_ref="synthetic://correlation/voice/123",
+            stage=chain.BecomeChainStage.RELATIONS,
+            request_payload={"safe": [{sensitive_key: "private"}]},
+            source_sha=SOURCE_SHA,
+            requested_at=NOW,
         )
 
 
@@ -111,7 +142,7 @@ async def test_reserve_rejects_private_content() -> None:
     ):
         await chain.ReserveBecomeChainStageService(FakeStore()).execute(
             workspace_key="workspace-test",
-            correlation_ref="voice_corr_123",
+            correlation_ref="synthetic://correlation/voice/123",
             stage=chain.BecomeChainStage.RELATIONS,
             request_payload={"transcript": "private words"},
             source_sha=SOURCE_SHA,
@@ -123,12 +154,12 @@ async def test_reserve_rejects_private_content() -> None:
 async def test_reserved_request_is_reconciliation_only_until_receipt() -> None:
     payload = {
         "schema": "become.i4-service-request@1",
-        "correlation_ref": "voice_corr_123",
+        "correlation_ref": "synthetic://correlation/voice/123",
         "consent_receipt_ref": "consent_123",
     }
     result = await chain.ReserveBecomeChainStageService(FakeStore()).execute(
         workspace_key="workspace-test",
-        correlation_ref="voice_corr_123",
+        correlation_ref="synthetic://correlation/voice/123",
         stage=chain.BecomeChainStage.RELATIONS,
         request_payload=payload,
         source_sha=SOURCE_SHA,
