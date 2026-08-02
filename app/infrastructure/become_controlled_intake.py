@@ -19,6 +19,9 @@ from app.application.become_controlled_intake import (
     registration_evidence,
 )
 from app.infrastructure.become_media_intake import become_media_status
+from app.infrastructure.become_media_prompt import (
+    become_media_prompt_status,
+)
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
@@ -399,6 +402,14 @@ async def become_controlled_intake_status(
     )
     media_pending = int(media["media_pending_download_count"])
     media_count = int(media["media_intake_count"])
+    prompt = await become_media_prompt_status(
+        session,
+        workspace_key=workspace_key,
+    )
+    prompt_count = int(prompt["media_prompt_count"])
+    prompt_sent = int(prompt["media_prompt_sent_count"])
+    prompt_unknown = int(prompt["media_prompt_unknown_count"])
+    prompt_failed = int(prompt["media_prompt_failed_count"])
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -419,6 +430,16 @@ async def become_controlled_intake_status(
         "relations_delivery_attempts": delivery_attempts,
         "relations_consent_executed_count": executed_count,
         "relations_consent_executed_ready": relations_executed_ready,
+        "media_prompt_gate_ready": relations_executed_ready,
+        "media_prompt_count": prompt_count,
+        "media_prompt_sent_count": prompt_sent,
+        "media_prompt_unknown_count": prompt_unknown,
+        "media_prompt_failed_count": prompt_failed,
+        "media_prompt_ready": prompt_sent == 1 or media_count == 1,
+        "media_prompt_reply_required": (
+            prompt_sent == 1 and media_count == 0
+        ),
+        "media_prompt_reconciliation_required": prompt_unknown > 0,
         "media_intake_gate_ready": relations_executed_ready,
         "media_intake_ready": (
             relations_executed_ready
@@ -445,9 +466,9 @@ async def become_controlled_intake_status(
         "confirmed_transcript_purged_count": int(
             media["confirmed_transcript_purged_count"]
         ),
-        "external_effects": media_count,
+        "external_effects": media_count + prompt_sent,
         "provider_calls": 0,
-        "messages_or_publications": 0,
+        "messages_or_publications": prompt_sent,
         "media_bytes": int(media["raw_media_retained_bytes"]),
         "real_payments": 0,
         "private_content_exposed": False,

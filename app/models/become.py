@@ -537,3 +537,116 @@ class BecomeMediaIntakeModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+class BecomeMediaPromptModel(Base):
+    """One durable BECOME-only reply anchor after executed consent."""
+
+    __tablename__ = "become_media_prompts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["installation_id", "workspace_id"],
+            ["agent_installations.id", "agent_installations.workspace_id"],
+            name="fk_become_media_prompt_installation_workspace",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "installation_id",
+            name="uq_become_media_prompt_installation",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "prompt_key",
+            name="uq_become_media_prompt_workspace_key",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-media-prompt@1'",
+            name="ck_become_media_prompt_schema",
+        ),
+        CheckConstraint(
+            "state IN ('sending', 'sent', 'failed', 'blocked', 'unknown')",
+            name="ck_become_media_prompt_state",
+        ),
+        CheckConstraint(
+            "char_length(prompt_digest) = 64",
+            name="ck_become_media_prompt_digest",
+        ),
+        CheckConstraint(
+            "("
+            "state = 'sending' "
+            "AND provider_message_id IS NULL "
+            "AND error_code IS NULL "
+            "AND sent_at IS NULL"
+            ") OR ("
+            "state = 'sent' "
+            "AND provider_message_id IS NOT NULL "
+            "AND error_code IS NULL "
+            "AND sent_at IS NOT NULL"
+            ") OR ("
+            "state IN ('failed', 'blocked', 'unknown') "
+            "AND provider_message_id IS NULL "
+            "AND error_code IS NOT NULL "
+            "AND sent_at IS NULL"
+            ")",
+            name="ck_become_media_prompt_outcome",
+        ),
+        Index(
+            "ix_become_media_prompt_workspace_state",
+            "workspace_id",
+            "state",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    installation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    consent_receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_controlled_consent_receipts.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    relations_handoff_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_relations_consent_handoffs.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    prompt_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
