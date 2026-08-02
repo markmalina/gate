@@ -501,6 +501,57 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
+                    "voice_correlation_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "voice_correlation_ready": {"type": "boolean"},
+                    "chain_slot_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_slots_initialized_ready": {"type": "boolean"},
+                    "chain_execution_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "chain_ready_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_requested_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_unknown_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_reconciliation_required": {"type": "boolean"},
+                    "relations_chain_completed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "mayaki_chain_completed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "oko_chain_completed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "take_chain_completed_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "free_result_delivery_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "controlled_test_payment_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
                     "raw_media_retention_days": {
                         "type": "integer",
                         "const": 7,
