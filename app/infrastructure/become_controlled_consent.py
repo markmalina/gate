@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -218,7 +219,9 @@ class SessionFactoryBecomeControlledConsentStore:
                     group_state=command.receipt.group_state,
                     member_count=command.receipt.member_count,
                     payload=payload,
-                    accepted_at=command.receipt.accepted_at,
+                    accepted_at=datetime.fromisoformat(
+                        command.receipt.accepted_at.replace("Z", "+00:00")
+                    ),
                 )
                 .on_conflict_do_nothing(
                     constraint="uq_become_consent_subject_policy",
