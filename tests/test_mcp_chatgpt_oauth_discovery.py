@@ -307,6 +307,8 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             "registration_confirmed_count": 0,
             "owner_only_count": 0,
             "registration_ready": False,
+            "consent_accepted_count": 0,
+            "consent_ready": False,
             "external_effects": 0,
             "provider_calls": 0,
             "messages_or_publications": 0,
