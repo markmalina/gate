@@ -82,7 +82,6 @@ async def observe_owner_test_presence(
     installation, dialog, connector = row
     bot_token = _presence_bot_token(
         settings=settings,
-        installation_ref=installation.installation_key,
         group_label=installation.dialog_label,
         connector_key=connector.connector_key,
     )
@@ -378,7 +377,6 @@ async def verify_owner_test_review_replay(
 def _presence_bot_token(
     *,
     settings: Settings,
-    installation_ref: str,
     group_label: str,
     connector_key: str,
 ) -> str:
@@ -400,9 +398,9 @@ def _presence_bot_token(
         and settings.gate_become_group_capacity == 1
     ):
         raise AlphaOwnerTestRuntimeError("become_owner_test_gates_incomplete")
-    pinned = settings.gate_become_installation_key.strip()
-    if pinned and pinned != installation_ref:
-        raise AlphaOwnerTestRuntimeError("become_owner_test_installation_not_pinned")
+    # The exact active installation is resolved from the workspace, connector,
+    # and dialog binding in PostgreSQL. Railway configuration is not an
+    # installation authority for BECOME.
     return settings.telegram_become_bot_token.get_secret_value().strip()
 
 
