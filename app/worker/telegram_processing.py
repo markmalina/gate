@@ -149,6 +149,9 @@ from app.infrastructure.become_media_prompt import (
     SessionFactoryBecomeMediaPromptStore,
     TelegramClientBecomeMediaPromptAdapter,
 )
+from app.infrastructure.become_voice_chain import (
+    SessionFactoryBecomeVoiceChainStore,
+)
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
@@ -1232,6 +1235,38 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         presence=become_presence,
                         subject_pepper=subject_pepper,
                     )
+                    try:
+                        correlation = await (
+                            SessionFactoryBecomeVoiceChainStore(
+                                sessions
+                            ).reconcile_one(
+                                workspace_key=settings.gate_workspace_id,
+                                prepared_at=datetime.now(UTC),
+                            )
+                        )
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME voice correlation blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            (
+                                "BECOME voice correlation deferred: "
+                                "error_type=%s"
+                            ),
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if correlation is not None:
+                            logger.info(
+                                (
+                                    "BECOME voice correlation ready: "
+                                    "duplicate=%s slots=%s"
+                                ),
+                                correlation.duplicate,
+                                correlation.slot_count,
+                            )
                     try:
                         prompt_result = await (
                             DeliverBecomeMediaPromptService(
