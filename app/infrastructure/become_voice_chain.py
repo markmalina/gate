@@ -6,6 +6,7 @@ import hashlib
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import TypedDict
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -37,6 +38,20 @@ from app.models.become import (
     BecomeVoiceCorrelationModel,
 )
 from app.models.canonical import Workspace
+
+
+class BecomeVoiceChainStatus(TypedDict):
+    voice_correlation_count: int
+    chain_slot_count: int
+    chain_ready_count: int
+    chain_requested_count: int
+    chain_unknown_count: int
+    chain_failed_count: int
+    chain_last_failure_code: str | None
+    relations_chain_completed_count: int
+    mayaki_chain_completed_count: int
+    oko_chain_completed_count: int
+    take_chain_completed_count: int
 
 
 class SessionFactoryBecomeVoiceChainStore:
@@ -431,7 +446,7 @@ async def become_voice_chain_status(
     session: AsyncSession,
     *,
     workspace_key: str,
-) -> dict[str, object]:
+) -> BecomeVoiceChainStatus:
     root_count = int(
         (
             await session.scalar(
@@ -494,7 +509,7 @@ async def become_voice_chain_status(
         value = failure_payload.get("error_code")
         if isinstance(value, str):
             failure_code = value
-    result: dict[str, object] = {
+    result: BecomeVoiceChainStatus = {
         "voice_correlation_count": root_count,
         "chain_slot_count": sum(counts.values()),
         "chain_ready_count": sum(
