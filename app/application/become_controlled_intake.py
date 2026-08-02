@@ -138,6 +138,75 @@ class BecomeControlledIntakeStore(Protocol):
     ) -> PersistedBecomeControlledIntake: ...
 
 
+class BecomeOwnerPresenceReader(Protocol):
+    async def member_count(
+        self,
+        *,
+        installation_ref: str,
+        provider_dialog_id: str,
+    ) -> int | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessBecomeRegistrationCommand:
+    workspace_key: str
+    source_receipt_id: str
+    installation_ref: str
+    update: JsonObject = field(repr=False)
+    received_at: datetime
+
+
+class ProcessBecomeRegistrationService:
+    """Materialize one exact registration after a current owner-only observation."""
+
+    def __init__(
+        self,
+        *,
+        store: BecomeControlledIntakeStore,
+        presence: BecomeOwnerPresenceReader,
+        subject_pepper: str,
+    ) -> None:
+        if not subject_pepper:
+            raise BecomeControlledIntakeError(
+                "become_registration_subject_scope_incomplete"
+            )
+        self._store = store
+        self._presence = presence
+        self._subject_pepper = subject_pepper
+
+    async def execute(
+        self,
+        command: ProcessBecomeRegistrationCommand,
+    ) -> PersistedBecomeControlledIntake:
+        evidence = registration_evidence(
+            command.update,
+            invocation_command="become",
+            bot_username="BecomeNowBot",
+        )
+        member_count = await self._presence.member_count(
+            installation_ref=command.installation_ref,
+            provider_dialog_id=evidence.provider_dialog_id,
+        )
+        receipt = build_registration_receipt(
+            installation_ref=command.installation_ref,
+            subject_ref=opaque_subject_ref(
+                provider_actor_id=evidence.provider_actor_id,
+                pepper=self._subject_pepper,
+            ),
+            source_receipt_id=command.source_receipt_id,
+            received_at=command.received_at,
+            member_count=member_count,
+        )
+        return await self._store.persist(
+            PersistBecomeControlledIntakeCommand(
+                workspace_key=command.workspace_key,
+                source_receipt_id=command.source_receipt_id,
+                provider_dialog_id=evidence.provider_dialog_id,
+                receipt=receipt,
+            )
+        )
+
+
 def registration_evidence(
     update: JsonObject,
     *,
