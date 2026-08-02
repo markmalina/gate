@@ -152,6 +152,9 @@ from app.infrastructure.become_media_prompt import (
 from app.infrastructure.become_voice_chain import (
     SessionFactoryBecomeVoiceChainStore,
 )
+from app.infrastructure.become_voice_transcription import (
+    SessionFactoryBecomeVoiceTranscriptionStore,
+)
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
@@ -1266,6 +1269,92 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 ),
                                 correlation.duplicate,
                                 correlation.slot_count,
+                            )
+                    try:
+                        api_key = settings.openai_api_key.get_secret_value()
+                        transcription_result = await (
+                            ProcessBecomeVoiceTranscriptionService(
+                                store=(
+                                    SessionFactoryBecomeVoiceTranscriptionStore(
+                                        sessions
+                                    )
+                                ),
+                                normalizer=TelegramVoiceNormalizer(),
+                                budget=SqlBillingBudgetService(sessions),
+                                speech_to_text=OpenAITranscriptionClient(
+                                    config=OpenAITranscriptionConfig(
+                                        api_key=api_key,
+                                        enabled=(
+                                            settings
+                                            .gate_become_voice_transcription_enabled
+                                            and settings
+                                            .gate_become_voice_transcription_data_gate_approved
+                                            and settings
+                                            .gate_become_voice_transcription_max_calls
+                                            == 1
+                                            and bool(api_key)
+                                        ),
+                                        model=(
+                                            settings
+                                            .gate_become_voice_transcription_model
+                                        ),
+                                        base_url=settings.openai_api_base_url,
+                                        timeout_seconds=(
+                                            settings
+                                            .gate_become_voice_transcription_timeout_seconds
+                                        ),
+                                    ),
+                                    http=http_client,
+                                ),
+                                workspace_key=settings.gate_workspace_id,
+                                model=(
+                                    settings
+                                    .gate_become_voice_transcription_model
+                                ),
+                                language=(
+                                    settings
+                                    .gate_become_voice_transcription_language
+                                ),
+                                reserve_microusd_per_second=(
+                                    settings
+                                    .gate_become_voice_transcription_reserve_microusd_per_second
+                                ),
+                                enabled=(
+                                    settings
+                                    .gate_become_voice_transcription_enabled
+                                ),
+                                data_gate_approved=(
+                                    settings
+                                    .gate_become_voice_transcription_data_gate_approved
+                                ),
+                                max_calls=(
+                                    settings
+                                    .gate_become_voice_transcription_max_calls
+                                ),
+                            ).run_once(now=datetime.now(UTC))
+                        )
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME voice transcription blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            (
+                                "BECOME voice transcription deferred: "
+                                "error_type=%s"
+                            ),
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if transcription_result.disposition != "disabled":
+                            logger.info(
+                                (
+                                    "BECOME voice transcription state: "
+                                    "disposition=%s reconciliation=%s"
+                                ),
+                                transcription_result.disposition,
+                                transcription_result.reconciliation_required,
                             )
                     try:
                         prompt_result = await (
