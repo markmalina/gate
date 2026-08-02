@@ -2,7 +2,6 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application.become_controlled_consent import (
     APPROVED_BECOME_CONSENT_COPY,
     BECOME_CONSENT_POLICY_VERSION,
