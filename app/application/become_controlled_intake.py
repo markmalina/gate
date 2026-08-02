@@ -186,7 +186,7 @@ def opaque_subject_ref(*, provider_actor_id: str, pepper: str) -> str:
         raise BecomeControlledIntakeError("become_registration_subject_scope_incomplete")
     digest = hmac.new(
         pepper.encode("utf-8"),
-        f"{BECOME_CONNECTOR_KEY}:{provider_actor_id}".encode("utf-8"),
+        f"{BECOME_CONNECTOR_KEY}:{provider_actor_id}".encode(),
         hashlib.sha256,
     ).hexdigest()
     return f"person_gate_{digest[:24]}"
