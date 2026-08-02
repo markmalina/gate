@@ -2,7 +2,6 @@ import hashlib
 import json
 
 import pytest
-
 from app.application.become_controlled_intake import BecomeControlledIntakeError
 from app.application.become_relations_delivery import (
     RELATIONS_CONSENT_ACCEPTANCE_SCHEMA,
