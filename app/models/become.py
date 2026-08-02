@@ -888,12 +888,26 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
             name="ck_become_voice_transcription_call_boundary",
         ),
         CheckConstraint(
-            "(state IN ('succeeded_unsettled', 'confirmed') "
+            "(state = 'succeeded_unsettled' "
+            "AND staged_transcript IS NOT NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND provider_succeeded_at IS NOT NULL "
+            "AND billed_quantity IS NOT NULL "
+            "AND actual_microusd IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND reason_code IS NULL) OR "
+            "(state = 'confirmed' "
+            "AND staged_transcript IS NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND provider_succeeded_at IS NOT NULL "
             "AND billed_quantity IS NOT NULL "
             "AND actual_microusd IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
             "AND reason_code IS NULL) OR "
             "(state NOT IN ('succeeded_unsettled', 'confirmed') "
+            "AND staged_transcript IS NULL "
+            "AND transcript_digest IS NULL "
+            "AND provider_succeeded_at IS NULL "
             "AND billed_quantity IS NULL "
             "AND actual_microusd IS NULL "
             "AND receipt_digest IS NULL)",
@@ -940,6 +954,18 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
     )
     provider_operation_ref: Mapped[str | None] = mapped_column(
         String(255),
+        nullable=True,
+    )
+    staged_transcript: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    transcript_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    provider_succeeded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     billed_quantity: Mapped[int | None] = mapped_column(
