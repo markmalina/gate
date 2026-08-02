@@ -17,6 +17,15 @@ from app.application.become_controlled_intake import (
 BECOME_VOICE_CORRELATION_SCHEMA = "gate.become-voice-correlation@1"
 BECOME_CHAIN_SLOT_SCHEMA = "gate.become-chain-slot@1"
 BECOME_CHAIN_STAGES = ("relations", "mayaki", "oko", "take")
+_DIRECT_PRIVATE_KEYS = {
+    "audio",
+    "content",
+    "media",
+    "raw",
+    "text",
+    "transcript",
+    "video",
+}
 _SENSITIVE_KEY = re.compile(
     r"(^|_)(email|phone|username|token|secret|credential|"
     r"provider_payload|raw_text|transcript_text|media_bytes|pii|"
@@ -344,7 +353,10 @@ def _assert_content_free_payload(payload: JsonObject) -> None:
         if isinstance(value, dict):
             for key, nested in value.items():
                 normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
-                if _SENSITIVE_KEY.search(normalized):
+                if (
+                    normalized in _DIRECT_PRIVATE_KEYS
+                    or _SENSITIVE_KEY.search(normalized)
+                ):
                     raise BecomeControlledIntakeError(
                         "become_chain_payload_contains_private_content"
                     )
