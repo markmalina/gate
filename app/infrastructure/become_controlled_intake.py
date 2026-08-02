@@ -355,7 +355,12 @@ async def become_controlled_intake_status(
             select(
                 func.count(BecomeRelationsConsentHandoffModel.id),
                 func.count(BecomeRelationsConsentHandoffModel.id).filter(
-                    BecomeRelationsConsentHandoffModel.status == "delivered"
+                    BecomeRelationsConsentHandoffModel.status.in_(
+                        ("pending_execution", "executed")
+                    )
+                ),
+                func.count(BecomeRelationsConsentHandoffModel.id).filter(
+                    BecomeRelationsConsentHandoffModel.status == "executed"
                 ),
                 func.coalesce(
                     func.sum(
@@ -379,7 +384,8 @@ async def become_controlled_intake_status(
     ).one()
     handoff_count = int(handoff_row[0] or 0)
     delivered_count = int(handoff_row[1] or 0)
-    delivery_attempts = int(handoff_row[2] or 0)
+    executed_count = int(handoff_row[2] or 0)
+    delivery_attempts = int(handoff_row[3] or 0)
     return {
         "schema": CONTROLLED_INTAKE_SCHEMA,
         "receipt_count": total,
@@ -398,6 +404,13 @@ async def become_controlled_intake_status(
         "relations_delivered_count": delivered_count,
         "relations_delivery_ready": delivered_count == 1,
         "relations_delivery_attempts": delivery_attempts,
+        "relations_consent_executed_count": executed_count,
+        "relations_consent_executed_ready": (
+            consent_count == 1
+            and handoff_count == 1
+            and delivered_count == 1
+            and executed_count == 1
+        ),
         "external_effects": 0,
         "provider_calls": 0,
         "messages_or_publications": 0,
