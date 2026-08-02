@@ -367,7 +367,7 @@ class SessionFactoryBecomeRelationsHandoffBackfiller:
 
 
 BECOME_RELATIONS_CONSENT_ENDPOINT = (
-    "http://become-relations-controlled.railway.internal:3000"
+    "http://become-relations-controlled.railway.internal:8080"
     "/internal/become/controlled-consent"
 )
 
