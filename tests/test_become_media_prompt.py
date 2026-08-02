@@ -109,7 +109,7 @@ def sending() -> prompt.BecomeMediaPromptReservation:
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_no_candidate_has_no_external_effect() -> None:
     store = FakeStore(candidate=None)
     telegram = FakeTelegram()
@@ -124,7 +124,7 @@ async def test_no_candidate_has_no_external_effect() -> None:
     assert store.finalized == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_owner_only_candidate_sends_and_finalizes_once() -> None:
     store = FakeStore(candidate=candidate(), reservation=sending())
     telegram = FakeTelegram()
@@ -142,7 +142,7 @@ async def test_owner_only_candidate_sends_and_finalizes_once() -> None:
     assert store.finalized[0]["state"] is prompt.BecomeMediaPromptState.SENT
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_non_owner_only_candidate_fails_before_reservation() -> None:
     store = FakeStore(candidate=candidate(), reservation=sending())
     telegram = FakeTelegram()
@@ -159,7 +159,7 @@ async def test_non_owner_only_candidate_fails_before_reservation() -> None:
     assert store.finalized == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_terminal_replay_never_sends_again() -> None:
     store = FakeStore(
         candidate=candidate(),
@@ -182,7 +182,7 @@ async def test_terminal_replay_never_sends_again() -> None:
     assert store.finalized == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ambiguous_provider_outcome_is_durable_unknown() -> None:
     store = FakeStore(candidate=candidate(), reservation=sending())
     telegram = FakeTelegram(
