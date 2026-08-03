@@ -43,14 +43,14 @@ OKO_TARGET = BecomeI4HealthTarget(
     service_name="become-oko-controlled",
     private_port=3000,
     health_path="/healthz",
-    source_sha="7b6e0eab766779e815ba8fc4c2c13352421ce38e",
+    source_sha="2c304529d04be43726e677d2b864c4b5f8283be8",
 )
 TAKE_TARGET = BecomeI4HealthTarget(
     stage="take",
     service_name="become-take-controlled",
     private_port=8000,
     health_path="/healthz",
-    source_sha="c88a592e161fd3dbe9af83acc719a825bacd0f03",
+    source_sha="4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc",
 )
 PRODUCTION_HEALTH_TARGETS = (MAYAKI_TARGET, OKO_TARGET, TAKE_TARGET)
 
