@@ -14,6 +14,17 @@ from uuid import UUID, uuid4
 import pytest
 from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
+    opaque_subject_ref,
+)
+from app.application.become_media_intake import (
+    DownloadedBecomeMedia,
+    ProcessBecomeMediaCommand,
+    ProcessBecomeMediaService,
+)
+from app.application.telegram_processing import (
+    AcceptTelegramReceiptCommand,
+    AcceptTelegramReceiptService,
+    TelegramReceiptError,
 )
 from app.application.become_transcript_review import (
     PilotReviewDisposition,
@@ -39,6 +50,7 @@ from app.application.telegram_voice_transcription import (
     SpeechToTextPort,
 )
 from app.infrastructure.become_media_intake import (
+    SessionFactoryBecomeMediaStore,
     SessionFactoryBecomeMediaRetention,
 )
 from app.infrastructure.become_transcript_review import (
@@ -47,6 +59,7 @@ from app.infrastructure.become_transcript_review import (
 from app.infrastructure.become_voice_transcription import (
     SessionFactoryBecomeVoiceTranscriptionStore,
 )
+from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -74,6 +87,8 @@ class PilotGraph:
     callback_ref: str | None
     delivery_id: UUID | None
     media_receipt_id: UUID
+    subject_ref: str
+    provider_dialog_id: str
 
 
 def _database_url() -> str:
@@ -181,6 +196,8 @@ async def seed_pilot(
     attempt_state: str = "confirmed",
     with_review: bool = True,
     staged_expiry: datetime | None = None,
+    subject_ref: str = SUBJECT,
+    provider_dialog_id: str = CHAT,
 ) -> PilotGraph:
     workspace_id = uuid4()
     agent_definition_id = uuid4()
@@ -322,7 +339,7 @@ async def seed_pilot(
                 "id": dialog_id,
                 "workspace_id": workspace_id,
                 "connector_id": connector_id,
-                "dialog": CHAT,
+                "dialog": provider_dialog_id,
             },
         )
         await session.execute(
@@ -393,6 +410,39 @@ async def seed_pilot(
         await session.execute(
             text(
                 """
+                UPDATE telegram_receipts
+                SET payload = CAST(:payload AS jsonb)
+                WHERE id = :source_id
+                """
+            ),
+            {
+                "source_id": media_source_id,
+                "payload": json.dumps(
+                    {
+                        "update_id": media_source_id.int
+                        % 9_000_000_000_000_000_000,
+                        "message": {
+                            "message_id": 1,
+                            "chat": {
+                                "id": provider_dialog_id,
+                                "type": "group",
+                            },
+                            "from": {"id": "1001", "is_bot": False},
+                            "voice": {
+                                "file_id": "private-file-ref",
+                                "file_unique_id": "private-unique-file-ref",
+                                "duration": 1,
+                                "file_size": 3,
+                                "mime_type": "audio/ogg",
+                            },
+                        },
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
                 INSERT INTO become_controlled_intake_receipts (
                     id, workspace_id, installation_id, source_receipt_id,
                     receipt_key, receipt_digest, schema_name, connector_key,
@@ -415,7 +465,7 @@ async def seed_pilot(
                 "key": f"registration-{registration_id}",
                 "digest": "a" * 64,
                 "installation_ref": installation_ref,
-                "subject_ref": SUBJECT,
+                "subject_ref": subject_ref,
                 "update_ref": f"ref://update/{registration_source_id}",
                 "now": NOW,
             },
@@ -450,7 +500,7 @@ async def seed_pilot(
                 "installation_ref": installation_ref,
                 "quest_ref": f"ref://quest/{workspace_id}",
                 "correlation_ref": f"ref://consent/{correlation_id}",
-                "subject_ref": SUBJECT,
+                "subject_ref": subject_ref,
                 "action_ref": f"ref://action/{consent_id}",
                 "policy_digest": "c" * 64,
                 "now": NOW,
@@ -515,7 +565,7 @@ async def seed_pilot(
                 "consent_id": consent_id,
                 "handoff_id": handoff_id,
                 "key": f"media-{media_id}",
-                "subject_ref": SUBJECT,
+                "subject_ref": subject_ref,
                 "update_ref": f"ref://update/{media_source_id}",
                 "file_digest": "3" * 64,
                 "raw_data": b"ogg",
@@ -614,7 +664,7 @@ async def seed_pilot(
                     "media_id": media_id,
                     "attempt_id": attempt_id,
                     "dialog_id": dialog_id,
-                    "subject_ref": SUBJECT,
+                    "subject_ref": subject_ref,
                     "callback_ref": callback_ref,
                     "now": NOW,
                 },
@@ -678,7 +728,115 @@ async def seed_pilot(
         callback_ref=callback_ref,
         delivery_id=delivery_id,
         media_receipt_id=media_source_id,
+        subject_ref=subject_ref,
+        provider_dialog_id=provider_dialog_id,
     )
+
+
+def _error_code(exc: pytest.ExceptionInfo[BecomeControlledIntakeError]) -> str:
+    return str(exc.value.args[0])
+
+
+async def review_snapshot(
+    sessions: async_sessionmaker[AsyncSession],
+    review_id: UUID,
+) -> tuple[tuple[object, ...], int, int]:
+    async with sessions() as session:
+        review = (
+            await session.execute(
+                text(
+                    """
+                    SELECT state, latest_version, callback_ref::text,
+                           approved_version, approved_digest, approved_at
+                    FROM become_pilot_transcript_reviews
+                    WHERE id = :review_id
+                    """
+                ),
+                {"review_id": review_id},
+            )
+        ).one()
+        versions = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_pilot_transcript_versions
+                WHERE review_id = :review_id
+                """
+            ),
+            {"review_id": review_id},
+        )
+        deliveries = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_pilot_transcript_deliveries
+                WHERE review_id = :review_id
+                """
+            ),
+            {"review_id": review_id},
+        )
+    return tuple(review), int(versions or 0), int(deliveries or 0)
+
+
+async def present_initial(
+    sessions: async_sessionmaker[AsyncSession],
+    graph: PilotGraph,
+) -> SessionFactoryPilotTranscriptReviewStore:
+    store = SessionFactoryPilotTranscriptReviewStore(sessions)
+    job = await store.claim_delivery(now=NOW, max_operations=8)
+    assert job is not None
+    assert job.delivery_id == str(graph.delivery_id)
+    await store.settle_delivery(
+        delivery_id=job.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-presentation",
+        now=NOW,
+    )
+    return store
+
+
+async def correct_to_version_two(
+    sessions: async_sessionmaker[AsyncSession],
+    graph: PilotGraph,
+) -> tuple[SessionFactoryPilotTranscriptReviewStore, str, str]:
+    store = await present_initial(sessions, graph)
+    assert graph.callback_ref
+    disposition = await store.apply_callback(
+        action="e",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    )
+    assert disposition is PilotReviewDisposition.CORRECTION_REQUESTED
+    prompt = await store.claim_delivery(now=NOW, max_operations=8)
+    assert prompt is not None and prompt.kind == "correction_prompt"
+    await store.settle_delivery(
+        delivery_id=prompt.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-correction-prompt",
+        now=NOW,
+    )
+    assert await store.apply_correction(
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="human corrected transcript",
+        now=NOW,
+    )
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    """
+                    SELECT callback_ref::text, transcript_digest
+                    FROM become_pilot_transcript_reviews AS r
+                    JOIN become_pilot_transcript_versions AS v
+                      ON v.review_id = r.id AND v.version = r.latest_version
+                    WHERE r.id = :review_id
+                    """
+                ),
+                {"review_id": graph.review_id},
+            )
+        ).one()
+    return store, row[0].replace("-", ""), row[1]
 
 
 class FakeBudget:
@@ -757,6 +915,74 @@ class CountingSpeech:
         )
 
 
+class NoExternalDownload:
+    calls = 0
+
+    async def download(self, **_: object) -> DownloadedBecomeMedia:
+        self.calls += 1
+        return DownloadedBecomeMedia(b"ogg", "audio/ogg")
+
+
+class OwnerOnlyPresence:
+    async def member_count(self, **_: object) -> int:
+        return 2
+
+
+def media_update(
+    graph: PilotGraph,
+    *,
+    actor_id: str = "1001",
+    chat_id: str | None = None,
+) -> dict[str, object]:
+    return {
+        "update_id": graph.media_receipt_id.int
+        % 9_000_000_000_000_000_000,
+        "message": {
+            "message_id": 1,
+            "chat": {
+                "id": chat_id or graph.provider_dialog_id,
+                "type": "group",
+            },
+            "from": {"id": actor_id, "is_bot": False},
+            "voice": {
+                "file_id": "private-file-ref",
+                "file_unique_id": "private-unique-file-ref",
+                "duration": 1,
+                "file_size": 3,
+                "mime_type": "audio/ogg",
+            },
+        },
+    }
+
+
+async def remove_seeded_media(
+    sessions: async_sessionmaker[AsyncSession], graph: PilotGraph
+) -> None:
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                "DELETE FROM become_voice_correlations WHERE media_intake_id = :id"
+            ),
+            {"id": graph.media_id},
+        )
+        await session.execute(
+            text("DELETE FROM become_media_intakes WHERE id = :id"),
+            {"id": graph.media_id},
+        )
+
+
+def media_service(
+    sessions: async_sessionmaker[AsyncSession],
+    downloader: NoExternalDownload,
+) -> ProcessBecomeMediaService:
+    return ProcessBecomeMediaService(
+        store=SessionFactoryBecomeMediaStore(sessions),
+        downloader=downloader,
+        presence=OwnerOnlyPresence(),
+        subject_pepper="pilot-pepper",
+    )
+
+
 def provider_service(
     graph: PilotGraph,
     sessions: async_sessionmaker[AsyncSession],
@@ -783,6 +1009,153 @@ def provider_service(
         max_calls=1,
         slice1_enabled=slice1_enabled,
         slice1_provider_max_calls=provider_cap,
+    )
+
+
+async def assert_rejected_media_keeps_provider_zero(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    case: str,
+) -> None:
+    subject_ref = opaque_subject_ref(
+        provider_actor_id="1001", pepper="pilot-pepper"
+    )
+    graph = await seed_pilot(
+        sessions,
+        attempt_state="absent",
+        with_review=False,
+        subject_ref=subject_ref,
+    )
+    await remove_seeded_media(sessions, graph)
+    workspace_key = graph.workspace_key
+    update = media_update(graph)
+    expected_code = "become_media_executed_consent_required"
+    if case == "wrong_actor":
+        update = media_update(graph, actor_id="1002")
+    elif case == "wrong_chat":
+        update = media_update(graph, chat_id="wrong-private-chat")
+        expected_code = "become_media_installation_invalid"
+    elif case == "wrong_workspace":
+        workspace_key = graph.workspace_key + "-wrong"
+        expected_code = "become_media_installation_invalid"
+    elif case == "missing_consent":
+        async with sessions.begin() as session:
+            await session.execute(
+                text(
+                    "DELETE FROM become_relations_consent_handoffs "
+                    "WHERE workspace_id = :workspace_id"
+                ),
+                {"workspace_id": graph.workspace_id},
+            )
+            await session.execute(
+                text(
+                    "DELETE FROM become_controlled_consent_receipts "
+                    "WHERE workspace_id = :workspace_id"
+                ),
+                {"workspace_id": graph.workspace_id},
+            )
+    else:
+        raise AssertionError(f"unknown identity case: {case}")
+
+    downloader = NoExternalDownload()
+    with pytest.raises(BecomeControlledIntakeError) as rejected:
+        await media_service(sessions, downloader).execute(
+            ProcessBecomeMediaCommand(
+                workspace_key=workspace_key,
+                source_receipt_id=str(graph.media_receipt_id),
+                update=update,
+                received_at=NOW,
+            )
+        )
+    assert _error_code(rejected) == expected_code
+    speech = CountingSpeech()
+    budget = FakeBudget()
+    run = await provider_service(
+        graph, sessions, budget, speech
+    ).run_once(now=NOW)
+    assert run.disposition == "idle"
+    assert downloader.calls == 0
+    assert speech.calls == 0
+    assert budget.reservations == 0
+    async with sessions() as session:
+        provider_rows = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_voice_transcription_attempts
+                WHERE workspace_id = :workspace_id
+                """
+            ),
+            {"workspace_id": graph.workspace_id},
+        )
+        staged_rows = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_voice_transcription_attempts
+                WHERE workspace_id = :workspace_id
+                  AND staged_transcript IS NOT NULL
+                """
+            ),
+            {"workspace_id": graph.workspace_id},
+        )
+        version_rows = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_pilot_transcript_reviews
+                WHERE workspace_id = :workspace_id
+                """
+            ),
+            {"workspace_id": graph.workspace_id},
+        )
+        delivery_rows = await session.scalar(
+            text(
+                """
+                SELECT count(*)
+                FROM become_pilot_transcript_deliveries AS d
+                JOIN become_pilot_transcript_reviews AS r
+                  ON r.id = d.review_id
+                WHERE r.workspace_id = :workspace_id
+                """
+            ),
+            {"workspace_id": graph.workspace_id},
+        )
+    assert (provider_rows, staged_rows, version_rows, delivery_rows) == (
+        0, 0, 0, 0
+    )
+
+
+@pytest.mark.anyio
+async def test_wrong_actor_application_boundary_keeps_provider_calls_zero(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await assert_rejected_media_keeps_provider_zero(
+        sessions, case="wrong_actor"
+    )
+
+
+@pytest.mark.anyio
+async def test_wrong_chat_application_boundary_keeps_provider_calls_zero(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await assert_rejected_media_keeps_provider_zero(
+        sessions, case="wrong_chat"
+    )
+
+
+@pytest.mark.anyio
+async def test_wrong_workspace_application_boundary_keeps_provider_calls_zero(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await assert_rejected_media_keeps_provider_zero(
+        sessions, case="wrong_workspace"
+    )
+
+
+@pytest.mark.anyio
+async def test_missing_consent_application_boundary_keeps_provider_calls_zero(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await assert_rejected_media_keeps_provider_zero(
+        sessions, case="missing_consent"
     )
 
 
@@ -1047,6 +1420,562 @@ async def test_postgres_identity_append_only_and_exact_latest_approval(
 
 
 @pytest.mark.anyio
+async def test_cross_pilot_callbacks_fail_closed_without_row_mutation(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    pilot_a = await seed_pilot(
+        sessions,
+        subject_ref="ref://pilot/subject/a",
+        provider_dialog_id="pilot-private-chat-a",
+    )
+    pilot_b = await seed_pilot(
+        sessions,
+        subject_ref="ref://pilot/subject/b",
+        provider_dialog_id="pilot-private-chat-b",
+    )
+    assert pilot_a.review_id and pilot_a.callback_ref
+    assert pilot_b.review_id and pilot_b.callback_ref
+    before_a = await review_snapshot(sessions, pilot_a.review_id)
+    before_b = await review_snapshot(sessions, pilot_b.review_id)
+    store = SessionFactoryPilotTranscriptReviewStore(sessions)
+
+    with pytest.raises(BecomeControlledIntakeError) as callback_a_from_b:
+        await store.apply_callback(
+            action="c",
+            callback_ref=pilot_a.callback_ref,
+            subject_ref=pilot_b.subject_ref,
+            provider_dialog_id=pilot_b.provider_dialog_id,
+            now=NOW,
+        )
+    assert _error_code(callback_a_from_b) == (
+        "become_pilot_callback_binding_invalid"
+    )
+    with pytest.raises(BecomeControlledIntakeError) as callback_b_to_a:
+        await store.apply_callback(
+            action="c",
+            callback_ref=pilot_b.callback_ref,
+            subject_ref=pilot_a.subject_ref,
+            provider_dialog_id=pilot_a.provider_dialog_id,
+            now=NOW,
+        )
+    assert _error_code(callback_b_to_a) == (
+        "become_pilot_callback_binding_invalid"
+    )
+    assert await review_snapshot(sessions, pilot_a.review_id) == before_a
+    assert await review_snapshot(sessions, pilot_b.review_id) == before_b
+
+
+@pytest.mark.anyio
+async def test_version_digest_exact_replay_differs_from_mutated_and_lower(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.review_id
+    store = await present_initial(sessions, graph)
+    assert await store.owner_redisplay(
+        review_id=str(graph.review_id),
+        expected_version=1,
+        expected_digest=DIGEST_1,
+        now=NOW,
+    ) == "redisplay_scheduled"
+    exact_snapshot = await review_snapshot(sessions, graph.review_id)
+    assert await store.owner_redisplay(
+        review_id=str(graph.review_id),
+        expected_version=1,
+        expected_digest=DIGEST_1,
+        now=NOW,
+    ) == "redisplay_scheduled"
+    assert await review_snapshot(sessions, graph.review_id) == exact_snapshot
+
+    with pytest.raises(BecomeControlledIntakeError) as mutated:
+        await store.owner_redisplay(
+            review_id=str(graph.review_id),
+            expected_version=1,
+            expected_digest="f" * 64,
+            now=NOW,
+        )
+    assert _error_code(mutated) == "become_pilot_operator_binding_invalid"
+    with pytest.raises(BecomeControlledIntakeError) as lower:
+        await store.owner_redisplay(
+            review_id=str(graph.review_id),
+            expected_version=0,
+            expected_digest=DIGEST_1,
+            now=NOW,
+        )
+    assert _error_code(lower) == "become_pilot_operator_binding_invalid"
+    assert await review_snapshot(sessions, graph.review_id) == exact_snapshot
+
+
+@pytest.mark.anyio
+async def test_higher_version_accepts_then_stale_and_wrong_digest_reject(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.review_id and graph.callback_ref
+    store, callback_v2, digest_v2 = await correct_to_version_two(
+        sessions, graph
+    )
+    expected = await review_snapshot(sessions, graph.review_id)
+    assert expected[0][0:2] == ("pending_display", 2)
+    with pytest.raises(BecomeControlledIntakeError) as stale:
+        await store.apply_callback(
+            action="c",
+            callback_ref=graph.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+    assert _error_code(stale) == "become_pilot_callback_binding_invalid"
+
+    corrected = await store.claim_delivery(now=NOW, max_operations=8)
+    assert corrected is not None and corrected.version == 2
+    await store.settle_delivery(
+        delivery_id=corrected.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-version-two",
+        now=NOW,
+    )
+    with pytest.raises(BecomeControlledIntakeError) as wrong_digest:
+        await store.owner_approve(
+            review_id=str(graph.review_id),
+            expected_version=2,
+            expected_digest="f" * 64,
+            now=NOW,
+        )
+    assert _error_code(wrong_digest) == "become_pilot_operator_binding_invalid"
+    presented = await review_snapshot(sessions, graph.review_id)
+    assert presented[0][0:2] == ("presented", 2)
+    assert presented[0][3:6] == (None, None, None)
+    assert callback_v2 == presented[0][2].replace("-", "")
+    assert digest_v2 != DIGEST_1
+
+
+@pytest.mark.anyio
+async def test_approval_v1_is_invalidated_by_correction_v2_and_restart_safe(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.review_id and graph.callback_ref
+    store = await present_initial(sessions, graph)
+    assert await store.apply_callback(
+        action="c",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    ) is PilotReviewDisposition.APPROVED
+    confirmation_v1 = await store.claim_delivery(now=NOW, max_operations=8)
+    assert confirmation_v1 is not None and confirmation_v1.kind == "confirmation"
+    await store.settle_delivery(
+        delivery_id=confirmation_v1.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-confirmation-v1",
+        now=NOW,
+    )
+
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert await restarted.apply_callback(
+        action="e",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW + timedelta(seconds=1),
+    ) is PilotReviewDisposition.CORRECTION_REQUESTED
+    prompt = await restarted.claim_delivery(
+        now=NOW + timedelta(seconds=1), max_operations=8
+    )
+    assert prompt is not None and prompt.kind == "correction_prompt"
+    await restarted.settle_delivery(
+        delivery_id=prompt.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-correction-after-v1",
+        now=NOW + timedelta(seconds=1),
+    )
+    assert await restarted.apply_correction(
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="approved transcript corrected once",
+        now=NOW + timedelta(seconds=2),
+    )
+    async with sessions() as session:
+        invalidated = (
+            await session.execute(
+                text(
+                    """
+                    SELECT r.state, r.latest_version, r.approved_version,
+                           r.approved_digest, m.transcript_state,
+                           count(dl.id) FILTER (
+                             WHERE dl.kind = 'confirmation' AND dl.version = 1
+                           )
+                    FROM become_pilot_transcript_reviews AS r
+                    JOIN become_media_intakes AS m ON m.id = r.media_intake_id
+                    LEFT JOIN become_pilot_transcript_deliveries AS dl
+                      ON dl.review_id = r.id
+                    WHERE r.id = :review_id
+                    GROUP BY r.id, m.id
+                    """
+                ),
+                {"review_id": graph.review_id},
+            )
+        ).one()
+    assert invalidated == ("pending_display", 2, None, None, "none", 1)
+
+    with pytest.raises(BecomeControlledIntakeError):
+        await restarted.apply_callback(
+            action="c",
+            callback_ref=graph.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW + timedelta(seconds=2),
+        )
+    version_two = await restarted.claim_delivery(
+        now=NOW + timedelta(seconds=2), max_operations=8
+    )
+    assert version_two is not None and version_two.version == 2
+    await restarted.settle_delivery(
+        delivery_id=version_two.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-version-two-after-approval",
+        now=NOW + timedelta(seconds=2),
+    )
+    disposition = await restarted.apply_callback(
+        action="c",
+        callback_ref=version_two.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW + timedelta(seconds=3),
+    )
+    assert disposition is PilotReviewDisposition.APPROVED
+    after_restart = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert await after_restart.apply_callback(
+        action="c",
+        callback_ref=version_two.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW + timedelta(seconds=4),
+    ) is PilotReviewDisposition.APPROVED_DUPLICATE
+    final = await review_snapshot(sessions, graph.review_id)
+    assert final[0][0:2] == ("approved", 2)
+    assert final[0][3] == 2
+
+
+@pytest.mark.anyio
+async def test_restart_after_voice_intake_claims_one_persisted_attempt(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions, attempt_state="absent", with_review=False)
+    restarted = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
+    first = await restarted.claim_or_resume(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+        model="gpt-4o-mini-transcribe",
+        language="ru",
+        reserve_microusd_per_second=100,
+        stale_after=timedelta(minutes=5),
+    )
+    assert first is not None and first.state.value == "reserving"
+    exact_replay = await SessionFactoryBecomeVoiceTranscriptionStore(
+        sessions
+    ).claim_or_resume(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+        model="gpt-4o-mini-transcribe",
+        language="ru",
+        reserve_microusd_per_second=100,
+        stale_after=timedelta(minutes=5),
+    )
+    assert exact_replay is not None
+    assert exact_replay.attempt_id == first.attempt_id
+    async with sessions() as session:
+        assert await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_voice_transcription_attempts
+                WHERE workspace_id = :workspace_id
+                """
+            ),
+            {"workspace_id": graph.workspace_id},
+        ) == 1
+
+
+@pytest.mark.anyio
+async def test_restart_after_provider_reservation_preserves_single_call_claim(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions, attempt_state="absent", with_review=False)
+    first_store = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
+    work = await first_store.claim_or_resume(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+        model="gpt-4o-mini-transcribe",
+        language="ru",
+        reserve_microusd_per_second=100,
+        stale_after=timedelta(minutes=5),
+    )
+    assert work is not None
+    reserved = await first_store.mark_reserved(
+        attempt_id=work.attempt_id, now=NOW
+    )
+    assert reserved.state.value == "reserved"
+    assert (await first_store.mark_reserved(
+        attempt_id=work.attempt_id, now=NOW
+    )).attempt_id == work.attempt_id
+
+    restarted = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
+    calling = await restarted.begin_call(attempt_id=work.attempt_id, now=NOW)
+    assert calling is not None and calling.state.value == "calling"
+    assert await SessionFactoryBecomeVoiceTranscriptionStore(
+        sessions
+    ).begin_call(attempt_id=work.attempt_id, now=NOW) is None
+    with pytest.raises(BecomeControlledIntakeError):
+        await restarted.mark_reserved(attempt_id=str(uuid4()), now=NOW)
+
+
+@pytest.mark.anyio
+async def test_restart_after_provider_success_stages_exactly_one_review(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(
+        sessions,
+        attempt_state="succeeded_unsettled",
+        with_review=False,
+    )
+    restarted = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
+    assert await restarted.confirm_success(
+        attempt_id=str(graph.attempt_id), now=NOW
+    ) is True
+    assert await SessionFactoryBecomeVoiceTranscriptionStore(
+        sessions
+    ).confirm_success(attempt_id=str(graph.attempt_id), now=NOW) is True
+    with pytest.raises(BecomeControlledIntakeError):
+        await restarted.confirm_success(attempt_id=str(uuid4()), now=NOW)
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    """
+                    SELECT a.state, a.staged_transcript,
+                           count(r.id), count(d.id)
+                    FROM become_voice_transcription_attempts AS a
+                    LEFT JOIN become_pilot_transcript_reviews AS r
+                      ON r.attempt_id = a.id
+                    LEFT JOIN become_pilot_transcript_deliveries AS d
+                      ON d.review_id = r.id
+                    WHERE a.id = :attempt_id
+                    GROUP BY a.id
+                    """
+                ),
+                {"attempt_id": graph.attempt_id},
+            )
+        ).one()
+    assert row == ("confirmed", None, 1, 1)
+
+
+@pytest.mark.anyio
+async def test_restart_after_transcript_version_persistence_keeps_latest_digest(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.review_id
+    before = await review_snapshot(sessions, graph.review_id)
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    job = await restarted.claim_delivery(now=NOW, max_operations=8)
+    assert job is not None
+    assert job.version == 1 and job.transcript_digest == DIGEST_1
+    after = await review_snapshot(sessions, graph.review_id)
+    assert after[0][0:2] == before[0][0:2]
+    assert after[1:] == before[1:]
+    assert await SessionFactoryPilotTranscriptReviewStore(
+        sessions
+    ).claim_delivery(now=NOW, max_operations=8) is None
+
+
+@pytest.mark.anyio
+async def test_restart_after_delivery_reservation_never_automatically_resends(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.delivery_id
+    first = SessionFactoryPilotTranscriptReviewStore(sessions)
+    reserved = await first.claim_delivery(now=NOW, max_operations=8)
+    assert reserved is not None
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert await restarted.claim_delivery(now=NOW, max_operations=8) is None
+    status = await restarted.status(now=NOW)
+    assert status["delivery_reserved"] == 1
+    await restarted.settle_delivery(
+        delivery_id=reserved.delivery_id,
+        outcome="unknown",
+        telegram_message_id=None,
+        now=NOW,
+    )
+    assert await restarted.claim_delivery(now=NOW, max_operations=8) is None
+    with pytest.raises(BecomeControlledIntakeError) as mutated:
+        await restarted.settle_delivery(
+            delivery_id=reserved.delivery_id,
+            outcome="failed",
+            telegram_message_id=None,
+            now=NOW,
+        )
+    assert _error_code(mutated) == "become_pilot_delivery_replay_invalid"
+
+
+@pytest.mark.anyio
+async def test_restart_after_delivery_success_continues_with_one_edit_prompt(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.callback_ref and graph.review_id
+    await present_initial(sessions, graph)
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    first = await restarted.apply_callback(
+        action="e",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    )
+    replay = await SessionFactoryPilotTranscriptReviewStore(
+        sessions
+    ).apply_callback(
+        action="e",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    )
+    assert first is replay is PilotReviewDisposition.CORRECTION_REQUESTED
+    async with sessions() as session:
+        prompts = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_pilot_transcript_deliveries
+                WHERE review_id = :review_id AND kind = 'correction_prompt'
+                """
+            ),
+            {"review_id": graph.review_id},
+        )
+    assert prompts == 1
+
+
+@pytest.mark.anyio
+async def test_restart_after_correction_state_accepts_only_bound_actor_text(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.callback_ref and graph.review_id
+    store = await present_initial(sessions, graph)
+    await store.apply_callback(
+        action="e",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    )
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert await restarted.apply_correction(
+        subject_ref="ref://pilot/subject/mutated",
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="must not persist",
+        now=NOW,
+    ) is False
+    assert await restarted.apply_correction(
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="restart correction",
+        now=NOW,
+    ) is True
+    assert await restarted.apply_correction(
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="duplicate must not append",
+        now=NOW,
+    ) is False
+    snapshot = await review_snapshot(sessions, graph.review_id)
+    assert snapshot[0][0:2] == ("pending_display", 2)
+    assert snapshot[1] == 2
+
+
+@pytest.mark.anyio
+async def test_restart_after_corrected_version_rejects_stale_then_approves_latest(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.callback_ref and graph.review_id
+    _, callback_v2, digest_v2 = await correct_to_version_two(sessions, graph)
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    with pytest.raises(BecomeControlledIntakeError):
+        await restarted.apply_callback(
+            action="c",
+            callback_ref=graph.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+    job = await restarted.claim_delivery(now=NOW, max_operations=8)
+    assert job is not None and job.version == 2
+    await restarted.settle_delivery(
+        delivery_id=job.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-corrected-version",
+        now=NOW,
+    )
+    with pytest.raises(BecomeControlledIntakeError):
+        await restarted.owner_approve(
+            review_id=str(graph.review_id),
+            expected_version=2,
+            expected_digest="f" * 64,
+            now=NOW,
+        )
+    assert await restarted.apply_callback(
+        action="c",
+        callback_ref=callback_v2,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    ) is PilotReviewDisposition.APPROVED
+    snapshot = await review_snapshot(sessions, graph.review_id)
+    assert snapshot[0][0:2] == ("approved", 2)
+    assert snapshot[0][3:5] == (2, digest_v2)
+
+
+@pytest.mark.anyio
+async def test_restart_after_human_approval_is_durable_exact_no_op(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(sessions)
+    assert graph.callback_ref and graph.review_id
+    store = await present_initial(sessions, graph)
+    assert await store.apply_callback(
+        action="c",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    ) is PilotReviewDisposition.APPROVED
+    restarted = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert await restarted.apply_callback(
+        action="c",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW,
+    ) is PilotReviewDisposition.APPROVED_DUPLICATE
+    with pytest.raises(BecomeControlledIntakeError) as mutated:
+        await restarted.apply_callback(
+            action="c",
+            callback_ref=uuid4().hex,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+    assert _error_code(mutated) == "become_pilot_callback_binding_invalid"
+    snapshot = await review_snapshot(sessions, graph.review_id)
+    assert snapshot[0][0:5] == ("approved", 1, snapshot[0][2], 1, DIGEST_1)
+    assert snapshot[1] == 1
+
+
+@pytest.mark.anyio
 async def test_delivery_crash_visibility_and_bounded_owner_reconciliation(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -1203,6 +2132,113 @@ async def test_delivery_crash_visibility_and_bounded_owner_reconciliation(
             owner_authorized=True,
             now=NOW + timedelta(minutes=5),
         )
+
+
+@pytest.mark.anyio
+async def test_telegram_update_replay_survives_restart_and_rejects_mutation(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    update_id = uuid4().int % 9_000_000_000_000_000_000
+    payload = {
+        "update_id": update_id,
+        "message": {
+            "message_id": 1,
+            "chat": {"id": "private-pilot", "type": "group"},
+            "from": {"id": "exact-expert", "is_bot": False},
+            "voice": {
+                "file_id": "private-file",
+                "file_unique_id": "private-unique-file",
+                "duration": 1,
+            },
+        },
+    }
+    command = AcceptTelegramReceiptCommand(
+        bot_key="telegram_become_group",
+        update_id=update_id,
+        payload=payload,
+        received_at=NOW,
+    )
+    async with sessions() as first_session:
+        service = AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(first_session)
+        )
+        first = await service.execute(command)
+        before_restart = await service.execute(command)
+    assert first.duplicate is False
+    assert before_restart.duplicate is True
+    assert before_restart.receipt_id == first.receipt_id
+    assert before_restart.outbox_event_id == first.outbox_event_id
+
+    async with sessions() as restarted_session:
+        restarted = AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(restarted_session)
+        )
+        after_restart = await restarted.execute(command)
+        assert after_restart.duplicate is True
+        assert after_restart.receipt_id == first.receipt_id
+        with pytest.raises(TelegramReceiptError) as mutated:
+            await restarted.execute(
+                replace(
+                    command,
+                    payload={
+                        **payload,
+                        "message": {
+                            **payload["message"],
+                            "message_id": 2,
+                        },
+                    },
+                )
+            )
+    assert str(mutated.value) == "telegram_receipt_mutated_replay"
+
+    async with sessions.begin() as session:
+        receipt_count = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM telegram_receipts
+                WHERE bot_key = 'telegram_become_group'
+                  AND update_id = :update_id
+                """
+            ),
+            {"update_id": update_id},
+        )
+        outbox_count = await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM telegram_outbox_events
+                WHERE receipt_id = CAST(:receipt_id AS uuid)
+                """
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+        provider_count = await session.scalar(
+            text("SELECT count(*) FROM become_voice_transcription_attempts")
+        )
+        delivery_count = await session.scalar(
+            text("SELECT count(*) FROM become_pilot_transcript_deliveries")
+        )
+        await session.execute(
+            text(
+                """
+                DELETE FROM telegram_outbox_events
+                WHERE receipt_id = CAST(:receipt_id AS uuid)
+                """
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+        await session.execute(
+            text(
+                """
+                DELETE FROM telegram_receipts
+                WHERE id = CAST(:receipt_id AS uuid)
+                """
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+    assert receipt_count == 1
+    assert outbox_count == 1
+    assert provider_count == 0
+    assert delivery_count == 0
 
 
 @pytest.mark.anyio
