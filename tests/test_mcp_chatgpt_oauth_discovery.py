@@ -370,11 +370,40 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
         return {
             "chain_recovery_receipt_count": 0,
             "chain_recovery_prepared_count": 0,
+            "chain_recovery_prepared_receipt_enabled": False,
             "chain_recovery_enabled": False,
+            "chain_recovery_activation_max_posts": 0,
             "chain_recovery_attempt_version": None,
             "chain_recovery_target_source_sha": None,
             "chain_recovery_source_failure_preserved": False,
+            "chain_recovery_attempt_count": 0,
+            "chain_recovery_activation_receipt_count": 0,
+            "chain_recovery_attempt_digest": None,
+            "chain_recovery_prepared_digest": None,
+            "chain_recovery_attempt_state": "prepared",
+            "chain_recovery_post_count": 0,
             "chain_recovery_reconciliation_required": False,
+            "chain_recovery_mayaki_source_sha": (
+                "2078d230852af1c7e3a309f00d716fa2fc664f68"
+            ),
+            "chain_recovery_oko_source_sha": (
+                "2c304529d04be43726e677d2b864c4b5f8283be8"
+            ),
+            "chain_recovery_take_source_sha": (
+                "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
+            ),
+            "chain_recovery_take_receipt_digest": None,
+            "chain_recovery_mayaki_state": "not_started",
+            "chain_recovery_mayaki_post_count": 0,
+            "chain_recovery_mayaki_request_digest": None,
+            "chain_recovery_mayaki_receipt_digest": None,
+            "chain_recovery_oko_state": "not_started",
+            "chain_recovery_oko_post_count": 0,
+            "chain_recovery_oko_request_digest": None,
+            "chain_recovery_oko_receipt_digest": None,
+            "chain_recovery_take_state": "not_started",
+            "chain_recovery_take_post_count": 0,
+            "chain_recovery_take_request_digest": None,
         }
 
     async def connectivity_status(
@@ -393,6 +422,24 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
                 "2078d230852af1c7e3a309f00d716fa2fc664f68"
             ),
             "mayaki_health_external_effects": 0,
+            "oko_connectivity_proven": False,
+            "oko_connectivity_error_code": "connection_not_established",
+            "oko_service_name": "become-oko-controlled",
+            "oko_private_hostname": "become-oko-controlled.railway.internal",
+            "oko_private_port": 3000,
+            "oko_source_sha": (
+                "2c304529d04be43726e677d2b864c4b5f8283be8"
+            ),
+            "oko_health_external_effects": 0,
+            "take_connectivity_proven": False,
+            "take_connectivity_error_code": "connection_not_established",
+            "take_service_name": "become-take-controlled",
+            "take_private_hostname": "become-take-controlled.railway.internal",
+            "take_private_port": 8000,
+            "take_source_sha": (
+                "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
+            ),
+            "take_health_external_effects": 0,
         }
 
     app.dependency_overrides[get_db_session] = override_session
