@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
 )
-from app.application.become_media_intake import CONFIRMED_TRANSCRIPT_RETENTION
-from app.application.become_voice_chain import BecomeChainSlotState
 from app.application.become_voice_transcription import (
     BECOME_TRANSCRIPTION_GRANT_KEY,
     BECOME_TRANSCRIPTION_SCHEMA,
@@ -31,7 +29,6 @@ from app.models.become import (
     BecomeControlledIntakeReceiptModel,
     BecomeMediaIntakeModel,
     BecomeRelationsConsentHandoffModel,
-    BecomeVoiceChainSlotModel,
     BecomeVoiceCorrelationModel,
     BecomeVoiceTranscriptionAttemptModel,
 )
@@ -40,6 +37,7 @@ from app.models.billing import (
     BillingEntitlementModel,
 )
 from app.models.canonical import TransportConnector, Workspace
+from app.infrastructure.become_transcript_review import stage_provider_transcript
 
 
 class SessionFactoryBecomeVoiceTranscriptionStore:
@@ -77,7 +75,9 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 select(BecomeVoiceTranscriptionAttemptModel)
                 .where(
                     BecomeVoiceTranscriptionAttemptModel.workspace_id
-                    == workspace.id
+                    == workspace.id,
+                    BecomeVoiceTranscriptionAttemptModel.grant_key
+                    == BECOME_TRANSCRIPTION_GRANT_KEY,
                 )
                 .with_for_update()
             )
@@ -435,6 +435,8 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
         attempt_id: str,
         now: datetime,
     ) -> None:
+        """Settle provider output into pending human review, never approval."""
+
         async with self._sessions.begin() as session:
             attempt = await _attempt(session, attempt_id)
             if attempt.state == BecomeVoiceTranscriptionState.CONFIRMED.value:
@@ -474,39 +476,19 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 or intake.transcript_state != "none"
             ):
                 raise BecomeControlledIntakeError(
-                    "become_transcription_confirmation_binding_invalid"
+                    "become_transcription_review_binding_invalid"
                 )
-            confirmed_at = attempt.provider_succeeded_at
-            expires_at = confirmed_at + CONFIRMED_TRANSCRIPT_RETENTION
-            intake.transcript_state = "confirmed"
-            intake.confirmed_transcript = attempt.staged_transcript
-            intake.transcript_digest = attempt.transcript_digest
-            intake.transcript_confirmed_at = confirmed_at
-            intake.transcript_expires_at = expires_at
-            intake.updated_at = now
-            relations = await session.scalar(
-                select(BecomeVoiceChainSlotModel)
-                .where(
-                    BecomeVoiceChainSlotModel.correlation_id
-                    == correlation.id,
-                    BecomeVoiceChainSlotModel.stage == "relations",
-                    BecomeVoiceChainSlotModel.position == 1,
-                )
-                .with_for_update()
+            await stage_provider_transcript(
+                session,
+                attempt_id=str(attempt.id),
+                workspace_id=str(attempt.workspace_id),
+                correlation_id=str(correlation.id),
+                media_intake_id=str(intake.id),
+                transcript_body=attempt.staged_transcript,
+                transcript_digest=attempt.transcript_digest,
+                provider_succeeded_at=attempt.provider_succeeded_at,
+                now=now,
             )
-            if (
-                relations is None
-                or relations.state
-                not in {
-                    BecomeChainSlotState.BLOCKED.value,
-                    BecomeChainSlotState.READY.value,
-                }
-            ):
-                raise BecomeControlledIntakeError(
-                    "become_transcription_relations_slot_invalid"
-                )
-            relations.state = BecomeChainSlotState.READY.value
-            relations.updated_at = now
             attempt.state = BecomeVoiceTranscriptionState.CONFIRMED.value
             attempt.staged_transcript = None
             attempt.reason_code = None
