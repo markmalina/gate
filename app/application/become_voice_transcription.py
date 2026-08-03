@@ -446,9 +446,9 @@ class ProcessBecomeVoiceTranscriptionService:
             now=now,
         )
         return BecomeVoiceTranscriptionRun(
-            "confirmed",
+            "settled_pending_human_review",
             provider_call_boundary_entered=True,
-            transcript_confirmed=True,
+            transcript_confirmed=False,
         )
 
 
