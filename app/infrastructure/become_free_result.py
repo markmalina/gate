@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
