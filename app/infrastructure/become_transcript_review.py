@@ -506,13 +506,19 @@ class SessionFactoryPilotTranscriptReviewStore:
                             'content_purged', true
                         ),
                         updated_at = :now
-                    FROM become_media_intakes AS mi
-                    WHERE mi.source_receipt_id = tr.id
-                      AND tr.bot_key = 'telegram_become_group'
+                    WHERE tr.bot_key = 'telegram_become_group'
                       AND tr.payload ->> 'schema' IS DISTINCT FROM :schema
+                      AND (
+                        tr.processed_at IS NOT NULL
+                        OR tr.received_at <= :raw_cutoff
+                      )
                     """
                 ),
-                {"schema": _TOMBSTONE_SCHEMA, "now": now},
+                {
+                    "schema": _TOMBSTONE_SCHEMA,
+                    "now": now,
+                    "raw_cutoff": now - timedelta(days=7),
+                },
             )
             return {
                 "transcript_versions_purged": int(
