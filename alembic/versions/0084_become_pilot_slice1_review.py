@@ -264,7 +264,18 @@ def upgrade() -> None:
         "become_pilot_transcript_deliveries",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("review_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "retry_of_delivery_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=True,
+        ),
         sa.Column("kind", sa.String(length=32), nullable=False),
+        sa.Column(
+            "attempt_no",
+            sa.Integer(),
+            server_default="1",
+            nullable=False,
+        ),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("transcript_digest", sa.String(length=64), nullable=False),
         sa.Column("callback_ref", postgresql.UUID(as_uuid=True), nullable=False),
@@ -272,6 +283,17 @@ def upgrade() -> None:
         sa.Column("outcome", sa.String(length=16), nullable=False),
         sa.Column("telegram_message_id", sa.String(length=64), nullable=True),
         sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "reconciliation_action",
+            sa.String(length=32),
+            nullable=True,
+        ),
+        sa.Column(
+            "reconciliation_request_digest",
+            sa.String(length=64),
+            nullable=True,
+        ),
+        sa.Column("reconciled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
@@ -297,10 +319,31 @@ def upgrade() -> None:
             "AND telegram_message_id IS NULL AND settled_at IS NOT NULL)",
             name="ck_become_pilot_delivery_settlement",
         ),
+        sa.CheckConstraint(
+            "(attempt_no = 1 AND retry_of_delivery_id IS NULL) OR "
+            "(attempt_no = 2 AND retry_of_delivery_id IS NOT NULL)",
+            name="ck_become_pilot_delivery_attempt",
+        ),
+        sa.CheckConstraint(
+            "(reconciliation_action IS NULL "
+            "AND reconciliation_request_digest IS NULL "
+            "AND reconciled_at IS NULL) OR "
+            "(reconciliation_action IN ('sent_confirmed', "
+            "'failed_confirmed', 'retry_authorized') "
+            "AND char_length(reconciliation_request_digest) = 64 "
+            "AND reconciled_at IS NOT NULL)",
+            name="ck_become_pilot_delivery_reconciliation",
+        ),
         sa.ForeignKeyConstraint(
             ["review_id"],
             ["become_pilot_transcript_reviews.id"],
             name="fk_become_pilot_delivery_review",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["retry_of_delivery_id"],
+            ["become_pilot_transcript_deliveries.id"],
+            name="fk_become_pilot_delivery_retry_of",
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id"),
@@ -309,11 +352,16 @@ def upgrade() -> None:
             "kind",
             "version",
             "transcript_digest",
+            "attempt_no",
             name="uq_become_pilot_delivery_operation",
         ),
         sa.UniqueConstraint(
             "request_digest",
             name="uq_become_pilot_delivery_request",
+        ),
+        sa.UniqueConstraint(
+            "reconciliation_request_digest",
+            name="uq_become_pilot_delivery_reconciliation_request",
         ),
     )
     op.create_index(
