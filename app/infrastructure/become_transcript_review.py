@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta
 
@@ -17,9 +18,13 @@ from app.application.become_transcript_review import (
     PilotReviewDisposition,
     request_digest,
 )
+from app.application.telegram_processing import (
+    TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+    TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION,
+    canonical_telegram_payload_digest,
+)
 
 _TRANSCRIPT_RETENTION = timedelta(days=30)
-_TOMBSTONE_SCHEMA = "gate.telegram-content-tombstone@1"
 
 
 class SessionFactoryPilotTranscriptReviewStore:
@@ -924,24 +929,53 @@ class SessionFactoryPilotTranscriptReviewStore:
         now: datetime,
     ) -> None:
         async with self._sessions.begin() as session:
+            receipt = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT payload, update_id
+                        FROM telegram_receipts
+                        WHERE id = CAST(:receipt_id AS uuid)
+                          AND bot_key = 'telegram_become_group'
+                        FOR UPDATE
+                        """
+                    ),
+                    {"receipt_id": receipt_id},
+                )
+            ).mappings().one_or_none()
+            if receipt is None:
+                return
+            payload = receipt["payload"]
+            if (
+                isinstance(payload, dict)
+                and payload.get("schema")
+                == TELEGRAM_CONTENT_TOMBSTONE_SCHEMA
+            ):
+                return
+            digest = canonical_telegram_payload_digest(payload)
             await session.execute(
                 text(
                     """
                     UPDATE telegram_receipts
-                    SET payload = jsonb_build_object(
-                            'schema', :schema,
-                            'update_id', update_id,
-                            'content_purged', true
-                        ),
+                    SET payload = CAST(:tombstone AS jsonb),
                         updated_at = :now
                     WHERE id = CAST(:receipt_id AS uuid)
                       AND bot_key = 'telegram_become_group'
-                      AND payload ->> 'schema' IS DISTINCT FROM :schema
                     """
                 ),
                 {
                     "receipt_id": receipt_id,
-                    "schema": _TOMBSTONE_SCHEMA,
+                    "tombstone": json.dumps(
+                        {
+                            "schema": TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+                            "canonicalization_version": (
+                                TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION
+                            ),
+                            "canonical_payload_digest": digest,
+                            "update_id": receipt["update_id"],
+                            "content_purged": True,
+                        }
+                    ),
                     "now": now,
                 },
             )
@@ -975,30 +1009,55 @@ class SessionFactoryPilotTranscriptReviewStore:
                 ),
                 {"now": now},
             )
-            receipts = await session.execute(
-                text(
-                    """
-                    UPDATE telegram_receipts AS tr
-                    SET payload = jsonb_build_object(
-                            'schema', :schema,
-                            'update_id', tr.update_id,
-                            'content_purged', true
+            receipt_rows = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT tr.id, tr.update_id, tr.payload
+                        FROM telegram_receipts AS tr
+                        WHERE tr.bot_key = 'telegram_become_group'
+                          AND tr.payload ->> 'schema' IS DISTINCT FROM :schema
+                          AND (
+                            tr.processed_at IS NOT NULL
+                            OR tr.received_at <= :raw_cutoff
+                          )
+                        FOR UPDATE
+                        """
+                    ),
+                    {
+                        "schema": TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+                        "raw_cutoff": now - timedelta(days=7),
+                    },
+                )
+            ).mappings().all()
+            for receipt in receipt_rows:
+                digest = canonical_telegram_payload_digest(receipt["payload"])
+                tombstone = json.dumps(
+                    {
+                        "schema": TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+                        "canonicalization_version": (
+                            TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION
                         ),
-                        updated_at = :now
-                    WHERE tr.bot_key = 'telegram_become_group'
-                      AND tr.payload ->> 'schema' IS DISTINCT FROM :schema
-                      AND (
-                        tr.processed_at IS NOT NULL
-                        OR tr.received_at <= :raw_cutoff
-                      )
-                    """
-                ),
-                {
-                    "schema": _TOMBSTONE_SCHEMA,
-                    "now": now,
-                    "raw_cutoff": now - timedelta(days=7),
-                },
-            )
+                        "canonical_payload_digest": digest,
+                        "update_id": receipt["update_id"],
+                        "content_purged": True,
+                    }
+                )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE telegram_receipts
+                        SET payload = CAST(:tombstone AS jsonb),
+                            updated_at = :now
+                        WHERE id = CAST(:receipt_id AS uuid)
+                        """
+                    ),
+                    {
+                        "receipt_id": receipt["id"],
+                        "tombstone": tombstone,
+                        "now": now,
+                    },
+                )
             return {
                 "staged_transcripts_purged": int(
                     getattr(staged, "rowcount", 0) or 0
@@ -1006,9 +1065,7 @@ class SessionFactoryPilotTranscriptReviewStore:
                 "transcript_versions_purged": int(
                     getattr(versions, "rowcount", 0) or 0
                 ),
-                "telegram_payloads_tombstoned": int(
-                    getattr(receipts, "rowcount", 0) or 0
-                ),
+                "telegram_payloads_tombstoned": int(len(receipt_rows)),
             }
 
     async def status(self, *, now: datetime) -> dict[str, int]:
