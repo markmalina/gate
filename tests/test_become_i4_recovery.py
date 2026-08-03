@@ -6,7 +6,7 @@ from app.application.become_i4_chain import canonical_digest
 from app.infrastructure.become_i4_recovery import (
     RECOVERY_TARGET_SOURCE_SHA,
     build_recovery_payload,
-    validate_recovery_payload,
+    validate_recovery_replay,
 )
 
 
@@ -47,9 +47,8 @@ def test_mutated_recovery_replay_fails_closed(
 ) -> None:
     original = _payload()
     mutated = {**original, **mutation}
-    if mutation == {"original_request_digest": "5" * 64}:
-        # A changed digest can be structurally valid, but its replay digest is not.
-        assert canonical_digest(mutated) != canonical_digest(original)
-        return
     with pytest.raises(ValueError):
-        validate_recovery_payload(mutated)
+        validate_recovery_replay(
+            mutated,
+            expected_digest=canonical_digest(original),
+        )
