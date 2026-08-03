@@ -96,6 +96,13 @@ class PilotTranscriptReviewStore(Protocol):
         now: datetime,
     ) -> None: ...
 
+    async def tombstone_receipt(
+        self,
+        *,
+        receipt_id: str,
+        now: datetime,
+    ) -> None: ...
+
 
 class PilotTelegram(Protocol):
     async def send_message(
@@ -184,6 +191,17 @@ class ProcessPilotTranscriptReviewUpdate:
         return PilotReviewUpdateResult(
             disposition,
             callback_query_id=event.callback_query_id,
+        )
+
+    async def tombstone_receipt(
+        self,
+        *,
+        receipt_id: str,
+        now: datetime,
+    ) -> None:
+        await self._store.tombstone_receipt(
+            receipt_id=receipt_id,
+            now=now,
         )
 
 
