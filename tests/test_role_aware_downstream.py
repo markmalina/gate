@@ -4,7 +4,6 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-
 from app.become.role_aware_contract import ContractError, canonical_digest
 from app.become.role_aware_downstream import create_role_aware_gate_adapter
 
