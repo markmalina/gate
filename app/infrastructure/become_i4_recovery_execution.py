@@ -464,6 +464,17 @@ def build_stage_event_payload(
     return validate_stage_event_payload(payload)
 
 
+def validate_stage_event_replay(
+    raw: object,
+    *,
+    expected_digest: str,
+) -> JsonObject:
+    payload = validate_stage_event_payload(raw)
+    if canonical_digest(payload) != expected_digest:
+        raise ValueError("become_i4_recovery_event_mutated_replay")
+    return payload
+
+
 def validate_stage_event_payload(raw: object) -> JsonObject:
     if not isinstance(raw, dict) or frozenset(raw) != _EVENT_FIELDS:
         raise ValueError("become_i4_recovery_event_fields_invalid")
@@ -683,11 +694,13 @@ def _validate_events(
         if identity in seen:
             raise ValueError("become_i4_recovery_duplicate_event")
         seen.add(identity)
-        payload = validate_stage_event_payload(event.event_payload)
+        payload = validate_stage_event_replay(
+            event.event_payload,
+            expected_digest=event.event_digest,
+        )
         if (
             event.attempt_id != attempt.id
             or event.workspace_id != attempt.workspace_id
-            or event.event_digest != canonical_digest(payload)
             or payload["attempt_digest"] != attempt.attempt_digest
             or payload["request_digest"] != event.request_digest
             or payload["source_sha"] != event.source_sha
