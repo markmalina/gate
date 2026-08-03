@@ -245,6 +245,7 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 provider_call_started_at=None,
                 provider_operation_ref=None,
                 staged_transcript=None,
+                staged_transcript_expires_at=None,
                 transcript_digest=None,
                 provider_succeeded_at=None,
                 billed_quantity=None,
@@ -365,6 +366,17 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 )
                 .with_for_update()
             )
+            if attempt.staged_transcript_expires_at <= now:
+                attempt.state = (
+                    BecomeVoiceTranscriptionState
+                    .RECONCILIATION_REQUIRED.value
+                )
+                attempt.staged_transcript = None
+                attempt.reason_code = (
+                    "become_transcription_staged_plaintext_expired"
+                )
+                attempt.updated_at = now
+                return False
             intake = await session.scalar(
                 select(BecomeMediaIntakeModel)
                 .where(
@@ -404,6 +416,7 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 transcript.provider_operation_ref
             )
             attempt.staged_transcript = normalized
+            attempt.staged_transcript_expires_at = expires_at
             attempt.transcript_digest = digest
             attempt.provider_succeeded_at = confirmed_at
             attempt.billed_quantity = transcript.billed_quantity
@@ -435,17 +448,23 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
         *,
         attempt_id: str,
         now: datetime,
-    ) -> None:
+    ) -> bool:
         """Settle provider output into pending human review, never approval."""
 
         async with self._sessions.begin() as session:
             attempt = await _attempt(session, attempt_id)
             if attempt.state == BecomeVoiceTranscriptionState.CONFIRMED.value:
-                return
+                return True
+            if (
+                attempt.state
+                == BecomeVoiceTranscriptionState.RECONCILIATION_REQUIRED.value
+            ):
+                return False
             if (
                 attempt.state
                 != BecomeVoiceTranscriptionState.SUCCEEDED_UNSETTLED.value
                 or attempt.staged_transcript is None
+                or attempt.staged_transcript_expires_at is None
                 or attempt.transcript_digest is None
                 or attempt.provider_succeeded_at is None
             ):
@@ -494,6 +513,7 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
             attempt.staged_transcript = None
             attempt.reason_code = None
             attempt.updated_at = now
+            return True
 
     async def mark_terminal(
         self,
@@ -588,6 +608,11 @@ async def become_voice_transcription_status(
                     BecomeVoiceTranscriptionAttemptModel.state
                     == BecomeVoiceTranscriptionState.BLOCKED.value
                 ),
+                func.count(BecomeVoiceTranscriptionAttemptModel.id).filter(
+                    BecomeVoiceTranscriptionAttemptModel.state
+                    == BecomeVoiceTranscriptionState
+                    .RECONCILIATION_REQUIRED.value
+                ),
             ).where(
                 BecomeVoiceTranscriptionAttemptModel.workspace_id
                 == workspace.id
@@ -646,6 +671,7 @@ async def become_voice_transcription_status(
     rejected = int(attempts[4] or 0)
     unknown = int(attempts[5] or 0)
     blocked = int(attempts[6] or 0)
+    staged_reconciliation = int(attempts[7] or 0)
     open_budget = int(billing[0] or 0)
     unknown_budget = int(billing[1] or 0)
     call_boundary = calling + unsettled + confirmed + rejected + unknown
@@ -654,6 +680,7 @@ async def become_voice_transcription_status(
         or unsettled > 0
         or unknown > 0
         or unknown_budget > 0
+        or staged_reconciliation > 0
         or (open_budget > 0 and unsettled == 0)
     )
     prerequisites = entitlement_count == 1 and api_key_configured
@@ -680,6 +707,9 @@ async def become_voice_transcription_status(
         "voice_transcription_unknown_count": unknown,
         "voice_transcription_blocked_count": blocked,
         "voice_transcription_settlement_pending_count": unsettled,
+        "voice_transcription_staged_reconciliation_count": (
+            staged_reconciliation
+        ),
         "voice_transcription_ready": confirmed == 1,
         "voice_transcription_reconciliation_required": reconciliation,
     }
