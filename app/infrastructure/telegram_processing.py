@@ -3,6 +3,10 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODES,
     TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
@@ -24,9 +28,6 @@ from app.models.domain import (
     TelegramReceipt,
     TelegramReceiptStatus,
 )
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TelegramQueueStateError(RuntimeError):
