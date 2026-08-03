@@ -531,6 +531,49 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "minimum": 0,
                     },
                     "chain_last_failure_code": _nullable("string"),
+                    "chain_recovery_receipt_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_recovery_prepared_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "chain_recovery_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "chain_recovery_attempt_version": _nullable("integer"),
+                    "chain_recovery_target_source_sha": _nullable("string"),
+                    "chain_recovery_source_failure_preserved": {
+                        "type": "boolean",
+                    },
+                    "mayaki_connectivity_proven": {"type": "boolean"},
+                    "mayaki_connectivity_error_code": _nullable("string"),
+                    "mayaki_service_name": {
+                        "type": "string",
+                        "const": "become-mayaki-controlled",
+                    },
+                    "mayaki_private_hostname": {
+                        "type": "string",
+                        "const": (
+                            "become-mayaki-controlled.railway.internal"
+                        ),
+                    },
+                    "mayaki_private_port": {
+                        "type": "integer",
+                        "const": 3000,
+                    },
+                    "mayaki_source_sha": {
+                        "type": "string",
+                        "const": (
+                            "2078d230852af1c7e3a309f00d716fa2fc664f68"
+                        ),
+                    },
+                    "mayaki_health_external_effects": {
+                        "type": "integer",
+                        "const": 0,
+                    },
                     "chain_reconciliation_required": {"type": "boolean"},
                     "relations_chain_completed_count": {
                         "type": "integer",
