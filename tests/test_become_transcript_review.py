@@ -355,6 +355,24 @@ def test_presentation_is_human_readable_and_hides_internal_refs() -> None:
     assert "-100" not in text
 
 
+
+
+def test_owner_redisplay_uses_saved_text_and_same_human_buttons() -> None:
+    job = PilotDeliveryJob(
+        delivery_id="redisplay-private",
+        kind="redisplay",
+        provider_dialog_id="-100",
+        version=2,
+        transcript_digest="b" * 64,
+        callback_ref=TOKEN,
+        transcript_text="Сохранённый текст",
+    )
+    text, markup = delivery_body(job)
+    assert text == "Вот распознанный текст:\n\nСохранённый текст"
+    assert markup is not None
+    assert "Подтвердить" in repr(markup)
+    assert "Исправить" in repr(markup)
+
 @pytest.mark.anyio
 async def test_duplicate_worker_execution_sends_once() -> None:
     store = FakeStore()
