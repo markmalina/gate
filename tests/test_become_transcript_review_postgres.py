@@ -1163,6 +1163,11 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
     assert staged[3] == NOW
     assert staged[4] < NOW
     assert staged[5] == "become_transcription_staged_plaintext_expired"
+    restarted_voice_store = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
+    assert await restarted_voice_store.confirm_success(
+        attempt_id=str(graph.attempt_id),
+        now=NOW,
+    ) is False
     assert version[0] is None
     assert version[1] == DIGEST_1
     assert version[2] == NOW
@@ -1183,28 +1188,26 @@ async def test_old_worker_rollback_preconditions_block_nonterminal_v2(
     store = SessionFactoryPilotTranscriptReviewStore(sessions)
     status = await store.status(now=NOW)
     assert status["staged_transcript_reconciliation_required"] == 0
+    preflight = await store.rollback_preflight()
+    assert preflight["rollback_ready"] is False
+    assert preflight["nonterminal_v2_provider_attempts"] >= 1
+    assert preflight["staged_plaintext"] >= 1
+    assert preflight["content_exposed"] is False
     async with sessions() as session:
-        blockers = (
-            await session.execute(
-                text(
-                    """
-                    SELECT
-                      count(*) FILTER (
-                        WHERE state IN (
-                          'reserving', 'reserved', 'calling',
-                          'succeeded_unsettled'
-                        )
-                      ) AS nonterminal_v2,
-                      count(*) FILTER (
-                        WHERE staged_transcript IS NOT NULL
-                      ) AS staged_plaintext
-                    FROM become_voice_transcription_attempts
-                    WHERE grant_key =
-                      'become-pilot-slice1-transcription-v2'
-                      AND workspace_id = :workspace_id
-                    """
-                ),
-                {"workspace_id": graph.workspace_id},
-            )
-        ).one()
-    assert blockers == (1, 1)
+        legacy_selector_count = await session.scalar(
+            text(
+                """
+                SELECT count(*)
+                FROM become_voice_transcription_attempts
+                WHERE id = :attempt_id
+                  AND grant_key =
+                    'become-investor-demo-transcription-v1'
+                  AND state IN (
+                    'reserving', 'reserved', 'calling',
+                    'succeeded_unsettled'
+                  )
+                """
+            ),
+            {"attempt_id": graph.attempt_id},
+        )
+    assert legacy_selector_count == 0
