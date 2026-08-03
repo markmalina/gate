@@ -43,7 +43,7 @@ class OpenAITranscriptionConfig:
             raise ValueError("openai_transcription_api_key_required")
         if not self.base_url.startswith("https://"):
             raise ValueError("openai_transcription_base_url_invalid")
-        if not 5 <= self.timeout_seconds <= 120:
+        if not 5 <= self.timeout_seconds <= 300:
             raise ValueError("openai_transcription_timeout_invalid")
 
 
