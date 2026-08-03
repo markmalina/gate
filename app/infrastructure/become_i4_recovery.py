@@ -90,6 +90,19 @@ def validate_recovery_payload(raw: object) -> JsonObject:
     return cast(JsonObject, raw)
 
 
+def validate_recovery_replay(
+    raw: object,
+    *,
+    expected_digest: str,
+) -> JsonObject:
+    """Reject any structurally valid payload whose canonical digest changed."""
+
+    payload = validate_recovery_payload(raw)
+    if canonical_digest(payload) != expected_digest:
+        raise ValueError("become_i4_recovery_mutated_replay")
+    return payload
+
+
 async def become_i4_recovery_status(
     session: AsyncSession,
     *,
@@ -130,9 +143,10 @@ async def become_i4_recovery_status(
     target_source_sha: str | None = None
     attempt_version: int | None = None
     for recovery, slot, correlation in rows:
-        payload = validate_recovery_payload(recovery.receipt_payload)
-        if recovery.receipt_digest != canonical_digest(payload):
-            raise ValueError("become_i4_recovery_digest_mismatch")
+        payload = validate_recovery_replay(
+            recovery.receipt_payload,
+            expected_digest=recovery.receipt_digest,
+        )
         if (
             recovery.schema_name != RECOVERY_SCHEMA
             or recovery.stage != "mayaki"
