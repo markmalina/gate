@@ -1271,6 +1271,8 @@ async def test_postgres_identity_append_only_and_exact_latest_approval(
 
     job = await store.claim_delivery(now=NOW, max_operations=8)
     assert job is not None
+    assert job.kind == "presentation"
+    assert job.transcript_source == "provider"
     await store.settle_delivery(
         delivery_id=job.delivery_id,
         outcome="sent",
@@ -1364,6 +1366,8 @@ async def test_postgres_identity_append_only_and_exact_latest_approval(
 
     corrected = await store.claim_delivery(now=NOW, max_operations=8)
     assert corrected is not None
+    assert corrected.kind == "presentation"
+    assert corrected.transcript_source == "human_correction"
     await store.settle_delivery(
         delivery_id=corrected.delivery_id,
         outcome="sent",

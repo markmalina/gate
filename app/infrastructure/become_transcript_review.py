@@ -395,7 +395,8 @@ class SessionFactoryPilotTranscriptReviewStore:
                                dl.transcript_digest,
                                dl.callback_ref::text,
                                d.provider_dialog_id,
-                               v.transcript_body
+                               v.transcript_body,
+                               v.source AS transcript_source
                         FROM become_pilot_transcript_deliveries AS dl
                         JOIN become_pilot_transcript_reviews AS r
                           ON r.id = dl.review_id
@@ -433,6 +434,11 @@ class SessionFactoryPilotTranscriptReviewStore:
                 transcript_text=(
                     str(row["transcript_body"])
                     if row["transcript_body"] is not None
+                    else None
+                ),
+                transcript_source=(
+                    str(row["transcript_source"])
+                    if row["transcript_source"] is not None
                     else None
                 ),
             )
