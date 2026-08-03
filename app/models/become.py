@@ -1239,16 +1239,6 @@ class BecomePilotTranscriptDeliveryModel(Base):
             "(attempt_no = 2 AND retry_of_delivery_id IS NOT NULL)",
             name="ck_become_pilot_delivery_attempt",
         ),
-        CheckConstraint(
-            "(reconciliation_action IS NULL "
-            "AND reconciliation_request_digest IS NULL "
-            "AND reconciled_at IS NULL) OR "
-            "(reconciliation_action IN ('sent_confirmed', "
-            "'failed_confirmed', 'retry_authorized') "
-            "AND char_length(reconciliation_request_digest) = 64 "
-            "AND reconciled_at IS NOT NULL)",
-            name="ck_become_pilot_delivery_reconciliation",
-        ),
         UniqueConstraint(
             "review_id",
             "kind",
@@ -1260,10 +1250,6 @@ class BecomePilotTranscriptDeliveryModel(Base):
         UniqueConstraint(
             "request_digest",
             name="uq_become_pilot_delivery_request",
-        ),
-        UniqueConstraint(
-            "reconciliation_request_digest",
-            name="uq_become_pilot_delivery_reconciliation_request",
         ),
         Index(
             "ix_become_pilot_delivery_outcome_created",
@@ -1322,23 +1308,58 @@ class BecomePilotTranscriptDeliveryModel(Base):
         DateTime(timezone=True),
         nullable=True,
     )
-    reconciliation_action: Mapped[str | None] = mapped_column(
-        String(32),
-        nullable=True,
-    )
-    reconciliation_request_digest: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-    )
-    reconciled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+class BecomePilotDeliveryReconciliationModel(Base):
+    """Append-only content-free owner reconciliation audit receipt."""
+
+    __tablename__ = "become_pilot_delivery_reconciliations"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('sent_confirmed', 'failed_confirmed', "
+            "'retry_authorized')",
+            name="ck_become_pilot_delivery_reconciliation_action",
+        ),
+        CheckConstraint(
+            "char_length(request_digest) = 64 "
+            "AND char_length(evidence_digest) = 64",
+            name="ck_become_pilot_delivery_reconciliation_digests",
+        ),
+        UniqueConstraint(
+            "delivery_id",
+            "action",
+            name="uq_become_pilot_delivery_reconciliation_action",
+        ),
+        UniqueConstraint(
+            "request_digest",
+            name="uq_become_pilot_delivery_reconciliation_request",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_pilot_transcript_deliveries.id",
+            name="fk_become_pilot_delivery_reconciliation_delivery",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
     )
