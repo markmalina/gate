@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from app.application.become_i4_chain import I4_CONTRACT_DIGEST
 from app.infrastructure.become_i4_connectivity import (
     MAYAKI_HEALTH_ENDPOINT,
