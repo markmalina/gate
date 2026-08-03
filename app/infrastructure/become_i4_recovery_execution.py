@@ -26,7 +26,6 @@ from app.domain.become_controlled_intake import BecomeChainSlotState
 from app.infrastructure.become_i4_chain import (
     MAYAKI_SOURCE_SHA,
     OKO_SOURCE_SHA,
-    RELATIONS_SOURCE_SHA,
     TAKE_SOURCE_SHA,
     BecomeI4HttpClient,
     BecomeI4ProductionTargets,
@@ -34,7 +33,10 @@ from app.infrastructure.become_i4_chain import (
     PostReservedBecomeI4StageOnce,
     ReservedBecomeI4Stage,
 )
-from app.infrastructure.become_i4_recovery import validate_recovery_replay
+from app.infrastructure.become_i4_recovery import (
+    validate_recovery_event_sequence,
+    validate_recovery_replay,
+)
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
     BecomeMediaIntakeModel,
@@ -280,17 +282,17 @@ class SessionFactoryBecomeI4RecoveryExecutor:
             created_at=now,
         )
         async with self._sessions() as session:
-            duplicate = await session.scalar(
-                select(func.count(BecomeI4RecoveryStageEventModel.id)).where(
-                    BecomeI4RecoveryStageEventModel.attempt_id
-                    == candidate.attempt.id,
-                    BecomeI4RecoveryStageEventModel.stage == stage.value,
-                    BecomeI4RecoveryStageEventModel.event_sequence == 1,
-                )
-            )
-            if int(duplicate or 0) != 0:
-                return None
             async with session.begin():
+                duplicate = await session.scalar(
+                    select(func.count(BecomeI4RecoveryStageEventModel.id)).where(
+                        BecomeI4RecoveryStageEventModel.attempt_id
+                        == candidate.attempt.id,
+                        BecomeI4RecoveryStageEventModel.stage == stage.value,
+                        BecomeI4RecoveryStageEventModel.event_sequence == 1,
+                    )
+                )
+                if int(duplicate or 0) != 0:
+                    return None
                 session.add(row)
         return row
 
@@ -669,6 +671,12 @@ def _validate_events(
     attempt: BecomeI4RecoveryAttemptModel,
     events: tuple[BecomeI4RecoveryStageEventModel, ...],
 ) -> None:
+    validate_recovery_event_sequence(
+        [
+            (event.stage, event.event_sequence, event.event_type)
+            for event in events
+        ]
+    )
     seen: set[tuple[str, int]] = set()
     for event in events:
         identity = (event.stage, event.event_sequence)
