@@ -21,11 +21,6 @@ from app.application.become_media_intake import (
     ProcessBecomeMediaCommand,
     ProcessBecomeMediaService,
 )
-from app.application.telegram_processing import (
-    AcceptTelegramReceiptCommand,
-    AcceptTelegramReceiptService,
-    TelegramReceiptError,
-)
 from app.application.become_transcript_review import (
     PilotReviewDisposition,
     request_digest,
@@ -43,6 +38,11 @@ from app.application.billing import (
     BudgetReservationState,
     UsageAttribution,
     UsageOperation,
+)
+from app.application.telegram_processing import (
+    AcceptTelegramReceiptCommand,
+    AcceptTelegramReceiptService,
+    TelegramReceiptError,
 )
 from app.application.telegram_voice_transcription import (
     NormalizedVoice,
