@@ -8,6 +8,7 @@ from app.models import (  # noqa: F401
     agent,
     alpha,
     alpha_preflight,
+    alpha_transcription,
     alpha_voice,
     become,
     become_quest,
