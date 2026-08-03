@@ -71,3 +71,10 @@ jobs:
 
       - name: Test Quest state, persistence, replay, and migration safety
         run: pytest tests/test_become_quest.py tests/test_become_quest_postgres.py
+
+      - name: Prove the single migration head and schema convergence
+        run: |
+          test "$(alembic heads | wc -l)" -eq 1
+          alembic heads | grep -F "0082_become_quest (head)"
+          alembic upgrade head
+          alembic check
