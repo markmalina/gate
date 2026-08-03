@@ -123,7 +123,7 @@ async def clean_previous_pilot_fixtures(
           JOIN become_pilot_transcript_reviews AS r ON r.id = d.review_id
           WHERE r.workspace_id IN ("""
         + workspace_filter
-        + """)
+        + """))
         """,
         """
         DELETE FROM become_pilot_transcript_deliveries
@@ -131,7 +131,7 @@ async def clean_previous_pilot_fixtures(
           SELECT id FROM become_pilot_transcript_reviews
           WHERE workspace_id IN ("""
         + workspace_filter
-        + """)
+        + """))
         """,
         """
         DELETE FROM become_pilot_transcript_versions
@@ -139,7 +139,7 @@ async def clean_previous_pilot_fixtures(
           SELECT id FROM become_pilot_transcript_reviews
           WHERE workspace_id IN ("""
         + workspace_filter
-        + """)
+        + """))
         """,
         "DELETE FROM become_pilot_transcript_reviews "
         "WHERE workspace_id IN (" + workspace_filter + ")",
