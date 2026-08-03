@@ -20,7 +20,7 @@ from app.api.contact_snapshot_routes import router as contact_snapshot_router
 from app.api.dropbox_call_routes import router as dropbox_call_router
 from app.api.health_routes import router as health_router
 from app.api.mcp_metadata_routes import router as mcp_metadata_router
-from app.api.mcp_routes import router as mcp_router
+from app.api.mcp_transcription_routes import router as mcp_router
 from app.api.owner_one_off_transcription import router as owner_one_off_transcription_router
 from app.api.routes import router
 from app.api.sprint12_routes import router as sprint12_router
@@ -50,6 +50,7 @@ from app.services.telegram_become_webhook import (
     reconcile_become_telegram_webhook_with_retries,
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
+from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.telegram_processing import run_telegram_worker_loop
@@ -69,6 +70,29 @@ async def _reconcile_all_telegram_webhooks(
     )
 
 
+def _configured_value(settings: object, attribute: str) -> bool:
+    value = getattr(settings, attribute, None)
+    if value is None:
+        return False
+    reveal = getattr(value, "get_secret_value", None)
+    if callable(reveal):
+        return bool(reveal())
+    return bool(value)
+
+
+def _alpha_transcription_configured(settings: object) -> bool:
+    return all(
+        _configured_value(settings, attribute)
+        for attribute in (
+            "openai_api_key",
+            "dropbox_call_app_key",
+            "dropbox_call_app_secret",
+            "dropbox_call_refresh_token",
+            "dropbox_call_account_id",
+        )
+    )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Own process-scoped resources and reconcile the Telegram webhook."""
@@ -85,6 +109,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         "gate_dropbox_call_intake_enabled",
         False,
     )
+    alpha_transcription_enabled = _alpha_transcription_configured(settings)
     worker_health = WorkerHealthRegistry()
     worker_health.register(
         TELEGRAM_WORKER,
@@ -113,6 +138,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 worker_task: asyncio.Task[None] | None = None
                 reply_sequence_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
+                alpha_transcription_task: asyncio.Task[None] | None = None
                 try:
                     api_base_url = os.getenv(
                         "TELEGRAM_API_BASE_URL",
@@ -129,6 +155,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     reconciliation_task = asyncio.create_task(
                         _reconcile_all_telegram_webhooks(settings, http_client)
                     )
+                    if alpha_transcription_enabled:
+                        alpha_transcription_task = asyncio.create_task(
+                            run_alpha_transcription_worker_loop(
+                                settings=settings,
+                                session_factory=database_runtime.session_factory,
+                            )
+                        )
                     if telegram_worker_enabled:
                         worker_task = asyncio.create_task(
                             run_telegram_worker_loop(
@@ -155,6 +188,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     yield
                 finally:
                     try:
+                        if alpha_transcription_task is not None:
+                            if not alpha_transcription_task.done():
+                                alpha_transcription_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await alpha_transcription_task
                         if dropbox_call_task is not None:
                             if not dropbox_call_task.done():
                                 dropbox_call_task.cancel()
