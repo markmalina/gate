@@ -114,6 +114,9 @@ async def seed_pilot(
     staged_expiry: datetime | None = None,
 ) -> PilotGraph:
     workspace_id = uuid4()
+    agent_definition_id = uuid4()
+    instruction_revision_id = uuid4()
+    deployment_id = uuid4()
     connector_id = uuid4()
     dialog_id = uuid4()
     installation_id = uuid4()
@@ -164,6 +167,62 @@ async def seed_pilot(
         await session.execute(
             text(
                 """
+                INSERT INTO agent_definitions (
+                    id, workspace_id, agent_key, display_name
+                ) VALUES (
+                    :id, :workspace_id, 'alpha_group', 'Pilot fixture'
+                )
+                """
+            ),
+            {"id": agent_definition_id, "workspace_id": workspace_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO instruction_revisions (
+                    id, workspace_id, agent_definition_id, revision_key,
+                    source_repository, source_path, source_commit_sha,
+                    content_sha256, schema_version, validation_state
+                ) VALUES (
+                    :id, :workspace_id, :agent_id, :key,
+                    'fixture/repository', 'fixture/path', :commit_sha,
+                    :content_sha, '1', 'validated'
+                )
+                """
+            ),
+            {
+                "id": instruction_revision_id,
+                "workspace_id": workspace_id,
+                "agent_id": agent_definition_id,
+                "key": f"pilot-revision-{instruction_revision_id}",
+                "commit_sha": "a" * 40,
+                "content_sha": "b" * 64,
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO agent_deployments (
+                    id, workspace_id, agent_definition_id,
+                    instruction_revision_id, deployment_key,
+                    runtime_profile, model_profile, policy_version, state
+                ) VALUES (
+                    :id, :workspace_id, :agent_id, :revision_id, :key,
+                    'pilot-runtime', 'pilot-model', 'pilot-policy-v1', 'active'
+                )
+                """
+            ),
+            {
+                "id": deployment_id,
+                "workspace_id": workspace_id,
+                "agent_id": agent_definition_id,
+                "revision_id": instruction_revision_id,
+                "key": f"pilot-deployment-{deployment_id}",
+            },
+        )
+        await session.execute(
+            text(
+                """
                 INSERT INTO transport_connectors (
                     id, workspace_id, connector_key, connector_kind, is_enabled
                 ) VALUES (
@@ -197,9 +256,11 @@ async def seed_pilot(
                 """
                 INSERT INTO agent_installations (
                     id, workspace_id, connector_id, dialog_id,
+                    deployment_id, instruction_revision_id,
                     installation_key, dialog_label, state
                 ) VALUES (
                     :id, :workspace_id, :connector_id, :dialog_id,
+                    :deployment_id, :revision_id,
                     :key, 'Pilot fixture', 'active'
                 )
                 """
@@ -209,6 +270,8 @@ async def seed_pilot(
                 "workspace_id": workspace_id,
                 "connector_id": connector_id,
                 "dialog_id": dialog_id,
+                "deployment_id": deployment_id,
+                "revision_id": instruction_revision_id,
                 "key": f"pilot-{installation_id}",
             },
         )
