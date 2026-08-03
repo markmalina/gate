@@ -259,6 +259,19 @@ class PostgresBecomeQuestCoordinator:
         self.sessions = sessions
         self.workspace_key = workspace_key
 
+    @staticmethod
+    def _replay_attempt(
+        attempt: BecomeQuestOperationAttemptModel,
+        request_digest: str,
+    ) -> JsonObject:
+        if attempt.request_digest != request_digest:
+            raise SqlBecomeQuestError("mutated_replay")
+        if attempt.state == "COMPLETED" and attempt.receipt_payload is not None:
+            return dict(attempt.receipt_payload)
+        if attempt.state == "RESERVED":
+            raise SqlBecomeQuestError("operation_reconciliation_required")
+        raise SqlBecomeQuestError("terminal_operation_not_retriable")
+
     async def execute(self, command: JsonObject) -> JsonObject:
         _assert_content_free(command)
         (
@@ -282,16 +295,7 @@ class PostgresBecomeQuestCoordinator:
                     idempotency_key,
                 )
                 if attempt is not None:
-                    if attempt.request_digest != request_digest:
-                        raise SqlBecomeQuestError("mutated_replay")
-                    if (
-                        attempt.state == "COMPLETED"
-                        and attempt.receipt_payload is not None
-                    ):
-                        return dict(attempt.receipt_payload)
-                    if attempt.state == "RESERVED":
-                        raise SqlBecomeQuestError("operation_reconciliation_required")
-                    raise SqlBecomeQuestError("terminal_operation_not_retriable")
+                    return self._replay_attempt(attempt, request_digest)
             if operation == "CREATE_QUEST":
                 quest = await self._create_or_validate(
                     session,
@@ -300,6 +304,16 @@ class PostgresBecomeQuestCoordinator:
                     quest_ref,
                     correlation_ref,
                 )
+                if attempt is None:
+                    attempt = await _lock_attempt(
+                        session,
+                        quest,
+                        operation,
+                        attempt_version,
+                        idempotency_key,
+                    )
+                    if attempt is not None:
+                        return self._replay_attempt(attempt, request_digest)
             elif quest is None:
                 raise SqlBecomeQuestError("quest_not_found")
             elif quest.correlation_ref != correlation_ref:
