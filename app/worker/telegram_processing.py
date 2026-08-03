@@ -292,17 +292,20 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
             connector.key is TelegramConnectorKey.BECOME_GROUP
             and self._become_review is not None
         ):
+            review_candidate = _is_become_pilot_review_payload(payload)
             try:
                 review_result = await self._become_review.execute(
                     update=payload,
                     now=item.received_at,
                 )
             except BecomeControlledIntakeError as exc:
+                if review_candidate:
+                    await self._become_review.tombstone_receipt(
+                        receipt_id=item.receipt_id,
+                        now=item.received_at,
+                    )
                 raise TelegramUpdateProcessingError(exc.code) from None
-            if (
-                review_result.disposition
-                is not PilotReviewDisposition.NOT_APPLICABLE
-            ):
+            if review_candidate:
                 await self._become_review.tombstone_receipt(
                     receipt_id=item.receipt_id,
                     now=item.received_at,
@@ -1819,3 +1822,17 @@ def _connector_kind(role: TelegramConnectorRole) -> ConnectorKind:
     if role is TelegramConnectorRole.ALPHA_GROUP:
         return ConnectorKind.TELEGRAM_BOT
     raise TelegramCanonicalProjectionError("canonical_connector_role_invalid")
+
+def _is_become_pilot_review_payload(payload: dict[str, object]) -> bool:
+    if isinstance(payload.get("callback_query"), dict):
+        return True
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return False
+    value = message.get("text")
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not value.strip().startswith("/")
+    )
+
