@@ -81,3 +81,27 @@ jobs:
           alembic heads | grep -F "0083_become_quest_corrective (head)"
           alembic upgrade head
           alembic check
+
+      - name: Prove populated Quest backup and restore on the literal PR head
+        env:
+          PGPASSWORD: postgres
+        run: |
+          pg_dump --host localhost --username postgres --dbname gate --format custom --file /tmp/gate-quest-backup.dump
+          dropdb --host localhost --username postgres --if-exists gate_quest_restore
+          createdb --host localhost --username postgres gate_quest_restore
+          pg_restore --host localhost --username postgres --dbname gate_quest_restore --no-owner --no-privileges /tmp/gate-quest-backup.dump
+          python scripts/postgres_restore_evidence.py --database-url postgresql://postgres:postgres@localhost:5432/gate_quest_restore --output become-quest-postgres-restore-evidence.json
+          recovery_graph_count="$(psql --host localhost --username postgres --dbname gate_quest_restore --tuples-only --no-align --command "SELECT count(*) FROM become_i4_recovery_receipts AS recovery JOIN workspaces AS workspace ON workspace.id = recovery.workspace_id JOIN become_voice_correlations AS correlation ON correlation.id = recovery.correlation_id AND correlation.workspace_id = recovery.workspace_id JOIN become_media_intakes AS intake ON intake.id = correlation.media_intake_id AND intake.workspace_id = recovery.workspace_id JOIN become_voice_chain_slots AS failed_slot ON failed_slot.id = recovery.failed_slot_id AND failed_slot.workspace_id = recovery.workspace_id AND failed_slot.correlation_id = recovery.correlation_id WHERE failed_slot.stage = 'mayaki' AND failed_slot.state = 'failed';")"
+          test "$recovery_graph_count" -ge 1
+          invalid_fk_count="$(psql --host localhost --username postgres --dbname gate_quest_restore --tuples-only --no-align --command "SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND NOT convalidated;")"
+          test "$invalid_fk_count" -eq 0
+          recovery_fk_count="$(psql --host localhost --username postgres --dbname gate_quest_restore --tuples-only --no-align --command "SELECT count(*) FROM pg_constraint WHERE conname IN ('fk_become_i4_recovery_workspace', 'fk_become_i4_recovery_correlation', 'fk_become_i4_recovery_failed_slot') AND convalidated;")"
+          test "$recovery_fk_count" -eq 3
+
+      - name: Upload exact-head Quest restore evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: become-quest-postgres-restore-evidence
+          path: become-quest-postgres-restore-evidence.json
+          if-no-files-found: error
+          retention-days: 1
