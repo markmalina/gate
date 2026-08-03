@@ -384,11 +384,58 @@ async def become_i4_recovery_status(
     return result
 
 
+def validate_recovery_event_sequence(
+    events: list[tuple[str, int, str]],
+) -> None:
+    """Reject a terminal without reservation or any skipped/later stage."""
+
+    by_stage = {
+        stage: {
+            sequence: event_type
+            for event_stage, sequence, event_type in events
+            if event_stage == stage
+        }
+        for stage in ("mayaki", "oko", "take")
+    }
+    for index, stage in enumerate(("mayaki", "oko", "take")):
+        current = by_stage[stage]
+        if not current:
+            if any(
+                by_stage[later]
+                for later in ("mayaki", "oko", "take")[index + 1 :]
+            ):
+                raise ValueError("become_i4_recovery_stage_skipped")
+            continue
+        for prior in ("mayaki", "oko", "take")[:index]:
+            if by_stage[prior].get(2) != "completed":
+                raise ValueError("become_i4_recovery_prior_stage_incomplete")
+        if current.get(1) != "reserved":
+            raise ValueError("become_i4_recovery_reservation_required")
+        terminal = current.get(2)
+        if terminal is not None and terminal not in {
+            "completed",
+            "failed",
+            "unknown",
+        }:
+            raise ValueError("become_i4_recovery_terminal_invalid")
+        if terminal != "completed" and any(
+            by_stage[later]
+            for later in ("mayaki", "oko", "take")[index + 1 :]
+        ):
+            raise ValueError("become_i4_recovery_terminal_blocks_later_stage")
+
+
 def _validate_status_events(
     *,
     attempt: BecomeI4RecoveryAttemptModel,
     events: list[BecomeI4RecoveryStageEventModel],
 ) -> None:
+    validate_recovery_event_sequence(
+        [
+            (event.stage, event.event_sequence, event.event_type)
+            for event in events
+        ]
+    )
     seen: set[tuple[str, int]] = set()
     for event in events:
         identity = (event.stage, event.event_sequence)
