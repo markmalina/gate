@@ -9,6 +9,9 @@ from app.infrastructure.become_i4_connectivity import (
     MAYAKI_PRIVATE_PORT,
     MAYAKI_SERVICE_NAME,
     MAYAKI_SOURCE_SHA,
+    PRODUCTION_HEALTH_TARGETS,
+    BecomeI4HealthTarget,
+    probe_all_i4_connectivity,
     probe_mayaki_i4_connectivity,
 )
 
@@ -17,28 +20,34 @@ class FakeHealthClient:
     def __init__(
         self,
         *,
-        response: httpx.Response | None = None,
-        error: Exception | None = None,
+        mutations: dict[str, dict[str, object]] | None = None,
+        failing_endpoint: str | None = None,
     ) -> None:
-        self.response = response
-        self.error = error
-        self.calls = 0
+        self.mutations = mutations or {}
+        self.failing_endpoint = failing_endpoint
+        self.methods: list[tuple[str, str]] = []
 
     async def get(self, url: str, *, timeout: float) -> httpx.Response:
-        self.calls += 1
-        assert url == MAYAKI_HEALTH_ENDPOINT
+        self.methods.append(("GET", url))
         assert timeout == 5.0
-        if self.error is not None:
-            raise self.error
-        assert self.response is not None
-        return self.response
+        target = next(item for item in PRODUCTION_HEALTH_TARGETS if item.endpoint == url)
+        if url == self.failing_endpoint:
+            raise httpx.ConnectError("connect", request=httpx.Request("GET", url))
+        return httpx.Response(
+            200,
+            json=_health(target, **self.mutations.get(target.stage, {})),
+            request=httpx.Request("GET", url),
+        )
 
 
-def _health(**overrides: object) -> dict[str, object]:
+def _health(
+    target: BecomeI4HealthTarget,
+    **overrides: object,
+) -> dict[str, object]:
     value: dict[str, object] = {
         "schema": "become.i4-service-health@1",
-        "service": "mayaki",
-        "source_sha": MAYAKI_SOURCE_SHA,
+        "service": target.stage,
+        "source_sha": target.source_sha,
         "contract_digest": I4_CONTRACT_DIGEST,
         "internal_only": True,
         "external_effects": 0,
@@ -48,14 +57,27 @@ def _health(**overrides: object) -> dict[str, object]:
 
 
 @pytest.mark.anyio
-async def test_content_free_health_proves_exact_private_target() -> None:
-    client = FakeHealthClient(
-        response=httpx.Response(
-            200,
-            json=_health(),
-            request=httpx.Request("GET", MAYAKI_HEALTH_ENDPOINT),
-        )
-    )
+async def test_content_free_health_proves_all_exact_private_targets() -> None:
+    client = FakeHealthClient()
+    proof = await probe_all_i4_connectivity(client)
+    assert {key for key, value in proof.items() if key.endswith("_connectivity_proven") and value} == {
+        "mayaki_connectivity_proven",
+        "oko_connectivity_proven",
+        "take_connectivity_proven",
+    }
+    assert client.methods == [("GET", target.endpoint) for target in PRODUCTION_HEALTH_TARGETS]
+    assert all(method == "GET" for method, _ in client.methods)
+    for target in PRODUCTION_HEALTH_TARGETS:
+        assert proof[f"{target.stage}_service_name"] == target.service_name
+        assert proof[f"{target.stage}_private_hostname"] == target.private_hostname
+        assert proof[f"{target.stage}_private_port"] == target.private_port
+        assert proof[f"{target.stage}_source_sha"] == target.source_sha
+        assert proof[f"{target.stage}_health_external_effects"] == 0
+
+
+@pytest.mark.anyio
+async def test_backward_compatible_mayaki_proof() -> None:
+    client = FakeHealthClient()
     proof = await probe_mayaki_i4_connectivity(client)
     assert proof == {
         "mayaki_connectivity_proven": True,
@@ -66,7 +88,7 @@ async def test_content_free_health_proves_exact_private_target() -> None:
         "mayaki_source_sha": MAYAKI_SOURCE_SHA,
         "mayaki_health_external_effects": 0,
     }
-    assert client.calls == 1
+    assert client.methods == [("GET", MAYAKI_HEALTH_ENDPOINT)]
 
 
 @pytest.mark.anyio
@@ -75,32 +97,23 @@ async def test_content_free_health_proves_exact_private_target() -> None:
     [
         {"source_sha": "f" * 40},
         {"external_effects": 1},
+        {"internal_only": False},
         {"unexpected": True},
     ],
 )
 async def test_mutated_health_fails_closed(mutation: dict[str, object]) -> None:
-    client = FakeHealthClient(
-        response=httpx.Response(
-            200,
-            json=_health(**mutation),
-            request=httpx.Request("GET", MAYAKI_HEALTH_ENDPOINT),
-        )
-    )
-    proof = await probe_mayaki_i4_connectivity(client)
-    assert proof["mayaki_connectivity_proven"] is False
-    assert proof["mayaki_connectivity_error_code"] == "health_receipt_invalid"
-    assert client.calls == 1
+    client = FakeHealthClient(mutations={"oko": mutation})
+    proof = await probe_all_i4_connectivity(client)
+    assert proof["oko_connectivity_proven"] is False
+    assert proof["oko_connectivity_error_code"] == "health_receipt_invalid"
+    assert all(method == "GET" for method, _ in client.methods)
 
 
 @pytest.mark.anyio
 async def test_connection_failure_is_content_free_and_never_posts() -> None:
-    client = FakeHealthClient(
-        error=httpx.ConnectError(
-            "connect",
-            request=httpx.Request("GET", MAYAKI_HEALTH_ENDPOINT),
-        )
-    )
-    proof = await probe_mayaki_i4_connectivity(client)
-    assert proof["mayaki_connectivity_proven"] is False
-    assert proof["mayaki_connectivity_error_code"] == "connection_not_established"
-    assert client.calls == 1
+    failing = PRODUCTION_HEALTH_TARGETS[-1]
+    client = FakeHealthClient(failing_endpoint=failing.endpoint)
+    proof = await probe_all_i4_connectivity(client)
+    assert proof["take_connectivity_proven"] is False
+    assert proof["take_connectivity_error_code"] == "connection_not_established"
+    assert all(method == "GET" for method, _ in client.methods)
