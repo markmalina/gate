@@ -12,6 +12,7 @@ from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
 )
 from app.application.become_transcript_review import (
+    MAX_CORRECTION_CHARS,
     PilotDeliveryJob,
     PilotReviewDisposition,
     request_digest,
@@ -223,6 +224,10 @@ class SessionFactoryPilotTranscriptReviewStore:
         if not normalized:
             raise BecomeControlledIntakeError(
                 "become_pilot_correction_empty"
+            )
+        if len(normalized) > MAX_CORRECTION_CHARS:
+            raise BecomeControlledIntakeError(
+                "become_pilot_correction_too_large"
             )
         digest = _sha256(normalized)
         async with self._sessions.begin() as session:
