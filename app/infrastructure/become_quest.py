@@ -272,6 +272,26 @@ class PostgresBecomeQuestCoordinator:
         request_digest = canonical_digest(command)
         async with self.sessions() as session, session.begin():
             quest = await _lock_quest(session, quest_ref)
+            attempt = None
+            if quest is not None and quest.correlation_ref == correlation_ref:
+                attempt = await _lock_attempt(
+                    session,
+                    quest,
+                    operation,
+                    attempt_version,
+                    idempotency_key,
+                )
+                if attempt is not None:
+                    if attempt.request_digest != request_digest:
+                        raise SqlBecomeQuestError("mutated_replay")
+                    if (
+                        attempt.state == "COMPLETED"
+                        and attempt.receipt_payload is not None
+                    ):
+                        return dict(attempt.receipt_payload)
+                    if attempt.state == "RESERVED":
+                        raise SqlBecomeQuestError("operation_reconciliation_required")
+                    raise SqlBecomeQuestError("terminal_operation_not_retriable")
             if operation == "CREATE_QUEST":
                 quest = await self._create_or_validate(
                     session,
@@ -285,22 +305,6 @@ class PostgresBecomeQuestCoordinator:
             elif quest.correlation_ref != correlation_ref:
                 raise SqlBecomeQuestError("quest_correlation_mismatch")
             assert quest is not None
-
-            attempt = await _lock_attempt(
-                session,
-                quest,
-                operation,
-                attempt_version,
-                idempotency_key,
-            )
-            if attempt is not None:
-                if attempt.request_digest != request_digest:
-                    raise SqlBecomeQuestError("mutated_replay")
-                if attempt.state == "COMPLETED" and attempt.receipt_payload is not None:
-                    return dict(attempt.receipt_payload)
-                if attempt.state == "RESERVED":
-                    raise SqlBecomeQuestError("operation_reconciliation_required")
-                raise SqlBecomeQuestError("terminal_operation_not_retriable")
 
             attempt = BecomeQuestOperationAttemptModel(
                 quest_id=quest.id,
