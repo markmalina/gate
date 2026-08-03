@@ -862,7 +862,7 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
         CheckConstraint(
             "state IN ('reserving', 'reserved', 'calling', "
             "'succeeded_unsettled', 'confirmed', 'rejected', "
-            "'unknown', 'blocked')",
+            "'unknown', 'blocked', 'reconciliation_required')",
             name="ck_become_voice_transcription_state",
         ),
         CheckConstraint(
@@ -885,29 +885,43 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
             "(state IN ('reserving', 'reserved', 'blocked') "
             "AND provider_call_started_at IS NULL) OR "
             "(state IN ('calling', 'succeeded_unsettled', 'confirmed', "
-            "'rejected', 'unknown') "
+            "'rejected', 'unknown', 'reconciliation_required') "
             "AND provider_call_started_at IS NOT NULL)",
             name="ck_become_voice_transcription_call_boundary",
         ),
         CheckConstraint(
             "(state = 'succeeded_unsettled' "
             "AND staged_transcript IS NOT NULL "
+            "AND staged_transcript_expires_at IS NOT NULL "
             "AND char_length(transcript_digest) = 64 "
             "AND provider_succeeded_at IS NOT NULL "
+            "AND staged_transcript_expires_at > provider_succeeded_at "
             "AND billed_quantity IS NOT NULL "
             "AND actual_microusd IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
             "AND reason_code IS NULL) OR "
             "(state = 'confirmed' "
             "AND staged_transcript IS NULL "
+            "AND staged_transcript_expires_at IS NOT NULL "
             "AND char_length(transcript_digest) = 64 "
             "AND provider_succeeded_at IS NOT NULL "
             "AND billed_quantity IS NOT NULL "
             "AND actual_microusd IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
             "AND reason_code IS NULL) OR "
-            "(state NOT IN ('succeeded_unsettled', 'confirmed') "
+            "(state = 'reconciliation_required' "
             "AND staged_transcript IS NULL "
+            "AND staged_transcript_expires_at IS NOT NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND provider_succeeded_at IS NOT NULL "
+            "AND billed_quantity IS NOT NULL "
+            "AND actual_microusd IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND reason_code IS NOT NULL) OR "
+            "(state NOT IN ('succeeded_unsettled', 'confirmed', "
+            "'reconciliation_required') "
+            "AND staged_transcript IS NULL "
+            "AND staged_transcript_expires_at IS NULL "
             "AND transcript_digest IS NULL "
             "AND provider_succeeded_at IS NULL "
             "AND billed_quantity IS NULL "
@@ -960,6 +974,10 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
     )
     staged_transcript: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True,
+    )
+    staged_transcript_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     transcript_digest: Mapped[str | None] = mapped_column(
