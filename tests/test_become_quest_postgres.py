@@ -9,15 +9,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from app.models.canonical import Workspace
-from app.models.domain import Base
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-
 from app.infrastructure.become_quest import (
     SqlBecomeQuestError,
     SqlBecomeQuestRepository,
@@ -27,6 +18,14 @@ from app.models.become_quest import (
     BecomeQuestModel,
     BecomeQuestOperationAttemptModel,
     BecomeQuestParticipantModel,
+)
+from app.models.canonical import Workspace
+from app.models.domain import Base
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
 
 DIGEST_A = "a" * 64

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.models.canonical import Workspace
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,6 +20,7 @@ from app.models.become_quest import (
     BecomeQuestOperationAttemptModel,
     BecomeQuestParticipantModel,
 )
+from app.models.canonical import Workspace
 
 
 class SqlBecomeQuestError(RuntimeError):

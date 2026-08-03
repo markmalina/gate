@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application.become_quest import (
     QUEST_MAX_OPERATIONS,
     QUEST_PROJECTION_ENABLED,

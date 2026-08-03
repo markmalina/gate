@@ -9,9 +9,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0082_become_quest"
 down_revision: str | None = "0081_become_i4_recovery_v2"
@@ -58,7 +57,8 @@ def upgrade() -> None:
             "mode IN ('PRODUCTION','SIMULATED')", name="ck_become_quest_mode"
         ),
         sa.CheckConstraint(
-            "expert_person_ref IS NULL OR learner_person_ref IS NULL OR expert_person_ref <> learner_person_ref",
+            "expert_person_ref IS NULL OR learner_person_ref IS NULL "
+            "OR expert_person_ref <> learner_person_ref",
             name="ck_become_quest_distinct_roles",
         ),
         sa.ForeignKeyConstraint(
@@ -140,7 +140,8 @@ def upgrade() -> None:
             "char_length(artifact_digest) = 64", name="ck_become_quest_artifact_digest"
         ),
         sa.CheckConstraint(
-            "artifact_type = 'TRANSCRIPT' OR (provider_settled = false AND transcript_available = false)",
+            "artifact_type = 'TRANSCRIPT' OR "
+            "(provider_settled = false AND transcript_available = false)",
             name="ck_become_quest_provider_transcript_only",
         ),
         sa.ForeignKeyConstraint(
