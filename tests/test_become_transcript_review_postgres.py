@@ -106,6 +106,21 @@ async def sessions() -> async_sessionmaker[AsyncSession]:
         await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+async def clean_previous_pilot_fixtures(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM workspaces
+                WHERE key LIKE 'pilot-postgres-%'
+                """
+            )
+        )
+
+
 async def seed_pilot(
     sessions: async_sessionmaker[AsyncSession],
     *,
@@ -137,11 +152,16 @@ async def seed_pilot(
     installation_ref = f"ref://pilot/installation/{installation_id}"
     correlation_ref = f"synthetic://correlation/voice/{correlation_id.hex}"
     expiry = staged_expiry or NOW + timedelta(days=30)
+    provider_success_at = (
+        NOW - timedelta(days=31)
+        if expiry <= NOW
+        else NOW
+    )
     staged = "provider private transcript" if attempt_state == "succeeded_unsettled" else None
     provider_started = (
         None
         if attempt_state in {"reserving", "reserved", "blocked"}
-        else NOW - timedelta(minutes=2)
+        else provider_success_at - timedelta(minutes=2)
     )
     success_state = attempt_state in {
         "succeeded_unsettled",
@@ -507,7 +527,9 @@ async def seed_pilot(
                     "staged": staged,
                     "expiry": expiry if success_state else None,
                     "digest": DIGEST_1 if success_state else None,
-                    "provider_succeeded": NOW if success_state else None,
+                    "provider_succeeded": (
+                        provider_success_at if success_state else None
+                    ),
                     "quantity": 10 if success_state else None,
                     "actual": 20 if success_state else None,
                     "reason": reason,
@@ -751,7 +773,7 @@ async def test_provider_gate_and_cap_survive_restart_on_postgres(
     assert budget.reservations == 1
     assert {first.disposition, second.disposition} == {
         "settled_pending_human_review",
-        "idle",
+        "call_not_claimed",
     }
 
     restarted = await provider_service(
@@ -830,6 +852,15 @@ async def test_postgres_identity_append_only_and_exact_latest_approval(
         now=NOW,
     )
     assert requested is PilotReviewDisposition.CORRECTION_REQUESTED
+    correction_prompt = await store.claim_delivery(now=NOW, max_operations=8)
+    assert correction_prompt is not None
+    assert correction_prompt.kind == "correction_prompt"
+    await store.settle_delivery(
+        delivery_id=correction_prompt.delivery_id,
+        outcome="sent",
+        telegram_message_id="private-correction-prompt",
+        now=NOW,
+    )
     assert await store.apply_correction(
         subject_ref="ref://pilot/subject/wrong",
         provider_dialog_id=CHAT,
