@@ -341,6 +341,7 @@ def test_presentation_is_human_readable_and_hides_internal_refs() -> None:
         transcript_digest="a" * 64,
         callback_ref=TOKEN,
         transcript_text="Человеческий текст",
+        transcript_source="provider",
     )
     text, markup = delivery_body(job)
     assert text == "Вот распознанный текст:\n\nЧеловеческий текст"
@@ -353,7 +354,7 @@ def test_presentation_is_human_readable_and_hides_internal_refs() -> None:
     assert "-100" not in text
 
 
-def test_owner_redisplay_uses_saved_text_and_same_human_buttons() -> None:
+def test_owner_redisplay_uses_human_copy_and_same_review_buttons() -> None:
     job = PilotDeliveryJob(
         delivery_id="redisplay-private",
         kind="redisplay",
@@ -362,9 +363,13 @@ def test_owner_redisplay_uses_saved_text_and_same_human_buttons() -> None:
         transcript_digest="b" * 64,
         callback_ref=TOKEN,
         transcript_text="Сохранённый текст",
+        transcript_source="human_correction",
     )
     text, markup = delivery_body(job)
-    assert text == "Вот распознанный текст:\n\nСохранённый текст"
+    assert text == (
+        "Вот текст:\n\nСохранённый текст\n\nПодтвердите отправку."
+    )
+    assert "распознан" not in text
     assert markup is not None
     assert "Подтвердить" in repr(markup)
     assert "Исправить" in repr(markup)
