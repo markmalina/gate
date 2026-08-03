@@ -31,6 +31,9 @@ from app.application.become_controlled_intake import (
     ProcessBecomeRegistrationCommand,
     ProcessBecomeRegistrationService,
 )
+from app.application.become_free_result import (
+    DeliverBecomeFreeResultService,
+)
 from app.application.become_media_intake import (
     ProcessBecomeMediaCommand,
     ProcessBecomeMediaService,
@@ -142,6 +145,10 @@ from app.infrastructure.become_controlled_intake import (
     SessionFactoryBecomeControlledIntakeStore,
     SessionFactoryBecomeRegistrationReplayer,
     TelegramBecomeOwnerPresence,
+)
+from app.infrastructure.become_free_result import (
+    SessionFactoryBecomeFreeResultStore,
+    TelegramClientBecomeFreeResultAdapter,
 )
 from app.infrastructure.become_i4_execution import (
     SessionFactoryBecomeI4Executor,
@@ -1440,6 +1447,74 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 ),
                                 recovery_result.attempted,
                                 recovery_result.reconciliation_required,
+                            )
+                    free_result_store = (
+                        SessionFactoryBecomeFreeResultStore(sessions)
+                    )
+                    try:
+                        artifact = await free_result_store.ensure_artifact(
+                            workspace_key=settings.gate_workspace_id,
+                            now=datetime.now(UTC),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            (
+                                "BECOME free result projection deferred: "
+                                "error_type=%s"
+                            ),
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if artifact is not None:
+                            logger.info(
+                                (
+                                    "BECOME free result artifact ready: "
+                                    "duplicate=%s result_digest=%s"
+                                ),
+                                artifact.duplicate,
+                                artifact.result_digest,
+                            )
+                    try:
+                        free_result = await DeliverBecomeFreeResultService(
+                            store=free_result_store,
+                            presence=become_presence,
+                            telegram=TelegramClientBecomeFreeResultAdapter(
+                                become_telegram
+                            ),
+                            enabled=(
+                                settings
+                                .gate_become_free_result_delivery_enabled
+                            ),
+                            max_calls=(
+                                settings.gate_become_free_result_max_calls
+                            ),
+                        ).execute(
+                            workspace_key=settings.gate_workspace_id,
+                            now=datetime.now(UTC),
+                        )
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME free result blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            (
+                                "BECOME free result deferred: "
+                                "error_type=%s"
+                            ),
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if free_result.disposition != "disabled":
+                            logger.info(
+                                (
+                                    "BECOME free result delivery: "
+                                    "state=%s duplicate=%s reconciliation=%s"
+                                ),
+                                free_result.disposition,
+                                free_result.duplicate,
+                                free_result.reconciliation_required,
                             )
                     try:
                         prompt_result = await (
