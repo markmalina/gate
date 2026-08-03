@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
@@ -37,6 +37,9 @@ from app.application.telegram_voice_transcription import (
     NormalizedVoice,
     ProviderTranscript,
     SpeechToTextPort,
+)
+from app.infrastructure.become_media_intake import (
+    SessionFactoryBecomeMediaRetention,
 )
 from app.infrastructure.become_transcript_review import (
     SessionFactoryPilotTranscriptReviewStore,
@@ -562,7 +565,11 @@ class FakeBudget:
             created_at=NOW,
             updated_at=NOW,
         )
-        return BudgetAdmission(True, "billing_reserved", self.current)
+        return BudgetAdmission(
+            allowed=True,
+            reason_code="billing_reserved",
+            reservation=self.current,
+        )
 
     async def get_exact(
         self,
@@ -575,12 +582,11 @@ class FakeBudget:
 
     async def settle(self, *_: object, **__: object) -> None:
         assert self.current is not None
-        self.current = self.current.__class__(
-            **{
-                **self.current.__dict__,
-                "state": BudgetReservationState.SETTLED,
-                "settled_microusd": 20,
-            }
+        self.current = replace(
+            self.current,
+            state=BudgetReservationState.SETTLED,
+            settled_microusd=20,
+            updated_at=NOW,
         )
 
     async def release(self, *_: object, **__: object) -> None:
@@ -1081,11 +1087,19 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
 
     store = SessionFactoryPilotTranscriptReviewStore(sessions)
     first = await store.purge_expired(now=NOW)
+    media_first = await SessionFactoryBecomeMediaRetention(sessions).purge_expired(
+        now=NOW
+    )
     second = await store.purge_expired(now=NOW)
+    media_second = await SessionFactoryBecomeMediaRetention(sessions).purge_expired(
+        now=NOW
+    )
     assert first["staged_transcripts_purged"] == 1
     assert first["transcript_versions_purged"] >= 1
     assert second["staged_transcripts_purged"] == 0
     assert second["transcript_versions_purged"] == 0
+    assert media_first.transcripts_purged >= 1
+    assert media_second.transcripts_purged == 0
 
     async with sessions() as session:
         staged = (
@@ -1114,6 +1128,19 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
                 {"review_id": confirmed.review_id},
             )
         ).one()
+        confirmed_media = (
+            await session.execute(
+                text(
+                    """
+                    SELECT transcript_state, confirmed_transcript,
+                           transcript_digest, transcript_purged_at
+                    FROM become_media_intakes
+                    WHERE id = :media_id
+                    """
+                ),
+                {"media_id": confirmed.media_id},
+            )
+        ).one()
         payloads = (
             await session.execute(
                 text(
@@ -1139,6 +1166,7 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
     assert version[0] is None
     assert version[1] == DIGEST_1
     assert version[2] == NOW
+    assert confirmed_media == ("purged", None, DIGEST_1, NOW)
     assert all(payload["content_purged"] is True for payload in payloads)
     assert all("message" not in payload for payload in payloads)
 
