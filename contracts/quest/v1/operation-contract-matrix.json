@@ -1,0 +1,66 @@
+{
+  "schema": "become.quest-operation-contract-matrix@1",
+  "contract_version": "become.role-correct-quest@1",
+  "command_required": [
+    "quest_id",
+    "correlation_id",
+    "operation",
+    "attempt_version",
+    "idempotency_key",
+    "occurred_at"
+  ],
+  "receipt_required": [
+    "schema",
+    "quest_id",
+    "correlation_id",
+    "operation",
+    "attempt_version",
+    "idempotency_key",
+    "state",
+    "contract_version",
+    "mode",
+    "external_effects"
+  ],
+  "readiness_approvals": [
+    "TRANSCRIPT",
+    "EXPERT_PROFILE",
+    "PRODUCT",
+    "PROGRAM"
+  ],
+  "operations": {
+    "CREATE_QUEST": ["mode", "source_provenance_digest"],
+    "BIND_PARTICIPANT": ["role", "person_ref", "provenance_digest"],
+    "EXPERT_CONSENT": ["person_ref", "consent_ref"],
+    "PROVIDER_TRANSCRIPT_SETTLED": ["artifact_version", "artifact_digest", "provenance_digest"],
+    "REGISTER_ARTIFACT": ["artifact_type", "artifact_version", "artifact_digest", "provenance_digest"],
+    "APPROVE_ARTIFACT": ["artifact_type", "artifact_version", "artifact_digest", "approver_person_ref", "approver_role"],
+    "INVITE_LEARNER": ["learner_person_ref", "invitation_ref", "invitation_version", "invitation_digest"],
+    "ACCEPT_LEARNER": ["learner_person_ref", "invitation_ref", "invitation_version", "invitation_digest", "acceptance_ref", "acceptance_digest"]
+  },
+  "executable_fixtures": {
+    "create_quest": {
+      "command": {
+        "quest_id": "ref://simulated/quest/parity-create",
+        "correlation_id": "ref://simulated/correlation/parity-create",
+        "operation": "CREATE_QUEST",
+        "attempt_version": 1,
+        "idempotency_key": "parity-create-v1",
+        "occurred_at": "2026-08-03T10:30:00.000Z",
+        "mode": "SIMULATED",
+        "source_provenance_digest": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "expected_receipt": {
+        "schema": "become.quest-operation-receipt@1",
+        "quest_id": "ref://simulated/quest/parity-create",
+        "correlation_id": "ref://simulated/correlation/parity-create",
+        "operation": "CREATE_QUEST",
+        "attempt_version": 1,
+        "idempotency_key": "parity-create-v1",
+        "state": "DRAFT",
+        "contract_version": "become.role-correct-quest@1",
+        "mode": "SIMULATED",
+        "external_effects": 0
+      }
+    }
+  }
+}

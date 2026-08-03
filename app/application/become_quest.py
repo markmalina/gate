@@ -1,4 +1,8 @@
-"""Fail-closed role-correct BECOME Quest contracts and transitions."""
+"""Canonical fail-closed role-correct BECOME Quest contract.
+
+The synchronous coordinator and SnapshotQuestStore in this module are test fixtures.
+Production orchestration is implemented by PostgresBecomeQuestCoordinator.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +12,10 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
 
 QUEST_CONTRACT_VERSION = "become.role-correct-quest@1"
 APPROVAL_SCHEMA = "become.quest-approval@1"
+OPERATION_RECEIPT_SCHEMA = "become.quest-operation-receipt@1"
 QUEST_PROJECTION_ENABLED = False
 QUEST_MAX_OPERATIONS = 0
 
@@ -57,6 +61,24 @@ class ArtifactType(StrEnum):
     PRODUCT = "PRODUCT"
     PROGRAM = "PROGRAM"
     EXERCISE = "EXERCISE"
+
+
+READINESS_APPROVALS = frozenset(
+    {
+        ArtifactType.TRANSCRIPT.value,
+        ArtifactType.EXPERT_PROFILE.value,
+        ArtifactType.PRODUCT.value,
+        ArtifactType.PROGRAM.value,
+    }
+)
+BASE_COMMAND_FIELDS = (
+    "quest_id",
+    "correlation_id",
+    "operation",
+    "attempt_version",
+    "idempotency_key",
+    "occurred_at",
+)
 
 
 class BecomeQuestError(ValueError):
@@ -107,44 +129,71 @@ def _require_digest(value: object, field_name: str) -> str:
     return value
 
 
+def _require_version(value: object, field_name: str) -> int:
+    if not isinstance(value, int) or value < 1:
+        raise BecomeQuestError(f"{field_name}_invalid")
+    return value
+
+
+def _require_occurred_at(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise BecomeQuestError("occurred_at_invalid")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise BecomeQuestError("occurred_at_invalid") from exc
+
+
+def _require_command_envelope(command: JsonObject) -> None:
+    for field_name in BASE_COMMAND_FIELDS:
+        if command.get(field_name) in {None, ""}:
+            raise BecomeQuestError(f"{field_name}_required")
+    _require_ref(command.get("quest_id"), "quest_id")
+    _require_ref(command.get("correlation_id"), "correlation_id")
+    _require_version(command.get("attempt_version"), "attempt_version")
+    _require_occurred_at(command.get("occurred_at"))
+
+
 def operation_attempt_key(
     *,
-    quest_ref: str,
-    correlation_ref: str,
-    operation_type: str,
+    quest_id: str,
+    correlation_id: str,
+    operation: str,
     attempt_version: int,
+    idempotency_key: str,
 ) -> str:
-    _require_ref(quest_ref, "quest_ref")
-    _require_ref(correlation_ref, "correlation_ref")
-    if not operation_type or attempt_version < 1:
+    _require_ref(quest_id, "quest_id")
+    _require_ref(correlation_id, "correlation_id")
+    _require_version(attempt_version, "attempt_version")
+    if not operation or not idempotency_key:
         raise BecomeQuestError("attempt_scope_invalid")
     return "quest-attempt:" + canonical_digest(
         {
-            "quest_ref": quest_ref,
-            "correlation_ref": correlation_ref,
-            "operation_type": operation_type,
+            "quest_id": quest_id,
+            "correlation_id": correlation_id,
+            "operation": operation,
             "attempt_version": attempt_version,
+            "idempotency_key": idempotency_key,
         }
     )
 
 
 def build_approval_receipt(
     *,
-    quest_ref: str,
+    quest_id: str,
     artifact_type: ArtifactType,
     artifact_version: int,
     artifact_digest: str,
     approver_person_ref: str,
     approved_at: datetime,
 ) -> JsonObject:
-    _require_ref(quest_ref, "quest_ref")
+    _require_ref(quest_id, "quest_id")
     _require_ref(approver_person_ref, "approver_person_ref")
     _require_digest(artifact_digest, "artifact_digest")
-    if artifact_version < 1:
-        raise BecomeQuestError("artifact_version_invalid")
+    _require_version(artifact_version, "artifact_version")
     receipt: JsonObject = {
         "schema": APPROVAL_SCHEMA,
-        "quest_id": quest_ref,
+        "quest_id": quest_id,
         "artifact_type": artifact_type.value,
         "artifact_version": artifact_version,
         "artifact_digest": artifact_digest,
@@ -159,37 +208,54 @@ def build_approval_receipt(
     return receipt
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactSnapshot:
+    artifact_version: int
+    artifact_digest: str
+    provenance_digest: str
+    provider_settled: bool
+    transcript_available: bool
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationSnapshot:
+    invitation_ref: str
+    invitation_version: int
+    invitation_digest: str
+    learner_person_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantSnapshot:
+    role: str
+    person_ref: str
+    provenance_digest: str
+    mode: str
+    active: bool = True
+
+
 @dataclass(slots=True)
 class QuestSnapshot:
-    quest_ref: str
-    correlation_ref: str
+    quest_id: str
+    correlation_id: str
     mode: str
     state: QuestState = QuestState.DRAFT
     expert_person_ref: str | None = None
     learner_person_ref: str | None = None
     expert_consented: bool = False
     learner_enrolled: bool = False
-    artifacts: dict[str, tuple[int, str]] = field(default_factory=dict)
+    participants: dict[str, ParticipantSnapshot] = field(default_factory=dict)
+    artifacts: dict[str, dict[int, ArtifactSnapshot]] = field(default_factory=dict)
     approvals: dict[str, tuple[int, str]] = field(default_factory=dict)
-
-
-class BecomeQuestStore(Protocol):
-    def load(self, quest_ref: str) -> QuestSnapshot | None: ...
-
-    def save(self, snapshot: QuestSnapshot) -> None: ...
-
-    def replay(self, idempotency_key: str) -> tuple[str, JsonObject] | None: ...
-
-    def save_replay(
-        self,
-        idempotency_key: str,
-        request_digest: str,
-        receipt: JsonObject,
-    ) -> None: ...
+    approval_history: list[tuple[str, int, str, str]] = field(default_factory=list)
+    invitations: dict[int, InvitationSnapshot] = field(default_factory=dict)
+    current_invitation_version: int | None = None
 
 
 class SnapshotQuestStore:
-    """Test store whose snapshot models a durable process restart."""
+    """Explicit test-only fixture; never use as a production Quest state source."""
+
+    test_fixture_only = True
 
     def __init__(self, snapshot: dict[str, object] | None = None) -> None:
         raw = copy.deepcopy(snapshot or {"quests": {}, "replays": {}})
@@ -199,94 +265,102 @@ class SnapshotQuestStore:
     def snapshot(self) -> dict[str, object]:
         return copy.deepcopy({"quests": self.quests, "replays": self.replays})
 
-    def load(self, quest_ref: str) -> QuestSnapshot | None:
-        value = self.quests.get(quest_ref)
-        return copy.deepcopy(value)
+    def load(self, quest_id: str) -> QuestSnapshot | None:
+        return copy.deepcopy(self.quests.get(quest_id))
 
     def save(self, snapshot: QuestSnapshot) -> None:
-        self.quests[snapshot.quest_ref] = copy.deepcopy(snapshot)
+        self.quests[snapshot.quest_id] = copy.deepcopy(snapshot)
 
-    def replay(self, idempotency_key: str) -> tuple[str, JsonObject] | None:
-        value = self.replays.get(idempotency_key)
-        return copy.deepcopy(value)
+    def replay(self, scope_key: str) -> tuple[str, JsonObject] | None:
+        return copy.deepcopy(self.replays.get(scope_key))
 
     def save_replay(
         self,
-        idempotency_key: str,
+        scope_key: str,
         request_digest: str,
         receipt: JsonObject,
     ) -> None:
-        self.replays[idempotency_key] = (request_digest, copy.deepcopy(receipt))
+        self.replays[scope_key] = (request_digest, copy.deepcopy(receipt))
 
 
 class BecomeQuestCoordinator:
-    def __init__(self, store: BecomeQuestStore) -> None:
+    """Synchronous test coordinator mirroring PostgreSQL production semantics."""
+
+    def __init__(self, store: SnapshotQuestStore) -> None:
+        if not store.test_fixture_only:
+            raise BecomeQuestError("snapshot_store_must_be_test_fixture")
         self.store = store
 
     def execute(self, command: JsonObject) -> JsonObject:
         _assert_content_free(command)
+        _require_command_envelope(command)
         request_digest = canonical_digest(command)
-        key = command.get("idempotency_key")
-        if not isinstance(key, str) or not key:
-            raise BecomeQuestError("idempotency_key_required")
-        prior = self.store.replay(key)
+        scope_key = operation_attempt_key(
+            quest_id=str(command["quest_id"]),
+            correlation_id=str(command["correlation_id"]),
+            operation=str(command["operation"]),
+            attempt_version=_require_version(
+                command["attempt_version"], "attempt_version"
+            ),
+            idempotency_key=str(command["idempotency_key"]),
+        )
+        prior = self.store.replay(scope_key)
         if prior is not None:
             prior_digest, receipt = prior
             if prior_digest != request_digest:
                 raise BecomeQuestError("mutated_replay")
             return receipt
         receipt = self._execute_new(command)
-        self.store.save_replay(key, request_digest, receipt)
+        self.store.save_replay(scope_key, request_digest, receipt)
         return receipt
 
     def _execute_new(self, command: JsonObject) -> JsonObject:
-        quest_ref = _require_ref(command.get("quest_ref"), "quest_ref")
-        correlation_ref = _require_ref(
-            command.get("correlation_ref"), "correlation_ref"
-        )
-        operation = command.get("operation")
-        if not isinstance(operation, str):
-            raise BecomeQuestError("operation_required")
-        snapshot = self.store.load(quest_ref)
+        quest_id = _require_ref(command.get("quest_id"), "quest_id")
+        correlation_id = _require_ref(command.get("correlation_id"), "correlation_id")
+        operation = str(command["operation"])
+        snapshot = self.store.load(quest_id)
         if operation == "CREATE_QUEST":
             if snapshot is not None:
                 raise BecomeQuestError("quest_already_exists")
             mode = command.get("mode")
             if mode not in {"PRODUCTION", "SIMULATED"}:
                 raise BecomeQuestError("mode_invalid")
+            _require_digest(
+                command.get("source_provenance_digest"),
+                "source_provenance_digest",
+            )
             snapshot = QuestSnapshot(
-                quest_ref=quest_ref,
-                correlation_ref=correlation_ref,
+                quest_id=quest_id,
+                correlation_id=correlation_id,
                 mode=str(mode),
             )
         elif snapshot is None:
             raise BecomeQuestError("quest_not_found")
-        elif snapshot.correlation_ref != correlation_ref:
+        elif snapshot.correlation_id != correlation_id:
             raise BecomeQuestError("quest_correlation_mismatch")
 
         assert snapshot is not None
-        if operation == "BIND_PARTICIPANT":
-            self._bind(snapshot, command)
-        elif operation == "EXPERT_CONSENT":
-            self._expert_consent(snapshot, command)
-        elif operation == "PROVIDER_TRANSCRIPT_SETTLED":
-            self._provider_transcript(snapshot, command)
-        elif operation == "REGISTER_ARTIFACT":
-            self._register_artifact(snapshot, command)
-        elif operation == "APPROVE_ARTIFACT":
-            self._approve(snapshot, command)
-        elif operation == "INVITE_LEARNER":
-            self._invite(snapshot, command)
-        elif operation == "ACCEPT_LEARNER":
-            self._accept(snapshot, command)
+        handlers = {
+            "BIND_PARTICIPANT": self._bind,
+            "EXPERT_CONSENT": self._expert_consent,
+            "PROVIDER_TRANSCRIPT_SETTLED": self._provider_transcript,
+            "REGISTER_ARTIFACT": self._register_artifact,
+            "APPROVE_ARTIFACT": self._approve,
+            "INVITE_LEARNER": self._invite,
+            "ACCEPT_LEARNER": self._accept,
+        }
+        if operation in handlers:
+            handlers[operation](snapshot, command)
         elif operation != "CREATE_QUEST":
             raise BecomeQuestError("operation_unsupported")
         self.store.save(snapshot)
         return {
-            "schema": "gate.become-quest-operation@1",
-            "quest_ref": snapshot.quest_ref,
-            "correlation_ref": snapshot.correlation_ref,
+            "schema": OPERATION_RECEIPT_SCHEMA,
+            "quest_id": snapshot.quest_id,
+            "correlation_id": snapshot.correlation_id,
             "operation": operation,
+            "attempt_version": command["attempt_version"],
+            "idempotency_key": command["idempotency_key"],
             "state": snapshot.state.value,
             "contract_version": QUEST_CONTRACT_VERSION,
             "mode": snapshot.mode,
@@ -300,15 +374,26 @@ class BecomeQuestCoordinator:
         except ValueError as exc:
             raise BecomeQuestError("role_invalid") from exc
         person_ref = _require_ref(command.get("person_ref"), "person_ref")
+        provenance_digest = _require_digest(
+            command.get("provenance_digest"), "provenance_digest"
+        )
         if snapshot.mode == "PRODUCTION" and person_ref.startswith("ref://simulated/"):
             raise BecomeQuestError("synthetic_participant_in_production")
+        existing = snapshot.participants.get(role.value)
+        if existing is not None:
+            if (
+                existing.person_ref != person_ref
+                or existing.provenance_digest != provenance_digest
+                or existing.mode != snapshot.mode
+                or not existing.active
+            ):
+                raise BecomeQuestError("role_rebinding_forbidden")
+            return
         if role is QuestRole.EXPERT:
             if snapshot.learner_person_ref == person_ref:
                 raise BecomeQuestError("roles_must_use_distinct_people")
             if snapshot.expert_person_ref not in {None, person_ref}:
                 raise BecomeQuestError("role_rebinding_forbidden")
-            if snapshot.expert_person_ref == person_ref:
-                return
             snapshot.expert_person_ref = person_ref
             snapshot.state = QuestState.EXPERT_BOUND
         else:
@@ -316,9 +401,13 @@ class BecomeQuestCoordinator:
                 raise BecomeQuestError("roles_must_use_distinct_people")
             if snapshot.learner_person_ref not in {None, person_ref}:
                 raise BecomeQuestError("role_rebinding_forbidden")
-            if snapshot.learner_person_ref == person_ref:
-                return
             snapshot.learner_person_ref = person_ref
+        snapshot.participants[role.value] = ParticipantSnapshot(
+            role=role.value,
+            person_ref=person_ref,
+            provenance_digest=provenance_digest,
+            mode=snapshot.mode,
+        )
 
     @staticmethod
     def _expert_consent(snapshot: QuestSnapshot, command: JsonObject) -> None:
@@ -331,18 +420,51 @@ class BecomeQuestCoordinator:
         snapshot.state = QuestState.EXPERT_CONSENTED
 
     @staticmethod
+    def _store_artifact(
+        snapshot: QuestSnapshot,
+        command: JsonObject,
+        artifact_type: ArtifactType,
+        *,
+        provider_settled: bool,
+        transcript_available: bool,
+    ) -> None:
+        artifact_digest = _require_digest(
+            command.get("artifact_digest"), "artifact_digest"
+        )
+        provenance_digest = _require_digest(
+            command.get("provenance_digest"), "provenance_digest"
+        )
+        version = _require_version(command.get("artifact_version"), "artifact_version")
+        versions = snapshot.artifacts.setdefault(artifact_type.value, {})
+        latest_version = max(versions, default=0)
+        if version < latest_version:
+            raise BecomeQuestError("artifact_version_not_increased")
+        if version == latest_version:
+            if versions[version].artifact_digest != artifact_digest:
+                raise BecomeQuestError("artifact_version_mutation")
+            raise BecomeQuestError("artifact_version_not_increased")
+        versions[version] = ArtifactSnapshot(
+            artifact_version=version,
+            artifact_digest=artifact_digest,
+            provenance_digest=provenance_digest,
+            provider_settled=provider_settled,
+            transcript_available=transcript_available,
+        )
+        snapshot.approvals.pop(artifact_type.value, None)
+        if artifact_type.value in READINESS_APPROVALS:
+            BecomeQuestCoordinator._recompute_readiness(snapshot)
+
+    @staticmethod
     def _provider_transcript(snapshot: QuestSnapshot, command: JsonObject) -> None:
-        if (
-            not snapshot.expert_consented
-            or snapshot.state is not QuestState.EXPERT_CONSENTED
-        ):
+        if not snapshot.expert_consented:
             raise BecomeQuestError("expert_consent_required")
-        digest = _require_digest(command.get("artifact_digest"), "artifact_digest")
-        version = command.get("artifact_version")
-        if not isinstance(version, int) or version < 1:
-            raise BecomeQuestError("artifact_version_invalid")
-        snapshot.artifacts[ArtifactType.TRANSCRIPT.value] = (version, digest)
-        snapshot.approvals.pop(ArtifactType.TRANSCRIPT.value, None)
+        BecomeQuestCoordinator._store_artifact(
+            snapshot,
+            command,
+            ArtifactType.TRANSCRIPT,
+            provider_settled=True,
+            transcript_available=True,
+        )
         snapshot.state = QuestState.TRANSCRIPT_PENDING_REVIEW
 
     @staticmethod
@@ -355,15 +477,13 @@ class BecomeQuestCoordinator:
             raise BecomeQuestError("provider_transcript_operation_required")
         if ArtifactType.TRANSCRIPT.value not in snapshot.approvals:
             raise BecomeQuestError("transcript_approval_required")
-        digest = _require_digest(command.get("artifact_digest"), "artifact_digest")
-        version = command.get("artifact_version")
-        if not isinstance(version, int) or version < 1:
-            raise BecomeQuestError("artifact_version_invalid")
-        prior = snapshot.artifacts.get(artifact_type.value)
-        if prior is not None and version <= prior[0]:
-            raise BecomeQuestError("artifact_version_not_increased")
-        snapshot.artifacts[artifact_type.value] = (version, digest)
-        snapshot.approvals.pop(artifact_type.value, None)
+        BecomeQuestCoordinator._store_artifact(
+            snapshot,
+            command,
+            artifact_type,
+            provider_settled=False,
+            transcript_available=False,
+        )
         if artifact_type is ArtifactType.PRODUCT:
             snapshot.state = QuestState.PRODUCT_PENDING_APPROVAL
 
@@ -378,56 +498,101 @@ class BecomeQuestCoordinator:
             artifact_type = ArtifactType(str(command.get("artifact_type")))
         except ValueError as exc:
             raise BecomeQuestError("artifact_type_invalid") from exc
-        exact = snapshot.artifacts.get(artifact_type.value)
-        if exact != (
-            command.get("artifact_version"),
-            command.get("artifact_digest"),
+        versions = snapshot.artifacts.get(artifact_type.value, {})
+        if not versions:
+            raise BecomeQuestError("artifact_not_found")
+        latest = versions[max(versions)]
+        if (
+            latest.artifact_version != command.get("artifact_version")
+            or latest.artifact_digest != command.get("artifact_digest")
         ):
             raise BecomeQuestError("approval_artifact_version_mismatch")
-        snapshot.approvals[artifact_type.value] = exact
+        snapshot.approvals[artifact_type.value] = (
+            latest.artifact_version,
+            latest.artifact_digest,
+        )
+        snapshot.approval_history.append(
+            (
+                artifact_type.value,
+                latest.artifact_version,
+                latest.artifact_digest,
+                str(command["approver_person_ref"]),
+            )
+        )
         if artifact_type is ArtifactType.TRANSCRIPT:
             snapshot.state = QuestState.TRANSCRIPT_APPROVED
         if artifact_type is ArtifactType.PRODUCT:
             snapshot.state = QuestState.PRODUCT_APPROVED
-        BecomeQuestCoordinator._advance(snapshot)
+        BecomeQuestCoordinator._recompute_readiness(snapshot)
 
     @staticmethod
     def _invite(snapshot: QuestSnapshot, command: JsonObject) -> None:
-        required = {
-            ArtifactType.TRANSCRIPT.value,
-            ArtifactType.EXPERT_PROFILE.value,
-            ArtifactType.PRODUCT.value,
-            ArtifactType.PROGRAM.value,
-        }
-        if not required.issubset(snapshot.approvals):
+        if not READINESS_APPROVALS.issubset(snapshot.approvals):
             raise BecomeQuestError("expert_artifact_approvals_required")
-        if command.get("learner_person_ref") != snapshot.learner_person_ref:
+        learner = _require_ref(command.get("learner_person_ref"), "learner_person_ref")
+        if learner != snapshot.learner_person_ref:
             raise BecomeQuestError("learner_binding_required")
-        _require_ref(command.get("invitation_ref"), "invitation_ref")
+        invitation_ref = _require_ref(command.get("invitation_ref"), "invitation_ref")
+        invitation_digest = _require_digest(
+            command.get("invitation_digest"), "invitation_digest"
+        )
+        invitation_version = _require_version(
+            command.get("invitation_version"), "invitation_version"
+        )
+        current = (
+            snapshot.invitations.get(snapshot.current_invitation_version)
+            if snapshot.current_invitation_version is not None
+            else None
+        )
+        if current is not None and invitation_version <= current.invitation_version:
+            if invitation_version == current.invitation_version and (
+                invitation_ref != current.invitation_ref
+                or invitation_digest != current.invitation_digest
+            ):
+                raise BecomeQuestError("invitation_version_mutation")
+            raise BecomeQuestError("invitation_version_not_increased")
+        snapshot.invitations[invitation_version] = InvitationSnapshot(
+            invitation_ref=invitation_ref,
+            invitation_version=invitation_version,
+            invitation_digest=invitation_digest,
+            learner_person_ref=learner,
+        )
+        snapshot.current_invitation_version = invitation_version
         snapshot.state = QuestState.LEARNER_INVITED
 
     @staticmethod
     def _accept(snapshot: QuestSnapshot, command: JsonObject) -> None:
-        if snapshot.state is not QuestState.LEARNER_INVITED:
+        if (
+            snapshot.state is not QuestState.LEARNER_INVITED
+            or snapshot.current_invitation_version is None
+        ):
             raise BecomeQuestError("learner_acceptance_transition_blocked")
         if command.get("learner_person_ref") != snapshot.learner_person_ref:
             raise BecomeQuestError("learner_only")
+        invitation = snapshot.invitations[snapshot.current_invitation_version]
+        if (
+            command.get("invitation_ref") != invitation.invitation_ref
+            or command.get("invitation_version") != invitation.invitation_version
+            or command.get("invitation_digest") != invitation.invitation_digest
+        ):
+            raise BecomeQuestError("learner_invitation_mismatch")
         _require_ref(command.get("acceptance_ref"), "acceptance_ref")
+        _require_digest(command.get("acceptance_digest"), "acceptance_digest")
         snapshot.learner_enrolled = True
         snapshot.state = QuestState.LEARNER_ENROLLED
-        BecomeQuestCoordinator._advance(snapshot)
+        BecomeQuestCoordinator._recompute_readiness(snapshot)
 
     @staticmethod
-    def _advance(snapshot: QuestSnapshot) -> None:
-        required = {
-            ArtifactType.TRANSCRIPT.value,
-            ArtifactType.EXPERT_PROFILE.value,
-            ArtifactType.PRODUCT.value,
-            ArtifactType.PROGRAM.value,
-        }
+    def _recompute_readiness(snapshot: QuestSnapshot) -> None:
         if (
             snapshot.expert_consented
             and snapshot.learner_enrolled
-            and required.issubset(snapshot.approvals)
+            and READINESS_APPROVALS.issubset(snapshot.approvals)
         ):
             snapshot.state = QuestState.READY_FOR_EXERCISE
+            return
+        if snapshot.state is QuestState.READY_FOR_EXERCISE:
+            if ArtifactType.TRANSCRIPT.value not in snapshot.approvals:
+                snapshot.state = QuestState.TRANSCRIPT_PENDING_REVIEW
+            else:
+                snapshot.state = QuestState.BLOCKED

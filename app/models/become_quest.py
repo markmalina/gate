@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -26,7 +27,10 @@ class BecomeQuestModel(Base):
     __tablename__ = "become_quests"
     __table_args__ = (
         UniqueConstraint("quest_ref", name="uq_become_quest_ref"),
-        UniqueConstraint("correlation_ref", name="uq_become_quest_correlation"),
+        UniqueConstraint(
+            "id", "correlation_ref", name="uq_become_quest_id_correlation"
+        ),
+        UniqueConstraint("id", "mode", name="uq_become_quest_id_mode"),
         CheckConstraint(
             "contract_version = 'become.role-correct-quest@1'",
             name="ck_become_quest_contract",
@@ -92,6 +96,19 @@ class BecomeQuestParticipantModel(Base):
             "mode = 'SIMULATED' OR person_ref NOT LIKE 'ref://simulated/%'",
             name="ck_become_quest_no_synthetic_production_participant",
         ),
+        UniqueConstraint(
+            "quest_id",
+            "role",
+            "person_ref",
+            "active",
+            name="uq_become_quest_participant_binding_state",
+        ),
+        ForeignKeyConstraint(
+            ["quest_id", "mode"],
+            ["become_quests.id", "become_quests.mode"],
+            name="fk_become_quest_participant_quest_mode",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -135,6 +152,13 @@ class BecomeQuestArtifactModel(Base):
             "(provider_settled = false AND transcript_available = false)",
             name="ck_become_quest_provider_transcript_only",
         ),
+        CheckConstraint(
+            "expert_approved = false",
+            name="ck_become_quest_artifact_approval_is_receipt_only",
+        ),
+        UniqueConstraint(
+            "quest_id", "id", name="uq_become_quest_artifact_quest_id"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -172,6 +196,9 @@ class BecomeQuestApprovalModel(Base):
             "approver_role = 'EXPERT'", name="ck_become_quest_approval_expert"
         ),
         CheckConstraint(
+            "approver_active = true", name="ck_become_quest_approval_active"
+        ),
+        CheckConstraint(
             "approval_state = 'APPROVED'", name="ck_become_quest_approval_state"
         ),
         CheckConstraint(
@@ -181,6 +208,28 @@ class BecomeQuestApprovalModel(Base):
         CheckConstraint(
             "char_length(receipt_digest) = 64",
             name="ck_become_quest_approval_receipt_digest",
+        ),
+        ForeignKeyConstraint(
+            ["quest_id", "artifact_id"],
+            ["become_quest_artifacts.quest_id", "become_quest_artifacts.id"],
+            name="fk_become_quest_approval_artifact_quest",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "quest_id",
+                "approver_role",
+                "approver_person_ref",
+                "approver_active",
+            ],
+            [
+                "become_quest_participants.quest_id",
+                "become_quest_participants.role",
+                "become_quest_participants.person_ref",
+                "become_quest_participants.active",
+            ],
+            name="fk_become_quest_approval_bound_expert",
+            ondelete="RESTRICT",
         ),
     )
 
@@ -195,6 +244,9 @@ class BecomeQuestApprovalModel(Base):
     )
     approver_person_ref: Mapped[str] = mapped_column(String(160), nullable=False)
     approver_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    approver_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
     approval_state: Mapped[str] = mapped_column(String(16), nullable=False)
     approved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -207,7 +259,16 @@ class BecomeQuestApprovalModel(Base):
 class BecomeQuestEnrollmentModel(Base):
     __tablename__ = "become_quest_enrollments"
     __table_args__ = (
-        UniqueConstraint("quest_id", name="uq_become_quest_enrollment"),
+        UniqueConstraint(
+            "quest_id",
+            "invitation_version",
+            name="uq_become_quest_enrollment_invitation_version",
+        ),
+        UniqueConstraint(
+            "quest_id",
+            "invitation_ref",
+            name="uq_become_quest_enrollment_invitation_ref",
+        ),
         CheckConstraint(
             "state IN ('INVITED','ENROLLED')",
             name="ck_become_quest_enrollment_state",
@@ -216,6 +277,31 @@ class BecomeQuestEnrollmentModel(Base):
             "char_length(invitation_digest) = 64 AND "
             "(acceptance_digest IS NULL OR char_length(acceptance_digest) = 64)",
             name="ck_become_quest_enrollment_digests",
+        ),
+        CheckConstraint(
+            "invitation_version > 0",
+            name="ck_become_quest_enrollment_invitation_version",
+        ),
+        CheckConstraint(
+            "learner_role = 'LEARNER' AND learner_active = true",
+            name="ck_become_quest_enrollment_bound_learner",
+        ),
+        CheckConstraint(
+            "(state = 'INVITED' AND acceptance_digest IS NULL AND accepted_at IS NULL) "
+            "OR (state = 'ENROLLED' AND acceptance_digest IS NOT NULL "
+            "AND accepted_at IS NOT NULL)",
+            name="ck_become_quest_enrollment_acceptance_required",
+        ),
+        ForeignKeyConstraint(
+            ["quest_id", "learner_role", "learner_person_ref", "learner_active"],
+            [
+                "become_quest_participants.quest_id",
+                "become_quest_participants.role",
+                "become_quest_participants.person_ref",
+                "become_quest_participants.active",
+            ],
+            name="fk_become_quest_enrollment_bound_learner",
+            ondelete="RESTRICT",
         ),
     )
 
@@ -226,7 +312,15 @@ class BecomeQuestEnrollmentModel(Base):
         ForeignKey("become_quests.id", ondelete="RESTRICT"), nullable=False
     )
     learner_person_ref: Mapped[str] = mapped_column(String(160), nullable=False)
+    learner_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="LEARNER"
+    )
+    learner_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
     state: Mapped[str] = mapped_column(String(16), nullable=False)
+    invitation_ref: Mapped[str] = mapped_column(String(160), nullable=False)
+    invitation_version: Mapped[int] = mapped_column(Integer, nullable=False)
     invitation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     acceptance_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     invited_at: Mapped[datetime] = mapped_column(
@@ -245,6 +339,7 @@ class BecomeQuestOperationAttemptModel(Base):
             "correlation_ref",
             "operation_type",
             "attempt_version",
+            "idempotency_key",
             name="uq_become_quest_operation_attempt_scope",
         ),
         CheckConstraint("attempt_version > 0", name="ck_become_quest_attempt_version"),
@@ -258,6 +353,12 @@ class BecomeQuestOperationAttemptModel(Base):
             name="ck_become_quest_attempt_digests",
         ),
         Index("ix_become_quest_attempt_quest_operation", "quest_id", "operation_type"),
+        ForeignKeyConstraint(
+            ["quest_id", "correlation_ref"],
+            ["become_quests.id", "become_quests.correlation_ref"],
+            name="fk_become_quest_attempt_correlation",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -269,6 +370,7 @@ class BecomeQuestOperationAttemptModel(Base):
     correlation_ref: Mapped[str] = mapped_column(String(160), nullable=False)
     operation_type: Mapped[str] = mapped_column(String(64), nullable=False)
     attempt_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
     request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     receipt_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
