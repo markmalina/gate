@@ -374,6 +374,7 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             "chain_recovery_attempt_version": None,
             "chain_recovery_target_source_sha": None,
             "chain_recovery_source_failure_preserved": False,
+            "chain_recovery_reconciliation_required": False,
         }
 
     async def connectivity_status(
