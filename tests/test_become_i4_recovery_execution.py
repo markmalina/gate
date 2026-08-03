@@ -5,13 +5,13 @@ from typing import cast
 
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.become_i4_chain import BecomeI4Stage, canonical_digest
 from app.infrastructure.become_i4_recovery_execution import (
     SessionFactoryBecomeI4RecoveryExecutor,
     build_stage_event_payload,
     validate_stage_event_replay,
 )
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 class NoPostClient:
