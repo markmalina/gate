@@ -5,10 +5,13 @@ on:
     paths:
       - "alembic/versions/0082_become_quest.py"
       - "alembic/versions/0083_become_quest_corrective.py"
+      - "alembic/versions/0083_alpha_transcription_product.py"
+      - "alembic/versions/0084_alpha_transcription_merge.py"
       - "alembic/env.py"
       - "app/application/become_quest.py"
       - "app/infrastructure/become_quest.py"
       - "app/models/become_quest.py"
+      - "app/models/alpha_transcription.py"
       - "app/api/mcp_routes.py"
       - "app/api/mcp_schemas.py"
       - "tests/test_become_quest.py"
@@ -67,9 +70,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -c constraints/ci.txt ".[dev]"
 
-      - name: Lint and type-check Quest files
+      - name: Lint and type-check Quest and transcription migration files
         run: |
-          ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py alembic/versions/0082_become_quest.py alembic/versions/0083_become_quest_corrective.py
+          ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py app/models/alpha_transcription.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py alembic/versions/0082_become_quest.py alembic/versions/0083_become_quest_corrective.py alembic/versions/0083_alpha_transcription_product.py alembic/versions/0084_alpha_transcription_merge.py
           mypy app
 
       - name: Test Quest state, persistence, replay, and migration safety
@@ -78,7 +81,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0083_become_quest_corrective (head)"
+          alembic heads | grep -F "0084_alpha_transcription_merge (head)"
           alembic upgrade head
           alembic check
 
