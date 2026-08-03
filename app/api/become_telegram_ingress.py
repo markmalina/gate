@@ -101,7 +101,11 @@ async def accept_become_telegram_receipt(
 
 def _is_group_update(update: JsonObject) -> bool:
     update_kinds = {key for key in update if key != "update_id"}
-    if update_kinds not in ({"message"}, {"my_chat_member"}):
+    if update_kinds not in (
+        {"message"},
+        {"my_chat_member"},
+        {"callback_query"},
+    ):
         return False
     message = update.get("message")
     if isinstance(message, dict):
@@ -110,6 +114,11 @@ def _is_group_update(update: JsonObject) -> bool:
     membership = update.get("my_chat_member")
     if isinstance(membership, dict):
         chat = membership.get("chat")
+        return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
+    callback = update.get("callback_query")
+    callback_message = callback.get("message") if isinstance(callback, dict) else None
+    if isinstance(callback_message, dict):
+        chat = callback_message.get("chat")
         return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
     return False
 
