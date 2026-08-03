@@ -1193,7 +1193,8 @@ class BecomePilotTranscriptDeliveryModel(Base):
     __tablename__ = "become_pilot_transcript_deliveries"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('presentation', 'correction_prompt', 'confirmation')",
+            "kind IN ('presentation', 'redisplay', "
+            "'correction_prompt', 'confirmation')",
             name="ck_become_pilot_delivery_kind",
         ),
         CheckConstraint(
