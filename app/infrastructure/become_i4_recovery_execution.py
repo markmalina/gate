@@ -22,7 +22,7 @@ from app.application.become_i4_chain import (
     project_i4_refs,
     validate_i4_receipt,
 )
-from app.domain.become_controlled_intake import BecomeChainSlotState
+from app.application.become_voice_chain import BecomeChainSlotState
 from app.infrastructure.become_i4_chain import (
     MAYAKI_SOURCE_SHA,
     OKO_SOURCE_SHA,
