@@ -50,8 +50,8 @@ from app.application.telegram_voice_transcription import (
     SpeechToTextPort,
 )
 from app.infrastructure.become_media_intake import (
-    SessionFactoryBecomeMediaStore,
     SessionFactoryBecomeMediaRetention,
+    SessionFactoryBecomeMediaStore,
 )
 from app.infrastructure.become_transcript_review import (
     SessionFactoryPilotTranscriptReviewStore,
