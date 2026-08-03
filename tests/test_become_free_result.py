@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
+
 from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
 )
