@@ -220,6 +220,16 @@ class Settings(BaseSettings):
             "GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS"
         ),
     )
+    gate_become_pilot_slice1_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE1_ENABLED",
+    )
+    gate_become_pilot_slice1_max_operations: int = Field(
+        default=0,
+        ge=0,
+        le=8,
+        validation_alias="GATE_BECOME_PILOT_SLICE1_MAX_OPERATIONS",
+    )
     gate_alpha_shadow_worker_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_SHADOW_WORKER_ENABLED",
