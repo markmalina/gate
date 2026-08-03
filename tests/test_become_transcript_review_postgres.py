@@ -2342,7 +2342,7 @@ async def test_telegram_tombstone_replay_survives_restart_and_rejects_mutation(
 
     class ContentFreeProcessor:
         async def process(self, item: object) -> None:
-            assert getattr(item, "payload") == payload
+            assert item.payload == payload
 
     async with sessions() as first_session:
         first = await AcceptTelegramReceiptService(
