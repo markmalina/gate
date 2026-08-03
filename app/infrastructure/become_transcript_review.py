@@ -1058,6 +1058,48 @@ class SessionFactoryPilotTranscriptReviewStore:
             return {key: int(value or 0) for key, value in row.items()}
 
 
+    async def rollback_preflight(self) -> dict[str, int | bool]:
+        """Prove application rollback can stop without consuming v2 work."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                          count(*) FILTER (
+                            WHERE grant_key =
+                              'become-pilot-slice1-transcription-v2'
+                              AND state IN (
+                                'reserving', 'reserved', 'calling',
+                                'succeeded_unsettled'
+                              )
+                          ) AS nonterminal_v2_provider_attempts,
+                          count(*) FILTER (
+                            WHERE grant_key =
+                              'become-pilot-slice1-transcription-v2'
+                              AND staged_transcript IS NOT NULL
+                          ) AS staged_plaintext,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome IN (
+                              'pending', 'reserved', 'unknown'
+                            )
+                          ) AS unresolved_deliveries
+                        FROM become_voice_transcription_attempts
+                        """
+                    )
+                )
+            ).mappings().one()
+            counts = {key: int(value or 0) for key, value in row.items()}
+            return {
+                **counts,
+                "rollback_ready": all(value == 0 for value in counts.values()),
+                "content_exposed": False,
+            }
+
+
 async def stage_provider_transcript(
     session: AsyncSession,
     *,
