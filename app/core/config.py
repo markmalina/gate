@@ -178,6 +178,16 @@ class Settings(BaseSettings):
         le=3,
         validation_alias="GATE_BECOME_I4_RECOVERY_MAX_POSTS",
     )
+    gate_become_free_result_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_FREE_RESULT_DELIVERY_ENABLED",
+    )
+    gate_become_free_result_max_calls: int = Field(
+        default=0,
+        ge=0,
+        le=1,
+        validation_alias="GATE_BECOME_FREE_RESULT_MAX_CALLS",
+    )
     gate_become_voice_transcription_enabled: bool = Field(
         default=False,
         validation_alias="GATE_BECOME_VOICE_TRANSCRIPTION_ENABLED",
