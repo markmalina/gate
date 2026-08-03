@@ -18,6 +18,7 @@ from app.application.telegram_processing import (
     TelegramUpdateDeferred,
     TelegramUpdateProcessingError,
     TelegramWorkerDisposition,
+    canonical_telegram_payload_digest,
 )
 
 
@@ -69,6 +70,38 @@ def test_duplicate_acceptance_reuses_receipt_and_outbox_identity() -> None:
     assert duplicate.receipt_id == first.receipt_id
     assert duplicate.outbox_event_id == first.outbox_event_id
     assert store.create_count == 1
+
+
+def test_canonical_payload_digest_ignores_json_field_order_and_detects_mutation(
+) -> None:
+    original = {
+        "update_id": 42,
+        "message": {
+            "message_id": 7,
+            "chat": {"id": -100, "type": "supergroup"},
+        },
+    }
+    reordered = {
+        "message": {
+            "chat": {"type": "supergroup", "id": -100},
+            "message_id": 7,
+        },
+        "update_id": 42,
+    }
+    mutated = {
+        "message": {
+            "chat": {"type": "supergroup", "id": -100},
+            "message_id": 8,
+        },
+        "update_id": 42,
+    }
+
+    assert canonical_telegram_payload_digest(original) == (
+        canonical_telegram_payload_digest(reordered)
+    )
+    assert canonical_telegram_payload_digest(original) != (
+        canonical_telegram_payload_digest(mutated)
+    )
 
 
 @pytest.mark.parametrize(
