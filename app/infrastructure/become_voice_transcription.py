@@ -366,17 +366,6 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 )
                 .with_for_update()
             )
-            if attempt.staged_transcript_expires_at <= now:
-                attempt.state = (
-                    BecomeVoiceTranscriptionState
-                    .RECONCILIATION_REQUIRED.value
-                )
-                attempt.staged_transcript = None
-                attempt.reason_code = (
-                    "become_transcription_staged_plaintext_expired"
-                )
-                attempt.updated_at = now
-                return False
             intake = await session.scalar(
                 select(BecomeMediaIntakeModel)
                 .where(
@@ -471,6 +460,17 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 raise BecomeControlledIntakeError(
                     "become_transcription_confirmation_not_ready"
                 )
+            if attempt.staged_transcript_expires_at <= now:
+                attempt.state = (
+                    BecomeVoiceTranscriptionState
+                    .RECONCILIATION_REQUIRED.value
+                )
+                attempt.staged_transcript = None
+                attempt.reason_code = (
+                    "become_transcription_staged_plaintext_expired"
+                )
+                attempt.updated_at = now
+                return False
             intake = await session.scalar(
                 select(BecomeMediaIntakeModel)
                 .where(
