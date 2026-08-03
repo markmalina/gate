@@ -70,6 +70,11 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                 "state": await store.status(now=datetime.now(UTC)),
                 "content_exposed": False,
             }
+        elif command == "rollback-preflight":
+            result = {
+                "schema": "gate.become-pilot-slice1-rollback-preflight@1",
+                **await store.rollback_preflight(),
+            }
         elif command == "purge":
             now = datetime.now(UTC)
             media = await SessionFactoryBecomeMediaRetention(
@@ -214,6 +219,7 @@ def main() -> None:
         "command",
         choices=(
             "status",
+            "rollback-preflight",
             "purge",
             "deliver",
             "redisplay",
