@@ -15,6 +15,7 @@ from app.application.telegram_processing import (
     TelegramProcessingQueue,
     TelegramProcessingWorkItem,
     TelegramReceiptAcceptance,
+    TelegramReceiptError,
     TelegramReceiptStore,
     is_alpha_membership_update,
 )
@@ -59,7 +60,11 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
             )
             if inserted_receipt_id is None:
                 existing_result = await self._session.execute(
-                    select(TelegramReceipt.id, TelegramOutboxEvent.id)
+                    select(
+                        TelegramReceipt.id,
+                        TelegramOutboxEvent.id,
+                        TelegramReceipt.payload,
+                    )
                     .join(
                         TelegramOutboxEvent,
                         TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
@@ -70,6 +75,10 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                     )
                 )
                 existing = existing_result.one()
+                if existing[2] != command.payload:
+                    raise TelegramReceiptError(
+                        "telegram_receipt_mutated_replay"
+                    )
                 await self._session.commit()
                 return TelegramReceiptAcceptance(
                     receipt_id=str(existing[0]),
