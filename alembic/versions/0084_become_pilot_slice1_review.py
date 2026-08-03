@@ -35,6 +35,90 @@ def upgrade() -> None:
             f"('{_LEGACY_GRANT}', '{_SLICE1_GRANT}')"
         ),
     )
+    op.add_column(
+        "become_voice_transcription_attempts",
+        sa.Column(
+            "staged_transcript_expires_at",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
+    )
+    op.execute(
+        """
+        UPDATE become_voice_transcription_attempts
+        SET staged_transcript_expires_at =
+            provider_succeeded_at + INTERVAL '30 days'
+        WHERE state IN ('succeeded_unsettled', 'confirmed')
+          AND provider_succeeded_at IS NOT NULL
+        """
+    )
+    for constraint in (
+        "ck_become_voice_transcription_state",
+        "ck_become_voice_transcription_call_boundary",
+        "ck_become_voice_transcription_success",
+    ):
+        op.drop_constraint(
+            constraint,
+            "become_voice_transcription_attempts",
+            type_="check",
+        )
+    op.create_check_constraint(
+        "ck_become_voice_transcription_state",
+        "become_voice_transcription_attempts",
+        "state IN ('reserving', 'reserved', 'calling', "
+        "'succeeded_unsettled', 'confirmed', 'rejected', "
+        "'unknown', 'blocked', 'reconciliation_required')",
+    )
+    op.create_check_constraint(
+        "ck_become_voice_transcription_call_boundary",
+        "become_voice_transcription_attempts",
+        "(state IN ('reserving', 'reserved', 'blocked') "
+        "AND provider_call_started_at IS NULL) OR "
+        "(state IN ('calling', 'succeeded_unsettled', 'confirmed', "
+        "'rejected', 'unknown', 'reconciliation_required') "
+        "AND provider_call_started_at IS NOT NULL)",
+    )
+    op.create_check_constraint(
+        "ck_become_voice_transcription_success",
+        "become_voice_transcription_attempts",
+        "(state = 'succeeded_unsettled' "
+        "AND staged_transcript IS NOT NULL "
+        "AND staged_transcript_expires_at IS NOT NULL "
+        "AND char_length(transcript_digest) = 64 "
+        "AND provider_succeeded_at IS NOT NULL "
+        "AND staged_transcript_expires_at > provider_succeeded_at "
+        "AND billed_quantity IS NOT NULL "
+        "AND actual_microusd IS NOT NULL "
+        "AND char_length(receipt_digest) = 64 "
+        "AND reason_code IS NULL) OR "
+        "(state = 'confirmed' "
+        "AND staged_transcript IS NULL "
+        "AND staged_transcript_expires_at IS NOT NULL "
+        "AND char_length(transcript_digest) = 64 "
+        "AND provider_succeeded_at IS NOT NULL "
+        "AND billed_quantity IS NOT NULL "
+        "AND actual_microusd IS NOT NULL "
+        "AND char_length(receipt_digest) = 64 "
+        "AND reason_code IS NULL) OR "
+        "(state = 'reconciliation_required' "
+        "AND staged_transcript IS NULL "
+        "AND staged_transcript_expires_at IS NOT NULL "
+        "AND char_length(transcript_digest) = 64 "
+        "AND provider_succeeded_at IS NOT NULL "
+        "AND billed_quantity IS NOT NULL "
+        "AND actual_microusd IS NOT NULL "
+        "AND char_length(receipt_digest) = 64 "
+        "AND reason_code IS NOT NULL) OR "
+        "(state NOT IN ('succeeded_unsettled', 'confirmed', "
+        "'reconciliation_required') "
+        "AND staged_transcript IS NULL "
+        "AND staged_transcript_expires_at IS NULL "
+        "AND transcript_digest IS NULL "
+        "AND provider_succeeded_at IS NULL "
+        "AND billed_quantity IS NULL "
+        "AND actual_microusd IS NULL "
+        "AND receipt_digest IS NULL)",
+    )
 
     op.create_table(
         "become_pilot_transcript_reviews",
@@ -282,6 +366,63 @@ def downgrade() -> None:
         table_name="become_pilot_transcript_reviews",
     )
     op.drop_table("become_pilot_transcript_reviews")
+    for constraint in (
+        "ck_become_voice_transcription_success",
+        "ck_become_voice_transcription_call_boundary",
+        "ck_become_voice_transcription_state",
+    ):
+        op.drop_constraint(
+            constraint,
+            "become_voice_transcription_attempts",
+            type_="check",
+        )
+    op.drop_column(
+        "become_voice_transcription_attempts",
+        "staged_transcript_expires_at",
+    )
+    op.create_check_constraint(
+        "ck_become_voice_transcription_state",
+        "become_voice_transcription_attempts",
+        "state IN ('reserving', 'reserved', 'calling', "
+        "'succeeded_unsettled', 'confirmed', 'rejected', "
+        "'unknown', 'blocked')",
+    )
+    op.create_check_constraint(
+        "ck_become_voice_transcription_call_boundary",
+        "become_voice_transcription_attempts",
+        "(state IN ('reserving', 'reserved', 'blocked') "
+        "AND provider_call_started_at IS NULL) OR "
+        "(state IN ('calling', 'succeeded_unsettled', 'confirmed', "
+        "'rejected', 'unknown') "
+        "AND provider_call_started_at IS NOT NULL)",
+    )
+    op.create_check_constraint(
+        "ck_become_voice_transcription_success",
+        "become_voice_transcription_attempts",
+        "(state = 'succeeded_unsettled' "
+        "AND staged_transcript IS NOT NULL "
+        "AND char_length(transcript_digest) = 64 "
+        "AND provider_succeeded_at IS NOT NULL "
+        "AND billed_quantity IS NOT NULL "
+        "AND actual_microusd IS NOT NULL "
+        "AND char_length(receipt_digest) = 64 "
+        "AND reason_code IS NULL) OR "
+        "(state = 'confirmed' "
+        "AND staged_transcript IS NULL "
+        "AND char_length(transcript_digest) = 64 "
+        "AND provider_succeeded_at IS NOT NULL "
+        "AND billed_quantity IS NOT NULL "
+        "AND actual_microusd IS NOT NULL "
+        "AND char_length(receipt_digest) = 64 "
+        "AND reason_code IS NULL) OR "
+        "(state NOT IN ('succeeded_unsettled', 'confirmed') "
+        "AND staged_transcript IS NULL "
+        "AND transcript_digest IS NULL "
+        "AND provider_succeeded_at IS NULL "
+        "AND billed_quantity IS NULL "
+        "AND actual_microusd IS NULL "
+        "AND receipt_digest IS NULL)",
+    )
     op.drop_constraint(
         "ck_become_voice_transcription_grant",
         "become_voice_transcription_attempts",
