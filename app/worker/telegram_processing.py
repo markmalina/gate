@@ -1348,6 +1348,11 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                         api_key=api_key,
                                         enabled=(
                                             settings
+                                            .gate_become_pilot_slice1_enabled
+                                            and settings
+                                            .gate_become_pilot_slice1_provider_max_calls
+                                            == 1
+                                            and settings
                                             .gate_become_voice_transcription_enabled
                                             and settings
                                             .gate_become_voice_transcription_data_gate_approved
@@ -1392,6 +1397,13 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 max_calls=(
                                     settings
                                     .gate_become_voice_transcription_max_calls
+                                ),
+                                slice1_enabled=(
+                                    settings.gate_become_pilot_slice1_enabled
+                                ),
+                                slice1_provider_max_calls=(
+                                    settings
+                                    .gate_become_pilot_slice1_provider_max_calls
                                 ),
                             ).run_once(now=datetime.now(UTC))
                         )
