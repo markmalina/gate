@@ -110,15 +110,69 @@ async def sessions() -> async_sessionmaker[AsyncSession]:
 async def clean_previous_pilot_fixtures(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
+    workspace_filter = (
+        "SELECT id FROM workspaces "
+        "WHERE key LIKE 'pilot-postgres-%'"
+    )
+    statements = (
+        """
+        DELETE FROM become_pilot_delivery_reconciliations
+        WHERE delivery_id IN (
+          SELECT d.id
+          FROM become_pilot_transcript_deliveries AS d
+          JOIN become_pilot_transcript_reviews AS r ON r.id = d.review_id
+          WHERE r.workspace_id IN ("""
+        + workspace_filter
+        + """)
+        """,
+        """
+        DELETE FROM become_pilot_transcript_deliveries
+        WHERE review_id IN (
+          SELECT id FROM become_pilot_transcript_reviews
+          WHERE workspace_id IN ("""
+        + workspace_filter
+        + """)
+        """,
+        """
+        DELETE FROM become_pilot_transcript_versions
+        WHERE review_id IN (
+          SELECT id FROM become_pilot_transcript_reviews
+          WHERE workspace_id IN ("""
+        + workspace_filter
+        + """)
+        """,
+        "DELETE FROM become_pilot_transcript_reviews "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM become_voice_transcription_attempts "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM become_voice_correlations "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM become_media_intakes "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM become_relations_consent_handoffs "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM become_controlled_consent_receipts "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM become_controlled_intake_receipts "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM agent_installations "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM agent_deployments "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM instruction_revisions "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM agent_definitions "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM dialogs "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM transport_connectors "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        "DELETE FROM workspaces "
+        "WHERE key LIKE 'pilot-postgres-%'",
+    )
     async with sessions.begin() as session:
-        await session.execute(
-            text(
-                """
-                DELETE FROM workspaces
-                WHERE key LIKE 'pilot-postgres-%'
-                """
-            )
-        )
+        for statement in statements:
+            await session.execute(text(statement))
 
 
 async def seed_pilot(
