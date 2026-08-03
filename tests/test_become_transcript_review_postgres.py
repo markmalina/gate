@@ -1311,7 +1311,7 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
     assert staged[0] == "reconciliation_required"
     assert staged[1] is None
     assert staged[2] == DIGEST_1
-    assert staged[3] == NOW
+    assert staged[3] == NOW - timedelta(days=31)
     assert staged[4] < NOW
     assert staged[5] == "become_transcription_staged_plaintext_expired"
     restarted_voice_store = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
