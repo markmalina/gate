@@ -995,3 +995,240 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+class BecomeFreeResultArtifactModel(Base):
+    """One private result bound to the canonical TAKE terminal receipt."""
+
+    __tablename__ = "become_free_result_artifacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["installation_id", "workspace_id"],
+            ["agent_installations.id", "agent_installations.workspace_id"],
+            name="fk_become_free_result_installation_workspace",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["dialog_id", "workspace_id"],
+            ["dialogs.id", "dialogs.workspace_id"],
+            name="fk_become_free_result_dialog_workspace",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "correlation_id",
+            name="uq_become_free_result_correlation",
+        ),
+        UniqueConstraint(
+            "take_event_id",
+            name="uq_become_free_result_take_event",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "result_key",
+            name="uq_become_free_result_workspace_key",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-free-result@1'",
+            name="ck_become_free_result_schema",
+        ),
+        CheckConstraint(
+            "char_length(result_digest) = 64 "
+            "AND char_length(transcript_digest) = 64 "
+            "AND char_length(take_receipt_digest) = 64 "
+            "AND char_length(destination_binding_digest) = 64 "
+            "AND char_length(receipt_digest) = 64",
+            name="ck_become_free_result_digests",
+        ),
+        Index(
+            "ix_become_free_result_workspace_created",
+            "workspace_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    installation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    correlation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_voice_correlations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    recovery_attempt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_i4_recovery_attempts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    take_event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_i4_recovery_stage_events.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_text: Mapped[str] = mapped_column(Text, nullable=False)
+    transcript_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    take_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_binding_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    receipt_payload: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class BecomeFreeResultDeliveryModel(Base):
+    """One destination-bound delivery reservation with a terminal receipt."""
+
+    __tablename__ = "become_free_result_deliveries"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["installation_id", "workspace_id"],
+            ["agent_installations.id", "agent_installations.workspace_id"],
+            name="fk_become_free_delivery_installation_workspace",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["dialog_id", "workspace_id"],
+            ["dialogs.id", "dialogs.workspace_id"],
+            name="fk_become_free_delivery_dialog_workspace",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "artifact_id",
+            name="uq_become_free_delivery_artifact",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "delivery_key",
+            name="uq_become_free_delivery_workspace_key",
+        ),
+        CheckConstraint(
+            "schema_name = 'gate.become-free-result-delivery@1'",
+            name="ck_become_free_delivery_schema",
+        ),
+        CheckConstraint(
+            "state IN ('sending', 'sent', 'failed', 'blocked', 'unknown')",
+            name="ck_become_free_delivery_state",
+        ),
+        CheckConstraint(
+            "max_calls = 1 AND char_length(destination_binding_digest) = 64",
+            name="ck_become_free_delivery_boundary",
+        ),
+        CheckConstraint(
+            "(state = 'sending' "
+            "AND provider_message_id IS NULL "
+            "AND error_code IS NULL "
+            "AND receipt_digest IS NULL "
+            "AND receipt_payload IS NULL "
+            "AND sent_at IS NULL "
+            "AND finished_at IS NULL) OR ("
+            "state = 'sent' "
+            "AND provider_message_id IS NOT NULL "
+            "AND error_code IS NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND receipt_payload IS NOT NULL "
+            "AND sent_at IS NOT NULL "
+            "AND finished_at IS NOT NULL) OR ("
+            "state IN ('failed', 'blocked', 'unknown') "
+            "AND provider_message_id IS NULL "
+            "AND error_code IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND receipt_payload IS NOT NULL "
+            "AND sent_at IS NULL "
+            "AND finished_at IS NOT NULL)",
+            name="ck_become_free_delivery_outcome",
+        ),
+        Index(
+            "ix_become_free_delivery_workspace_state",
+            "workspace_id",
+            "state",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    artifact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("become_free_result_artifacts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    installation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    delivery_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    max_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_binding_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    provider_message_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    receipt_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    receipt_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
