@@ -41,7 +41,6 @@ from app.application.become_media_prompt import (
 )
 from app.application.become_transcript_review import (
     DeliverPilotTranscriptReview,
-    PilotReviewDisposition,
     ProcessPilotTranscriptReviewUpdate,
 )
 from app.application.become_voice_transcription import (
