@@ -940,32 +940,45 @@ async def _insert_delivery(
     transcript_digest: str,
     callback_ref: str,
     now: datetime,
+    attempt_no: int = 1,
+    retry_of_delivery_id: str | None = None,
 ) -> None:
     digest = request_digest(
         kind=kind,
         version=version,
         transcript_digest=transcript_digest,
         callback_ref=callback_ref,
+        attempt_no=attempt_no,
     )
     await session.execute(
         text(
             """
             INSERT INTO become_pilot_transcript_deliveries (
-                id, review_id, kind, version, transcript_digest,
-                callback_ref, request_digest, outcome, created_at, updated_at
+                id, review_id, retry_of_delivery_id, kind, attempt_no,
+                version, transcript_digest, callback_ref, request_digest,
+                outcome, created_at, updated_at
             ) VALUES (
-                CAST(:id AS uuid), CAST(:review_id AS uuid), :kind, :version,
-                :transcript_digest, CAST(:callback_ref AS uuid),
+                CAST(:id AS uuid), CAST(:review_id AS uuid),
+                CAST(:retry_of_delivery_id AS uuid), :kind, :attempt_no,
+                :version, :transcript_digest, CAST(:callback_ref AS uuid),
                 :request_digest, 'pending', :now, :now
             )
-            ON CONFLICT (review_id, kind, version, transcript_digest)
+            ON CONFLICT (
+                review_id, kind, version, transcript_digest, attempt_no
+            )
             DO NOTHING
             """
         ),
         {
             "id": str(uuid.uuid4()),
             "review_id": review_id,
+            "retry_of_delivery_id": (
+                _uuid(retry_of_delivery_id)
+                if retry_of_delivery_id is not None
+                else None
+            ),
             "kind": kind,
+            "attempt_no": attempt_no,
             "version": version,
             "transcript_digest": transcript_digest,
             "callback_ref": _uuid(callback_ref),
