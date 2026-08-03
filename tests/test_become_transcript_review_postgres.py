@@ -363,7 +363,7 @@ async def seed_pilot(
                 "dialog_id": dialog_id,
                 "deployment_id": deployment_id,
                 "revision_id": instruction_revision_id,
-                "key": f"pilot-{installation_id}",
+                "key": f"installation-{installation_id}",
             },
         )
         for source_id, update_id, payload, processed in (
