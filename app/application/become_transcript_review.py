@@ -58,6 +58,7 @@ class PilotDeliveryJob:
     transcript_digest: str
     callback_ref: str = field(repr=False)
     transcript_text: str | None = field(default=None, repr=False)
+    transcript_source: str | None = field(default=None, repr=False)
 
 
 class PilotTranscriptReviewStore(Protocol):
@@ -334,8 +335,16 @@ def delivery_body(
             raise BecomeControlledIntakeError(
                 "become_pilot_transcript_content_missing"
             )
+        if job.transcript_source == "human_correction":
+            body = (
+                "Вот текст:\n\n"
+                + job.transcript_text
+                + "\n\nПодтвердите отправку."
+            )
+        else:
+            body = "Вот распознанный текст:\n\n" + job.transcript_text
         return (
-            "Вот распознанный текст:\n\n" + job.transcript_text,
+            body,
             {
                 "inline_keyboard": [
                     [
