@@ -326,11 +326,18 @@ async def mcp_endpoint(
                 ),
                 now=datetime.now(UTC),
             )
-            become_status.update(
-                await become_i4_recovery_status(
-                    session,
-                    workspace_key=principal.access_scope.workspace_id,
-                )
+            recovery_status = await become_i4_recovery_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                execution_enabled=(
+                    settings.gate_become_i4_recovery_execution_enabled
+                ),
+                max_posts=settings.gate_become_i4_recovery_max_posts,
+            )
+            become_status.update(recovery_status)
+            become_status["chain_reconciliation_required"] = bool(
+                become_status["chain_reconciliation_required"]
+                or recovery_status["chain_recovery_reconciliation_required"]
             )
             async with httpx.AsyncClient() as connectivity_client:
                 become_status.update(
