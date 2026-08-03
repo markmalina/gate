@@ -866,7 +866,8 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
             name="ck_become_voice_transcription_state",
         ),
         CheckConstraint(
-            "grant_key = 'become-investor-demo-transcription-v1'",
+            "grant_key IN ('become-investor-demo-transcription-v1', "
+            "'become-pilot-slice1-transcription-v2')",
             name="ck_become_voice_transcription_grant",
         ),
         CheckConstraint(
