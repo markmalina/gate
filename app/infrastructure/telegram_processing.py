@@ -3,12 +3,10 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODES,
+    TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+    TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION,
     AcceptTelegramReceiptCommand,
     TelegramProcessingDisposition,
     TelegramProcessingPlan,
@@ -17,8 +15,6 @@ from app.application.telegram_processing import (
     TelegramReceiptAcceptance,
     TelegramReceiptError,
     TelegramReceiptStore,
-    TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
-    TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION,
     canonical_telegram_payload_digest,
     is_alpha_membership_update,
 )
@@ -28,6 +24,9 @@ from app.models.domain import (
     TelegramReceipt,
     TelegramReceiptStatus,
 )
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TelegramQueueStateError(RuntimeError):
