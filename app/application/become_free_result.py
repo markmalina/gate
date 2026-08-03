@@ -316,12 +316,12 @@ def validate_artifact_receipt(value: object) -> JsonObject:
     ):
         raise ValueError("become_free_result_artifact_invalid")
     _require_correlation(payload["correlation_ref"])
-    for field in (
+    for field_name in (
         "take_receipt_digest",
         "transcript_digest",
         "result_digest",
     ):
-        _require_digest(payload[field], field)
+        _require_digest(payload[field_name], field_name)
     return payload
 
 
@@ -356,12 +356,12 @@ def validate_delivery_receipt(value: object) -> JsonObject:
     if payload["schema"] != FREE_RESULT_DELIVERY_SCHEMA:
         raise ValueError("become_free_result_delivery_schema_invalid")
     _require_correlation(payload["correlation_ref"])
-    for field in (
+    for field_name in (
         "result_digest",
         "take_receipt_digest",
         "destination_binding_digest",
     ):
-        _require_digest(payload[field], field)
+        _require_digest(payload[field_name], field_name)
     try:
         state = BecomeFreeResultState(str(payload["classification"]))
     except ValueError as exc:
