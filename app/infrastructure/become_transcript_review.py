@@ -82,11 +82,11 @@ class SessionFactoryPilotTranscriptReviewStore:
                     "become_pilot_callback_mutated"
                 )
             if action == "e":
-                if state == "approved":
-                    raise BecomeControlledIntakeError(
-                        "become_pilot_approved_correction_forbidden"
-                    )
-                if state not in {"presented", "awaiting_correction"}:
+                if state not in {
+                    "presented",
+                    "awaiting_correction",
+                    "approved",
+                }:
                     raise BecomeControlledIntakeError(
                         "become_pilot_stale_callback"
                     )
@@ -235,7 +235,8 @@ class SessionFactoryPilotTranscriptReviewStore:
                 await session.execute(
                     text(
                         """
-                        SELECT r.id, r.latest_version
+                        SELECT r.id, r.latest_version,
+                               r.media_intake_id
                         FROM become_pilot_transcript_reviews AS r
                         JOIN dialogs AS d ON d.id = r.dialog_id
                         WHERE r.state = 'awaiting_correction'
@@ -259,9 +260,27 @@ class SessionFactoryPilotTranscriptReviewStore:
                     "become_pilot_correction_scope_ambiguous"
                 )
             review_id = str(rows[0]["id"])
+            media_intake_id = str(rows[0]["media_intake_id"])
             version = int(rows[0]["latest_version"]) + 1
             callback_ref = uuid.uuid4().hex
             expires_at = now + _TRANSCRIPT_RETENTION
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_media_intakes
+                    SET transcript_state = 'none',
+                        confirmed_transcript = NULL,
+                        transcript_digest = NULL,
+                        transcript_confirmed_at = NULL,
+                        transcript_expires_at = NULL,
+                        transcript_purged_at = NULL,
+                        updated_at = :now
+                    WHERE id = CAST(:media_intake_id AS uuid)
+                      AND transcript_state = 'confirmed'
+                    """
+                ),
+                {"media_intake_id": media_intake_id, "now": now},
+            )
             await session.execute(
                 text(
                     """
