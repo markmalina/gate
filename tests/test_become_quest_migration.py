@@ -788,6 +788,9 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
     corrective = Path(
         "alembic/versions/0083_become_quest_corrective.py"
     ).read_text()
+    pilot = Path(
+        "alembic/versions/0084_become_pilot_slice1_review.py"
+    ).read_text()
     assert 'revision: str = "0082_become_quest"' in original
     assert 'down_revision: str | None = "0081_become_i4_recovery_v2"' in original
     assert 'revision: str = "0083_become_quest_corrective"' in corrective
@@ -795,6 +798,11 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
     assert "UPDATE become_i4" not in corrective
     assert "DELETE FROM become_i4" not in corrective
     assert "not a safe production rollback" in corrective
+    assert 'revision: str = "0084_become_pilot_slice1_review"' in pilot
+    assert (
+        'down_revision: str | None = "0083_become_quest_corrective_m"'
+        in pilot
+    )
     heads = subprocess.run(
         ["alembic", "heads"],
         check=True,
@@ -803,5 +811,5 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0083_become_quest_corrective")
+    assert heads[0].startswith("0084_become_pilot_slice1_review")
 

@@ -1,0 +1,1397 @@
+"""PostgreSQL persistence for the bounded BECOME Pilot transcript review."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime, timedelta
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.application.become_controlled_intake import (
+    BecomeControlledIntakeError,
+)
+from app.application.become_transcript_review import (
+    MAX_CORRECTION_CHARS,
+    PilotDeliveryJob,
+    PilotReviewDisposition,
+    request_digest,
+)
+from app.application.telegram_processing import (
+    TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+    TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION,
+    canonical_telegram_payload_digest,
+)
+
+_TRANSCRIPT_RETENTION = timedelta(days=30)
+
+
+class SessionFactoryPilotTranscriptReviewStore:
+    """One-workspace review ledger with append-only versions and sends."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def apply_callback(
+        self,
+        *,
+        action: str,
+        callback_ref: str,
+        subject_ref: str,
+        provider_dialog_id: str,
+        now: datetime,
+    ) -> PilotReviewDisposition:
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.id, r.state, r.latest_version,
+                               r.media_intake_id,
+                               r.callback_ref::text,
+                               r.approved_version,
+                               v.transcript_digest, v.expires_at
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        JOIN become_pilot_transcript_versions AS v
+                          ON v.review_id = r.id
+                         AND v.version = r.latest_version
+                        WHERE r.callback_ref = CAST(:callback_ref AS uuid)
+                          AND r.subject_ref = :subject_ref
+                          AND d.provider_dialog_id = :provider_dialog_id
+                        FOR UPDATE OF r, v
+                        """
+                    ),
+                    {
+                        "callback_ref": _uuid(callback_ref),
+                        "subject_ref": subject_ref,
+                        "provider_dialog_id": provider_dialog_id,
+                    },
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_callback_binding_invalid"
+                )
+            if row["expires_at"] <= now:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_transcript_expired"
+                )
+            review_id = str(row["id"])
+            version = int(row["latest_version"])
+            digest = str(row["transcript_digest"])
+            state = str(row["state"])
+            exact_callback = str(row["callback_ref"]).replace("-", "")
+            if exact_callback != callback_ref:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_callback_mutated"
+                )
+            if action == "e":
+                if state not in {
+                    "presented",
+                    "awaiting_correction",
+                    "approved",
+                }:
+                    raise BecomeControlledIntakeError(
+                        "become_pilot_stale_callback"
+                    )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_pilot_transcript_reviews
+                        SET state = 'awaiting_correction',
+                            approved_version = NULL,
+                            approved_digest = NULL,
+                            approved_at = NULL,
+                            updated_at = :now
+                        WHERE id = CAST(:review_id AS uuid)
+                        """
+                    ),
+                    {"review_id": review_id, "now": now},
+                )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_media_intakes
+                        SET transcript_state = 'none',
+                            confirmed_transcript = NULL,
+                            transcript_digest = NULL,
+                            transcript_confirmed_at = NULL,
+                            transcript_expires_at = NULL,
+                            transcript_purged_at = NULL,
+                            updated_at = :now
+                        WHERE id = CAST(:media_intake_id AS uuid)
+                          AND transcript_state = 'confirmed'
+                        """
+                    ),
+                    {
+                        "media_intake_id": str(row["media_intake_id"]),
+                        "now": now,
+                    },
+                )
+                await _insert_delivery(
+                    session,
+                    review_id=review_id,
+                    kind="correction_prompt",
+                    version=version,
+                    transcript_digest=digest,
+                    callback_ref=callback_ref,
+                    now=now,
+                )
+                return PilotReviewDisposition.CORRECTION_REQUESTED
+            if action != "c":
+                raise BecomeControlledIntakeError(
+                    "become_pilot_callback_action_invalid"
+                )
+            if state == "approved":
+                if int(row["approved_version"] or 0) != version:
+                    raise BecomeControlledIntakeError(
+                        "become_pilot_approval_binding_invalid"
+                    )
+                return PilotReviewDisposition.APPROVED_DUPLICATE
+            if state != "presented":
+                raise BecomeControlledIntakeError(
+                    "become_pilot_stale_callback"
+                )
+            version_row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT transcript_body, transcript_digest, expires_at
+                        FROM become_pilot_transcript_versions
+                        WHERE review_id = CAST(:review_id AS uuid)
+                          AND version = :version
+                        FOR UPDATE
+                        """
+                    ),
+                    {"review_id": review_id, "version": version},
+                )
+            ).mappings().one()
+            body = version_row["transcript_body"]
+            if not isinstance(body, str) or not body:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_transcript_content_missing"
+                )
+            media_row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT media_intake_id::text
+                        FROM become_pilot_transcript_reviews
+                        WHERE id = CAST(:review_id AS uuid)
+                        """
+                    ),
+                    {"review_id": review_id},
+                )
+            ).mappings().one()
+            updated = await session.execute(
+                text(
+                    """
+                    UPDATE become_media_intakes
+                    SET transcript_state = 'confirmed',
+                        confirmed_transcript = :body,
+                        transcript_digest = :digest,
+                        transcript_confirmed_at = :now,
+                        transcript_expires_at = :expires_at,
+                        transcript_purged_at = NULL,
+                        updated_at = :now
+                    WHERE id = CAST(:media_intake_id AS uuid)
+                      AND transcript_state = 'none'
+                    """
+                ),
+                {
+                    "media_intake_id": media_row["media_intake_id"],
+                    "body": body,
+                    "digest": digest,
+                    "now": now,
+                    "expires_at": version_row["expires_at"],
+                },
+            )
+            if int(getattr(updated, "rowcount", 0) or 0) != 1:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_media_approval_invalid"
+                )
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_pilot_transcript_reviews
+                    SET state = 'approved',
+                        approved_version = :version,
+                        approved_digest = :digest,
+                        approved_at = :now,
+                        updated_at = :now
+                    WHERE id = CAST(:review_id AS uuid)
+                    """
+                ),
+                {
+                    "review_id": review_id,
+                    "version": version,
+                    "digest": digest,
+                    "now": now,
+                },
+            )
+            await _insert_delivery(
+                session,
+                review_id=review_id,
+                kind="confirmation",
+                version=version,
+                transcript_digest=digest,
+                callback_ref=callback_ref,
+                now=now,
+            )
+            return PilotReviewDisposition.APPROVED
+
+    async def apply_correction(
+        self,
+        *,
+        subject_ref: str,
+        provider_dialog_id: str,
+        correction_text: str,
+        now: datetime,
+    ) -> bool:
+        normalized = correction_text.strip()
+        if not normalized:
+            raise BecomeControlledIntakeError(
+                "become_pilot_correction_empty"
+            )
+        if len(normalized) > MAX_CORRECTION_CHARS:
+            raise BecomeControlledIntakeError(
+                "become_pilot_correction_too_large"
+            )
+        digest = _sha256(normalized)
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.id, r.latest_version,
+                               r.media_intake_id
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        WHERE r.state = 'awaiting_correction'
+                          AND r.subject_ref = :subject_ref
+                          AND d.provider_dialog_id = :provider_dialog_id
+                        ORDER BY r.created_at
+                        LIMIT 2
+                        FOR UPDATE OF r
+                        """
+                    ),
+                    {
+                        "subject_ref": subject_ref,
+                        "provider_dialog_id": provider_dialog_id,
+                    },
+                )
+            ).mappings().all()
+            if not rows:
+                return False
+            if len(rows) != 1:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_correction_scope_ambiguous"
+                )
+            review_id = str(rows[0]["id"])
+            media_intake_id = str(rows[0]["media_intake_id"])
+            version = int(rows[0]["latest_version"]) + 1
+            callback_ref = uuid.uuid4().hex
+            expires_at = now + _TRANSCRIPT_RETENTION
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_media_intakes
+                    SET transcript_state = 'none',
+                        confirmed_transcript = NULL,
+                        transcript_digest = NULL,
+                        transcript_confirmed_at = NULL,
+                        transcript_expires_at = NULL,
+                        transcript_purged_at = NULL,
+                        updated_at = :now
+                    WHERE id = CAST(:media_intake_id AS uuid)
+                      AND transcript_state = 'confirmed'
+                    """
+                ),
+                {"media_intake_id": media_intake_id, "now": now},
+            )
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO become_pilot_transcript_versions (
+                        id, review_id, version, source, transcript_body,
+                        transcript_digest, expires_at, created_at
+                    ) VALUES (
+                        CAST(:id AS uuid), CAST(:review_id AS uuid), :version,
+                        'human_correction', :body, :digest, :expires_at, :now
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "review_id": review_id,
+                    "version": version,
+                    "body": normalized,
+                    "digest": digest,
+                    "expires_at": expires_at,
+                    "now": now,
+                },
+            )
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_pilot_transcript_reviews
+                    SET state = 'pending_display',
+                        latest_version = :version,
+                        callback_ref = CAST(:callback_ref AS uuid),
+                        approved_version = NULL,
+                        approved_digest = NULL,
+                        approved_at = NULL,
+                        updated_at = :now
+                    WHERE id = CAST(:review_id AS uuid)
+                    """
+                ),
+                {
+                    "review_id": review_id,
+                    "version": version,
+                    "callback_ref": _uuid(callback_ref),
+                    "now": now,
+                },
+            )
+            await _insert_delivery(
+                session,
+                review_id=review_id,
+                kind="presentation",
+                version=version,
+                transcript_digest=digest,
+                callback_ref=callback_ref,
+                now=now,
+            )
+            return True
+
+    async def claim_delivery(
+        self,
+        *,
+        now: datetime,
+        max_operations: int,
+    ) -> PilotDeliveryJob | None:
+        if not 1 <= max_operations <= 8:
+            raise BecomeControlledIntakeError(
+                "become_pilot_operation_cap_invalid"
+            )
+        async with self._sessions.begin() as session:
+            operation_count = await session.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM become_pilot_transcript_deliveries
+                    WHERE outcome IN ('reserved', 'sent', 'unknown')
+                    """
+                )
+            )
+            if int(operation_count or 0) >= max_operations:
+                return None
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT dl.id, dl.kind, dl.version,
+                               dl.transcript_digest,
+                               dl.callback_ref::text,
+                               d.provider_dialog_id,
+                               v.transcript_body
+                        FROM become_pilot_transcript_deliveries AS dl
+                        JOIN become_pilot_transcript_reviews AS r
+                          ON r.id = dl.review_id
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        LEFT JOIN become_pilot_transcript_versions AS v
+                          ON v.review_id = r.id
+                         AND v.version = dl.version
+                        WHERE dl.outcome = 'pending'
+                        ORDER BY dl.created_at
+                        LIMIT 1
+                        FOR UPDATE OF dl
+                        """
+                    )
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                return None
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_pilot_transcript_deliveries
+                    SET outcome = 'reserved', updated_at = :now
+                    WHERE id = CAST(:id AS uuid) AND outcome = 'pending'
+                    """
+                ),
+                {"id": str(row["id"]), "now": now},
+            )
+            return PilotDeliveryJob(
+                delivery_id=str(row["id"]),
+                kind=str(row["kind"]),
+                provider_dialog_id=str(row["provider_dialog_id"]),
+                version=int(row["version"]),
+                transcript_digest=str(row["transcript_digest"]),
+                callback_ref=str(row["callback_ref"]).replace("-", ""),
+                transcript_text=(
+                    str(row["transcript_body"])
+                    if row["transcript_body"] is not None
+                    else None
+                ),
+            )
+
+    async def settle_delivery(
+        self,
+        *,
+        delivery_id: str,
+        outcome: str,
+        telegram_message_id: str | None,
+        now: datetime,
+    ) -> None:
+        if outcome not in {"sent", "failed", "unknown"}:
+            raise ValueError("become_pilot_delivery_outcome_invalid")
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT id::text, review_id::text, kind, version,
+                               outcome, telegram_message_id
+                        FROM become_pilot_transcript_deliveries
+                        WHERE id = CAST(:id AS uuid)
+                        FOR UPDATE
+                        """
+                    ),
+                    {"id": delivery_id},
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_delivery_missing"
+                )
+            if row["outcome"] == outcome and row["telegram_message_id"] == telegram_message_id:
+                return
+            if row["outcome"] != "reserved":
+                raise BecomeControlledIntakeError(
+                    "become_pilot_delivery_replay_invalid"
+                )
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_pilot_transcript_deliveries
+                    SET outcome = :outcome,
+                        telegram_message_id = :telegram_message_id,
+                        settled_at = :now,
+                        updated_at = :now
+                    WHERE id = CAST(:id AS uuid)
+                    """
+                ),
+                {
+                    "id": delivery_id,
+                    "outcome": outcome,
+                    "telegram_message_id": telegram_message_id,
+                    "now": now,
+                },
+            )
+            if outcome == "sent" and row["kind"] == "presentation":
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_pilot_transcript_reviews
+                        SET state = 'presented', updated_at = :now
+                        WHERE id = CAST(:review_id AS uuid)
+                          AND latest_version = :version
+                          AND state = 'pending_display'
+                        """
+                    ),
+                    {
+                        "review_id": row["review_id"],
+                        "version": row["version"],
+                        "now": now,
+                    },
+                )
+
+    async def owner_reconcile_delivery(
+        self,
+        *,
+        delivery_id: str,
+        action: str,
+        evidence_digest: str,
+        external_message_id: str | None,
+        owner_authorized: bool,
+        now: datetime,
+    ) -> str:
+        """Reconcile one exact ambiguous operation without implicit resend."""
+
+        if not owner_authorized:
+            raise BecomeControlledIntakeError(
+                "become_pilot_owner_authorization_required"
+            )
+        action_map = {
+            "confirm_sent": "sent_confirmed",
+            "mark_failed": "failed_confirmed",
+            "authorize_retry": "retry_authorized",
+        }
+        audit_action = action_map.get(action)
+        if audit_action is None or len(evidence_digest) != 64:
+            raise BecomeControlledIntakeError(
+                "become_pilot_reconciliation_request_invalid"
+            )
+        operation_id = _uuid(delivery_id)
+        audit_digest = _sha256(
+            f"{operation_id}:{audit_action}:{evidence_digest}"
+        )
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT id::text, review_id::text, kind, attempt_no,
+                               version, transcript_digest,
+                               callback_ref::text, outcome
+                        FROM become_pilot_transcript_deliveries
+                        WHERE id = CAST(:id AS uuid)
+                        FOR UPDATE
+                        """
+                    ),
+                    {"id": operation_id},
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_delivery_missing"
+                )
+            existing = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT request_digest
+                        FROM become_pilot_delivery_reconciliations
+                        WHERE delivery_id = CAST(:id AS uuid)
+                          AND action = :action
+                        """
+                    ),
+                    {"id": operation_id, "action": audit_action},
+                )
+            ).mappings().one_or_none()
+            if existing is not None:
+                if existing["request_digest"] != audit_digest:
+                    raise BecomeControlledIntakeError(
+                        "become_pilot_reconciliation_mutated_replay"
+                    )
+                return "reconciliation_duplicate"
+
+            outcome = str(row["outcome"])
+            if action == "confirm_sent":
+                if (
+                    outcome not in {"reserved", "unknown"}
+                    or not external_message_id
+                ):
+                    raise BecomeControlledIntakeError(
+                        "become_pilot_reconciliation_state_invalid"
+                    )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_pilot_transcript_deliveries
+                        SET outcome = 'sent',
+                            telegram_message_id = :message_id,
+                            settled_at = COALESCE(settled_at, :now),
+                            updated_at = :now
+                        WHERE id = CAST(:id AS uuid)
+                        """
+                    ),
+                    {
+                        "id": operation_id,
+                        "message_id": external_message_id,
+                        "now": now,
+                    },
+                )
+                if row["kind"] == "presentation":
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE become_pilot_transcript_reviews
+                            SET state = 'presented', updated_at = :now
+                            WHERE id = CAST(:review_id AS uuid)
+                              AND latest_version = :version
+                              AND state = 'pending_display'
+                            """
+                        ),
+                        {
+                            "review_id": row["review_id"],
+                            "version": row["version"],
+                            "now": now,
+                        },
+                    )
+            elif action == "mark_failed":
+                if outcome not in {"reserved", "unknown"}:
+                    raise BecomeControlledIntakeError(
+                        "become_pilot_reconciliation_state_invalid"
+                    )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_pilot_transcript_deliveries
+                        SET outcome = 'failed',
+                            telegram_message_id = NULL,
+                            settled_at = COALESCE(settled_at, :now),
+                            updated_at = :now
+                        WHERE id = CAST(:id AS uuid)
+                        """
+                    ),
+                    {"id": operation_id, "now": now},
+                )
+            else:
+                if outcome != "failed" or int(row["attempt_no"]) != 1:
+                    raise BecomeControlledIntakeError(
+                        "become_pilot_retry_state_invalid"
+                    )
+                await _insert_delivery(
+                    session,
+                    review_id=str(row["review_id"]),
+                    kind=str(row["kind"]),
+                    version=int(row["version"]),
+                    transcript_digest=str(row["transcript_digest"]),
+                    callback_ref=str(row["callback_ref"]).replace("-", ""),
+                    now=now,
+                    attempt_no=2,
+                    retry_of_delivery_id=operation_id,
+                )
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO become_pilot_delivery_reconciliations (
+                        id, delivery_id, action, request_digest,
+                        evidence_digest, created_at
+                    ) VALUES (
+                        CAST(:id AS uuid), CAST(:delivery_id AS uuid),
+                        :action, :request_digest, :evidence_digest, :now
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "delivery_id": operation_id,
+                    "action": audit_action,
+                    "request_digest": audit_digest,
+                    "evidence_digest": evidence_digest,
+                    "now": now,
+                },
+            )
+            return audit_action
+
+    async def owner_redisplay(
+        self,
+        *,
+        review_id: str,
+        expected_version: int,
+        expected_digest: str,
+        now: datetime,
+    ) -> str:
+        """Schedule one idempotent re-display without a provider call."""
+
+        if expected_version < 1 or len(expected_digest) != 64:
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_binding_invalid"
+            )
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version,
+                               r.callback_ref::text,
+                               v.transcript_digest, v.transcript_body
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN become_pilot_transcript_versions AS v
+                          ON v.review_id = r.id
+                         AND v.version = r.latest_version
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        FOR UPDATE OF r, v
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+            if (
+                row is None
+                or row["state"] != "presented"
+                or int(row["latest_version"]) != expected_version
+                or row["transcript_digest"] != expected_digest
+                or not isinstance(row["transcript_body"], str)
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_pilot_operator_binding_invalid"
+                )
+            await _insert_delivery(
+                session,
+                review_id=_uuid(review_id),
+                kind="redisplay",
+                version=expected_version,
+                transcript_digest=expected_digest,
+                callback_ref=str(row["callback_ref"]).replace("-", ""),
+                now=now,
+            )
+            return "redisplay_scheduled"
+
+    async def owner_apply_correction(
+        self,
+        *,
+        review_id: str,
+        expected_version: int,
+        correction_text: str,
+        now: datetime,
+    ) -> str:
+        """Apply content privately only to the exact awaiting Pilot review."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version, r.subject_ref,
+                               d.provider_dialog_id
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+        if (
+            row is None
+            or row["state"] != "awaiting_correction"
+            or int(row["latest_version"]) != expected_version
+        ):
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_binding_invalid"
+            )
+        handled = await self.apply_correction(
+            subject_ref=str(row["subject_ref"]),
+            provider_dialog_id=str(row["provider_dialog_id"]),
+            correction_text=correction_text,
+            now=now,
+        )
+        if not handled:
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_correction_not_applied"
+            )
+        return "correction_applied"
+
+    async def owner_approve(
+        self,
+        *,
+        review_id: str,
+        expected_version: int,
+        expected_digest: str,
+        now: datetime,
+    ) -> str:
+        """Approve only an exact currently presented version and digest."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version, r.subject_ref,
+                               r.callback_ref::text,
+                               d.provider_dialog_id,
+                               v.transcript_digest
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        JOIN become_pilot_transcript_versions AS v
+                          ON v.review_id = r.id
+                         AND v.version = r.latest_version
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+        if (
+            row is None
+            or row["state"] not in {"presented", "approved"}
+            or int(row["latest_version"]) != expected_version
+            or row["transcript_digest"] != expected_digest
+        ):
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_binding_invalid"
+            )
+        disposition = await self.apply_callback(
+            action="c",
+            callback_ref=str(row["callback_ref"]).replace("-", ""),
+            subject_ref=str(row["subject_ref"]),
+            provider_dialog_id=str(row["provider_dialog_id"]),
+            now=now,
+        )
+        return disposition.value
+
+    async def owner_reset_ready(self, *, review_id: str) -> dict[str, object]:
+        """Prove the current Pilot can be reset only after settled approval."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version, r.approved_version,
+                               count(dl.id) FILTER (
+                                 WHERE dl.outcome != 'sent'
+                               ) AS unsettled_deliveries,
+                               count(dl.id) FILTER (
+                                 WHERE dl.kind = 'confirmation'
+                                   AND dl.outcome = 'sent'
+                               ) AS confirmation_deliveries
+                        FROM become_pilot_transcript_reviews AS r
+                        LEFT JOIN become_pilot_transcript_deliveries AS dl
+                          ON dl.review_id = r.id
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        GROUP BY r.id
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+        ready = bool(
+            row is not None
+            and row["state"] == "approved"
+            and row["approved_version"] == row["latest_version"]
+            and int(row["unsettled_deliveries"] or 0) == 0
+            and int(row["confirmation_deliveries"] or 0) == 1
+        )
+        return {
+            "reset_ready": ready,
+            "content_exposed": False,
+        }
+
+    async def owner_prepare_transcription_retry(self, *, now: datetime) -> str:
+        """Authorize one retry only after a known rejected provider outcome."""
+
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT a.id::text, a.reservation_key,
+                               a.reason_code, br.state AS budget_state
+                        FROM become_voice_transcription_attempts AS a
+                        JOIN billing_budget_reservations AS br
+                          ON br.workspace_id = a.workspace_id
+                         AND br.reservation_key = a.reservation_key
+                        WHERE a.grant_key =
+                          'become-pilot-slice1-transcription-v2'
+                          AND a.state = 'rejected'
+                        FOR UPDATE OF a
+                        """
+                    )
+                )
+            ).mappings().all()
+            if len(rows) != 1:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_retry_rejected_scope_invalid"
+                )
+            row = rows[0]
+            reservation_key = str(row["reservation_key"])
+            if (
+                row["budget_state"] != "released"
+                or not row["reason_code"]
+                or reservation_key.endswith(":retry1")
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_pilot_retry_not_safe"
+                )
+            retry_key = reservation_key[:121] + ":retry1"
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_voice_transcription_attempts
+                    SET state = 'reserving',
+                        reservation_key = :retry_key,
+                        provider_call_started_at = NULL,
+                        provider_operation_ref = NULL,
+                        reason_code = 'operator_retry_authorized',
+                        updated_at = :now
+                    WHERE id = CAST(:attempt_id AS uuid)
+                      AND state = 'rejected'
+                    """
+                ),
+                {
+                    "attempt_id": row["id"],
+                    "retry_key": retry_key,
+                    "now": now,
+                },
+            )
+            return "retry_authorized"
+
+    async def tombstone_receipt(
+        self,
+        *,
+        receipt_id: str,
+        now: datetime,
+    ) -> None:
+        async with self._sessions.begin() as session:
+            receipt = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT payload, update_id
+                        FROM telegram_receipts
+                        WHERE id = CAST(:receipt_id AS uuid)
+                          AND bot_key = 'telegram_become_group'
+                        FOR UPDATE
+                        """
+                    ),
+                    {"receipt_id": receipt_id},
+                )
+            ).mappings().one_or_none()
+            if receipt is None:
+                return
+            payload = receipt["payload"]
+            if (
+                isinstance(payload, dict)
+                and payload.get("schema")
+                == TELEGRAM_CONTENT_TOMBSTONE_SCHEMA
+            ):
+                return
+            digest = canonical_telegram_payload_digest(payload)
+            await session.execute(
+                text(
+                    """
+                    UPDATE telegram_receipts
+                    SET payload = CAST(:tombstone AS jsonb),
+                        updated_at = :now
+                    WHERE id = CAST(:receipt_id AS uuid)
+                      AND bot_key = 'telegram_become_group'
+                    """
+                ),
+                {
+                    "receipt_id": receipt_id,
+                    "tombstone": json.dumps(
+                        {
+                            "schema": TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+                            "canonicalization_version": (
+                                TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION
+                            ),
+                            "canonical_payload_digest": digest,
+                            "update_id": receipt["update_id"],
+                            "content_purged": True,
+                        }
+                    ),
+                    "now": now,
+                },
+            )
+
+    async def purge_expired(self, *, now: datetime) -> dict[str, int]:
+        async with self._sessions.begin() as session:
+            staged = await session.execute(
+                text(
+                    """
+                    UPDATE become_voice_transcription_attempts
+                    SET staged_transcript = NULL,
+                        state = 'reconciliation_required',
+                        reason_code =
+                          'become_transcription_staged_plaintext_expired',
+                        updated_at = :now
+                    WHERE state = 'succeeded_unsettled'
+                      AND staged_transcript IS NOT NULL
+                      AND staged_transcript_expires_at <= :now
+                    """
+                ),
+                {"now": now},
+            )
+            versions = await session.execute(
+                text(
+                    """
+                    UPDATE become_pilot_transcript_versions
+                    SET transcript_body = NULL, purged_at = :now
+                    WHERE transcript_body IS NOT NULL
+                      AND expires_at <= :now
+                    """
+                ),
+                {"now": now},
+            )
+            receipt_rows = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT tr.id, tr.update_id, tr.payload
+                        FROM telegram_receipts AS tr
+                        WHERE tr.bot_key = 'telegram_become_group'
+                          AND tr.payload ->> 'schema' IS DISTINCT FROM :schema
+                          AND (
+                            tr.processed_at IS NOT NULL
+                            OR tr.received_at <= :raw_cutoff
+                          )
+                        FOR UPDATE
+                        """
+                    ),
+                    {
+                        "schema": TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+                        "raw_cutoff": now - timedelta(days=7),
+                    },
+                )
+            ).mappings().all()
+            for receipt in receipt_rows:
+                digest = canonical_telegram_payload_digest(receipt["payload"])
+                tombstone = json.dumps(
+                    {
+                        "schema": TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+                        "canonicalization_version": (
+                            TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION
+                        ),
+                        "canonical_payload_digest": digest,
+                        "update_id": receipt["update_id"],
+                        "content_purged": True,
+                    }
+                )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE telegram_receipts
+                        SET payload = CAST(:tombstone AS jsonb),
+                            updated_at = :now
+                        WHERE id = CAST(:receipt_id AS uuid)
+                        """
+                    ),
+                    {
+                        "receipt_id": receipt["id"],
+                        "tombstone": tombstone,
+                        "now": now,
+                    },
+                )
+            return {
+                "staged_transcripts_purged": int(
+                    getattr(staged, "rowcount", 0) or 0
+                ),
+                "transcript_versions_purged": int(
+                    getattr(versions, "rowcount", 0) or 0
+                ),
+                "telegram_payloads_tombstoned": int(len(receipt_rows)),
+            }
+
+    async def status(self, *, now: datetime) -> dict[str, int]:
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                          count(*) FILTER (
+                            WHERE r.state = 'pending_display'
+                          ) AS pending_display,
+                          count(*) FILTER (
+                            WHERE r.state = 'presented'
+                          ) AS presented,
+                          count(*) FILTER (
+                            WHERE r.state = 'awaiting_correction'
+                          ) AS awaiting_correction,
+                          count(*) FILTER (
+                            WHERE r.state = 'approved'
+                          ) AS approved,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'pending'
+                          ) AS delivery_pending,
+                          (
+                            SELECT COALESCE(EXTRACT(EPOCH FROM (
+                              :now - min(created_at)
+                            ))::bigint, 0)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'pending'
+                          ) AS delivery_pending_oldest_seconds,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'reserved'
+                          ) AS delivery_reserved,
+                          (
+                            SELECT COALESCE(EXTRACT(EPOCH FROM (
+                              :now - min(created_at)
+                            ))::bigint, 0)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'reserved'
+                          ) AS delivery_reserved_oldest_seconds,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'unknown'
+                          ) AS delivery_unknown,
+                          (
+                            SELECT COALESCE(EXTRACT(EPOCH FROM (
+                              :now - min(created_at)
+                            ))::bigint, 0)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'unknown'
+                          ) AS delivery_unknown_oldest_seconds,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'failed'
+                          ) AS delivery_failed,
+                          (
+                            SELECT COALESCE(EXTRACT(EPOCH FROM (
+                              :now - min(created_at)
+                            ))::bigint, 0)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'failed'
+                          ) AS delivery_failed_oldest_seconds,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome = 'sent'
+                          ) AS delivery_delivered,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome IN ('reserved', 'unknown', 'failed')
+                          ) AS delivery_owner_reconciliation_required,
+                          (
+                            SELECT count(*)
+                            FROM become_voice_transcription_attempts
+                            WHERE state = 'reconciliation_required'
+                          ) AS staged_transcript_reconciliation_required
+                        FROM become_pilot_transcript_reviews AS r
+                        """
+                    ),
+                    {"now": now},
+                )
+            ).mappings().one()
+            return {key: int(value or 0) for key, value in row.items()}
+
+
+    async def rollback_preflight(self) -> dict[str, int | bool]:
+        """Prove application rollback can stop without consuming v2 work."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                          count(*) FILTER (
+                            WHERE grant_key =
+                              'become-pilot-slice1-transcription-v2'
+                              AND state IN (
+                                'reserving', 'reserved', 'calling',
+                                'succeeded_unsettled'
+                              )
+                          ) AS nonterminal_v2_provider_attempts,
+                          count(*) FILTER (
+                            WHERE grant_key =
+                              'become-pilot-slice1-transcription-v2'
+                              AND staged_transcript IS NOT NULL
+                          ) AS staged_plaintext,
+                          (
+                            SELECT count(*)
+                            FROM become_pilot_transcript_deliveries
+                            WHERE outcome IN (
+                              'pending', 'reserved', 'unknown'
+                            )
+                          ) AS unresolved_deliveries
+                        FROM become_voice_transcription_attempts
+                        """
+                    )
+                )
+            ).mappings().one()
+            counts = {key: int(value or 0) for key, value in row.items()}
+            return {
+                **counts,
+                "rollback_ready": all(value == 0 for value in counts.values()),
+                "content_exposed": False,
+            }
+
+
+async def stage_provider_transcript(
+    session: AsyncSession,
+    *,
+    attempt_id: str,
+    workspace_id: str,
+    correlation_id: str,
+    media_intake_id: str,
+    transcript_body: str,
+    transcript_digest: str,
+    provider_succeeded_at: datetime,
+    now: datetime,
+) -> bool:
+    """Stage provider output as version 1 without creating human approval."""
+
+    binding = (
+        await session.execute(
+            text(
+                """
+                SELECT mi.subject_ref, ai.dialog_id::text,
+                       d.provider_dialog_id
+                FROM become_media_intakes AS mi
+                JOIN agent_installations AS ai
+                  ON ai.id = mi.installation_id
+                 AND ai.workspace_id = mi.workspace_id
+                JOIN dialogs AS d
+                  ON d.id = ai.dialog_id
+                 AND d.workspace_id = mi.workspace_id
+                WHERE mi.id = CAST(:media_intake_id AS uuid)
+                  AND mi.workspace_id = CAST(:workspace_id AS uuid)
+                """
+            ),
+            {
+                "media_intake_id": media_intake_id,
+                "workspace_id": workspace_id,
+            },
+        )
+    ).mappings().one_or_none()
+    if binding is None:
+        raise BecomeControlledIntakeError(
+            "become_pilot_transcript_binding_missing"
+        )
+    existing = (
+        await session.execute(
+            text(
+                """
+                SELECT id::text
+                FROM become_pilot_transcript_reviews
+                WHERE attempt_id = CAST(:attempt_id AS uuid)
+                """
+            ),
+            {"attempt_id": attempt_id},
+        )
+    ).mappings().one_or_none()
+    if existing is not None:
+        return True
+    review_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+    callback_ref = uuid.uuid4().hex
+    expires_at = provider_succeeded_at + _TRANSCRIPT_RETENTION
+    await session.execute(
+        text(
+            """
+            INSERT INTO become_pilot_transcript_reviews (
+                id, workspace_id, correlation_id, media_intake_id,
+                attempt_id, dialog_id, subject_ref, state,
+                latest_version, callback_ref, created_at, updated_at
+            ) VALUES (
+                CAST(:id AS uuid), CAST(:workspace_id AS uuid),
+                CAST(:correlation_id AS uuid),
+                CAST(:media_intake_id AS uuid),
+                CAST(:attempt_id AS uuid), CAST(:dialog_id AS uuid),
+                :subject_ref, 'pending_display', 1,
+                CAST(:callback_ref AS uuid), :now, :now
+            )
+            """
+        ),
+        {
+            "id": review_id,
+            "workspace_id": workspace_id,
+            "correlation_id": correlation_id,
+            "media_intake_id": media_intake_id,
+            "attempt_id": attempt_id,
+            "dialog_id": binding["dialog_id"],
+            "subject_ref": binding["subject_ref"],
+            "callback_ref": _uuid(callback_ref),
+            "now": now,
+        },
+    )
+    await session.execute(
+        text(
+            """
+            INSERT INTO become_pilot_transcript_versions (
+                id, review_id, version, source, transcript_body,
+                transcript_digest, expires_at, created_at
+            ) VALUES (
+                CAST(:id AS uuid), CAST(:review_id AS uuid), 1,
+                'provider', :body, :digest, :expires_at, :now
+            )
+            """
+        ),
+        {
+            "id": version_id,
+            "review_id": review_id,
+            "body": transcript_body,
+            "digest": transcript_digest,
+            "expires_at": expires_at,
+            "now": now,
+        },
+    )
+    await _insert_delivery(
+        session,
+        review_id=review_id,
+        kind="presentation",
+        version=1,
+        transcript_digest=transcript_digest,
+        callback_ref=callback_ref,
+        now=now,
+    )
+    return False
+
+
+async def _insert_delivery(
+    session: AsyncSession,
+    *,
+    review_id: str,
+    kind: str,
+    version: int,
+    transcript_digest: str,
+    callback_ref: str,
+    now: datetime,
+    attempt_no: int = 1,
+    retry_of_delivery_id: str | None = None,
+) -> None:
+    digest = request_digest(
+        kind=kind,
+        version=version,
+        transcript_digest=transcript_digest,
+        callback_ref=callback_ref,
+        attempt_no=attempt_no,
+    )
+    await session.execute(
+        text(
+            """
+            INSERT INTO become_pilot_transcript_deliveries (
+                id, review_id, retry_of_delivery_id, kind, attempt_no,
+                version, transcript_digest, callback_ref, request_digest,
+                outcome, created_at, updated_at
+            ) VALUES (
+                CAST(:id AS uuid), CAST(:review_id AS uuid),
+                CAST(:retry_of_delivery_id AS uuid), :kind, :attempt_no,
+                :version, :transcript_digest, CAST(:callback_ref AS uuid),
+                :request_digest, 'pending', :now, :now
+            )
+            ON CONFLICT (
+                review_id, kind, version, transcript_digest, attempt_no
+            )
+            DO NOTHING
+            """
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "review_id": review_id,
+            "retry_of_delivery_id": (
+                _uuid(retry_of_delivery_id)
+                if retry_of_delivery_id is not None
+                else None
+            ),
+            "kind": kind,
+            "attempt_no": attempt_no,
+            "version": version,
+            "transcript_digest": transcript_digest,
+            "callback_ref": _uuid(callback_ref),
+            "request_digest": digest,
+            "now": now,
+        },
+    )
+
+
+def _uuid(value: str) -> str:
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        try:
+            return str(uuid.UUID(hex=value))
+        except ValueError:
+            raise BecomeControlledIntakeError(
+                "become_pilot_uuid_invalid"
+            ) from None
+
+
+def _sha256(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()

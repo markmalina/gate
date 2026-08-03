@@ -9,13 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODES,
+    TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
+    TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION,
     AcceptTelegramReceiptCommand,
     TelegramProcessingDisposition,
     TelegramProcessingPlan,
     TelegramProcessingQueue,
     TelegramProcessingWorkItem,
     TelegramReceiptAcceptance,
+    TelegramReceiptError,
     TelegramReceiptStore,
+    canonical_telegram_payload_digest,
     is_alpha_membership_update,
 )
 from app.models.domain import (
@@ -30,6 +34,24 @@ class TelegramQueueStateError(RuntimeError):
     """Reject a stale or inconsistent durable queue transition."""
 
 
+def _durable_payload_digest(payload: object) -> str:
+    if not isinstance(payload, dict):
+        raise TelegramReceiptError("telegram_receipt_original_digest_missing")
+    if payload.get("schema") != TELEGRAM_CONTENT_TOMBSTONE_SCHEMA:
+        return canonical_telegram_payload_digest(payload)
+    digest = payload.get("canonical_payload_digest")
+    version = payload.get("canonicalization_version")
+    if (
+        version != TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION
+        or not isinstance(digest, str)
+        or len(digest) != 64
+        or digest != digest.lower()
+        or any(character not in "0123456789abcdef" for character in digest)
+    ):
+        raise TelegramReceiptError("telegram_receipt_original_digest_missing")
+    return digest
+
+
 class SqlTelegramReceiptStore(TelegramReceiptStore):
     """Create one receipt and one outbox event in the same transaction."""
 
@@ -40,6 +62,7 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
         self,
         command: AcceptTelegramReceiptCommand,
     ) -> TelegramReceiptAcceptance:
+        incoming_digest = canonical_telegram_payload_digest(command.payload)
         receipt_id = uuid4()
         outbox_event_id = uuid4()
         try:
@@ -59,7 +82,11 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
             )
             if inserted_receipt_id is None:
                 existing_result = await self._session.execute(
-                    select(TelegramReceipt.id, TelegramOutboxEvent.id)
+                    select(
+                        TelegramReceipt.id,
+                        TelegramOutboxEvent.id,
+                        TelegramReceipt.payload,
+                    )
                     .join(
                         TelegramOutboxEvent,
                         TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
@@ -70,6 +97,10 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                     )
                 )
                 existing = existing_result.one()
+                if _durable_payload_digest(existing[2]) != incoming_digest:
+                    raise TelegramReceiptError(
+                        "telegram_receipt_mutated_replay"
+                    )
                 await self._session.commit()
                 return TelegramReceiptAcceptance(
                     receipt_id=str(existing[0]),

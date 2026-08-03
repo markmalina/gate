@@ -14,7 +14,6 @@ from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
 )
 from app.application.become_media_intake import CONFIRMED_TRANSCRIPT_RETENTION
-from app.application.become_voice_chain import BecomeChainSlotState
 from app.application.become_voice_transcription import (
     BECOME_TRANSCRIPTION_GRANT_KEY,
     BECOME_TRANSCRIPTION_SCHEMA,
@@ -25,13 +24,13 @@ from app.application.become_voice_transcription import (
 )
 from app.application.billing import BillingProduct, BudgetReservationState
 from app.application.telegram_voice_transcription import ProviderTranscript
+from app.infrastructure.become_transcript_review import stage_provider_transcript
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
     BecomeControlledIntakeReceiptModel,
     BecomeMediaIntakeModel,
     BecomeRelationsConsentHandoffModel,
-    BecomeVoiceChainSlotModel,
     BecomeVoiceCorrelationModel,
     BecomeVoiceTranscriptionAttemptModel,
 )
@@ -77,7 +76,9 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 select(BecomeVoiceTranscriptionAttemptModel)
                 .where(
                     BecomeVoiceTranscriptionAttemptModel.workspace_id
-                    == workspace.id
+                    == workspace.id,
+                    BecomeVoiceTranscriptionAttemptModel.grant_key
+                    == BECOME_TRANSCRIPTION_GRANT_KEY,
                 )
                 .with_for_update()
             )
@@ -244,6 +245,7 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 provider_call_started_at=None,
                 provider_operation_ref=None,
                 staged_transcript=None,
+                staged_transcript_expires_at=None,
                 transcript_digest=None,
                 provider_succeeded_at=None,
                 billed_quantity=None,
@@ -403,6 +405,7 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 transcript.provider_operation_ref
             )
             attempt.staged_transcript = normalized
+            attempt.staged_transcript_expires_at = expires_at
             attempt.transcript_digest = digest
             attempt.provider_succeeded_at = confirmed_at
             attempt.billed_quantity = transcript.billed_quantity
@@ -434,21 +437,40 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
         *,
         attempt_id: str,
         now: datetime,
-    ) -> None:
+    ) -> bool:
+        """Settle provider output into pending human review, never approval."""
+
         async with self._sessions.begin() as session:
             attempt = await _attempt(session, attempt_id)
             if attempt.state == BecomeVoiceTranscriptionState.CONFIRMED.value:
-                return
+                return True
+            if (
+                attempt.state
+                == BecomeVoiceTranscriptionState.RECONCILIATION_REQUIRED.value
+            ):
+                return False
             if (
                 attempt.state
                 != BecomeVoiceTranscriptionState.SUCCEEDED_UNSETTLED.value
                 or attempt.staged_transcript is None
+                or attempt.staged_transcript_expires_at is None
                 or attempt.transcript_digest is None
                 or attempt.provider_succeeded_at is None
             ):
                 raise BecomeControlledIntakeError(
                     "become_transcription_confirmation_not_ready"
                 )
+            if attempt.staged_transcript_expires_at <= now:
+                attempt.state = (
+                    BecomeVoiceTranscriptionState
+                    .RECONCILIATION_REQUIRED.value
+                )
+                attempt.staged_transcript = None
+                attempt.reason_code = (
+                    "become_transcription_staged_plaintext_expired"
+                )
+                attempt.updated_at = now
+                return False
             intake = await session.scalar(
                 select(BecomeMediaIntakeModel)
                 .where(
@@ -474,43 +496,24 @@ class SessionFactoryBecomeVoiceTranscriptionStore:
                 or intake.transcript_state != "none"
             ):
                 raise BecomeControlledIntakeError(
-                    "become_transcription_confirmation_binding_invalid"
+                    "become_transcription_review_binding_invalid"
                 )
-            confirmed_at = attempt.provider_succeeded_at
-            expires_at = confirmed_at + CONFIRMED_TRANSCRIPT_RETENTION
-            intake.transcript_state = "confirmed"
-            intake.confirmed_transcript = attempt.staged_transcript
-            intake.transcript_digest = attempt.transcript_digest
-            intake.transcript_confirmed_at = confirmed_at
-            intake.transcript_expires_at = expires_at
-            intake.updated_at = now
-            relations = await session.scalar(
-                select(BecomeVoiceChainSlotModel)
-                .where(
-                    BecomeVoiceChainSlotModel.correlation_id
-                    == correlation.id,
-                    BecomeVoiceChainSlotModel.stage == "relations",
-                    BecomeVoiceChainSlotModel.position == 1,
-                )
-                .with_for_update()
+            await stage_provider_transcript(
+                session,
+                attempt_id=str(attempt.id),
+                workspace_id=str(attempt.workspace_id),
+                correlation_id=str(correlation.id),
+                media_intake_id=str(intake.id),
+                transcript_body=attempt.staged_transcript,
+                transcript_digest=attempt.transcript_digest,
+                provider_succeeded_at=attempt.provider_succeeded_at,
+                now=now,
             )
-            if (
-                relations is None
-                or relations.state
-                not in {
-                    BecomeChainSlotState.BLOCKED.value,
-                    BecomeChainSlotState.READY.value,
-                }
-            ):
-                raise BecomeControlledIntakeError(
-                    "become_transcription_relations_slot_invalid"
-                )
-            relations.state = BecomeChainSlotState.READY.value
-            relations.updated_at = now
             attempt.state = BecomeVoiceTranscriptionState.CONFIRMED.value
             attempt.staged_transcript = None
             attempt.reason_code = None
             attempt.updated_at = now
+            return True
 
     async def mark_terminal(
         self,
@@ -605,6 +608,11 @@ async def become_voice_transcription_status(
                     BecomeVoiceTranscriptionAttemptModel.state
                     == BecomeVoiceTranscriptionState.BLOCKED.value
                 ),
+                func.count(BecomeVoiceTranscriptionAttemptModel.id).filter(
+                    BecomeVoiceTranscriptionAttemptModel.state
+                    == BecomeVoiceTranscriptionState
+                    .RECONCILIATION_REQUIRED.value
+                ),
             ).where(
                 BecomeVoiceTranscriptionAttemptModel.workspace_id
                 == workspace.id
@@ -663,6 +671,7 @@ async def become_voice_transcription_status(
     rejected = int(attempts[4] or 0)
     unknown = int(attempts[5] or 0)
     blocked = int(attempts[6] or 0)
+    staged_reconciliation = int(attempts[7] or 0)
     open_budget = int(billing[0] or 0)
     unknown_budget = int(billing[1] or 0)
     call_boundary = calling + unsettled + confirmed + rejected + unknown
@@ -671,6 +680,7 @@ async def become_voice_transcription_status(
         or unsettled > 0
         or unknown > 0
         or unknown_budget > 0
+        or staged_reconciliation > 0
         or (open_budget > 0 and unsettled == 0)
     )
     prerequisites = entitlement_count == 1 and api_key_configured
@@ -697,6 +707,9 @@ async def become_voice_transcription_status(
         "voice_transcription_unknown_count": unknown,
         "voice_transcription_blocked_count": blocked,
         "voice_transcription_settlement_pending_count": unsettled,
+        "voice_transcription_staged_reconciliation_count": (
+            staged_reconciliation
+        ),
         "voice_transcription_ready": confirmed == 1,
         "voice_transcription_reconciliation_required": reconciliation,
     }

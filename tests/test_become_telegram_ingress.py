@@ -48,6 +48,21 @@ def _update(chat_type: str = "supergroup") -> dict[str, object]:
     }
 
 
+def _callback_update(chat_type: str = "supergroup") -> dict[str, object]:
+    return {
+        "update_id": 82,
+        "callback_query": {
+            "id": "callback-82",
+            "from": {"id": 740000001, "is_bot": False},
+            "data": "b1:c:0123456789abcdef0123456789abcdef",
+            "message": {
+                "message_id": 92,
+                "chat": {"id": -100730000001, "type": chat_type},
+            },
+        },
+    }
+
+
 def _accept(settings: Settings, store: CapturingStore, update: dict[str, object]) -> object:
     return asyncio.run(
         become_ingress.accept_become_telegram_receipt(
@@ -98,6 +113,21 @@ def test_private_chat_and_wrong_secret_fail_before_storage() -> None:
         )
     assert secret_error.value.status_code == 403
     assert store.commands == []
+
+
+def test_group_callback_is_durable_and_private_callback_is_rejected() -> None:
+    store = CapturingStore()
+
+    acceptance = _accept(_settings(), store, _callback_update())
+
+    assert acceptance.duplicate is False
+    assert store.commands[0].payload == _callback_update()
+
+    private_store = CapturingStore()
+    with pytest.raises(become_ingress.HTTPException) as captured:
+        _accept(_settings(), private_store, _callback_update("private"))
+    assert captured.value.status_code == 400
+    assert private_store.commands == []
 
 
 def test_enabled_registry_still_has_no_send_authorization() -> None:

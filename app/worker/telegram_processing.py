@@ -39,6 +39,10 @@ from app.application.become_media_intake import (
 from app.application.become_media_prompt import (
     DeliverBecomeMediaPromptService,
 )
+from app.application.become_transcript_review import (
+    DeliverPilotTranscriptReview,
+    ProcessPilotTranscriptReviewUpdate,
+)
 from app.application.become_voice_transcription import (
     ProcessBecomeVoiceTranscriptionService,
 )
@@ -158,6 +162,9 @@ from app.infrastructure.become_media_prompt import (
     SessionFactoryBecomeMediaPromptStore,
     TelegramClientBecomeMediaPromptAdapter,
 )
+from app.infrastructure.become_transcript_review import (
+    SessionFactoryPilotTranscriptReviewStore,
+)
 from app.infrastructure.become_voice_chain import (
     SessionFactoryBecomeVoiceChainStore,
 )
@@ -247,6 +254,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         become_intake: ProcessBecomeRegistrationService | None = None,
         become_consent: ProcessBecomeConsentService | None = None,
         become_media: ProcessBecomeMediaService | None = None,
+        become_review: ProcessPilotTranscriptReviewUpdate | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         voice_archive: TelegramVoiceArchiver | None = None,
         business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -263,6 +271,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._become_intake = become_intake
         self._become_consent = become_consent
         self._become_media = become_media
+        self._become_review = become_review
         self._voice_updates = voice_updates
         self._voice_archive = voice_archive
         self._business_text_parity = business_text_parity
@@ -278,6 +287,33 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         except TelegramConnectorResolutionError as exc:
             raise TelegramUpdateProcessingError(exc.code) from None
         payload = item.payload
+        if (
+            connector.key is TelegramConnectorKey.BECOME_GROUP
+            and self._become_review is not None
+        ):
+            review_candidate = _is_become_pilot_review_payload(payload)
+            try:
+                review_result = await self._become_review.execute(
+                    update=payload,
+                    now=item.received_at,
+                )
+            except BecomeControlledIntakeError as exc:
+                if review_candidate:
+                    await self._become_review.tombstone_receipt(
+                        receipt_id=item.receipt_id,
+                        now=item.received_at,
+                    )
+                raise TelegramUpdateProcessingError(exc.code) from None
+            if review_candidate:
+                await self._become_review.tombstone_receipt(
+                    receipt_id=item.receipt_id,
+                    now=item.received_at,
+                )
+                self._logger.info(
+                    "BECOME Pilot review update persisted: disposition=%s",
+                    review_result.disposition.value,
+                )
+                return
         if (
             connector.key is TelegramConnectorKey.BECOME_GROUP
             and is_consent_command(
@@ -341,6 +377,11 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 media_result.kind.value,
                 media_result.duplicate,
             )
+            if self._become_review is not None:
+                await self._become_review.tombstone_receipt(
+                    receipt_id=item.receipt_id,
+                    now=item.received_at,
+                )
             return
         voice_disposition = "not_applicable"
         if connector.role is TelegramConnectorRole.BUSINESS:
@@ -892,6 +933,7 @@ async def run_telegram_worker_once(
     become_intake: ProcessBecomeRegistrationService | None = None,
     become_consent: ProcessBecomeConsentService | None = None,
     become_media: ProcessBecomeMediaService | None = None,
+    become_review: ProcessPilotTranscriptReviewUpdate | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     voice_archive: TelegramVoiceArchiver | None = None,
     business_text_parity: TelegramBusinessTextParityObserver | None = None,
@@ -967,6 +1009,7 @@ async def run_telegram_worker_once(
             become_intake=become_intake,
             become_consent=become_consent,
             become_media=become_media,
+            become_review=become_review,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
             business_text_parity=business_text_parity,
@@ -1175,6 +1218,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         disclosure_prefix=BETA_DISCLOSURE_PREFIX,
                     )
                 become_canary = None
+                become_review = None
                 if settings.gate_become_canary_enabled:
                     become_telegram = TelegramClient(
                         credential=settings.telegram_become_bot_token.get_secret_value(),
@@ -1230,6 +1274,15 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         store=SessionFactoryBecomeControlledConsentStore(sessions),
                         presence=become_presence,
                         subject_pepper=subject_pepper,
+                    )
+                    review_store = SessionFactoryPilotTranscriptReviewStore(
+                        sessions
+                    )
+                    become_review = ProcessPilotTranscriptReviewUpdate(
+                        store=review_store,
+                        telegram=become_telegram,
+                        identity_pepper=subject_pepper,
+                        enabled=settings.gate_become_pilot_slice1_enabled,
                     )
                     become_media = ProcessBecomeMediaService(
                         store=SessionFactoryBecomeMediaStore(sessions),
@@ -1295,6 +1348,11 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                         api_key=api_key,
                                         enabled=(
                                             settings
+                                            .gate_become_pilot_slice1_enabled
+                                            and settings
+                                            .gate_become_pilot_slice1_provider_max_calls
+                                            == 1
+                                            and settings
                                             .gate_become_voice_transcription_enabled
                                             and settings
                                             .gate_become_voice_transcription_data_gate_approved
@@ -1339,6 +1397,13 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 max_calls=(
                                     settings
                                     .gate_become_voice_transcription_max_calls
+                                ),
+                                slice1_enabled=(
+                                    settings.gate_become_pilot_slice1_enabled
+                                ),
+                                slice1_provider_max_calls=(
+                                    settings
+                                    .gate_become_pilot_slice1_provider_max_calls
                                 ),
                             ).run_once(now=datetime.now(UTC))
                         )
@@ -1440,6 +1505,31 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 ),
                                 recovery_result.attempted,
                                 recovery_result.reconciliation_required,
+                            )
+                    try:
+                        review_delivery = await DeliverPilotTranscriptReview(
+                            store=review_store,
+                            telegram=become_telegram,
+                            enabled=settings.gate_become_pilot_slice1_enabled,
+                            max_operations=(
+                                settings.gate_become_pilot_slice1_max_operations
+                            ),
+                        ).run_once(now=datetime.now(UTC))
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME Pilot delivery blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "BECOME Pilot delivery deferred: error_type=%s",
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if review_delivery != "disabled":
+                            logger.info(
+                                "BECOME Pilot delivery state: disposition=%s",
+                                review_delivery,
                             )
                     try:
                         prompt_result = await (
@@ -1596,6 +1686,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         become_intake=become_intake,
                         become_consent=become_consent,
                         become_media=become_media,
+                        become_review=become_review,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
                         universal_mayak=universal_mayak,
@@ -1742,3 +1833,18 @@ def _connector_kind(role: TelegramConnectorRole) -> ConnectorKind:
     if role is TelegramConnectorRole.ALPHA_GROUP:
         return ConnectorKind.TELEGRAM_BOT
     raise TelegramCanonicalProjectionError("canonical_connector_role_invalid")
+
+
+def _is_become_pilot_review_payload(payload: dict[str, object]) -> bool:
+    if isinstance(payload.get("callback_query"), dict):
+        return True
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return False
+    value = message.get("text")
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not value.strip().startswith("/")
+    )
+

@@ -862,11 +862,12 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
         CheckConstraint(
             "state IN ('reserving', 'reserved', 'calling', "
             "'succeeded_unsettled', 'confirmed', 'rejected', "
-            "'unknown', 'blocked')",
+            "'unknown', 'blocked', 'reconciliation_required')",
             name="ck_become_voice_transcription_state",
         ),
         CheckConstraint(
-            "grant_key = 'become-investor-demo-transcription-v1'",
+            "grant_key IN ('become-investor-demo-transcription-v1', "
+            "'become-pilot-slice1-transcription-v2')",
             name="ck_become_voice_transcription_grant",
         ),
         CheckConstraint(
@@ -884,29 +885,43 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
             "(state IN ('reserving', 'reserved', 'blocked') "
             "AND provider_call_started_at IS NULL) OR "
             "(state IN ('calling', 'succeeded_unsettled', 'confirmed', "
-            "'rejected', 'unknown') "
+            "'rejected', 'unknown', 'reconciliation_required') "
             "AND provider_call_started_at IS NOT NULL)",
             name="ck_become_voice_transcription_call_boundary",
         ),
         CheckConstraint(
             "(state = 'succeeded_unsettled' "
             "AND staged_transcript IS NOT NULL "
+            "AND staged_transcript_expires_at IS NOT NULL "
             "AND char_length(transcript_digest) = 64 "
             "AND provider_succeeded_at IS NOT NULL "
+            "AND staged_transcript_expires_at > provider_succeeded_at "
             "AND billed_quantity IS NOT NULL "
             "AND actual_microusd IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
             "AND reason_code IS NULL) OR "
             "(state = 'confirmed' "
             "AND staged_transcript IS NULL "
+            "AND staged_transcript_expires_at IS NOT NULL "
             "AND char_length(transcript_digest) = 64 "
             "AND provider_succeeded_at IS NOT NULL "
             "AND billed_quantity IS NOT NULL "
             "AND actual_microusd IS NOT NULL "
             "AND char_length(receipt_digest) = 64 "
             "AND reason_code IS NULL) OR "
-            "(state NOT IN ('succeeded_unsettled', 'confirmed') "
+            "(state = 'reconciliation_required' "
             "AND staged_transcript IS NULL "
+            "AND staged_transcript_expires_at IS NOT NULL "
+            "AND char_length(transcript_digest) = 64 "
+            "AND provider_succeeded_at IS NOT NULL "
+            "AND billed_quantity IS NOT NULL "
+            "AND actual_microusd IS NOT NULL "
+            "AND char_length(receipt_digest) = 64 "
+            "AND reason_code IS NOT NULL) OR "
+            "(state NOT IN ('succeeded_unsettled', 'confirmed', "
+            "'reconciliation_required') "
+            "AND staged_transcript IS NULL "
+            "AND staged_transcript_expires_at IS NULL "
             "AND transcript_digest IS NULL "
             "AND provider_succeeded_at IS NULL "
             "AND billed_quantity IS NULL "
@@ -961,6 +976,10 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
         Text,
         nullable=True,
     )
+    staged_transcript_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     transcript_digest: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
@@ -995,3 +1014,353 @@ class BecomeVoiceTranscriptionAttemptModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+class BecomePilotTranscriptReviewModel(Base):
+    """Exact actor/chat binding and latest-version approval for one Pilot transcript."""
+
+    __tablename__ = "become_pilot_transcript_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('pending_display', 'presented', "
+            "'awaiting_correction', 'approved')",
+            name="ck_become_pilot_review_state",
+        ),
+        CheckConstraint(
+            "latest_version > 0",
+            name="ck_become_pilot_review_latest_version",
+        ),
+        CheckConstraint(
+            "(state = 'approved' "
+            "AND approved_version = latest_version "
+            "AND char_length(approved_digest) = 64 "
+            "AND approved_at IS NOT NULL) OR "
+            "(state != 'approved' "
+            "AND approved_version IS NULL "
+            "AND approved_digest IS NULL "
+            "AND approved_at IS NULL)",
+            name="ck_become_pilot_review_approval",
+        ),
+        UniqueConstraint(
+            "attempt_id",
+            name="uq_become_pilot_review_attempt",
+        ),
+        UniqueConstraint(
+            "correlation_id",
+            name="uq_become_pilot_review_correlation",
+        ),
+        UniqueConstraint(
+            "media_intake_id",
+            name="uq_become_pilot_review_media",
+        ),
+        UniqueConstraint(
+            "callback_ref",
+            name="uq_become_pilot_review_callback",
+        ),
+        Index(
+            "ix_become_pilot_review_workspace_state",
+            "workspace_id",
+            "state",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "workspaces.id",
+            name="fk_become_pilot_review_workspace",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    correlation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_voice_correlations.id",
+            name="fk_become_pilot_review_correlation",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    media_intake_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_media_intakes.id",
+            name="fk_become_pilot_review_media",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    attempt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_voice_transcription_attempts.id",
+            name="fk_become_pilot_review_attempt",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    dialog_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "dialogs.id",
+            name="fk_become_pilot_review_dialog",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    subject_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    latest_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    callback_ref: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    approved_version: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    approved_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class BecomePilotTranscriptVersionModel(Base):
+    """Append-only plaintext version with an independently purgeable body."""
+
+    __tablename__ = "become_pilot_transcript_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "version > 0",
+            name="ck_become_pilot_version_positive",
+        ),
+        CheckConstraint(
+            "source IN ('provider', 'human_correction')",
+            name="ck_become_pilot_version_source",
+        ),
+        CheckConstraint(
+            "char_length(transcript_digest) = 64",
+            name="ck_become_pilot_version_digest",
+        ),
+        CheckConstraint(
+            "(transcript_body IS NOT NULL AND purged_at IS NULL) "
+            "OR (transcript_body IS NULL AND purged_at IS NOT NULL)",
+            name="ck_become_pilot_version_retention",
+        ),
+        UniqueConstraint(
+            "review_id",
+            "version",
+            name="uq_become_pilot_version",
+        ),
+        Index(
+            "ix_become_pilot_version_expiry",
+            "expires_at",
+            "purged_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    review_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_pilot_transcript_reviews.id",
+            name="fk_become_pilot_version_review",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    transcript_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcript_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class BecomePilotTranscriptDeliveryModel(Base):
+    """Content-free durable send ledger for exact replay/no-op behavior."""
+
+    __tablename__ = "become_pilot_transcript_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('presentation', 'redisplay', "
+            "'correction_prompt', 'confirmation')",
+            name="ck_become_pilot_delivery_kind",
+        ),
+        CheckConstraint(
+            "version > 0 AND char_length(transcript_digest) = 64 "
+            "AND char_length(request_digest) = 64",
+            name="ck_become_pilot_delivery_binding",
+        ),
+        CheckConstraint(
+            "outcome IN ('pending', 'reserved', 'sent', 'failed', 'unknown')",
+            name="ck_become_pilot_delivery_outcome",
+        ),
+        CheckConstraint(
+            "(outcome IN ('pending', 'reserved') "
+            "AND telegram_message_id IS NULL AND settled_at IS NULL) OR "
+            "(outcome = 'sent' "
+            "AND telegram_message_id IS NOT NULL "
+            "AND settled_at IS NOT NULL) OR "
+            "(outcome IN ('failed', 'unknown') "
+            "AND telegram_message_id IS NULL AND settled_at IS NOT NULL)",
+            name="ck_become_pilot_delivery_settlement",
+        ),
+        CheckConstraint(
+            "(attempt_no = 1 AND retry_of_delivery_id IS NULL) OR "
+            "(attempt_no = 2 AND retry_of_delivery_id IS NOT NULL)",
+            name="ck_become_pilot_delivery_attempt",
+        ),
+        UniqueConstraint(
+            "review_id",
+            "kind",
+            "version",
+            "transcript_digest",
+            "attempt_no",
+            name="uq_become_pilot_delivery_operation",
+        ),
+        UniqueConstraint(
+            "request_digest",
+            name="uq_become_pilot_delivery_request",
+        ),
+        Index(
+            "ix_become_pilot_delivery_outcome_created",
+            "outcome",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    review_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_pilot_transcript_reviews.id",
+            name="fk_become_pilot_delivery_review",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    retry_of_delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "become_pilot_transcript_deliveries.id",
+            name="fk_become_pilot_delivery_retry_of",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    transcript_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    callback_ref: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+    )
+    request_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    telegram_message_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+class BecomePilotDeliveryReconciliationModel(Base):
+    """Append-only content-free owner reconciliation audit receipt."""
+
+    __tablename__ = "become_pilot_delivery_reconciliations"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('sent_confirmed', 'failed_confirmed', "
+            "'retry_authorized')",
+            name="ck_become_pilot_delivery_reconciliation_action",
+        ),
+        CheckConstraint(
+            "char_length(request_digest) = 64 "
+            "AND char_length(evidence_digest) = 64",
+            name="ck_become_pilot_delivery_reconciliation_digests",
+        ),
+        UniqueConstraint(
+            "delivery_id",
+            "action",
+            name="uq_become_pilot_delivery_reconciliation_action",
+        ),
+        UniqueConstraint(
+            "request_digest",
+            name="uq_become_pilot_delivery_reconciliation_request",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(
+            "become_pilot_transcript_deliveries.id",
+            name="fk_become_pilot_delivery_reconciliation_delivery",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+

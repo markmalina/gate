@@ -26,7 +26,7 @@ from app.application.telegram_voice_transcription import (
 )
 
 BECOME_TRANSCRIPTION_SCHEMA = "gate.become-voice-transcription@1"
-BECOME_TRANSCRIPTION_GRANT_KEY = "become-investor-demo-transcription-v1"
+BECOME_TRANSCRIPTION_GRANT_KEY = "become-pilot-slice1-transcription-v2"
 BECOME_TRANSCRIPTION_SCOPE_KIND = "become_media_intake"
 BECOME_TRANSCRIPTION_SCOPE_REF = "telegram_become_group"
 
@@ -40,6 +40,7 @@ class BecomeVoiceTranscriptionState(StrEnum):
     REJECTED = "rejected"
     UNKNOWN = "unknown"
     BLOCKED = "blocked"
+    RECONCILIATION_REQUIRED = "reconciliation_required"
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +119,7 @@ class BecomeVoiceTranscriptionStore(Protocol):
         *,
         attempt_id: str,
         now: datetime,
-    ) -> None: ...
+    ) -> bool: ...
 
     async def mark_terminal(
         self,
@@ -193,10 +194,16 @@ class ProcessBecomeVoiceTranscriptionService:
         enabled: bool,
         data_gate_approved: bool,
         max_calls: int,
+        slice1_enabled: bool,
+        slice1_provider_max_calls: int,
         stale_seconds: int = 300,
     ) -> None:
         if max_calls not in {0, 1}:
             raise ValueError("become_transcription_call_limit_invalid")
+        if slice1_provider_max_calls not in {0, 1}:
+            raise ValueError(
+                "become_pilot_slice1_provider_call_limit_invalid"
+            )
         if reserve_microusd_per_second < 100:
             raise ValueError("become_transcription_reserve_rate_invalid")
         self._store = store
@@ -210,13 +217,17 @@ class ProcessBecomeVoiceTranscriptionService:
         self._enabled = enabled
         self._data_gate_approved = data_gate_approved
         self._max_calls = max_calls
+        self._slice1_enabled = slice1_enabled
+        self._slice1_provider_max_calls = slice1_provider_max_calls
         self._stale_after = timedelta(seconds=stale_seconds)
 
     async def run_once(self, *, now: datetime) -> BecomeVoiceTranscriptionRun:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("become_transcription_time_invalid")
         if (
-            not self._enabled
+            not self._slice1_enabled
+            or self._slice1_provider_max_calls != 1
+            or not self._enabled
             or not self._data_gate_approved
             or self._max_calls != 1
             or not self._speech.ready
@@ -291,13 +302,19 @@ class ProcessBecomeVoiceTranscriptionService:
                     "settlement_unknown",
                     reconciliation_required=True,
                 )
-            await self._store.confirm_success(
+            staged = await self._store.confirm_success(
                 attempt_id=work.attempt_id,
                 now=now,
             )
+            if not staged:
+                return BecomeVoiceTranscriptionRun(
+                    "staged_transcript_expired_reconciliation",
+                    transcript_confirmed=False,
+                    reconciliation_required=True,
+                )
             return BecomeVoiceTranscriptionRun(
-                "confirmed",
-                transcript_confirmed=True,
+                "settled_pending_human_review",
+                transcript_confirmed=False,
             )
 
         if work.state is BecomeVoiceTranscriptionState.RESERVING:
@@ -441,14 +458,21 @@ class ProcessBecomeVoiceTranscriptionService:
             provider_operation_ref=transcript.provider_operation_ref,
             occurred_at=now,
         )
-        await self._store.confirm_success(
+        staged = await self._store.confirm_success(
             attempt_id=work.attempt_id,
             now=now,
         )
+        if not staged:
+            return BecomeVoiceTranscriptionRun(
+                "staged_transcript_expired_reconciliation",
+                provider_call_boundary_entered=True,
+                transcript_confirmed=False,
+                reconciliation_required=True,
+            )
         return BecomeVoiceTranscriptionRun(
-            "confirmed",
+            "settled_pending_human_review",
             provider_call_boundary_entered=True,
-            transcript_confirmed=True,
+            transcript_confirmed=False,
         )
 
 

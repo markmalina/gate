@@ -1,5 +1,7 @@
 """Application contracts for durable Telegram receipt and outbox processing."""
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -7,6 +9,9 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 JsonObject = dict[str, Any]
+
+TELEGRAM_CONTENT_TOMBSTONE_SCHEMA = "gate.telegram-content-tombstone@1"
+TELEGRAM_PAYLOAD_CANONICALIZATION_VERSION = "telegram-json-c14n-v1"
 
 ALPHA_GROUP_CAPACITY_ERROR_CODE = "alpha_canary_group_capacity_reached"
 ALPHA_GROUP_LEGACY_CAPACITY_ERROR_CODE = "alpha_canary_group_already_pinned"
@@ -40,6 +45,24 @@ def is_alpha_membership_update(payload: Mapping[str, Any], *, update_id: int) ->
 
 class TelegramReceiptError(ValueError):
     """Reject an invalid receipt envelope before persistence."""
+
+
+def canonical_telegram_payload_digest(payload: Mapping[str, Any]) -> str:
+    """Hash one full Telegram payload with stable JSON canonicalization v1."""
+
+    try:
+        canonical_payload = json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError) as exc:
+        raise TelegramReceiptError(
+            "telegram_receipt_payload_not_canonical"
+        ) from exc
+    return hashlib.sha256(canonical_payload).hexdigest()
 
 
 class TelegramProcessingDisposition(StrEnum):

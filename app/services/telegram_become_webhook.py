@@ -11,7 +11,7 @@ import httpx
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
-BECOME_ALLOWED_UPDATES = ["message", "my_chat_member"]
+BECOME_ALLOWED_UPDATES = ["message", "my_chat_member", "callback_query"]
 
 
 def build_become_public_webhook_url(environ: Mapping[str, str]) -> str | None:
