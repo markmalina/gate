@@ -555,6 +555,23 @@ class SessionFactoryPilotTranscriptReviewStore:
                         "now": now,
                     },
                 )
+                if row["kind"] == "presentation":
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE become_pilot_transcript_reviews
+                            SET state = 'presented', updated_at = :now
+                            WHERE id = CAST(:review_id AS uuid)
+                              AND latest_version = :version
+                              AND state = 'pending_display'
+                            """
+                        ),
+                        {
+                            "review_id": row["review_id"],
+                            "version": row["version"],
+                            "now": now,
+                        },
+                    )
             elif action == "mark_failed":
                 if outcome not in {"reserved", "unknown"}:
                     raise BecomeControlledIntakeError(
