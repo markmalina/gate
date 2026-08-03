@@ -329,7 +329,7 @@ async def seed_pilot(
                     :key, :digest, 'gate.become-controlled-intake@1',
                     'telegram_become_group', 'registration_confirmed',
                     :installation_ref, :subject_ref, :update_ref,
-                    'owner_only', 2, '{"external_effects":0}'::jsonb, :now
+                    'owner_only', 2, '{}'::jsonb, :now
                 )
                 """
             ),
@@ -362,7 +362,7 @@ async def seed_pilot(
                     'telegram_become_group', 'consent_accepted',
                     :installation_ref, :quest_ref, :correlation_ref,
                     :subject_ref, :action_ref, 'pilot-policy-v1', :policy_digest,
-                    'owner_only', 2, '{"external_effects":0}'::jsonb, :now
+                    'owner_only', 2, '{}'::jsonb, :now
                 )
                 """
             ),
@@ -393,8 +393,8 @@ async def seed_pilot(
                 ) VALUES (
                     :id, :workspace_id, :consent_id, :key, :digest,
                     'relations.controlled-consent-command@1', 'executed',
-                    '{"external_effects":0}'::jsonb, :execution_digest,
-                    '{"external_effects":0}'::jsonb, :event_id,
+                    '{}'::jsonb, :execution_digest,
+                    '{}'::jsonb, :event_id,
                     :event_digest, :now
                 )
                 """
@@ -1104,7 +1104,7 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
                     id, bot_key, update_id, payload, status, received_at
                 ) VALUES (
                     :id, 'telegram_become_group', :update_id,
-                    '{"message":{"text":"private rejected text"}}'::jsonb,
+                    CAST(:private_payload AS jsonb),
                     'received', :received_at
                 )
                 """
@@ -1113,6 +1113,9 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
                 "id": old_unprocessed,
                 "update_id": old_unprocessed.int % 9_000_000_000_000_000_000,
                 "received_at": NOW - timedelta(days=7, seconds=1),
+                "private_payload": json.dumps(
+                    {"message": {"text": "private rejected text"}}
+                ),
             },
         )
         await session.execute(
