@@ -55,6 +55,9 @@ select = ["E", "F", "I", "UP", "B"]
 "src/become_w6/learner_delivery.py" = ["E501"]
 "src/become_w7/stars_test_order.py" = ["E501"]
 "src/become_w8/referral_delivery.py" = ["E501"]
+"app/api/mcp_transcription_routes.py" = ["I001"]
+"app/application/alpha_transcription_product.py" = ["E501"]
+"tests/test_alpha_transcription_product.py" = ["I001"]
 
 [tool.mypy]
 python_version = "3.12"
