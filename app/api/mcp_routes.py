@@ -88,6 +88,7 @@ from app.infrastructure.become_i4_connectivity import (
 from app.infrastructure.become_i4_recovery import (
     become_i4_recovery_status,
 )
+from app.infrastructure.become_quest import become_quest_status
 from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
@@ -335,6 +336,12 @@ async def mcp_endpoint(
                 max_posts=settings.gate_become_i4_recovery_max_posts,
             )
             become_status.update(recovery_status)
+            become_status.update(
+                await become_quest_status(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                )
+            )
             become_status["chain_reconciliation_required"] = bool(
                 become_status["chain_reconciliation_required"]
                 or recovery_status["chain_recovery_reconciliation_required"]
