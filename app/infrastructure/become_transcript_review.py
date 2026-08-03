@@ -43,6 +43,7 @@ class SessionFactoryPilotTranscriptReviewStore:
                     text(
                         """
                         SELECT r.id, r.state, r.latest_version,
+                               r.media_intake_id,
                                r.callback_ref::text,
                                r.approved_version,
                                v.transcript_digest, v.expires_at
@@ -94,11 +95,35 @@ class SessionFactoryPilotTranscriptReviewStore:
                     text(
                         """
                         UPDATE become_pilot_transcript_reviews
-                        SET state = 'awaiting_correction', updated_at = :now
+                        SET state = 'awaiting_correction',
+                            approved_version = NULL,
+                            approved_digest = NULL,
+                            approved_at = NULL,
+                            updated_at = :now
                         WHERE id = CAST(:review_id AS uuid)
                         """
                     ),
                     {"review_id": review_id, "now": now},
+                )
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_media_intakes
+                        SET transcript_state = 'none',
+                            confirmed_transcript = NULL,
+                            transcript_digest = NULL,
+                            transcript_confirmed_at = NULL,
+                            transcript_expires_at = NULL,
+                            transcript_purged_at = NULL,
+                            updated_at = :now
+                        WHERE id = CAST(:media_intake_id AS uuid)
+                          AND transcript_state = 'confirmed'
+                        """
+                    ),
+                    {
+                        "media_intake_id": str(row["media_intake_id"]),
+                        "now": now,
+                    },
                 )
                 await _insert_delivery(
                     session,
