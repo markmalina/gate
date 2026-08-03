@@ -1,0 +1,38 @@
+{
+  "schema": "become.role-aware-downstream-operation-matrix@1",
+  "contract_version": "become.role-aware-downstream@1",
+  "operations": [
+    {
+      "operation": "GATE_VALIDATE_CHAIN",
+      "service": "GATE",
+      "required_evidence": [],
+      "outcome": "validated_default_off"
+    },
+    {
+      "operation": "RELATIONS_VERIFY_EXPERT",
+      "service": "RELATIONS",
+      "required_evidence": ["expert_eligibility", "expert_consent"],
+      "outcome": "expert_verified"
+    },
+    {
+      "operation": "MAYAKI_CREATE_ARTIFACTS",
+      "service": "MAYAKI",
+      "required_evidence": ["relations_evidence"],
+      "outcome": "artifacts_created"
+    },
+    {
+      "operation": "OKO_EVALUATE_SUBMISSION",
+      "service": "OKO",
+      "required_evidence": ["learner_submission"],
+      "outcome": "result_created"
+    },
+    {
+      "operation": "TAKE_CREATE_PRIVATE_RESULT",
+      "service": "TAKE",
+      "required_evidence": ["oko_result", "quest_approvals"],
+      "outcome": "private_result_created"
+    }
+  ],
+  "production_routing": false,
+  "external_effects": 0
+}

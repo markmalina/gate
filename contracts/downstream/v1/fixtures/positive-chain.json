@@ -1,0 +1,151 @@
+{
+  "schema": "become.role-aware-downstream-positive-fixture@1",
+  "contract_version": "become.role-aware-downstream@1",
+  "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+  "fixture_mode": "SIMULATED_REPOSITORY_ONLY",
+  "expected_canonical_request_digest": "5d40a06885804b1c99df36d861e1e1b328ad64f5780964b3213efc3e4e495a71",
+  "transitions": [
+    {
+      "service": "GATE",
+      "request": {
+        "schema": "become.role-aware-downstream-request@1",
+        "contract_version": "become.role-aware-downstream@1",
+        "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+        "mode": "TEST",
+        "service": "GATE",
+        "quest_ref": "quest://fixture/role-aware-001",
+        "correlation_ref": "correlation://fixture/role-aware-001",
+        "operation": "GATE_VALIDATE_CHAIN",
+        "operation_ref": "operation://fixture/gate-001",
+        "attempt_version": 1,
+        "idempotency_key": "idem://fixture/gate-001-v1",
+        "participants": {
+          "expert": {"role": "EXPERT", "person_ref": "person://fixture/expert-001", "binding_version": 1, "binding_digest": "1111111111111111111111111111111111111111111111111111111111111111"},
+          "learner": {"role": "LEARNER", "person_ref": "person://fixture/learner-001", "binding_version": 1, "binding_digest": "2222222222222222222222222222222222222222222222222222222222222222"}
+        },
+        "input": {"chain_version": "become.role-aware-downstream@1", "validate_only": true}
+      },
+      "expected_outcome": "validated_default_off"
+    },
+    {
+      "service": "RELATIONS",
+      "request": {
+        "schema": "become.role-aware-downstream-request@1",
+        "contract_version": "become.role-aware-downstream@1",
+        "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+        "mode": "TEST",
+        "service": "RELATIONS",
+        "quest_ref": "quest://fixture/role-aware-001",
+        "correlation_ref": "correlation://fixture/role-aware-001",
+        "operation": "RELATIONS_VERIFY_EXPERT",
+        "operation_ref": "operation://fixture/relations-001",
+        "attempt_version": 1,
+        "idempotency_key": "idem://fixture/relations-001-v1",
+        "participants": {
+          "expert": {"role": "EXPERT", "person_ref": "person://fixture/expert-001", "binding_version": 1, "binding_digest": "1111111111111111111111111111111111111111111111111111111111111111"},
+          "learner": {"role": "LEARNER", "person_ref": "person://fixture/learner-001", "binding_version": 1, "binding_digest": "2222222222222222222222222222222222222222222222222222222222222222"}
+        },
+        "input": {
+          "expert_eligibility": {"artifact_type": "EXPERT_PROFILE", "artifact_ref": "artifact://fixture/expert-profile-001", "version": 1, "content_digest": "3333333333333333333333333333333333333333333333333333333333333333"},
+          "expert_consent": {
+            "approval_schema": "become.quest-approval@1",
+            "quest_ref": "quest://fixture/role-aware-001",
+            "approver_person_ref": "person://fixture/expert-001",
+            "approver_role": "EXPERT",
+            "artifact": {"artifact_type": "EXPERT_CONSENT", "artifact_ref": "artifact://fixture/expert-consent-001", "version": 1, "content_digest": "4444444444444444444444444444444444444444444444444444444444444444"},
+            "approval_version": 1,
+            "approval_digest": "5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        }
+      },
+      "expected_outcome": "expert_verified"
+    },
+    {
+      "service": "MAYAKI",
+      "request": {
+        "schema": "become.role-aware-downstream-request@1",
+        "contract_version": "become.role-aware-downstream@1",
+        "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+        "mode": "TEST",
+        "service": "MAYAKI",
+        "quest_ref": "quest://fixture/role-aware-001",
+        "correlation_ref": "correlation://fixture/role-aware-001",
+        "operation": "MAYAKI_CREATE_ARTIFACTS",
+        "operation_ref": "operation://fixture/mayaki-001",
+        "attempt_version": 1,
+        "idempotency_key": "idem://fixture/mayaki-001-v1",
+        "participants": {
+          "expert": {"role": "EXPERT", "person_ref": "person://fixture/expert-001", "binding_version": 1, "binding_digest": "1111111111111111111111111111111111111111111111111111111111111111"},
+          "learner": {"role": "LEARNER", "person_ref": "person://fixture/learner-001", "binding_version": 1, "binding_digest": "2222222222222222222222222222222222222222222222222222222222222222"}
+        },
+        "input": {
+          "relations_evidence": {"artifact_type": "RELATIONS_EVIDENCE", "artifact_ref": "artifact://fixture/relations-evidence-001", "version": 1, "content_digest": "6666666666666666666666666666666666666666666666666666666666666666"},
+          "quest_approvals": [{"approval_schema": "become.quest-approval@1", "quest_ref": "quest://fixture/role-aware-001", "approver_person_ref": "person://fixture/expert-001", "approver_role": "EXPERT", "artifact": {"artifact_type": "EXPERT_PROFILE", "artifact_ref": "artifact://fixture/expert-profile-001", "version": 1, "content_digest": "3333333333333333333333333333333333333333333333333333333333333333"}, "approval_version": 1, "approval_digest": "7777777777777777777777777777777777777777777777777777777777777777"}],
+          "invitation": {"artifact_type": "INVITATION", "artifact_ref": "artifact://fixture/invitation-001", "version": 1, "content_digest": "8888888888888888888888888888888888888888888888888888888888888888"},
+          "learner_acceptance": {"quest_ref": "quest://fixture/role-aware-001", "invitation_ref": "artifact://fixture/invitation-001", "invitation_version": 1, "invitation_digest": "8888888888888888888888888888888888888888888888888888888888888888", "learner_person_ref": "person://fixture/learner-001", "accepted_by_person_ref": "person://fixture/learner-001", "acceptance_version": 1, "acceptance_digest": "9999999999999999999999999999999999999999999999999999999999999999"}
+        }
+      },
+      "expected_outcome": "artifacts_created"
+    },
+    {
+      "service": "OKO",
+      "request": {
+        "schema": "become.role-aware-downstream-request@1",
+        "contract_version": "become.role-aware-downstream@1",
+        "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+        "mode": "TEST",
+        "service": "OKO",
+        "quest_ref": "quest://fixture/role-aware-001",
+        "correlation_ref": "correlation://fixture/role-aware-001",
+        "operation": "OKO_EVALUATE_SUBMISSION",
+        "operation_ref": "operation://fixture/oko-001",
+        "attempt_version": 1,
+        "idempotency_key": "idem://fixture/oko-001-v1",
+        "participants": {
+          "expert": {"role": "EXPERT", "person_ref": "person://fixture/expert-001", "binding_version": 1, "binding_digest": "1111111111111111111111111111111111111111111111111111111111111111"},
+          "learner": {"role": "LEARNER", "person_ref": "person://fixture/learner-001", "binding_version": 1, "binding_digest": "2222222222222222222222222222222222222222222222222222222222222222"}
+        },
+        "input": {
+          "learner_submission": {
+            "quest_ref": "quest://fixture/role-aware-001",
+            "actor_person_ref": "person://fixture/learner-001",
+            "actor_role": "LEARNER",
+            "exercise": {"artifact_type": "EXERCISE", "artifact_ref": "artifact://fixture/exercise-001", "version": 1, "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+            "submission": {"artifact_type": "SUBMISSION", "artifact_ref": "artifact://fixture/submission-001", "version": 1, "content_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+          }
+        }
+      },
+      "expected_outcome": "result_created"
+    },
+    {
+      "service": "TAKE",
+      "request": {
+        "schema": "become.role-aware-downstream-request@1",
+        "contract_version": "become.role-aware-downstream@1",
+        "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+        "mode": "TEST",
+        "service": "TAKE",
+        "quest_ref": "quest://fixture/role-aware-001",
+        "correlation_ref": "correlation://fixture/role-aware-001",
+        "operation": "TAKE_CREATE_PRIVATE_RESULT",
+        "operation_ref": "operation://fixture/take-001",
+        "attempt_version": 1,
+        "idempotency_key": "idem://fixture/take-001-v1",
+        "participants": {
+          "expert": {"role": "EXPERT", "person_ref": "person://fixture/expert-001", "binding_version": 1, "binding_digest": "1111111111111111111111111111111111111111111111111111111111111111"},
+          "learner": {"role": "LEARNER", "person_ref": "person://fixture/learner-001", "binding_version": 1, "binding_digest": "2222222222222222222222222222222222222222222222222222222222222222"}
+        },
+        "input": {
+          "oko_result": {
+            "quest_ref": "quest://fixture/role-aware-001",
+            "submission": {"artifact_type": "SUBMISSION", "artifact_ref": "artifact://fixture/submission-001", "version": 1, "content_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+            "exercise": {"artifact_type": "EXERCISE", "artifact_ref": "artifact://fixture/exercise-001", "version": 1, "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+            "result": {"artifact_type": "OKO_RESULT", "artifact_ref": "artifact://fixture/oko-result-001", "version": 1, "content_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+          },
+          "quest_approvals": [{"approval_schema": "become.quest-approval@1", "quest_ref": "quest://fixture/role-aware-001", "approver_person_ref": "person://fixture/expert-001", "approver_role": "EXPERT", "artifact": {"artifact_type": "EXERCISE", "artifact_ref": "artifact://fixture/exercise-001", "version": 1, "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "approval_version": 1, "approval_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]
+        }
+      },
+      "expected_outcome": "private_result_created"
+    }
+  ]
+}

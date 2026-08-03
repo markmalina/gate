@@ -1,0 +1,30 @@
+{
+  "schema": "become.role-aware-downstream-manifest@1",
+  "contract_version": "become.role-aware-downstream@1",
+  "contract_digest_algorithm": "sha256(operation-matrix.json bytes)",
+  "contract_digest": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+  "compatibility_path": {
+    "request_schema": "become.i4-service-request@1",
+    "receipt_schema": "become.i4-service-receipt@1",
+    "frozen_contract_digest": "91c3a210709c63738358bd0c512d11a9668acabd0997afcd68ba240bed38f573",
+    "modified": false
+  },
+  "operation_matrix": {
+    "sha256": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9",
+    "git_blob": "061eb137c12dc581d4991462f99774fdaf2ccfad"
+  },
+  "fixtures": {
+    "positive-chain.json": {
+      "sha256": "6eb94214c8bda93381f81fd26a06d4a5fd3882061d87b611c67a177e0b00355f",
+      "git_blob": "c621a1be492e7f2ed68d03a9ba2bac1ce846ad72",
+      "canonical_request_digest": "5d40a06885804b1c99df36d861e1e1b328ad64f5780964b3213efc3e4e495a71"
+    },
+    "negative-cases.json": {
+      "sha256": "040cc4c8b981cef71c593840b653f4a6ec5cf9d0e5c5e342530d0059b4b52c27",
+      "git_blob": "2226b94110ee9d5ffd3ec9361f419012d43f2509"
+    }
+  },
+  "production_routing": false,
+  "durable_replay_claimed": false,
+  "external_effects": 0
+}

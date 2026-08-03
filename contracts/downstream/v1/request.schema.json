@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-request@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contract_version", "contract_digest", "mode", "service", "quest_ref", "correlation_ref", "operation", "operation_ref", "attempt_version", "idempotency_key", "participants", "input"],
+  "properties": {
+    "schema": {"const": "become.role-aware-downstream-request@1"},
+    "contract_version": {"const": "become.role-aware-downstream@1"},
+    "contract_digest": {"const": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9"},
+    "mode": {"enum": ["TEST", "PRODUCTION"]},
+    "service": {"enum": ["GATE", "RELATIONS", "MAYAKI", "OKO", "TAKE"]},
+    "quest_ref": {"type": "string", "pattern": "^quest://[A-Za-z0-9._/-]+$"},
+    "correlation_ref": {"type": "string", "pattern": "^correlation://[A-Za-z0-9._/-]+$"},
+    "operation": {"enum": ["GATE_VALIDATE_CHAIN", "RELATIONS_VERIFY_EXPERT", "MAYAKI_CREATE_ARTIFACTS", "OKO_EVALUATE_SUBMISSION", "TAKE_CREATE_PRIVATE_RESULT"]},
+    "operation_ref": {"type": "string", "pattern": "^operation://[A-Za-z0-9._/-]+$"},
+    "attempt_version": {"type": "integer", "minimum": 1},
+    "idempotency_key": {"type": "string", "pattern": "^idem://[A-Za-z0-9._/-]+$"},
+    "participants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expert", "learner"],
+      "properties": {
+        "expert": {"allOf": [{"$ref": "person-binding.schema.json"}, {"type": "object", "properties": {"role": {"const": "EXPERT"}}}]},
+        "learner": {"allOf": [{"$ref": "person-binding.schema.json"}, {"type": "object", "properties": {"role": {"const": "LEARNER"}}}]}
+      }
+    },
+    "input": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"mode": {"const": "PRODUCTION"}}},
+      "then": {
+        "properties": {
+          "participants": {
+            "type": "object",
+            "properties": {
+              "expert": {"type": "object", "properties": {"person_ref": {"type": "string", "pattern": "^person://"}}},
+              "learner": {"type": "object", "properties": {"person_ref": {"type": "string", "pattern": "^person://"}}}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "GATE_VALIDATE_CHAIN"}}},
+      "then": {
+        "properties": {
+          "service": {"const": "GATE"},
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["chain_version", "validate_only"],
+            "properties": {
+              "chain_version": {"const": "become.role-aware-downstream@1"},
+              "validate_only": {"const": true}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "RELATIONS_VERIFY_EXPERT"}}},
+      "then": {
+        "properties": {
+          "service": {"const": "RELATIONS"},
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["expert_eligibility", "expert_consent"],
+            "properties": {
+              "expert_eligibility": {"$ref": "artifact-binding.schema.json"},
+              "expert_consent": {"$ref": "quest-approval-binding.schema.json"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "MAYAKI_CREATE_ARTIFACTS"}}},
+      "then": {
+        "properties": {
+          "service": {"const": "MAYAKI"},
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relations_evidence", "quest_approvals", "invitation", "learner_acceptance"],
+            "properties": {
+              "relations_evidence": {"$ref": "artifact-binding.schema.json"},
+              "quest_approvals": {"type": "array", "minItems": 1, "items": {"$ref": "quest-approval-binding.schema.json"}},
+              "invitation": {"$ref": "artifact-binding.schema.json"},
+              "learner_acceptance": {"$ref": "invitation-acceptance-binding.schema.json"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "OKO_EVALUATE_SUBMISSION"}}},
+      "then": {
+        "properties": {
+          "service": {"const": "OKO"},
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["learner_submission"],
+            "properties": {"learner_submission": {"$ref": "learner-submission-binding.schema.json"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "TAKE_CREATE_PRIVATE_RESULT"}}},
+      "then": {
+        "properties": {
+          "service": {"const": "TAKE"},
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["oko_result", "quest_approvals"],
+            "properties": {
+              "oko_result": {"$ref": "oko-result-binding.schema.json"},
+              "quest_approvals": {"type": "array", "minItems": 1, "items": {"$ref": "quest-approval-binding.schema.json"}}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

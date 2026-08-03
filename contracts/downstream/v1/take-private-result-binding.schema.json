@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-take-private-result-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quest_ref", "oko_result", "result_artifact_ref", "version", "content_digest", "storage_classification", "public_receipt_content_free"],
+  "properties": {
+    "quest_ref": {"type": "string", "pattern": "^quest://[A-Za-z0-9._/-]+$"},
+    "oko_result": {"$ref": "artifact-binding.schema.json"},
+    "result_artifact_ref": {"type": "string", "pattern": "^artifact://[A-Za-z0-9._/-]+$"},
+    "version": {"type": "integer", "minimum": 1},
+    "content_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "storage_classification": {"const": "PRIVATE"},
+    "public_receipt_content_free": {"const": true}
+  }
+}
