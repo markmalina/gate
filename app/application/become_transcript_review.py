@@ -370,9 +370,13 @@ def request_digest(
     version: int,
     transcript_digest: str,
     callback_ref: str,
+    attempt_no: int = 1,
 ) -> str:
     return hashlib.sha256(
-        f"{kind}:{version}:{transcript_digest}:{callback_ref}".encode()
+        (
+            f"{kind}:{version}:{transcript_digest}:"
+            f"{callback_ref}:{attempt_no}"
+        ).encode()
     ).hexdigest()
 
 
