@@ -17,6 +17,7 @@ from app.application.become_transcript_review import (
     extract_pilot_review_update,
     parse_callback_data,
 )
+from app.worker.telegram_processing import _is_become_pilot_review_payload
 
 NOW = datetime(2026, 8, 3, 15, 30, tzinfo=UTC)
 PEPPER = "test-only-pepper"
@@ -242,6 +243,30 @@ async def test_wrong_chat_callback_fails_closed() -> None:
     )
     with pytest.raises(BecomeControlledIntakeError, match="wrong_chat"):
         await service.execute(update=_callback(chat_id=-200), now=NOW)
+
+
+
+
+@pytest.mark.anyio
+async def test_stale_well_formed_callback_fails_closed() -> None:
+    service = ProcessPilotTranscriptReviewUpdate(
+        store=FakeStore(),
+        telegram=FakeTelegram(),
+        identity_pepper=PEPPER,
+        enabled=True,
+    )
+    with pytest.raises(BecomeControlledIntakeError, match="mutated_callback"):
+        await service.execute(
+            update=_callback(token="f" * 32),
+            now=NOW,
+        )
+
+
+def test_review_payload_classifier_separates_commands_from_private_content() -> None:
+    assert _is_become_pilot_review_payload(_callback()) is True
+    assert _is_become_pilot_review_payload(_correction()) is True
+    command = _correction(text="/become@BecomeNowBot")
+    assert _is_become_pilot_review_payload(command) is False
 
 
 @pytest.mark.anyio
