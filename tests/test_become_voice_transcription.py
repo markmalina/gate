@@ -133,8 +133,9 @@ class FakeStore:
         )
         return self.item
 
-    async def confirm_success(self, **_: object) -> None:
+    async def confirm_success(self, **_: object) -> bool:
         self.events.append("confirmed")
+        return True
 
     async def mark_terminal(
         self,
@@ -230,6 +231,8 @@ def service(
     *,
     normalizer: FakeNormalizer | None = None,
     enabled: bool = True,
+    slice1_enabled: bool = True,
+    slice1_provider_max_calls: int = 1,
 ) -> ProcessBecomeVoiceTranscriptionService:
     return ProcessBecomeVoiceTranscriptionService(
         store=cast(BecomeVoiceTranscriptionStore, store),
@@ -246,7 +249,36 @@ def service(
         enabled=enabled,
         data_gate_approved=enabled,
         max_calls=1 if enabled else 0,
+        slice1_enabled=slice1_enabled,
+        slice1_provider_max_calls=slice1_provider_max_calls,
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("slice1_enabled", "provider_cap"),
+    [(False, 0), (False, 1), (True, 0)],
+)
+async def test_slice1_provider_gate_blocks_before_store_and_provider(
+    slice1_enabled: bool,
+    provider_cap: int,
+) -> None:
+    store = FakeStore(work(BecomeVoiceTranscriptionState.RESERVING))
+    budget = FakeBudget()
+    speech = FakeSpeech()
+
+    result = await service(
+        store,
+        budget,
+        speech,
+        slice1_enabled=slice1_enabled,
+        slice1_provider_max_calls=provider_cap,
+    ).run_once(now=NOW)
+
+    assert result.disposition == "disabled"
+    assert store.events == []
+    assert budget.events == []
+    assert speech.calls == 0
 
 
 @pytest.mark.anyio
