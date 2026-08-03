@@ -245,8 +245,6 @@ async def test_wrong_chat_callback_fails_closed() -> None:
         await service.execute(update=_callback(chat_id=-200), now=NOW)
 
 
-
-
 @pytest.mark.anyio
 async def test_stale_well_formed_callback_fails_closed() -> None:
     service = ProcessPilotTranscriptReviewUpdate(
@@ -353,8 +351,6 @@ def test_presentation_is_human_readable_and_hides_internal_refs() -> None:
     assert "delivery-private" not in text
     assert "a" * 64 not in text
     assert "-100" not in text
-
-
 
 
 def test_owner_redisplay_uses_saved_text_and_same_human_buttons() -> None:
