@@ -83,7 +83,7 @@ from app.infrastructure.become_controlled_intake import (
     become_controlled_intake_status,
 )
 from app.infrastructure.become_i4_connectivity import (
-    probe_mayaki_i4_connectivity,
+    probe_all_i4_connectivity,
 )
 from app.infrastructure.become_i4_recovery import (
     become_i4_recovery_status,
@@ -334,7 +334,7 @@ async def mcp_endpoint(
             )
             async with httpx.AsyncClient() as connectivity_client:
                 become_status.update(
-                    await probe_mayaki_i4_connectivity(
+                    await probe_all_i4_connectivity(
                         connectivity_client,
                     )
                 )
