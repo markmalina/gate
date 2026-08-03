@@ -602,7 +602,6 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
                         ),
                     },
-                    "chain_recovery_take_receipt_digest": _nullable("string"),
                     "chain_recovery_mayaki_state": {
                         "type": "string",
                         "enum": [
