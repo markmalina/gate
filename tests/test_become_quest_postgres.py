@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -150,13 +152,14 @@ async def approve(
     artifact_digest: str,
     *,
     key: str,
+    version: int = 1,
 ) -> dict[str, object]:
     return await coordinator.execute(
         command(
             "APPROVE_ARTIFACT",
             key,
             artifact_type=artifact_type.value,
-            artifact_version=1,
+            artifact_version=version,
             artifact_digest=artifact_digest,
             approver_person_ref=EXPERT,
             approver_role="EXPERT",
@@ -291,6 +294,34 @@ async def test_postgres_restart_restores_full_human_state_and_exact_replay() -> 
 
 
 @pytest.mark.anyio
+async def test_postgres_executes_shared_create_quest_parity_fixture() -> None:
+    matrix = json.loads(
+        Path("contracts/quest/v1/operation-contract-matrix.json").read_text()
+    )
+    fixture = matrix["executable_fixtures"]["create_quest"]
+    async with postgres_sessions() as sessions:
+        await seed_workspace(sessions)
+        coordinator = PostgresBecomeQuestCoordinator(
+            sessions, workspace_key="become-simulated"
+        )
+        receipt = await coordinator.execute(fixture["command"])
+        assert receipt == fixture["expected_receipt"]
+        for field in matrix["receipt_required"]:
+            assert field in receipt
+        assert await coordinator.execute(fixture["command"]) == receipt
+        with pytest.raises(SqlBecomeQuestError, match="mutated_replay"):
+            await coordinator.execute({**fixture["command"], "mode": "PRODUCTION"})
+        with pytest.raises(SqlBecomeQuestError, match="operation_unsupported"):
+            await coordinator.execute(
+                {
+                    **fixture["command"],
+                    "operation": "UNSUPPORTED",
+                    "idempotency_key": "unsupported-v1",
+                }
+            )
+
+
+@pytest.mark.anyio
 async def test_postgres_transcript_version_history_invalidates_current_approval() -> None:
     async with postgres_sessions() as sessions:
         await seed_workspace(sessions)
@@ -346,6 +377,100 @@ async def test_postgres_transcript_version_history_invalidates_current_approval(
         assert [artifact.artifact_version for artifact in artifacts] == [1, 2]
         assert len(approvals) == 1
         assert approvals[0].artifact_id == artifacts[0].id
+
+
+@pytest.mark.anyio
+async def test_postgres_profile_program_versions_recompute_readiness_after_restart() -> None:
+    async with postgres_sessions() as sessions:
+        await seed_workspace(sessions)
+        coordinator = PostgresBecomeQuestCoordinator(
+            sessions, workspace_key="become-simulated"
+        )
+        await full_human_path(coordinator)
+
+        for expected_approval_count, artifact_type, digest, key in (
+            (4, ArtifactType.EXPERT_PROFILE, "6" * 64, "profile-v2"),
+            (5, ArtifactType.PROGRAM, "7" * 64, "program-v2"),
+        ):
+            await coordinator.execute(
+                command(
+                    "REGISTER_ARTIFACT",
+                    key,
+                    artifact_type=artifact_type.value,
+                    artifact_version=2,
+                    artifact_digest=digest,
+                    provenance_digest="8" * 64,
+                )
+            )
+            restarted = PostgresBecomeQuestCoordinator(
+                sessions, workspace_key="become-simulated"
+            )
+            async with sessions() as session:
+                quest = await session.scalar(select(BecomeQuestModel))
+                approval_count = await session.scalar(
+                    select(func.count()).select_from(BecomeQuestApprovalModel)
+                )
+            assert quest is not None and quest.state != "READY_FOR_EXERCISE"
+            assert approval_count == expected_approval_count
+            await approve(
+                restarted,
+                artifact_type,
+                digest,
+                key=f"approve-{key}",
+                version=2,
+            )
+            async with sessions() as session:
+                restored = await session.scalar(select(BecomeQuestModel))
+            assert restored is not None and restored.state == "READY_FOR_EXERCISE"
+            coordinator = restarted
+
+        await coordinator.execute(
+            command(
+                "REGISTER_ARTIFACT",
+                "exercise-v1",
+                artifact_type=ArtifactType.EXERCISE.value,
+                artifact_version=1,
+                artifact_digest="e" * 64,
+                provenance_digest="8" * 64,
+            )
+        )
+        async with sessions() as session:
+            exercise = await session.scalar(select(BecomeQuestModel))
+        assert exercise is not None and exercise.state == "READY_FOR_EXERCISE"
+
+
+@pytest.mark.anyio
+async def test_postgres_exact_binding_is_noop_after_ready() -> None:
+    async with postgres_sessions() as sessions:
+        await seed_workspace(sessions)
+        coordinator = PostgresBecomeQuestCoordinator(
+            sessions, workspace_key="become-simulated"
+        )
+        await full_human_path(coordinator)
+        for role, person_ref, digest in (
+            ("EXPERT", EXPERT, "2" * 64),
+            ("LEARNER", LEARNER, "3" * 64),
+        ):
+            receipt = await coordinator.execute(
+                command(
+                    "BIND_PARTICIPANT",
+                    f"rebind-{role}",
+                    role=role,
+                    person_ref=person_ref,
+                    provenance_digest=digest,
+                )
+            )
+            assert receipt["state"] == "READY_FOR_EXERCISE"
+        with pytest.raises(SqlBecomeQuestError, match="role_rebinding_forbidden"):
+            await coordinator.execute(
+                command(
+                    "BIND_PARTICIPANT",
+                    "rebind-changed",
+                    role="EXPERT",
+                    person_ref="ref://simulated/person/other",
+                    provenance_digest="2" * 64,
+                )
+            )
 
 
 @pytest.mark.anyio
@@ -566,6 +691,7 @@ async def test_postgres_constraints_reject_cross_quest_approval_and_bad_enrollme
                         artifact_id=artifact.id,
                         approver_person_ref=EXPERT,
                         approver_role="EXPERT",
+                        approver_active=True,
                         approval_state="APPROVED",
                         approved_at=datetime.fromisoformat(
                             "2026-08-03T09:00:00+00:00"
@@ -576,6 +702,102 @@ async def test_postgres_constraints_reject_cross_quest_approval_and_bad_enrollme
                     )
                 )
                 await session.flush()
+
+
+@pytest.mark.anyio
+async def test_postgres_approval_requires_exact_bound_quest_expert() -> None:
+    other_expert = "ref://simulated/person/expert-other-quest"
+    async with postgres_sessions() as sessions:
+        await seed_workspace(sessions)
+        coordinator = PostgresBecomeQuestCoordinator(
+            sessions, workspace_key="become-simulated"
+        )
+        await create_and_bind(coordinator)
+        await coordinator.execute(
+            command(
+                "EXPERT_CONSENT",
+                "consent",
+                person_ref=EXPERT,
+                consent_ref="ref://simulated/consent/expert",
+            )
+        )
+        await coordinator.execute(
+            command(
+                "PROVIDER_TRANSCRIPT_SETTLED",
+                "transcript-v1",
+                artifact_version=1,
+                artifact_digest=DIGEST_A,
+                provenance_digest="4" * 64,
+            )
+        )
+        await coordinator.execute(
+            command(
+                "CREATE_QUEST",
+                "create-other",
+                quest_id=QUEST_TWO,
+                correlation_id="ref://simulated/correlation/other",
+                mode="SIMULATED",
+                source_provenance_digest=DIGEST_B,
+            )
+        )
+        await coordinator.execute(
+            command(
+                "BIND_PARTICIPANT",
+                "bind-other-expert",
+                quest_id=QUEST_TWO,
+                correlation_id="ref://simulated/correlation/other",
+                role="EXPERT",
+                person_ref=other_expert,
+                provenance_digest=DIGEST_B,
+            )
+        )
+        async with sessions() as session:
+            quest = await session.scalar(
+                select(BecomeQuestModel).where(BecomeQuestModel.quest_ref == QUEST_ONE)
+            )
+            assert quest is not None
+            artifact = await session.scalar(
+                select(BecomeQuestArtifactModel).where(
+                    BecomeQuestArtifactModel.quest_id == quest.id
+                )
+            )
+        assert artifact is not None
+
+        async def insert_approval(person_ref: str) -> None:
+            async with sessions() as session, session.begin():
+                session.add(
+                    BecomeQuestApprovalModel(
+                        quest_id=quest.id,
+                        artifact_id=artifact.id,
+                        approver_person_ref=person_ref,
+                        approver_role="EXPERT",
+                        approver_active=True,
+                        approval_state="APPROVED",
+                        approved_at=datetime.fromisoformat(
+                            "2026-08-03T09:00:00+00:00"
+                        ),
+                        contract_version="become.role-correct-quest@1",
+                        receipt_digest=DIGEST_B,
+                        receipt_payload={"external_effects": 0},
+                    )
+                )
+                await session.flush()
+
+        for invalid_person in (
+            "ref://simulated/person/arbitrary",
+            LEARNER,
+            other_expert,
+        ):
+            with pytest.raises(IntegrityError):
+                await insert_approval(invalid_person)
+
+        await insert_approval(EXPERT)
+        async with sessions() as session:
+            approvals = (
+                await session.scalars(select(BecomeQuestApprovalModel))
+            ).all()
+        assert len(approvals) == 1
+        assert approvals[0].approver_person_ref == EXPERT
 
         with pytest.raises(IntegrityError):
             async with sessions() as session, session.begin():

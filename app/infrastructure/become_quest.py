@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.become_quest import (
@@ -527,6 +527,7 @@ class PostgresBecomeQuestCoordinator:
                     artifact_id=artifact.id,
                     approver_person_ref=str(command["approver_person_ref"]),
                     approver_role=QuestRole.EXPERT.value,
+                    approver_active=True,
                     approval_state="APPROVED",
                     approved_at=occurred_at,
                     contract_version=QUEST_CONTRACT_VERSION,
@@ -538,7 +539,7 @@ class PostgresBecomeQuestCoordinator:
             quest.state = "TRANSCRIPT_APPROVED"
         elif artifact_type is ArtifactType.PRODUCT:
             quest.state = "PRODUCT_APPROVED"
-        await _advance_ready(session, quest)
+        await _recompute_readiness(session, quest)
 
     @staticmethod
     async def _invite(
@@ -611,7 +612,7 @@ class PostgresBecomeQuestCoordinator:
         invitation.accepted_at = occurred_at
         invitation.state = "ENROLLED"
         quest.state = "LEARNER_ENROLLED"
-        await _advance_ready(session, quest)
+        await _recompute_readiness(session, quest)
 
 
 async def _lock_workspace(session: AsyncSession, key: str) -> Workspace:
@@ -789,6 +790,8 @@ async def _append_artifact(
     )
     session.add(artifact)
     await session.flush()
+    if artifact_type.value in READINESS_APPROVALS:
+        await _recompute_readiness(session, quest)
     return artifact
 
 
@@ -804,9 +807,25 @@ async def _latest_artifact_is_approved(
         await session.scalar(
             select(func.count())
             .select_from(BecomeQuestApprovalModel)
+            .join(
+                BecomeQuestParticipantModel,
+                and_(
+                    BecomeQuestApprovalModel.quest_id
+                    == BecomeQuestParticipantModel.quest_id,
+                    BecomeQuestApprovalModel.approver_role
+                    == BecomeQuestParticipantModel.role,
+                    BecomeQuestApprovalModel.approver_person_ref
+                    == BecomeQuestParticipantModel.person_ref,
+                    BecomeQuestApprovalModel.approver_active
+                    == BecomeQuestParticipantModel.active,
+                ),
+            )
             .where(
                 BecomeQuestApprovalModel.quest_id == quest_id,
                 BecomeQuestApprovalModel.artifact_id == artifact.id,
+                BecomeQuestApprovalModel.approver_role == QuestRole.EXPERT.value,
+                BecomeQuestApprovalModel.approver_active.is_(True),
+                BecomeQuestParticipantModel.active.is_(True),
             )
         )
         or 0
@@ -836,7 +855,7 @@ async def _latest_invitation(
     )
 
 
-async def _advance_ready(
+async def _recompute_readiness(
     session: AsyncSession,
     quest: BecomeQuestModel,
 ) -> None:
@@ -847,6 +866,14 @@ async def _advance_ready(
         and await _has_readiness_approvals(session, quest.id)
     ):
         quest.state = "READY_FOR_EXERCISE"
+        return
+    if quest.state == "READY_FOR_EXERCISE":
+        if not await _latest_artifact_is_approved(
+            session, quest.id, ArtifactType.TRANSCRIPT.value
+        ):
+            quest.state = "TRANSCRIPT_PENDING_REVIEW"
+        else:
+            quest.state = "BLOCKED"
 
 
 async def become_quest_status(

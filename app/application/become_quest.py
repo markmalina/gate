@@ -225,6 +225,15 @@ class InvitationSnapshot:
     learner_person_ref: str
 
 
+@dataclass(frozen=True, slots=True)
+class ParticipantSnapshot:
+    role: str
+    person_ref: str
+    provenance_digest: str
+    mode: str
+    active: bool = True
+
+
 @dataclass(slots=True)
 class QuestSnapshot:
     quest_id: str
@@ -235,8 +244,10 @@ class QuestSnapshot:
     learner_person_ref: str | None = None
     expert_consented: bool = False
     learner_enrolled: bool = False
+    participants: dict[str, ParticipantSnapshot] = field(default_factory=dict)
     artifacts: dict[str, dict[int, ArtifactSnapshot]] = field(default_factory=dict)
     approvals: dict[str, tuple[int, str]] = field(default_factory=dict)
+    approval_history: list[tuple[str, int, str, str]] = field(default_factory=list)
     invitations: dict[int, InvitationSnapshot] = field(default_factory=dict)
     current_invitation_version: int | None = None
 
@@ -363,9 +374,21 @@ class BecomeQuestCoordinator:
         except ValueError as exc:
             raise BecomeQuestError("role_invalid") from exc
         person_ref = _require_ref(command.get("person_ref"), "person_ref")
-        _require_digest(command.get("provenance_digest"), "provenance_digest")
+        provenance_digest = _require_digest(
+            command.get("provenance_digest"), "provenance_digest"
+        )
         if snapshot.mode == "PRODUCTION" and person_ref.startswith("ref://simulated/"):
             raise BecomeQuestError("synthetic_participant_in_production")
+        existing = snapshot.participants.get(role.value)
+        if existing is not None:
+            if (
+                existing.person_ref != person_ref
+                or existing.provenance_digest != provenance_digest
+                or existing.mode != snapshot.mode
+                or not existing.active
+            ):
+                raise BecomeQuestError("role_rebinding_forbidden")
+            return
         if role is QuestRole.EXPERT:
             if snapshot.learner_person_ref == person_ref:
                 raise BecomeQuestError("roles_must_use_distinct_people")
@@ -379,6 +402,12 @@ class BecomeQuestCoordinator:
             if snapshot.learner_person_ref not in {None, person_ref}:
                 raise BecomeQuestError("role_rebinding_forbidden")
             snapshot.learner_person_ref = person_ref
+        snapshot.participants[role.value] = ParticipantSnapshot(
+            role=role.value,
+            person_ref=person_ref,
+            provenance_digest=provenance_digest,
+            mode=snapshot.mode,
+        )
 
     @staticmethod
     def _expert_consent(snapshot: QuestSnapshot, command: JsonObject) -> None:
@@ -422,6 +451,8 @@ class BecomeQuestCoordinator:
             transcript_available=transcript_available,
         )
         snapshot.approvals.pop(artifact_type.value, None)
+        if artifact_type.value in READINESS_APPROVALS:
+            BecomeQuestCoordinator._recompute_readiness(snapshot)
 
     @staticmethod
     def _provider_transcript(snapshot: QuestSnapshot, command: JsonObject) -> None:
@@ -480,11 +511,19 @@ class BecomeQuestCoordinator:
             latest.artifact_version,
             latest.artifact_digest,
         )
+        snapshot.approval_history.append(
+            (
+                artifact_type.value,
+                latest.artifact_version,
+                latest.artifact_digest,
+                str(command["approver_person_ref"]),
+            )
+        )
         if artifact_type is ArtifactType.TRANSCRIPT:
             snapshot.state = QuestState.TRANSCRIPT_APPROVED
         if artifact_type is ArtifactType.PRODUCT:
             snapshot.state = QuestState.PRODUCT_APPROVED
-        BecomeQuestCoordinator._advance(snapshot)
+        BecomeQuestCoordinator._recompute_readiness(snapshot)
 
     @staticmethod
     def _invite(snapshot: QuestSnapshot, command: JsonObject) -> None:
@@ -541,13 +580,19 @@ class BecomeQuestCoordinator:
         _require_digest(command.get("acceptance_digest"), "acceptance_digest")
         snapshot.learner_enrolled = True
         snapshot.state = QuestState.LEARNER_ENROLLED
-        BecomeQuestCoordinator._advance(snapshot)
+        BecomeQuestCoordinator._recompute_readiness(snapshot)
 
     @staticmethod
-    def _advance(snapshot: QuestSnapshot) -> None:
+    def _recompute_readiness(snapshot: QuestSnapshot) -> None:
         if (
             snapshot.expert_consented
             and snapshot.learner_enrolled
             and READINESS_APPROVALS.issubset(snapshot.approvals)
         ):
             snapshot.state = QuestState.READY_FOR_EXERCISE
+            return
+        if snapshot.state is QuestState.READY_FOR_EXERCISE:
+            if ArtifactType.TRANSCRIPT.value not in snapshot.approvals:
+                snapshot.state = QuestState.TRANSCRIPT_PENDING_REVIEW
+            else:
+                snapshot.state = QuestState.BLOCKED

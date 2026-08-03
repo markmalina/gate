@@ -66,6 +66,29 @@ def upgrade() -> None:
         ["quest_id", "id"],
         ondelete="RESTRICT",
     )
+    op.add_column(
+        "become_quest_approvals",
+        sa.Column("approver_active", sa.Boolean(), nullable=True),
+    )
+    op.execute("UPDATE become_quest_approvals SET approver_active = true")
+    op.alter_column(
+        "become_quest_approvals",
+        "approver_active",
+        nullable=False,
+    )
+    op.create_check_constraint(
+        "ck_become_quest_approval_active",
+        "become_quest_approvals",
+        "approver_active = true",
+    )
+    op.create_foreign_key(
+        "fk_become_quest_approval_bound_expert",
+        "become_quest_approvals",
+        "become_quest_participants",
+        ["quest_id", "approver_role", "approver_person_ref", "approver_active"],
+        ["quest_id", "role", "person_ref", "active"],
+        ondelete="RESTRICT",
+    )
 
     op.add_column(
         "become_quest_enrollments",
@@ -174,6 +197,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Data-bearing downgrade is not a safe production rollback. This mechanical
+    # downgrade exists only for empty-schema development checks.
     op.drop_constraint(
         "fk_become_quest_attempt_correlation",
         "become_quest_operation_attempts",
@@ -230,6 +255,18 @@ def downgrade() -> None:
     op.drop_column("become_quest_enrollments", "invitation_ref")
     op.drop_column("become_quest_enrollments", "learner_active")
     op.drop_column("become_quest_enrollments", "learner_role")
+
+    op.drop_constraint(
+        "fk_become_quest_approval_bound_expert",
+        "become_quest_approvals",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "ck_become_quest_approval_active",
+        "become_quest_approvals",
+        type_="check",
+    )
+    op.drop_column("become_quest_approvals", "approver_active")
 
     op.drop_constraint(
         "fk_become_quest_approval_artifact_quest",

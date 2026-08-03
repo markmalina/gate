@@ -196,6 +196,9 @@ class BecomeQuestApprovalModel(Base):
             "approver_role = 'EXPERT'", name="ck_become_quest_approval_expert"
         ),
         CheckConstraint(
+            "approver_active = true", name="ck_become_quest_approval_active"
+        ),
+        CheckConstraint(
             "approval_state = 'APPROVED'", name="ck_become_quest_approval_state"
         ),
         CheckConstraint(
@@ -212,6 +215,22 @@ class BecomeQuestApprovalModel(Base):
             name="fk_become_quest_approval_artifact_quest",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            [
+                "quest_id",
+                "approver_role",
+                "approver_person_ref",
+                "approver_active",
+            ],
+            [
+                "become_quest_participants.quest_id",
+                "become_quest_participants.role",
+                "become_quest_participants.person_ref",
+                "become_quest_participants.active",
+            ],
+            name="fk_become_quest_approval_bound_expert",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -225,6 +244,9 @@ class BecomeQuestApprovalModel(Base):
     )
     approver_person_ref: Mapped[str] = mapped_column(String(160), nullable=False)
     approver_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    approver_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
     approval_state: Mapped[str] = mapped_column(String(16), nullable=False)
     approved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

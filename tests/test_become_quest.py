@@ -159,6 +159,13 @@ def approved_expert_path() -> BecomeQuestCoordinator:
     return coordinator
 
 
+def ready_quest() -> BecomeQuestCoordinator:
+    coordinator = approved_expert_path()
+    coordinator.execute(command("INVITE_LEARNER", "invite", **invitation_fields()))
+    coordinator.execute(command("ACCEPT_LEARNER", "accept", **acceptance_fields()))
+    return coordinator
+
+
 def invitation_fields(**overrides: object) -> dict[str, object]:
     return {
         "learner_person_ref": LEARNER,
@@ -192,6 +199,21 @@ def test_simulated_contract_matrix_matches_canonical_public_envelope() -> None:
     ]
     assert set(matrix["readiness_approvals"]) == READINESS_APPROVALS
     assert "EXERCISE" not in matrix["readiness_approvals"]
+
+
+def test_simulated_create_quest_fixture_executes_with_canonical_receipt() -> None:
+    matrix = json.loads(
+        Path("contracts/quest/v1/operation-contract-matrix.json").read_text()
+    )
+    fixture = matrix["executable_fixtures"]["create_quest"]
+    coordinator = BecomeQuestCoordinator(SnapshotQuestStore())
+    receipt = coordinator.execute(fixture["command"])
+    assert receipt == fixture["expected_receipt"]
+    for field in matrix["receipt_required"]:
+        assert field in receipt
+    assert coordinator.execute(fixture["command"]) == receipt
+    with pytest.raises(BecomeQuestError, match="mutated_replay"):
+        coordinator.execute({**fixture["command"], "mode": "PRODUCTION"})
 
 
 def test_simulated_distinct_roles_and_synthetic_production_guard() -> None:
@@ -334,6 +356,84 @@ def test_simulated_four_approvals_reach_ready_without_exercise_approval() -> Non
     assert receipt["state"] == QuestState.READY_FOR_EXERCISE.value
     assert ArtifactType.EXERCISE.value not in snapshot.approvals
     assert receipt["external_effects"] == 0
+
+
+def test_simulated_profile_and_program_versions_recompute_readiness() -> None:
+    coordinator = ready_quest()
+    for artifact_type, digest, key in (
+        (ArtifactType.EXPERT_PROFILE, "6" * 64, "profile-v2"),
+        (ArtifactType.PROGRAM, "7" * 64, "program-v2"),
+    ):
+        before = coordinator.store.load(QUEST)
+        assert before is not None
+        history_count = len(before.approval_history)
+        coordinator.execute(
+            command(
+                "REGISTER_ARTIFACT",
+                key,
+                artifact_type=artifact_type.value,
+                artifact_version=2,
+                artifact_digest=digest,
+                provenance_digest="8" * 64,
+            )
+        )
+        pending = coordinator.store.load(QUEST)
+        assert pending is not None
+        assert pending.state is not QuestState.READY_FOR_EXERCISE
+        assert artifact_type.value not in pending.approvals
+        assert len(pending.approval_history) == history_count
+        approve(
+            coordinator,
+            artifact_type,
+            2,
+            digest,
+            key=f"approve-{key}",
+        )
+        restored = coordinator.store.load(QUEST)
+        assert restored is not None
+        assert restored.state is QuestState.READY_FOR_EXERCISE
+
+    coordinator.execute(
+        command(
+            "REGISTER_ARTIFACT",
+            "exercise-v1",
+            artifact_type=ArtifactType.EXERCISE.value,
+            artifact_version=1,
+            artifact_digest="e" * 64,
+            provenance_digest="8" * 64,
+        )
+    )
+    exercise = coordinator.store.load(QUEST)
+    assert exercise is not None
+    assert exercise.state is QuestState.READY_FOR_EXERCISE
+
+
+def test_simulated_exact_binding_is_noop_after_ready() -> None:
+    coordinator = ready_quest()
+    for role, person_ref, digest in (
+        ("EXPERT", EXPERT, "2" * 64),
+        ("LEARNER", LEARNER, "3" * 64),
+    ):
+        receipt = coordinator.execute(
+            command(
+                "BIND_PARTICIPANT",
+                f"rebind-{role}",
+                role=role,
+                person_ref=person_ref,
+                provenance_digest=digest,
+            )
+        )
+        assert receipt["state"] == QuestState.READY_FOR_EXERCISE.value
+    with pytest.raises(BecomeQuestError, match="role_rebinding_forbidden"):
+        coordinator.execute(
+            command(
+                "BIND_PARTICIPANT",
+                "rebind-changed",
+                role="EXPERT",
+                person_ref="ref://simulated/person/other",
+                provenance_digest="2" * 64,
+            )
+        )
 
 
 def test_simulated_exact_and_mutated_replay_are_scoped() -> None:
