@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "alembic/versions/0082_become_quest.py"
+      - "alembic/versions/0083_become_quest_corrective.py"
       - "alembic/env.py"
       - "app/application/become_quest.py"
       - "app/infrastructure/become_quest.py"
@@ -12,6 +13,8 @@ on:
       - "app/api/mcp_schemas.py"
       - "tests/test_become_quest.py"
       - "tests/test_become_quest_postgres.py"
+      - "tests/test_become_quest_migration.py"
+      - "contracts/quest/v1/operation-contract-matrix.json"
       - "tests/test_mcp_routes.py"
       - "tests/test_mcp_chatgpt_oauth_discovery.py"
       - ".github/workflows/become-quest-exact-head.yml"
@@ -66,15 +69,15 @@ jobs:
 
       - name: Lint and type-check Quest files
         run: |
-          ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py tests/test_become_quest.py tests/test_become_quest_postgres.py alembic/versions/0082_become_quest.py
+          ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py alembic/versions/0082_become_quest.py alembic/versions/0083_become_quest_corrective.py
           mypy app
 
       - name: Test Quest state, persistence, replay, and migration safety
-        run: pytest tests/test_become_quest.py tests/test_become_quest_postgres.py
+        run: pytest tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py
 
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0082_become_quest (head)"
+          alembic heads | grep -F "0083_become_quest_corrective (head)"
           alembic upgrade head
           alembic check
