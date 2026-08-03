@@ -187,6 +187,7 @@ async def _become_recovery_status(
             "2078d230852af1c7e3a309f00d716fa2fc664f68"
         ),
         "chain_recovery_source_failure_preserved": True,
+        "chain_recovery_reconciliation_required": False,
     }
 
 
