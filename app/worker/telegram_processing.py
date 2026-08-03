@@ -1823,6 +1823,7 @@ def _connector_kind(role: TelegramConnectorRole) -> ConnectorKind:
         return ConnectorKind.TELEGRAM_BOT
     raise TelegramCanonicalProjectionError("canonical_connector_role_invalid")
 
+
 def _is_become_pilot_review_payload(payload: dict[str, object]) -> bool:
     if isinstance(payload.get("callback_query"), dict):
         return True
