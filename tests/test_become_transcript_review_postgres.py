@@ -1103,6 +1103,10 @@ async def test_delivery_crash_visibility_and_bounded_owner_reconciliation(
         owner_authorized=True,
         now=NOW,
     ) == "reconciliation_duplicate"
+    failed_status = await store.status(now=NOW)
+    assert failed_status["delivery_failed"] == 1
+    assert failed_status["delivery_failed_oldest_seconds"] >= 300
+    assert failed_status["delivery_owner_reconciliation_required"] == 1
 
     assert await store.owner_reconcile_delivery(
         delivery_id=str(graph.delivery_id),
@@ -1157,14 +1161,47 @@ async def test_delivery_crash_visibility_and_bounded_owner_reconciliation(
         now=NOW,
     )
     assert await store.claim_delivery(now=NOW, max_operations=8) is None
+    unknown_status = await store.status(now=NOW + timedelta(minutes=5))
+    assert unknown_status["delivery_unknown"] == 1
+    assert unknown_status["delivery_unknown_oldest_seconds"] >= 300
+    assert unknown_status["delivery_owner_reconciliation_required"] >= 1
+    assert await store.owner_reconcile_delivery(
+        delivery_id=retry.delivery_id,
+        action="confirm_sent",
+        evidence_digest="b" * 64,
+        external_message_id="external-proof-message",
+        owner_authorized=True,
+        now=NOW + timedelta(minutes=5),
+    ) == "sent_confirmed"
+    assert await store.owner_reconcile_delivery(
+        delivery_id=retry.delivery_id,
+        action="confirm_sent",
+        evidence_digest="b" * 64,
+        external_message_id="external-proof-message",
+        owner_authorized=True,
+        now=NOW + timedelta(minutes=5),
+    ) == "reconciliation_duplicate"
+    with pytest.raises(BecomeControlledIntakeError):
+        await store.owner_reconcile_delivery(
+            delivery_id=retry.delivery_id,
+            action="confirm_sent",
+            evidence_digest="c" * 64,
+            external_message_id="external-proof-message",
+            owner_authorized=True,
+            now=NOW + timedelta(minutes=5),
+        )
+    delivered_status = await store.status(now=NOW + timedelta(minutes=5))
+    assert delivered_status["delivery_delivered"] == 1
+    assert delivered_status["delivery_unknown"] == 0
+    assert await store.claim_delivery(now=NOW, max_operations=8) is None
     with pytest.raises(BecomeControlledIntakeError):
         await store.owner_reconcile_delivery(
             delivery_id=retry.delivery_id,
             action="authorize_retry",
-            evidence_digest="b" * 64,
+            evidence_digest="d" * 64,
             external_message_id=None,
             owner_authorized=True,
-            now=NOW,
+            now=NOW + timedelta(minutes=5),
         )
 
 
