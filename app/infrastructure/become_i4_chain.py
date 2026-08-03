@@ -18,8 +18,8 @@ from app.application.become_i4_chain import (
 
 RELATIONS_SOURCE_SHA = "a9bc98f8ec81ddd767381f414799f19e159701a4"
 MAYAKI_SOURCE_SHA = "2078d230852af1c7e3a309f00d716fa2fc664f68"
-OKO_SOURCE_SHA = "7b6e0eab766779e815ba8fc4c2c13352421ce38e"
-TAKE_SOURCE_SHA = "c88a592e161fd3dbe9af83acc719a825bacd0f03"
+OKO_SOURCE_SHA = "2c304529d04be43726e677d2b864c4b5f8283be8"
+TAKE_SOURCE_SHA = "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
 
 RELATIONS_ENDPOINT = (
     "http://become-relations-controlled.railway.internal:8080/internal/become/i4"
