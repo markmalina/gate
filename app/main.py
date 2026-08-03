@@ -21,6 +21,7 @@ from app.api.dropbox_call_routes import router as dropbox_call_router
 from app.api.health_routes import router as health_router
 from app.api.mcp_metadata_routes import router as mcp_metadata_router
 from app.api.mcp_routes import router as mcp_router
+from app.api.owner_one_off_transcription import router as owner_one_off_transcription_router
 from app.api.routes import router
 from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_telegram_ingress
@@ -286,6 +287,7 @@ def create_app() -> FastAPI:
     app.include_router(dropbox_call_router)
     app.include_router(mcp_metadata_router)
     app.include_router(mcp_router)
+    app.include_router(owner_one_off_transcription_router)
     app.include_router(alpha_admin_router)
     app.include_router(beta_checkpoint_router)
     include_telegram_ingress(app)
