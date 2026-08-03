@@ -5,10 +5,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.application.become_controlled_intake import (
-    BecomeControlledIntakeError,
-)
 from app.application.become_free_result import (
+    BecomeControlledIntakeError,
     BecomeFreeResultCandidate,
     BecomeFreeResultDeliveryResult,
     BecomeFreeResultProviderError,
