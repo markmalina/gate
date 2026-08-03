@@ -26,7 +26,7 @@ from app.application.telegram_voice_transcription import (
 )
 
 BECOME_TRANSCRIPTION_SCHEMA = "gate.become-voice-transcription@1"
-BECOME_TRANSCRIPTION_GRANT_KEY = "become-investor-demo-transcription-v1"
+BECOME_TRANSCRIPTION_GRANT_KEY = "become-pilot-slice1-transcription-v2"
 BECOME_TRANSCRIPTION_SCOPE_KIND = "become_media_intake"
 BECOME_TRANSCRIPTION_SCOPE_REF = "telegram_become_group"
 
@@ -296,8 +296,8 @@ class ProcessBecomeVoiceTranscriptionService:
                 now=now,
             )
             return BecomeVoiceTranscriptionRun(
-                "confirmed",
-                transcript_confirmed=True,
+                "settled_pending_human_review",
+                transcript_confirmed=False,
             )
 
         if work.state is BecomeVoiceTranscriptionState.RESERVING:
