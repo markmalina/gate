@@ -60,7 +60,7 @@ def _health(
 async def test_content_free_health_proves_all_exact_private_targets() -> None:
     client = FakeHealthClient()
     proof = await probe_all_i4_connectivity(client)
-    assert {key for key, value in proof.items() if key.endswith("_connectivity_proven") and value} == {
+    assert {\n        key\n        for key, value in proof.items()\n        if key.endswith("_connectivity_proven") and value\n    } == {
         "mayaki_connectivity_proven",
         "oko_connectivity_proven",
         "take_connectivity_proven",
