@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.application.become_i4_chain import canonical_digest
 from app.infrastructure.become_i4_recovery import (
     RECOVERY_TARGET_SOURCE_SHA,
