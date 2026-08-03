@@ -10,6 +10,7 @@ from app.models import (  # noqa: F401
     alpha_preflight,
     alpha_voice,
     become,
+    become_quest,
     become_recovery,
     beta_context,
     billing,

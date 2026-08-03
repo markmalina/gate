@@ -406,6 +406,24 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             "chain_recovery_take_request_digest": None,
         }
 
+    async def quest_status(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        return {
+            "quest_projection_enabled": False,
+            "quest_activation_max_operations": 0,
+            "quest_role_gate_enabled": False,
+            "quest_approval_gate_enabled": False,
+            "quest_count": 0,
+            "quest_participant_count": 0,
+            "quest_approval_count": 0,
+            "quest_enrollment_count": 0,
+            "quest_attempt_count": 0,
+            "quest_reconciliation_required": False,
+            "quest_external_effects": 0,
+        }
+
     async def connectivity_status(
         *_args: object,
         **_kwargs: object,
@@ -459,6 +477,10 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     monkeypatch.setattr(
         "app.api.mcp_routes.become_i4_recovery_status",
         recovery_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.become_quest_status",
+        quest_status,
     )
     monkeypatch.setattr(
         "app.api.mcp_routes.probe_all_i4_connectivity",
