@@ -40,6 +40,7 @@ class BecomeVoiceTranscriptionState(StrEnum):
     REJECTED = "rejected"
     UNKNOWN = "unknown"
     BLOCKED = "blocked"
+    RECONCILIATION_REQUIRED = "reconciliation_required"
 
 
 @dataclass(frozen=True, slots=True)
