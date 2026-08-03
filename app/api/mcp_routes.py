@@ -82,6 +82,12 @@ from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.become_controlled_intake import (
     become_controlled_intake_status,
 )
+from app.infrastructure.become_i4_connectivity import (
+    probe_mayaki_i4_connectivity,
+)
+from app.infrastructure.become_i4_recovery import (
+    become_i4_recovery_status,
+)
 from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
@@ -300,29 +306,39 @@ async def mcp_endpoint(
                 workspace_key=principal.access_scope.workspace_id,
                 settings=settings,
             )
-            snapshot["become_controlled_intake"] = (
-                await become_controlled_intake_status(
+            become_status = await become_controlled_intake_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                transcription_enabled=(
+                    settings.gate_become_voice_transcription_enabled
+                ),
+                transcription_data_gate_approved=(
+                    settings.gate_become_voice_transcription_data_gate_approved
+                ),
+                transcription_max_calls=(
+                    settings.gate_become_voice_transcription_max_calls
+                ),
+                transcription_api_key_configured=bool(
+                    settings.openai_api_key.get_secret_value()
+                ),
+                chain_execution_enabled=(
+                    settings.gate_become_i4_chain_execution_enabled
+                ),
+                now=datetime.now(UTC),
+            )
+            become_status.update(
+                await become_i4_recovery_status(
                     session,
                     workspace_key=principal.access_scope.workspace_id,
-                    transcription_enabled=(
-                        settings.gate_become_voice_transcription_enabled
-                    ),
-                    transcription_data_gate_approved=(
-                        settings
-                        .gate_become_voice_transcription_data_gate_approved
-                    ),
-                    transcription_max_calls=(
-                        settings.gate_become_voice_transcription_max_calls
-                    ),
-                    transcription_api_key_configured=bool(
-                        settings.openai_api_key.get_secret_value()
-                    ),
-                    chain_execution_enabled=(
-                        settings.gate_become_i4_chain_execution_enabled
-                    ),
-                    now=datetime.now(UTC),
                 )
             )
+            async with httpx.AsyncClient() as connectivity_client:
+                become_status.update(
+                    await probe_mayaki_i4_connectivity(
+                        connectivity_client,
+                    )
+                )
+            snapshot["become_controlled_intake"] = become_status
             snapshot["telegram_voice"] = (
                 await telegram_voice_operational_status(
                     session,

@@ -363,6 +363,37 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             "telegram_identifiers_exposed": False,
         }
 
+    async def recovery_status(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        return {
+            "chain_recovery_receipt_count": 0,
+            "chain_recovery_prepared_count": 0,
+            "chain_recovery_enabled": False,
+            "chain_recovery_attempt_version": None,
+            "chain_recovery_target_source_sha": None,
+            "chain_recovery_source_failure_preserved": False,
+        }
+
+    async def connectivity_status(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        return {
+            "mayaki_connectivity_proven": False,
+            "mayaki_connectivity_error_code": "connection_not_established",
+            "mayaki_service_name": "become-mayaki-controlled",
+            "mayaki_private_hostname": (
+                "become-mayaki-controlled.railway.internal"
+            ),
+            "mayaki_private_port": 3000,
+            "mayaki_source_sha": (
+                "2078d230852af1c7e3a309f00d716fa2fc664f68"
+            ),
+            "mayaki_health_external_effects": 0,
+        }
+
     app.dependency_overrides[get_db_session] = override_session
     monkeypatch.setattr("app.api.mcp_routes.authenticate_mcp_oauth", authenticate)
     monkeypatch.setattr(
@@ -376,6 +407,14 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     monkeypatch.setattr(
         "app.api.mcp_routes.become_controlled_intake_status",
         become_intake_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.become_i4_recovery_status",
+        recovery_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.probe_mayaki_i4_connectivity",
+        connectivity_status,
     )
     response = await _post(
         {

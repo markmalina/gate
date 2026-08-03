@@ -174,6 +174,41 @@ async def _become_intake_status(
     }
 
 
+async def _become_recovery_status(
+    *_args: object,
+    **_kwargs: object,
+) -> dict[str, object]:
+    return {
+        "chain_recovery_receipt_count": 1,
+        "chain_recovery_prepared_count": 1,
+        "chain_recovery_enabled": False,
+        "chain_recovery_attempt_version": 2,
+        "chain_recovery_target_source_sha": (
+            "2078d230852af1c7e3a309f00d716fa2fc664f68"
+        ),
+        "chain_recovery_source_failure_preserved": True,
+    }
+
+
+async def _become_connectivity(
+    *_args: object,
+    **_kwargs: object,
+) -> dict[str, object]:
+    return {
+        "mayaki_connectivity_proven": True,
+        "mayaki_connectivity_error_code": None,
+        "mayaki_service_name": "become-mayaki-controlled",
+        "mayaki_private_hostname": (
+            "become-mayaki-controlled.railway.internal"
+        ),
+        "mayaki_private_port": 3000,
+        "mayaki_source_sha": (
+            "2078d230852af1c7e3a309f00d716fa2fc664f68"
+        ),
+        "mayaki_health_external_effects": 0,
+    }
+
+
 class UnexpectedTelegramClient:
     """Fail if a read-only MCP test reaches the Telegram provider."""
 
@@ -756,6 +791,14 @@ async def test_mcp_status_is_scoped(
         "app.api.mcp_routes.become_controlled_intake_status",
         _become_intake_status,
     )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.become_i4_recovery_status",
+        _become_recovery_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.probe_mayaki_i4_connectivity",
+        _become_connectivity,
+    )
     response = await _post(
         {
             "jsonrpc": "2.0",
@@ -805,6 +848,20 @@ async def test_mcp_status_is_scoped(
     }
     assert structured["become_controlled_intake"]["receipt_count"] == 1
     assert structured["become_controlled_intake"]["registration_ready"] is True
+    assert (
+        structured["become_controlled_intake"]["mayaki_connectivity_proven"]
+        is True
+    )
+    assert (
+        structured["become_controlled_intake"]["chain_recovery_enabled"]
+        is False
+    )
+    assert (
+        structured["become_controlled_intake"][
+            "chain_recovery_source_failure_preserved"
+        ]
+        is True
+    )
     assert structured["become_controlled_intake"]["private_content_exposed"] is False
     assert (
         structured["become_controlled_intake"]["provider_identifiers_exposed"]
