@@ -6,7 +6,7 @@ on:
       - "alembic/versions/0082_become_quest.py"
       - "alembic/versions/0083_become_quest_corrective.py"
       - "alembic/versions/0083_alpha_transcription_product.py"
-      - "alembic/versions/0084_alpha_transcription_merge.py"
+      - "alembic/versions/0083_become_quest_corrective_merge.py"
       - "alembic/env.py"
       - "app/application/become_quest.py"
       - "app/infrastructure/become_quest.py"
@@ -72,7 +72,7 @@ jobs:
 
       - name: Lint and type-check Quest and transcription migration files
         run: |
-          ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py app/models/alpha_transcription.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py alembic/versions/0082_become_quest.py alembic/versions/0083_become_quest_corrective.py alembic/versions/0083_alpha_transcription_product.py alembic/versions/0084_alpha_transcription_merge.py
+          ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py app/models/alpha_transcription.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py alembic/versions/0082_become_quest.py alembic/versions/0083_become_quest_corrective.py alembic/versions/0083_alpha_transcription_product.py alembic/versions/0083_become_quest_corrective_merge.py
           mypy app
 
       - name: Test Quest state, persistence, replay, and migration safety
@@ -81,7 +81,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0084_alpha_transcription_merge (head)"
+          alembic heads | grep -F "0083_become_quest_corrective_m (head)"
           alembic upgrade head
           alembic check
 
