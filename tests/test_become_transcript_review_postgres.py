@@ -1660,33 +1660,50 @@ async def test_approval_v1_is_invalidated_by_correction_v2_and_restart_safe(
 
 
 @pytest.mark.anyio
-async def test_restart_after_voice_intake_claims_one_persisted_attempt(
+async def test_restart_after_voice_intake_replays_one_persisted_intake(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    graph = await seed_pilot(sessions, attempt_state="absent", with_review=False)
-    restarted = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
-    first = await restarted.claim_or_resume(
-        workspace_key=graph.workspace_key,
-        now=NOW,
-        model="gpt-4o-mini-transcribe",
-        language="ru",
-        reserve_microusd_per_second=100,
-        stale_after=timedelta(minutes=5),
+    subject_ref = opaque_subject_ref(
+        provider_actor_id="1001", pepper="pilot-pepper"
     )
-    assert first is not None and first.state.value == "reserving"
-    exact_replay = await SessionFactoryBecomeVoiceTranscriptionStore(
-        sessions
-    ).claim_or_resume(
-        workspace_key=graph.workspace_key,
-        now=NOW,
-        model="gpt-4o-mini-transcribe",
-        language="ru",
-        reserve_microusd_per_second=100,
-        stale_after=timedelta(minutes=5),
+    graph = await seed_pilot(
+        sessions,
+        attempt_state="absent",
+        with_review=False,
+        subject_ref=subject_ref,
     )
-    assert exact_replay is not None
-    assert exact_replay.attempt_id == first.attempt_id
+    await remove_seeded_media(sessions, graph)
+    downloader = NoExternalDownload()
+    command = ProcessBecomeMediaCommand(
+        workspace_key=graph.workspace_key,
+        source_receipt_id=str(graph.media_receipt_id),
+        update=media_update(graph),
+        received_at=NOW,
+    )
+    first = await media_service(sessions, downloader).execute(command)
+    assert first.archived is True and first.duplicate is False
+    exact_replay = await media_service(sessions, downloader).execute(command)
+    assert exact_replay.archived is True and exact_replay.duplicate is True
+    assert exact_replay.intake_key == first.intake_key
+    assert downloader.calls == 1
+    mutated = media_update(graph)
+    message = cast(dict[str, object], mutated["message"])
+    voice = cast(dict[str, object], message["voice"])
+    voice["file_unique_id"] = "mutated-private-unique-file"
+    with pytest.raises(BecomeControlledIntakeError):
+        await media_service(sessions, downloader).execute(
+            replace(command, update=mutated)
+        )
     async with sessions() as session:
+        assert await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_media_intakes
+                WHERE workspace_id = :workspace_id
+                """
+            ),
+            {"workspace_id": graph.workspace_id},
+        ) == 1
         assert await session.scalar(
             text(
                 """
@@ -1695,7 +1712,7 @@ async def test_restart_after_voice_intake_claims_one_persisted_attempt(
                 """
             ),
             {"workspace_id": graph.workspace_id},
-        ) == 1
+        ) == 0
 
 
 @pytest.mark.anyio
@@ -1735,18 +1752,39 @@ async def test_restart_after_provider_reservation_preserves_single_call_claim(
 async def test_restart_after_provider_success_stages_exactly_one_review(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    graph = await seed_pilot(
-        sessions,
-        attempt_state="succeeded_unsettled",
-        with_review=False,
+    graph = await seed_pilot(sessions, attempt_state="absent", with_review=False)
+    first_store = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
+    work = await first_store.claim_or_resume(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+        model="gpt-4o-mini-transcribe",
+        language="ru",
+        reserve_microusd_per_second=100,
+        stale_after=timedelta(minutes=5),
     )
+    assert work is not None
+    await first_store.mark_reserved(attempt_id=work.attempt_id, now=NOW)
+    assert await first_store.begin_call(
+        attempt_id=work.attempt_id, now=NOW
+    ) is not None
+    succeeded = await first_store.persist_success(
+        attempt_id=work.attempt_id,
+        transcript=ProviderTranscript(
+            "provider private transcript",
+            "private-provider-operation",
+            billed_quantity=10,
+            actual_microusd=20,
+        ),
+        confirmed_at=NOW,
+    )
+    assert succeeded.state.value == "succeeded_unsettled"
     restarted = SessionFactoryBecomeVoiceTranscriptionStore(sessions)
     assert await restarted.confirm_success(
-        attempt_id=str(graph.attempt_id), now=NOW
+        attempt_id=work.attempt_id, now=NOW
     ) is True
     assert await SessionFactoryBecomeVoiceTranscriptionStore(
         sessions
-    ).confirm_success(attempt_id=str(graph.attempt_id), now=NOW) is True
+    ).confirm_success(attempt_id=work.attempt_id, now=NOW) is True
     with pytest.raises(BecomeControlledIntakeError):
         await restarted.confirm_success(attempt_id=str(uuid4()), now=NOW)
     async with sessions() as session:
@@ -1765,7 +1803,7 @@ async def test_restart_after_provider_success_stages_exactly_one_review(
                     GROUP BY a.id
                     """
                 ),
-                {"attempt_id": graph.attempt_id},
+                {"attempt_id": work.attempt_id},
             )
         ).one()
     assert row == ("confirmed", None, 1, 1)
