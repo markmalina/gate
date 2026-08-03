@@ -220,6 +220,25 @@ async def _become_recovery_status(
     }
 
 
+async def _become_quest_status(
+    *_args: object,
+    **_kwargs: object,
+) -> dict[str, object]:
+    return {
+        "quest_projection_enabled": False,
+        "quest_activation_max_operations": 0,
+        "quest_role_gate_enabled": False,
+        "quest_approval_gate_enabled": False,
+        "quest_count": 0,
+        "quest_participant_count": 0,
+        "quest_approval_count": 0,
+        "quest_enrollment_count": 0,
+        "quest_attempt_count": 0,
+        "quest_reconciliation_required": False,
+        "quest_external_effects": 0,
+    }
+
+
 async def _become_connectivity(
     *_args: object,
     **_kwargs: object,
@@ -840,6 +859,10 @@ async def test_mcp_status_is_scoped(
         _become_recovery_status,
     )
     monkeypatch.setattr(
+        "app.api.mcp_routes.become_quest_status",
+        _become_quest_status,
+    )
+    monkeypatch.setattr(
         "app.api.mcp_routes.probe_all_i4_connectivity",
         _become_connectivity,
     )
@@ -906,6 +929,15 @@ async def test_mcp_status_is_scoped(
         ]
         is True
     )
+    assert (
+        structured["become_controlled_intake"]["quest_projection_enabled"]
+        is False
+    )
+    assert (
+        structured["become_controlled_intake"]["quest_activation_max_operations"]
+        == 0
+    )
+    assert structured["become_controlled_intake"]["quest_count"] == 0
     assert structured["become_controlled_intake"]["private_content_exposed"] is False
     assert (
         structured["become_controlled_intake"]["provider_identifiers_exposed"]
