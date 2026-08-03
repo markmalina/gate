@@ -796,7 +796,7 @@ async def test_mcp_status_is_scoped(
         _become_recovery_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.probe_mayaki_i4_connectivity",
+        "app.api.mcp_routes.probe_all_i4_connectivity",
         _become_connectivity,
     )
     response = await _post(
