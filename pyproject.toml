@@ -58,6 +58,7 @@ select = ["E", "F", "I", "UP", "B"]
 "app/api/mcp_transcription_routes.py" = ["I001"]
 "app/application/alpha_transcription_product.py" = ["E501"]
 "tests/test_alpha_transcription_product.py" = ["I001"]
+"tests/test_alpha_transcription_receipts.py" = ["I001"]
 
 [tool.mypy]
 python_version = "3.12"
