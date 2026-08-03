@@ -539,15 +539,120 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
-                    "chain_recovery_enabled": {
+                    "chain_recovery_prepared_receipt_enabled": {
                         "type": "boolean",
                         "const": False,
+                    },
+                    "chain_recovery_enabled": {"type": "boolean"},
+                    "chain_recovery_activation_max_posts": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3,
                     },
                     "chain_recovery_attempt_version": _nullable("integer"),
                     "chain_recovery_target_source_sha": _nullable("string"),
                     "chain_recovery_source_failure_preserved": {
                         "type": "boolean",
                     },
+                    "chain_recovery_attempt_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "chain_recovery_activation_receipt_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "chain_recovery_attempt_digest": _nullable("string"),
+                    "chain_recovery_prepared_digest": _nullable("string"),
+                    "chain_recovery_attempt_state": {
+                        "type": "string",
+                        "enum": [
+                            "prepared",
+                            "in_progress",
+                            "completed",
+                            "failed",
+                            "unknown",
+                        ],
+                    },
+                    "chain_recovery_post_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3,
+                    },
+                    "chain_recovery_reconciliation_required": {
+                        "type": "boolean",
+                    },
+                    "chain_recovery_mayaki_source_sha": {
+                        "type": "string",
+                        "const": (
+                            "2078d230852af1c7e3a309f00d716fa2fc664f68"
+                        ),
+                    },
+                    "chain_recovery_oko_source_sha": {
+                        "type": "string",
+                        "const": (
+                            "2c304529d04be43726e677d2b864c4b5f8283be8"
+                        ),
+                    },
+                    "chain_recovery_take_source_sha": {
+                        "type": "string",
+                        "const": (
+                            "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
+                        ),
+                    },
+                    "chain_recovery_mayaki_state": {
+                        "type": "string",
+                        "enum": [
+                            "not_started",
+                            "reserved",
+                            "completed",
+                            "failed",
+                            "unknown",
+                        ],
+                    },
+                    "chain_recovery_mayaki_post_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "chain_recovery_mayaki_request_digest": _nullable("string"),
+                    "chain_recovery_mayaki_receipt_digest": _nullable("string"),
+                    "chain_recovery_oko_state": {
+                        "type": "string",
+                        "enum": [
+                            "not_started",
+                            "reserved",
+                            "completed",
+                            "failed",
+                            "unknown",
+                        ],
+                    },
+                    "chain_recovery_oko_post_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "chain_recovery_oko_request_digest": _nullable("string"),
+                    "chain_recovery_oko_receipt_digest": _nullable("string"),
+                    "chain_recovery_take_state": {
+                        "type": "string",
+                        "enum": [
+                            "not_started",
+                            "reserved",
+                            "completed",
+                            "failed",
+                            "unknown",
+                        ],
+                    },
+                    "chain_recovery_take_post_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "chain_recovery_take_request_digest": _nullable("string"),
+                    "chain_recovery_take_receipt_digest": _nullable("string"),
                     "mayaki_connectivity_proven": {"type": "boolean"},
                     "mayaki_connectivity_error_code": _nullable("string"),
                     "mayaki_service_name": {
@@ -571,6 +676,54 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         ),
                     },
                     "mayaki_health_external_effects": {
+                        "type": "integer",
+                        "const": 0,
+                    },
+                    "oko_connectivity_proven": {"type": "boolean"},
+                    "oko_connectivity_error_code": _nullable("string"),
+                    "oko_service_name": {
+                        "type": "string",
+                        "const": "become-oko-controlled",
+                    },
+                    "oko_private_hostname": {
+                        "type": "string",
+                        "const": "become-oko-controlled.railway.internal",
+                    },
+                    "oko_private_port": {
+                        "type": "integer",
+                        "const": 3000,
+                    },
+                    "oko_source_sha": {
+                        "type": "string",
+                        "const": (
+                            "2c304529d04be43726e677d2b864c4b5f8283be8"
+                        ),
+                    },
+                    "oko_health_external_effects": {
+                        "type": "integer",
+                        "const": 0,
+                    },
+                    "take_connectivity_proven": {"type": "boolean"},
+                    "take_connectivity_error_code": _nullable("string"),
+                    "take_service_name": {
+                        "type": "string",
+                        "const": "become-take-controlled",
+                    },
+                    "take_private_hostname": {
+                        "type": "string",
+                        "const": "become-take-controlled.railway.internal",
+                    },
+                    "take_private_port": {
+                        "type": "integer",
+                        "const": 8000,
+                    },
+                    "take_source_sha": {
+                        "type": "string",
+                        "const": (
+                            "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
+                        ),
+                    },
+                    "take_health_external_effects": {
                         "type": "integer",
                         "const": 0,
                     },

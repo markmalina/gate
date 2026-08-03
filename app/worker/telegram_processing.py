@@ -146,6 +146,9 @@ from app.infrastructure.become_controlled_intake import (
 from app.infrastructure.become_i4_execution import (
     SessionFactoryBecomeI4Executor,
 )
+from app.infrastructure.become_i4_recovery_execution import (
+    SessionFactoryBecomeI4RecoveryExecutor,
+)
 from app.infrastructure.become_media_intake import (
     SessionFactoryBecomeMediaRetention,
     SessionFactoryBecomeMediaStore,
@@ -1398,6 +1401,45 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 ),
                                 chain_result.attempted,
                                 chain_result.reconciliation_required,
+                            )
+                    try:
+                        recovery_result = (
+                            await SessionFactoryBecomeI4RecoveryExecutor(
+                                sessions,
+                                http_client=http_client,
+                                enabled=(
+                                    settings
+                                    .gate_become_i4_recovery_execution_enabled
+                                ),
+                                max_posts=(
+                                    settings.gate_become_i4_recovery_max_posts
+                                ),
+                            ).run_once(
+                                workspace_key=settings.gate_workspace_id,
+                                now=datetime.now(UTC),
+                            )
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "BECOME I4 recovery deferred: error_type=%s",
+                            exc.__class__.__name__,
+                        )
+                    else:
+                        if recovery_result.disposition != "disabled":
+                            logger.info(
+                                (
+                                    "BECOME I4 recovery state: "
+                                    "disposition=%s stage=%s attempted=%s "
+                                    "reconciliation=%s"
+                                ),
+                                recovery_result.disposition,
+                                (
+                                    recovery_result.stage.value
+                                    if recovery_result.stage is not None
+                                    else "none"
+                                ),
+                                recovery_result.attempted,
+                                recovery_result.reconciliation_required,
                             )
                     try:
                         prompt_result = await (
