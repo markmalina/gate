@@ -276,6 +276,7 @@ async def test_calling_is_durable_before_single_provider_call() -> None:
 
     result = await service(store, budget, speech).run_once(now=NOW)
 
+    assert result.disposition == "settled_pending_human_review"
     assert result.transcript_confirmed is False
     assert speech.calls == 1
     assert store.events == [
@@ -337,7 +338,8 @@ async def test_succeeded_unsettled_recovers_without_provider_call() -> None:
 
     result = await service(store, budget, speech).run_once(now=NOW)
 
-    assert result.transcript_confirmed is True
+    assert result.disposition == "settled_pending_human_review"
+    assert result.transcript_confirmed is False
     assert speech.calls == 0
     assert budget.events == ["settle"]
     assert store.events == ["claim", "confirmed"]
