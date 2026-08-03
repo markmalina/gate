@@ -82,6 +82,9 @@ from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.become_controlled_intake import (
     become_controlled_intake_status,
 )
+from app.infrastructure.become_free_result import (
+    become_free_result_status,
+)
 from app.infrastructure.become_i4_connectivity import (
     probe_all_i4_connectivity,
 )
@@ -335,6 +338,26 @@ async def mcp_endpoint(
                 max_posts=settings.gate_become_i4_recovery_max_posts,
             )
             become_status.update(recovery_status)
+            free_result_status = await become_free_result_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                delivery_enabled=(
+                    settings.gate_become_free_result_delivery_enabled
+                ),
+                max_calls=settings.gate_become_free_result_max_calls,
+            )
+            free_result_sent_count = int(
+                free_result_status["free_result_delivery_sent_count"]
+            )
+            become_status["external_effects"] = (
+                int(become_status["external_effects"])
+                + free_result_sent_count
+            )
+            become_status["messages_or_publications"] = (
+                int(become_status["messages_or_publications"])
+                + free_result_sent_count
+            )
+            become_status.update(free_result_status)
             become_status["chain_reconciliation_required"] = bool(
                 become_status["chain_reconciliation_required"]
                 or recovery_status["chain_recovery_reconciliation_required"]
