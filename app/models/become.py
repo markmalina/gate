@@ -1234,16 +1234,36 @@ class BecomePilotTranscriptDeliveryModel(Base):
             "AND telegram_message_id IS NULL AND settled_at IS NOT NULL)",
             name="ck_become_pilot_delivery_settlement",
         ),
+        CheckConstraint(
+            "(attempt_no = 1 AND retry_of_delivery_id IS NULL) OR "
+            "(attempt_no = 2 AND retry_of_delivery_id IS NOT NULL)",
+            name="ck_become_pilot_delivery_attempt",
+        ),
+        CheckConstraint(
+            "(reconciliation_action IS NULL "
+            "AND reconciliation_request_digest IS NULL "
+            "AND reconciled_at IS NULL) OR "
+            "(reconciliation_action IN ('sent_confirmed', "
+            "'failed_confirmed', 'retry_authorized') "
+            "AND char_length(reconciliation_request_digest) = 64 "
+            "AND reconciled_at IS NOT NULL)",
+            name="ck_become_pilot_delivery_reconciliation",
+        ),
         UniqueConstraint(
             "review_id",
             "kind",
             "version",
             "transcript_digest",
+            "attempt_no",
             name="uq_become_pilot_delivery_operation",
         ),
         UniqueConstraint(
             "request_digest",
             name="uq_become_pilot_delivery_request",
+        ),
+        UniqueConstraint(
+            "reconciliation_request_digest",
+            name="uq_become_pilot_delivery_reconciliation_request",
         ),
         Index(
             "ix_become_pilot_delivery_outcome_created",
@@ -1265,7 +1285,21 @@ class BecomePilotTranscriptDeliveryModel(Base):
         ),
         nullable=False,
     )
+    retry_of_delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "become_pilot_transcript_deliveries.id",
+            name="fk_become_pilot_delivery_retry_of",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_no: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     transcript_digest: Mapped[str] = mapped_column(
         String(64),
@@ -1285,6 +1319,18 @@ class BecomePilotTranscriptDeliveryModel(Base):
         nullable=True,
     )
     settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reconciliation_action: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+    reconciliation_request_digest: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
