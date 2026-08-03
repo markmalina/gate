@@ -329,7 +329,7 @@ def parse_callback_data(value: object) -> tuple[str, str]:
 def delivery_body(
     job: PilotDeliveryJob,
 ) -> tuple[str, dict[str, Any] | None]:
-    if job.kind == "presentation":
+    if job.kind in {"presentation", "redisplay"}:
         if not job.transcript_text:
             raise BecomeControlledIntakeError(
                 "become_pilot_transcript_content_missing"
