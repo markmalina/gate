@@ -413,7 +413,7 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
         recovery_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.probe_mayaki_i4_connectivity",
+        "app.api.mcp_routes.probe_all_i4_connectivity",
         connectivity_status,
     )
     response = await _post(
