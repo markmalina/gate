@@ -191,7 +191,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "kind IN ('presentation', 'correction_prompt', 'confirmation')",
+            "kind IN ('presentation', 'redisplay', "
+            "'correction_prompt', 'confirmation')",
             name="ck_become_pilot_delivery_kind",
         ),
         sa.CheckConstraint(
