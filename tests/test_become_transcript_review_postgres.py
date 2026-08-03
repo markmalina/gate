@@ -42,7 +42,10 @@ from app.application.billing import (
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
+    ProcessTelegramOutboxService,
     TelegramReceiptError,
+    TelegramWorkerDisposition,
+    canonical_telegram_payload_digest,
 )
 from app.application.telegram_voice_transcription import (
     NormalizedVoice,
@@ -59,7 +62,10 @@ from app.infrastructure.become_transcript_review import (
 from app.infrastructure.become_voice_transcription import (
     SessionFactoryBecomeVoiceTranscriptionStore,
 )
-from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
+from app.infrastructure.telegram_processing import (
+    SqlTelegramProcessingQueue,
+    SqlTelegramReceiptStore,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -2280,6 +2286,270 @@ async def test_telegram_update_replay_survives_restart_and_rejects_mutation(
 
 
 @pytest.mark.anyio
+async def test_telegram_tombstone_replay_survives_restart_and_rejects_mutation(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    update_id = uuid4().int % 9_000_000_000_000_000_000
+    payload = {
+        "update_id": update_id,
+        "message": {
+            "message_id": 17,
+            "chat": {"id": "private-pilot", "type": "group"},
+            "from": {"id": "exact-expert", "is_bot": False},
+            "voice": {
+                "file_id": "private-file",
+                "file_unique_id": "private-unique-file",
+                "duration": 1,
+            },
+        },
+    }
+    command = AcceptTelegramReceiptCommand(
+        bot_key="telegram_become_group",
+        update_id=update_id,
+        payload=payload,
+        received_at=NOW,
+    )
+    original_digest = canonical_telegram_payload_digest(payload)
+    external_effects = {
+        "provider_calls": 0,
+        "telegram_deliveries": 0,
+        "downstream_posts": 0,
+        "payments": 0,
+    }
+
+    async def persisted_effect_state() -> tuple[object, ...]:
+        async with sessions() as effect_session:
+            return (
+                await effect_session.execute(
+                    text(
+                        """
+                        SELECT
+                          (SELECT count(*)
+                           FROM become_voice_transcription_attempts),
+                          (SELECT count(*)
+                           FROM become_pilot_transcript_deliveries),
+                          (SELECT count(*)
+                           FROM become_pilot_transcript_versions),
+                          (SELECT count(*)
+                           FROM become_pilot_transcript_reviews
+                           WHERE approved_version IS NOT NULL)
+                        """
+                    )
+                )
+            ).one()
+
+    effects_before = await persisted_effect_state()
+
+    class ContentFreeProcessor:
+        async def process(self, item: object) -> None:
+            assert getattr(item, "payload") == payload
+
+    async with sessions() as first_session:
+        first = await AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(first_session)
+        ).execute(command)
+    assert first.duplicate is False
+
+    async with sessions() as worker_session:
+        worker_result = await ProcessTelegramOutboxService(
+            queue=SqlTelegramProcessingQueue(worker_session),
+            processor=ContentFreeProcessor(),
+        ).run_once(now=NOW + timedelta(seconds=1))
+    assert worker_result.disposition == TelegramWorkerDisposition.PROCESSED
+    assert worker_result.receipt_id == first.receipt_id
+
+    review_store = SessionFactoryPilotTranscriptReviewStore(sessions)
+    await review_store.tombstone_receipt(
+        receipt_id=first.receipt_id,
+        now=NOW + timedelta(seconds=2),
+    )
+    async with sessions() as tombstoned_session:
+        tombstone = (
+            await tombstoned_session.execute(
+                text(
+                    """
+                    SELECT payload FROM telegram_receipts
+                    WHERE id = CAST(:receipt_id AS uuid)
+                    """
+                ),
+                {"receipt_id": first.receipt_id},
+            )
+        ).scalar_one()
+    assert tombstone["canonical_payload_digest"] == original_digest
+    assert tombstone["canonicalization_version"] == "telegram-json-c14n-v1"
+    assert tombstone["content_purged"] is True
+    assert "message" not in tombstone
+    assert "private-file" not in json.dumps(tombstone)
+
+    async def durable_snapshot() -> tuple[object, ...]:
+        async with sessions() as snapshot_session:
+            return (
+                await snapshot_session.execute(
+                    text(
+                        """
+                        SELECT
+                          (SELECT count(*) FROM telegram_receipts
+                           WHERE bot_key = 'telegram_become_group'
+                             AND update_id = :update_id),
+                          (SELECT count(*) FROM telegram_outbox_events
+                           WHERE receipt_id = CAST(:receipt_id AS uuid)),
+                          (SELECT status FROM telegram_receipts
+                           WHERE id = CAST(:receipt_id AS uuid)),
+                          (SELECT status FROM telegram_outbox_events
+                           WHERE receipt_id = CAST(:receipt_id AS uuid)),
+                          (SELECT count(*)
+                           FROM become_voice_transcription_attempts),
+                          (SELECT count(*)
+                           FROM become_pilot_transcript_deliveries),
+                          (SELECT count(*)
+                           FROM become_pilot_transcript_versions),
+                          (SELECT count(*)
+                           FROM become_pilot_transcript_reviews
+                           WHERE approved_version IS NOT NULL)
+                        """
+                    ),
+                    {
+                        "update_id": update_id,
+                        "receipt_id": first.receipt_id,
+                    },
+                )
+            ).one()
+
+    before_replay = await durable_snapshot()
+    async with sessions() as restarted_session:
+        restarted = AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(restarted_session)
+        )
+        exact_replay = await restarted.execute(command)
+    assert exact_replay.duplicate is True
+    assert exact_replay.receipt_id == first.receipt_id
+    assert exact_replay.outbox_event_id == first.outbox_event_id
+    after_exact_replay = await durable_snapshot()
+    assert after_exact_replay == before_replay
+
+    async with sessions() as mutated_session:
+        restarted = AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(mutated_session)
+        )
+        with pytest.raises(TelegramReceiptError) as mutated:
+            await restarted.execute(
+                replace(
+                    command,
+                    payload={
+                        **payload,
+                        "message": {**payload["message"], "message_id": 18},
+                    },
+                )
+            )
+    assert str(mutated.value) == "telegram_receipt_mutated_replay"
+    assert await durable_snapshot() == before_replay
+    assert before_replay[0:4] == (1, 1, "processed", "delivered")
+    assert await persisted_effect_state() == effects_before
+    assert external_effects == {
+        "provider_calls": 0,
+        "telegram_deliveries": 0,
+        "downstream_posts": 0,
+        "payments": 0,
+    }
+
+    async with sessions.begin() as cleanup_session:
+        await cleanup_session.execute(
+            text(
+                "DELETE FROM telegram_outbox_events "
+                "WHERE receipt_id = CAST(:receipt_id AS uuid)"
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+        await cleanup_session.execute(
+            text(
+                "DELETE FROM telegram_receipts "
+                "WHERE id = CAST(:receipt_id AS uuid)"
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+
+
+@pytest.mark.anyio
+async def test_legacy_telegram_tombstone_without_digest_fails_closed_after_restart(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    update_id = uuid4().int % 9_000_000_000_000_000_000
+    command = AcceptTelegramReceiptCommand(
+        bot_key="telegram_become_group",
+        update_id=update_id,
+        payload={"update_id": update_id, "message": {"text": "private"}},
+        received_at=NOW,
+    )
+    async with sessions() as first_session:
+        first = await AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(first_session)
+        ).execute(command)
+    async with sessions.begin() as tombstone_session:
+        await tombstone_session.execute(
+            text(
+                """
+                UPDATE telegram_receipts
+                SET payload = CAST(:legacy_tombstone AS jsonb)
+                WHERE id = CAST(:receipt_id AS uuid)
+                """
+            ),
+            {
+                "receipt_id": first.receipt_id,
+                "legacy_tombstone": json.dumps(
+                    {
+                        "schema": "gate.telegram-content-tombstone@1",
+                        "update_id": update_id,
+                        "content_purged": True,
+                    }
+                ),
+            },
+        )
+
+    async with sessions() as restarted_session:
+        restarted = AcceptTelegramReceiptService(
+            SqlTelegramReceiptStore(restarted_session)
+        )
+        with pytest.raises(TelegramReceiptError) as replay:
+            await restarted.execute(command)
+    assert str(replay.value) == "telegram_receipt_original_digest_missing"
+
+    async with sessions.begin() as cleanup_session:
+        state = (
+            await cleanup_session.execute(
+                text(
+                    """
+                    SELECT
+                      (SELECT count(*) FROM telegram_receipts
+                       WHERE id = CAST(:receipt_id AS uuid)),
+                      (SELECT count(*) FROM telegram_outbox_events
+                       WHERE receipt_id = CAST(:receipt_id AS uuid)),
+                      (SELECT payload FROM telegram_receipts
+                       WHERE id = CAST(:receipt_id AS uuid))
+                    """
+                ),
+                {"receipt_id": first.receipt_id},
+            )
+        ).one()
+        assert state[0:2] == (1, 1)
+        assert state[2]["content_purged"] is True
+        assert "message" not in state[2]
+        await cleanup_session.execute(
+            text(
+                "DELETE FROM telegram_outbox_events "
+                "WHERE receipt_id = CAST(:receipt_id AS uuid)"
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+        await cleanup_session.execute(
+            text(
+                "DELETE FROM telegram_receipts "
+                "WHERE id = CAST(:receipt_id AS uuid)"
+            ),
+            {"receipt_id": first.receipt_id},
+        )
+
+
+@pytest.mark.anyio
 async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -2435,6 +2705,11 @@ async def test_independent_privacy_purge_is_idempotent_and_fail_closed(
     assert version[2] == NOW
     assert confirmed_media == ("purged", None, DIGEST_1, NOW)
     assert all(payload["content_purged"] is True for payload in payloads)
+    assert all(
+        payload["canonicalization_version"] == "telegram-json-c14n-v1"
+        for payload in payloads
+    )
+    assert all(len(payload["canonical_payload_digest"]) == 64 for payload in payloads)
     assert all("message" not in payload for payload in payloads)
 
 
