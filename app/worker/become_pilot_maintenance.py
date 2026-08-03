@@ -30,6 +30,7 @@ _MUTATING_ACTIONS = {
     "manual-correct",
     "approve",
     "retry-transcription",
+    "reconcile-delivery",
 }
 
 
@@ -66,7 +67,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         if command == "status":
             result: dict[str, object] = {
                 "schema": "gate.become-pilot-slice1-status@1",
-                "state": await store.status(),
+                "state": await store.status(now=datetime.now(UTC)),
                 "content_exposed": False,
             }
         elif command == "purge":
@@ -151,6 +152,27 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                 "disposition": disposition,
                 "content_exposed": False,
             }
+        elif command == "reconcile-delivery":
+            delivery_id = _required(args.delivery_id, "--delivery-id")
+            action = _required(args.reconciliation_action, "--action")
+            evidence_digest = _required(
+                args.evidence_digest,
+                "--evidence-digest",
+            )
+            disposition = await store.owner_reconcile_delivery(
+                delivery_id=delivery_id,
+                action=action,
+                evidence_digest=evidence_digest,
+                external_message_id=args.external_message_id,
+                owner_authorized=True,
+                now=datetime.now(UTC),
+            )
+            result = {
+                "schema": "gate.become-pilot-slice1-reconciliation@1",
+                "action": action,
+                "disposition": disposition,
+                "content_exposed": False,
+            }
         elif command == "retry-transcription":
             if args.confirm_rejected_failure != "REJECTED":
                 raise RuntimeError(
@@ -198,6 +220,7 @@ def main() -> None:
             "manual-correct",
             "approve",
             "retry-transcription",
+            "reconcile-delivery",
             "reset-check",
         ),
     )
@@ -206,6 +229,14 @@ def main() -> None:
     parser.add_argument("--expected-digest")
     parser.add_argument("--text-file")
     parser.add_argument("--confirm-rejected-failure")
+    parser.add_argument("--delivery-id")
+    parser.add_argument(
+        "--action",
+        dest="reconciliation_action",
+        choices=("confirm_sent", "mark_failed", "authorize_retry"),
+    )
+    parser.add_argument("--evidence-digest")
+    parser.add_argument("--external-message-id")
     args = parser.parse_args()
     result = asyncio.run(_run(args))
     print(json.dumps(result, sort_keys=True))
