@@ -163,11 +163,11 @@ from app.infrastructure.become_media_prompt import (
     SessionFactoryBecomeMediaPromptStore,
     TelegramClientBecomeMediaPromptAdapter,
 )
-from app.infrastructure.become_voice_chain import (
-    SessionFactoryBecomeVoiceChainStore,
-)
 from app.infrastructure.become_transcript_review import (
     SessionFactoryPilotTranscriptReviewStore,
+)
+from app.infrastructure.become_voice_chain import (
+    SessionFactoryBecomeVoiceChainStore,
 )
 from app.infrastructure.become_voice_transcription import (
     SessionFactoryBecomeVoiceTranscriptionStore,
