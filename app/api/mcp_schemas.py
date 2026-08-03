@@ -744,6 +744,46 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                         "type": "integer",
                         "minimum": 0,
                     },
+                    "quest_projection_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "quest_activation_max_operations": {
+                        "type": "integer",
+                        "const": 0,
+                    },
+                    "quest_role_gate_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "quest_approval_gate_enabled": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "quest_count": {"type": "integer", "minimum": 0},
+                    "quest_participant_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "quest_approval_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "quest_enrollment_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "quest_attempt_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "quest_reconciliation_required": {
+                        "type": "boolean",
+                    },
+                    "quest_external_effects": {
+                        "type": "integer",
+                        "const": 0,
+                    },
                     "free_result_delivery_enabled": {
                         "type": "boolean",
                         "const": False,
