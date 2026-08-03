@@ -220,6 +220,28 @@ async def _become_recovery_status(
     }
 
 
+async def _become_free_result_status(
+    *_args: object,
+    **_kwargs: object,
+) -> dict[str, object]:
+    return {
+        "free_result_artifact_count": 1,
+        "free_result_artifact_ready": True,
+        "free_result_schema": "gate.become-free-result@1",
+        "free_result_digest": "3" * 64,
+        "free_result_receipt_digest": "4" * 64,
+        "free_result_take_receipt_digest": "5" * 64,
+        "free_result_delivery_enabled": False,
+        "free_result_activation_max_calls": 0,
+        "free_result_delivery_count": 0,
+        "free_result_delivery_state": "not_started",
+        "free_result_delivery_sent_count": 0,
+        "free_result_delivery_unknown_count": 0,
+        "free_result_delivery_receipt_digest": None,
+        "free_result_reconciliation_required": False,
+    }
+
+
 async def _become_connectivity(
     *_args: object,
     **_kwargs: object,
@@ -840,6 +862,10 @@ async def test_mcp_status_is_scoped(
         _become_recovery_status,
     )
     monkeypatch.setattr(
+        "app.api.mcp_routes.become_free_result_status",
+        _become_free_result_status,
+    )
+    monkeypatch.setattr(
         "app.api.mcp_routes.probe_all_i4_connectivity",
         _become_connectivity,
     )
@@ -898,6 +924,16 @@ async def test_mcp_status_is_scoped(
     )
     assert (
         structured["become_controlled_intake"]["chain_recovery_enabled"]
+        is False
+    )
+    assert (
+        structured["become_controlled_intake"]["free_result_artifact_ready"]
+        is True
+    )
+    assert (
+        structured["become_controlled_intake"][
+            "free_result_delivery_enabled"
+        ]
         is False
     )
     assert (
