@@ -48,8 +48,6 @@ def _update(chat_type: str = "supergroup") -> dict[str, object]:
     }
 
 
-
-
 def _callback_update(chat_type: str = "supergroup") -> dict[str, object]:
     return {
         "update_id": 82,
@@ -115,8 +113,6 @@ def test_private_chat_and_wrong_secret_fail_before_storage() -> None:
         )
     assert secret_error.value.status_code == 403
     assert store.commands == []
-
-
 
 
 def test_group_callback_is_durable_and_private_callback_is_rejected() -> None:
