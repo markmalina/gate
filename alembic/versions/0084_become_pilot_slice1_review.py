@@ -283,17 +283,6 @@ def upgrade() -> None:
         sa.Column("outcome", sa.String(length=16), nullable=False),
         sa.Column("telegram_message_id", sa.String(length=64), nullable=True),
         sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column(
-            "reconciliation_action",
-            sa.String(length=32),
-            nullable=True,
-        ),
-        sa.Column(
-            "reconciliation_request_digest",
-            sa.String(length=64),
-            nullable=True,
-        ),
-        sa.Column("reconciled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
@@ -324,16 +313,6 @@ def upgrade() -> None:
             "(attempt_no = 2 AND retry_of_delivery_id IS NOT NULL)",
             name="ck_become_pilot_delivery_attempt",
         ),
-        sa.CheckConstraint(
-            "(reconciliation_action IS NULL "
-            "AND reconciliation_request_digest IS NULL "
-            "AND reconciled_at IS NULL) OR "
-            "(reconciliation_action IN ('sent_confirmed', "
-            "'failed_confirmed', 'retry_authorized') "
-            "AND char_length(reconciliation_request_digest) = 64 "
-            "AND reconciled_at IS NOT NULL)",
-            name="ck_become_pilot_delivery_reconciliation",
-        ),
         sa.ForeignKeyConstraint(
             ["review_id"],
             ["become_pilot_transcript_reviews.id"],
@@ -359,16 +338,51 @@ def upgrade() -> None:
             "request_digest",
             name="uq_become_pilot_delivery_request",
         ),
-        sa.UniqueConstraint(
-            "reconciliation_request_digest",
-            name="uq_become_pilot_delivery_reconciliation_request",
-        ),
     )
     op.create_index(
         "ix_become_pilot_delivery_outcome_created",
         "become_pilot_transcript_deliveries",
         ["outcome", "created_at"],
         unique=False,
+    )
+    op.create_table(
+        "become_pilot_delivery_reconciliations",
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "delivery_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=False,
+        ),
+        sa.Column("action", sa.String(length=32), nullable=False),
+        sa.Column("request_digest", sa.String(length=64), nullable=False),
+        sa.Column("evidence_digest", sa.String(length=64), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "action IN ('sent_confirmed', 'failed_confirmed', "
+            "'retry_authorized')",
+            name="ck_become_pilot_delivery_reconciliation_action",
+        ),
+        sa.CheckConstraint(
+            "char_length(request_digest) = 64 "
+            "AND char_length(evidence_digest) = 64",
+            name="ck_become_pilot_delivery_reconciliation_digests",
+        ),
+        sa.ForeignKeyConstraint(
+            ["delivery_id"],
+            ["become_pilot_transcript_deliveries.id"],
+            name="fk_become_pilot_delivery_reconciliation_delivery",
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "delivery_id",
+            "action",
+            name="uq_become_pilot_delivery_reconciliation_action",
+        ),
+        sa.UniqueConstraint(
+            "request_digest",
+            name="uq_become_pilot_delivery_reconciliation_request",
+        ),
     )
 
 
@@ -378,6 +392,8 @@ def downgrade() -> None:
         DO $$
         BEGIN
           IF EXISTS (
+            SELECT 1 FROM become_pilot_delivery_reconciliations
+          ) OR EXISTS (
             SELECT 1 FROM become_pilot_transcript_deliveries
           ) OR EXISTS (
             SELECT 1 FROM become_pilot_transcript_versions
@@ -399,6 +415,7 @@ def downgrade() -> None:
         $$;
         """
     )
+    op.drop_table("become_pilot_delivery_reconciliations")
     op.drop_index(
         "ix_become_pilot_delivery_outcome_created",
         table_name="become_pilot_transcript_deliveries",
