@@ -454,6 +454,250 @@ class SessionFactoryPilotTranscriptReviewStore:
                     },
                 )
 
+    async def owner_redisplay(
+        self,
+        *,
+        review_id: str,
+        expected_version: int,
+        expected_digest: str,
+        now: datetime,
+    ) -> str:
+        """Schedule one idempotent re-display without a provider call."""
+
+        if expected_version < 1 or len(expected_digest) != 64:
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_binding_invalid"
+            )
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version,
+                               r.callback_ref::text,
+                               v.transcript_digest, v.transcript_body
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN become_pilot_transcript_versions AS v
+                          ON v.review_id = r.id
+                         AND v.version = r.latest_version
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        FOR UPDATE OF r, v
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+            if (
+                row is None
+                or row["state"] != "presented"
+                or int(row["latest_version"]) != expected_version
+                or row["transcript_digest"] != expected_digest
+                or not isinstance(row["transcript_body"], str)
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_pilot_operator_binding_invalid"
+                )
+            await _insert_delivery(
+                session,
+                review_id=_uuid(review_id),
+                kind="redisplay",
+                version=expected_version,
+                transcript_digest=expected_digest,
+                callback_ref=str(row["callback_ref"]).replace("-", ""),
+                now=now,
+            )
+            return "redisplay_scheduled"
+
+    async def owner_apply_correction(
+        self,
+        *,
+        review_id: str,
+        expected_version: int,
+        correction_text: str,
+        now: datetime,
+    ) -> str:
+        """Apply content privately only to the exact awaiting Pilot review."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version, r.subject_ref,
+                               d.provider_dialog_id
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+        if (
+            row is None
+            or row["state"] != "awaiting_correction"
+            or int(row["latest_version"]) != expected_version
+        ):
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_binding_invalid"
+            )
+        handled = await self.apply_correction(
+            subject_ref=str(row["subject_ref"]),
+            provider_dialog_id=str(row["provider_dialog_id"]),
+            correction_text=correction_text,
+            now=now,
+        )
+        if not handled:
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_correction_not_applied"
+            )
+        return "correction_applied"
+
+    async def owner_approve(
+        self,
+        *,
+        review_id: str,
+        expected_version: int,
+        expected_digest: str,
+        now: datetime,
+    ) -> str:
+        """Approve only an exact currently presented version and digest."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version, r.subject_ref,
+                               r.callback_ref::text,
+                               d.provider_dialog_id,
+                               v.transcript_digest
+                        FROM become_pilot_transcript_reviews AS r
+                        JOIN dialogs AS d ON d.id = r.dialog_id
+                        JOIN become_pilot_transcript_versions AS v
+                          ON v.review_id = r.id
+                         AND v.version = r.latest_version
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+        if (
+            row is None
+            or row["state"] not in {"presented", "approved"}
+            or int(row["latest_version"]) != expected_version
+            or row["transcript_digest"] != expected_digest
+        ):
+            raise BecomeControlledIntakeError(
+                "become_pilot_operator_binding_invalid"
+            )
+        disposition = await self.apply_callback(
+            action="c",
+            callback_ref=str(row["callback_ref"]).replace("-", ""),
+            subject_ref=str(row["subject_ref"]),
+            provider_dialog_id=str(row["provider_dialog_id"]),
+            now=now,
+        )
+        return disposition.value
+
+    async def owner_reset_ready(self, *, review_id: str) -> dict[str, object]:
+        """Prove the current Pilot can be reset only after settled approval."""
+
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT r.state, r.latest_version, r.approved_version,
+                               count(dl.id) FILTER (
+                                 WHERE dl.outcome != 'sent'
+                               ) AS unsettled_deliveries,
+                               count(dl.id) FILTER (
+                                 WHERE dl.kind = 'confirmation'
+                                   AND dl.outcome = 'sent'
+                               ) AS confirmation_deliveries
+                        FROM become_pilot_transcript_reviews AS r
+                        LEFT JOIN become_pilot_transcript_deliveries AS dl
+                          ON dl.review_id = r.id
+                        WHERE r.id = CAST(:review_id AS uuid)
+                        GROUP BY r.id
+                        """
+                    ),
+                    {"review_id": _uuid(review_id)},
+                )
+            ).mappings().one_or_none()
+        ready = bool(
+            row is not None
+            and row["state"] == "approved"
+            and row["approved_version"] == row["latest_version"]
+            and int(row["unsettled_deliveries"] or 0) == 0
+            and int(row["confirmation_deliveries"] or 0) == 1
+        )
+        return {
+            "reset_ready": ready,
+            "content_exposed": False,
+        }
+
+    async def owner_prepare_transcription_retry(self, *, now: datetime) -> str:
+        """Authorize one retry only after a known rejected provider outcome."""
+
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT a.id::text, a.reservation_key,
+                               a.reason_code, br.state AS budget_state
+                        FROM become_voice_transcription_attempts AS a
+                        JOIN billing_budget_reservations AS br
+                          ON br.workspace_id = a.workspace_id
+                         AND br.reservation_key = a.reservation_key
+                        WHERE a.grant_key =
+                          'become-pilot-slice1-transcription-v2'
+                          AND a.state = 'rejected'
+                        FOR UPDATE OF a
+                        """
+                    )
+                )
+            ).mappings().all()
+            if len(rows) != 1:
+                raise BecomeControlledIntakeError(
+                    "become_pilot_retry_rejected_scope_invalid"
+                )
+            row = rows[0]
+            reservation_key = str(row["reservation_key"])
+            if (
+                row["budget_state"] != "released"
+                or not row["reason_code"]
+                or reservation_key.endswith(":retry1")
+            ):
+                raise BecomeControlledIntakeError(
+                    "become_pilot_retry_not_safe"
+                )
+            retry_key = reservation_key[:121] + ":retry1"
+            await session.execute(
+                text(
+                    """
+                    UPDATE become_voice_transcription_attempts
+                    SET state = 'reserving',
+                        reservation_key = :retry_key,
+                        provider_call_started_at = NULL,
+                        provider_operation_ref = NULL,
+                        reason_code = 'operator_retry_authorized',
+                        updated_at = :now
+                    WHERE id = CAST(:attempt_id AS uuid)
+                      AND state = 'rejected'
+                    """
+                ),
+                {
+                    "attempt_id": row["id"],
+                    "retry_key": retry_key,
+                    "now": now,
+                },
+            )
+            return "retry_authorized"
+
     async def tombstone_receipt(
         self,
         *,
