@@ -746,7 +746,53 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "free_result_delivery_enabled": {
                         "type": "boolean",
-                        "const": False,
+                    },
+                    "free_result_artifact_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "free_result_artifact_ready": {"type": "boolean"},
+                    "free_result_schema": _nullable("string"),
+                    "free_result_digest": _nullable("string"),
+                    "free_result_receipt_digest": _nullable("string"),
+                    "free_result_take_receipt_digest": _nullable("string"),
+                    "free_result_activation_max_calls": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "free_result_delivery_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "free_result_delivery_state": {
+                        "type": "string",
+                        "enum": [
+                            "not_started",
+                            "sending",
+                            "sent",
+                            "failed",
+                            "blocked",
+                            "unknown",
+                        ],
+                    },
+                    "free_result_delivery_sent_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "free_result_delivery_unknown_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "free_result_delivery_receipt_digest": _nullable(
+                        "string"
+                    ),
+                    "free_result_reconciliation_required": {
+                        "type": "boolean",
                     },
                     "controlled_test_payment_enabled": {
                         "type": "boolean",
