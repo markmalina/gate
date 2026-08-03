@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.become_controlled_intake import (
     BecomeControlledIntakeError,
 )
+from app.application.become_media_intake import CONFIRMED_TRANSCRIPT_RETENTION
 from app.application.become_voice_transcription import (
     BECOME_TRANSCRIPTION_GRANT_KEY,
     BECOME_TRANSCRIPTION_SCHEMA,
@@ -23,6 +24,7 @@ from app.application.become_voice_transcription import (
 )
 from app.application.billing import BillingProduct, BudgetReservationState
 from app.application.telegram_voice_transcription import ProviderTranscript
+from app.infrastructure.become_transcript_review import stage_provider_transcript
 from app.models.alpha import AgentInstallationModel
 from app.models.become import (
     BecomeControlledConsentReceiptModel,
@@ -37,7 +39,6 @@ from app.models.billing import (
     BillingEntitlementModel,
 )
 from app.models.canonical import TransportConnector, Workspace
-from app.infrastructure.become_transcript_review import stage_provider_transcript
 
 
 class SessionFactoryBecomeVoiceTranscriptionStore:
