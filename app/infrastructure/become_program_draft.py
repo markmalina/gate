@@ -138,7 +138,7 @@ class OpenAIProgramDraftProvider:
         ):
             raise BecomeControlledIntakeError("become_program_provider_usage_invalid")
         return ProgramDraftProviderResult(
-            program_markdown=normalize_program_markdown(parsed["program_markdown"]),
+            program_markdown=normalize_program_markdown(program_markdown),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
@@ -168,7 +168,7 @@ class SessionFactoryProgramDraftStore:
                           ON v.review_id = r.id
                          AND v.version = r.approved_version
                          AND v.transcript_digest = r.approved_digest
-                        WHERE w.workspace_key = :workspace_key
+                        WHERE w.key = :workspace_key
                           AND r.state = 'approved'
                           AND v.transcript_body IS NOT NULL
                           AND v.purged_at IS NULL
