@@ -59,10 +59,10 @@ class TelegramBusinessTextParityCommand:
     account_alias: str
     direction: CanonicalMessageDirection
     route: WorkRoute
-    reply_task_expected: bool
     provider_dialog_id: str = field(repr=False)
     business_connection_id: str = field(repr=False)
     text_content: str = field(repr=False)
+    reply_task_expected: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.workspace_key or self.workspace_key != self.workspace_key.strip():
@@ -89,7 +89,10 @@ class TelegramBusinessTextParityCommand:
             self.direction is CanonicalMessageDirection.INBOUND
             and self.route is WorkRoute.HUMAN_REPLY_TASK
         )
-        if self.reply_task_expected is not route_expectation:
+        if (
+            self.reply_task_expected is not None
+            and self.reply_task_expected is not route_expectation
+        ):
             raise ValueError("reply_task_expected must match the effective route")
 
 
@@ -201,7 +204,15 @@ def compare_telegram_business_text_parity(
         raise TelegramBusinessTextParityError(
             "telegram_business_text_parity_text_mismatch"
         )
-    expected_reply_tasks = int(command.reply_task_expected)
+    reply_task_expected = (
+        command.reply_task_expected
+        if command.reply_task_expected is not None
+        else (
+            command.direction is CanonicalMessageDirection.INBOUND
+            and command.route is WorkRoute.HUMAN_REPLY_TASK
+        )
+    )
+    expected_reply_tasks = int(reply_task_expected)
     if legacy.reply_task_count != expected_reply_tasks:
         code = (
             "telegram_business_text_parity_unexpected_reply_task"
@@ -211,6 +222,6 @@ def compare_telegram_business_text_parity(
         raise TelegramBusinessTextParityError(code)
     return TelegramBusinessTextParityResult(
         effective_route=command.route,
-        reply_task_expected=command.reply_task_expected,
+        reply_task_expected=reply_task_expected,
         observed_reply_task_count=legacy.reply_task_count,
     )
