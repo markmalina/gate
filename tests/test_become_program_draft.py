@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 """Unit contract proofs for the owner-only Slice 2 PROGRAM draft."""
 
 from __future__ import annotations
@@ -8,7 +9,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.application.become_controlled_intake import BecomeControlledIntakeError
-from app.application.become_program_draft import (  # noqa: I001
+from app.application.become_program_draft import (
     DeliverPilotProgramDraft,
     ProcessConfirmedTranscriptToProgramDraft,
     ProgramDeliveryJob,
