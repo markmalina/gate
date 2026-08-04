@@ -39,10 +39,13 @@ TELEGRAM_BUSINESS_TEXT_PARITY_MISMATCH_CODES = frozenset(
         "telegram_business_text_parity_dialog_mismatch",
         "telegram_business_text_parity_text_mismatch",
         "telegram_business_text_parity_reply_task_mismatch",
+        "telegram_business_text_parity_unexpected_reply_task",
         "telegram_business_text_parity_legacy_cardinality",
         "telegram_business_text_parity_legacy_invalid",
     }
 )
+
+TELEGRAM_BUSINESS_TEXT_PARITY_POLICY_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +62,7 @@ class TelegramBusinessTextParityCommand:
     provider_dialog_id: str = field(repr=False)
     business_connection_id: str = field(repr=False)
     text_content: str = field(repr=False)
+    reply_task_expected: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.workspace_key or self.workspace_key != self.workspace_key.strip():
@@ -81,6 +85,15 @@ class TelegramBusinessTextParityCommand:
             raise ValueError("provider identity is required")
         if not self.text_content.strip():
             raise ValueError("text_content is required")
+        route_expectation = (
+            self.direction is CanonicalMessageDirection.INBOUND
+            and self.route is WorkRoute.HUMAN_REPLY_TASK
+        )
+        if (
+            self.reply_task_expected is not None
+            and self.reply_task_expected is not route_expectation
+        ):
+            raise ValueError("reply_task_expected must match the effective route")
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +118,10 @@ class TelegramBusinessTextParityResult:
     dialog_matched: bool = True
     text_matched: bool = True
     reply_task_matched: bool = True
+    policy_version: int = TELEGRAM_BUSINESS_TEXT_PARITY_POLICY_VERSION
+    effective_route: WorkRoute = WorkRoute.IGNORED
+    reply_task_expected: bool = False
+    observed_reply_task_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,14 +204,24 @@ def compare_telegram_business_text_parity(
         raise TelegramBusinessTextParityError(
             "telegram_business_text_parity_text_mismatch"
         )
-    expected_reply_tasks = (
-        1
-        if command.direction is CanonicalMessageDirection.INBOUND
-        and command.route is WorkRoute.HUMAN_REPLY_TASK
-        else 0
-    )
-    if legacy.reply_task_count != expected_reply_tasks:
-        raise TelegramBusinessTextParityError(
-            "telegram_business_text_parity_reply_task_mismatch"
+    reply_task_expected = (
+        command.reply_task_expected
+        if command.reply_task_expected is not None
+        else (
+            command.direction is CanonicalMessageDirection.INBOUND
+            and command.route is WorkRoute.HUMAN_REPLY_TASK
         )
-    return TelegramBusinessTextParityResult()
+    )
+    expected_reply_tasks = int(reply_task_expected)
+    if legacy.reply_task_count != expected_reply_tasks:
+        code = (
+            "telegram_business_text_parity_unexpected_reply_task"
+            if expected_reply_tasks == 0 and legacy.reply_task_count > 0
+            else "telegram_business_text_parity_reply_task_mismatch"
+        )
+        raise TelegramBusinessTextParityError(code)
+    return TelegramBusinessTextParityResult(
+        effective_route=command.route,
+        reply_task_expected=reply_task_expected,
+        observed_reply_task_count=legacy.reply_task_count,
+    )

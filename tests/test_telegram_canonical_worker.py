@@ -16,6 +16,10 @@ from app.application.telegram_business_text_inbox import (
     TelegramBusinessTextInboxCommand,
     TelegramBusinessTextInboxResult,
 )
+from app.application.telegram_business_text_parity import (
+    TelegramBusinessTextParityCommand,
+    TelegramBusinessTextParityResult,
+)
 from app.application.telegram_ingress_identity import TelegramIngressIdentitySnapshot
 from app.application.telegram_processing import (
     TelegramProcessingWorkItem,
@@ -91,6 +95,21 @@ class CapturingBusinessTextInbox:
             duplicate=False,
             message_created=True,
             reply_task_created=True,
+        )
+
+
+class CapturingBusinessTextParity:
+    def __init__(self) -> None:
+        self.commands: list[TelegramBusinessTextParityCommand] = []
+
+    async def observe(
+        self,
+        command: TelegramBusinessTextParityCommand,
+    ) -> TelegramBusinessTextParityResult:
+        self.commands.append(command)
+        return TelegramBusinessTextParityResult(
+            effective_route=command.route,
+            reply_task_expected=bool(command.reply_task_expected),
         )
 
 
@@ -263,11 +282,13 @@ def test_processed_mayak_route_never_creates_parallel_human_work() -> None:
     store = CapturingCanonicalStore()
     inbox = CapturingBusinessTextInbox()
     mayak = CapturingUniversalMayak(PrivateIngressDisposition.PROCESSED)
+    parity = CapturingBusinessTextParity()
     processor = ShadowClassifyingTelegramProcessor(
         settings=_mayak_settings(),
         identity_reader=FakeIdentityReader(),
         canonical_store=store,
         business_text_inbox=inbox,
+        business_text_parity=parity,
         universal_mayak=mayak,
         runtime_logger=logging.getLogger("gate.mayak-route-test"),
     )
@@ -276,17 +297,22 @@ def test_processed_mayak_route_never_creates_parallel_human_work() -> None:
 
     assert len(mayak.commands) == 1
     assert [command.route for command in inbox.commands] == [WorkRoute.AGENT_TURN]
+    assert len(parity.commands) == 1
+    assert parity.commands[0].route is WorkRoute.AGENT_TURN
+    assert parity.commands[0].reply_task_expected is False
 
 
 def test_unclaimed_mayak_route_promotes_once_to_human_work() -> None:
     store = CapturingCanonicalStore()
     inbox = CapturingBusinessTextInbox()
     mayak = CapturingUniversalMayak(PrivateIngressDisposition.BLOCKED)
+    parity = CapturingBusinessTextParity()
     processor = ShadowClassifyingTelegramProcessor(
         settings=_mayak_settings(),
         identity_reader=FakeIdentityReader(),
         canonical_store=store,
         business_text_inbox=inbox,
+        business_text_parity=parity,
         universal_mayak=mayak,
         runtime_logger=logging.getLogger("gate.mayak-fallback-test"),
     )
@@ -298,3 +324,30 @@ def test_unclaimed_mayak_route_promotes_once_to_human_work() -> None:
         WorkRoute.AGENT_TURN,
         WorkRoute.HUMAN_REPLY_TASK,
     ]
+    assert len(parity.commands) == 1
+    assert parity.commands[0].route is WorkRoute.HUMAN_REPLY_TASK
+    assert parity.commands[0].reply_task_expected is True
+
+
+def test_not_applicable_mayak_path_keeps_human_reply_expectation() -> None:
+    store = CapturingCanonicalStore()
+    inbox = CapturingBusinessTextInbox()
+    parity = CapturingBusinessTextParity()
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=_mayak_settings(),
+        identity_reader=FakeIdentityReader(),
+        canonical_store=store,
+        business_text_inbox=inbox,
+        business_text_parity=parity,
+        universal_mayak=None,
+        runtime_logger=logging.getLogger("gate.mayak-not-applicable-test"),
+    )
+
+    asyncio.run(processor.process(_work_item()))
+
+    assert [command.route for command in inbox.commands] == [
+        WorkRoute.HUMAN_REPLY_TASK
+    ]
+    assert len(parity.commands) == 1
+    assert parity.commands[0].route is WorkRoute.HUMAN_REPLY_TASK
+    assert parity.commands[0].reply_task_expected is True
