@@ -1188,6 +1188,44 @@ HISTORICAL_VOICE_DEBT_RECORD_SCHEMA = _object(
         "projection_recovery_allowed": {"type": "boolean"},
     }
 )
+MAYAK_PARITY_DIAGNOSTIC_SCHEMA = _object(
+    {
+        "exact_join": {"type": "boolean"},
+        "mayak_turn_ref": {
+            "anyOf": [
+                {"type": "string", "minLength": 16, "maxLength": 16},
+                {"type": "null"},
+            ]
+        },
+        "mayak_disposition": {
+            "type": "string",
+            "enum": ["processed", "unknown"],
+        },
+        "effective_route": {
+            "anyOf": [
+                {"type": "string", "enum": ["agent_turn"]},
+                {"type": "null"},
+            ]
+        },
+        "reply_task_expected": {
+            "anyOf": [
+                {"type": "integer", "minimum": 0, "maximum": 1},
+                {"type": "null"},
+            ]
+        },
+        "observed_reply_task_count": {"type": "integer", "minimum": 0},
+        "parity_policy_version": {"type": "integer", "minimum": 3},
+        "classification": {
+            "type": "string",
+            "enum": [
+                "expected_zero_reply_task",
+                "unexpected_reply_task",
+                "ambiguous",
+            ],
+        },
+        "historical_false_positive": {"type": "boolean"},
+    }
+)
 HISTORICAL_PARITY_DEBT_RECORD_SCHEMA = _object(
     {
         "evidence_id": {"type": "string", "format": "uuid"},
@@ -1229,6 +1267,7 @@ HISTORICAL_PARITY_DEBT_RECORD_SCHEMA = _object(
                 "ambiguous",
             ],
         },
+        "mayak_parity": MAYAK_PARITY_DIAGNOSTIC_SCHEMA,
     }
 )
 HISTORICAL_DEBT_SCHEMA = _object(
