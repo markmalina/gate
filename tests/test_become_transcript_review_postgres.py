@@ -2797,6 +2797,14 @@ async def _approve_seeded_transcript(
         )
         is PilotReviewDisposition.APPROVED
     )
+    confirmation = await review.claim_delivery(now=NOW, max_operations=8)
+    assert confirmation is not None
+    await review.settle_delivery(
+        delivery_id=confirmation.delivery_id,
+        outcome="sent",
+        telegram_message_id="slice2-seed-confirmed",
+        now=NOW,
+    )
     return graph
 
 
@@ -2872,6 +2880,15 @@ async def test_slice2_program_is_singleton_restart_safe_and_owner_bound(
         subject_ref=graph.subject_ref,
         provider_dialog_id=graph.provider_dialog_id,
         correction_text="# Исправленная программа\n\n1. Точный шаг",
+        now=NOW,
+    )
+    correction_prompt = await restarted.claim_delivery(now=NOW, max_operations=6)
+    assert correction_prompt is not None
+    assert correction_prompt.kind == "correction_prompt"
+    await restarted.settle_delivery(
+        delivery_id=correction_prompt.delivery_id,
+        outcome="sent",
+        telegram_message_id="program-correction-prompt",
         now=NOW,
     )
     redisplay = await restarted.claim_delivery(now=NOW, max_operations=6)
@@ -2962,6 +2979,17 @@ async def test_slice2_transcript_correction_invalidates_old_program_and_ttl_purg
         provider_dialog_id=graph.provider_dialog_id,
         correction_text="исправленный подтвержденный текст",
         now=NOW + timedelta(minutes=2),
+    )
+    correction_prompt = await transcript.claim_delivery(
+        now=NOW + timedelta(minutes=3),
+        max_operations=8,
+    )
+    assert correction_prompt is not None
+    await transcript.settle_delivery(
+        delivery_id=correction_prompt.delivery_id,
+        outcome="sent",
+        telegram_message_id="transcript-correction-prompt",
+        now=NOW + timedelta(minutes=3),
     )
     transcript_card = await transcript.claim_delivery(
         now=NOW + timedelta(minutes=3),
