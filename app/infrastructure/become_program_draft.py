@@ -123,7 +123,10 @@ class OpenAIProgramDraftProvider:
             parsed = json.loads(_output_text(provider))
         except json.JSONDecodeError as exc:
             raise BecomeControlledIntakeError("become_program_provider_contract") from exc
-        if not isinstance(parsed, dict) or not isinstance(parsed.get("program_markdown"), str):
+        if not isinstance(parsed, dict):
+            raise BecomeControlledIntakeError("become_program_provider_contract")
+        program_markdown = parsed.get("program_markdown")
+        if not isinstance(program_markdown, str):
             raise BecomeControlledIntakeError("become_program_provider_contract")
         usage = provider.get("usage")
         if not isinstance(usage, Mapping):
