@@ -1114,6 +1114,148 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
 }
 
 
+
+HISTORICAL_VOICE_DEBT_RECORD_SCHEMA = _object(
+    {
+        "receipt_id": {"type": "string", "format": "uuid"},
+        "event_id": {"type": "string", "format": "uuid"},
+        "archive_id": {"type": "string", "format": "uuid"},
+        "record_ref": {"type": "string", "minLength": 16, "maxLength": 16},
+        "reason_code": {
+            "type": "string",
+            "enum": [
+                "billing_reservation_replayed",
+                "openai_transcription_transport_unknown",
+            ],
+        },
+        "received_at": {"type": "string", "format": "date-time"},
+        "last_error_at": _nullable("string"),
+        "workspace_id": {"type": "string", "format": "uuid"},
+        "account_id": {"type": "string", "format": "uuid"},
+        "project_id": {"type": "string", "format": "uuid"},
+        "country_code": _nullable("string"),
+        "chat_scope_matched": {"type": "boolean"},
+        "business_connection_scope_matched": {"type": "boolean"},
+        "verified_identity_count": {"type": "integer", "minimum": 0},
+        "telegram_identity_confirmed": {"type": "boolean"},
+        "logical_operation_sha256": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+        },
+        "reservation_count": {"type": "integer", "minimum": 0},
+        "reservation_states": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": ["reserved", "settled", "released", "unknown"],
+            },
+        },
+        "original_reservation_state": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "enum": ["reserved", "settled", "released", "unknown"],
+                },
+                {"type": "null"},
+            ]
+        },
+        "settlement_count": {"type": "integer", "minimum": 0},
+        "release_count": {"type": "integer", "minimum": 0},
+        "unknown_count": {"type": "integer", "minimum": 0},
+        "usage_event_count": {"type": "integer", "minimum": 0},
+        "ledger_entry_count": {"type": "integer", "minimum": 0},
+        "provider_attempt_count": {"type": "integer", "minimum": 0},
+        "archive_status": _nullable("string"),
+        "transcript_complete": {"type": "boolean"},
+        "summary_complete": {"type": "boolean"},
+        "provider_result_saved": {"type": "boolean"},
+        "canonical_projection_count": {"type": "integer", "minimum": 0},
+        "legacy_projection_count": {"type": "integer", "minimum": 0},
+        "billing_verdict": {
+            "type": "string",
+            "enum": ["not_applicable", "safe_replay_rejected", "ambiguous"],
+        },
+        "transport_verdict": {
+            "type": "string",
+            "enum": [
+                "not_applicable",
+                "provider_free_projection_recovery_available",
+                "residual_provider_outcome_unknown",
+                "residual_archive_missing",
+            ],
+        },
+        "projection_recovery_allowed": {"type": "boolean"},
+    }
+)
+HISTORICAL_PARITY_DEBT_RECORD_SCHEMA = _object(
+    {
+        "evidence_id": {"type": "string", "format": "uuid"},
+        "canonical_message_id": {"type": "string", "format": "uuid"},
+        "legacy_message_id": {
+            "anyOf": [
+                {"type": "string", "format": "uuid"},
+                {"type": "null"},
+            ]
+        },
+        "record_ref": {"type": "string", "minLength": 16, "maxLength": 16},
+        "first_observed_at": {"type": "string", "format": "date-time"},
+        "last_observed_at": {"type": "string", "format": "date-time"},
+        "observation_count": {"type": "integer", "minimum": 1},
+        "canonical_message_exists": {"type": "boolean", "const": True},
+        "legacy_message_count": {"type": "integer", "minimum": 0},
+        "reply_task_count": {"type": "integer", "minimum": 0},
+        "reply_task_state": {
+            "type": "string",
+            "enum": ["absent", "present", "duplicated"],
+        },
+        "trigger_matches_message": {"type": "boolean"},
+        "account_scope_matched": {"type": "boolean"},
+        "project_scope_matched": {"type": "boolean"},
+        "chat_scope_matched": {"type": "boolean"},
+        "business_connection_scope_matched": {"type": "boolean"},
+        "text_matched": {"type": "boolean"},
+        "verified_identity_count": {"type": "integer", "minimum": 0},
+        "person_identity_confirmed": {"type": "boolean"},
+        "message_should_create_reply_task": {
+            "anyOf": [{"type": "boolean"}, {"type": "null"}]
+        },
+        "classification": {
+            "type": "string",
+            "enum": [
+                "real_defect_missing_reply_task",
+                "historical_residue_repaired",
+                "real_defect_unexpected_reply_task",
+                "ambiguous",
+            ],
+        },
+    }
+)
+HISTORICAL_DEBT_SCHEMA = _object(
+    {
+        "voice_count": {"type": "integer", "minimum": 0},
+        "parity_count": {"type": "integer", "minimum": 0},
+        "voice_records": {
+            "type": "array",
+            "maxItems": 2,
+            "items": HISTORICAL_VOICE_DEBT_RECORD_SCHEMA,
+        },
+        "parity_records": {
+            "type": "array",
+            "maxItems": 4,
+            "items": HISTORICAL_PARITY_DEBT_RECORD_SCHEMA,
+        },
+        "private_content_exposed": {"type": "boolean", "const": False},
+        "provider_identifiers_exposed": {"type": "boolean", "const": False},
+        "billing_identifiers_exposed": {"type": "boolean", "const": False},
+        "mutation_allowed": {"type": "boolean", "const": False},
+        "provider_call_allowed": {"type": "boolean", "const": False},
+    }
+)
+# Optional for older fixtures, always present in the live gate_get_status response.
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
+
+
 UNANSWERED_ITEM_SCHEMA = _object(
     {
         "task_id": {"type": "string", "format": "uuid"},
