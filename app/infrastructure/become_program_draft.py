@@ -331,10 +331,20 @@ class SessionFactoryProgramDraftStore:
                 await session.execute(
                     text(
                         """
-                        SELECT id, callback_ref::text
-                        FROM become_pilot_program_drafts
-                        WHERE id = CAST(:id AS uuid) AND state = 'calling'
-                        FOR UPDATE
+                        SELECT
+                            p.id,
+                            p.callback_ref::text,
+                            p.source_transcript_version,
+                            p.source_transcript_digest,
+                            r.state AS review_state,
+                            r.approved_version,
+                            r.approved_digest
+                        FROM become_pilot_program_drafts AS p
+                        JOIN become_pilot_transcript_reviews AS r
+                          ON r.id = p.transcript_review_id
+                        WHERE p.id = CAST(:id AS uuid)
+                          AND p.state = 'calling'
+                        FOR UPDATE OF p, r
                         """
                     ),
                     {"id": _uuid(draft_id)},
@@ -342,6 +352,26 @@ class SessionFactoryProgramDraftStore:
             ).mappings().one_or_none()
             if row is None:
                 raise BecomeControlledIntakeError("become_program_call_not_claimed")
+            source_is_current = (
+                row["review_state"] == "approved"
+                and row["approved_version"] == row["source_transcript_version"]
+                and row["approved_digest"] == row["source_transcript_digest"]
+            )
+            if not source_is_current:
+                await session.execute(
+                    text(
+                        """
+                        UPDATE become_pilot_program_drafts
+                        SET state = 'invalidated',
+                            invalidated_at = :now,
+                            error_code = 'source_changed_in_flight',
+                            updated_at = :now
+                        WHERE id = CAST(:id AS uuid) AND state = 'calling'
+                        """
+                    ),
+                    {"id": _uuid(draft_id), "now": now},
+                )
+                return
             await session.execute(
                 text(
                     """
