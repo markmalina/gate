@@ -719,12 +719,27 @@ async def _get_reply_context_tool_result(
             message="task_id must be a UUID or an exact task:voice:message selector",
         )
 
-    context = await get_reply_context(
-        session=session,
-        scope=principal.access_scope,
-        task_id=task_id,
-        limit=_bounded_limit(arguments.get("limit"), default=10, maximum=20),
-    )
+    raw_cursor = arguments.get("cursor")
+    if raw_cursor is not None and not isinstance(raw_cursor, str):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="cursor must be an opaque string",
+        )
+    try:
+        context = await get_reply_context(
+            session=session,
+            scope=principal.access_scope,
+            task_id=task_id,
+            limit=_bounded_limit(arguments.get("limit"), default=20, maximum=100),
+            cursor=raw_cursor,
+        )
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="reply context cursor is invalid for this task",
+        )
     if context is None:
         return _tool_error_result(
             request_id=request_id,
@@ -826,6 +841,8 @@ async def _latest_phone_call_tool_result(
         "messages": [],
         "count": 0,
         "limit": 1,
+        "next_cursor": None,
+        "has_more": False,
     }
     effective_media_type = _effective_phone_call_media_type(
         recording.media_type,
@@ -989,6 +1006,8 @@ async def _latest_voice_archive_tool_result(
         "messages": [],
         "count": 0,
         "limit": 1,
+        "next_cursor": None,
+        "has_more": False,
     }
     if transcript_payload:
         if settings is None:
@@ -2309,14 +2328,66 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "name": "gate_get_reply_context",
         "title": "Get Gate reply context",
         "description": (
-            "Return the scoped RU/BY account, recipient and recent chronological "
-            "message history for one reply task."
+            "Return one scoped RU/BY conversation as a chronological text+voice "
+            "timeline. A UUID reply task is the primary path. Existing exact voice "
+            "and latest call/voice selectors remain available for compatibility."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string", "format": "uuid"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+                "task_id": {
+                    "oneOf": [
+                        {"type": "string", "format": "uuid"},
+                        {
+                            "type": "string",
+                            "pattern": (
+                                "^[0-9a-fA-F-]{36}:voice:[0-9a-fA-F-]{36}$"
+                            ),
+                        },
+                        {
+                            "type": "string",
+                            "pattern": (
+                                "^voice:latest:[a-z0-9_-]{1,64}$"
+                            ),
+                        },
+                        {
+                            "type": "string",
+                            "pattern": (
+                                "^voice:latest-file:[a-z0-9_-]{1,64}$"
+                            ),
+                        },
+                        {
+                            "type": "string",
+                            "pattern": (
+                                "^voice:latest-transcript:[a-z0-9_-]{1,64}$"
+                            ),
+                        },
+                        {
+                            "type": "string",
+                            "enum": [
+                                "call:latest",
+                                "call:latest-file",
+                                "call:latest-transcript",
+                            ],
+                        },
+                    ],
+                    "examples": [
+                        "48aa85f2-651e-43c0-b027-bf9efb22084e",
+                        "voice:latest-transcript:ru",
+                        "call:latest-transcript",
+                    ],
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 20,
+                },
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                },
             },
             "required": ["task_id"],
             "additionalProperties": False,

@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import mcp_routes
 from app.api.deps import get_db_session
-from app.api.mcp_schemas import COMMON_DEFINITIONS, REPLY_CONTEXT_SUCCESS_SCHEMA
+from app.api.mcp_schemas import (
+    COMMON_DEFINITIONS,
+    REPLY_CONTEXT_MESSAGE_SCHEMA,
+    REPLY_CONTEXT_SUCCESS_SCHEMA,
+    VOICE_DETAILS_SCHEMA,
+)
 from app.api.routes import get_telegram_client
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError
@@ -132,6 +137,8 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
     "type": "object",
     "$defs": {
         **copy.deepcopy(COMMON_DEFINITIONS),
+        "voice_details": copy.deepcopy(VOICE_DETAILS_SCHEMA),
+        "reply_context_message": copy.deepcopy(REPLY_CONTEXT_MESSAGE_SCHEMA),
         "communication_feed_item": FEED_ITEM_SCHEMA,
     },
     "oneOf": [
