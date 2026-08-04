@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-import pytest
 from jsonschema import Draft202012Validator, FormatChecker
+import pytest
 
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.application.mcp_inbox import (
