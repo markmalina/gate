@@ -160,6 +160,13 @@ async def test_postgres_evidence_is_scoped_content_free_and_restart_replay_safe(
                 state=TelegramBusinessTextParityState.MATCHED,
                 mismatch_code=None,
             )
+        async with sessions.begin() as session:
+            await _record_evidence(
+                session,
+                command=command,
+                state=TelegramBusinessTextParityState.MATCHED,
+                mismatch_code=None,
+            )
 
         async with sessions() as session:
             evidence = (
