@@ -1051,7 +1051,6 @@ async def run_telegram_worker_once(
             become_consent=become_consent,
             become_media=become_media,
             become_program_review=become_program_review,
-            become_program_review=become_program_review,
             become_review=become_review,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
