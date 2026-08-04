@@ -1809,6 +1809,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         become_intake=become_intake,
                         become_consent=become_consent,
                         become_media=become_media,
+                        become_program_review=become_program_review,
                         become_review=become_review,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
