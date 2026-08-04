@@ -11,6 +11,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.telegram_business_text_parity import (
+    TELEGRAM_BUSINESS_TEXT_PARITY_POLICY_VERSION,
     TelegramBusinessLegacyTextFact,
     TelegramBusinessTextParityCommand,
     TelegramBusinessTextParityError,
@@ -33,7 +34,9 @@ from app.models.domain import (
     TelegramBusinessConnection,
 )
 
-TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION = 2
+TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION = (
+    TELEGRAM_BUSINESS_TEXT_PARITY_POLICY_VERSION
+)
 
 
 class SessionFactoryTelegramBusinessTextParityObserver(
@@ -202,45 +205,56 @@ async def _record_evidence(
         raise TelegramBusinessTextParityError(
             "telegram_business_text_parity_scope_invalid"
         )
+    persisted_mismatch_code = (
+        "telegram_business_text_parity_reply_task_mismatch"
+        if mismatch_code == "telegram_business_text_parity_unexpected_reply_task"
+        else mismatch_code
+    )
     values = {
         "workspace_id": workspace_id,
         "account_id": account_id,
         "canonical_message_id": canonical_message_id,
         "state": state.value,
-        "mismatch_code": mismatch_code,
+        "mismatch_code": persisted_mismatch_code,
         "direction_policy_version": (
             TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
         ),
     }
     statement = insert(TelegramBusinessTextParityEvidence).values(**values)
     evidence_id = await session.scalar(
-        statement.on_conflict_do_update(
-            index_elements=[TelegramBusinessTextParityEvidence.canonical_message_id],
-            set_={
-                "state": statement.excluded.state,
-                "mismatch_code": statement.excluded.mismatch_code,
-                "direction_policy_version": (
-                    statement.excluded.direction_policy_version
-                ),
-                "observation_count": (
-                    TelegramBusinessTextParityEvidence.observation_count + 1
-                ),
-                "last_observed_at": func.now(),
-            },
-            where=(
-                TelegramBusinessTextParityEvidence.workspace_id
-                == statement.excluded.workspace_id
-            )
-            & (
-                TelegramBusinessTextParityEvidence.account_id
-                == statement.excluded.account_id
-            ),
+        statement.on_conflict_do_nothing(
+            index_elements=[TelegramBusinessTextParityEvidence.canonical_message_id]
         ).returning(TelegramBusinessTextParityEvidence.id)
     )
-    if evidence_id is None:
+    if evidence_id is not None:
+        return
+
+    existing = await session.scalar(
+        select(TelegramBusinessTextParityEvidence).where(
+            TelegramBusinessTextParityEvidence.canonical_message_id
+            == canonical_message_id,
+            TelegramBusinessTextParityEvidence.workspace_id == workspace_id,
+            TelegramBusinessTextParityEvidence.account_id == account_id,
+        )
+    )
+    if existing is None:
         raise TelegramBusinessTextParityError(
             "telegram_business_text_parity_scope_invalid"
         )
+    if existing.direction_policy_version < (
+        TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
+    ):
+        return
+    if (
+        existing.direction_policy_version
+        == TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
+        and existing.state == state.value
+        and existing.mismatch_code == persisted_mismatch_code
+    ):
+        return
+    raise TelegramBusinessTextParityError(
+        "telegram_business_text_parity_evidence_conflict"
+    )
 
 
 async def telegram_business_text_parity_status(
