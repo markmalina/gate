@@ -3151,7 +3151,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
     )
     migration_env = {**os.environ, "DATABASE_URL": _database_url()}
     blocked = subprocess.run(
-        ["alembic", "downgrade", "0083_become_quest_corrective_merge"],
+        ["alembic", "downgrade", "0083_become_quest_corrective_m"],
         check=False,
         capture_output=True,
         text=True,
