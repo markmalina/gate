@@ -3113,7 +3113,7 @@ async def test_slice2_inflight_source_change_invalidates_without_delivery_or_ret
     ) is None
     assert await restarted.claim_delivery(
         now=NOW + timedelta(minutes=3),
-        max_operations=8,
+        max_operations=6,
     ) is None
 
     async with sessions() as session:
@@ -3151,7 +3151,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
     )
     migration_env = {**os.environ, "DATABASE_URL": _database_url()}
     blocked = subprocess.run(
-        ["alembic", "downgrade", "-1"],
+        ["alembic", "downgrade", "0083_become_quest_corrective_merge"],
         check=False,
         capture_output=True,
         text=True,
@@ -3199,6 +3199,6 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0084_become_pilot_slice1_review")
+    assert heads[0].startswith("0085_become_pilot_slice2_program")
 
 
