@@ -90,6 +90,33 @@ MESSAGE_WITH_COUNTERPARTY_SCHEMA = _object(
         "counterparty": _ref("counterparty"),
     }
 )
+VOICE_DETAILS_SCHEMA = _object(
+    {
+        "archive_ref": {"type": "string", "minLength": 1, "maxLength": 160},
+        "transcription_status": {
+            "type": "string",
+            "enum": ["pending", "processing", "transcribed", "failed", "unknown"],
+        },
+        "transcription_reason_code": _nullable("string"),
+        "language": _nullable("string"),
+        "transcribed_at": _nullable("string"),
+        "duration_seconds": {"type": "integer", "minimum": 0},
+    }
+)
+REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
+    {
+        **MESSAGE_SCHEMA["properties"],
+        "message_type": {"type": "string", "enum": ["text", "voice"]},
+        "text": _nullable("string"),
+        "voice": {
+            "anyOf": [
+                _ref("voice_details"),
+                {"type": "null"},
+            ]
+        },
+        "counterparty": _ref("counterparty"),
+    }
+)
 COMMON_DEFINITIONS: JsonObject = {
     "account": ACCOUNT_SCHEMA,
     "account_label": ACCOUNT_LABEL_SCHEMA,
@@ -1157,15 +1184,21 @@ REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
         "counterparty": _ref("counterparty"),
         "messages": {
             "type": "array",
-            "items": _ref("message_with_counterparty"),
+            "items": _ref("reply_context_message"),
         },
         "count": {"type": "integer", "minimum": 0},
-        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+        "next_cursor": _nullable("string"),
+        "has_more": {"type": "boolean"},
     }
 )
 GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     REPLY_CONTEXT_SUCCESS_SCHEMA,
-    COMMON_DEFINITIONS,
+    {
+        **COMMON_DEFINITIONS,
+        "voice_details": VOICE_DETAILS_SCHEMA,
+        "reply_context_message": REPLY_CONTEXT_MESSAGE_SCHEMA,
+    },
 )
 
 
