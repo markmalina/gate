@@ -6,7 +6,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from jsonschema import Draft202012Validator, FormatChecker
 
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.application.mcp_inbox import (
@@ -18,6 +17,7 @@ from app.application.mcp_inbox import (
     get_reply_context,
 )
 from app.core.mcp_security import AccessScope
+from jsonschema import Draft202012Validator, FormatChecker
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")
 ACCOUNT_ID = UUID("22222222-2222-2222-2222-222222222222")
