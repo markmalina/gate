@@ -211,3 +211,31 @@ def test_callback_namespace_and_delivery_are_program_specific() -> None:
     assert text.startswith("Черновик программы:")
     assert markup is not None
     assert markup["inline_keyboard"][0][0]["callback_data"].startswith("b2:c:")
+
+@pytest.mark.anyio
+async def test_enabled_program_text_without_active_review_is_not_consumed() -> None:
+    store = FakeStore(source())
+    store.source = None
+
+    async def not_active(**kwargs: object) -> bool:
+        return False
+
+    store.apply_correction = not_active  # type: ignore[method-assign]
+    from app.application.become_program_draft import ProcessPilotProgramReviewUpdate
+
+    result = await ProcessPilotProgramReviewUpdate(
+        store=store,
+        telegram=FakeTelegram(),
+        identity_pepper="pepper",
+        enabled=True,
+    ).execute(
+        update={
+            "message": {
+                "from": {"id": 100},
+                "chat": {"id": -200},
+                "text": "обычный текст",
+            }
+        },
+        now=NOW,
+    )
+    assert result.disposition is ProgramDraftDisposition.NOT_APPLICABLE
