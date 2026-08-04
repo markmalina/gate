@@ -29,6 +29,7 @@ NOW = datetime(2026, 8, 4, 5, 0, tzinfo=UTC)
 class FakeStore:
     source: ProgramDraftSource | None
     claimed: bool = False
+    correction_handled: bool = True
     completed: int = 0
     unknown: int = 0
     settled: list[str] = field(default_factory=list)
@@ -57,7 +58,7 @@ class FakeStore:
         return ProgramDraftDisposition.APPROVED
 
     async def apply_correction(self, **kwargs: object) -> bool:
-        return True
+        return self.correction_handled
 
     async def claim_delivery(
         self, *, now: datetime, max_operations: int
@@ -214,13 +215,7 @@ def test_callback_namespace_and_delivery_are_program_specific() -> None:
 
 @pytest.mark.anyio
 async def test_enabled_program_text_without_active_review_is_not_consumed() -> None:
-    store = FakeStore(source())
-    store.source = None
-
-    async def not_active(**kwargs: object) -> bool:
-        return False
-
-    store.apply_correction = not_active  # type: ignore[method-assign]
+    store = FakeStore(source(), correction_handled=False)
     from app.application.become_program_draft import ProcessPilotProgramReviewUpdate
 
     result = await ProcessPilotProgramReviewUpdate(
