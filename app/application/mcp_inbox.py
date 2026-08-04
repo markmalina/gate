@@ -2,6 +2,7 @@
 """Scoped application queries for the Gate MCP inbox and reply context."""
 
 import base64
+import binascii
 import json
 from datetime import datetime
 from typing import Any
@@ -438,7 +439,7 @@ async def get_reply_context(
                     voice_item["created_at"] = existing_item["created_at"]
                     voice_item["sent_at"] = existing_item["sent_at"]
                     timeline[existing_index] = (
-                        (existing_key[0], 1, existing_key[2]),
+                        (archive.received_at, 1, archive.id),
                         voice_item,
                     )
                     continue
@@ -555,7 +556,7 @@ def _decode_reply_context_cursor(
         if effective_at.tzinfo is None:
             raise ValueError
         return effective_at, int(payload["rank"]), UUID(payload["id"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, binascii.Error):
         raise ValueError("invalid reply context cursor") from None
 
 
