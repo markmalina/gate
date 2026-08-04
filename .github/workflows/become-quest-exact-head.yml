@@ -89,6 +89,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -c constraints/ci.txt ".[dev]"
 
+      - name: Validate scoped voice reply context on the literal PR head
+        run: |
+          ruff check app/application/mcp_inbox.py app/api/mcp_routes.py app/api/mcp_schemas.py tests/test_mcp_voice_reply_context.py tests/test_mcp_routes.py
+          pytest tests/test_mcp_voice_reply_context.py tests/test_mcp_routes.py
+
       - name: Lint and type-check Quest and transcription migration files
         run: |
           ruff check app/application/become_quest.py app/infrastructure/become_quest.py app/models/become_quest.py app/models/become_program_draft.py app/models/alpha_transcription.py app/api/become_telegram_ingress.py app/services/telegram_become_webhook.py app/application/become_transcript_review.py app/application/become_program_draft.py app/application/become_voice_transcription.py app/infrastructure/become_transcript_review.py app/infrastructure/become_program_draft.py app/infrastructure/become_voice_transcription.py app/worker/become_pilot_maintenance.py app/worker/telegram_processing.py tests/test_become_transcript_review.py tests/test_become_program_draft.py tests/test_become_transcript_review_postgres.py tests/test_become_voice_transcription.py tests/test_become_telegram_ingress.py tests/test_telegram_become_webhook.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py alembic/versions/0082_become_quest.py alembic/versions/0083_become_quest_corrective.py alembic/versions/0083_alpha_transcription_product.py alembic/versions/0083_become_quest_corrective_merge.py alembic/versions/0084_become_pilot_slice1_review.py alembic/versions/0085_become_pilot_slice2_program.py

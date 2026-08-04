@@ -424,6 +424,23 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             "quest_external_effects": 0,
         }
 
+    async def historical_debt_status(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        return {
+            "voice_count": 0,
+            "parity_count": 0,
+            "voice_records": [],
+            "parity_records": [],
+            "private_content_exposed": False,
+            "provider_identifiers_exposed": False,
+            "billing_identifiers_exposed": False,
+            "mutation_allowed": False,
+            "provider_call_allowed": False,
+        }
+
+
     async def connectivity_status(
         *_args: object,
         **_kwargs: object,
@@ -469,6 +486,10 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     monkeypatch.setattr(
         "app.api.mcp_routes.telegram_business_text_parity_status",
         parity_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.historical_debt_diagnostics",
+        historical_debt_status,
     )
     monkeypatch.setattr(
         "app.api.mcp_routes.become_controlled_intake_status",

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import subprocess
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -127,8 +128,7 @@ async def sessions() -> async_sessionmaker[AsyncSession]:
         await engine.dispose()
 
 
-@pytest.fixture(autouse=True)
-async def clean_previous_pilot_fixtures(
+async def _clean_pilot_fixtures(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     workspace_filter = (
@@ -212,6 +212,17 @@ async def clean_previous_pilot_fixtures(
     async with sessions.begin() as session:
         for statement in statements:
             await session.execute(text(statement))
+
+
+@pytest.fixture(autouse=True)
+async def clean_previous_pilot_fixtures(
+    sessions: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[None]:
+    await _clean_pilot_fixtures(sessions)
+    try:
+        yield
+    finally:
+        await _clean_pilot_fixtures(sessions)
 
 
 async def seed_pilot(
@@ -3128,3 +3139,66 @@ async def test_slice2_inflight_source_change_invalidates_without_delivery_or_ret
     assert row["error_code"] == "source_changed_in_flight"
     assert row["version_count"] == 0
     assert row["delivery_count"] == 0
+
+@pytest.mark.anyio
+async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    graph = await seed_pilot(
+        sessions,
+        attempt_state="succeeded_unsettled",
+        with_review=False,
+    )
+    migration_env = {**os.environ, "DATABASE_URL": _database_url()}
+    blocked = subprocess.run(
+        ["alembic", "downgrade", "-1"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=migration_env,
+    )
+    assert blocked.returncode != 0
+    assert (
+        "refusing to remove active BECOME Pilot transcription grant"
+        in blocked.stdout + blocked.stderr
+    )
+    async with sessions() as session:
+        active_grants = await session.scalar(
+            text(
+                """
+                SELECT count(*)
+                FROM become_voice_transcription_attempts
+                WHERE id = :attempt_id
+                  AND grant_key = 'become-pilot-slice1-transcription-v2'
+                """
+            ),
+            {"attempt_id": graph.attempt_id},
+        )
+    assert active_grants == 1
+
+    await _clean_pilot_fixtures(sessions)
+    await _clean_pilot_fixtures(sessions)
+    try:
+        subprocess.run(
+            ["alembic", "downgrade", "-1"],
+            check=True,
+            env=migration_env,
+        )
+    finally:
+        subprocess.run(
+            ["alembic", "upgrade", "head"],
+            check=True,
+            env=migration_env,
+        )
+
+    heads = subprocess.run(
+        ["alembic", "heads"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=migration_env,
+    ).stdout.strip().splitlines()
+    assert len(heads) == 1
+    assert heads[0].startswith("0084_become_pilot_slice1_review")
+
+

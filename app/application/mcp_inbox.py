@@ -1,6 +1,9 @@
 # mypy: ignore-errors
 """Scoped application queries for the Gate MCP inbox and reply context."""
 
+import base64
+import binascii
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -20,7 +23,9 @@ from app.models.domain import (
     ReplyTask,
     ReplyTaskStatus,
     TelegramBusinessConnection,
+    TelegramReceipt,
     TelegramUpdate,
+    TelegramVoiceArchive,
 )
 
 JsonObject = dict[str, Any]
@@ -213,9 +218,11 @@ async def get_reply_context(
     scope: AccessScope,
     task_id: UUID,
     limit: int,
+    cursor: str | None = None,
 ) -> JsonObject | None:
-    """Return chronological reply context when the task belongs to the scope."""
+    """Return a scoped text+voice chronology with stable keyset pagination."""
 
+    cursor_key = _decode_reply_context_cursor(cursor, task_id=task_id)
     task_result = await session.execute(
         select(
             ReplyTask,
@@ -267,6 +274,7 @@ async def get_reply_context(
         account,
         resolved_contact_name,
     ) = row
+
     history_counterparty_user_id = case(
         (
             Message.direction == MessageDirection.INBOUND.value,
@@ -274,7 +282,12 @@ async def get_reply_context(
         ),
         else_=func.coalesce(Message.recipient_id, Message.chat_id),
     )
-    history_result = await session.execute(
+    message_effective_at = func.coalesce(
+        Message.sent_at,
+        Message.received_at,
+        Message.created_at,
+    )
+    history_statement = (
         select(
             Message,
             TelegramUpdate,
@@ -305,17 +318,147 @@ async def get_reply_context(
                 conversation.business_connection_id
             ),
         )
-        .order_by(
-            func.coalesce(
-                Message.sent_at,
-                Message.received_at,
-                Message.created_at,
-            ).desc(),
-            Message.id.desc(),
-        )
-        .limit(limit)
     )
-    history_rows = list(reversed(history_result.all()))
+    message_cursor_filter = _reply_cursor_filter(
+        effective_at=message_effective_at,
+        identifier=Message.id,
+        source_rank=0,
+        cursor_key=cursor_key,
+    )
+    if message_cursor_filter is not None:
+        history_statement = history_statement.where(message_cursor_filter)
+    history_result = await session.execute(
+        history_statement.order_by(
+            message_effective_at.desc(),
+            Message.id.desc(),
+        ).limit(limit + 1)
+    )
+    history_rows = history_result.all()
+
+    timeline: list[tuple[tuple[datetime, int, UUID], JsonObject]] = []
+    message_items_by_telegram_id: dict[int, int] = {}
+    for message, telegram_update, history_contact_name in history_rows:
+        serialized = {
+            **_serialize_message(message),
+            "message_type": "text",
+            "text": message.text,
+            "voice": None,
+            "counterparty": counterparty(
+                message=message,
+                telegram_update=telegram_update,
+                resolved_contact_name=history_contact_name,
+                fallback_name=getattr(conversation, "title", None),
+            ),
+        }
+        key = (
+            _message_effective_at(message),
+            0,
+            message.id,
+        )
+        timeline.append((key, serialized))
+        telegram_message_id = getattr(message, "telegram_message_id", None)
+        if telegram_message_id is not None:
+            message_items_by_telegram_id[int(telegram_message_id)] = len(timeline) - 1
+
+    conversation_person_id = getattr(conversation, "person_id", None)
+    task_person_id = getattr(task, "person_id", None)
+    if (
+        conversation_person_id is not None
+        and task_person_id == conversation_person_id
+        and conversation.account_id is not None
+        and conversation.project_id is not None
+        and conversation.business_connection_id is not None
+    ):
+        identity_result = await session.execute(
+            select(PersonIdentity.platform_user_id).where(
+                PersonIdentity.person_id == conversation_person_id,
+                PersonIdentity.account_id == conversation.account_id,
+                PersonIdentity.platform == "telegram",
+                PersonIdentity.is_verified.is_(True),
+            )
+        )
+        verified_ids = {str(value) for value in identity_result.scalars().all()}
+        if verified_ids:
+            voice_statement = (
+                select(TelegramVoiceArchive, TelegramReceipt)
+                .join(
+                    TelegramReceipt,
+                    TelegramReceipt.id == TelegramVoiceArchive.receipt_id,
+                )
+                .where(
+                    TelegramVoiceArchive.account_id == conversation.account_id,
+                    TelegramVoiceArchive.project_id == conversation.project_id,
+                    TelegramVoiceArchive.chat_id == conversation.chat_id,
+                    TelegramVoiceArchive.business_connection_id
+                    == conversation.business_connection_id,
+                )
+            )
+            voice_cursor_filter = _reply_cursor_filter(
+                effective_at=TelegramVoiceArchive.received_at,
+                identifier=TelegramVoiceArchive.id,
+                source_rank=1,
+                cursor_key=cursor_key,
+            )
+            if voice_cursor_filter is not None:
+                voice_statement = voice_statement.where(voice_cursor_filter)
+            voice_result = await session.execute(
+                voice_statement.order_by(
+                    TelegramVoiceArchive.received_at.desc(),
+                    TelegramVoiceArchive.id.desc(),
+                ).limit((limit + 1) * 4)
+            )
+            for archive, receipt in voice_result.all():
+                platform_user_id = _voice_counterparty_id(
+                    receipt.payload,
+                    direction=archive.direction,
+                )
+                if platform_user_id not in verified_ids:
+                    continue
+                voice_item = _serialize_voice_message(
+                    archive=archive,
+                    task_id=task.id,
+                    counterparty_payload={
+                        **counterparty(
+                            message=trigger,
+                            telegram_update=trigger_update,
+                            resolved_contact_name=resolved_contact_name,
+                            fallback_name=getattr(conversation, "title", None),
+                        ),
+                        "platform_user_id": platform_user_id,
+                    },
+                )
+                existing_index = message_items_by_telegram_id.get(
+                    int(archive.telegram_message_id)
+                )
+                if existing_index is not None:
+                    existing_key, existing_item = timeline[existing_index]
+                    voice_item["id"] = existing_item["id"]
+                    voice_item["chat_id"] = existing_item["chat_id"]
+                    voice_item["sender_id"] = existing_item["sender_id"]
+                    voice_item["recipient_id"] = existing_item["recipient_id"]
+                    voice_item["created_at"] = existing_item["created_at"]
+                    voice_item["sent_at"] = existing_item["sent_at"]
+                    timeline[existing_index] = (
+                        (archive.received_at, 1, archive.id),
+                        voice_item,
+                    )
+                    continue
+                timeline.append(
+                    (
+                        (archive.received_at, 1, archive.id),
+                        voice_item,
+                    )
+                )
+
+    timeline.sort(key=lambda item: item[0], reverse=True)
+    has_more = len(timeline) > limit
+    page = timeline[:limit]
+    next_cursor = (
+        _encode_reply_context_cursor(task_id=task.id, key=page[-1][0])
+        if has_more and page
+        else None
+    )
+    page.reverse()
     content = {
         "task_id": str(task.id),
         "task_ref": str(task.id)[:8],
@@ -333,22 +476,167 @@ async def get_reply_context(
             resolved_contact_name=resolved_contact_name,
             fallback_name=getattr(conversation, "title", None),
         ),
-        "messages": [
-            {
-                **_serialize_message(message),
-                "counterparty": counterparty(
-                    message=message,
-                    telegram_update=telegram_update,
-                    resolved_contact_name=history_contact_name,
-                    fallback_name=getattr(conversation, "title", None),
-                ),
-            }
-            for message, telegram_update, history_contact_name in history_rows
-        ],
-        "count": len(history_rows),
+        "messages": [item for _key, item in page],
+        "count": len(page),
         "limit": limit,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
     }
     return content
+
+
+def _message_effective_at(message: Message) -> datetime:
+    return message.sent_at or message.received_at or message.created_at
+
+
+def _reply_cursor_filter(
+    *,
+    effective_at: Any,
+    identifier: Any,
+    source_rank: int,
+    cursor_key: tuple[datetime, int, UUID] | None,
+) -> Any | None:
+    if cursor_key is None:
+        return None
+    cursor_at, cursor_rank, cursor_id = cursor_key
+    clauses = [effective_at < cursor_at]
+    if source_rank < cursor_rank:
+        clauses.append(effective_at == cursor_at)
+    elif source_rank == cursor_rank:
+        clauses.append(and_(effective_at == cursor_at, identifier < cursor_id))
+    return or_(*clauses)
+
+
+def _encode_reply_context_cursor(
+    *,
+    task_id: UUID,
+    key: tuple[datetime, int, UUID],
+) -> str:
+    effective_at, source_rank, identifier = key
+    payload = json.dumps(
+        {
+            "v": 1,
+            "task": str(task_id),
+            "at": effective_at.isoformat(),
+            "rank": source_rank,
+            "id": str(identifier),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_reply_context_cursor(
+    raw: str | None,
+    *,
+    task_id: UUID,
+) -> tuple[datetime, int, UUID] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw or len(raw) > 512:
+        raise ValueError("invalid reply context cursor")
+    try:
+        padded = raw + "=" * (-len(raw) % 4)
+        payload = json.loads(
+            base64.b64decode(
+                padded.encode(),
+                altchars=b"-_",
+                validate=True,
+            )
+        )
+        if (
+            not isinstance(payload, dict)
+            or payload.get("v") != 1
+            or payload.get("task") != str(task_id)
+            or payload.get("rank") not in {0, 1}
+        ):
+            raise ValueError
+        effective_at = datetime.fromisoformat(payload["at"])
+        if effective_at.tzinfo is None:
+            raise ValueError
+        return effective_at, int(payload["rank"]), UUID(payload["id"])
+    except (KeyError, TypeError, ValueError, binascii.Error):
+        raise ValueError("invalid reply context cursor") from None
+
+
+def _voice_counterparty_id(payload: JsonObject, *, direction: str) -> str | None:
+    raw_message: Any = None
+    for key in (
+        "business_message",
+        "edited_business_message",
+        "message",
+        "edited_message",
+    ):
+        candidate = payload.get(key)
+        if isinstance(candidate, dict):
+            raw_message = candidate
+            break
+    if not isinstance(raw_message, dict):
+        return None
+    raw_identity = (
+        raw_message.get("from")
+        if direction == MessageDirection.INBOUND.value
+        else raw_message.get("chat")
+    )
+    if not isinstance(raw_identity, dict):
+        return None
+    platform_user_id = raw_identity.get("id")
+    return str(platform_user_id) if platform_user_id is not None else None
+
+
+def _voice_transcription_status(archive: TelegramVoiceArchive) -> str:
+    if archive.transcript_text is not None:
+        return "transcribed"
+    status = archive.transcription_status
+    if status in {"processing", "transcribing"}:
+        return "processing"
+    if status in {"failed", "rejected", "blocked"}:
+        return "failed"
+    if status == "unknown":
+        return "unknown"
+    return "pending"
+
+
+def _serialize_voice_message(
+    *,
+    archive: TelegramVoiceArchive,
+    task_id: UUID,
+    counterparty_payload: JsonObject,
+) -> JsonObject:
+    status = _voice_transcription_status(archive)
+    text = archive.transcript_text if status == "transcribed" else None
+    return {
+        "id": str(archive.id),
+        "message_type": "voice",
+        "direction": archive.direction,
+        "source": "telegram-voice",
+        "chat_id": archive.chat_id,
+        "sender_id": (
+            str(counterparty_payload["platform_user_id"])
+            if archive.direction == MessageDirection.INBOUND.value
+            else "owner"
+        ),
+        "recipient_id": (
+            None
+            if archive.direction == MessageDirection.INBOUND.value
+            else str(counterparty_payload["platform_user_id"])
+        ),
+        "text": text,
+        "text_preview": _truncate_text(text or "", 240),
+        "created_at": _serialize_datetime(archive.created_at),
+        "received_at": _serialize_datetime(archive.received_at),
+        "sent_at": None,
+        "counterparty": counterparty_payload,
+        "voice": {
+            "archive_ref": f"task:{task_id}:voice-archive:{archive.id}",
+            "transcription_status": status,
+            "transcription_reason_code": archive.transcription_reason_code,
+            "language": archive.transcript_language,
+            "transcribed_at": _serialize_datetime(archive.transcribed_at),
+            "duration_seconds": archive.duration_seconds,
+        },
+    }
 
 
 def _serialize_unanswered_item(
