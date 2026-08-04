@@ -99,7 +99,7 @@ with `store=false`, no tools, a strict JSON schema and a bounded output limit.
 ## Rollback
 
 Rollback target remains Gate production
-`d7f144668bd2d5f43b9764c51e21bcff6484a22c`.
+`3aca383b64a36874033ef262f6f7430f326c7096`.
 
 1. Freeze BECOME Pilot worker intake.
 2. Set the Slice 2 enabled/data gates false and both caps to zero.
