@@ -3041,3 +3041,90 @@ async def test_slice2_transcript_correction_invalidates_old_program_and_ttl_purg
             {"id": source.draft_id},
         )
     assert body is None
+
+@pytest.mark.anyio
+async def test_slice2_inflight_source_change_invalidates_without_delivery_or_retry(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A provider result crossing an approval change can never become displayable."""
+
+    from app.infrastructure.become_program_draft import (
+        SessionFactoryProgramDraftStore,
+    )
+
+    graph = await _approve_seeded_transcript(sessions)
+    program = SessionFactoryProgramDraftStore(sessions)
+    source = await program.reserve_from_confirmed_transcript(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+    )
+    assert source is not None
+    assert await program.claim_provider_call(draft_id=source.draft_id, now=NOW)
+
+    provider_started = asyncio.Event()
+    provider_may_return = asyncio.Event()
+
+    async def controlled_provider_completion() -> None:
+        provider_started.set()
+        await provider_may_return.wait()
+        await program.complete_provider_call(
+            draft_id=source.draft_id,
+            program_markdown="# Устаревшая программа",
+            input_tokens=1,
+            output_tokens=1,
+            provider_model="barrier-fixture",
+            now=NOW + timedelta(minutes=2),
+        )
+
+    provider_task = asyncio.create_task(controlled_provider_completion())
+    await provider_started.wait()
+
+    transcript = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert graph.callback_ref is not None
+    assert (
+        await transcript.apply_callback(
+            action="e",
+            callback_ref=graph.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW + timedelta(minutes=1),
+        )
+        is PilotReviewDisposition.CORRECTION_REQUESTED
+    )
+
+    provider_may_return.set()
+    await provider_task
+
+    restarted = SessionFactoryProgramDraftStore(sessions)
+    assert await restarted.claim_provider_call(
+        draft_id=source.draft_id,
+        now=NOW + timedelta(minutes=3),
+    ) is None
+    assert await restarted.claim_delivery(
+        now=NOW + timedelta(minutes=3),
+        max_operations=8,
+    ) is None
+
+    async with sessions() as session:
+        row = (
+            await session.execute(
+                text(
+                    """
+                    SELECT state, error_code,
+                           (SELECT count(*)
+                            FROM become_pilot_program_versions v
+                            WHERE v.draft_id = p.id) AS version_count,
+                           (SELECT count(*)
+                            FROM become_pilot_program_deliveries d
+                            WHERE d.draft_id = p.id) AS delivery_count
+                    FROM become_pilot_program_drafts p
+                    WHERE p.id = CAST(:id AS uuid)
+                    """
+                ),
+                {"id": source.draft_id},
+            )
+        ).mappings().one()
+    assert row["state"] == "invalidated"
+    assert row["error_code"] == "source_changed_in_flight"
+    assert row["version_count"] == 0
+    assert row["delivery_count"] == 0
