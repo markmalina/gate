@@ -94,6 +94,7 @@ from app.infrastructure.beta_checkpoint_export import (
     export_beta_space_checkpoint,
 )
 from app.infrastructure.billing_budget import SqlBillingBudgetService
+from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
@@ -372,6 +373,12 @@ async def mcp_endpoint(
                     account_ids=principal.access_scope.account_ids,
                 )
             ).payload()
+            snapshot["historical_debt"] = await historical_debt_diagnostics(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                account_ids=principal.access_scope.account_ids,
+                project_ids=principal.access_scope.project_ids,
+            )
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_alpha_list_installations":
             return await _alpha_list_installations_tool_result(
