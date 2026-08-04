@@ -7,6 +7,7 @@ from app.application.canonical_messaging import (
 )
 from app.application.telegram_business_text_parity import (
     TELEGRAM_BUSINESS_TEXT_PARITY_MISMATCH_CODES,
+    TELEGRAM_BUSINESS_TEXT_PARITY_POLICY_VERSION,
     TelegramBusinessLegacyTextFact,
     TelegramBusinessTextParityCommand,
     TelegramBusinessTextParityError,
@@ -20,7 +21,13 @@ def _command(
     *,
     direction: CanonicalMessageDirection = CanonicalMessageDirection.INBOUND,
     route: WorkRoute = WorkRoute.HUMAN_REPLY_TASK,
+    reply_task_expected: bool | None = None,
 ) -> TelegramBusinessTextParityCommand:
+    if reply_task_expected is None:
+        reply_task_expected = (
+            direction is CanonicalMessageDirection.INBOUND
+            and route is WorkRoute.HUMAN_REPLY_TASK
+        )
     return TelegramBusinessTextParityCommand(
         workspace_key="mark-personal",
         account_id="22222222-2222-2222-2222-222222222222",
@@ -29,6 +36,7 @@ def _command(
         account_alias="telegram_mark_ru",
         direction=direction,
         route=route,
+        reply_task_expected=reply_task_expected,
         provider_dialog_id="private-dialog",
         business_connection_id="private-connection",
         text_content="private-text",
@@ -67,6 +75,31 @@ def test_owner_outbound_text_requires_no_reply_task() -> None:
     )
 
     assert result.reply_task_matched is True
+
+
+def test_processed_mayak_expects_zero_human_tasks_under_versioned_policy() -> None:
+    result = compare_telegram_business_text_parity(
+        _command(route=WorkRoute.AGENT_TURN, reply_task_expected=False),
+        _legacy(reply_task_count=0),
+    )
+
+    assert result.policy_version == TELEGRAM_BUSINESS_TEXT_PARITY_POLICY_VERSION
+    assert result.effective_route is WorkRoute.AGENT_TURN
+    assert result.reply_task_expected is False
+    assert result.observed_reply_task_count == 0
+
+
+def test_processed_mayak_unexpected_task_fails_with_distinct_code() -> None:
+    with pytest.raises(TelegramBusinessTextParityError) as captured:
+        compare_telegram_business_text_parity(
+            _command(route=WorkRoute.AGENT_TURN, reply_task_expected=False),
+            _legacy(reply_task_count=1),
+        )
+
+    assert (
+        captured.value.code
+        == "telegram_business_text_parity_unexpected_reply_task"
+    )
 
 
 @pytest.mark.parametrize(

@@ -649,6 +649,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 raise TelegramUpdateProcessingError(
                     "telegram_business_text_parity_identity_invalid"
                 )
+            effective_reply_route = projection.ownership.route
             if is_telegram_business_text_cutover_update(payload):
                 if self._business_text_inbox is None:
                     raise TelegramUpdateProcessingError(
@@ -676,6 +677,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                     inbox_projection = await self._business_text_inbox.project(
                         inbox_command
                     )
+                    effective_reply_route = inbox_command.route
                     mayak_processed = False
                     if (
                         self._universal_mayak is not None
@@ -718,7 +720,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         not mayak_processed
                         and inbox_command.route is WorkRoute.AGENT_TURN
                     ):
-                        inbox_projection = await self._business_text_inbox.project(
+                        fallback_command = (
                             build_telegram_business_text_inbox_command(
                                 payload,
                                 account_id=identity.account_id,
@@ -732,6 +734,10 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                                 projection=projection,
                             )
                         )
+                        inbox_projection = await self._business_text_inbox.project(
+                            fallback_command
+                        )
+                        effective_reply_route = fallback_command.route
                 except Exception:
                     raise TelegramUpdateProcessingError(
                         "telegram_business_text_inbox_projection_failed"
@@ -751,7 +757,12 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                             update_id=item.update_id,
                             account_alias=identity.account_alias,
                             direction=projection.message.direction,
-                            route=projection.ownership.route,
+                            route=effective_reply_route,
+                            reply_task_expected=(
+                                projection.message.direction.value == "inbound"
+                                and effective_reply_route
+                                is WorkRoute.HUMAN_REPLY_TASK
+                            ),
                             provider_dialog_id=projection.dialog.provider_dialog_id,
                             business_connection_id=(
                                 identity_command.business_connection_id
