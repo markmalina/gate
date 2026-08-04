@@ -1328,11 +1328,15 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         enabled=settings.gate_become_pilot_slice1_enabled,
                     )
                     program_store = SessionFactoryProgramDraftStore(sessions)
-                    become_program_review = ProcessPilotProgramReviewUpdate(
-                        store=program_store,
-                        telegram=become_telegram,
-                        identity_pepper=subject_pepper,
-                        enabled=settings.gate_become_pilot_slice2_enabled,
+                    become_program_review = (
+                        ProcessPilotProgramReviewUpdate(
+                            store=program_store,
+                            telegram=become_telegram,
+                            identity_pepper=subject_pepper,
+                            enabled=True,
+                        )
+                        if settings.gate_become_pilot_slice2_enabled
+                        else None
                     )
                     become_media = ProcessBecomeMediaService(
                         store=SessionFactoryBecomeMediaStore(sessions),
