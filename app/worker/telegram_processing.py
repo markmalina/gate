@@ -720,8 +720,9 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         not mayak_processed
                         and inbox_command.route is WorkRoute.AGENT_TURN
                     ):
-                        fallback_command = build_telegram_business_text_inbox_command(
-                            payload,
+                        fallback_command = (
+                            build_telegram_business_text_inbox_command(
+                                payload,
                                 account_id=identity.account_id,
                                 project_id=identity.project_id or "",
                                 canonical_message_id=canonical_message_id,
@@ -730,7 +731,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                                 business_connection_id=(
                                     identity_command.business_connection_id
                                 ),
-                            projection=projection,
+                                projection=projection,
+                            )
                         )
                         inbox_projection = await self._business_text_inbox.project(
                             fallback_command
