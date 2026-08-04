@@ -799,6 +799,8 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
     assert "DELETE FROM become_i4" not in corrective
     assert "not a safe production rollback" in corrective
     assert 'revision: str = "0084_become_pilot_slice1_review"' in pilot
+    assert 'revision: str = "0085_become_pilot_slice2_program"' in program
+    assert 'down_revision: str | None = "0084_become_pilot_slice1_review"' in program
     assert (
         'down_revision: str | None = "0083_become_quest_corrective_m"'
         in pilot
@@ -811,5 +813,5 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0084_become_pilot_slice1_review")
+    assert heads[0].startswith("0085_become_pilot_slice2_program")
 
