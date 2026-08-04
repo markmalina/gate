@@ -21,6 +21,9 @@ from app.models.canonical import (
     TelegramBusinessTextParityEvidence,
     Workspace,
 )
+from app.infrastructure.mayak_parity_diagnostics import (
+    exact_mayak_parity_join,
+)
 from app.models.domain import (
     Account,
     Message,
@@ -305,7 +308,9 @@ async def _parity_records(
             (
                 await session.scalars(
                     select(Message).where(
-                        Message.telegram_update_id == receipt.update_id,
+                        Message.canonical_message_id == canonical.id,
+                        Message.account_id == evidence.account_id,
+                        Message.project_id.in_(project_ids),
                         Message.source == "telegram",
                         Message.business_connection_id.is_not(None),
                     )
@@ -354,6 +359,16 @@ async def _parity_records(
             and len(identities) == 1
             and message.person_id == identities[0].person_id
         )
+        mayak_parity = await exact_mayak_parity_join(
+            session,
+            workspace_id=workspace.id,
+            canonical_message_id=canonical.id,
+            dialog_id=dialog.id,
+            account_id=evidence.account_id,
+            project_ids=project_ids,
+            legacy_message_id=message.id if message is not None else None,
+            observed_reply_task_count=len(tasks),
+        )
         classification, should_create = _classify_reply_task_mismatch(
             legacy_count=len(messages),
             task_created_at=[task.created_at for task in tasks],
@@ -392,6 +407,7 @@ async def _parity_records(
                 "person_identity_confirmed": person_matched,
                 "message_should_create_reply_task": should_create,
                 "classification": classification,
+                "mayak_parity": mayak_parity,
             }
         )
     return result
