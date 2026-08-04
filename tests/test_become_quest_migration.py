@@ -791,6 +791,9 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
     pilot = Path(
         "alembic/versions/0084_become_pilot_slice1_review.py"
     ).read_text()
+    program = Path(
+        "alembic/versions/0085_become_pilot_slice2_program.py"
+    ).read_text()
     assert 'revision: str = "0082_become_quest"' in original
     assert 'down_revision: str | None = "0081_become_i4_recovery_v2"' in original
     assert 'revision: str = "0083_become_quest_corrective"' in corrective
