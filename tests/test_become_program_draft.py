@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.application.become_program_draft import (
+from app.application.become_controlled_intake import BecomeControlledIntakeError
+from app.application.become_program_draft import (  # noqa: I001
     DeliverPilotProgramDraft,
     ProcessConfirmedTranscriptToProgramDraft,
     ProgramDeliveryJob,
@@ -193,7 +194,7 @@ def test_callback_namespace_and_delivery_are_program_specific() -> None:
         "c",
         "1" * 32,
     )
-    with pytest.raises(Exception):
+    with pytest.raises(BecomeControlledIntakeError):
         parse_program_callback_data("b1:c:" + "1" * 32)
     text, markup = program_delivery_body(
         ProgramDeliveryJob(
