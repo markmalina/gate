@@ -90,6 +90,23 @@ async def _parity_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
     return SimpleNamespace(payload=_parity_status_payload)
 
 
+async def _historical_debt_status(
+    _session: object,
+    **_kwargs: Any,
+) -> dict[str, object]:
+    return {
+        "voice_count": 0,
+        "parity_count": 0,
+        "voice_records": [],
+        "parity_records": [],
+        "private_content_exposed": False,
+        "provider_identifiers_exposed": False,
+        "billing_identifiers_exposed": False,
+        "mutation_allowed": False,
+        "provider_call_allowed": False,
+    }
+
+
 async def _become_intake_status(
     *_args: object,
     **_kwargs: object,
@@ -851,6 +868,10 @@ async def test_mcp_status_is_scoped(
         _parity_status,
     )
     monkeypatch.setattr(
+        "app.api.mcp_routes.historical_debt_diagnostics",
+        _historical_debt_status,
+    )
+    monkeypatch.setattr(
         "app.api.mcp_routes.become_controlled_intake_status",
         _become_intake_status,
     )
@@ -949,6 +970,9 @@ async def test_mcp_status_is_scoped(
     )
     assert structured["telegram_voice"] == _voice_status_payload()
     assert structured["telegram_business_text_parity"] == _parity_status_payload()
+    assert structured["historical_debt"]["voice_count"] == 0
+    assert structured["historical_debt"]["parity_count"] == 0
+    assert structured["historical_debt"]["mutation_allowed"] is False
     assert "Contact directory:" in result["content"][0]["text"]
     assert "accepted_messages: 1" in result["content"][0]["text"]
     assert "Alpha model shadow:" in result["content"][0]["text"]
