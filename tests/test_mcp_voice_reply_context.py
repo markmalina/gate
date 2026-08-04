@@ -6,7 +6,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.application.mcp_inbox import (
     _decode_reply_context_cursor,
