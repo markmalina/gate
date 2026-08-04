@@ -237,7 +237,7 @@ async def _record_evidence(
             TelegramBusinessTextParityEvidence.account_id == account_id,
         )
     )
-    if existing is None:
+    if not isinstance(existing, TelegramBusinessTextParityEvidence):
         raise TelegramBusinessTextParityError(
             "telegram_business_text_parity_scope_invalid"
         )
@@ -245,12 +245,22 @@ async def _record_evidence(
         TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
     ):
         return
+    if existing.direction_policy_version != (
+        TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
+    ):
+        raise TelegramBusinessTextParityError(
+            "telegram_business_text_parity_evidence_conflict"
+        )
     if (
-        existing.direction_policy_version
-        == TELEGRAM_BUSINESS_TEXT_PARITY_DIRECTION_POLICY_VERSION
-        and existing.state == state.value
+        existing.state == state.value
         and existing.mismatch_code == persisted_mismatch_code
     ):
+        return
+    if existing.state == TelegramBusinessTextParityState.PENDING.value:
+        existing.state = state.value
+        existing.mismatch_code = persisted_mismatch_code
+        existing.observation_count += 1
+        existing.last_observed_at = func.now()
         return
     raise TelegramBusinessTextParityError(
         "telegram_business_text_parity_evidence_conflict"
