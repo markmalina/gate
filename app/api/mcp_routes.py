@@ -1006,6 +1006,8 @@ async def _latest_voice_archive_tool_result(
         "messages": [],
         "count": 0,
         "limit": 1,
+        "next_cursor": None,
+        "has_more": False,
     }
     if transcript_payload:
         if settings is None:
