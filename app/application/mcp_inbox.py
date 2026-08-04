@@ -556,7 +556,7 @@ def _decode_reply_context_cursor(
         if effective_at.tzinfo is None:
             raise ValueError
         return effective_at, int(payload["rank"]), UUID(payload["id"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError, binascii.Error):
+    except (KeyError, TypeError, ValueError, binascii.Error):
         raise ValueError("invalid reply context cursor") from None
 
 
@@ -637,6 +637,7 @@ def _serialize_voice_message(
             "duration_seconds": archive.duration_seconds,
         },
     }
+
 
 def _serialize_unanswered_item(
     *,
