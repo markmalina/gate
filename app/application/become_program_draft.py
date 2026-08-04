@@ -82,7 +82,9 @@ class ProgramDraftStore(Protocol):
         self, *, workspace_key: str, now: datetime
     ) -> ProgramDraftSource | None: ...
 
-    async def claim_provider_call(self, *, draft_id: str, now: datetime) -> ProgramDraftJob | None: ...
+    async def claim_provider_call(
+        self, *, draft_id: str, now: datetime
+    ) -> ProgramDraftJob | None: ...
 
     async def complete_provider_call(
         self,
