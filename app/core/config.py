@@ -238,6 +238,44 @@ class Settings(BaseSettings):
             "GATE_BECOME_PILOT_SLICE1_PROVIDER_MAX_CALLS"
         ),
     )
+    gate_become_pilot_slice2_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_ENABLED",
+    )
+    gate_become_pilot_slice2_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_DATA_GATE_APPROVED",
+    )
+    gate_become_pilot_slice2_max_operations: int = Field(
+        default=0,
+        ge=0,
+        le=6,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_MAX_OPERATIONS",
+    )
+    gate_become_pilot_slice2_provider_max_calls: int = Field(
+        default=0,
+        ge=0,
+        le=1,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_PROVIDER_MAX_CALLS",
+    )
+    gate_become_pilot_slice2_model: str = Field(
+        default="gpt-5.6-luna",
+        min_length=1,
+        max_length=128,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_MODEL",
+    )
+    gate_become_pilot_slice2_max_output_tokens: int = Field(
+        default=1024,
+        ge=128,
+        le=4096,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_MAX_OUTPUT_TOKENS",
+    )
+    gate_become_pilot_slice2_timeout_seconds: float = Field(
+        default=30,
+        ge=1,
+        le=120,
+        validation_alias="GATE_BECOME_PILOT_SLICE2_TIMEOUT_SECONDS",
+    )
     gate_alpha_shadow_worker_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_SHADOW_WORKER_ENABLED",
