@@ -137,6 +137,24 @@ async def clean_previous_pilot_fixtures(
     )
     statements = (
         """
+        DELETE FROM become_pilot_program_deliveries
+        WHERE draft_id IN (
+          SELECT id FROM become_pilot_program_drafts
+          WHERE workspace_id IN ("""
+        + workspace_filter
+        + """))
+        """,
+        """
+        DELETE FROM become_pilot_program_versions
+        WHERE draft_id IN (
+          SELECT id FROM become_pilot_program_drafts
+          WHERE workspace_id IN ("""
+        + workspace_filter
+        + """))
+        """,
+        "DELETE FROM become_pilot_program_drafts "
+        "WHERE workspace_id IN (" + workspace_filter + ")",
+        """
         DELETE FROM become_pilot_delivery_reconciliations
         WHERE delivery_id IN (
           SELECT d.id
@@ -2752,3 +2770,246 @@ async def test_old_worker_rollback_preconditions_block_nonterminal_v2(
             {"attempt_id": graph.attempt_id},
         )
     assert legacy_selector_count == 0
+
+
+
+async def _approve_seeded_transcript(
+    sessions: async_sessionmaker[AsyncSession],
+) -> PilotGraph:
+    graph = await seed_pilot(sessions)
+    review = SessionFactoryPilotTranscriptReviewStore(sessions)
+    presentation = await review.claim_delivery(now=NOW, max_operations=8)
+    assert presentation is not None
+    await review.settle_delivery(
+        delivery_id=presentation.delivery_id,
+        outcome="sent",
+        telegram_message_id="slice2-seed",
+        now=NOW,
+    )
+    assert graph.callback_ref is not None
+    assert (
+        await review.apply_callback(
+            action="c",
+            callback_ref=graph.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+        is PilotReviewDisposition.APPROVED
+    )
+    return graph
+
+
+@pytest.mark.anyio
+async def test_slice2_program_is_singleton_restart_safe_and_owner_bound(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    from app.application.become_program_draft import ProgramDraftDisposition
+    from app.infrastructure.become_program_draft import (
+        SessionFactoryProgramDraftStore,
+    )
+
+    graph = await _approve_seeded_transcript(sessions)
+    store = SessionFactoryProgramDraftStore(sessions)
+    source = await store.reserve_from_confirmed_transcript(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+    )
+    assert source is not None
+    assert source.transcript_version == 1
+    job = await store.claim_provider_call(draft_id=source.draft_id, now=NOW)
+    assert job is not None
+    await store.complete_provider_call(
+        draft_id=source.draft_id,
+        program_markdown="# Программа\n\n1. Первый шаг",
+        input_tokens=10,
+        output_tokens=20,
+        provider_model="fixture-model",
+        now=NOW,
+    )
+    restarted = SessionFactoryProgramDraftStore(sessions)
+    assert (
+        await restarted.reserve_from_confirmed_transcript(
+            workspace_key=graph.workspace_key,
+            now=NOW,
+        )
+        is None
+    )
+    assert await restarted.claim_provider_call(
+        draft_id=source.draft_id,
+        now=NOW,
+    ) is None
+    delivery = await restarted.claim_delivery(now=NOW, max_operations=6)
+    assert delivery is not None
+    await restarted.settle_delivery(
+        delivery_id=delivery.delivery_id,
+        outcome="sent",
+        telegram_message_id="program-card",
+        now=NOW,
+    )
+    with pytest.raises(
+        BecomeControlledIntakeError,
+        match="become_program_callback_binding_invalid",
+    ):
+        await restarted.apply_callback(
+            action="c",
+            callback_ref=delivery.callback_ref,
+            subject_ref="ref://pilot/subject/wrong",
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+    assert (
+        await restarted.apply_callback(
+            action="e",
+            callback_ref=delivery.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+        is ProgramDraftDisposition.CORRECTION_REQUESTED
+    )
+    assert await restarted.apply_correction(
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="# Исправленная программа\n\n1. Точный шаг",
+        now=NOW,
+    )
+    redisplay = await restarted.claim_delivery(now=NOW, max_operations=6)
+    assert redisplay is not None
+    await restarted.settle_delivery(
+        delivery_id=redisplay.delivery_id,
+        outcome="sent",
+        telegram_message_id="program-card-v2",
+        now=NOW,
+    )
+    assert (
+        await restarted.apply_callback(
+            action="c",
+            callback_ref=redisplay.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+        is ProgramDraftDisposition.APPROVED
+    )
+    assert (
+        await restarted.apply_callback(
+            action="c",
+            callback_ref=redisplay.callback_ref,
+            subject_ref=graph.subject_ref,
+            provider_dialog_id=graph.provider_dialog_id,
+            now=NOW,
+        )
+        is ProgramDraftDisposition.APPROVED_DUPLICATE
+    )
+    async with sessions() as session:
+        assert await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_pilot_program_drafts
+                WHERE transcript_review_id = :review_id
+                """
+            ),
+            {"review_id": graph.review_id},
+        ) == 1
+        assert await session.scalar(
+            text(
+                """
+                SELECT count(*) FROM become_pilot_program_versions
+                WHERE draft_id = CAST(:draft_id AS uuid)
+                """
+            ),
+            {"draft_id": source.draft_id},
+        ) == 2
+
+
+@pytest.mark.anyio
+async def test_slice2_transcript_correction_invalidates_old_program_and_ttl_purges(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    from app.infrastructure.become_program_draft import (
+        SessionFactoryProgramDraftStore,
+    )
+
+    graph = await _approve_seeded_transcript(sessions)
+    program = SessionFactoryProgramDraftStore(sessions)
+    source = await program.reserve_from_confirmed_transcript(
+        workspace_key=graph.workspace_key,
+        now=NOW,
+    )
+    assert source is not None
+    assert await program.claim_provider_call(draft_id=source.draft_id, now=NOW)
+    await program.complete_provider_call(
+        draft_id=source.draft_id,
+        program_markdown="# Старая программа",
+        input_tokens=1,
+        output_tokens=1,
+        provider_model="fixture-model",
+        now=NOW,
+    )
+
+    transcript = SessionFactoryPilotTranscriptReviewStore(sessions)
+    assert graph.callback_ref is not None
+    await transcript.apply_callback(
+        action="e",
+        callback_ref=graph.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW + timedelta(minutes=1),
+    )
+    assert await transcript.apply_correction(
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        correction_text="исправленный подтвержденный текст",
+        now=NOW + timedelta(minutes=2),
+    )
+    transcript_card = await transcript.claim_delivery(
+        now=NOW + timedelta(minutes=3),
+        max_operations=8,
+    )
+    assert transcript_card is not None
+    await transcript.settle_delivery(
+        delivery_id=transcript_card.delivery_id,
+        outcome="sent",
+        telegram_message_id="transcript-v2",
+        now=NOW + timedelta(minutes=3),
+    )
+    await transcript.apply_callback(
+        action="c",
+        callback_ref=transcript_card.callback_ref,
+        subject_ref=graph.subject_ref,
+        provider_dialog_id=graph.provider_dialog_id,
+        now=NOW + timedelta(minutes=4),
+    )
+    replacement = await program.reserve_from_confirmed_transcript(
+        workspace_key=graph.workspace_key,
+        now=NOW + timedelta(minutes=5),
+    )
+    assert replacement is not None
+    assert replacement.transcript_version == 2
+    assert replacement.draft_id != source.draft_id
+    async with sessions() as session:
+        state = await session.scalar(
+            text(
+                """
+                SELECT state FROM become_pilot_program_drafts
+                WHERE id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": source.draft_id},
+        )
+    assert state == "invalidated"
+    assert await program.purge_expired(
+        now=NOW + timedelta(days=31),
+    ) == 1
+    async with sessions() as session:
+        body = await session.scalar(
+            text(
+                """
+                SELECT program_body FROM become_pilot_program_versions
+                WHERE draft_id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": source.draft_id},
+        )
+    assert body is None
