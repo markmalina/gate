@@ -10,6 +10,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infrastructure.mayak_parity_diagnostics import (
+    exact_mayak_parity_join,
+)
 from app.models.billing import (
     BillingBudgetReservationModel,
     BillingLedgerEntryModel,
@@ -20,9 +23,6 @@ from app.models.canonical import (
     Dialog,
     TelegramBusinessTextParityEvidence,
     Workspace,
-)
-from app.infrastructure.mayak_parity_diagnostics import (
-    exact_mayak_parity_join,
 )
 from app.models.domain import (
     Account,
