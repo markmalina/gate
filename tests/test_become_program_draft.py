@@ -225,11 +225,12 @@ async def test_enabled_program_text_without_active_review_is_not_consumed() -> N
         enabled=True,
     ).execute(
         update={
+            "update_id": 9001,
             "message": {
-                "from": {"id": 100},
-                "chat": {"id": -200},
+                "from": {"id": 100, "is_bot": False},
+                "chat": {"id": -200, "type": "supergroup"},
                 "text": "обычный текст",
-            }
+            },
         },
         now=NOW,
     )
