@@ -117,8 +117,14 @@ def test_consent_requires_production_readiness_and_exact_plain_message() -> None
     disabled = ProcessBetaSpaceUpdate(store=store, production_ready=False)
     enabled = ProcessBetaSpaceUpdate(store=store, production_ready=True)
 
-    assert run(disabled, update(text=SYNTHETIC_CONSENT)).disposition == BetaSpaceDisposition.DISABLED
-    assert run(enabled, update(text=f" {SYNTHETIC_CONSENT}")).disposition == BetaSpaceDisposition.CONSENT_REQUIRED
+    assert (
+        run(disabled, update(text=SYNTHETIC_CONSENT)).disposition
+        == BetaSpaceDisposition.DISABLED
+    )
+    assert (
+        run(enabled, update(text=f" {SYNTHETIC_CONSENT}")).disposition
+        == BetaSpaceDisposition.CONSENT_REQUIRED
+    )
     result = run(enabled, update(text=SYNTHETIC_CONSENT))
     assert result.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
     assert result.delivery_id == "delivery-a"
@@ -128,8 +134,14 @@ def test_negative_routing_never_creates_an_event() -> None:
     store = MemoryStore()
     service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
 
-    assert run(service, update(chat_id=-19999, text=SYNTHETIC_CONSENT)).disposition == BetaSpaceDisposition.UNBOUND_CHAT
-    assert run(service, update(user_id=79999, text=SYNTHETIC_CONSENT)).disposition == BetaSpaceDisposition.ACTOR_MISMATCH
+    assert (
+        run(service, update(chat_id=-19999, text=SYNTHETIC_CONSENT)).disposition
+        == BetaSpaceDisposition.UNBOUND_CHAT
+    )
+    assert (
+        run(service, update(user_id=79999, text=SYNTHETIC_CONSENT)).disposition
+        == BetaSpaceDisposition.ACTOR_MISMATCH
+    )
     assert store.events == set()
 
 
@@ -139,8 +151,17 @@ def test_cross_space_events_keep_exact_tenant_space_and_actor_scope() -> None:
     store.bindings[SPACE_B.telegram_chat_id] = replace(SPACE_B, state="consented")
     service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
 
-    assert run(service, update(update_id=10, kind="voice")).disposition == BetaSpaceDisposition.FACT_ACCEPTED
-    assert run(service, update(update_id=11, chat_id=-10002, user_id=70002, kind="document")).disposition == BetaSpaceDisposition.FACT_ACCEPTED
+    assert (
+        run(service, update(update_id=10, kind="voice")).disposition
+        == BetaSpaceDisposition.FACT_ACCEPTED
+    )
+    assert (
+        run(
+            service,
+            update(update_id=11, chat_id=-10002, user_id=70002, kind="document"),
+        ).disposition
+        == BetaSpaceDisposition.FACT_ACCEPTED
+    )
     assert store.facts == [
         ("tenant-a", "space-a", "70001", "voice"),
         ("tenant-b", "space-b", "70002", "document"),
@@ -162,10 +183,19 @@ def test_consent_before_processing_and_other_actor_is_not_attributed() -> None:
     store = MemoryStore()
     service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
 
-    assert run(service, update(update_id=30, kind="photo")).disposition == BetaSpaceDisposition.CONSENT_REQUIRED
+    assert (
+        run(service, update(update_id=30, kind="photo")).disposition
+        == BetaSpaceDisposition.CONSENT_REQUIRED
+    )
     run(service, update(update_id=31, text=SYNTHETIC_CONSENT))
-    assert run(service, update(update_id=32, user_id=70003, kind="photo")).disposition == BetaSpaceDisposition.ACTOR_MISMATCH
-    assert run(service, update(update_id=33, kind="photo")).disposition == BetaSpaceDisposition.FACT_ACCEPTED
+    assert (
+        run(service, update(update_id=32, user_id=70003, kind="photo")).disposition
+        == BetaSpaceDisposition.ACTOR_MISMATCH
+    )
+    assert (
+        run(service, update(update_id=33, kind="photo")).disposition
+        == BetaSpaceDisposition.FACT_ACCEPTED
+    )
     assert store.facts == [("tenant-a", "space-a", "70001", "photo")]
 
 
