@@ -5,7 +5,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from app.core.config import Settings
 from app.infrastructure.become_slice3_status import (
     EXPECTED_ALEMBIC_HEAD,
