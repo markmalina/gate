@@ -6,6 +6,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -105,7 +106,8 @@ async def reconcile_beta_katya_space_binding(
                 BetaSpaceBindingModel.workspace_id == workspace.id,
                 BetaSpaceBindingModel.space_ref == BETA_SPACE_REF,
             )
-            .with_for_update()
+                .with_for_update()
+            ),
         )
         expected = (
             connector.id,
@@ -310,8 +312,10 @@ class SqlBetaSpaceStore:
     async def _locked_binding(
         self, binding: BetaSpaceBinding
     ) -> BetaSpaceBindingModel | None:
-        return await self._session.scalar(
-            select(BetaSpaceBindingModel)
+        return cast(
+            BetaSpaceBindingModel | None,
+            await self._session.scalar(
+                select(BetaSpaceBindingModel)
             .where(
                 BetaSpaceBindingModel.id == uuid.UUID(binding.binding_id),
                 BetaSpaceBindingModel.workspace_id == uuid.UUID(binding.workspace_id),
