@@ -635,11 +635,15 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         except Exception as exc:
             raise TelegramUpdateProcessingError("shadow_classification_failed") from exc
 
+        beta_space_owned = (
+            connector.key is TelegramConnectorKey.BETA_GROUP
+            and _is_beta_space_owned_update(self._settings, payload)
+        )
         canonical_persisted = False
         canonical_duplicate = False
         canonical_message_id: str | None = None
         projection = None
-        if self._canonical_store is not None:
+        if self._canonical_store is not None and not beta_space_owned:
             try:
                 projection = project_telegram_canonical_message(
                     payload,
@@ -822,7 +826,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         alpha_canary_disposition = "not_applicable"
         if (
             connector.role is TelegramConnectorRole.ALPHA_GROUP
-            and not _is_beta_space_owned_update(self._settings, payload)
+            and not beta_space_owned
         ):
             if connector.key is TelegramConnectorKey.BETA_GROUP:
                 group_canary = self._beta_canary
