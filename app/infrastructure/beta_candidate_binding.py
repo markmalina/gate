@@ -23,15 +23,31 @@ from .beta_space import (
     BETA_TENANT_REF,
 )
 
-BETA_BINDING_CLAIM_NOT_BEFORE = datetime(2026, 8, 5, 19, 17, 13, tzinfo=UTC)
-BETA_BINDING_CANDIDATE_TEXT = "Подключить Бету: Зубы Кати"
+BETA_BINDING_EVIDENCE_NOT_BEFORE = datetime(2026, 8, 5, tzinfo=UTC)
+BETA_BINDING_EVIDENCE_TEXT = (
+    "Я согласна, чтобы Бета собирала и систематизировала размещённую в этой "
+    "группе информацию о моих зубах и лечении."
+)
 BETA_BINDING_GROUP_TITLE = "Зубы Кати"
 BETA_CONSENT_PROMPT = (
-    "Катя, чтобы Бета сохраняла новые сообщения о зубах только в этой группе, "
-    "отправь одним сообщением: «"
-    + KATYA_CONSENT_TEXT
-    + "». История до согласия не импортируется."
+    "Катя, ты согласна, чтобы Бета собирала и систематизировала новые сообщения "
+    "о твоих зубах и лечении из этой группы?\n\n"
+    "История сообщений до согласия не загружается."
 )
+BETA_CONSENT_REPLY_MARKUP = {
+    "inline_keyboard": [
+        [
+            {
+                "text": "Да, согласна",
+                "callback_data": "beta:katya:consent:yes",
+            },
+            {
+                "text": "Нет",
+                "callback_data": "beta:katya:consent:no",
+            },
+        ]
+    ]
+}
 
 
 class BetaCandidateBindingError(RuntimeError):
@@ -75,19 +91,20 @@ class BetaCandidateBindingResult:
 def extract_beta_binding_candidate(
     *, receipt_id: uuid.UUID, update_id: int, payload: object, received_at: datetime
 ) -> BetaCandidate | None:
-    """Accept only one exact, post-claim, subject-authored activation sentence."""
+    """Use the exact prior consent only as private group/subject identity evidence."""
 
-    if received_at.tzinfo is None or received_at < BETA_BINDING_CLAIM_NOT_BEFORE:
+    if received_at.tzinfo is None or received_at < BETA_BINDING_EVIDENCE_NOT_BEFORE:
         return None
     if not isinstance(payload, dict):
         return None
     message = payload.get("message")
-    if not isinstance(message, dict) or message.get("text") != BETA_BINDING_CANDIDATE_TEXT:
+    if not isinstance(message, dict) or message.get("text") != BETA_BINDING_EVIDENCE_TEXT:
         return None
     chat = message.get("chat")
     actor = message.get("from")
     chat_id = chat.get("id") if isinstance(chat, dict) else None
     actor_id = actor.get("id") if isinstance(actor, dict) else None
+    actor_first_name = actor.get("first_name") if isinstance(actor, dict) else None
     if (
         not isinstance(chat, dict)
         or chat.get("type") not in {"group", "supergroup"}
@@ -96,6 +113,8 @@ def extract_beta_binding_candidate(
         or isinstance(chat_id, bool)
         or not isinstance(actor, dict)
         or actor.get("is_bot") is not False
+        or not isinstance(actor_first_name, str)
+        or actor_first_name.strip().casefold() != "катя"
         or not isinstance(actor_id, int)
         or isinstance(actor_id, bool)
         or actor_id <= 0
@@ -113,7 +132,7 @@ def extract_beta_binding_candidate(
 async def prepare_beta_katya_candidate_binding(
     session: AsyncSession, *, workspace_key: str, now: datetime
 ) -> BetaCandidateBindingResult:
-    """Atomically bind exactly one private candidate without returning identifiers."""
+    """Atomically bind one distinct private identity without returning identifiers."""
 
     workspace = await session.scalar(
         select(Workspace).where(
@@ -149,7 +168,7 @@ async def prepare_beta_katya_candidate_binding(
             select(TelegramReceipt)
             .where(
                 TelegramReceipt.bot_key == BETA_CONNECTOR_KEY,
-                TelegramReceipt.received_at >= BETA_BINDING_CLAIM_NOT_BEFORE,
+                TelegramReceipt.received_at >= BETA_BINDING_EVIDENCE_NOT_BEFORE,
             )
             .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
             .with_for_update()
@@ -174,9 +193,9 @@ async def prepare_beta_katya_candidate_binding(
     }
     if not distinct:
         return BetaCandidateBindingResult("awaiting_candidate", 0, False, False)
-    if len(distinct) != 1 or len(candidates) != 1:
+    if len(distinct) != 1:
         raise BetaCandidateBindingError("beta_binding_candidate_ambiguous")
-    candidate = candidates[0]
+    candidate = candidates[-1]
     collision = await session.scalar(
         select(BetaSpaceBindingModel.id).where(
             BetaSpaceBindingModel.connector_id == connector.id,
