@@ -1097,10 +1097,11 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_alpha_send_review",
                                 "gate_alpha_verify_review_replay",
                                 "gate_beta_export_space_checkpoint",
+                                "gate_beta_get_provider_probe",
                             ],
                         },
-                        "minItems": 15,
-                        "maxItems": 15,
+                        "minItems": 16,
+                        "maxItems": 16,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -1666,6 +1667,121 @@ ALPHA_SHADOW_REVIEWS_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "probe": _object(
+                {
+                    "provider": {
+                        "type": "string",
+                        "const": "telegram_bot_api",
+                    },
+                    "provider_calls": {
+                        "type": "integer",
+                        "const": 2,
+                    },
+                    "call_surface": _object(
+                        {
+                            "read_methods": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["getWebhookInfo", "getMe"],
+                                },
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "uniqueItems": True,
+                            },
+                            "mutations_allowed": {
+                                "type": "boolean",
+                                "const": False,
+                            },
+                        }
+                    ),
+                    "webhook": _object(
+                        {
+                            "configured": {"type": "boolean"},
+                            "exact_match": {"type": "boolean"},
+                            "actual_origin_match": {"type": "boolean"},
+                            "url_host": {
+                                "type": "string",
+                                "maxLength": 253,
+                            },
+                            "url_path": {
+                                "type": "string",
+                                "maxLength": 2048,
+                            },
+                            "expected_path": {
+                                "type": "string",
+                                "const": "/telegram/beta/webhook",
+                            },
+                            "allowed_updates": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64,
+                                },
+                                "maxItems": 32,
+                            },
+                            "pending_update_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                            },
+                            "max_connections": _nullable("integer"),
+                            "has_custom_certificate": {
+                                "type": "boolean",
+                            },
+                            "last_error": _object(
+                                {
+                                    "present": {"type": "boolean"},
+                                    "date": _nullable("integer"),
+                                    "message": {
+                                        "type": ["string", "null"],
+                                        "enum": [
+                                            "provider_error_redacted",
+                                            None,
+                                        ],
+                                    },
+                                }
+                            ),
+                        }
+                    ),
+                    "identity": _object(
+                        {
+                            "username_match": {"type": "boolean"},
+                            "can_join_groups": {"type": "boolean"},
+                            "can_read_all_group_messages": {
+                                "type": "boolean",
+                            },
+                            "privacy_mode_enabled": {
+                                "type": "boolean",
+                            },
+                            "ordinary_group_messages_available": {
+                                "type": "boolean",
+                            },
+                        }
+                    ),
+                    "provider_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "telegram_private_data_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "secrets_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            )
+        }
+    ),
+    {},
+)
+
+
 BETA_CHECKPOINT_EXPORT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     _object(
         {
@@ -1803,4 +1919,5 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_alpha_send_review": ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA,
     "gate_alpha_verify_review_replay": ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA,
     "gate_beta_export_space_checkpoint": BETA_CHECKPOINT_EXPORT_OUTPUT_SCHEMA,
+    "gate_beta_get_provider_probe": BETA_PROVIDER_PROBE_OUTPUT_SCHEMA,
 }

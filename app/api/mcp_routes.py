@@ -108,6 +108,7 @@ from app.infrastructure.telegram_voice_status import telegram_voice_operational_
 from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
     get_alpha_webhook_status,
+    get_beta_provider_probe,
 )
 from app.infrastructure.universal_mayak_status import (
     universal_mayak_operational_status,
@@ -136,7 +137,7 @@ from app.models.domain import (
     TelegramUpdate,
     TelegramVoiceArchive,
 )
-from app.services.telegram import TelegramClient
+from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
     TelegramVoiceError,
@@ -178,6 +179,7 @@ MCP_TOOL_NAMES = [
     "gate_alpha_send_review",
     "gate_alpha_verify_review_replay",
     "gate_beta_export_space_checkpoint",
+    "gate_beta_get_provider_probe",
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -197,6 +199,7 @@ MCP_TOOL_SCOPES = {
     "gate_alpha_send_review": "gate:messages:send",
     "gate_alpha_verify_review_replay": "gate:status:read",
     "gate_beta_export_space_checkpoint": "gate:agents:manage",
+    "gate_beta_get_provider_probe": "gate:agents:manage",
 }
 
 
@@ -258,6 +261,7 @@ async def mcp_endpoint(
                     _gate_alpha_send_review_tool(settings),
                     _gate_alpha_verify_review_replay_tool(settings),
                     _gate_beta_export_space_checkpoint_tool(settings),
+                    _gate_beta_get_provider_probe_tool(settings),
                 ]
             },
         )
@@ -430,6 +434,12 @@ async def mcp_endpoint(
                 arguments=arguments,
                 principal=principal,
                 session=session,
+            )
+        if tool_name == "gate_beta_get_provider_probe":
+            return await _beta_get_provider_probe_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                settings=settings,
             )
         if tool_name == "gate_alpha_control_installation":
             return await _alpha_control_installation_tool_result(
@@ -1558,6 +1568,52 @@ async def _beta_export_space_checkpoint_tool_result(
     )
 
 
+async def _beta_get_provider_probe_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    settings: Settings,
+) -> JsonObject:
+    if set(arguments) != {"confirmed"} or arguments.get("confirmed") is not True:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="confirmed=true is required",
+        )
+    if (
+        settings.gate_env != "production"
+        or not settings.gate_beta_connector_enabled
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="beta_probe_not_production_ready",
+            message="Beta provider probe is not production-ready",
+        )
+    try:
+        async with build_telegram_http_client() as http_client:
+            probe = await get_beta_provider_probe(
+                settings=settings,
+                http_client=http_client,
+            )
+    except TelegramWebhookStatusError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message=exc.code,
+        )
+    webhook_state = "exact" if probe["webhook"]["exact_match"] else "mismatch"
+    return _tool_result(
+        {"probe": probe},
+        (
+            f"Beta provider probe: webhook={webhook_state}; "
+            f"pending={probe['webhook']['pending_update_count']}; "
+            "ordinary_group_messages="
+            f"{probe['identity']['ordinary_group_messages_available']}"
+        ),
+        request_id,
+    )
+
+
 async def _alpha_list_installations_tool_result(
     *,
     request_id: Any,
@@ -1991,6 +2047,42 @@ def _gate_beta_export_space_checkpoint_tool(settings: Settings) -> JsonObject:
             "gate_beta_export_space_checkpoint"
         ],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
+    }
+    return _with_security_scheme(
+        tool=tool,
+        settings=settings,
+        scope="gate:agents:manage",
+    )
+
+
+def _gate_beta_get_provider_probe_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_beta_get_provider_probe",
+        "title": "Probe Beta Telegram provider state",
+        "description": (
+            "After exact owner confirmation, call only Telegram Bot API "
+            "getWebhookInfo and getMe for the configured Beta bot. Return a "
+            "redacted webhook/privacy snapshot without tokens or Telegram IDs. "
+            "The tool cannot set or delete webhooks, send messages, read history "
+            "or inspect participants."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "confirmed": {"type": "boolean", "const": True},
+            },
+            "required": ["confirmed"],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
+            "gate_beta_get_provider_probe"
+        ],
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
     }
     return _with_security_scheme(
         tool=tool,

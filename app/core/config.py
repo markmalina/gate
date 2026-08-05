@@ -133,6 +133,30 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_BETA_PRIVACY_MODE_CONFIRMED",
     )
+    gate_beta_katya_space_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_KATYA_SPACE_ENABLED",
+    )
+    gate_beta_katya_space_ready: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_KATYA_SPACE_READY",
+    )
+    gate_beta_katya_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_KATYA_DELIVERY_ENABLED",
+    )
+    gate_beta_katya_chat_id: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_BETA_KATYA_CHAT_ID",
+    )
+    gate_beta_katya_user_id: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_BETA_KATYA_USER_ID",
+    )
+    gate_beta_katya_consent_sha256: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_BETA_KATYA_CONSENT_SHA256",
+    )
     gate_beta_group_capacity: int = Field(
         default=1,
         ge=1,

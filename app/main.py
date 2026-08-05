@@ -37,6 +37,7 @@ from app.infrastructure.become_connector_binding import (
 from app.infrastructure.beta_connector_binding import (
     reconcile_beta_connector_binding,
 )
+from app.infrastructure.beta_space import reconcile_beta_katya_space_binding
 from app.infrastructure.database import database_runtime_lifespan
 from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram import TelegramClient, build_telegram_http_client
@@ -133,6 +134,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     settings,
                     database_runtime.session_factory,
                 )
+                await reconcile_beta_katya_space_binding(
+                    settings,
+                    database_runtime.session_factory,
+                )
             async with build_telegram_http_client() as http_client:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
@@ -149,6 +154,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         api_base_url=api_base_url,
                         http_client=http_client,
                     )
+                    if getattr(
+                        settings,
+                        "gate_beta_katya_delivery_enabled",
+                        False,
+                    ):
+                        _app.state.beta_telegram_client = TelegramClient(
+                            credential=settings.telegram_beta_bot_token.get_secret_value(),
+                            api_base_url=api_base_url,
+                            http_client=http_client,
+                        )
                     _app.state.readiness_service = build_readiness_service(
                         database_runtime.engine
                     )
