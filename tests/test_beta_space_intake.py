@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.application.beta_space_intake import (
     CONSENT_RESPONSE,
@@ -26,6 +26,7 @@ SPACE_A = BetaSpaceBinding(
     telegram_chat_id="-10001",
     subject_telegram_user_id="70001",
     consent_sha256=hashlib.sha256(SYNTHETIC_CONSENT.encode()).hexdigest(),
+    ready_at=NOW,
     state="ready",
 )
 SPACE_B = replace(
@@ -90,10 +91,19 @@ class RecordingTelegram:
         return {"ok": True, "result": {"message_id": 901}} if self.confirmed else {"ok": True}
 
 
-def update(*, update_id=1, chat_id=-10001, user_id=70001, message_id=11, text=None, kind=None):
+def update(
+    *,
+    update_id=1,
+    chat_id=-10001,
+    user_id=70001,
+    message_id=11,
+    text=None,
+    kind=None,
+    occurred_at=NOW,
+):
     message = {
         "message_id": message_id,
-        "date": 1785913200,
+        "date": int(occurred_at.timestamp()),
         "chat": {"id": chat_id, "type": "supergroup"},
         "from": {"id": user_id, "is_bot": False},
     }
@@ -128,6 +138,35 @@ def test_consent_requires_production_readiness_and_exact_plain_message() -> None
     result = run(enabled, update(text=SYNTHETIC_CONSENT))
     assert result.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
     assert result.delivery_id == "delivery-a"
+
+
+def test_pending_consent_before_ready_at_is_stale_but_equality_is_accepted() -> None:
+    store = MemoryStore()
+    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+
+    stale = run(
+        service,
+        update(
+            update_id=2,
+            message_id=12,
+            text=SYNTHETIC_CONSENT,
+            occurred_at=NOW - timedelta(seconds=1),
+        ),
+    )
+    assert stale.disposition == BetaSpaceDisposition.PRE_READINESS
+    assert store.events == set()
+
+    boundary = run(
+        service,
+        update(
+            update_id=3,
+            message_id=13,
+            text=SYNTHETIC_CONSENT,
+            occurred_at=NOW,
+        ),
+    )
+    assert boundary.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
+    assert store.events == {(SPACE_A.binding_id, 3)}
 
 
 def test_negative_routing_never_creates_an_event() -> None:
