@@ -157,6 +157,12 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_alpha_list_shadow_reviews",
         "gate_alpha_verify_review_replay",
         "gate_beta_export_space_checkpoint",
+    ]
+    assert payload["mcp"]["write_tools"] == [
+        "gate_save_reply_draft",
+        "gate_alpha_control_installation",
+        "gate_alpha_run_model_preflight",
+        "gate_alpha_get_test_group_presence",
         "gate_beta_get_provider_probe",
     ]
     assert payload["mcp"]["send_tools"] == [

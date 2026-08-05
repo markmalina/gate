@@ -890,7 +890,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "openWorldHint": False,
     }
     assert tools[15]["annotations"] == {
-        "readOnlyHint": True,
+        "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,

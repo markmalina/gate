@@ -52,9 +52,6 @@ def beta_space_production_ready(settings: Settings) -> bool:
             settings.gate_env == "production",
             settings.gate_beta_connector_enabled,
             settings.gate_beta_privacy_mode_confirmed,
-            settings.gate_beta_katya_space_enabled,
-            settings.gate_beta_katya_space_ready,
-            settings.gate_beta_katya_delivery_enabled,
         )
     )
 
@@ -137,26 +134,23 @@ async def beta_katya_space_operational_status(
                 or 0
             )
 
+    binding_state = binding.state if binding is not None else "absent"
+    binding_live = binding_state in {"ready", "consented"}
     configured = {
-        "chat_binding": bool(settings.gate_beta_katya_chat_id.get_secret_value().strip()),
-        "subject_binding": bool(settings.gate_beta_katya_user_id.get_secret_value().strip()),
-        "consent_digest": bool(
-            settings.gate_beta_katya_consent_sha256.get_secret_value().strip()
-        ),
+        "chat_binding": binding is not None,
+        "subject_binding": binding is not None,
+        "consent_digest": binding is not None,
     }
     gates = {
         "production": settings.gate_env == "production",
         "connector": settings.gate_beta_connector_enabled,
         "privacy_mode_confirmed": settings.gate_beta_privacy_mode_confirmed,
-        "space_enabled": settings.gate_beta_katya_space_enabled,
-        "space_ready": settings.gate_beta_katya_space_ready,
-        "delivery_enabled": settings.gate_beta_katya_delivery_enabled,
+        "space_enabled": binding_live,
+        "space_ready": binding_live,
+        "delivery_enabled": binding_live,
     }
-    binding_state = binding.state if binding is not None else "absent"
-    if not gates["production"] or not gates["connector"]:
+    if not beta_space_production_ready(settings):
         state = "connector_not_ready"
-    elif not all(gates.values()) or not all(configured.values()):
-        state = "configuration_incomplete"
     elif binding is None:
         state = "awaiting_binding"
     elif binding_state == "ready":
@@ -173,7 +167,7 @@ async def beta_katya_space_operational_status(
         "gates": gates,
         "configured": configured,
         "binding_state": binding_state,
-        "production_ready": beta_space_production_ready(settings),
+        "production_ready": beta_space_production_ready(settings) and binding_live,
         "event_count": event_count,
         "consent_count": consent_count,
         "fact_count": fact_count,
