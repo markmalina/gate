@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from app.application.beta_space_intake import (
+    BETA_CONSENT_CALLBACK_NO,
+    BETA_CONSENT_CALLBACK_YES,
     CONSENT_RESPONSE,
     BetaConsentDeliveryJob,
     BetaSpaceBinding,
@@ -247,3 +249,62 @@ def test_delivery_is_exactly_once_and_unknown_is_not_retried() -> None:
     assert asyncio.run(delivery.execute(delivery_id="delivery-a", now=NOW)) == "duplicate"
     assert telegram.sends == [(SPACE_A.telegram_chat_id, CONSENT_RESPONSE)]
 
+
+
+def callback_update(
+    *,
+    update_id=101,
+    chat_id=-10001,
+    user_id=70001,
+    message_id=91,
+    data=BETA_CONSENT_CALLBACK_YES,
+):
+    return {
+        "update_id": update_id,
+        "callback_query": {
+            "id": f"callback-{update_id}",
+            "from": {"id": user_id, "is_bot": False},
+            "data": data,
+            "message": {
+                "message_id": message_id,
+                "chat": {"id": chat_id, "type": "supergroup"},
+            },
+        },
+    }
+
+
+def test_yes_button_accepts_consent_without_typed_text() -> None:
+    store = MemoryStore()
+    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+
+    result = run(service, callback_update())
+
+    assert result.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
+    assert result.delivery_id == "delivery-a"
+    assert store.events == {(SPACE_A.binding_id, 101)}
+    assert store.bindings[SPACE_A.telegram_chat_id].state == "consented"
+
+
+def test_no_button_does_not_enable_collection() -> None:
+    store = MemoryStore()
+    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+
+    result = run(
+        service,
+        callback_update(update_id=102, data=BETA_CONSENT_CALLBACK_NO),
+    )
+
+    assert result.disposition == BetaSpaceDisposition.CONSENT_DECLINED
+    assert result.delivery_id is None
+    assert store.events == set()
+    assert store.bindings[SPACE_A.telegram_chat_id].state == "ready"
+
+
+def test_callback_from_other_actor_is_rejected() -> None:
+    store = MemoryStore()
+    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+
+    result = run(service, callback_update(update_id=103, user_id=79999))
+
+    assert result.disposition == BetaSpaceDisposition.ACTOR_MISMATCH
+    assert store.events == set()
