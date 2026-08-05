@@ -25,6 +25,7 @@ class BetaSpaceDisposition(StrEnum):
     NOT_APPLICABLE = "not_applicable"
     UNBOUND_CHAT = "unbound_chat"
     SPACE_NOT_READY = "space_not_ready"
+    PRE_READINESS = "pre_readiness"
     ACTOR_MISMATCH = "actor_mismatch"
     CONSENT_REQUIRED = "consent_required"
     CONSENT_ACCEPTED = "consent_accepted"
@@ -43,6 +44,7 @@ class BetaSpaceBinding:
     telegram_chat_id: str = field(repr=False)
     subject_telegram_user_id: str = field(repr=False)
     consent_sha256: str = field(repr=False)
+    ready_at: datetime
     state: str
 
 
@@ -137,6 +139,10 @@ class ProcessBetaSpaceUpdate:
         scope = {"tenant_ref": binding.tenant_ref, "space_ref": binding.space_ref}
         if binding.state not in {"ready", "consented"}:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.SPACE_NOT_READY, **scope)
+        # The production-ready instant is inclusive: an update created exactly at
+        # ready_at is eligible, while a delayed update created before it is stale.
+        if binding.ready_at.tzinfo is None or source.occurred_at < binding.ready_at:
+            return BetaSpaceIntakeResult(BetaSpaceDisposition.PRE_READINESS, **scope)
         if not hmac.compare_digest(
             source.telegram_user_id.encode(),
             binding.subject_telegram_user_id.encode(),
