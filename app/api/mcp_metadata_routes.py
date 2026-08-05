@@ -104,6 +104,7 @@ async def mcp_metadata(
                 "gate_alpha_list_shadow_reviews",
                 "gate_alpha_verify_review_replay",
                 "gate_beta_export_space_checkpoint",
+                "gate_beta_get_provider_probe",
             ],
             "write": [
                 "gate_save_reply_draft",
@@ -140,6 +141,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_alpha_list_shadow_reviews",
             "gate_alpha_verify_review_replay",
             "gate_beta_export_space_checkpoint",
+            "gate_beta_get_provider_probe",
         ],
         "write_tools_enabled": True,
         "write_tools": [
