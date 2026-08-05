@@ -39,6 +39,12 @@ from app.application.become_media_intake import (
 from app.application.become_media_prompt import (
     DeliverBecomeMediaPromptService,
 )
+from app.application.become_program_draft import (
+    DeliverPilotProgramDraft,
+    ProcessConfirmedTranscriptToProgramDraft,
+    ProcessPilotProgramReviewUpdate,
+    ProgramDraftDisposition,
+)
 from app.application.become_transcript_review import (
     DeliverPilotTranscriptReview,
     ProcessPilotTranscriptReviewUpdate,
@@ -162,6 +168,10 @@ from app.infrastructure.become_media_prompt import (
     SessionFactoryBecomeMediaPromptStore,
     TelegramClientBecomeMediaPromptAdapter,
 )
+from app.infrastructure.become_program_draft import (
+    OpenAIProgramDraftProvider,
+    SessionFactoryProgramDraftStore,
+)
 from app.infrastructure.become_transcript_review import (
     SessionFactoryPilotTranscriptReviewStore,
 )
@@ -254,6 +264,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         become_intake: ProcessBecomeRegistrationService | None = None,
         become_consent: ProcessBecomeConsentService | None = None,
         become_media: ProcessBecomeMediaService | None = None,
+        become_program_review: ProcessPilotProgramReviewUpdate | None = None,
         become_review: ProcessPilotTranscriptReviewUpdate | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         voice_archive: TelegramVoiceArchiver | None = None,
@@ -271,6 +282,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._become_intake = become_intake
         self._become_consent = become_consent
         self._become_media = become_media
+        self._become_program_review = become_program_review
         self._become_review = become_review
         self._voice_updates = voice_updates
         self._voice_archive = voice_archive
@@ -287,6 +299,34 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         except TelegramConnectorResolutionError as exc:
             raise TelegramUpdateProcessingError(exc.code) from None
         payload = item.payload
+        if (
+            connector.key is TelegramConnectorKey.BECOME_GROUP
+            and self._become_program_review is not None
+            and _is_become_pilot_program_payload(payload)
+        ):
+            try:
+                program_result = await self._become_program_review.execute(
+                    update=payload,
+                    now=item.received_at,
+                )
+            except BecomeControlledIntakeError as exc:
+                if self._become_review is not None:
+                    await self._become_review.tombstone_receipt(
+                        receipt_id=item.receipt_id,
+                        now=item.received_at,
+                    )
+                raise TelegramUpdateProcessingError(exc.code) from None
+            if program_result.disposition is not ProgramDraftDisposition.NOT_APPLICABLE:
+                if self._become_review is not None:
+                    await self._become_review.tombstone_receipt(
+                        receipt_id=item.receipt_id,
+                        now=item.received_at,
+                    )
+                self._logger.info(
+                    "BECOME Pilot program review persisted: disposition=%s",
+                    program_result.disposition.value,
+                )
+                return
         if (
             connector.key is TelegramConnectorKey.BECOME_GROUP
             and self._become_review is not None
@@ -944,6 +984,7 @@ async def run_telegram_worker_once(
     become_intake: ProcessBecomeRegistrationService | None = None,
     become_consent: ProcessBecomeConsentService | None = None,
     become_media: ProcessBecomeMediaService | None = None,
+    become_program_review: ProcessPilotProgramReviewUpdate | None = None,
     become_review: ProcessPilotTranscriptReviewUpdate | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     voice_archive: TelegramVoiceArchiver | None = None,
@@ -1020,6 +1061,7 @@ async def run_telegram_worker_once(
             become_intake=become_intake,
             become_consent=become_consent,
             become_media=become_media,
+            become_program_review=become_program_review,
             become_review=become_review,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
@@ -1230,6 +1272,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                     )
                 become_canary = None
                 become_review = None
+                become_program_review = None
                 if settings.gate_become_canary_enabled:
                     become_telegram = TelegramClient(
                         credential=settings.telegram_become_bot_token.get_secret_value(),
@@ -1294,6 +1337,17 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         telegram=become_telegram,
                         identity_pepper=subject_pepper,
                         enabled=settings.gate_become_pilot_slice1_enabled,
+                    )
+                    program_store = SessionFactoryProgramDraftStore(sessions)
+                    become_program_review = (
+                        ProcessPilotProgramReviewUpdate(
+                            store=program_store,
+                            telegram=become_telegram,
+                            identity_pepper=subject_pepper,
+                            enabled=True,
+                        )
+                        if settings.gate_become_pilot_slice2_enabled
+                        else None
                     )
                     become_media = ProcessBecomeMediaService(
                         store=SessionFactoryBecomeMediaStore(sessions),
@@ -1518,6 +1572,79 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 recovery_result.reconciliation_required,
                             )
                     try:
+                        program_purged = await program_store.purge_expired(
+                            now=datetime.now(UTC)
+                        )
+                        if program_purged:
+                            logger.info(
+                                "Purged expired BECOME program bodies: count=%s",
+                                program_purged,
+                            )
+                        api_key = settings.openai_api_key.get_secret_value()
+                        program_result = await ProcessConfirmedTranscriptToProgramDraft(
+                            store=program_store,
+                            provider=OpenAIProgramDraftProvider(
+                                http_client=http_client,
+                                api_key=api_key,
+                                model=settings.gate_become_pilot_slice2_model,
+                                api_base_url=settings.openai_api_base_url,
+                                max_output_tokens=(
+                                    settings
+                                    .gate_become_pilot_slice2_max_output_tokens
+                                ),
+                                timeout_seconds=(
+                                    settings
+                                    .gate_become_pilot_slice2_timeout_seconds
+                                ),
+                                enabled=(
+                                    settings.gate_become_pilot_slice2_enabled
+                                    and settings
+                                    .gate_become_pilot_slice2_provider_max_calls
+                                    == 1
+                                    and bool(api_key)
+                                ),
+                                data_gate_approved=(
+                                    settings
+                                    .gate_become_pilot_slice2_data_gate_approved
+                                ),
+                            ),
+                            workspace_key=settings.gate_workspace_id,
+                            provider_model=settings.gate_become_pilot_slice2_model,
+                            enabled=settings.gate_become_pilot_slice2_enabled,
+                            provider_max_calls=(
+                                settings
+                                .gate_become_pilot_slice2_provider_max_calls
+                            ),
+                        ).run_once(now=datetime.now(UTC))
+                        if program_result is not ProgramDraftDisposition.IDLE:
+                            logger.info(
+                                "BECOME program draft state: disposition=%s",
+                                program_result.value,
+                            )
+                        program_delivery = await DeliverPilotProgramDraft(
+                            store=program_store,
+                            telegram=become_telegram,
+                            enabled=settings.gate_become_pilot_slice2_enabled,
+                            max_operations=(
+                                settings.gate_become_pilot_slice2_max_operations
+                            ),
+                        ).run_once(now=datetime.now(UTC))
+                        if program_delivery != "idle":
+                            logger.info(
+                                "BECOME program delivery state: disposition=%s",
+                                program_delivery,
+                            )
+                    except BecomeControlledIntakeError as exc:
+                        logger.warning(
+                            "BECOME program draft blocked: code=%s",
+                            exc.code,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "BECOME program draft deferred: error_type=%s",
+                            exc.__class__.__name__,
+                        )
+                    try:
                         review_delivery = await DeliverPilotTranscriptReview(
                             store=review_store,
                             telegram=become_telegram,
@@ -1697,6 +1824,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         become_intake=become_intake,
                         become_consent=become_consent,
                         become_media=become_media,
+                        become_program_review=become_program_review,
                         become_review=become_review,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,
@@ -1844,6 +1972,22 @@ def _connector_kind(role: TelegramConnectorRole) -> ConnectorKind:
     if role is TelegramConnectorRole.ALPHA_GROUP:
         return ConnectorKind.TELEGRAM_BOT
     raise TelegramCanonicalProjectionError("canonical_connector_role_invalid")
+
+
+def _is_become_pilot_program_payload(payload: dict[str, object]) -> bool:
+    callback = payload.get("callback_query")
+    if isinstance(callback, dict):
+        data = callback.get("data")
+        return isinstance(data, str) and data.startswith("b2:")
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return False
+    value = message.get("text")
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not value.strip().startswith("/")
+    )
 
 
 def _is_become_pilot_review_payload(payload: dict[str, object]) -> bool:

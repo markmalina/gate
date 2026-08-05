@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401
     alpha_transcription,
     alpha_voice,
     become,
+    become_program_draft,
     become_quest,
     become_recovery,
     beta_context,
