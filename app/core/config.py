@@ -300,6 +300,46 @@ class Settings(BaseSettings):
         le=120,
         validation_alias="GATE_BECOME_PILOT_SLICE2_TIMEOUT_SECONDS",
     )
+    gate_become_pilot_slice3_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE3_ENABLED",
+    )
+    gate_become_pilot_slice3_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE3_DATA_GATE_APPROVED",
+    )
+    gate_become_pilot_slice3_delivery_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE3_DELIVERY_ENABLED",
+    )
+    gate_become_pilot_slice3_relations_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BECOME_PILOT_SLICE3_RELATIONS_ENABLED",
+    )
+    gate_become_pilot_slice3_max_telegram_sends: int = Field(
+        default=0,
+        ge=0,
+        le=2,
+        validation_alias="GATE_BECOME_PILOT_SLICE3_MAX_TELEGRAM_SENDS",
+    )
+    gate_become_pilot_slice3_max_relations_posts: int = Field(
+        default=0,
+        ge=0,
+        le=1,
+        validation_alias="GATE_BECOME_PILOT_SLICE3_MAX_RELATIONS_POSTS",
+    )
+    gate_become_pilot_slice3_bot_installation_identity: str = Field(
+        default="",
+        validation_alias="GATE_BECOME_PILOT_SLICE3_BOT_INSTALLATION_IDENTITY",
+    )
+    gate_become_pilot_slice3_space_ref: str = Field(
+        default="",
+        validation_alias="GATE_BECOME_PILOT_SLICE3_SPACE_REF",
+    )
+    gate_become_pilot_slice3_relations_url: str = Field(
+        default="",
+        validation_alias="GATE_BECOME_PILOT_SLICE3_RELATIONS_URL",
+    )
     gate_alpha_shadow_worker_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_SHADOW_WORKER_ENABLED",

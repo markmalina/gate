@@ -32,6 +32,13 @@ from app.application.become_controlled_intake import (
     ProcessBecomeRegistrationCommand,
     ProcessBecomeRegistrationService,
 )
+from app.application.become_learner_invitation import (
+    DeliverSlice3,
+    PostSlice3Relations,
+    ProcessSlice3Update,
+    Slice3Disposition,
+    Slice3Error,
+)
 from app.application.become_media_intake import (
     ProcessBecomeMediaCommand,
     ProcessBecomeMediaService,
@@ -160,6 +167,10 @@ from app.infrastructure.become_i4_execution import (
 from app.infrastructure.become_i4_recovery_execution import (
     SessionFactoryBecomeI4RecoveryExecutor,
 )
+from app.infrastructure.become_learner_invitation import (
+    HttpSlice3RelationsClient,
+    SessionFactoryLearnerInvitationStore,
+)
 from app.infrastructure.become_media_intake import (
     SessionFactoryBecomeMediaRetention,
     SessionFactoryBecomeMediaStore,
@@ -266,6 +277,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         become_consent: ProcessBecomeConsentService | None = None,
         become_media: ProcessBecomeMediaService | None = None,
         become_program_review: ProcessPilotProgramReviewUpdate | None = None,
+        become_learner: ProcessSlice3Update | None = None,
         become_review: ProcessPilotTranscriptReviewUpdate | None = None,
         voice_updates: TelegramVoiceUpdateProcessor | None = None,
         voice_archive: TelegramVoiceArchiver | None = None,
@@ -284,6 +296,7 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         self._become_consent = become_consent
         self._become_media = become_media
         self._become_program_review = become_program_review
+        self._become_learner = become_learner
         self._become_review = become_review
         self._voice_updates = voice_updates
         self._voice_archive = voice_archive
@@ -300,6 +313,34 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
         except TelegramConnectorResolutionError as exc:
             raise TelegramUpdateProcessingError(exc.code) from None
         payload = item.payload
+        if (
+            connector.key is TelegramConnectorKey.BECOME_GROUP
+            and self._become_learner is not None
+        ):
+            try:
+                learner_disposition = await self._become_learner.execute(
+                    update=payload,
+                    source_receipt_id=str(item.receipt_id),
+                    now=item.received_at,
+                )
+            except Slice3Error as exc:
+                if self._become_review is not None:
+                    await self._become_review.tombstone_receipt(
+                        receipt_id=item.receipt_id,
+                        now=item.received_at,
+                    )
+                raise TelegramUpdateProcessingError(str(exc)) from None
+            if learner_disposition is not Slice3Disposition.NOT_APPLICABLE:
+                if self._become_review is not None:
+                    await self._become_review.tombstone_receipt(
+                        receipt_id=item.receipt_id,
+                        now=item.received_at,
+                    )
+                self._logger.info(
+                    "BECOME Slice 3 update persisted: disposition=%s",
+                    learner_disposition.value,
+                )
+                return
         if (
             connector.key is TelegramConnectorKey.BECOME_GROUP
             and self._become_program_review is not None
@@ -993,6 +1034,7 @@ async def run_telegram_worker_once(
     become_consent: ProcessBecomeConsentService | None = None,
     become_media: ProcessBecomeMediaService | None = None,
     become_program_review: ProcessPilotProgramReviewUpdate | None = None,
+    become_learner: ProcessSlice3Update | None = None,
     become_review: ProcessPilotTranscriptReviewUpdate | None = None,
     voice_updates: TelegramVoiceUpdateProcessor | None = None,
     voice_archive: TelegramVoiceArchiver | None = None,
@@ -1070,6 +1112,7 @@ async def run_telegram_worker_once(
             become_consent=become_consent,
             become_media=become_media,
             become_program_review=become_program_review,
+            become_learner=become_learner,
             become_review=become_review,
             voice_updates=voice_updates,
             voice_archive=voice_archive,
@@ -1295,6 +1338,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                 become_canary = None
                 become_review = None
                 become_program_review = None
+                become_learner = None
                 if settings.gate_become_canary_enabled:
                     become_telegram = TelegramClient(
                         credential=settings.telegram_become_bot_token.get_secret_value(),
@@ -1361,6 +1405,28 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         enabled=settings.gate_become_pilot_slice1_enabled,
                     )
                     program_store = SessionFactoryProgramDraftStore(sessions)
+                    slice3_store = SessionFactoryLearnerInvitationStore(sessions)
+                    become_learner = (
+                        ProcessSlice3Update(
+                            store=slice3_store,
+                            identity_pepper=subject_pepper,
+                            workspace_key=settings.gate_workspace_id,
+                            become_space_ref=(
+                                settings.gate_become_pilot_slice3_space_ref
+                            ),
+                            bot_installation_identity=(
+                                settings
+                                .gate_become_pilot_slice3_bot_installation_identity
+                            ),
+                            enabled=True,
+                            data_gate_approved=(
+                                settings
+                                .gate_become_pilot_slice3_data_gate_approved
+                            ),
+                        )
+                        if settings.gate_become_pilot_slice3_enabled
+                        else None
+                    )
                     become_program_review = (
                         ProcessPilotProgramReviewUpdate(
                             store=program_store,
@@ -1656,6 +1722,51 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                                 "BECOME program delivery state: disposition=%s",
                                 program_delivery,
                             )
+                        if become_learner is not None:
+                            slice3_delivery = await DeliverSlice3(
+                                store=slice3_store,
+                                telegram=become_telegram,
+                                enabled=(
+                                    settings
+                                    .gate_become_pilot_slice3_delivery_enabled
+                                ),
+                                max_sends=(
+                                    settings
+                                    .gate_become_pilot_slice3_max_telegram_sends
+                                ),
+                            ).run_once(now=datetime.now(UTC))
+                            if slice3_delivery not in {"idle", "disabled"}:
+                                logger.info(
+                                    "BECOME Slice 3 delivery state: disposition=%s",
+                                    slice3_delivery,
+                                )
+                            slice3_relations = await PostSlice3Relations(
+                                store=slice3_store,
+                                relations=HttpSlice3RelationsClient(
+                                    http_client=http_client,
+                                    endpoint=(
+                                        settings
+                                        .gate_become_pilot_slice3_relations_url
+                                    ),
+                                    enabled=(
+                                        settings
+                                        .gate_become_pilot_slice3_relations_enabled
+                                    ),
+                                ),
+                                enabled=(
+                                    settings
+                                    .gate_become_pilot_slice3_relations_enabled
+                                ),
+                                max_posts=(
+                                    settings
+                                    .gate_become_pilot_slice3_max_relations_posts
+                                ),
+                            ).run_once(now=datetime.now(UTC))
+                            if slice3_relations not in {"idle", "disabled"}:
+                                logger.info(
+                                    "BECOME Slice 3 Relations state: disposition=%s",
+                                    slice3_relations,
+                                )
                     except BecomeControlledIntakeError as exc:
                         logger.warning(
                             "BECOME program draft blocked: code=%s",
@@ -1847,6 +1958,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         become_consent=become_consent,
                         become_media=become_media,
                         become_program_review=become_program_review,
+                        become_learner=become_learner,
                         become_review=become_review,
                         business_text_parity=business_text_parity,
                         business_text_inbox=business_text_inbox,

@@ -130,6 +130,31 @@ def test_group_callback_is_durable_and_private_callback_is_rejected() -> None:
     assert private_store.commands == []
 
 
+def test_slice3_gate_allows_only_private_message_and_callback_shapes() -> None:
+    settings = _settings(GATE_BECOME_PILOT_SLICE3_ENABLED=True)
+    message_store = CapturingStore()
+    callback_store = CapturingStore()
+
+    _accept(settings, message_store, _update("private"))
+    _accept(settings, callback_store, _callback_update("private"))
+
+    assert len(message_store.commands) == 1
+    assert len(callback_store.commands) == 1
+
+    membership_store = CapturingStore()
+    membership = {
+        "update_id": 83,
+        "my_chat_member": {
+            "chat": {"id": 740000001, "type": "private"},
+            "from": {"id": 740000001, "is_bot": False},
+        },
+    }
+    with pytest.raises(become_ingress.HTTPException) as captured:
+        _accept(settings, membership_store, membership)
+    assert captured.value.status_code == 400
+    assert membership_store.commands == []
+
+
 def test_enabled_registry_still_has_no_send_authorization() -> None:
     connector = _settings().telegram_connectors.become_group
 

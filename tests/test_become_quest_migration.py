@@ -816,5 +816,5 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0086_beta_katya_space")
+    assert heads[0].startswith("0087_become_pilot_slice3_learner")
 
