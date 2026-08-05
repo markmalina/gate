@@ -98,6 +98,7 @@ from app.infrastructure.beta_candidate_binding import (
     BETA_CONSENT_PROMPT,
     BETA_CONSENT_REPLY_MARKUP,
     BetaCandidateBindingError,
+    BetaCandidateBindingResult,
     extract_beta_katya_creator,
     find_beta_katya_group_candidates,
     prepare_beta_katya_candidate_binding,
@@ -1643,9 +1644,11 @@ async def _beta_get_provider_probe_tool_result(
                 workspace_key=principal.access_scope.workspace_id,
                 now=datetime.now(UTC),
             )
+            prompt_delivery = "not_attempted"
             if activation.state == "awaiting_candidate":
+                candidates = await find_beta_katya_group_candidates(session)
                 live_match: tuple[object, str] | None = None
-                for group_candidate in await find_beta_katya_group_candidates(session):
+                for group_candidate in candidates:
                     try:
                         administrator_response = (
                             await beta_telegram.get_chat_administrators(
@@ -1660,24 +1663,47 @@ async def _beta_get_provider_probe_tool_result(
                     if subject is not None:
                         live_match = (group_candidate, subject)
                         break
-                if live_match is None:
-                    raise BetaCandidateBindingError(
-                        "beta_binding_live_group_not_exact"
-                    )
-                group, subject_user_id = live_match
                 probe = await ensure_beta_callback_query_allowed(
                     settings=settings,
                     http_client=http_client,
                     current_probe=probe,
                 )
-                activation = await prepare_beta_katya_candidate_binding(
-                    session,
-                    workspace_key=principal.access_scope.workspace_id,
-                    now=datetime.now(UTC),
-                    telegram_chat_id=group.telegram_chat_id,
-                    telegram_user_id=subject_user_id,
-                )
-            prompt_delivery = "not_attempted"
+                if live_match is not None:
+                    group, subject_user_id = live_match
+                    activation = await prepare_beta_katya_candidate_binding(
+                        session,
+                        workspace_key=principal.access_scope.workspace_id,
+                        now=datetime.now(UTC),
+                        telegram_chat_id=group.telegram_chat_id,
+                        telegram_user_id=subject_user_id,
+                    )
+                else:
+                    for group_candidate in candidates:
+                        try:
+                            response = await beta_telegram.send_message(
+                                chat_id=group_candidate.telegram_chat_id,
+                                text=BETA_CONSENT_PROMPT,
+                                reply_markup=BETA_CONSENT_REPLY_MARKUP,
+                            )
+                        except TelegramApiError:
+                            continue
+                        message_id = response.get("result", {}).get("message_id")
+                        if type(message_id) is not int:
+                            raise BetaCandidateBindingError(
+                                "beta_binding_prompt_unconfirmed"
+                            )
+                        prompt_delivery = "sent"
+                        activation = BetaCandidateBindingResult(
+                            "prompt_sent_awaiting_callback_binding",
+                            1,
+                            False,
+                            False,
+                        )
+                        break
+                    else:
+                        raise BetaCandidateBindingError(
+                            "beta_binding_prompt_target_unreachable"
+                        )
             if activation.prompt_required:
                 if activation.telegram_chat_id is None:
                     raise BetaCandidateBindingError(
