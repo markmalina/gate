@@ -259,6 +259,52 @@ async def test_beta_probe_rejects_non_bot_identity_without_partial_result() -> N
 
 
 @pytest.mark.anyio
+async def test_beta_probe_rejects_wrong_real_bot_credential_without_partial_result() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path.endswith("/getWebhookInfo"):
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "url": "https://gate.example/telegram/beta/webhook",
+                        "allowed_updates": ["message"],
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": {
+                    "id": 700_000_002,
+                    "is_bot": True,
+                    "username": "AlphaViaBot",
+                    "can_join_groups": True,
+                    "can_read_all_group_messages": True,
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        with pytest.raises(TelegramWebhookStatusError) as exc_info:
+            await get_beta_provider_probe(
+                settings=_beta_settings(),
+                http_client=http_client,
+            )
+
+    assert len(calls) == 2
+    assert exc_info.value.code == "beta_probe_identity_mismatch"
+    assert "AlphaViaBot" not in str(exc_info.value)
+    assert "700000002" not in str(exc_info.value)
+
+
+@pytest.mark.anyio
 async def test_beta_probe_missing_beta_credential_makes_no_provider_call() -> None:
     calls: list[httpx.Request] = []
 
