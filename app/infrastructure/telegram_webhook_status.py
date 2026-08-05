@@ -177,6 +177,8 @@ async def get_beta_provider_probe(
         isinstance(actual_username, str)
         and actual_username.casefold() == expected_username.casefold()
     )
+    if not username_match:
+        raise TelegramWebhookStatusError("beta_probe_identity_mismatch")
     can_join_groups = identity_result.get("can_join_groups") is True
     can_read_all_group_messages = (
         identity_result.get("can_read_all_group_messages") is True
