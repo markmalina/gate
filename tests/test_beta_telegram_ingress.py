@@ -6,14 +6,13 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-from starlette.requests import Request
-
 from app.api import beta_telegram_ingress as beta_ingress
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     TelegramReceiptAcceptance,
 )
 from app.core.config import Settings
+from starlette.requests import Request
 
 
 class CapturingStore:
