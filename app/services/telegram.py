@@ -200,6 +200,24 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/answerCallbackQuery"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def get_chat_administrators(
+        self,
+        *,
+        chat_id: str,
+    ) -> dict[str, Any]:
+        """Return current group administrators for bounded owner resolution."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+        if not chat_id:
+            raise RuntimeError("Telegram chat id is required")
+
+        url = f"{self._api_base_url}/bot{self._credential}/getChatAdministrators"
+        return await self._post_telegram_json(
+            url=url,
+            payload={"chat_id": chat_id},
+        )
+
     async def get_business_connection(
         self,
         *,
