@@ -167,7 +167,11 @@ class SqlBetaSpaceStore:
         self, *, binding: BetaSpaceBinding, source: BetaSpaceSource
     ) -> BetaSpaceReservation:
         row = await self._locked_binding(binding)
-        if row is None or row.state == "consented":
+        if (
+            row is None
+            or row.state != "ready"
+            or source.occurred_at < row.ready_at
+        ):
             await self._session.rollback()
             return BetaSpaceReservation(False)
         event_id = uuid.uuid4()
@@ -323,6 +327,7 @@ class SqlBetaSpaceStore:
                     BetaSpaceBindingModel.telegram_chat_id == binding.telegram_chat_id,
                     BetaSpaceBindingModel.subject_telegram_user_id
                     == binding.subject_telegram_user_id,
+                    BetaSpaceBindingModel.ready_at == binding.ready_at,
                 )
                 .with_for_update()
             ),
@@ -339,6 +344,7 @@ def _binding(row: BetaSpaceBindingModel) -> BetaSpaceBinding:
         telegram_chat_id=row.telegram_chat_id,
         subject_telegram_user_id=row.subject_telegram_user_id,
         consent_sha256=row.consent_sha256,
+        ready_at=row.ready_at,
         state=row.state,
     )
 
