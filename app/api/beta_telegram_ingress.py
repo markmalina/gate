@@ -53,7 +53,6 @@ def get_beta_space_store(
     return SqlBetaSpaceStore(session)
 
 
-beta_telegram_dependency = Depends(get_beta_telegram_client)
 beta_space_store_dependency = Depends(get_beta_space_store)
 
 
@@ -65,7 +64,6 @@ async def beta_telegram_webhook(
     ] = None,
     settings: Settings = settings_dependency,
     receipt_store: TelegramReceiptStore = receipt_store_dependency,
-    telegram: TelegramClient = beta_telegram_dependency,
     beta_space_store: SqlBetaSpaceStore = beta_space_store_dependency,
 ) -> JsonObject:
     """Authenticate and durably accept one group-only update without legacy dispatch."""
@@ -97,7 +95,7 @@ async def beta_telegram_webhook(
     if intake.delivery_id is not None:
         delivery = await DeliverBetaSpaceConsent(
             store=beta_space_store,
-            telegram=telegram,
+            telegram=get_beta_telegram_client(request),
             enabled=beta_space_production_ready(settings),
         ).execute(delivery_id=intake.delivery_id, now=received_at)
     return {
