@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
 from app.core.config import Settings
 from app.infrastructure.beta_space import beta_katya_space_operational_status
 
