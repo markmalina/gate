@@ -122,10 +122,10 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_alpha_list_shadow_reviews",
         "gate_alpha_verify_review_replay",
         "gate_beta_export_space_checkpoint",
-        "gate_beta_get_provider_probe",
     ]
     assert payload["tools"]["write"] == [
         "gate_save_reply_draft",
+        "gate_beta_get_provider_probe",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_get_test_group_presence",
