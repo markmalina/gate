@@ -68,6 +68,12 @@ class BetaCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class BetaGroupCandidate:
+    telegram_chat_id: str = field(repr=False)
+    received_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class BetaCandidateBindingResult:
     state: str
     candidate_count: int
@@ -129,8 +135,106 @@ def extract_beta_binding_candidate(
     )
 
 
+def extract_beta_group_candidate(
+    *, payload: object, received_at: datetime
+) -> BetaGroupCandidate | None:
+    """Select only the exact existing group from a durable bot-membership receipt."""
+
+    if received_at.tzinfo is None or received_at < BETA_BINDING_EVIDENCE_NOT_BEFORE:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    membership = payload.get("my_chat_member")
+    if not isinstance(membership, dict):
+        return None
+    chat = membership.get("chat")
+    new_member = membership.get("new_chat_member")
+    bot = new_member.get("user") if isinstance(new_member, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if (
+        not isinstance(chat, dict)
+        or chat.get("type") not in {"group", "supergroup"}
+        or chat.get("title") != BETA_BINDING_GROUP_TITLE
+        or not isinstance(chat_id, int)
+        or isinstance(chat_id, bool)
+        or not isinstance(new_member, dict)
+        or new_member.get("status") not in {"member", "administrator"}
+        or not isinstance(bot, dict)
+        or bot.get("is_bot") is not True
+    ):
+        return None
+    return BetaGroupCandidate(
+        telegram_chat_id=str(chat_id),
+        received_at=received_at,
+    )
+
+
+def extract_beta_katya_creator(administrators: object) -> str | None:
+    """Return one exact non-bot Katya creator, otherwise fail closed."""
+
+    if not isinstance(administrators, list):
+        return None
+    matches: list[int] = []
+    for administrator in administrators:
+        if not isinstance(administrator, dict) or administrator.get("status") != "creator":
+            continue
+        actor = administrator.get("user")
+        actor_id = actor.get("id") if isinstance(actor, dict) else None
+        first_name = actor.get("first_name") if isinstance(actor, dict) else None
+        if (
+            isinstance(actor, dict)
+            and actor.get("is_bot") is False
+            and isinstance(first_name, str)
+            and first_name.strip().casefold() == "катя"
+            and isinstance(actor_id, int)
+            and not isinstance(actor_id, bool)
+            and actor_id > 0
+        ):
+            matches.append(actor_id)
+    return str(matches[0]) if len(set(matches)) == 1 else None
+
+
+async def find_beta_katya_group_candidate(
+    session: AsyncSession,
+) -> BetaGroupCandidate:
+    """Resolve exactly one durable group membership receipt without exposing its id."""
+
+    receipts = (
+        await session.scalars(
+            select(TelegramReceipt)
+            .where(
+                TelegramReceipt.bot_key == BETA_CONNECTOR_KEY,
+                TelegramReceipt.received_at >= BETA_BINDING_EVIDENCE_NOT_BEFORE,
+            )
+            .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
+        )
+    ).all()
+    candidates = [
+        candidate
+        for receipt in receipts
+        if (
+            candidate := extract_beta_group_candidate(
+                payload=receipt.payload,
+                received_at=receipt.received_at,
+            )
+        )
+        is not None
+    ]
+    distinct = {candidate.telegram_chat_id for candidate in candidates}
+    if not distinct:
+        raise BetaCandidateBindingError("beta_binding_group_candidate_missing")
+    if len(distinct) != 1:
+        raise BetaCandidateBindingError("beta_binding_group_candidate_ambiguous")
+    return candidates[-1]
+
+
 async def prepare_beta_katya_candidate_binding(
-    session: AsyncSession, *, workspace_key: str, now: datetime
+    session: AsyncSession,
+    *,
+    workspace_key: str,
+    now: datetime,
+    telegram_chat_id: str | None = None,
+    telegram_user_id: str | None = None,
 ) -> BetaCandidateBindingResult:
     """Atomically bind one distinct private identity without returning identifiers."""
 
@@ -163,30 +267,45 @@ async def prepare_beta_katya_candidate_binding(
     )
     if connector is None:
         raise BetaCandidateBindingError("beta_binding_connector_missing")
-    receipts = (
-        await session.scalars(
-            select(TelegramReceipt)
-            .where(
-                TelegramReceipt.bot_key == BETA_CONNECTOR_KEY,
-                TelegramReceipt.received_at >= BETA_BINDING_EVIDENCE_NOT_BEFORE,
+    if (telegram_chat_id is None) != (telegram_user_id is None):
+        raise BetaCandidateBindingError("beta_binding_private_identity_incomplete")
+    if telegram_chat_id is not None and telegram_user_id is not None:
+        if not telegram_chat_id or not telegram_user_id:
+            raise BetaCandidateBindingError("beta_binding_private_identity_invalid")
+        candidates = [
+            BetaCandidate(
+                receipt_id=uuid.UUID(int=0),
+                update_id=0,
+                telegram_chat_id=telegram_chat_id,
+                telegram_user_id=telegram_user_id,
+                received_at=now,
             )
-            .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
-            .with_for_update()
-        )
-    ).all()
-    candidates = [
-        candidate
-        for receipt in receipts
-        if (
-            candidate := extract_beta_binding_candidate(
-                receipt_id=receipt.id,
-                update_id=receipt.update_id,
-                payload=receipt.payload,
-                received_at=receipt.received_at,
+        ]
+    else:
+        receipts = (
+            await session.scalars(
+                select(TelegramReceipt)
+                .where(
+                    TelegramReceipt.bot_key == BETA_CONNECTOR_KEY,
+                    TelegramReceipt.received_at >= BETA_BINDING_EVIDENCE_NOT_BEFORE,
+                )
+                .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
+                .with_for_update()
             )
-        )
-        is not None
-    ]
+        ).all()
+        candidates = [
+            candidate
+            for receipt in receipts
+            if (
+                candidate := extract_beta_binding_candidate(
+                    receipt_id=receipt.id,
+                    update_id=receipt.update_id,
+                    payload=receipt.payload,
+                    received_at=receipt.received_at,
+                )
+            )
+            is not None
+        ]
     distinct = {
         (candidate.telegram_chat_id, candidate.telegram_user_id)
         for candidate in candidates

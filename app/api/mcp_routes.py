@@ -98,6 +98,8 @@ from app.infrastructure.beta_candidate_binding import (
     BETA_CONSENT_PROMPT,
     BETA_CONSENT_REPLY_MARKUP,
     BetaCandidateBindingError,
+    extract_beta_katya_creator,
+    find_beta_katya_group_candidate,
     prepare_beta_katya_candidate_binding,
     revoke_beta_katya_binding_after_unknown_prompt,
 )
@@ -116,6 +118,7 @@ from app.infrastructure.telegram_voice import (
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
+    ensure_beta_callback_query_allowed,
     get_alpha_webhook_status,
     get_beta_provider_probe,
 )
@@ -1631,23 +1634,49 @@ async def _beta_get_provider_probe_tool_result(
                     code="beta_binding_provider_not_exact",
                     message="Beta provider state is not exact",
                 )
+            beta_telegram = TelegramClient(
+                credential=settings.telegram_beta_bot_token.get_secret_value(),
+                http_client=http_client,
+            )
             activation = await prepare_beta_katya_candidate_binding(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
                 now=datetime.now(UTC),
             )
+            if activation.state == "awaiting_candidate":
+                group = await find_beta_katya_group_candidate(session)
+                administrator_response = await beta_telegram.get_chat_administrators(
+                    chat_id=group.telegram_chat_id,
+                )
+                subject_user_id = extract_beta_katya_creator(
+                    administrator_response.get("result")
+                )
+                if subject_user_id is None:
+                    raise BetaCandidateBindingError(
+                        "beta_binding_group_creator_not_exact"
+                    )
+                probe = await ensure_beta_callback_query_allowed(
+                    settings=settings,
+                    http_client=http_client,
+                    current_probe=probe,
+                )
+                activation = await prepare_beta_katya_candidate_binding(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                    now=datetime.now(UTC),
+                    telegram_chat_id=group.telegram_chat_id,
+                    telegram_user_id=subject_user_id,
+                )
             prompt_delivery = "not_attempted"
             if activation.prompt_required:
                 if activation.telegram_chat_id is None:
                     raise BetaCandidateBindingError(
                         "beta_binding_prompt_target_missing"
                     )
-                beta_telegram = TelegramClient(
-                    credential=(
-                        settings.telegram_beta_bot_token.get_secret_value()
-                    ),
-                    http_client=http_client,
-                )
+                if "callback_query" not in probe["webhook"]["allowed_updates"]:
+                    raise BetaCandidateBindingError(
+                        "beta_binding_callback_admission_missing"
+                    )
                 try:
                     response = await beta_telegram.send_message(
                         chat_id=activation.telegram_chat_id,

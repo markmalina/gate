@@ -7,6 +7,7 @@ import pytest
 from app.core.config import Settings
 from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
+    ensure_beta_callback_query_allowed,
     get_alpha_webhook_status,
     get_beta_provider_probe,
 )
@@ -101,6 +102,7 @@ def _beta_settings() -> Settings:
         TELEGRAM_ALPHA_BOT_TOKEN="alpha-secret-token",
         TELEGRAM_BETA_BOT_TOKEN="beta-secret-token",
         TELEGRAM_BETA_BOT_USERNAME="BetaViaBot",
+        TELEGRAM_BETA_WEBHOOK_SECRET="beta-webhook-secret",
         TELEGRAM_BECOME_BOT_TOKEN="become-secret-token",
         MCP_PUBLIC_RESOURCE_URL="https://gate.example/mcp",
     )
@@ -327,3 +329,73 @@ async def test_beta_probe_missing_beta_credential_makes_no_provider_call() -> No
     assert exc_info.value.code == "beta_probe_credentials_incomplete"
     assert calls == []
 
+
+
+@pytest.mark.anyio
+async def test_beta_callback_admission_preserves_exact_webhook_and_confirms_update():
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if request.url.path.endswith("/setWebhook"):
+            body = request.content.decode()
+            assert "callback_query" in body
+            assert "drop_pending_updates" in body
+            assert "beta-webhook-secret" in body
+            return httpx.Response(200, json={"ok": True, "result": True})
+        if request.url.path.endswith("/getWebhookInfo"):
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "url": "https://gate.example/telegram/beta/webhook",
+                        "pending_update_count": 0,
+                        "allowed_updates": [
+                            "message",
+                            "my_chat_member",
+                            "callback_query",
+                        ],
+                    },
+                },
+            )
+        if request.url.path.endswith("/getMe"):
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "is_bot": True,
+                        "username": "BetaViaBot",
+                        "can_join_groups": True,
+                        "can_read_all_group_messages": True,
+                    },
+                },
+            )
+        raise AssertionError("unexpected Telegram method")
+
+    current_probe = {
+        "provider_calls": 2,
+        "webhook": {
+            "allowed_updates": ["message", "my_chat_member"],
+        },
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        result = await ensure_beta_callback_query_allowed(
+            settings=_beta_settings(),
+            http_client=http_client,
+            current_probe=current_probe,
+        )
+
+    assert [call.url.path.rsplit("/", 1)[-1] for call in calls] == [
+        "setWebhook",
+        "getWebhookInfo",
+        "getMe",
+    ]
+    assert "callback_query" in result["webhook"]["allowed_updates"]
+    assert result["provider_calls"] == 5
+    assert result["call_surface"]["mutation_methods"] == ["setWebhook"]
+    assert result["secrets_exposed"] is False
+    assert "beta-webhook-secret" not in repr(result)
