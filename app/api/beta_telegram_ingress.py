@@ -83,6 +83,13 @@ async def beta_telegram_webhook(
         receipt_store=receipt_store,
         received_at=received_at,
     )
+    if acceptance is None:
+        return {
+            "ok": True,
+            "accepted": False,
+            "ignored": True,
+            "reason": "unsupported_update",
+        }
     intake = await ProcessBetaSpaceUpdate(
         store=beta_space_store,
         production_ready=beta_space_production_ready(settings),
@@ -114,8 +121,8 @@ async def accept_beta_telegram_receipt(
     settings: Settings,
     receipt_store: TelegramReceiptStore,
     received_at: datetime,
-) -> TelegramReceiptAcceptance:
-    """Fail closed before persistence unless the separate connector is ready."""
+) -> TelegramReceiptAcceptance | None:
+    """Authenticate every update and persist only approved group shapes."""
 
     if not settings.gate_beta_connector_enabled:
         raise HTTPException(
@@ -133,7 +140,10 @@ async def accept_beta_telegram_receipt(
     if type(update_id) is not int or update_id < 0 or update_id > TELEGRAM_UPDATE_ID_MAX:
         raise HTTPException(status_code=400, detail="Invalid Telegram update id")
     if not _is_group_update(update):
-        raise HTTPException(status_code=400, detail="Beta accepts group updates only")
+        # Telegram retries every non-2xx webhook response. Authenticated updates
+        # outside this group-only connector are terminally acknowledged by the
+        # route without persistence so one poison item cannot block the queue.
+        return None
     try:
         return await AcceptTelegramReceiptService(receipt_store).execute(
             AcceptTelegramReceiptCommand(
