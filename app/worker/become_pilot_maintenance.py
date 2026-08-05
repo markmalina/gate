@@ -15,6 +15,9 @@ from app.application.become_transcript_review import (
     DeliverPilotTranscriptReview,
 )
 from app.core.config import get_settings
+from app.infrastructure.become_learner_invitation import (
+    SessionFactoryLearnerInvitationStore,
+)
 from app.infrastructure.become_media_intake import (
     SessionFactoryBecomeMediaRetention,
 )
@@ -63,9 +66,17 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     store = SessionFactoryPilotTranscriptReviewStore(sessions)
+    slice3_store = SessionFactoryLearnerInvitationStore(sessions)
+    result: dict[str, object]
     try:
-        if command == "status":
-            result: dict[str, object] = {
+        if command == "slice3-status":
+            result = await slice3_store.status(now=datetime.now(UTC))
+        elif command == "slice3-rollback-preflight":
+            result = await slice3_store.rollback_preflight()
+        elif command == "slice3-purge":
+            result = await slice3_store.purge_expired(now=datetime.now(UTC))
+        elif command == "status":
+            result = {
                 "schema": "gate.become-pilot-slice1-status@1",
                 "state": await store.status(now=datetime.now(UTC)),
                 "content_exposed": False,
@@ -221,6 +232,9 @@ def main() -> None:
             "status",
             "rollback-preflight",
             "purge",
+            "slice3-status",
+            "slice3-rollback-preflight",
+            "slice3-purge",
             "deliver",
             "redisplay",
             "manual-correct",
