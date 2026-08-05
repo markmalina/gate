@@ -1958,7 +1958,43 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                         "const": False,
                     },
                 }
-            )
+            ),
+            "activation": _object(
+                {
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "awaiting_candidate",
+                            "already_bound",
+                            "bound_awaiting_consent",
+                            "prompt_delivery_unknown",
+                        ],
+                    },
+                    "candidate_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "binding_created": {"type": "boolean"},
+                    "prompt_required": {"type": "boolean"},
+                    "prompt_delivery": {
+                        "type": "string",
+                        "enum": ["not_attempted", "sent", "unknown"],
+                    },
+                    "private_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "private_payload_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "consent_digest_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
         }
     ),
     {},
