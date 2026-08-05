@@ -124,7 +124,7 @@ def run(service, value):
     return asyncio.run(service.execute(update=value, receipt_id="receipt", received_at=NOW))
 
 
-def test_consent_requires_production_readiness_and_exact_plain_message() -> None:
+def test_typed_consent_never_activates_collection() -> None:
     store = MemoryStore()
     disabled = ProcessBetaSpaceUpdate(store=store, production_ready=False)
     enabled = ProcessBetaSpaceUpdate(store=store, production_ready=True)
@@ -133,40 +133,26 @@ def test_consent_requires_production_readiness_and_exact_plain_message() -> None
         run(disabled, update(text=SYNTHETIC_CONSENT)).disposition
         == BetaSpaceDisposition.DISABLED
     )
-    assert (
-        run(enabled, update(text=f" {SYNTHETIC_CONSENT}")).disposition
-        == BetaSpaceDisposition.CONSENT_REQUIRED
-    )
-    result = run(enabled, update(text=SYNTHETIC_CONSENT))
-    assert result.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
-    assert result.delivery_id == "delivery-a"
+    for text in (f" {SYNTHETIC_CONSENT}", SYNTHETIC_CONSENT):
+        result = run(enabled, update(text=text))
+        assert result.disposition == BetaSpaceDisposition.CONSENT_REQUIRED
+        assert result.delivery_id is None
+    assert store.events == set()
 
 
-def test_pending_consent_before_ready_at_is_stale_but_equality_is_accepted() -> None:
+def test_inline_consent_before_ready_at_is_stale_but_equality_is_accepted() -> None:
     store = MemoryStore()
+    store.bindings[SPACE_A.telegram_chat_id] = replace(
+        SPACE_A, ready_at=NOW + timedelta(seconds=1)
+    )
     service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
 
-    stale = run(
-        service,
-        update(
-            update_id=2,
-            message_id=12,
-            text=SYNTHETIC_CONSENT,
-            occurred_at=NOW - timedelta(seconds=1),
-        ),
-    )
+    stale = run(service, callback_update(update_id=2, message_id=12))
     assert stale.disposition == BetaSpaceDisposition.PRE_READINESS
     assert store.events == set()
 
-    boundary = run(
-        service,
-        update(
-            update_id=3,
-            message_id=13,
-            text=SYNTHETIC_CONSENT,
-            occurred_at=NOW,
-        ),
-    )
+    store.bindings[SPACE_A.telegram_chat_id] = SPACE_A
+    boundary = run(service, callback_update(update_id=3, message_id=13))
     assert boundary.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
     assert store.events == {(SPACE_A.binding_id, 3)}
 
@@ -209,11 +195,12 @@ def test_cross_space_events_keep_exact_tenant_space_and_actor_scope() -> None:
     ]
 
 
-def test_duplicate_update_creates_no_second_fact_or_delivery() -> None:
+def test_duplicate_inline_callback_creates_no_second_event_or_delivery() -> None:
     store = MemoryStore()
     service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
-    first = run(service, update(update_id=20, text=SYNTHETIC_CONSENT))
-    second = run(service, update(update_id=20, text=SYNTHETIC_CONSENT))
+    value = callback_update(update_id=20, message_id=20)
+    first = run(service, value)
+    second = run(service, value)
 
     assert first.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
     assert second.disposition == BetaSpaceDisposition.DUPLICATE
@@ -228,7 +215,7 @@ def test_consent_before_processing_and_other_actor_is_not_attributed() -> None:
         run(service, update(update_id=30, kind="photo")).disposition
         == BetaSpaceDisposition.CONSENT_REQUIRED
     )
-    run(service, update(update_id=31, text=SYNTHETIC_CONSENT))
+    run(service, callback_update(update_id=31, message_id=31))
     assert (
         run(service, update(update_id=32, user_id=70003, kind="photo")).disposition
         == BetaSpaceDisposition.ACTOR_MISMATCH
