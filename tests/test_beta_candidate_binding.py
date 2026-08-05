@@ -131,14 +131,14 @@ def test_membership_receipt_rejects_wrong_group_or_inactive_bot():
     ) is None
 
 
-def test_exact_single_katya_creator_is_selected_privately():
+def test_exact_katya_first_name_with_surname_is_selected_privately():
     administrators = [
         {
             "status": "creator",
             "user": {
                 "id": 70001,
                 "is_bot": False,
-                "first_name": "Катя",
+                "first_name": "Катя Малиновская ❤️",
             },
         },
         {
@@ -177,3 +177,18 @@ def test_project_start_membership_receipt_before_activation_window_is_eligible()
     )
     assert candidate is not None
     assert "-10001" not in repr(candidate)
+
+
+def test_creator_resolution_rejects_name_that_only_contains_katya_later():
+    assert extract_beta_katya_creator(
+        [
+            {
+                "status": "creator",
+                "user": {
+                    "id": 70001,
+                    "is_bot": False,
+                    "first_name": "Мама Кати",
+                },
+            }
+        ]
+    ) is None

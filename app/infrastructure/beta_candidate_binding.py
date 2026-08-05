@@ -185,7 +185,8 @@ def extract_beta_katya_creator(administrators: object) -> str | None:
             isinstance(actor, dict)
             and actor.get("is_bot") is False
             and isinstance(first_name, str)
-            and first_name.strip().casefold() == "катя"
+            and bool(first_name.strip())
+            and first_name.strip().casefold().split(maxsplit=1)[0] == "катя"
             and isinstance(actor_id, int)
             and not isinstance(actor_id, bool)
             and actor_id > 0
