@@ -194,10 +194,10 @@ def extract_beta_katya_creator(administrators: object) -> str | None:
     return str(matches[0]) if len(set(matches)) == 1 else None
 
 
-async def find_beta_katya_group_candidate(
+async def find_beta_katya_group_candidates(
     session: AsyncSession,
-) -> BetaGroupCandidate:
-    """Resolve exactly one durable group membership receipt without exposing its id."""
+) -> list[BetaGroupCandidate]:
+    """Return a bounded newest-first set of exact-title membership candidates."""
 
     receipts = (
         await session.scalars(
@@ -206,23 +206,23 @@ async def find_beta_katya_group_candidate(
             .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
         )
     ).all()
-    candidates = [
-        candidate
-        for receipt in receipts
-        if (
-            candidate := extract_beta_group_candidate(
-                payload=receipt.payload,
-                received_at=receipt.received_at,
-            )
+    by_chat: dict[str, BetaGroupCandidate] = {}
+    for receipt in receipts:
+        candidate = extract_beta_group_candidate(
+            payload=receipt.payload,
+            received_at=receipt.received_at,
         )
-        is not None
-    ]
-    distinct = {candidate.telegram_chat_id for candidate in candidates}
-    if not distinct:
+        if candidate is not None:
+            by_chat[candidate.telegram_chat_id] = candidate
+    if not by_chat:
         raise BetaCandidateBindingError("beta_binding_group_candidate_missing")
-    if len(distinct) != 1:
+    if len(by_chat) > 3:
         raise BetaCandidateBindingError("beta_binding_group_candidate_ambiguous")
-    return candidates[-1]
+    return sorted(
+        by_chat.values(),
+        key=lambda candidate: candidate.received_at,
+        reverse=True,
+    )
 
 
 async def prepare_beta_katya_candidate_binding(
