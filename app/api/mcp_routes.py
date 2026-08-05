@@ -96,6 +96,7 @@ from app.infrastructure.beta_checkpoint_export import (
 )
 from app.infrastructure.beta_candidate_binding import (
     BETA_CONSENT_PROMPT,
+    BETA_CONSENT_REPLY_MARKUP,
     BetaCandidateBindingError,
     prepare_beta_katya_candidate_binding,
     revoke_beta_katya_binding_after_unknown_prompt,
@@ -1648,9 +1649,10 @@ async def _beta_get_provider_probe_tool_result(
                     http_client=http_client,
                 )
                 try:
-                    response = await beta_telegram.send_plain_message(
+                    response = await beta_telegram.send_message(
                         chat_id=activation.telegram_chat_id,
                         text=BETA_CONSENT_PROMPT,
+                        reply_markup=BETA_CONSENT_REPLY_MARKUP,
                     )
                     message_id = response.get("result", {}).get("message_id")
                     if type(message_id) is not int:
