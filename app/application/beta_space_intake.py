@@ -172,7 +172,7 @@ class ProcessBetaSpaceUpdate:
         if binding.state == "ready":
             if consent_decision == "no":
                 return BetaSpaceIntakeResult(BetaSpaceDisposition.CONSENT_DECLINED, **scope)
-            if consent_decision != "yes" and not exact_consent:
+            if consent_decision != "yes":
                 return BetaSpaceIntakeResult(BetaSpaceDisposition.CONSENT_REQUIRED, **scope)
             reservation = await self._store.reserve_consent(binding=binding, source=source)
             if not reservation.created:
@@ -183,7 +183,7 @@ class ProcessBetaSpaceUpdate:
                 **scope,
             )
 
-        if exact_consent:
+        if consent_decision is not None or exact_consent:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.DUPLICATE, **scope)
         if source.media_kind not in {"text", "voice", "photo", "document"}:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.UNSUPPORTED, **scope)
