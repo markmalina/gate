@@ -125,7 +125,7 @@ TOOL_CONTRACTS = (
     ToolContract(
         "gate_beta_get_provider_probe",
         "gate:agents:manage",
-        "read_only_tools",
+        "write_tools",
         "_gate_beta_get_provider_probe_tool",
     ),
 )
