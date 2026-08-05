@@ -1644,7 +1644,7 @@ async def _beta_get_provider_probe_tool_result(
                 now=datetime.now(UTC),
             )
             if activation.state == "awaiting_candidate":
-                live_matches: list[tuple[object, str]] = []
+                live_match: tuple[object, str] | None = None
                 for group_candidate in await find_beta_katya_group_candidates(session):
                     try:
                         administrator_response = (
@@ -1658,12 +1658,13 @@ async def _beta_get_provider_probe_tool_result(
                         administrator_response.get("result")
                     )
                     if subject is not None:
-                        live_matches.append((group_candidate, subject))
-                if len(live_matches) != 1:
+                        live_match = (group_candidate, subject)
+                        break
+                if live_match is None:
                     raise BetaCandidateBindingError(
                         "beta_binding_live_group_not_exact"
                     )
-                group, subject_user_id = live_matches[0]
+                group, subject_user_id = live_match
                 probe = await ensure_beta_callback_query_allowed(
                     settings=settings,
                     http_client=http_client,
