@@ -89,6 +89,7 @@ from app.infrastructure.become_i4_recovery import (
     become_i4_recovery_status,
 )
 from app.infrastructure.become_quest import become_quest_status
+from app.infrastructure.become_slice3_status import become_slice3_production_evidence
 from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
@@ -389,6 +390,13 @@ async def mcp_endpoint(
                 account_ids=principal.access_scope.account_ids,
                 project_ids=principal.access_scope.project_ids,
             )
+            async with httpx.AsyncClient() as slice3_status_client:
+                snapshot["become_slice3"] = await become_slice3_production_evidence(
+                    session,
+                    settings=settings,
+                    http_client=slice3_status_client,
+                    now=datetime.now(UTC),
+                )
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_alpha_list_installations":
             return await _alpha_list_installations_tool_result(
