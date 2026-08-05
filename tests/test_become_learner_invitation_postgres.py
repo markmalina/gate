@@ -257,6 +257,38 @@ async def _delivered(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("column", "mutated_value"),
+    [
+        ("telegram_actor_id", "2999"),
+        ("private_dialog_id", "2999"),
+        ("bot_installation_identity", "installation://telegram/rebound"),
+        ("become_space_ref", "space://become/rebound"),
+    ],
+)
+async def test_postgres_pin_rejects_candidate_tuple_mutation_before_slot_reservation(
+    sessions: async_sessionmaker[AsyncSession],
+    column: str,
+    mutated_value: str,
+) -> None:
+    graph, store = await _seed_program(sessions)
+    binding = await _candidate(sessions, store, graph, "2001")
+    async with sessions.begin() as session:
+        await session.execute(
+            text(
+                f"UPDATE become_slice3_learner_candidates SET {column}=:value "
+                "WHERE learner_binding_digest=:digest"
+            ),
+            {"value": mutated_value, "digest": binding},
+        )
+    with pytest.raises(Slice3Error, match="slice3_candidate_binding_mutated"):
+        await store.pin_and_create_invitation(command=_pin(graph, binding), now=NOW)
+    async with sessions() as session:
+        assert await session.scalar(text("SELECT count(*) FROM become_slice3_pilot_slots")) == 0
+        assert await session.scalar(text("SELECT count(*) FROM become_slice3_invitations")) == 0
+
+
+@pytest.mark.anyio
 async def test_postgres_two_candidate_pin_race_and_restart_replay(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -322,7 +354,14 @@ async def test_postgres_two_callback_race_commits_one_acceptance_and_replays_aft
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "mutation",
-    ["program_correction", "program_purge", "candidate_rebind", "slot_mutation"],
+    [
+        "program_correction",
+        "program_purge",
+        "candidate_rebind",
+        "slot_mutation",
+        "expert_dialog_rebind",
+        "program_dialog_mutation",
+    ],
 )
 async def test_postgres_callback_revalidates_every_locked_binding(
     sessions: async_sessionmaker[AsyncSession], mutation: str
@@ -353,12 +392,47 @@ async def test_postgres_callback_revalidates_every_locked_binding(
                     "UPDATE become_slice3_learner_candidates SET telegram_actor_id='9999'"
                 )
             )
-        else:
+        elif mutation == "slot_mutation":
             await session.execute(
                 text(
                     "UPDATE become_slice3_pilot_slots SET learner_binding_digest=:digest"
                 ),
                 {"digest": "f" * 64},
+            )
+        elif mutation == "expert_dialog_rebind":
+            await session.execute(
+                text(
+                    "UPDATE dialogs SET provider_dialog_id='expert-dialog-rebound' "
+                    "WHERE id=(SELECT dialog_id FROM become_pilot_program_drafts "
+                    "WHERE id=:program_id)"
+                ),
+                {"program_id": UUID(PROGRAM_ID)},
+            )
+        else:
+            rebound_dialog_id = uuid4()
+            await session.execute(
+                text(
+                    "INSERT INTO dialogs "
+                    "(id,workspace_id,connector_id,provider_dialog_id,dialog_kind,"
+                    "created_at,updated_at) "
+                    "SELECT :id,workspace_id,connector_id,'program-dialog-rebound',"
+                    "dialog_kind,:now,:now FROM dialogs WHERE id=:source_dialog_id"
+                ),
+                {
+                    "id": rebound_dialog_id,
+                    "source_dialog_id": graph.dialog_id,
+                    "now": NOW,
+                },
+            )
+            await session.execute(
+                text(
+                    "UPDATE become_pilot_program_drafts SET dialog_id=:dialog_id "
+                    "WHERE id=:program_id"
+                ),
+                {
+                    "dialog_id": rebound_dialog_id,
+                    "program_id": UUID(PROGRAM_ID),
+                },
             )
     with pytest.raises(Slice3Error):
         await store.apply_learner_callback(
