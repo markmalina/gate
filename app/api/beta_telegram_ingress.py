@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session
 from app.api.telegram_ingress import get_telegram_receipt_store
 from app.application.beta_space_intake import (
+    BetaSpaceDisposition,
     DeliverBetaSpaceConsent,
     ProcessBetaSpaceUpdate,
 )
@@ -98,11 +99,17 @@ async def beta_telegram_webhook(
         receipt_id=acceptance.receipt_id,
         received_at=received_at,
     )
+    beta_telegram = get_beta_telegram_client(request)
+    callback_delivery = await _settle_beta_consent_callback(
+        telegram=beta_telegram,
+        update=update,
+        disposition=intake.disposition,
+    )
     delivery = None
     if intake.delivery_id is not None:
         delivery = await DeliverBetaSpaceConsent(
             store=beta_space_store,
-            telegram=get_beta_telegram_client(request),
+            telegram=beta_telegram,
             enabled=beta_space_production_ready(settings),
         ).execute(delivery_id=intake.delivery_id, now=received_at)
     return {
@@ -110,6 +117,7 @@ async def beta_telegram_webhook(
         "accepted": True,
         "duplicate": acceptance.duplicate,
         "space_processing": intake.disposition.value,
+        "callback_delivery": callback_delivery,
         "delivery": delivery,
     }
 
@@ -161,9 +169,54 @@ async def accept_beta_telegram_receipt(
         ) from None
 
 
+
+async def _settle_beta_consent_callback(
+    *,
+    telegram: TelegramClient,
+    update: JsonObject,
+    disposition: BetaSpaceDisposition,
+) -> str | None:
+    if disposition not in {
+        BetaSpaceDisposition.CONSENT_ACCEPTED,
+        BetaSpaceDisposition.CONSENT_DECLINED,
+    }:
+        return None
+    callback = update.get("callback_query")
+    if not isinstance(callback, dict):
+        return "unknown"
+    callback_id = callback.get("id")
+    message = callback.get("message")
+    chat = message.get("chat") if isinstance(message, dict) else None
+    message_id = message.get("message_id") if isinstance(message, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if (
+        not isinstance(callback_id, str)
+        or not callback_id
+        or type(chat_id) is not int
+        or type(message_id) is not int
+    ):
+        return "unknown"
+    callback_text = (
+        "Согласие принято."
+        if disposition is BetaSpaceDisposition.CONSENT_ACCEPTED
+        else "Бета не подключена."
+    )
+    try:
+        await telegram.answer_callback_query(
+            callback_query_id=callback_id,
+            text=callback_text,
+        )
+        await telegram.edit_message_reply_markup(
+            chat_id=str(chat_id),
+            message_id=message_id,
+        )
+    except Exception:
+        return "unknown"
+    return "answered"
+
 def _is_group_update(update: JsonObject) -> bool:
     update_kinds = {key for key in update if key != "update_id"}
-    if update_kinds not in ({"message"}, {"my_chat_member"}):
+    if update_kinds not in ({"message"}, {"my_chat_member"}, {"callback_query"}):
         return False
     message = update.get("message")
     if isinstance(message, dict):
@@ -172,6 +225,11 @@ def _is_group_update(update: JsonObject) -> bool:
     membership = update.get("my_chat_member")
     if isinstance(membership, dict):
         chat = membership.get("chat")
+        return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
+    callback = update.get("callback_query")
+    if isinstance(callback, dict):
+        callback_message = callback.get("message")
+        chat = callback_message.get("chat") if isinstance(callback_message, dict) else None
         return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
     return False
 
