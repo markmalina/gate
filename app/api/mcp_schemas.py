@@ -1343,8 +1343,140 @@ HISTORICAL_DEBT_SCHEMA = _object(
         "provider_call_allowed": {"type": "boolean", "const": False},
     }
 )
+BECOME_SLICE3_STATUS_SCHEMA = _object(
+    {
+        "schema": {
+            "type": "string",
+            "const": "gate.become-pilot-slice3-status@1",
+        },
+        "candidate_count": {"type": "integer", "minimum": 0},
+        "slot_count": {"type": "integer", "minimum": 0},
+        "invitation_count": {"type": "integer", "minimum": 0},
+        "accepted_count": {"type": "integer", "minimum": 0},
+        "expiry_due_count": {"type": "integer", "minimum": 0},
+        "acceptance_count": {"type": "integer", "minimum": 0},
+        "delivery_unknown_count": {"type": "integer", "minimum": 0},
+        "relations_unknown_count": {"type": "integer", "minimum": 0},
+        "relations_executed_count": {"type": "integer", "minimum": 0},
+        "candidate_tombstone_count": {"type": "integer", "minimum": 0},
+        "content_exposed": {"type": "boolean", "const": False},
+        "provider_identifiers_exposed": {"type": "boolean", "const": False},
+    }
+)
+BECOME_SLICE3_ROLLBACK_SCHEMA = _object(
+    {
+        "schema": {
+            "type": "string",
+            "const": "gate.become-pilot-slice3-rollback-preflight@1",
+        },
+        "accepted_count": {"type": "integer", "minimum": 0},
+        "unresolved_delivery_count": {"type": "integer", "minimum": 0},
+        "unresolved_relations_count": {"type": "integer", "minimum": 0},
+        "schema_downgrade_allowed": {"type": "boolean"},
+        "application_rollback_allowed": {"type": "boolean"},
+        "content_exposed": {"type": "boolean", "const": False},
+    }
+)
+BECOME_SLICE3_COUNTS_SCHEMA = _object(
+    {
+        "candidate_total_count": {"type": "integer", "minimum": 0},
+        "candidate_count": {"type": "integer", "minimum": 0},
+        "slot_count": {"type": "integer", "minimum": 0},
+        "invitation_count": {"type": "integer", "minimum": 0},
+        "accepted_count": {"type": "integer", "minimum": 0},
+        "expiry_due_count": {"type": "integer", "minimum": 0},
+        "acceptance_count": {"type": "integer", "minimum": 0},
+        "delivery_count": {"type": "integer", "minimum": 0},
+        "delivery_reserved_count": {"type": "integer", "minimum": 0},
+        "delivery_unknown_count": {"type": "integer", "minimum": 0},
+        "outbox_count": {"type": "integer", "minimum": 0},
+        "outbox_reserved_count": {"type": "integer", "minimum": 0},
+        "relations_unknown_count": {"type": "integer", "minimum": 0},
+        "relations_executed_count": {"type": "integer", "minimum": 0},
+        "candidate_tombstone_count": {"type": "integer", "minimum": 0},
+    }
+)
+BECOME_SLICE3_RELATIONS_HEALTH_SCHEMA = _object(
+    {
+        "ready": {"type": "boolean"},
+        "error_code": _nullable("string"),
+        "source_sha": {
+            "anyOf": [
+                {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                {"type": "null"},
+            ]
+        },
+        "execution_count": {
+            "anyOf": [
+                {"type": "integer", "minimum": 0},
+                {"type": "null"},
+            ]
+        },
+        "provider_calls": {
+            "anyOf": [
+                {"type": "integer", "minimum": 0},
+                {"type": "null"},
+            ]
+        },
+        "external_effects": {
+            "anyOf": [
+                {"type": "integer", "minimum": 0},
+                {"type": "null"},
+            ]
+        },
+    }
+)
+BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA = _object(
+    {
+        "schema": {
+            "type": "string",
+            "const": "gate.become-pilot-slice3-production-evidence@1",
+        },
+        "ready": {"type": "boolean"},
+        "error_code": _nullable("string"),
+        "source_sha": {"type": "string", "minLength": 1, "maxLength": 64},
+        "expected_alembic_head": {
+            "type": "string",
+            "const": "0087_become_pilot_slice3_learner",
+        },
+        "alembic_head": _nullable("string"),
+        "gates": _object(
+            {
+                "runtime_enabled": {"type": "boolean"},
+                "data_gate_approved": {"type": "boolean"},
+                "delivery_enabled": {"type": "boolean"},
+                "relations_enabled": {"type": "boolean"},
+            }
+        ),
+        "caps": _object(
+            {
+                "telegram_sends": {"type": "integer", "minimum": 0, "maximum": 2},
+                "relations_posts": {"type": "integer", "minimum": 0, "maximum": 1},
+            }
+        ),
+        "slice3_status": {
+            "anyOf": [BECOME_SLICE3_STATUS_SCHEMA, {"type": "null"}]
+        },
+        "rollback_preflight": {
+            "anyOf": [BECOME_SLICE3_ROLLBACK_SCHEMA, {"type": "null"}]
+        },
+        "counts": {
+            "anyOf": [BECOME_SLICE3_COUNTS_SCHEMA, {"type": "null"}]
+        },
+        "relations": BECOME_SLICE3_RELATIONS_HEALTH_SCHEMA,
+        "private_content_exposed": {"type": "boolean", "const": False},
+        "provider_identifiers_exposed": {"type": "boolean", "const": False},
+        "telegram_identifiers_exposed": {"type": "boolean", "const": False},
+        "mutation_allowed": {"type": "boolean", "const": False},
+    }
+)
+
+
 # Optional for older fixtures, always present in the live gate_get_status response.
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = (
+    BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
+)
 
 
 UNANSWERED_ITEM_SCHEMA = _object(
