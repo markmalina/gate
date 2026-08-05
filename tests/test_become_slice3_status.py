@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -79,6 +81,10 @@ class _ReadOnlySession:
             "candidate_tombstone_count": 0,
         }
         self.statements: list[str] = []
+
+    @asynccontextmanager
+    async def begin_nested(self) -> AsyncIterator[None]:
+        yield
 
     async def scalar(self, statement: object) -> str:
         self.statements.append(str(statement))
