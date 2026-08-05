@@ -737,3 +737,27 @@ def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None
     assert command.route.value == "human_reply_task"
     assert "private-message-text" not in repr(command)
     assert "private-connection" not in repr(command)
+
+
+def test_configured_isolated_beta_space_bypasses_legacy_canary_context() -> None:
+    settings = Settings(
+        _env_file=None,
+        GATE_BETA_KATYA_SPACE_ENABLED=True,
+        GATE_BETA_KATYA_CHAT_ID="-100990001",
+    )
+    payload: dict[str, object] = {
+        "update_id": 901,
+        "message": {
+            "message_id": 902,
+            "chat": {"id": -100990001, "type": "supergroup"},
+            "from": {"id": 770000001, "is_bot": False},
+            "text": "synthetic dental fact",
+        },
+    }
+
+    assert worker_module._is_beta_space_owned_update(settings, payload) is True
+    payload["message"]["chat"]["id"] = -100990002  # type: ignore[index]
+    assert worker_module._is_beta_space_owned_update(settings, payload) is False
+    assert worker_module._is_beta_space_owned_update(
+        Settings(_env_file=None), payload
+    ) is False
