@@ -172,7 +172,7 @@ class ProcessBetaSpaceUpdate:
         if binding.state == "ready":
             if consent_decision == "no":
                 return BetaSpaceIntakeResult(BetaSpaceDisposition.CONSENT_DECLINED, **scope)
-            if consent_decision != "yes":
+            if consent_decision != "yes" and not exact_consent:
                 return BetaSpaceIntakeResult(BetaSpaceDisposition.CONSENT_REQUIRED, **scope)
             reservation = await self._store.reserve_consent(binding=binding, source=source)
             if not reservation.created:
