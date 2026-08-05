@@ -316,16 +316,17 @@ class SqlBetaSpaceStore:
             BetaSpaceBindingModel | None,
             await self._session.scalar(
                 select(BetaSpaceBindingModel)
-            .where(
-                BetaSpaceBindingModel.id == uuid.UUID(binding.binding_id),
-                BetaSpaceBindingModel.workspace_id == uuid.UUID(binding.workspace_id),
-                BetaSpaceBindingModel.tenant_ref == binding.tenant_ref,
-                BetaSpaceBindingModel.space_ref == binding.space_ref,
-                BetaSpaceBindingModel.telegram_chat_id == binding.telegram_chat_id,
-                BetaSpaceBindingModel.subject_telegram_user_id
-                == binding.subject_telegram_user_id,
-            )
-            .with_for_update()
+                .where(
+                    BetaSpaceBindingModel.id == uuid.UUID(binding.binding_id),
+                    BetaSpaceBindingModel.workspace_id == uuid.UUID(binding.workspace_id),
+                    BetaSpaceBindingModel.tenant_ref == binding.tenant_ref,
+                    BetaSpaceBindingModel.space_ref == binding.space_ref,
+                    BetaSpaceBindingModel.telegram_chat_id == binding.telegram_chat_id,
+                    BetaSpaceBindingModel.subject_telegram_user_id
+                    == binding.subject_telegram_user_id,
+                )
+                .with_for_update()
+            ),
         )
 
 
