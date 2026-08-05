@@ -304,8 +304,9 @@ async def test_postgres_two_candidate_pin_race_and_restart_replay(
     )
     assert sum(not isinstance(value, Exception) for value in results) == 1
     assert sum(isinstance(value, Slice3Error) for value in results) == 1
+    winner = first if not isinstance(results[0], Exception) else second
     restarted = SessionFactoryLearnerInvitationStore(sessions)
-    replay = await restarted.pin_and_create_invitation(command=_pin(graph, first), now=NOW)
+    replay = await restarted.pin_and_create_invitation(command=_pin(graph, winner), now=NOW)
     assert replay.replayed is True
     async with sessions() as session:
         assert await session.scalar(text("SELECT count(*) FROM become_slice3_pilot_slots")) == 1
