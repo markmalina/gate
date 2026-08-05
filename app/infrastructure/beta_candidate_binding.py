@@ -85,22 +85,26 @@ def extract_beta_binding_candidate(
         return None
     chat = message.get("chat")
     actor = message.get("from")
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    actor_id = actor.get("id") if isinstance(actor, dict) else None
     if (
         not isinstance(chat, dict)
         or chat.get("type") not in {"group", "supergroup"}
         or chat.get("title") != BETA_BINDING_GROUP_TITLE
-        or type(chat.get("id")) is not int
+        or not isinstance(chat_id, int)
+        or isinstance(chat_id, bool)
         or not isinstance(actor, dict)
         or actor.get("is_bot") is not False
-        or type(actor.get("id")) is not int
-        or actor.get("id") <= 0
+        or not isinstance(actor_id, int)
+        or isinstance(actor_id, bool)
+        or actor_id <= 0
     ):
         return None
     return BetaCandidate(
         receipt_id=receipt_id,
         update_id=update_id,
-        telegram_chat_id=str(chat["id"]),
-        telegram_user_id=str(actor["id"]),
+        telegram_chat_id=str(chat_id),
+        telegram_user_id=str(actor_id),
         received_at=received_at,
     )
 
