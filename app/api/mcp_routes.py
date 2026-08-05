@@ -99,7 +99,7 @@ from app.infrastructure.beta_candidate_binding import (
     BETA_CONSENT_REPLY_MARKUP,
     BetaCandidateBindingError,
     extract_beta_katya_creator,
-    find_beta_katya_group_candidate,
+    find_beta_katya_group_candidates,
     prepare_beta_katya_candidate_binding,
     revoke_beta_katya_binding_after_unknown_prompt,
 )
@@ -149,7 +149,7 @@ from app.models.domain import (
     TelegramUpdate,
     TelegramVoiceArchive,
 )
-from app.services.telegram import TelegramClient, build_telegram_http_client
+from app.services.telegram import TelegramApiError, TelegramClient, build_telegram_http_client
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
     TelegramVoiceError,
@@ -1644,17 +1644,26 @@ async def _beta_get_provider_probe_tool_result(
                 now=datetime.now(UTC),
             )
             if activation.state == "awaiting_candidate":
-                group = await find_beta_katya_group_candidate(session)
-                administrator_response = await beta_telegram.get_chat_administrators(
-                    chat_id=group.telegram_chat_id,
-                )
-                subject_user_id = extract_beta_katya_creator(
-                    administrator_response.get("result")
-                )
-                if subject_user_id is None:
-                    raise BetaCandidateBindingError(
-                        "beta_binding_group_creator_not_exact"
+                live_matches: list[tuple[object, str]] = []
+                for group_candidate in await find_beta_katya_group_candidates(session):
+                    try:
+                        administrator_response = (
+                            await beta_telegram.get_chat_administrators(
+                                chat_id=group_candidate.telegram_chat_id,
+                            )
+                        )
+                    except TelegramApiError:
+                        continue
+                    subject = extract_beta_katya_creator(
+                        administrator_response.get("result")
                     )
+                    if subject is not None:
+                        live_matches.append((group_candidate, subject))
+                if len(live_matches) != 1:
+                    raise BetaCandidateBindingError(
+                        "beta_binding_live_group_not_exact"
+                    )
+                group, subject_user_id = live_matches[0]
                 probe = await ensure_beta_callback_query_allowed(
                     settings=settings,
                     http_client=http_client,
