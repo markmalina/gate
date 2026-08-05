@@ -94,6 +94,12 @@ from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
 )
+from app.infrastructure.beta_candidate_binding import (
+    BETA_CONSENT_PROMPT,
+    BetaCandidateBindingError,
+    prepare_beta_katya_candidate_binding,
+    revoke_beta_katya_binding_after_unknown_prompt,
+)
 from app.infrastructure.beta_space import beta_katya_space_operational_status
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
@@ -453,6 +459,8 @@ async def mcp_endpoint(
             return await _beta_get_provider_probe_tool_result(
                 request_id=request_id,
                 arguments=arguments,
+                principal=principal,
+                session=session,
                 settings=settings,
             )
         if tool_name == "gate_alpha_control_installation":
@@ -1586,6 +1594,8 @@ async def _beta_get_provider_probe_tool_result(
     *,
     request_id: Any,
     arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
     settings: Settings,
 ) -> JsonObject:
     if set(arguments) != {"confirmed"} or arguments.get("confirmed") is not True:
@@ -1609,24 +1619,77 @@ async def _beta_get_provider_probe_tool_result(
                 settings=settings,
                 http_client=http_client,
             )
+            if (
+                not probe["webhook"]["exact_match"]
+                or not probe["webhook"]["actual_origin_match"]
+                or not probe["identity"]["ordinary_group_messages_available"]
+                or probe["identity"]["privacy_mode_enabled"]
+            ):
+                return _tool_error_result(
+                    request_id=request_id,
+                    code="beta_binding_provider_not_exact",
+                    message="Beta provider state is not exact",
+                )
+            activation = await prepare_beta_katya_candidate_binding(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                now=datetime.now(UTC),
+            )
+            prompt_delivery = "not_attempted"
+            if activation.prompt_required:
+                if activation.telegram_chat_id is None:
+                    raise BetaCandidateBindingError(
+                        "beta_binding_prompt_target_missing"
+                    )
+                beta_telegram = TelegramClient(
+                    credential=(
+                        settings.telegram_beta_bot_token.get_secret_value()
+                    ),
+                    http_client=http_client,
+                )
+                try:
+                    response = await beta_telegram.send_plain_message(
+                        chat_id=activation.telegram_chat_id,
+                        text=BETA_CONSENT_PROMPT,
+                    )
+                    message_id = response.get("result", {}).get("message_id")
+                    if type(message_id) is not int:
+                        raise RuntimeError("beta_binding_prompt_unconfirmed")
+                    prompt_delivery = "sent"
+                except Exception:
+                    await revoke_beta_katya_binding_after_unknown_prompt(
+                        session,
+                        workspace_key=principal.access_scope.workspace_id,
+                    )
+                    prompt_delivery = "unknown"
     except TelegramWebhookStatusError as exc:
         return _tool_error_result(
             request_id=request_id,
             code=exc.code,
             message=exc.code,
         )
+    except BetaCandidateBindingError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message="Beta candidate binding failed closed",
+        )
+    activation_payload = activation.redacted(prompt_delivery=prompt_delivery)
+    if prompt_delivery == "unknown":
+        activation_payload["state"] = "prompt_delivery_unknown"
+        activation_payload["prompt_required"] = False
     webhook_state = "exact" if probe["webhook"]["exact_match"] else "mismatch"
     return _tool_result(
-        {"probe": probe},
+        {"probe": probe, "activation": activation_payload},
         (
             f"Beta provider probe: webhook={webhook_state}; "
             f"pending={probe['webhook']['pending_update_count']}; "
-            "ordinary_group_messages="
-            f"{probe['identity']['ordinary_group_messages_available']}"
+            f"activation={activation_payload['state']}; "
+            f"candidate_count={activation_payload['candidate_count']}; "
+            f"prompt_delivery={activation_payload['prompt_delivery']}"
         ),
         request_id,
     )
-
 
 async def _alpha_list_installations_tool_result(
     *,
@@ -2072,13 +2135,13 @@ def _gate_beta_export_space_checkpoint_tool(settings: Settings) -> JsonObject:
 def _gate_beta_get_provider_probe_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_beta_get_provider_probe",
-        "title": "Probe Beta Telegram provider state",
+        "title": "Probe and activate the Katya Beta Space",
         "description": (
-            "After exact owner confirmation, call only Telegram Bot API "
-            "getWebhookInfo and getMe for the configured Beta bot. Return a "
-            "redacted webhook/privacy snapshot without tokens or Telegram IDs. "
-            "The tool cannot set or delete webhooks, send messages, read history "
-            "or inspect participants."
+            "After exact owner confirmation, probe the configured Beta bot and "
+            "attempt one fail-closed private binding from eligible post-claim "
+            "receipts. It rejects zero, multiple or conflicting candidates, "
+            "never returns Telegram identifiers or payloads, and sends at most "
+            "one non-clinical consent prompt after an exact binding."
         ),
         "inputSchema": {
             "type": "object",
@@ -2092,7 +2155,7 @@ def _gate_beta_get_provider_probe_tool(settings: Settings) -> JsonObject:
             "gate_beta_get_provider_probe"
         ],
         "annotations": {
-            "readOnlyHint": True,
+            "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": True,
             "openWorldHint": True,
