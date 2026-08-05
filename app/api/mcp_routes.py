@@ -93,6 +93,7 @@ from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
 )
+from app.infrastructure.beta_space import beta_katya_space_operational_status
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
 from app.infrastructure.openai_transcription import (
@@ -306,6 +307,11 @@ async def mcp_endpoint(
                 session=session,
                 settings=settings,
                 workspace_key=principal.access_scope.workspace_id,
+            )
+            snapshot["beta_katya_space"] = await beta_katya_space_operational_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                settings=settings,
             )
             snapshot["universal_mayak"] = await universal_mayak_operational_status(
                 session,
@@ -3044,6 +3050,20 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"{alpha['model_shadow']['budget']['reserved_microusd'] / 1_000_000:.6f}",
             f"- budget_remaining: $"
             f"{alpha['model_shadow']['budget']['remaining_microusd'] / 1_000_000:.6f}",
+        ]
+    )
+    beta_katya = snapshot["beta_katya_space"]
+    lines.extend(
+        [
+            "",
+            "Beta — Зубы Кати:",
+            f"- state: {beta_katya['state']}",
+            f"- production_ready: {beta_katya['production_ready']}",
+            f"- binding_state: {beta_katya['binding_state']}",
+            f"- consent_count: {beta_katya['consent_count']}",
+            f"- fact_count: {beta_katya['fact_count']}",
+            f"- delivery_sent_count: {beta_katya['delivery_sent_count']}",
+            f"- delivery_unknown_count: {beta_katya['delivery_unknown_count']}",
         ]
     )
     voice = snapshot["telegram_voice"]
