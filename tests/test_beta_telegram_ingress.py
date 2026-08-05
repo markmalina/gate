@@ -1,7 +1,9 @@
 """Isolation and fail-closed tests for the Beta Telegram ingress."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from app.api import beta_telegram_ingress as beta_ingress
@@ -10,6 +12,7 @@ from app.application.telegram_processing import (
     TelegramReceiptAcceptance,
 )
 from app.core.config import Settings
+from starlette.requests import Request
 
 
 class CapturingStore:
@@ -80,11 +83,9 @@ def test_beta_secret_is_independent_and_group_receipt_uses_beta_key() -> None:
     assert store.commands[0].bot_key == "telegram_beta_group"
 
 
-def test_private_chat_and_wrong_secret_fail_before_storage() -> None:
+def test_private_chat_is_ignored_and_wrong_secret_fails_before_storage() -> None:
     store = CapturingStore()
-    with pytest.raises(beta_ingress.HTTPException) as private_error:
-        _accept(_settings(), store, _update("private"))
-    assert private_error.value.status_code == 400
+    assert _accept(_settings(), store, _update("private")) is None
 
     with pytest.raises(beta_ingress.HTTPException) as secret_error:
         asyncio.run(
@@ -108,13 +109,45 @@ def test_enabled_registry_still_has_no_send_authorization() -> None:
     assert connector.send_authorizations == frozenset()
 
 
-def test_mixed_or_unapproved_update_shape_fails_before_storage() -> None:
+def test_mixed_or_unapproved_update_shape_is_ignored_before_storage() -> None:
     store = CapturingStore()
     mixed = _update()
     mixed["callback_query"] = {"id": "unexpected"}
 
-    with pytest.raises(beta_ingress.HTTPException) as captured:
-        _accept(_settings(), store, mixed)
+    assert _accept(_settings(), store, mixed) is None
+    assert store.commands == []
 
-    assert captured.value.status_code == 400
+
+def test_private_update_gets_terminal_success_response_without_storage() -> None:
+    store = CapturingStore()
+    payload = json.dumps(_update("private")).encode()
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": payload, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": beta_ingress.BETA_TELEGRAM_WEBHOOK_PATH,
+            "headers": [],
+        },
+        receive,
+    )
+    result = asyncio.run(
+        beta_ingress.beta_telegram_webhook(
+            request=request,
+            x_telegram_secret="beta-secret",
+            settings=_settings(),
+            receipt_store=store,
+            beta_space_store=cast(beta_ingress.SqlBetaSpaceStore, object()),
+        )
+    )
+
+    assert result == {
+        "ok": True,
+        "accepted": False,
+        "ignored": True,
+        "reason": "unsupported_update",
+    }
     assert store.commands == []
