@@ -332,6 +332,57 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     ),
                 }
             ),
+            "beta_katya_space": _object(
+                {
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "connector_not_ready",
+                            "configuration_incomplete",
+                            "awaiting_binding",
+                            "awaiting_consent",
+                            "reconciliation_required",
+                            "active",
+                            "revoked",
+                        ],
+                    },
+                    "gates": _object(
+                        {
+                            "production": {"type": "boolean"},
+                            "connector": {"type": "boolean"},
+                            "privacy_mode_confirmed": {"type": "boolean"},
+                            "space_enabled": {"type": "boolean"},
+                            "space_ready": {"type": "boolean"},
+                            "delivery_enabled": {"type": "boolean"},
+                        }
+                    ),
+                    "configured": _object(
+                        {
+                            "chat_binding": {"type": "boolean"},
+                            "subject_binding": {"type": "boolean"},
+                            "consent_digest": {"type": "boolean"},
+                        }
+                    ),
+                    "binding_state": {
+                        "type": "string",
+                        "enum": ["absent", "ready", "consented", "revoked"],
+                    },
+                    "production_ready": {"type": "boolean"},
+                    "event_count": {"type": "integer", "minimum": 0},
+                    "consent_count": {"type": "integer", "minimum": 0},
+                    "fact_count": {"type": "integer", "minimum": 0},
+                    "delivery_sent_count": {"type": "integer", "minimum": 0},
+                    "delivery_unknown_count": {"type": "integer", "minimum": 0},
+                    "private_identifiers_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "private_payload_exposed": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                }
+            ),
             "universal_mayak": _object(
                 {
                     "state": {
