@@ -206,3 +206,30 @@ async def prepare_beta_katya_candidate_binding(
         candidate.telegram_chat_id,
     )
 
+
+async def revoke_beta_katya_binding_after_unknown_prompt(
+    session: AsyncSession, *, workspace_key: str
+) -> None:
+    """Make an ambiguous prompt delivery terminal and non-retryable."""
+
+    workspace = await session.scalar(
+        select(Workspace).where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+        )
+    )
+    if workspace is None:
+        raise BetaCandidateBindingError("beta_binding_workspace_missing")
+    binding = await session.scalar(
+        select(BetaSpaceBindingModel)
+        .where(
+            BetaSpaceBindingModel.workspace_id == workspace.id,
+            BetaSpaceBindingModel.space_ref == BETA_SPACE_REF,
+            BetaSpaceBindingModel.state == "ready",
+        )
+        .with_for_update()
+    )
+    if binding is None:
+        raise BetaCandidateBindingError("beta_binding_prompt_state_conflict")
+    binding.state = "revoked"
+    await session.commit()
