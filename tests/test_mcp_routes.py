@@ -12,7 +12,11 @@ from jsonschema import Draft202012Validator, FormatChecker
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
-from app.api.mcp_routes import _counterparty, _serialize_connection_health
+from app.api.mcp_routes import (
+    MCP_TOOL_SCOPES,
+    _counterparty,
+    _serialize_connection_health,
+)
 from app.core.config import get_settings
 from app.main import app
 
@@ -780,6 +784,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_alpha_send_review",
         "gate_alpha_verify_review_replay",
         "gate_beta_export_space_checkpoint",
+        "gate_beta_get_provider_probe",
     ]
     for tool in tools:
         assert tool["outputSchema"] == MCP_TOOL_OUTPUT_SCHEMAS[tool["name"]]
@@ -797,6 +802,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_alpha_send_review",
         "gate_alpha_verify_review_replay",
         "gate_beta_export_space_checkpoint",
+        "gate_beta_get_provider_probe",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
     assert tools[0]["annotations"]["readOnlyHint"] is True
@@ -852,6 +858,16 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "idempotentHint": True,
         "openWorldHint": False,
     }
+    assert tools[15]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    assert (
+        MCP_TOOL_SCOPES["gate_beta_get_provider_probe"]
+        == "gate:agents:manage"
+    )
 
 
 @pytest.mark.anyio
