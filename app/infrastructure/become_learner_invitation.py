@@ -183,6 +183,21 @@ class SessionFactoryLearnerInvitationStore:
             if candidate is None or candidate["state"] not in {"candidate", "pinned"}:
                 raise Slice3Error("slice3_candidate_unpinned_or_missing")
             if (
+                candidate["telegram_actor_id"] is None
+                or candidate["private_dialog_id"] is None
+                or candidate["bot_installation_identity"] is None
+                or candidate["become_space_ref"] is None
+            ):
+                raise Slice3Error("slice3_candidate_binding_unavailable")
+            recomputed_binding = learner_binding_digest(
+                telegram_actor_id=str(candidate["telegram_actor_id"]),
+                private_dialog_id=str(candidate["private_dialog_id"]),
+                bot_installation_identity=str(candidate["bot_installation_identity"]),
+                become_space_ref=str(candidate["become_space_ref"]),
+            )
+            if recomputed_binding != command.learner_binding_digest:
+                raise Slice3Error("slice3_candidate_binding_mutated")
+            if (
                 candidate["subject_ref"] == command.expert_subject_ref
                 or candidate["become_space_ref"] != command.become_space_ref
                 or candidate["bot_installation_identity"] != command.bot_installation_identity
@@ -228,8 +243,10 @@ class SessionFactoryLearnerInvitationStore:
                 "bot_installation_identity": command.bot_installation_identity,
                 "consent_policy_digest": command.consent_policy_digest,
                 "consent_policy_version": command.consent_policy_version,
+                "expert_dialog_id": str(program["expert_dialog"]),
                 "expert_subject_ref": command.expert_subject_ref,
                 "learner_binding_digest": command.learner_binding_digest,
+                "program_dialog_id": str(program["dialog_id"]),
                 "program_id": command.program_id,
             }
             invitation_digest = canonical_digest(tuple_value)
@@ -424,8 +441,10 @@ class SessionFactoryLearnerInvitationStore:
                 "bot_installation_identity": row["bot_installation_identity"],
                 "consent_policy_digest": row["consent_policy_digest"],
                 "consent_policy_version": row["consent_policy_version"],
+                "expert_dialog_id": str(row["expert_dialog"]),
                 "expert_subject_ref": row["expert_subject_ref"],
                 "learner_binding_digest": row["learner_binding_digest"],
+                "program_dialog_id": str(row["program_dialog_id"]),
                 "program_id": str(row["program_id"]),
             }
             if (
