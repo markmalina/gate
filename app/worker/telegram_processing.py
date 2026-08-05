@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -819,7 +820,10 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 business_text_parity_disposition = parity.disposition
 
         alpha_canary_disposition = "not_applicable"
-        if connector.role is TelegramConnectorRole.ALPHA_GROUP:
+        if (
+            connector.role is TelegramConnectorRole.ALPHA_GROUP
+            and not _is_beta_space_owned_update(self._settings, payload)
+        ):
             if connector.key is TelegramConnectorKey.BETA_GROUP:
                 group_canary = self._beta_canary
                 canary_enabled = self._settings.gate_beta_canary_enabled
@@ -1080,6 +1084,20 @@ async def run_telegram_worker_once(
         attempt=result.attempt,
         error_code=result.error_code,
     )
+
+
+def _is_beta_space_owned_update(settings: Settings, payload: dict[str, object]) -> bool:
+    """Keep a configured isolated Space out of the legacy Beta canary/model path."""
+
+    if not settings.gate_beta_katya_space_enabled:
+        return False
+    configured = settings.gate_beta_katya_chat_id.get_secret_value().strip()
+    message = payload.get("message")
+    chat = message.get("chat") if isinstance(message, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if not configured or type(chat_id) is not int:
+        return False
+    return hmac.compare_digest(str(chat_id).encode(), configured.encode())
 
 
 def _optional_installation_key(raw_value: str) -> str | None:
