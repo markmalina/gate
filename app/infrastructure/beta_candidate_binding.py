@@ -140,7 +140,7 @@ def extract_beta_group_candidate(
 ) -> BetaGroupCandidate | None:
     """Select only the exact existing group from a durable bot-membership receipt."""
 
-    if received_at.tzinfo is None or received_at < BETA_BINDING_EVIDENCE_NOT_BEFORE:
+    if received_at.tzinfo is None:
         return None
     if not isinstance(payload, dict):
         return None
@@ -202,10 +202,7 @@ async def find_beta_katya_group_candidate(
     receipts = (
         await session.scalars(
             select(TelegramReceipt)
-            .where(
-                TelegramReceipt.bot_key == BETA_CONNECTOR_KEY,
-                TelegramReceipt.received_at >= BETA_BINDING_EVIDENCE_NOT_BEFORE,
-            )
+            .where(TelegramReceipt.bot_key == BETA_CONNECTOR_KEY)
             .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
         )
     ).all()
