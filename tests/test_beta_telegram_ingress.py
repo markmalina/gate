@@ -151,3 +151,35 @@ def test_private_update_gets_terminal_success_response_without_storage() -> None
         "reason": "unsupported_update",
     }
     assert store.commands == []
+
+
+def _callback_update(chat_type: str = "supergroup") -> dict[str, object]:
+    return {
+        "update_id": 82,
+        "callback_query": {
+            "id": "callback-82",
+            "from": {"id": 740000001, "is_bot": False},
+            "data": "beta:katya:consent:yes",
+            "message": {
+                "message_id": 92,
+                "chat": {"id": -100730000001, "type": chat_type},
+            },
+        },
+    }
+
+
+def test_group_callback_is_durably_accepted_for_subject_verification() -> None:
+    store = CapturingStore()
+
+    acceptance = _accept(_settings(), store, _callback_update())
+
+    assert acceptance.duplicate is False
+    assert len(store.commands) == 1
+    assert store.commands[0].bot_key == "telegram_beta_group"
+
+
+def test_private_callback_is_ignored_before_storage() -> None:
+    store = CapturingStore()
+
+    assert _accept(_settings(), store, _callback_update("private")) is None
+    assert store.commands == []

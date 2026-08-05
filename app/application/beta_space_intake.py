@@ -16,6 +16,8 @@ KATYA_CONSENT_TEXT = (
     "Я согласна, чтобы Бета сохраняла и систематизировала новые сообщения "
     "о моих зубах и лечении из этой группы"
 )
+BETA_CONSENT_CALLBACK_YES = "beta:katya:consent:yes"
+BETA_CONSENT_CALLBACK_NO = "beta:katya:consent:no"
 
 CONSENT_RESPONSE = (
     "Катя, согласие получено. Я буду собирать и систематизировать только ту "
@@ -34,6 +36,7 @@ class BetaSpaceDisposition(StrEnum):
     ACTOR_MISMATCH = "actor_mismatch"
     CONSENT_REQUIRED = "consent_required"
     CONSENT_ACCEPTED = "consent_accepted"
+    CONSENT_DECLINED = "consent_declined"
     FACT_ACCEPTED = "fact_accepted"
     DUPLICATE = "duplicate"
     UNSUPPORTED = "unsupported"
@@ -130,12 +133,21 @@ class ProcessBetaSpaceUpdate:
     ) -> BetaSpaceIntakeResult:
         if not self._production_ready:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.DISABLED)
+        callback = extract_beta_consent_callback_source(
+            update=update, receipt_id=receipt_id, received_at=received_at
+        )
         source_and_text = extract_beta_space_source(
             update=update, receipt_id=receipt_id, received_at=received_at
         )
-        if source_and_text is None:
+        if callback is None and source_and_text is None:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.NOT_APPLICABLE)
-        source, text = source_and_text
+        if callback is not None:
+            source, consent_decision = callback
+            text = None
+        else:
+            assert source_and_text is not None
+            source, text = source_and_text
+            consent_decision = None
         binding = await self._store.resolve_binding(
             telegram_chat_id=source.telegram_chat_id
         )
@@ -158,7 +170,9 @@ class ProcessBetaSpaceUpdate:
             hashlib.sha256(text.encode()).hexdigest(), binding.consent_sha256
         )
         if binding.state == "ready":
-            if not exact_consent:
+            if consent_decision == "no":
+                return BetaSpaceIntakeResult(BetaSpaceDisposition.CONSENT_DECLINED, **scope)
+            if consent_decision != "yes":
                 return BetaSpaceIntakeResult(BetaSpaceDisposition.CONSENT_REQUIRED, **scope)
             reservation = await self._store.reserve_consent(binding=binding, source=source)
             if not reservation.created:
@@ -169,7 +183,7 @@ class ProcessBetaSpaceUpdate:
                 **scope,
             )
 
-        if exact_consent:
+        if consent_decision is not None or exact_consent:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.DUPLICATE, **scope)
         if source.media_kind not in {"text", "voice", "photo", "document"}:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.UNSUPPORTED, **scope)
@@ -280,4 +294,59 @@ def extract_beta_space_source(
             payload_sha256=hashlib.sha256(payload).hexdigest(),
         ),
         text,
+    )
+
+
+def extract_beta_consent_callback_source(
+    *, update: JsonObject, receipt_id: str, received_at: datetime
+) -> tuple[BetaSpaceSource, str] | None:
+    """Extract only the two exact inline-consent actions from one group callback."""
+
+    update_id = update.get("update_id")
+    callback = update.get("callback_query")
+    if type(update_id) is not int or not isinstance(callback, dict):
+        return None
+    callback_id = callback.get("id")
+    data = callback.get("data")
+    actor = callback.get("from")
+    message = callback.get("message")
+    if (
+        not isinstance(callback_id, str)
+        or not callback_id
+        or data not in {BETA_CONSENT_CALLBACK_YES, BETA_CONSENT_CALLBACK_NO}
+        or not isinstance(actor, dict)
+        or type(actor.get("id")) is not int
+        or actor.get("is_bot") is not False
+        or not isinstance(message, dict)
+    ):
+        return None
+    chat = message.get("chat")
+    message_id = message.get("message_id")
+    if (
+        not isinstance(chat, dict)
+        or chat.get("type") not in {"group", "supergroup"}
+        or type(chat.get("id")) is not int
+        or type(message_id) is not int
+    ):
+        return None
+    payload = json.dumps(
+        update,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return (
+        BetaSpaceSource(
+            receipt_id=receipt_id,
+            update_id=update_id,
+            telegram_chat_id=str(chat["id"]),
+            telegram_user_id=str(actor["id"]),
+            telegram_message_id=str(message_id),
+            occurred_at=received_at,
+            received_at=received_at,
+            media_kind="callback",
+            payload_sha256=hashlib.sha256(payload).hexdigest(),
+        ),
+        "yes" if data == BETA_CONSENT_CALLBACK_YES else "no",
     )
