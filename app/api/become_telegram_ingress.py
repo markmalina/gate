@@ -80,8 +80,11 @@ async def accept_become_telegram_receipt(
     update_id = update.get("update_id")
     if type(update_id) is not int or update_id < 0 or update_id > TELEGRAM_UPDATE_ID_MAX:
         raise HTTPException(status_code=400, detail="Invalid Telegram update id")
-    if not _is_group_update(update):
-        raise HTTPException(status_code=400, detail="BECOME accepts group updates only")
+    if not _is_allowed_update(
+        update,
+        allow_private=settings.gate_become_pilot_slice3_enabled,
+    ):
+        raise HTTPException(status_code=400, detail="BECOME update scope is not allowed")
     try:
         return await AcceptTelegramReceiptService(receipt_store).execute(
             AcceptTelegramReceiptCommand(
@@ -99,7 +102,7 @@ async def accept_become_telegram_receipt(
         ) from None
 
 
-def _is_group_update(update: JsonObject) -> bool:
+def _is_allowed_update(update: JsonObject, *, allow_private: bool) -> bool:
     update_kinds = {key for key in update if key != "update_id"}
     if update_kinds not in (
         {"message"},
@@ -110,7 +113,10 @@ def _is_group_update(update: JsonObject) -> bool:
     message = update.get("message")
     if isinstance(message, dict):
         chat = message.get("chat")
-        return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
+        return isinstance(chat, dict) and (
+            chat.get("type") in {"group", "supergroup"}
+            or (allow_private and chat.get("type") == "private")
+        )
     membership = update.get("my_chat_member")
     if isinstance(membership, dict):
         chat = membership.get("chat")
@@ -119,7 +125,10 @@ def _is_group_update(update: JsonObject) -> bool:
     callback_message = callback.get("message") if isinstance(callback, dict) else None
     if isinstance(callback_message, dict):
         chat = callback_message.get("chat")
-        return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
+        return isinstance(chat, dict) and (
+            chat.get("type") in {"group", "supergroup"}
+            or (allow_private and chat.get("type") == "private")
+        )
     return False
 
 
