@@ -7,6 +7,7 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
+
 from app.api import beta_telegram_ingress as beta_ingress
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
