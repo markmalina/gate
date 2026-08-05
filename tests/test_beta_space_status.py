@@ -38,7 +38,7 @@ async def test_status_is_redacted_when_activation_configuration_is_missing() -> 
         settings=settings,
     )
 
-    assert result["state"] == "configuration_incomplete"
+    assert result["state"] == "awaiting_binding"
     assert result["binding_state"] == "absent"
     assert result["event_count"] == 0
     assert result["private_identifiers_exposed"] is False
