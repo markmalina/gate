@@ -7,8 +7,14 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_db_session
 from app.api.telegram_ingress import get_telegram_receipt_store
+from app.application.beta_space_intake import (
+    DeliverBetaSpaceConsent,
+    ProcessBetaSpaceUpdate,
+)
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
@@ -18,6 +24,11 @@ from app.application.telegram_processing import (
 )
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import TelegramConnectorKey
+from app.infrastructure.beta_space import (
+    SqlBetaSpaceStore,
+    beta_space_production_ready,
+)
+from app.services.telegram import TelegramClient
 
 BETA_TELEGRAM_WEBHOOK_PATH = "/telegram/beta/webhook"
 TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
@@ -25,7 +36,25 @@ TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
 router = APIRouter()
 settings_dependency = Depends(get_settings)
 receipt_store_dependency = Depends(get_telegram_receipt_store)
+db_session_dependency = Depends(get_db_session)
 JsonObject = dict[str, Any]
+
+
+def get_beta_telegram_client(request: Request) -> TelegramClient:
+    telegram = getattr(request.app.state, "beta_telegram_client", None)
+    if not isinstance(telegram, TelegramClient):
+        raise RuntimeError("Beta Telegram client is not initialized")
+    return telegram
+
+
+def get_beta_space_store(
+    session: AsyncSession = db_session_dependency,
+) -> SqlBetaSpaceStore:
+    return SqlBetaSpaceStore(session)
+
+
+beta_telegram_dependency = Depends(get_beta_telegram_client)
+beta_space_store_dependency = Depends(get_beta_space_store)
 
 
 @router.post(BETA_TELEGRAM_WEBHOOK_PATH)
@@ -36,6 +65,8 @@ async def beta_telegram_webhook(
     ] = None,
     settings: Settings = settings_dependency,
     receipt_store: TelegramReceiptStore = receipt_store_dependency,
+    telegram: TelegramClient = beta_telegram_dependency,
+    beta_space_store: SqlBetaSpaceStore = beta_space_store_dependency,
 ) -> JsonObject:
     """Authenticate and durably accept one group-only update without legacy dispatch."""
 
@@ -45,14 +76,37 @@ async def beta_telegram_webhook(
         raise HTTPException(status_code=400, detail="Invalid Telegram update") from None
     if not isinstance(raw_update, dict):
         raise HTTPException(status_code=400, detail="Invalid Telegram update")
+    received_at = datetime.now(UTC)
+    update = cast(JsonObject, raw_update)
     acceptance = await accept_beta_telegram_receipt(
-        update=cast(JsonObject, raw_update),
+        update=update,
         provided_secret=x_telegram_secret,
         settings=settings,
         receipt_store=receipt_store,
-        received_at=datetime.now(UTC),
+        received_at=received_at,
     )
-    return {"ok": True, "accepted": True, "duplicate": acceptance.duplicate}
+    intake = await ProcessBetaSpaceUpdate(
+        store=beta_space_store,
+        production_ready=beta_space_production_ready(settings),
+    ).execute(
+        update=update,
+        receipt_id=acceptance.receipt_id,
+        received_at=received_at,
+    )
+    delivery = None
+    if intake.delivery_id is not None:
+        delivery = await DeliverBetaSpaceConsent(
+            store=beta_space_store,
+            telegram=telegram,
+            enabled=beta_space_production_ready(settings),
+        ).execute(delivery_id=intake.delivery_id, now=received_at)
+    return {
+        "ok": True,
+        "accepted": True,
+        "duplicate": acceptance.duplicate,
+        "space_processing": intake.disposition.value,
+        "delivery": delivery,
+    }
 
 
 async def accept_beta_telegram_receipt(
