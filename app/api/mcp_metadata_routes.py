@@ -107,10 +107,10 @@ async def mcp_metadata(
             ],
             "write": [
                 "gate_save_reply_draft",
-                "gate_beta_get_provider_probe",
                 "gate_alpha_control_installation",
                 "gate_alpha_run_model_preflight",
                 "gate_alpha_get_test_group_presence",
+                "gate_beta_get_provider_probe",
             ],
             "send": [
                 "gate_send_approved_reply",
@@ -145,10 +145,10 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "write_tools_enabled": True,
         "write_tools": [
             "gate_save_reply_draft",
-            "gate_beta_get_provider_probe",
             "gate_alpha_control_installation",
             "gate_alpha_run_model_preflight",
             "gate_alpha_get_test_group_presence",
+            "gate_beta_get_provider_probe",
         ],
         "send_tools_enabled": settings.gate_send_enabled,
         "send_tools": [
