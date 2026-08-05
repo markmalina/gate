@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401
     become_quest,
     become_recovery,
     beta_context,
+    beta_space,
     billing,
     canonical,
     relationship_crm,
