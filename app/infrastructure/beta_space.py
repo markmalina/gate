@@ -106,8 +106,7 @@ async def reconcile_beta_katya_space_binding(
                 BetaSpaceBindingModel.workspace_id == workspace.id,
                 BetaSpaceBindingModel.space_ref == BETA_SPACE_REF,
             )
-                .with_for_update()
-            ),
+            .with_for_update()
         )
         expected = (
             connector.id,
