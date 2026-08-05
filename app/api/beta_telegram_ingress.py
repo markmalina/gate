@@ -99,14 +99,22 @@ async def beta_telegram_webhook(
         receipt_id=acceptance.receipt_id,
         received_at=received_at,
     )
-    beta_telegram = get_beta_telegram_client(request)
-    callback_delivery = await _settle_beta_consent_callback(
-        telegram=beta_telegram,
-        update=update,
-        disposition=intake.disposition,
-    )
+    beta_telegram = None
+    callback_delivery = None
+    if intake.disposition in {
+        BetaSpaceDisposition.CONSENT_ACCEPTED,
+        BetaSpaceDisposition.CONSENT_DECLINED,
+    }:
+        beta_telegram = get_beta_telegram_client(request)
+        callback_delivery = await _settle_beta_consent_callback(
+            telegram=beta_telegram,
+            update=update,
+            disposition=intake.disposition,
+        )
     delivery = None
     if intake.delivery_id is not None:
+        if beta_telegram is None:
+            beta_telegram = get_beta_telegram_client(request)
         delivery = await DeliverBetaSpaceConsent(
             store=beta_space_store,
             telegram=beta_telegram,
