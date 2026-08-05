@@ -152,6 +152,8 @@ async def become_slice3_production_evidence(
             )
         ).mappings().one()
     except Exception:
+        if hasattr(session, "rollback"):
+            await session.rollback()
         return {
             "schema": STATUS_SCHEMA,
             "ready": False,
