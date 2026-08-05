@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -57,6 +57,131 @@ def beta_space_production_ready(settings: Settings) -> bool:
             settings.gate_beta_katya_delivery_enabled,
         )
     )
+
+
+async def beta_katya_space_operational_status(
+    session: AsyncSession,
+    *,
+    workspace_key: str,
+    settings: Settings,
+) -> dict[str, object]:
+    """Return a redacted activation snapshot without Telegram identifiers or payloads."""
+
+    workspace_id = await session.scalar(
+        select(Workspace.id).where(
+            Workspace.key == workspace_key,
+            Workspace.is_active.is_(True),
+        )
+    )
+    binding = None
+    event_count = 0
+    consent_count = 0
+    fact_count = 0
+    delivery_sent_count = 0
+    delivery_unknown_count = 0
+    if workspace_id is not None:
+        binding = await session.scalar(
+            select(BetaSpaceBindingModel).where(
+                BetaSpaceBindingModel.workspace_id == workspace_id,
+                BetaSpaceBindingModel.space_ref == BETA_SPACE_REF,
+            )
+        )
+        if binding is not None:
+            event_count = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceEventModel.id)).where(
+                        BetaSpaceEventModel.workspace_id == workspace_id,
+                        BetaSpaceEventModel.binding_id == binding.id,
+                    )
+                )
+                or 0
+            )
+            consent_count = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceEventModel.id)).where(
+                        BetaSpaceEventModel.workspace_id == workspace_id,
+                        BetaSpaceEventModel.binding_id == binding.id,
+                        BetaSpaceEventModel.event_kind == "consent",
+                    )
+                )
+                or 0
+            )
+            fact_count = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceEventModel.id)).where(
+                        BetaSpaceEventModel.workspace_id == workspace_id,
+                        BetaSpaceEventModel.binding_id == binding.id,
+                        BetaSpaceEventModel.event_kind == "fact",
+                    )
+                )
+                or 0
+            )
+            delivery_sent_count = int(
+                await session.scalar(
+                    select(func.count(BetaConsentDeliveryModel.id)).where(
+                        BetaConsentDeliveryModel.workspace_id == workspace_id,
+                        BetaConsentDeliveryModel.binding_id == binding.id,
+                        BetaConsentDeliveryModel.state == "sent",
+                    )
+                )
+                or 0
+            )
+            delivery_unknown_count = int(
+                await session.scalar(
+                    select(func.count(BetaConsentDeliveryModel.id)).where(
+                        BetaConsentDeliveryModel.workspace_id == workspace_id,
+                        BetaConsentDeliveryModel.binding_id == binding.id,
+                        BetaConsentDeliveryModel.state == "unknown",
+                    )
+                )
+                or 0
+            )
+
+    configured = {
+        "chat_binding": bool(settings.gate_beta_katya_chat_id.get_secret_value().strip()),
+        "subject_binding": bool(settings.gate_beta_katya_user_id.get_secret_value().strip()),
+        "consent_digest": bool(
+            settings.gate_beta_katya_consent_sha256.get_secret_value().strip()
+        ),
+    }
+    gates = {
+        "production": settings.gate_env == "production",
+        "connector": settings.gate_beta_connector_enabled,
+        "privacy_mode_confirmed": settings.gate_beta_privacy_mode_confirmed,
+        "space_enabled": settings.gate_beta_katya_space_enabled,
+        "space_ready": settings.gate_beta_katya_space_ready,
+        "delivery_enabled": settings.gate_beta_katya_delivery_enabled,
+    }
+    binding_state = binding.state if binding is not None else "absent"
+    if not gates["production"] or not gates["connector"]:
+        state = "connector_not_ready"
+    elif not all(gates.values()) or not all(configured.values()):
+        state = "configuration_incomplete"
+    elif binding is None:
+        state = "awaiting_binding"
+    elif binding_state == "ready":
+        state = "awaiting_consent"
+    elif binding_state == "consented" and delivery_unknown_count:
+        state = "reconciliation_required"
+    elif binding_state == "consented":
+        state = "active"
+    else:
+        state = "revoked"
+
+    return {
+        "state": state,
+        "gates": gates,
+        "configured": configured,
+        "binding_state": binding_state,
+        "production_ready": beta_space_production_ready(settings),
+        "event_count": event_count,
+        "consent_count": consent_count,
+        "fact_count": fact_count,
+        "delivery_sent_count": delivery_sent_count,
+        "delivery_unknown_count": delivery_unknown_count,
+        "private_identifiers_exposed": False,
+        "private_payload_exposed": False,
+    }
 
 
 async def reconcile_beta_katya_space_binding(

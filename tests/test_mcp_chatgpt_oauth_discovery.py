@@ -443,6 +443,37 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
         }
 
 
+    async def beta_katya_status(
+        *_args: object,
+        **_kwargs: object,
+    ) -> dict[str, object]:
+        return {
+            "state": "configuration_incomplete",
+            "gates": {
+                "production": False,
+                "connector": False,
+                "privacy_mode_confirmed": False,
+                "space_enabled": False,
+                "space_ready": False,
+                "delivery_enabled": False,
+            },
+            "configured": {
+                "chat_binding": False,
+                "subject_binding": False,
+                "consent_digest": False,
+            },
+            "binding_state": "absent",
+            "production_ready": False,
+            "event_count": 0,
+            "consent_count": 0,
+            "fact_count": 0,
+            "delivery_sent_count": 0,
+            "delivery_unknown_count": 0,
+            "private_identifiers_exposed": False,
+            "private_payload_exposed": False,
+        }
+
+
     async def connectivity_status(
         *_args: object,
         **_kwargs: object,
@@ -508,6 +539,10 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     monkeypatch.setattr(
         "app.api.mcp_routes.probe_all_i4_connectivity",
         connectivity_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.beta_katya_space_operational_status",
+        beta_katya_status,
     )
     response = await _post(
         {
