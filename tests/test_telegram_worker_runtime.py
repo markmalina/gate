@@ -739,9 +739,12 @@ def test_resolved_business_text_observes_exact_canonical_legacy_parity() -> None
     assert "private-connection" not in repr(command)
 
 
-def test_configured_isolated_beta_space_bypasses_legacy_canary_context() -> None:
+def test_owned_beta_space_bypasses_legacy_canonical_before_routing() -> None:
+    canonical = CapturingCanonicalStore()
     settings = Settings(
         _env_file=None,
+        GATE_BETA_CONNECTOR_ENABLED=True,
+        TELEGRAM_BETA_BOT_USERNAME="BetaViaBot",
         GATE_BETA_KATYA_SPACE_ENABLED=True,
         GATE_BETA_KATYA_CHAT_ID="-100990001",
     )
@@ -749,15 +752,36 @@ def test_configured_isolated_beta_space_bypasses_legacy_canary_context() -> None
         "update_id": 901,
         "message": {
             "message_id": 902,
-            "chat": {"id": -100990001, "type": "supergroup"},
+            "date": 1_785_913_200,
+            "chat": {
+                "id": -100990001,
+                "type": "supergroup",
+                "title": "Synthetic isolated Beta Space",
+            },
             "from": {"id": 770000001, "is_bot": False},
             "text": "synthetic dental fact",
         },
     }
+    processor = ShadowClassifyingTelegramProcessor(
+        settings=settings,
+        identity_reader=FakeIdentityReader(),
+        canonical_store=canonical,
+        runtime_logger=logging.getLogger("gate.worker.beta-space-isolation-test"),
+    )
+    owned_item = replace(
+        _work_item(bot_key="telegram_beta_group"),
+        update_id=901,
+        payload=payload,
+    )
 
     assert worker_module._is_beta_space_owned_update(settings, payload) is True
+    asyncio.run(processor.process(owned_item))
+    assert canonical.messages == []
+
     payload["message"]["chat"]["id"] = -100990002  # type: ignore[index]
     assert worker_module._is_beta_space_owned_update(settings, payload) is False
+    asyncio.run(processor.process(replace(owned_item, payload=payload)))
+    assert len(canonical.messages) == 1
     assert worker_module._is_beta_space_owned_update(
         Settings(_env_file=None), payload
     ) is False
