@@ -168,3 +168,12 @@ def test_creator_resolution_rejects_zero_or_multiple_exact_matches():
             },
         ]
     ) is None
+
+
+def test_project_start_membership_receipt_before_activation_window_is_eligible():
+    candidate = extract_beta_group_candidate(
+        payload=membership_payload(),
+        received_at=BETA_BINDING_EVIDENCE_NOT_BEFORE - timedelta(days=1),
+    )
+    assert candidate is not None
+    assert "-10001" not in repr(candidate)

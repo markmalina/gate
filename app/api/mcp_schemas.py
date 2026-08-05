@@ -1861,7 +1861,8 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                     },
                     "provider_calls": {
                         "type": "integer",
-                        "const": 2,
+                        "minimum": 2,
+                        "maximum": 5,
                     },
                     "call_surface": _object(
                         {
@@ -1875,11 +1876,20 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                                 "maxItems": 2,
                                 "uniqueItems": True,
                             },
+                            "mutation_methods": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["setWebhook"],
+                                },
+                                "maxItems": 1,
+                                "uniqueItems": True,
+                            },
                             "mutations_allowed": {
                                 "type": "boolean",
-                                "const": False,
                             },
-                        }
+                        },
+                        required=["read_methods", "mutations_allowed"],
                     ),
                     "webhook": _object(
                         {
