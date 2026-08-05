@@ -114,46 +114,47 @@ async def become_slice3_production_evidence(
         endpoint=settings.gate_become_pilot_slice3_relations_url,
     )
     try:
-        alembic_head = await session.scalar(
-            text("SELECT version_num FROM alembic_version")
-        )
-        row = (
-            await session.execute(
-                text(
-                    "SELECT "
-                    "(SELECT count(*) FROM become_slice3_learner_candidates) "
-                    "AS candidate_total_count,"
-                    "(SELECT count(*) FROM become_slice3_learner_candidates "
-                    " WHERE state='candidate') AS candidate_count,"
-                    "(SELECT count(*) FROM become_slice3_pilot_slots) AS slot_count,"
-                    "(SELECT count(*) FROM become_slice3_invitations) AS invitation_count,"
-                    "(SELECT count(*) FROM become_slice3_invitations "
-                    " WHERE state='accepted') AS accepted_count,"
-                    "(SELECT count(*) FROM become_slice3_invitations "
-                    " WHERE state IN ('pending_delivery','delivered') "
-                    " AND expires_at<=:now) AS expiry_due_count,"
-                    "(SELECT count(*) FROM become_slice3_acceptances) AS acceptance_count,"
-                    "(SELECT count(*) FROM become_slice3_deliveries) AS delivery_count,"
-                    "(SELECT count(*) FROM become_slice3_deliveries "
-                    " WHERE outcome='reserved') AS delivery_reserved_count,"
-                    "(SELECT count(*) FROM become_slice3_deliveries "
-                    " WHERE outcome='unknown') AS delivery_unknown_count,"
-                    "(SELECT count(*) FROM become_slice3_relations_outbox) AS outbox_count,"
-                    "(SELECT count(*) FROM become_slice3_relations_outbox "
-                    " WHERE outcome='reserved') AS outbox_reserved_count,"
-                    "(SELECT count(*) FROM become_slice3_relations_outbox "
-                    " WHERE outcome='unknown') AS relations_unknown_count,"
-                    "(SELECT count(*) FROM become_slice3_relations_outbox "
-                    " WHERE outcome='executed') AS relations_executed_count,"
-                    "(SELECT count(*) FROM become_slice3_learner_candidates "
-                    " WHERE state='tombstoned') AS candidate_tombstone_count"
-                ),
-                {"now": observed_at},
+        if not hasattr(session, "begin_nested"):
+            raise RuntimeError("slice3_nested_read_transaction_unavailable")
+        async with session.begin_nested():
+            alembic_head = await session.scalar(
+                text("SELECT version_num FROM alembic_version")
             )
-        ).mappings().one()
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT "
+                        "(SELECT count(*) FROM become_slice3_learner_candidates) "
+                        "AS candidate_total_count,"
+                        "(SELECT count(*) FROM become_slice3_learner_candidates "
+                        " WHERE state='candidate') AS candidate_count,"
+                        "(SELECT count(*) FROM become_slice3_pilot_slots) AS slot_count,"
+                        "(SELECT count(*) FROM become_slice3_invitations) AS invitation_count,"
+                        "(SELECT count(*) FROM become_slice3_invitations "
+                        " WHERE state='accepted') AS accepted_count,"
+                        "(SELECT count(*) FROM become_slice3_invitations "
+                        " WHERE state IN ('pending_delivery','delivered') "
+                        " AND expires_at<=:now) AS expiry_due_count,"
+                        "(SELECT count(*) FROM become_slice3_acceptances) AS acceptance_count,"
+                        "(SELECT count(*) FROM become_slice3_deliveries) AS delivery_count,"
+                        "(SELECT count(*) FROM become_slice3_deliveries "
+                        " WHERE outcome='reserved') AS delivery_reserved_count,"
+                        "(SELECT count(*) FROM become_slice3_deliveries "
+                        " WHERE outcome='unknown') AS delivery_unknown_count,"
+                        "(SELECT count(*) FROM become_slice3_relations_outbox) AS outbox_count,"
+                        "(SELECT count(*) FROM become_slice3_relations_outbox "
+                        " WHERE outcome='reserved') AS outbox_reserved_count,"
+                        "(SELECT count(*) FROM become_slice3_relations_outbox "
+                        " WHERE outcome='unknown') AS relations_unknown_count,"
+                        "(SELECT count(*) FROM become_slice3_relations_outbox "
+                        " WHERE outcome='executed') AS relations_executed_count,"
+                        "(SELECT count(*) FROM become_slice3_learner_candidates "
+                        " WHERE state='tombstoned') AS candidate_tombstone_count"
+                    ),
+                    {"now": observed_at},
+                )
+            ).mappings().one()
     except Exception:
-        if hasattr(session, "rollback"):
-            await session.rollback()
         return {
             "schema": STATUS_SCHEMA,
             "ready": False,
