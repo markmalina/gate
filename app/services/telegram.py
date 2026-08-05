@@ -200,6 +200,25 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/answerCallbackQuery"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def get_chat_member(
+        self,
+        *,
+        chat_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        """Return one current chat member for callback-owner verification."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+        if not chat_id or not user_id:
+            raise RuntimeError("Telegram chat and user ids are required")
+
+        url = f"{self._api_base_url}/bot{self._credential}/getChatMember"
+        return await self._post_telegram_json(
+            url=url,
+            payload={"chat_id": chat_id, "user_id": user_id},
+        )
+
     async def get_chat_administrators(
         self,
         *,

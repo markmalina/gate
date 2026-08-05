@@ -9,6 +9,7 @@ from app.infrastructure.beta_candidate_binding import (
     BETA_CONSENT_REPLY_MARKUP,
     BetaCandidateBindingResult,
     extract_beta_binding_candidate,
+    extract_beta_callback_owner_candidate,
     extract_beta_group_candidate,
     extract_beta_katya_creator,
 )
@@ -191,4 +192,51 @@ def test_creator_resolution_rejects_name_that_only_contains_katya_later():
                 },
             }
         ]
+    ) is None
+
+
+def test_exact_katya_button_callback_is_private_owner_candidate():
+    candidate = extract_beta_callback_owner_candidate(
+        {
+            "callback_query": {
+                "data": "beta:katya:consent:yes",
+                "from": {
+                    "id": 70001,
+                    "is_bot": False,
+                    "first_name": "Катя Малиновская ❤️",
+                },
+                "message": {
+                    "chat": {
+                        "id": -10001,
+                        "type": "supergroup",
+                        "title": BETA_BINDING_GROUP_TITLE,
+                    }
+                },
+            }
+        }
+    )
+    assert candidate is not None
+    assert "-10001" not in repr(candidate)
+    assert "70001" not in repr(candidate)
+
+
+def test_callback_owner_candidate_rejects_wrong_actor_or_group():
+    assert extract_beta_callback_owner_candidate(
+        {
+            "callback_query": {
+                "data": "beta:katya:consent:yes",
+                "from": {
+                    "id": 70001,
+                    "is_bot": False,
+                    "first_name": "Марк",
+                },
+                "message": {
+                    "chat": {
+                        "id": -10001,
+                        "type": "supergroup",
+                        "title": BETA_BINDING_GROUP_TITLE,
+                    }
+                },
+            }
+        }
     ) is None

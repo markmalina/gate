@@ -25,6 +25,10 @@ from app.application.telegram_processing import (
 )
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import TelegramConnectorKey
+from app.infrastructure.beta_candidate_binding import (
+    extract_beta_callback_owner_candidate,
+    prepare_beta_katya_candidate_binding,
+)
 from app.infrastructure.beta_space import (
     SqlBetaSpaceStore,
     beta_space_production_ready,
@@ -66,6 +70,7 @@ async def beta_telegram_webhook(
     settings: Settings = settings_dependency,
     receipt_store: TelegramReceiptStore = receipt_store_dependency,
     beta_space_store: SqlBetaSpaceStore = beta_space_store_dependency,
+    session: AsyncSession = db_session_dependency,
 ) -> JsonObject:
     """Authenticate and durably accept one group-only update without legacy dispatch."""
 
@@ -91,6 +96,41 @@ async def beta_telegram_webhook(
             "ignored": True,
             "reason": "unsupported_update",
         }
+    beta_telegram = None
+    callback_owner = extract_beta_callback_owner_candidate(update)
+    if callback_owner is not None:
+        beta_telegram = get_beta_telegram_client(request)
+        member_response = await beta_telegram.get_chat_member(
+            chat_id=callback_owner.telegram_chat_id,
+            user_id=callback_owner.telegram_user_id,
+        )
+        member = member_response.get("result")
+        member_user = member.get("user") if isinstance(member, dict) else None
+        member_user_id = (
+            member_user.get("id") if isinstance(member_user, dict) else None
+        )
+        if (
+            not isinstance(member, dict)
+            or member.get("status") != "creator"
+            or not isinstance(member_user, dict)
+            or member_user.get("is_bot") is not False
+            or type(member_user_id) is not int
+            or str(member_user_id) != callback_owner.telegram_user_id
+        ):
+            return {
+                "ok": True,
+                "accepted": True,
+                "duplicate": acceptance.duplicate,
+                "ignored": True,
+                "reason": "callback_owner_not_exact",
+            }
+        await prepare_beta_katya_candidate_binding(
+            session,
+            workspace_key=settings.gate_workspace_id,
+            now=received_at,
+            telegram_chat_id=callback_owner.telegram_chat_id,
+            telegram_user_id=callback_owner.telegram_user_id,
+        )
     intake = await ProcessBetaSpaceUpdate(
         store=beta_space_store,
         production_ready=beta_space_production_ready(settings),
@@ -99,7 +139,6 @@ async def beta_telegram_webhook(
         receipt_id=acceptance.receipt_id,
         received_at=received_at,
     )
-    beta_telegram = None
     callback_delivery = None
     if intake.disposition in {
         BetaSpaceDisposition.CONSENT_ACCEPTED,

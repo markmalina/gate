@@ -1978,6 +1978,7 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                             "already_bound",
                             "bound_awaiting_consent",
                             "prompt_delivery_unknown",
+                            "prompt_sent_awaiting_callback_binding",
                         ],
                     },
                     "candidate_count": {

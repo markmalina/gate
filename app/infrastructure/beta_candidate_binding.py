@@ -74,6 +74,12 @@ class BetaGroupCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class BetaCallbackOwnerCandidate:
+    telegram_chat_id: str = field(repr=False)
+    telegram_user_id: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class BetaCandidateBindingResult:
     state: str
     candidate_count: int
@@ -166,6 +172,47 @@ def extract_beta_group_candidate(
     return BetaGroupCandidate(
         telegram_chat_id=str(chat_id),
         received_at=received_at,
+    )
+
+
+def extract_beta_callback_owner_candidate(
+    payload: object,
+) -> BetaCallbackOwnerCandidate | None:
+    """Extract one exact Katya button callback without trusting it as consent yet."""
+
+    if not isinstance(payload, dict):
+        return None
+    callback = payload.get("callback_query")
+    if not isinstance(callback, dict) or callback.get("data") not in {
+        "beta:katya:consent:yes",
+        "beta:katya:consent:no",
+    }:
+        return None
+    actor = callback.get("from")
+    message = callback.get("message")
+    chat = message.get("chat") if isinstance(message, dict) else None
+    actor_id = actor.get("id") if isinstance(actor, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    first_name = actor.get("first_name") if isinstance(actor, dict) else None
+    if (
+        not isinstance(chat, dict)
+        or chat.get("type") not in {"group", "supergroup"}
+        or chat.get("title") != BETA_BINDING_GROUP_TITLE
+        or not isinstance(chat_id, int)
+        or isinstance(chat_id, bool)
+        or not isinstance(actor, dict)
+        or actor.get("is_bot") is not False
+        or not isinstance(first_name, str)
+        or not first_name.strip()
+        or first_name.strip().casefold().split(maxsplit=1)[0] != "катя"
+        or not isinstance(actor_id, int)
+        or isinstance(actor_id, bool)
+        or actor_id <= 0
+    ):
+        return None
+    return BetaCallbackOwnerCandidate(
+        telegram_chat_id=str(chat_id),
+        telegram_user_id=str(actor_id),
     )
 
 
