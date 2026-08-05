@@ -9,6 +9,8 @@ from app.infrastructure.beta_candidate_binding import (
     BETA_CONSENT_REPLY_MARKUP,
     BetaCandidateBindingResult,
     extract_beta_binding_candidate,
+    extract_beta_group_candidate,
+    extract_beta_katya_creator,
 )
 
 
@@ -95,3 +97,74 @@ def test_redacted_result_never_returns_private_values():
     assert result["private_identifiers_exposed"] is False
     assert result["private_payload_exposed"] is False
     assert result["consent_digest_exposed"] is False
+
+
+def membership_payload(*, title=BETA_BINDING_GROUP_TITLE, status="administrator"):
+    return {
+        "my_chat_member": {
+            "chat": {"id": -10001, "type": "supergroup", "title": title},
+            "new_chat_member": {
+                "status": status,
+                "user": {"id": 90001, "is_bot": True, "first_name": "Бета"},
+            },
+        }
+    }
+
+
+def test_exact_membership_receipt_selects_group_without_exposing_id():
+    candidate = extract_beta_group_candidate(
+        payload=membership_payload(),
+        received_at=BETA_BINDING_EVIDENCE_NOT_BEFORE,
+    )
+    assert candidate is not None
+    assert "-10001" not in repr(candidate)
+
+
+def test_membership_receipt_rejects_wrong_group_or_inactive_bot():
+    assert extract_beta_group_candidate(
+        payload=membership_payload(title="Другая группа"),
+        received_at=BETA_BINDING_EVIDENCE_NOT_BEFORE,
+    ) is None
+    assert extract_beta_group_candidate(
+        payload=membership_payload(status="left"),
+        received_at=BETA_BINDING_EVIDENCE_NOT_BEFORE,
+    ) is None
+
+
+def test_exact_single_katya_creator_is_selected_privately():
+    administrators = [
+        {
+            "status": "creator",
+            "user": {
+                "id": 70001,
+                "is_bot": False,
+                "first_name": "Катя",
+            },
+        },
+        {
+            "status": "administrator",
+            "user": {
+                "id": 70002,
+                "is_bot": False,
+                "first_name": "Марк",
+            },
+        },
+    ]
+    result = extract_beta_katya_creator(administrators)
+    assert result == "70001"
+
+
+def test_creator_resolution_rejects_zero_or_multiple_exact_matches():
+    assert extract_beta_katya_creator([]) is None
+    assert extract_beta_katya_creator(
+        [
+            {
+                "status": "creator",
+                "user": {"id": 1, "is_bot": False, "first_name": "Катя"},
+            },
+            {
+                "status": "creator",
+                "user": {"id": 2, "is_bot": False, "first_name": "Катя"},
+            },
+        ]
+    ) is None
