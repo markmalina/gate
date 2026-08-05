@@ -154,11 +154,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         api_base_url=api_base_url,
                         http_client=http_client,
                     )
-                    _app.state.beta_telegram_client = TelegramClient(
-                        credential=settings.telegram_beta_bot_token.get_secret_value(),
-                        api_base_url=api_base_url,
-                        http_client=http_client,
-                    )
+                    if getattr(
+                        settings,
+                        "gate_beta_katya_delivery_enabled",
+                        False,
+                    ):
+                        _app.state.beta_telegram_client = TelegramClient(
+                            credential=settings.telegram_beta_bot_token.get_secret_value(),
+                            api_base_url=api_base_url,
+                            http_client=http_client,
+                        )
                     _app.state.readiness_service = build_readiness_service(
                         database_runtime.engine
                     )
