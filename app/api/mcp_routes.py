@@ -1658,9 +1658,8 @@ async def _beta_get_provider_probe_tool_result(
                 wedding_candidates = await find_beta_wedding_group_candidates(
                     session
                 )
-            except BetaWeddingBindingError as exc:
-                if exc.code != "beta_wedding_group_candidate_missing":
-                    raise
+            except BetaWeddingBindingError:
+                raise
             else:
                 wedding_group = wedding_candidates[0]
                 try:

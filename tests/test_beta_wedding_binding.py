@@ -271,3 +271,28 @@ def test_wedding_creator_rejects_mayak_as_source() -> None:
     )
 
     assert creator is None
+
+
+def test_wedding_message_selects_exact_group_without_membership_receipt() -> None:
+    candidate = extract_beta_wedding_group_candidate(
+        payload={
+            "message": {
+                "message_id": 2,
+                "chat": {
+                    "id": -100496001,
+                    "type": "supergroup",
+                    "title": BETA_WEDDING_GROUP_TITLE,
+                },
+                "from": {
+                    "id": 496002,
+                    "is_bot": False,
+                    "first_name": "Марк",
+                },
+                "text": "Первая вводная по свадьбе.",
+            }
+        },
+        received_at=datetime(2026, 8, 6, 19, 5, tzinfo=UTC),
+    )
+
+    assert candidate is not None
+    assert "-100496001" not in repr(candidate)
