@@ -105,6 +105,9 @@ from app.infrastructure.beta_candidate_binding import (
     revoke_beta_katya_binding_after_unknown_prompt,
 )
 from app.infrastructure.beta_space import beta_katya_space_operational_status
+from app.infrastructure.beta_wedding_binding import (
+    beta_wedding_space_operational_status,
+)
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
 from app.infrastructure.openai_transcription import (
@@ -324,6 +327,13 @@ async def mcp_endpoint(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
                 settings=settings,
+            )
+            snapshot["beta_wedding_space"] = (
+                await beta_wedding_space_operational_status(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                    settings=settings,
+                )
             )
             snapshot["universal_mayak"] = await universal_mayak_operational_status(
                 session,
