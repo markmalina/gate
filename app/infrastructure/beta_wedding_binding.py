@@ -52,22 +52,34 @@ def extract_beta_wedding_group_candidate(
     if received_at.tzinfo is None or not isinstance(payload, dict):
         return None
     membership = payload.get("my_chat_member")
-    if not isinstance(membership, dict):
-        return None
-    chat = membership.get("chat")
-    new_member = membership.get("new_chat_member")
-    bot = new_member.get("user") if isinstance(new_member, dict) else None
-    chat_id = chat.get("id") if isinstance(chat, dict) else None
-    if (
-        not isinstance(chat, dict)
-        or chat.get("type") not in {"group", "supergroup"}
-        or chat.get("title") != BETA_WEDDING_GROUP_TITLE
-        or type(chat_id) is not int
-        or not isinstance(new_member, dict)
-        or new_member.get("status") not in {"member", "administrator"}
-        or not isinstance(bot, dict)
-        or bot.get("is_bot") is not True
-    ):
+    message = payload.get("message")
+    if isinstance(membership, dict):
+        chat = membership.get("chat")
+        new_member = membership.get("new_chat_member")
+        bot = new_member.get("user") if isinstance(new_member, dict) else None
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        if (
+            not isinstance(chat, dict)
+            or chat.get("type") not in {"group", "supergroup"}
+            or chat.get("title") != BETA_WEDDING_GROUP_TITLE
+            or type(chat_id) is not int
+            or not isinstance(new_member, dict)
+            or new_member.get("status") not in {"member", "administrator"}
+            or not isinstance(bot, dict)
+            or bot.get("is_bot") is not True
+        ):
+            return None
+    elif isinstance(message, dict):
+        chat = message.get("chat")
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        if (
+            not isinstance(chat, dict)
+            or chat.get("type") not in {"group", "supergroup"}
+            or chat.get("title") != BETA_WEDDING_GROUP_TITLE
+            or type(chat_id) is not int
+        ):
+            return None
+    else:
         return None
     return BetaWeddingGroupCandidate(
         telegram_chat_id=str(chat_id),
