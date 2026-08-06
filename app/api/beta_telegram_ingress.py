@@ -104,7 +104,7 @@ async def beta_telegram_webhook(
     wedding_candidate = extract_beta_wedding_activation_candidate(update)
     if wedding_candidate is not None:
         try:
-            await prepare_beta_wedding_binding(
+            binding_result = await prepare_beta_wedding_binding(
                 session,
                 workspace_key=settings.gate_workspace_id,
                 now=received_at,
@@ -118,6 +118,13 @@ async def beta_telegram_webhook(
                 "ignored": True,
                 "reason": exc.code,
             }
+        return {
+            "ok": True,
+            "accepted": True,
+            "duplicate": acceptance.duplicate,
+            "ignored": True,
+            "reason": f"beta_wedding_binding_${binding_result}",
+        }
     beta_telegram = None
     callback_owner = extract_beta_callback_owner_candidate(update)
     if callback_owner is not None:
