@@ -12,6 +12,8 @@ from app.infrastructure.beta_wedding_binding import (
     BetaWeddingActivationCandidate,
     BetaWeddingBindingError,
     extract_beta_wedding_activation_candidate,
+    extract_beta_wedding_creator,
+    extract_beta_wedding_group_candidate,
     prepare_beta_wedding_binding,
 )
 
@@ -184,3 +186,88 @@ async def test_wedding_binding_conflicting_retry_fails_closed():
 
     assert session.added == []
     assert session.commits == 0
+
+
+def test_wedding_membership_selects_exact_group_without_exposing_chat() -> None:
+    candidate = extract_beta_wedding_group_candidate(
+        payload={
+            "my_chat_member": {
+                "chat": {
+                    "id": -100496001,
+                    "type": "supergroup",
+                    "title": BETA_WEDDING_GROUP_TITLE,
+                },
+                "new_chat_member": {
+                    "status": "administrator",
+                    "user": {"id": 496003, "is_bot": True},
+                },
+            }
+        },
+        received_at=datetime(2026, 8, 6, 19, 0, tzinfo=UTC),
+    )
+
+    assert candidate is not None
+    assert "-100496001" not in repr(candidate)
+
+
+def test_wedding_membership_rejects_other_group() -> None:
+    candidate = extract_beta_wedding_group_candidate(
+        payload={
+            "my_chat_member": {
+                "chat": {
+                    "id": -100496001,
+                    "type": "supergroup",
+                    "title": "Зубы Кати",
+                },
+                "new_chat_member": {
+                    "status": "member",
+                    "user": {"id": 496003, "is_bot": True},
+                },
+            }
+        },
+        received_at=datetime(2026, 8, 6, 19, 0, tzinfo=UTC),
+    )
+
+    assert candidate is None
+
+
+def test_wedding_creator_accepts_only_one_exact_mark() -> None:
+    creator = extract_beta_wedding_creator(
+        [
+            {
+                "status": "creator",
+                "user": {
+                    "id": 496002,
+                    "is_bot": False,
+                    "first_name": "Марк",
+                },
+            },
+            {
+                "status": "administrator",
+                "user": {
+                    "id": 496004,
+                    "is_bot": False,
+                    "first_name": "Марк-Маяк",
+                },
+            },
+        ]
+    )
+
+    assert creator == "496002"
+
+
+def test_wedding_creator_rejects_mayak_as_source() -> None:
+    creator = extract_beta_wedding_creator(
+        [
+            {
+                "status": "creator",
+                "user": {
+                    "id": 496004,
+                    "is_bot": False,
+                    "first_name": "Марк-Маяк",
+                },
+            }
+        ]
+    )
+
+    assert creator is None
