@@ -257,7 +257,7 @@ def test_wedding_creator_accepts_only_one_exact_mark() -> None:
     assert creator == "496002"
 
 
-def test_wedding_creator_rejects_mayak_as_source() -> None:
+def test_wedding_creator_accepts_mayak_as_group_anchor() -> None:
     creator = extract_beta_wedding_creator(
         [
             {
@@ -271,7 +271,7 @@ def test_wedding_creator_rejects_mayak_as_source() -> None:
         ]
     )
 
-    assert creator is None
+    assert creator == "496004"
 
 
 def test_wedding_message_selects_exact_group_without_membership_receipt() -> None:
@@ -310,8 +310,8 @@ def test_wedding_source_accepts_ordinary_mark_message() -> None:
     assert "496002" not in repr(candidate)
 
 
-def test_wedding_source_rejects_mayak_message() -> None:
+def test_wedding_source_accepts_mayak_message() -> None:
     payload = _activation(first_name="Марк-Маяк")
     payload["message"]["text"] = "Проверка от Маяка."
 
-    assert extract_beta_wedding_source_candidate(payload) is None
+    assert extract_beta_wedding_source_candidate(payload) is not None
