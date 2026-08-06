@@ -88,7 +88,7 @@ def extract_beta_wedding_group_candidate(
 
 
 def extract_beta_wedding_creator(administrators: object) -> str | None:
-    """Return the one exact non-bot Mark creator; reject every ambiguity."""
+    """Return the one non-bot creator used only as the exact-group binding anchor."""
 
     if not isinstance(administrators, list):
         return None
@@ -101,12 +101,9 @@ def extract_beta_wedding_creator(administrators: object) -> str | None:
             continue
         actor = administrator.get("user")
         actor_id = actor.get("id") if isinstance(actor, dict) else None
-        first_name = actor.get("first_name") if isinstance(actor, dict) else None
         if (
             isinstance(actor, dict)
             and actor.get("is_bot") is False
-            and isinstance(first_name, str)
-            and first_name.strip().casefold().split(maxsplit=1)[0] == "марк"
             and type(actor_id) is int
             and actor_id > 0
         ):
@@ -173,7 +170,8 @@ def extract_beta_wedding_source_candidate(
         or actor_id <= 0
         or not isinstance(first_name, str)
         or not first_name.strip()
-        or first_name.strip().casefold().split(maxsplit=1)[0] != "марк"
+        or first_name.strip().casefold().split(maxsplit=1)[0]
+        not in {"марк", "марк-маяк"}
     ):
         return None
     return BetaWeddingActivationCandidate(
@@ -194,17 +192,16 @@ async def find_beta_wedding_source_candidates(
             .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
         )
     ).all()
-    by_source: dict[tuple[str, str], BetaWeddingActivationCandidate] = {}
+    by_chat: dict[str, BetaWeddingActivationCandidate] = {}
     for receipt in receipts:
         candidate = extract_beta_wedding_source_candidate(receipt.payload)
         if candidate is not None:
-            key = (candidate.telegram_chat_id, candidate.telegram_user_id)
-            by_source[key] = candidate
-    if not by_source:
+            by_chat[candidate.telegram_chat_id] = candidate
+    if not by_chat:
         raise BetaWeddingBindingError("beta_wedding_source_candidate_missing")
-    if len(by_source) != 1:
+    if len(by_chat) != 1:
         raise BetaWeddingBindingError("beta_wedding_source_candidate_ambiguous")
-    return list(by_source.values())
+    return list(by_chat.values())
 
 
 def extract_beta_wedding_activation_candidate(
