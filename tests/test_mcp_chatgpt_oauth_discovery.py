@@ -480,7 +480,6 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
         }
 
 
-
     async def beta_wedding_status(
         *_args: object,
         **_kwargs: object,
