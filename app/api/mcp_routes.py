@@ -3214,6 +3214,18 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- delivery_unknown_count: {beta_katya['delivery_unknown_count']}",
         ]
     )
+    beta_wedding = snapshot["beta_wedding_space"]
+    lines.extend(
+        [
+            "",
+            "Beta — Свадьба в Минске:",
+            f"- state: {beta_wedding['state']}",
+            f"- production_ready: {beta_wedding['production_ready']}",
+            f"- binding_state: {beta_wedding['binding_state']}",
+            f"- fact_count: {beta_wedding['fact_count']}",
+            f"- delivery_enabled: {beta_wedding['gates']['delivery_enabled']}",
+        ]
+    )
     voice = snapshot["telegram_voice"]
     lines.extend(
         [
