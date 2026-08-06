@@ -32,6 +32,7 @@ BETA_TENANT_REF = "beta-user-katya-001"
 BETA_INSTALLATION_REF = "installation-99feb906e18094b42dccf9f3636dcfcf"
 BETA_STORAGE_REF = "beta-group-katya-dental-001"
 BETA_CONNECTOR_KEY = "telegram_beta_group"
+BETA_GROUP_MEMBER_TENANT_REFS = frozenset({"beta-user-mark-wedding-001"})
 
 
 class BetaSpaceConfigurationError(RuntimeError):
@@ -465,6 +466,11 @@ def _binding(row: BetaSpaceBindingModel) -> BetaSpaceBinding:
         consent_sha256=row.consent_sha256,
         ready_at=row.ready_at,
         state=row.state,
+        actor_policy=(
+            "group_members"
+            if row.tenant_ref in BETA_GROUP_MEMBER_TENANT_REFS
+            else "subject_only"
+        ),
     )
 
 
