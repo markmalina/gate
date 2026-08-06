@@ -45,7 +45,10 @@ def extract_beta_wedding_activation_candidate(
     if not isinstance(payload, dict):
         return None
     message = payload.get("message")
-    if not isinstance(message, dict) or message.get("text") != BETA_WEDDING_ACTIVATION_TEXT:
+    if (
+        not isinstance(message, dict)
+        or message.get("text") != BETA_WEDDING_ACTIVATION_TEXT
+    ):
         return None
     chat = message.get("chat")
     actor = message.get("from")
