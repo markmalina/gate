@@ -142,7 +142,6 @@ async def _beta_katya_status(
     }
 
 
-
 async def _beta_wedding_status(
     _session: object,
     **_kwargs: Any,
