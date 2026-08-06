@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.models.beta_space import BetaSpaceBindingModel, BetaSpaceEventModel
 from app.models.canonical import TransportConnector, Workspace
+from app.models.domain import TelegramReceipt
 
 from .beta_space import BETA_CONNECTOR_KEY, beta_space_production_ready
 
@@ -35,6 +36,98 @@ class BetaWeddingBindingError(RuntimeError):
 class BetaWeddingActivationCandidate:
     telegram_chat_id: str = field(repr=False)
     telegram_user_id: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class BetaWeddingGroupCandidate:
+    telegram_chat_id: str = field(repr=False)
+    received_at: datetime
+
+
+def extract_beta_wedding_group_candidate(
+    *, payload: object, received_at: datetime
+) -> BetaWeddingGroupCandidate | None:
+    """Select the exact fresh wedding group from durable bot-membership evidence."""
+
+    if received_at.tzinfo is None or not isinstance(payload, dict):
+        return None
+    membership = payload.get("my_chat_member")
+    if not isinstance(membership, dict):
+        return None
+    chat = membership.get("chat")
+    new_member = membership.get("new_chat_member")
+    bot = new_member.get("user") if isinstance(new_member, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if (
+        not isinstance(chat, dict)
+        or chat.get("type") not in {"group", "supergroup"}
+        or chat.get("title") != BETA_WEDDING_GROUP_TITLE
+        or type(chat_id) is not int
+        or not isinstance(new_member, dict)
+        or new_member.get("status") not in {"member", "administrator"}
+        or not isinstance(bot, dict)
+        or bot.get("is_bot") is not True
+    ):
+        return None
+    return BetaWeddingGroupCandidate(
+        telegram_chat_id=str(chat_id),
+        received_at=received_at,
+    )
+
+
+def extract_beta_wedding_creator(administrators: object) -> str | None:
+    """Return the one exact non-bot Mark creator; reject every ambiguity."""
+
+    if not isinstance(administrators, list):
+        return None
+    matches: list[int] = []
+    for administrator in administrators:
+        if not isinstance(administrator, dict) or administrator.get("status") != "creator":
+            continue
+        actor = administrator.get("user")
+        actor_id = actor.get("id") if isinstance(actor, dict) else None
+        first_name = actor.get("first_name") if isinstance(actor, dict) else None
+        if (
+            isinstance(actor, dict)
+            and actor.get("is_bot") is False
+            and isinstance(first_name, str)
+            and first_name.strip().casefold().split(maxsplit=1)[0] == "марк"
+            and type(actor_id) is int
+            and actor_id > 0
+        ):
+            matches.append(actor_id)
+    return str(matches[0]) if len(set(matches)) == 1 else None
+
+
+async def find_beta_wedding_group_candidates(
+    session: AsyncSession,
+) -> list[BetaWeddingGroupCandidate]:
+    """Return exactly one newest durable wedding membership candidate."""
+
+    receipts = (
+        await session.scalars(
+            select(TelegramReceipt)
+            .where(TelegramReceipt.bot_key == BETA_CONNECTOR_KEY)
+            .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
+        )
+    ).all()
+    by_chat: dict[str, BetaWeddingGroupCandidate] = {}
+    for receipt in receipts:
+        candidate = extract_beta_wedding_group_candidate(
+            payload=receipt.payload,
+            received_at=receipt.received_at,
+        )
+        if candidate is not None:
+            by_chat[candidate.telegram_chat_id] = candidate
+    if not by_chat:
+        raise BetaWeddingBindingError("beta_wedding_group_candidate_missing")
+    if len(by_chat) != 1:
+        raise BetaWeddingBindingError("beta_wedding_group_candidate_ambiguous")
+    return sorted(
+        by_chat.values(),
+        key=lambda candidate: candidate.received_at,
+        reverse=True,
+    )
 
 
 def extract_beta_wedding_activation_candidate(
