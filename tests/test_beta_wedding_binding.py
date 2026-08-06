@@ -13,6 +13,7 @@ from app.infrastructure.beta_wedding_binding import (
     BetaWeddingBindingError,
     extract_beta_wedding_activation_candidate,
     extract_beta_wedding_creator,
+    extract_beta_wedding_source_candidate,
     extract_beta_wedding_group_candidate,
     prepare_beta_wedding_binding,
 )
@@ -296,3 +297,21 @@ def test_wedding_message_selects_exact_group_without_membership_receipt() -> Non
 
     assert candidate is not None
     assert "-100496001" not in repr(candidate)
+
+
+def test_wedding_source_accepts_ordinary_mark_message() -> None:
+    payload = _activation(first_name="Марк Малиновский")
+    payload["message"]["text"] = "Нужно подобрать площадку на 40 гостей."
+
+    candidate = extract_beta_wedding_source_candidate(payload)
+
+    assert candidate is not None
+    assert "-100496001" not in repr(candidate)
+    assert "496002" not in repr(candidate)
+
+
+def test_wedding_source_rejects_mayak_message() -> None:
+    payload = _activation(first_name="Марк-Маяк")
+    payload["message"]["text"] = "Проверка от Маяка."
+
+    assert extract_beta_wedding_source_candidate(payload) is None

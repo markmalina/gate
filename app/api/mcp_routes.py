@@ -111,6 +111,7 @@ from app.infrastructure.beta_wedding_binding import (
     beta_wedding_space_operational_status,
     extract_beta_wedding_creator,
     find_beta_wedding_group_candidates,
+    find_beta_wedding_source_candidates,
     prepare_beta_wedding_binding,
 )
 from app.infrastructure.billing_budget import SqlBillingBudgetService
@@ -1654,13 +1655,20 @@ async def _beta_get_provider_probe_tool_result(
                 credential=settings.telegram_beta_bot_token.get_secret_value(),
                 http_client=http_client,
             )
+            wedding_candidate = None
             try:
+                source_candidates = await find_beta_wedding_source_candidates(
+                    session
+                )
+            except BetaWeddingBindingError as exc:
+                if exc.code != "beta_wedding_source_candidate_missing":
+                    raise
+            else:
+                wedding_candidate = source_candidates[0]
+            if wedding_candidate is None:
                 wedding_candidates = await find_beta_wedding_group_candidates(
                     session
                 )
-            except BetaWeddingBindingError:
-                raise
-            else:
                 wedding_group = wedding_candidates[0]
                 try:
                     administrator_response = (
@@ -1679,34 +1687,35 @@ async def _beta_get_provider_probe_tool_result(
                     raise BetaWeddingBindingError(
                         "beta_wedding_creator_not_exact"
                     )
-                wedding_state = await prepare_beta_wedding_binding(
-                    session,
-                    workspace_key=principal.access_scope.workspace_id,
-                    now=datetime.now(UTC),
-                    candidate=BetaWeddingActivationCandidate(
-                        telegram_chat_id=wedding_group.telegram_chat_id,
-                        telegram_user_id=wedding_creator,
-                    ),
+                wedding_candidate = BetaWeddingActivationCandidate(
+                    telegram_chat_id=wedding_group.telegram_chat_id,
+                    telegram_user_id=wedding_creator,
                 )
-                wedding_activation = {
-                    "state": f"beta_wedding_binding_{wedding_state}",
-                    "candidate_count": 1,
-                    "binding_created": wedding_state == "created",
-                    "prompt_required": False,
-                    "prompt_delivery": "not_attempted",
-                    "private_identifiers_exposed": False,
-                    "private_payload_exposed": False,
-                    "consent_digest_exposed": False,
-                }
-                return _tool_result(
-                    {"probe": probe, "activation": wedding_activation},
-                    (
-                        "Beta wedding binding: "
-                        f"activation={wedding_activation['state']}; "
-                        "candidate_count=1; prompt_delivery=not_attempted"
-                    ),
-                    request_id,
-                )
+            wedding_state = await prepare_beta_wedding_binding(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                now=datetime.now(UTC),
+                candidate=wedding_candidate,
+            )
+            wedding_activation = {
+                "state": f"beta_wedding_binding_{wedding_state}",
+                "candidate_count": 1,
+                "binding_created": wedding_state == "created",
+                "prompt_required": False,
+                "prompt_delivery": "not_attempted",
+                "private_identifiers_exposed": False,
+                "private_payload_exposed": False,
+                "consent_digest_exposed": False,
+            }
+            return _tool_result(
+                {"probe": probe, "activation": wedding_activation},
+                (
+                    "Beta wedding binding: "
+                    f"activation={wedding_activation['state']}; "
+                    "candidate_count=1; prompt_delivery=not_attempted"
+                ),
+                request_id,
+            )
             activation = await prepare_beta_katya_candidate_binding(
                 session,
                 workspace_key=principal.access_scope.workspace_id,

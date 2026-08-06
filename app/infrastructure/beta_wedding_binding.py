@@ -145,17 +145,16 @@ async def find_beta_wedding_group_candidates(
     )
 
 
-def extract_beta_wedding_activation_candidate(
+def extract_beta_wedding_source_candidate(
     payload: object,
 ) -> BetaWeddingActivationCandidate | None:
-    """Return one exact owner activation without exposing private identifiers."""
+    """Return one exact wedding source from an ordinary group message."""
 
     if not isinstance(payload, dict):
         return None
     message = payload.get("message")
-    if (
-        not isinstance(message, dict)
-        or message.get("text") != BETA_WEDDING_ACTIVATION_TEXT
+    if not isinstance(message, dict) or not any(
+        key in message for key in ("text", "voice", "photo", "document")
     ):
         return None
     chat = message.get("chat")
@@ -181,6 +180,47 @@ def extract_beta_wedding_activation_candidate(
         telegram_chat_id=str(chat_id),
         telegram_user_id=str(actor_id),
     )
+
+
+async def find_beta_wedding_source_candidates(
+    session: AsyncSession,
+) -> list[BetaWeddingActivationCandidate]:
+    """Return one exact source already observed in the wedding group."""
+
+    receipts = (
+        await session.scalars(
+            select(TelegramReceipt)
+            .where(TelegramReceipt.bot_key == BETA_CONNECTOR_KEY)
+            .order_by(TelegramReceipt.received_at, TelegramReceipt.id)
+        )
+    ).all()
+    by_source: dict[tuple[str, str], BetaWeddingActivationCandidate] = {}
+    for receipt in receipts:
+        candidate = extract_beta_wedding_source_candidate(receipt.payload)
+        if candidate is not None:
+            key = (candidate.telegram_chat_id, candidate.telegram_user_id)
+            by_source[key] = candidate
+    if not by_source:
+        raise BetaWeddingBindingError("beta_wedding_source_candidate_missing")
+    if len(by_source) != 1:
+        raise BetaWeddingBindingError("beta_wedding_source_candidate_ambiguous")
+    return list(by_source.values())
+
+
+def extract_beta_wedding_activation_candidate(
+    payload: object,
+) -> BetaWeddingActivationCandidate | None:
+    """Return the legacy exact activation as a non-fact fallback."""
+
+    if not isinstance(payload, dict):
+        return None
+    message = payload.get("message")
+    if (
+        not isinstance(message, dict)
+        or message.get("text") != BETA_WEDDING_ACTIVATION_TEXT
+    ):
+        return None
+    return extract_beta_wedding_source_candidate(payload)
 
 
 async def prepare_beta_wedding_binding(

@@ -36,6 +36,7 @@ from app.infrastructure.beta_space import (
 from app.infrastructure.beta_wedding_binding import (
     BetaWeddingBindingError,
     extract_beta_wedding_activation_candidate,
+    extract_beta_wedding_source_candidate,
     prepare_beta_wedding_binding,
 )
 from app.services.telegram import TelegramClient
@@ -101,6 +102,23 @@ async def beta_telegram_webhook(
             "ignored": True,
             "reason": "unsupported_update",
         }
+    wedding_source_candidate = extract_beta_wedding_source_candidate(update)
+    if wedding_source_candidate is not None:
+        try:
+            await prepare_beta_wedding_binding(
+                session,
+                workspace_key=settings.gate_workspace_id,
+                now=received_at,
+                candidate=wedding_source_candidate,
+            )
+        except BetaWeddingBindingError as exc:
+            return {
+                "ok": True,
+                "accepted": True,
+                "duplicate": acceptance.duplicate,
+                "ignored": True,
+                "reason": exc.code,
+            }
     wedding_candidate = extract_beta_wedding_activation_candidate(update)
     if wedding_candidate is not None:
         try:
