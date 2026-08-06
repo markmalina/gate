@@ -1,7 +1,18 @@
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from uuid import UUID
+
+import pytest
+
 from app.infrastructure.beta_wedding_binding import (
     BETA_WEDDING_ACTIVATION_TEXT,
     BETA_WEDDING_GROUP_TITLE,
+    BETA_WEDDING_INSTALLATION_REF,
+    BETA_WEDDING_SPACE_REF,
+    BetaWeddingActivationCandidate,
+    BetaWeddingBindingError,
     extract_beta_wedding_activation_candidate,
+    prepare_beta_wedding_binding,
 )
 
 
@@ -26,6 +37,27 @@ def _activation(*, title: str = BETA_WEDDING_GROUP_TITLE, first_name: str = "М�
     }
 
 
+class BindingSession:
+    def __init__(self, values: list[object]) -> None:
+        self.values = iter(values)
+        self.added: list[object] = []
+        self.commits = 0
+
+    async def scalar(self, _statement: object) -> object:
+        return next(self.values)
+
+    def add(self, value: object) -> None:
+        self.added.append(value)
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 def test_exact_wedding_activation_returns_private_candidate():
     candidate = extract_beta_wedding_activation_candidate(_activation())
 
@@ -43,10 +75,11 @@ def test_wedding_activation_rejects_wrong_group():
     )
 
 
-def test_wedding_activation_rejects_wrong_actor():
+@pytest.mark.parametrize("first_name", ["Катя", "", "   "])
+def test_wedding_activation_rejects_wrong_actor(first_name: str):
     assert (
         extract_beta_wedding_activation_candidate(
-            _activation(first_name="Катя")
+            _activation(first_name=first_name)
         )
         is None
     )
@@ -64,3 +97,90 @@ def test_wedding_activation_rejects_bot_sender():
     payload["message"]["from"]["is_bot"] = True
 
     assert extract_beta_wedding_activation_candidate(payload) is None
+
+
+@pytest.mark.anyio
+async def test_wedding_binding_is_created_as_owner_consented():
+    workspace = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000001")
+    )
+    connector = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000002")
+    )
+    session = BindingSession([workspace, connector, None, None])
+    candidate = BetaWeddingActivationCandidate("-100496001", "496002")
+    now = datetime(2026, 8, 6, 18, 50, tzinfo=UTC)
+
+    result = await prepare_beta_wedding_binding(
+        session,  # type: ignore[arg-type]
+        workspace_key="workspace",
+        now=now,
+        candidate=candidate,
+    )
+
+    assert result == "created"
+    assert session.commits == 1
+    assert len(session.added) == 1
+    binding = session.added[0]
+    assert binding.space_ref == BETA_WEDDING_SPACE_REF
+    assert binding.installation_ref == BETA_WEDDING_INSTALLATION_REF
+    assert binding.state == "consented"
+    assert binding.ready_at == now
+    assert binding.consented_at == now
+
+
+@pytest.mark.anyio
+async def test_wedding_binding_exact_retry_is_idempotent():
+    workspace = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000001")
+    )
+    connector = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000002")
+    )
+    existing = SimpleNamespace(
+        state="consented",
+        telegram_chat_id="-100496001",
+        subject_telegram_user_id="496002",
+    )
+    session = BindingSession([workspace, connector, existing])
+
+    result = await prepare_beta_wedding_binding(
+        session,  # type: ignore[arg-type]
+        workspace_key="workspace",
+        now=datetime(2026, 8, 6, 18, 50, tzinfo=UTC),
+        candidate=BetaWeddingActivationCandidate("-100496001", "496002"),
+    )
+
+    assert result == "already_bound"
+    assert session.added == []
+    assert session.commits == 0
+
+
+@pytest.mark.anyio
+async def test_wedding_binding_conflicting_retry_fails_closed():
+    workspace = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000001")
+    )
+    connector = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000002")
+    )
+    existing = SimpleNamespace(
+        state="consented",
+        telegram_chat_id="-100496001",
+        subject_telegram_user_id="496999",
+    )
+    session = BindingSession([workspace, connector, existing])
+
+    with pytest.raises(
+        BetaWeddingBindingError,
+        match="beta_wedding_binding_conflict",
+    ):
+        await prepare_beta_wedding_binding(
+            session,  # type: ignore[arg-type]
+            workspace_key="workspace",
+            now=datetime(2026, 8, 6, 18, 50, tzinfo=UTC),
+            candidate=BetaWeddingActivationCandidate("-100496001", "496002"),
+        )
+
+    assert session.added == []
+    assert session.commits == 0
