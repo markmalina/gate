@@ -123,7 +123,7 @@ async def beta_telegram_webhook(
             "accepted": True,
             "duplicate": acceptance.duplicate,
             "ignored": True,
-            "reason": f"beta_wedding_binding_${binding_result}",
+            "reason": f"beta_wedding_binding_{binding_result}",
         }
     beta_telegram = None
     callback_owner = extract_beta_callback_owner_candidate(update)
