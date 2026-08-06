@@ -172,6 +172,7 @@ def extract_beta_wedding_source_candidate(
         or type(actor_id) is not int
         or actor_id <= 0
         or not isinstance(first_name, str)
+        or not first_name.strip()
         or first_name.strip().casefold().split(maxsplit=1)[0] != "марк"
     ):
         return None
