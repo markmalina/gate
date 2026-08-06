@@ -183,3 +183,66 @@ def test_private_callback_is_ignored_before_storage() -> None:
 
     assert _accept(_settings(), store, _callback_update("private")) is None
     assert store.commands == []
+
+
+def test_wedding_activation_is_not_stored_as_fact(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = CapturingStore()
+    update = {
+        "update_id": 496003,
+        "message": {
+            "message_id": 1,
+            "chat": {
+                "id": -100496001,
+                "type": "supergroup",
+                "title": "Свадьба в Минске",
+            },
+            "from": {
+                "id": 496002,
+                "is_bot": False,
+                "first_name": "Марк",
+            },
+            "text": "Бета, начинаем собирать свадьбу в Минске.",
+        },
+    }
+    payload = json.dumps(update).encode()
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": payload, "more_body": False}
+
+    async def prepare_binding(*_args: object, **_kwargs: object) -> str:
+        return "created"
+
+    monkeypatch.setattr(
+        beta_ingress,
+        "prepare_beta_wedding_binding",
+        prepare_binding,
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": beta_ingress.BETA_TELEGRAM_WEBHOOK_PATH,
+            "headers": [],
+        },
+        receive,
+    )
+
+    result = asyncio.run(
+        beta_ingress.beta_telegram_webhook(
+            request=request,
+            x_telegram_secret="beta-secret",
+            settings=_settings(),
+            receipt_store=store,
+            beta_space_store=cast(beta_ingress.SqlBetaSpaceStore, object()),
+            session=cast(beta_ingress.AsyncSession, object()),
+        )
+    )
+
+    assert result == {
+        "ok": True,
+        "accepted": True,
+        "duplicate": False,
+        "ignored": True,
+        "reason": "beta_wedding_binding_created",
+    }
+    assert len(store.commands) == 1
