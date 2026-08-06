@@ -82,7 +82,10 @@ def extract_beta_wedding_creator(administrators: object) -> str | None:
         return None
     matches: list[int] = []
     for administrator in administrators:
-        if not isinstance(administrator, dict) or administrator.get("status") != "creator":
+        if (
+            not isinstance(administrator, dict)
+            or administrator.get("status") != "creator"
+        ):
             continue
         actor = administrator.get("user")
         actor_id = actor.get("id") if isinstance(actor, dict) else None
