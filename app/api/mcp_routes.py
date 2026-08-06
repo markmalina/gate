@@ -105,6 +105,14 @@ from app.infrastructure.beta_candidate_binding import (
     revoke_beta_katya_binding_after_unknown_prompt,
 )
 from app.infrastructure.beta_space import beta_katya_space_operational_status
+from app.infrastructure.beta_wedding_binding import (
+    BetaWeddingActivationCandidate,
+    BetaWeddingBindingError,
+    beta_wedding_space_operational_status,
+    extract_beta_wedding_creator,
+    find_beta_wedding_group_candidates,
+    prepare_beta_wedding_binding,
+)
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
 from app.infrastructure.openai_transcription import (
@@ -324,6 +332,13 @@ async def mcp_endpoint(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
                 settings=settings,
+            )
+            snapshot["beta_wedding_space"] = (
+                await beta_wedding_space_operational_status(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                    settings=settings,
+                )
             )
             snapshot["universal_mayak"] = await universal_mayak_operational_status(
                 session,
@@ -1639,6 +1654,60 @@ async def _beta_get_provider_probe_tool_result(
                 credential=settings.telegram_beta_bot_token.get_secret_value(),
                 http_client=http_client,
             )
+            try:
+                wedding_candidates = await find_beta_wedding_group_candidates(
+                    session
+                )
+            except BetaWeddingBindingError as exc:
+                if exc.code != "beta_wedding_group_candidate_missing":
+                    raise
+            else:
+                wedding_group = wedding_candidates[0]
+                try:
+                    administrator_response = (
+                        await beta_telegram.get_chat_administrators(
+                            chat_id=wedding_group.telegram_chat_id,
+                        )
+                    )
+                except TelegramApiError as exc:
+                    raise BetaWeddingBindingError(
+                        "beta_wedding_creator_probe_failed"
+                    ) from exc
+                wedding_creator = extract_beta_wedding_creator(
+                    administrator_response.get("result")
+                )
+                if wedding_creator is None:
+                    raise BetaWeddingBindingError(
+                        "beta_wedding_creator_not_exact"
+                    )
+                wedding_state = await prepare_beta_wedding_binding(
+                    session,
+                    workspace_key=principal.access_scope.workspace_id,
+                    now=datetime.now(UTC),
+                    candidate=BetaWeddingActivationCandidate(
+                        telegram_chat_id=wedding_group.telegram_chat_id,
+                        telegram_user_id=wedding_creator,
+                    ),
+                )
+                wedding_activation = {
+                    "state": f"beta_wedding_binding_{wedding_state}",
+                    "candidate_count": 1,
+                    "binding_created": wedding_state == "created",
+                    "prompt_required": False,
+                    "prompt_delivery": "not_attempted",
+                    "private_identifiers_exposed": False,
+                    "private_payload_exposed": False,
+                    "consent_digest_exposed": False,
+                }
+                return _tool_result(
+                    {"probe": probe, "activation": wedding_activation},
+                    (
+                        "Beta wedding binding: "
+                        f"activation={wedding_activation['state']}; "
+                        "candidate_count=1; prompt_delivery=not_attempted"
+                    ),
+                    request_id,
+                )
             activation = await prepare_beta_katya_candidate_binding(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
@@ -1734,6 +1803,12 @@ async def _beta_get_provider_probe_tool_result(
             request_id=request_id,
             code=exc.code,
             message=exc.code,
+        )
+    except BetaWeddingBindingError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message="Beta wedding binding failed closed",
         )
     except BetaCandidateBindingError as exc:
         return _tool_error_result(
@@ -3202,6 +3277,18 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- fact_count: {beta_katya['fact_count']}",
             f"- delivery_sent_count: {beta_katya['delivery_sent_count']}",
             f"- delivery_unknown_count: {beta_katya['delivery_unknown_count']}",
+        ]
+    )
+    beta_wedding = snapshot["beta_wedding_space"]
+    lines.extend(
+        [
+            "",
+            "Beta — Свадьба в Минске:",
+            f"- state: {beta_wedding['state']}",
+            f"- production_ready: {beta_wedding['production_ready']}",
+            f"- binding_state: {beta_wedding['binding_state']}",
+            f"- fact_count: {beta_wedding['fact_count']}",
+            f"- delivery_enabled: {beta_wedding['gates']['delivery_enabled']}",
         ]
     )
     voice = snapshot["telegram_voice"]

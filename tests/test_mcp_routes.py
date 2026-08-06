@@ -142,6 +142,34 @@ async def _beta_katya_status(
     }
 
 
+async def _beta_wedding_status(
+    _session: object,
+    **_kwargs: Any,
+) -> dict[str, object]:
+    return {
+        "state": "awaiting_binding",
+        "gates": {
+            "production": True,
+            "connector": True,
+            "privacy_mode_confirmed": True,
+            "space_enabled": False,
+            "space_ready": False,
+            "delivery_enabled": False,
+        },
+        "configured": {
+            "chat_binding": False,
+            "subject_binding": False,
+            "activation_digest": False,
+        },
+        "binding_state": "absent",
+        "production_ready": False,
+        "event_count": 0,
+        "fact_count": 0,
+        "private_identifiers_exposed": False,
+        "private_payload_exposed": False,
+    }
+
+
 async def _become_intake_status(
     *_args: object,
     **_kwargs: object,
@@ -911,6 +939,10 @@ async def test_mcp_status_is_scoped(
         _beta_katya_status,
     )
     monkeypatch.setattr(
+        "app.api.mcp_routes.beta_wedding_space_operational_status",
+        _beta_wedding_status,
+    )
+    monkeypatch.setattr(
         "app.api.mcp_routes.telegram_voice_operational_status",
         _voice_status,
     )
@@ -1022,6 +1054,9 @@ async def test_mcp_status_is_scoped(
     assert structured["beta_katya_space"]["state"] == "configuration_incomplete"
     assert structured["beta_katya_space"]["private_identifiers_exposed"] is False
     assert structured["beta_katya_space"]["private_payload_exposed"] is False
+    assert structured["beta_wedding_space"]["state"] == "awaiting_binding"
+    assert structured["beta_wedding_space"]["private_identifiers_exposed"] is False
+    assert structured["beta_wedding_space"]["private_payload_exposed"] is False
     assert structured["telegram_voice"] == _voice_status_payload()
     assert structured["telegram_business_text_parity"] == _parity_status_payload()
     assert structured["historical_debt"]["voice_count"] == 0
