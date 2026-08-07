@@ -794,6 +794,9 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
     program = Path(
         "alembic/versions/0085_become_pilot_slice2_program.py"
     ).read_text()
+    beta_replies = Path(
+        "alembic/versions/0088_beta_wedding_replies.py"
+    ).read_text()
     assert 'revision: str = "0082_become_quest"' in original
     assert 'down_revision: str | None = "0081_become_i4_recovery_v2"' in original
     assert 'revision: str = "0083_become_quest_corrective"' in corrective
@@ -804,6 +807,11 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
     assert 'revision: str = "0084_become_pilot_slice1_review"' in pilot
     assert 'revision: str = "0085_become_pilot_slice2_program"' in program
     assert 'down_revision: str | None = "0084_become_pilot_slice1_review"' in program
+    assert 'revision: str = "0088_beta_wedding_replies"' in beta_replies
+    assert (
+        'down_revision: str | None = "0087_become_pilot_slice3_learner"'
+        in beta_replies
+    )
     assert (
         'down_revision: str | None = "0083_become_quest_corrective_m"'
         in pilot
@@ -816,5 +824,5 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0087_become_pilot_slice3_learner")
+    assert heads[0].startswith("0088_beta_wedding_replies")
 
