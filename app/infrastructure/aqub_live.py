@@ -107,7 +107,7 @@ class AQUBLiveDeliveryService:
         session: AsyncSession,
         telegram: TelegramClient,
         signing_key: bytes,
-        raw_chat_id: int = int(AQUB_RELEASE_GROUP_CHAT_ID),
+        raw_chat_id: str = AQUB_RELEASE_GROUP_CHAT_ID,
     ) -> None:
         self._session = session
         self._telegram = telegram
@@ -235,11 +235,16 @@ class AQUBLiveDeliveryService:
         return self._settled_response(sent, duplicate=False)
 
     async def _load(self, idempotency_key: str) -> AQUBLiveDelivery | None:
-        return await self._session.scalar(
+        value: Any = await self._session.scalar(
             select(AQUBLiveDelivery).where(
                 AQUBLiveDelivery.idempotency_key == idempotency_key
             )
         )
+        if value is None:
+            return None
+        if not isinstance(value, AQUBLiveDelivery):
+            raise RuntimeError("aqub_delivery_row_type_invalid")
+        return value
 
     async def _settle_failed(self, row_id: UUID, error_code: str) -> None:
         await self._session.execute(
