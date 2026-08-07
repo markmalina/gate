@@ -107,14 +107,16 @@ async def test_terminal_receipt_is_idempotent_and_never_queued() -> None:
                     )
                 )
             ).scalar_one()
+            receipt_status = receipt.status
+            receipt_processed_at = receipt.processed_at
             queued = await SqlTelegramProcessingQueue(session).claim_due(
                 now=_command().received_at + timedelta(seconds=1)
             )
 
         assert receipt_count == 1
         assert outbox_count == 0
-        assert receipt.status == TelegramReceiptStatus.PROCESSED.value
-        assert receipt.processed_at is not None
+        assert receipt_status == TelegramReceiptStatus.PROCESSED.value
+        assert receipt_processed_at is not None
         assert queued is None
     finally:
         await engine.dispose()
