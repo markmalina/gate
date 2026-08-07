@@ -7,7 +7,6 @@ import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Protocol
 
 import httpx
@@ -207,7 +206,6 @@ def _build_signed_envelope_body(
 
     envelope: JsonObject = {
         "schema_version": AQUB_GATE_ENVELOPE_SCHEMA,
-        # Gate forwarding timestamp; the source Telegram occurrence remains separately preserved.
         "occurred_at": inbound.received_at.isoformat(),
         "source_occurred_at": inbound.occurred_at.isoformat(),
         "chat_ref": _opaque_ref(
