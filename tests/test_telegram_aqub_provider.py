@@ -205,7 +205,7 @@ async def test_legacy_settings_double_is_dormant_and_makes_zero_provider_calls()
         transport=httpx.MockTransport(handler)
     ) as http_client:
         result = await reconcile_aqub_telegram_provider(
-            legacy_settings,  # type: ignore[arg-type]
+            legacy_settings,
             http_client,
             state,
         )
