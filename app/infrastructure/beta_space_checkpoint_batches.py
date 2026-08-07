@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infrastructure.beta_checkpoint_batches import BetaCheckpointBatchError
 from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     _build_portable_checkpoint,
@@ -30,7 +31,7 @@ _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
-class BetaSpaceCheckpointBatchError(RuntimeError):
+class BetaSpaceCheckpointBatchError(BetaCheckpointBatchError):
     """Fail-closed Wedding checkpoint error carrying only a stable code."""
 
     def __init__(self, code: str) -> None:
