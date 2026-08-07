@@ -5,7 +5,9 @@ Revises: 0088_beta_wedding_replies
 """
 
 from __future__ import annotations
+
 from collections.abc import Sequence
+
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
