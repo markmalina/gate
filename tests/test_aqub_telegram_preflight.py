@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from app.api.aqub_telegram_preflight import router
 from app.api.telegram_ingress import get_telegram_receipt_store
 from app.application.telegram_processing import (

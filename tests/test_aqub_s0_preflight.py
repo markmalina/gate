@@ -4,16 +4,15 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from app.application.aqub_s0_preflight import (
     AQUB_BOT_USERNAME,
-    AQUBReceiptStatus,
     AQUBDurableAcceptance,
     AQUBPreflightBinding,
     AQUBPreflightInbound,
     AQUBPreflightRole,
-    AQUBStoreDisposition,
+    AQUBReceiptStatus,
     AQUBS0PreflightAdapter,
+    AQUBStoreDisposition,
 )
 
 READY_AT = datetime(2026, 8, 7, 10, 0, tzinfo=UTC)

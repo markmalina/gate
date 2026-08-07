@@ -11,10 +11,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 AQUB_BOT_USERNAME = "@AQubAgentBot"
 AQUB_PING_COMMAND = "/aqub_ping"
