@@ -35,9 +35,7 @@ class BetaWeddingReplyReservation:
     current_text: str | None = field(default=None, repr=False)
     source_timestamp: datetime | None = None
     voice_duration_seconds: int | None = None
-    context: tuple[BetaWeddingContextMessage, ...] = field(
-        default=(), repr=False
-    )
+    context: tuple[BetaWeddingContextMessage, ...] = field(default=(), repr=False)
 
 
 class BetaWeddingReplyStore(Protocol):
@@ -75,9 +73,7 @@ class BetaWeddingReplyModel(Protocol):
 
 
 class BetaWeddingReplyTelegram(Protocol):
-    async def send_plain_message(
-        self, *, chat_id: str, text: str
-    ) -> JsonObject: ...
+    async def send_plain_message(self, *, chat_id: str, text: str) -> JsonObject: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,9 +99,7 @@ class RespondToBetaWeddingMessage:
     async def execute(
         self, *, receipt_id: str, now: datetime
     ) -> BetaWeddingReplyResult:
-        reservation = await self._store.reserve_reply(
-            receipt_id=receipt_id, now=now
-        )
+        reservation = await self._store.reserve_reply(receipt_id=receipt_id, now=now)
         if reservation is None:
             return BetaWeddingReplyResult(
                 BetaWeddingReplyDisposition.NOT_APPLICABLE,
@@ -223,7 +217,9 @@ def _media_acknowledgement(reservation: BetaWeddingReplyReservation) -> str:
     label = labels.get(reservation.media_kind or "", "материал")
     if reservation.media_kind == "voice":
         source_time = (
-            reservation.source_timestamp.astimezone(_MINSK_TZ).strftime("%d.%m.%Y %H:%M МСК")
+            reservation.source_timestamp.astimezone(_MINSK_TZ).strftime(
+                "%d.%m.%Y %H:%M МСК"
+            )
             if reservation.source_timestamp is not None
             else "время не подтверждено"
         )
