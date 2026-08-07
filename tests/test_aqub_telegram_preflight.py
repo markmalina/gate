@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.api.aqub_telegram_preflight import get_aqub_preflight_store, router
 from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
@@ -13,6 +13,11 @@ from app.application.aqub_s0_preflight import (
     AQUBStoreDisposition,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.aqub_s0_preflight import (
+    AQUB_RELEASE_ALPHA_USER_ID,
+    AQUB_RELEASE_GROUP_CHAT_ID,
+    AQUB_RELEASE_READY_AT,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -163,6 +168,39 @@ def test_disabled_non_ping_is_unowned_and_does_not_disclose_binding() -> None:
     assert "chat_id" not in body
     assert "method" not in body
     assert store.commands == []
+
+
+def test_release_pin_commits_confirmed_alpha_without_inventing_ace() -> None:
+    store = DurableStore()
+    release_settings = _settings(
+        GATE_AQUB_S0_PREFLIGHT_ENABLED=False,
+        GATE_AQUB_GROUP_CHAT_ID="",
+        GATE_AQUB_ACE_USER_ID="",
+        GATE_AQUB_ALPHA_USER_ID="",
+        GATE_AQUB_S0_READY_AT="",
+    )
+    live_update = _update(
+        date=int((AQUB_RELEASE_READY_AT + timedelta(seconds=1)).timestamp()),
+        chat={"id": int(AQUB_RELEASE_GROUP_CHAT_ID), "type": "supergroup"},
+        **{
+            "from": {
+                "id": int(AQUB_RELEASE_ALPHA_USER_ID),
+                "is_bot": False,
+            }
+        },
+    )
+
+    with _client(release_settings, store) as client:
+        response = _post(client, live_update)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["owned"] is True
+    assert body["accepted"] is True
+    assert body["reason"] == "aqub_ping_committed"
+    assert body["receipt"]["role"] == "alpha"
+    assert len(store.commands) == 1
+    assert store.commands[0].role.value == "alpha"
 
 
 def test_configured_unbound_route_touches_no_storage() -> None:
