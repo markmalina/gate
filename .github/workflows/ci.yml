@@ -141,7 +141,6 @@ jobs:
       - name: Assert contact sync container runs unprivileged
         run: docker run --rm --entrypoint sh gate-contact-sync:ci -c 'test "$(id -u)" -ne 0'
 
-
   aqub-s0-preflight:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
@@ -185,7 +184,17 @@ jobs:
       - name: AQUB repository lint
         run: ruff check .
       - name: AQUB repository type check
-        run: mypy app
+        run: |
+          set -o pipefail
+          mypy app 2>&1 | tee /tmp/aqub-mypy.log
+      - name: Upload AQUB mypy diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: aqub-mypy-${{ github.event.pull_request.head.sha }}
+          path: /tmp/aqub-mypy.log
+          if-no-files-found: error
+          retention-days: 1
       - name: AQUB targeted preflight tests
         run: >-
           pytest
@@ -194,7 +203,8 @@ jobs:
           tests/test_aqub_s0_preflight_postgres.py
           tests/test_telegram_aqub_provider.py
           tests/test_aqub_provider_status.py
-
+          tests/test_aqub_live.py
+          tests/test_aqub_live_delivery_postgres.py
 
   windows-enrollment:
     runs-on: windows-latest
