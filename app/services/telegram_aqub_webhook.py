@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 AQUB_ALLOWED_UPDATES = ["message", "my_chat_member"]
 _TELEGRAM_USERNAME = re.compile(r"[A-Za-z0-9_]{5,32}")
 _DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+_NUMERIC_HOST_LABEL = re.compile(r"(?:[0-9]+|0x[0-9a-f]+)")
 
 
 class AQUBProviderErrorCode(StrEnum):
@@ -116,13 +117,15 @@ def _valid_public_host(hostname: str | None) -> bool:
         return ipaddress.ip_address(canonical).is_global
     except ValueError:
         pass
+    labels = canonical.split(".")
+    if labels and all(_NUMERIC_HOST_LABEL.fullmatch(label) for label in labels):
+        return False
     if (
         "." not in canonical
         or canonical in {"localhost", "local", "localdomain"}
         or canonical.endswith((".localhost", ".local", ".localdomain"))
     ):
         return False
-    labels = canonical.split(".")
     return bool(labels) and all(_DNS_LABEL.fullmatch(label) for label in labels)
 
 
