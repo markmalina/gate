@@ -1,9 +1,7 @@
 import httpx
 import pytest
 
-from app.infrastructure.beta_wedding_voice_provider import (
-    OpenAIBetaWeddingVoiceStructurer,
-)
+from app.infrastructure.beta_wedding_voice_provider import OpenAIBetaWeddingVoiceStructurer
 
 
 @pytest.fixture
@@ -53,4 +51,3 @@ async def test_structurer_reads_output_text_from_raw_responses_output() -> None:
 
     assert result.startswith("Я поняла так:")
     assert "подобрать площадку" in result
-
