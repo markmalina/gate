@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from app.api.health_routes import aqub_provider_health
 from app.core.config import Settings
 from app.services.telegram_aqub_webhook import (
@@ -12,7 +13,6 @@ from app.services.telegram_aqub_webhook import (
     AQUBProviderReadinessState,
 )
 from fastapi import FastAPI, Request
-import pytest
 
 
 def _request(app: FastAPI) -> Request:
