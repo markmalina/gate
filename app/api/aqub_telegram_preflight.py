@@ -26,10 +26,11 @@ from app.infrastructure.aqub_s0_preflight import (
 router = APIRouter()
 settings_dependency = Depends(get_settings)
 JsonObject = dict[str, Any]
+db_session_dependency = Depends(get_db_session)
 
 
 def get_aqub_preflight_store(
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = db_session_dependency,
 ) -> AQUBPreflightStore:
     return SqlAQUBPreflightReceiptStore(session)
 
