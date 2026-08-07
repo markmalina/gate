@@ -145,6 +145,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
                 try:
+                    _app.state.beta_model_http_client = http_client
                     api_base_url = os.getenv(
                         "TELEGRAM_API_BASE_URL",
                         "https://api.telegram.org",
@@ -157,6 +158,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     if getattr(
                         settings,
                         "gate_beta_katya_delivery_enabled",
+                        False,
+                    ) or getattr(
+                        settings,
+                        "gate_beta_delivery_enabled",
                         False,
                     ):
                         _app.state.beta_telegram_client = TelegramClient(
@@ -233,6 +238,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                             delattr(_app.state, "readiness_service")
                         if hasattr(_app.state, "telegram_client"):
                             delattr(_app.state, "telegram_client")
+                        if hasattr(_app.state, "beta_telegram_client"):
+                            delattr(_app.state, "beta_telegram_client")
+                        if hasattr(_app.state, "beta_model_http_client"):
+                            delattr(_app.state, "beta_model_http_client")
         finally:
             delattr(_app.state, "database_runtime")
             delattr(_app.state, "worker_health_registry")

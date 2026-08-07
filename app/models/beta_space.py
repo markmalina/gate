@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -133,6 +134,77 @@ class BetaSpaceEventModel(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BetaSpaceReplyModel(Base):
+    """At-most-once generated reply and Telegram delivery for one Space event."""
+
+    __tablename__ = "beta_space_replies"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["binding_id", "workspace_id"],
+            ["beta_space_bindings.id", "beta_space_bindings.workspace_id"],
+            name="fk_beta_space_reply_binding_workspace",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("event_id", name="uq_beta_space_reply_event"),
+        UniqueConstraint("request_sha256", name="uq_beta_space_reply_request"),
+        CheckConstraint(
+            "state IN ('generating','sending','sent','unknown')",
+            name="ck_beta_space_reply_state",
+        ),
+        CheckConstraint(
+            "char_length(request_sha256) = 64",
+            name="ck_beta_space_reply_request_sha",
+        ),
+        CheckConstraint(
+            "(state = 'generating' AND candidate_text IS NULL "
+            "AND candidate_sha256 IS NULL AND provider_message_id IS NULL "
+            "AND settled_at IS NULL) OR "
+            "(state = 'sending' AND candidate_text IS NOT NULL "
+            "AND candidate_sha256 IS NOT NULL AND provider_message_id IS NULL "
+            "AND settled_at IS NULL) OR "
+            "(state = 'sent' AND candidate_text IS NOT NULL "
+            "AND candidate_sha256 IS NOT NULL AND provider_message_id IS NOT NULL "
+            "AND settled_at IS NOT NULL) OR "
+            "(state = 'unknown' AND candidate_text IS NOT NULL "
+            "AND candidate_sha256 IS NOT NULL AND provider_message_id IS NULL "
+            "AND settled_at IS NOT NULL)",
+            name="ck_beta_space_reply_settlement",
+        ),
+        Index(
+            "ix_beta_space_reply_scope_created",
+            "workspace_id",
+            "binding_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    binding_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("beta_space_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidate_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'generating'")
+    )
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 

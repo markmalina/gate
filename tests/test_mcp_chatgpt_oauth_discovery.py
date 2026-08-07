@@ -492,6 +492,8 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
                 "privacy_mode_confirmed": True,
                 "space_enabled": False,
                 "space_ready": False,
+                "model_runtime_enabled": False,
+                "model_data_gate_approved": False,
                 "delivery_enabled": False,
             },
             "configured": {
@@ -503,6 +505,8 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
             "production_ready": False,
             "event_count": 0,
             "fact_count": 0,
+            "reply_sent_count": 0,
+            "reply_unknown_count": 0,
             "private_identifiers_exposed": False,
             "private_payload_exposed": False,
         }

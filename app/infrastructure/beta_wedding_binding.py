@@ -10,7 +10,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.models.beta_space import BetaSpaceBindingModel, BetaSpaceEventModel
+from app.models.beta_space import (
+    BetaSpaceBindingModel,
+    BetaSpaceEventModel,
+    BetaSpaceReplyModel,
+)
 from app.models.canonical import TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
 
@@ -308,6 +312,8 @@ async def beta_wedding_space_operational_status(
     binding = None
     event_count = 0
     fact_count = 0
+    reply_sent_count = 0
+    reply_unknown_count = 0
     if workspace_id is not None:
         binding = await session.scalar(
             select(BetaSpaceBindingModel).where(
@@ -335,6 +341,26 @@ async def beta_wedding_space_operational_status(
                 )
                 or 0
             )
+            reply_sent_count = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceReplyModel.id)).where(
+                        BetaSpaceReplyModel.workspace_id == workspace_id,
+                        BetaSpaceReplyModel.binding_id == binding.id,
+                        BetaSpaceReplyModel.state == "sent",
+                    )
+                )
+                or 0
+            )
+            reply_unknown_count = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceReplyModel.id)).where(
+                        BetaSpaceReplyModel.workspace_id == workspace_id,
+                        BetaSpaceReplyModel.binding_id == binding.id,
+                        BetaSpaceReplyModel.state == "unknown",
+                    )
+                )
+                or 0
+            )
 
     binding_state = binding.state if binding is not None else "absent"
     binding_live = binding_state == "consented"
@@ -355,7 +381,11 @@ async def beta_wedding_space_operational_status(
             "privacy_mode_confirmed": settings.gate_beta_privacy_mode_confirmed,
             "space_enabled": binding_live,
             "space_ready": binding_live,
-            "delivery_enabled": False,
+            "model_runtime_enabled": settings.gate_beta_model_runtime_enabled,
+            "model_data_gate_approved": (
+                settings.gate_beta_model_data_gate_approved
+            ),
+            "delivery_enabled": settings.gate_beta_delivery_enabled,
         },
         "configured": {
             "chat_binding": binding is not None,
@@ -366,6 +396,8 @@ async def beta_wedding_space_operational_status(
         "production_ready": beta_space_production_ready(settings) and binding_live,
         "event_count": event_count,
         "fact_count": fact_count,
+        "reply_sent_count": reply_sent_count,
+        "reply_unknown_count": reply_unknown_count,
         "private_identifiers_exposed": False,
         "private_payload_exposed": False,
     }

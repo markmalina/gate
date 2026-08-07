@@ -56,6 +56,9 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         GATE_ENV="production",
         GATE_BETA_CONNECTOR_ENABLED=True,
         GATE_BETA_PRIVACY_MODE_CONFIRMED=True,
+        GATE_BETA_DELIVERY_ENABLED=True,
+        GATE_BETA_MODEL_RUNTIME_ENABLED=True,
+        GATE_BETA_MODEL_DATA_GATE_APPROVED=True,
     )
     binding = SimpleNamespace(
         id=UUID("00000000-0000-0000-0000-000000000496"),
@@ -67,6 +70,8 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
             binding,
             2,
             2,
+            2,
+            0,
         ]
     )
 
@@ -85,4 +90,8 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
     }
     assert result["event_count"] == 2
     assert result["fact_count"] == 2
-    assert result["gates"]["delivery_enabled"] is False
+    assert result["reply_sent_count"] == 2
+    assert result["reply_unknown_count"] == 0
+    assert result["gates"]["model_runtime_enabled"] is True
+    assert result["gates"]["model_data_gate_approved"] is True
+    assert result["gates"]["delivery_enabled"] is True
