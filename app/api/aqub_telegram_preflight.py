@@ -7,25 +7,34 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.telegram_ingress import get_telegram_receipt_store
+from app.api.deps import get_db_session
 from app.application.aqub_s0_preflight import (
     AQUB_OWNED_PATH,
     AQUBPreflightInbound,
     AQUBPreflightResult,
+    AQUBPreflightStore,
     AQUBS0PreflightAdapter,
 )
-from app.application.telegram_processing import TelegramReceiptStore
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_s0_preflight import (
-    GateAQUBPreflightStore,
+    SqlAQUBPreflightReceiptStore,
     build_aqub_s0_binding,
 )
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
-receipt_store_dependency = Depends(get_telegram_receipt_store)
 JsonObject = dict[str, Any]
+
+
+def get_aqub_preflight_store(
+    session: AsyncSession = Depends(get_db_session),
+) -> AQUBPreflightStore:
+    return SqlAQUBPreflightReceiptStore(session)
+
+
+store_dependency = Depends(get_aqub_preflight_store)
 
 
 @router.post(AQUB_OWNED_PATH)
@@ -35,7 +44,7 @@ async def aqub_telegram_preflight(
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
     ] = None,
     settings: Settings = settings_dependency,
-    receipt_store: TelegramReceiptStore = receipt_store_dependency,
+    store: AQUBPreflightStore = store_dependency,
 ) -> JsonObject:
     """Own one exact AQUB ping before any legacy/canary processing exists."""
 
@@ -83,7 +92,7 @@ async def aqub_telegram_preflight(
 
     result = await AQUBS0PreflightAdapter(
         binding=binding,
-        store=GateAQUBPreflightStore(receipt_store),
+        store=store,
     ).handle(inbound)
     return _response(result)
 
