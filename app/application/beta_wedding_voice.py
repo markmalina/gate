@@ -69,7 +69,9 @@ class BetaWeddingVoiceStore(Protocol):
         now: datetime,
     ) -> None: ...
 
-    async def claim_transcription(self, *, job_id: str, now: datetime) -> BetaWeddingVoiceJob | None: ...
+    async def claim_transcription(
+        self, *, job_id: str, now: datetime
+    ) -> BetaWeddingVoiceJob | None: ...
 
     async def persist_structured_result(
         self, *, job_id: str, transcript: str, structured_text: str, now: datetime
@@ -116,58 +118,137 @@ class ProcessBetaWeddingVoice:
         self._transcriber = transcriber
         self._structurer = structurer
 
-    async def execute(self, *, receipt_id: str, now: datetime) -> BetaWeddingVoiceResult:
-        reserved = await self._store.reserve_voice_receipt(receipt_id=receipt_id, now=now)
+    async def execute(
+        self, *, receipt_id: str, now: datetime
+    ) -> BetaWeddingVoiceResult:
+        reserved = await self._store.reserve_voice_receipt(
+            receipt_id=receipt_id, now=now
+        )
         if reserved is None:
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.NOT_APPLICABLE, "voice_not_applicable")
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.NOT_APPLICABLE, "voice_not_applicable"
+            )
         job, receipt = reserved
         if not receipt.created:
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.DUPLICATE, "voice_duplicate")
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.DUPLICATE, "voice_duplicate"
+            )
         if not await self._send(reservation=receipt, now=now):
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.UNKNOWN, "voice_receipt_unknown")
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.UNKNOWN, "voice_receipt_unknown"
+            )
 
         claimed = await self._store.claim_transcription(job_id=job.job_id, now=now)
         if claimed is None:
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.DUPLICATE, "voice_transcription_duplicate")
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.DUPLICATE, "voice_transcription_duplicate"
+            )
         try:
-            transcript = _bounded(await self._transcriber.transcribe(audio=await self._telegram.download_voice(file_id=claimed.telegram_file_id)))
-            structured = _bounded(await self._structurer.structure(transcript=transcript))
+            transcript = _bounded(
+                await self._transcriber.transcribe(
+                    audio=await self._telegram.download_voice(
+                        file_id=claimed.telegram_file_id
+                    )
+                )
+            )
+            structured = _bounded(
+                await self._structurer.structure(transcript=transcript)
+            )
         except Exception:
-            await self._store.settle_transcription_failure(job_id=claimed.job_id, error_code="voice_transcription_unknown", now=now)
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.UNKNOWN, "voice_transcription_unknown")
-        if not await self._store.persist_structured_result(job_id=claimed.job_id, transcript=transcript, structured_text=structured, now=now):
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.DUPLICATE, "voice_structure_duplicate")
-        result = await self._store.claim_phase(job_id=claimed.job_id, phase=BetaWeddingVoicePhase.STRUCTURED_RESULT, now=now)
+            await self._store.settle_transcription_failure(
+                job_id=claimed.job_id, error_code="voice_transcription_unknown", now=now
+            )
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.UNKNOWN, "voice_transcription_unknown"
+            )
+        if not await self._store.persist_structured_result(
+            job_id=claimed.job_id,
+            transcript=transcript,
+            structured_text=structured,
+            now=now,
+        ):
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.DUPLICATE, "voice_structure_duplicate"
+            )
+        result = await self._store.claim_phase(
+            job_id=claimed.job_id,
+            phase=BetaWeddingVoicePhase.STRUCTURED_RESULT,
+            now=now,
+        )
         if result is None:
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.DUPLICATE, "voice_result_duplicate")
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.DUPLICATE, "voice_result_duplicate"
+            )
         if not await self._send(reservation=result, now=now):
-            return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.UNKNOWN, "voice_result_unknown")
-        return BetaWeddingVoiceResult(BetaWeddingVoiceDisposition.SENT, "voice_structured_result_sent")
+            return BetaWeddingVoiceResult(
+                BetaWeddingVoiceDisposition.UNKNOWN, "voice_result_unknown"
+            )
+        return BetaWeddingVoiceResult(
+            BetaWeddingVoiceDisposition.SENT, "voice_structured_result_sent"
+        )
 
-    async def _send(self, *, reservation: BetaWeddingPhaseReservation, now: datetime) -> bool:
-        if reservation.delivery_id is None or reservation.telegram_chat_id is None or reservation.candidate_text is None:
+    async def _send(
+        self, *, reservation: BetaWeddingPhaseReservation, now: datetime
+    ) -> bool:
+        if (
+            reservation.delivery_id is None
+            or reservation.telegram_chat_id is None
+            or reservation.candidate_text is None
+        ):
             raise RuntimeError("beta_wedding_voice_delivery_invalid")
         try:
-            response = await self._telegram.send_plain_message(chat_id=reservation.telegram_chat_id, text=reservation.candidate_text)
+            response = await self._telegram.send_plain_message(
+                chat_id=reservation.telegram_chat_id, text=reservation.candidate_text
+            )
             result = response.get("result")
-            provider_message_id = result.get("message_id") if isinstance(result, dict) else None
+            provider_message_id = (
+                result.get("message_id") if isinstance(result, dict) else None
+            )
             if type(provider_message_id) is not int:
                 raise RuntimeError("beta_wedding_voice_delivery_unconfirmed")
         except Exception:
-            await self._store.settle_phase(delivery_id=reservation.delivery_id, outcome="unknown", telegram_message_id=None, error_code="beta_wedding_voice_delivery_unknown", now=now)
+            await self._store.settle_phase(
+                delivery_id=reservation.delivery_id,
+                outcome="unknown",
+                telegram_message_id=None,
+                error_code="beta_wedding_voice_delivery_unknown",
+                now=now,
+            )
             return False
-        await self._store.settle_phase(delivery_id=reservation.delivery_id, outcome="sent", telegram_message_id=str(provider_message_id), error_code=None, now=now)
+        await self._store.settle_phase(
+            delivery_id=reservation.delivery_id,
+            outcome="sent",
+            telegram_message_id=str(provider_message_id),
+            error_code=None,
+            now=now,
+        )
         return True
 
 
 def voice_receipt_text(job: BetaWeddingVoiceJob) -> str:
     when = job.occurred_at.astimezone(_MINSK_TZ).strftime("%d.%m.%Y %H:%M МСК")
-    duration = f"{job.duration_seconds} с" if job.duration_seconds is not None else "не подтверждена"
-    return "\n".join(("Приняла голосовое сообщение:", f"- От: {job.sender_label}", f"- Время: {when}", f"- Длительность: {duration}", "Расшифровываю и затем сохраню структурированный результат в памяти свадьбы."))
+    duration = (
+        f"{job.duration_seconds} с"
+        if job.duration_seconds is not None
+        else "не подтверждена"
+    )
+    return "\n".join(
+        (
+            "Приняла голосовое сообщение:",
+            f"- От: {job.sender_label}",
+            f"- Время: {when}",
+            f"- Длительность: {duration}",
+            "Расшифровываю и затем сохраню структурированный результат в памяти свадьбы.",
+        )
+    )
 
 
 def _bounded(value: str) -> str:
     result = value.strip()
     if not result:
         raise RuntimeError("beta_wedding_voice_empty")
-    return result if len(result) <= _MAX_TELEGRAM_TEXT_CHARS else result[: _MAX_TELEGRAM_TEXT_CHARS - 1].rstrip() + "…"
+    return (
+        result
+        if len(result) <= _MAX_TELEGRAM_TEXT_CHARS
+        else result[: _MAX_TELEGRAM_TEXT_CHARS - 1].rstrip() + "…"
+    )
