@@ -95,14 +95,14 @@ def build_aqub_public_webhook_url(environ: Mapping[str, str]) -> str | None:
         or not parsed.netloc
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
         or (port is not None and not 1 <= port <= 65_535)
         or not _valid_public_host(parsed.hostname)
     ):
         return None
-    base_url = raw_value.rstrip("/")
-    return f"{base_url}{AQUB_OWNED_PATH}"
+    return f"https://{parsed.netloc}{AQUB_OWNED_PATH}"
 
 
 def _valid_public_host(hostname: str | None) -> bool:
