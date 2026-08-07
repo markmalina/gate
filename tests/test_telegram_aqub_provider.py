@@ -192,6 +192,32 @@ def test_nul_control_is_rejected_by_url_builder() -> None:
 
 
 @pytest.mark.anyio
+async def test_legacy_settings_double_is_dormant_and_makes_zero_provider_calls() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise AssertionError("provider must not be called")
+
+    legacy_settings = type("LegacySettings", (), {})()
+    state = AQUBProviderReadinessState()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        result = await reconcile_aqub_telegram_provider(
+            legacy_settings,  # type: ignore[arg-type]
+            http_client,
+            state,
+        )
+
+    assert result == "skipped_preflight_disabled"
+    assert calls == []
+    assert state.snapshot().enabled is False
+    assert state.snapshot().configured is False
+    assert state.snapshot().error_code is None
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "settings",
     [
