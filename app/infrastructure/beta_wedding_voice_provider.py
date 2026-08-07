@@ -17,7 +17,9 @@ class BetaWeddingVoiceProviderError(RuntimeError):
 class TelegramVoiceDownloadAdapter:
     """Private adapter around the established Beta Telegram client transport."""
 
-    def __init__(self, *, credential: str, api_base_url: str, client: httpx.AsyncClient) -> None:
+    def __init__(
+        self, *, credential: str, api_base_url: str, client: httpx.AsyncClient
+    ) -> None:
         if not credential or not api_base_url.startswith("https://"):
             raise BetaWeddingVoiceProviderError("voice_telegram_configuration_invalid")
         self._credential = credential
@@ -52,9 +54,13 @@ class TelegramVoiceDownloadAdapter:
 class OpenAIBetaWeddingVoiceTranscriber:
     """One audio/transcriptions call; raw audio is not persisted or logged."""
 
-    def __init__(self, *, api_key: str, api_base_url: str, client: httpx.AsyncClient) -> None:
+    def __init__(
+        self, *, api_key: str, api_base_url: str, client: httpx.AsyncClient
+    ) -> None:
         if not api_key or api_base_url.rstrip("/") != "https://api.openai.com/v1":
-            raise BetaWeddingVoiceProviderError("voice_transcription_configuration_invalid")
+            raise BetaWeddingVoiceProviderError(
+                "voice_transcription_configuration_invalid"
+            )
         self._api_key = api_key
         self._api_base_url = api_base_url.rstrip("/")
         self._client = client
@@ -66,7 +72,11 @@ class OpenAIBetaWeddingVoiceTranscriber:
             f"{self._api_base_url}/audio/transcriptions",
             headers={"Authorization": f"Bearer {self._api_key}"},
             files={"file": ("voice.ogg", audio, "audio/ogg")},
-            data={"model": "gpt-4o-mini-transcribe", "language": "ru", "response_format": "json"},
+            data={
+                "model": "gpt-4o-mini-transcribe",
+                "language": "ru",
+                "response_format": "json",
+            },
             timeout=60,
         )
         payload = _object(response)
@@ -77,16 +87,58 @@ class OpenAIBetaWeddingVoiceTranscriber:
 
 
 class OpenAIBetaWeddingVoiceStructurer:
-    def __init__(self, *, api_key: str, api_base_url: str, model: str, client: httpx.AsyncClient) -> None:
-        if not api_key or api_base_url.rstrip("/") != "https://api.openai.com/v1" or not model:
-            raise BetaWeddingVoiceProviderError("voice_structurer_configuration_invalid")
-        self._api_key, self._api_base_url, self._model, self._client = api_key, api_base_url.rstrip("/"), model, client
+    def __init__(
+        self, *, api_key: str, api_base_url: str, model: str, client: httpx.AsyncClient
+    ) -> None:
+        if (
+            not api_key
+            or api_base_url.rstrip("/") != "https://api.openai.com/v1"
+            or not model
+        ):
+            raise BetaWeddingVoiceProviderError(
+                "voice_structurer_configuration_invalid"
+            )
+        self._api_key, self._api_base_url, self._model, self._client = (
+            api_key,
+            api_base_url.rstrip("/"),
+            model,
+            client,
+        )
 
     async def structure(self, *, transcript: str) -> str:
         response = await self._client.post(
             f"{self._api_base_url}/responses",
-            headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
-            json={"model": self._model, "store": False, "tools": [], "max_output_tokens": 512, "instructions": "Ты Бета, помощница свадьбы в Минске. Верни по-русски ровно: «Я поняла так:» и четыре строки Факты, Решения, Задачи, Вопросы. Не добавляй фактов.", "input": "Расшифровка голосового сообщения:\n" + transcript, "text": {"format": {"type": "json_schema", "name": "beta_wedding_voice_structure", "strict": True, "schema": {"type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 4096}}, "required": ["text"], "additionalProperties": False}}}},
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self._model,
+                "store": False,
+                "tools": [],
+                "max_output_tokens": 512,
+                "instructions": "Ты Бета, помощница свадьбы в Минске. Верни по-русски ровно: «Я поняла так:» и четыре строки Факты, Решения, Задачи, Вопросы. Не добавляй фактов.",
+                "input": "Расшифровка голосового сообщения:\n" + transcript,
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "beta_wedding_voice_structure",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "text": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4096,
+                                }
+                            },
+                            "required": ["text"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+            },
             timeout=30,
         )
         payload = _object(response)
@@ -96,7 +148,9 @@ class OpenAIBetaWeddingVoiceStructurer:
         try:
             text = json.loads(raw).get("text")
         except (TypeError, json.JSONDecodeError) as exc:
-            raise BetaWeddingVoiceProviderError("voice_structurer_contract_invalid") from exc
+            raise BetaWeddingVoiceProviderError(
+                "voice_structurer_contract_invalid"
+            ) from exc
         if not isinstance(text, str) or not text.strip():
             raise BetaWeddingVoiceProviderError("voice_structurer_contract_invalid")
         return text.strip()
