@@ -259,13 +259,15 @@ class SqlBetaWeddingReplyStore:
                 receipt.payload,
                 expected_chat_id=binding.telegram_chat_id,
             )
-            if projection is None or projection[1] is None:
+            if projection is None:
                 continue
-            sender_label, text = projection
+            sender_label, projected_text = projection
+            if projected_text is None:
+                continue
             remaining = _MAX_CONTEXT_CHARS - total_chars
             if remaining <= 0:
                 break
-            bounded = text[:remaining]
+            bounded = projected_text[:remaining]
             selected.append(
                 BetaWeddingContextMessage(
                     sender_label=sender_label,
