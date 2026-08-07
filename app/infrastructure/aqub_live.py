@@ -61,7 +61,10 @@ def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDel
         value = json.loads(raw_body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_json") from exc
-    if not isinstance(value, dict) or value.get("schema_version") != AQUB_DELIVERY_COMMAND_SCHEMA:
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != AQUB_DELIVERY_COMMAND_SCHEMA
+    ):
         raise AQUBLiveDeliveryError("aqub_delivery_bad_schema")
 
     try:
@@ -135,8 +138,14 @@ class AQUBLiveDeliveryService:
         row = await self._load(command.idempotency_key)
         if row is None:
             raise RuntimeError("aqub_delivery_reservation_missing")
-        if row.request_sha256 != command.request_sha256 or row.command_id != command.command_id:
-            raise AQUBLiveDeliveryError("aqub_delivery_mutated_replay", status_code=409)
+        if (
+            row.request_sha256 != command.request_sha256
+            or row.command_id != command.command_id
+        ):
+            raise AQUBLiveDeliveryError(
+                "aqub_delivery_mutated_replay",
+                status_code=409,
+            )
         if row.state == "sent":
             return self._settled_response(row, duplicate=True)
         if row.state in {"failed", "unknown"}:
@@ -147,11 +156,21 @@ class AQUBLiveDeliveryService:
             if updated_at.tzinfo is None:
                 updated_at = updated_at.replace(tzinfo=UTC)
             if now - updated_at < SENDING_UNKNOWN_AFTER:
-                raise AQUBLiveDeliveryError("aqub_delivery_in_progress", status_code=409)
+                raise AQUBLiveDeliveryError(
+                    "aqub_delivery_in_progress",
+                    status_code=409,
+                )
             await self._session.execute(
                 update(AQUBLiveDelivery)
-                .where(AQUBLiveDelivery.id == row.id, AQUBLiveDelivery.state == "sending")
-                .values(state="unknown", error_code="send_outcome_unknown", settled_at=now)
+                .where(
+                    AQUBLiveDelivery.id == row.id,
+                    AQUBLiveDelivery.state == "sending",
+                )
+                .values(
+                    state="unknown",
+                    error_code="send_outcome_unknown",
+                    settled_at=now,
+                )
             )
             await self._session.commit()
             row = await self._load(command.idempotency_key)
@@ -161,13 +180,19 @@ class AQUBLiveDeliveryService:
 
         claimed = await self._session.execute(
             update(AQUBLiveDelivery)
-            .where(AQUBLiveDelivery.id == row.id, AQUBLiveDelivery.state == "pending")
+            .where(
+                AQUBLiveDelivery.id == row.id,
+                AQUBLiveDelivery.state == "pending",
+            )
             .values(state="sending", updated_at=datetime.now(UTC))
             .returning(AQUBLiveDelivery.id)
         )
         if claimed.scalar_one_or_none() is None:
             await self._session.rollback()
-            raise AQUBLiveDeliveryError("aqub_delivery_in_progress", status_code=409)
+            raise AQUBLiveDeliveryError(
+                "aqub_delivery_in_progress",
+                status_code=409,
+            )
         await self._session.commit()
 
         try:
@@ -181,18 +206,21 @@ class AQUBLiveDeliveryService:
             await self._settle_failed(row.id, code)
             failed = await self._load(command.idempotency_key)
             if failed is None:
-                raise RuntimeError("aqub_delivery_failed_missing")
+                raise RuntimeError("aqub_delivery_failed_missing") from exc
             return self._settled_response(failed, duplicate=False)
-        except Exception:
+        except Exception as exc:
             await self._settle_failed(row.id, "telegram_send_failed")
             failed = await self._load(command.idempotency_key)
             if failed is None:
-                raise RuntimeError("aqub_delivery_failed_missing")
+                raise RuntimeError("aqub_delivery_failed_missing") from exc
             return self._settled_response(failed, duplicate=False)
 
         await self._session.execute(
             update(AQUBLiveDelivery)
-            .where(AQUBLiveDelivery.id == row.id, AQUBLiveDelivery.state == "sending")
+            .where(
+                AQUBLiveDelivery.id == row.id,
+                AQUBLiveDelivery.state == "sending",
+            )
             .values(
                 state="sent",
                 provider_message_id=str(message_id),
@@ -217,7 +245,10 @@ class AQUBLiveDeliveryService:
     async def _settle_failed(self, row_id: UUID, error_code: str) -> None:
         await self._session.execute(
             update(AQUBLiveDelivery)
-            .where(AQUBLiveDelivery.id == row_id, AQUBLiveDelivery.state == "sending")
+            .where(
+                AQUBLiveDelivery.id == row_id,
+                AQUBLiveDelivery.state == "sending",
+            )
             .values(
                 state="failed",
                 error_code=error_code,
@@ -227,7 +258,12 @@ class AQUBLiveDeliveryService:
         )
         await self._session.commit()
 
-    def _settled_response(self, row: AQUBLiveDelivery, *, duplicate: bool) -> JsonObject:
+    def _settled_response(
+        self,
+        row: AQUBLiveDelivery,
+        *,
+        duplicate: bool,
+    ) -> JsonObject:
         ack_status = "duplicate" if duplicate else "committed"
         ack: JsonObject = {
             "status": ack_status,
@@ -277,5 +313,9 @@ def _telegram_message_id(response: JsonObject) -> int:
 
 
 def _opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:
-    digest = hmac.new(signing_key, f"{kind}:{raw}".encode(), hashlib.sha256).hexdigest()
+    digest = hmac.new(
+        signing_key,
+        f"{kind}:{raw}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
     return f"{kind}:{digest}"
