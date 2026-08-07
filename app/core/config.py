@@ -129,6 +129,32 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_BETA_DELIVERY_ENABLED",
     )
+    gate_beta_model_runtime_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_MODEL_RUNTIME_ENABLED",
+    )
+    gate_beta_model_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_MODEL_DATA_GATE_APPROVED",
+    )
+    gate_beta_model_profile: str = Field(
+        default="gpt-5.6-luna",
+        min_length=1,
+        max_length=128,
+        validation_alias="GATE_BETA_MODEL_PROFILE",
+    )
+    gate_beta_model_max_output_tokens: int = Field(
+        default=512,
+        ge=64,
+        le=4096,
+        validation_alias="GATE_BETA_MODEL_MAX_OUTPUT_TOKENS",
+    )
+    gate_beta_model_timeout_seconds: float = Field(
+        default=30,
+        ge=1,
+        le=120,
+        validation_alias="GATE_BETA_MODEL_TIMEOUT_SECONDS",
+    )
     gate_beta_privacy_mode_confirmed: bool = Field(
         default=False,
         validation_alias="GATE_BETA_PRIVACY_MODE_CONFIRMED",
