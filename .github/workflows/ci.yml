@@ -192,6 +192,8 @@ jobs:
           tests/test_aqub_s0_preflight.py
           tests/test_aqub_telegram_preflight.py
           tests/test_aqub_s0_preflight_postgres.py
+          tests/test_telegram_aqub_provider.py
+          tests/test_aqub_provider_status.py
 
 
   windows-enrollment:
