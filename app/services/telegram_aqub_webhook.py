@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -20,6 +22,7 @@ from app.infrastructure.aqub_s0_preflight import build_aqub_s0_binding
 logger = logging.getLogger(__name__)
 AQUB_ALLOWED_UPDATES = ["message", "my_chat_member"]
 _TELEGRAM_USERNAME = re.compile(r"[A-Za-z0-9_]{5,32}")
+_DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 
 
 class AQUBProviderErrorCode(StrEnum):
@@ -75,11 +78,44 @@ def build_aqub_public_webhook_url(environ: Mapping[str, str]) -> str | None:
         or environ.get("RAILWAY_PUBLIC_DOMAIN")
         or environ.get("RAILWAY_STATIC_URL")
         or ""
-    ).strip()
-    if not raw_value:
+    )
+    if not raw_value or raw_value != raw_value.strip():
         return None
-    base_url = raw_value if "://" in raw_value else f"https://{raw_value}"
-    return f"{base_url.rstrip('/')}{AQUB_OWNED_PATH}"
+    if "://" not in raw_value:
+        if any(marker in raw_value for marker in ("/", "?", "#", "@")):
+            return None
+        raw_value = f"https://{raw_value}"
+    try:
+        parsed = urlsplit(raw_value)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or (port is not None and not 1 <= port <= 65_535)
+        or not _valid_public_host(parsed.hostname)
+    ):
+        return None
+    base_url = raw_value.rstrip("/")
+    return f"{base_url}{AQUB_OWNED_PATH}"
+
+
+def _valid_public_host(hostname: str | None) -> bool:
+    if hostname is None or hostname != hostname.strip() or len(hostname) > 253:
+        return False
+    try:
+        return ipaddress.ip_address(hostname).is_global
+    except ValueError:
+        pass
+    if hostname.casefold() == "localhost" or "." not in hostname:
+        return False
+    labels = hostname.rstrip(".").split(".")
+    return bool(labels) and all(_DNS_LABEL.fullmatch(label) for label in labels)
 
 
 async def reconcile_aqub_telegram_provider(
