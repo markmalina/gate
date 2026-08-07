@@ -29,6 +29,19 @@ class AQUBPreflightRole(StrEnum):
     ALPHA = "alpha"
 
 
+class AQUBReceiptStatus(StrEnum):
+    COMMITTED = "committed"
+
+
+class AQUBStoreDisposition(StrEnum):
+    CREATED = "created"
+    DUPLICATE = "duplicate"
+
+
+class AQUBDeliveryStatus(StrEnum):
+    NOT_RUN = "not_run"
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class AQUBPreflightBinding:
     """Release-pinned owner-only binding; blank defaults keep it dormant."""
@@ -79,6 +92,7 @@ class AQUBPreflightCommand:
     source: str
     external_id: str = field(repr=False)
     payload_sha256: str
+    payload: Mapping[str, Any] = field(repr=False)
     chat_id: str = field(repr=False)
     actor_id: str = field(repr=False)
     role: AQUBPreflightRole
@@ -88,17 +102,16 @@ class AQUBPreflightCommand:
     owned_path: str = AQUB_OWNED_PATH
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class AQUBDurableAcceptance:
     """Store result returned only after the inbound command is durable."""
 
-    created: bool
-    status: str
-    command_receipt_ref: str
-    root_event_ref: str
-    correlation_id: str
-    causation_id: str
-    result_json: Mapping[str, Any]
+    status: AQUBReceiptStatus
+    disposition: AQUBStoreDisposition
+    command_receipt_id: str = field(repr=False)
+    root_event_id: str = field(repr=False)
+    correlation_id: str = field(repr=False)
+    causation_id: str = field(repr=False)
 
 
 class AQUBPreflightStore(Protocol):
@@ -202,6 +215,7 @@ class AQUBS0PreflightAdapter:
                 source=AQUB_RECEIPT_SOURCE,
                 external_id=inbound.external_id,
                 payload_sha256=payload_sha256,
+                payload=inbound.payload,
                 chat_id=inbound.chat_id,
                 actor_id=inbound.actor_id,
                 role=role,
@@ -212,7 +226,11 @@ class AQUBS0PreflightAdapter:
         )
         _validate_acceptance(acceptance)
 
-        redacted_result = _redacted_result(acceptance.result_json)
+        duplicate = acceptance.disposition is AQUBStoreDisposition.DUPLICATE
+        redacted_result: JsonObject = {
+            "disposition": acceptance.disposition.value,
+            "command": "aqub_ping",
+        }
         unsigned: JsonObject = {
             "source": AQUB_RECEIPT_SOURCE,
             "external_id": _opaque_ref(
@@ -221,11 +239,27 @@ class AQUBS0PreflightAdapter:
                 inbound.external_id,
             ),
             "payload_sha256": payload_sha256,
-            "status": "committed",
-            "command_receipt_ref": acceptance.command_receipt_ref,
-            "root_event_ref": acceptance.root_event_ref,
-            "correlation_id": acceptance.correlation_id,
-            "causation_id": acceptance.causation_id,
+            "status": AQUBReceiptStatus.COMMITTED.value,
+            "command_receipt_ref": _opaque_ref(
+                self._binding.receipt_signing_key,
+                "receipt",
+                acceptance.command_receipt_id,
+            ),
+            "root_event_ref": _opaque_ref(
+                self._binding.receipt_signing_key,
+                "root_event",
+                acceptance.root_event_id,
+            ),
+            "correlation_id": _opaque_ref(
+                self._binding.receipt_signing_key,
+                "correlation",
+                acceptance.correlation_id,
+            ),
+            "causation_id": _opaque_ref(
+                self._binding.receipt_signing_key,
+                "causation",
+                acceptance.causation_id,
+            ),
             "role": role.value,
             "chat_ref": _opaque_ref(
                 self._binding.receipt_signing_key,
@@ -240,29 +274,29 @@ class AQUBS0PreflightAdapter:
             "occurred_at": inbound.occurred_at.isoformat(),
             "received_at": inbound.received_at.isoformat(),
             "owned_path": AQUB_OWNED_PATH,
-            "duplicate": not acceptance.created,
+            "duplicate": duplicate,
             "result_json": redacted_result,
             # A committed command receipt is not evidence of Telegram delivery.
-            "delivery_status": "not_run",
+            "delivery_status": AQUBDeliveryStatus.NOT_RUN.value,
         }
         receipt = AQUBCommittedReceipt(
             source=AQUB_RECEIPT_SOURCE,
             external_id=str(unsigned["external_id"]),
             payload_sha256=payload_sha256,
             status="committed",
-            command_receipt_ref=acceptance.command_receipt_ref,
-            root_event_ref=acceptance.root_event_ref,
-            correlation_id=acceptance.correlation_id,
-            causation_id=acceptance.causation_id,
+            command_receipt_ref=str(unsigned["command_receipt_ref"]),
+            root_event_ref=str(unsigned["root_event_ref"]),
+            correlation_id=str(unsigned["correlation_id"]),
+            causation_id=str(unsigned["causation_id"]),
             role=role.value,
             chat_ref=str(unsigned["chat_ref"]),
             actor_ref=str(unsigned["actor_ref"]),
             occurred_at=inbound.occurred_at.isoformat(),
             received_at=inbound.received_at.isoformat(),
             owned_path=AQUB_OWNED_PATH,
-            duplicate=not acceptance.created,
+            duplicate=duplicate,
             result_json=redacted_result,
-            delivery_status="not_run",
+            delivery_status=AQUBDeliveryStatus.NOT_RUN.value,
             signature=_signature(self._binding.receipt_signing_key, unsigned),
         )
         return AQUBPreflightResult(
@@ -302,28 +336,16 @@ def _owned_rejection(reason: str) -> AQUBPreflightResult:
 
 
 def _validate_acceptance(acceptance: AQUBDurableAcceptance) -> None:
-    if acceptance.status != "committed":
+    if acceptance.status is not AQUBReceiptStatus.COMMITTED:
         raise RuntimeError("aqub_store_not_committed")
     for value in (
-        acceptance.command_receipt_ref,
-        acceptance.root_event_ref,
+        acceptance.command_receipt_id,
+        acceptance.root_event_id,
         acceptance.correlation_id,
         acceptance.causation_id,
     ):
-        if not value or len(value) > 256:
+        if not value or len(value) > 1_024:
             raise RuntimeError("aqub_store_reference_invalid")
-    if not acceptance.created and not acceptance.result_json:
-        raise RuntimeError("aqub_duplicate_original_result_required")
-
-
-def _redacted_result(value: Mapping[str, Any]) -> Mapping[str, Any]:
-    allowed = {"disposition", "command", "transition", "next_exercise_ref"}
-    result = {
-        key: item
-        for key, item in value.items()
-        if key in allowed and isinstance(item, (str, bool, int, float, type(None)))
-    }
-    return result
 
 
 def _opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:

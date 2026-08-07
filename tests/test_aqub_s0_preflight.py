@@ -7,10 +7,12 @@ import pytest
 
 from app.application.aqub_s0_preflight import (
     AQUB_BOT_USERNAME,
+    AQUBReceiptStatus,
     AQUBDurableAcceptance,
     AQUBPreflightBinding,
     AQUBPreflightInbound,
     AQUBPreflightRole,
+    AQUBStoreDisposition,
     AQUBS0PreflightAdapter,
 )
 
@@ -24,26 +26,25 @@ def anyio_backend() -> str:
 
 
 class FakeStore:
-    def __init__(self, *, created: bool = True, status: str = "committed") -> None:
-        self.created = created
+    def __init__(
+        self,
+        *,
+        disposition: AQUBStoreDisposition = AQUBStoreDisposition.CREATED,
+        status: AQUBReceiptStatus = AQUBReceiptStatus.COMMITTED,
+    ) -> None:
+        self.disposition = disposition
         self.status = status
         self.commands = []
 
     async def accept(self, command):
         self.commands.append(command)
         return AQUBDurableAcceptance(
-            created=self.created,
             status=self.status,
-            command_receipt_ref="receipt:gate-s0-1",
-            root_event_ref="event:gate-s0-1",
-            correlation_id="correlation:s0-1",
-            causation_id="causation:telegram-1",
-            result_json={
-                "disposition": "ping_bound",
-                "command": "aqub_ping",
-                "next_exercise_ref": "exercise:opaque-2",
-                "raw_text": "must-not-leak",
-            },
+            disposition=self.disposition,
+            command_receipt_id="raw-receipt-id SECRET-RECEIPT",
+            root_event_id="raw-root-event SECRET-ROOT",
+            correlation_id="raw-correlation SECRET-CORRELATION",
+            causation_id="raw-causation SECRET-CAUSATION",
         )
 
 
@@ -150,6 +151,10 @@ async def test_receipt_contains_no_raw_ids_text_or_signing_key() -> None:
         "telegram-update-9001",
         "/aqub_ping",
         "must-not-leak",
+        "SECRET-RECEIPT",
+        "SECRET-ROOT",
+        "SECRET-CORRELATION",
+        "SECRET-CAUSATION",
         SIGNING_KEY.decode(),
     ):
         assert forbidden not in serialized
@@ -182,7 +187,7 @@ async def test_only_exact_route_can_be_owned(change, expected_owned) -> None:
 
 @pytest.mark.anyio
 async def test_duplicate_reuses_store_result_without_claiming_delivery() -> None:
-    store = FakeStore(created=False)
+    store = FakeStore(disposition=AQUBStoreDisposition.DUPLICATE)
     result = await AQUBS0PreflightAdapter(
         binding=_binding(), store=store
     ).handle(_inbound())
@@ -190,7 +195,10 @@ async def test_duplicate_reuses_store_result_without_claiming_delivery() -> None
     assert result.accepted is True
     assert result.receipt is not None
     assert result.receipt.duplicate is True
-    assert result.receipt.result_json["disposition"] == "ping_bound"
+    assert result.receipt.result_json == {
+        "disposition": "duplicate",
+        "command": "aqub_ping",
+    }
     assert result.receipt.delivery_status == "not_run"
 
 
@@ -198,7 +206,8 @@ async def test_duplicate_reuses_store_result_without_claiming_delivery() -> None
 async def test_uncommitted_store_result_cannot_create_receipt_or_reply() -> None:
     with pytest.raises(RuntimeError, match="aqub_store_not_committed"):
         await AQUBS0PreflightAdapter(
-            binding=_binding(), store=FakeStore(status="pending")
+            binding=_binding(),
+            store=FakeStore(status="pending"),  # type: ignore[arg-type]
         ).handle(_inbound())
 
 
