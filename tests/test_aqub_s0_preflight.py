@@ -210,6 +210,17 @@ async def test_uncommitted_store_result_cannot_create_receipt_or_reply() -> None
         ).handle(_inbound())
 
 
+@pytest.mark.anyio
+async def test_arbitrary_store_disposition_cannot_enter_result_json() -> None:
+    with pytest.raises(RuntimeError, match="aqub_store_disposition_invalid"):
+        await AQUBS0PreflightAdapter(
+            binding=_binding(),
+            store=FakeStore(
+                disposition="SECRET-ARBITRARY-RESULT"  # type: ignore[arg-type]
+            ),
+        ).handle(_inbound())
+
+
 def test_enabled_binding_requires_exact_identity_and_safe_key() -> None:
     with pytest.raises(ValueError, match="aqub_bot_identity_mismatch"):
         _binding(bot_username="AQubAgentBot")

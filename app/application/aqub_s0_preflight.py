@@ -337,8 +337,12 @@ def _owned_rejection(reason: str) -> AQUBPreflightResult:
 
 
 def _validate_acceptance(acceptance: AQUBDurableAcceptance) -> None:
+    if not isinstance(acceptance.status, AQUBReceiptStatus):
+        raise RuntimeError("aqub_store_status_invalid")
     if acceptance.status is not AQUBReceiptStatus.COMMITTED:
         raise RuntimeError("aqub_store_not_committed")
+    if not isinstance(acceptance.disposition, AQUBStoreDisposition):
+        raise RuntimeError("aqub_store_disposition_invalid")
     for value in (
         acceptance.command_receipt_id,
         acceptance.root_event_id,
