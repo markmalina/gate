@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
 from app.core.config import Settings
 from app.infrastructure.beta_wedding_binding import (
     beta_wedding_space_operational_status,

@@ -54,6 +54,7 @@ class BetaSpaceBinding:
     consent_sha256: str = field(repr=False)
     ready_at: datetime
     state: str
+    actor_policy: str = "subject_only"
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +161,9 @@ class ProcessBetaSpaceUpdate:
         # ready_at is eligible, while a delayed update created before it is stale.
         if binding.ready_at.tzinfo is None or source.occurred_at < binding.ready_at:
             return BetaSpaceIntakeResult(BetaSpaceDisposition.PRE_READINESS, **scope)
-        if not hmac.compare_digest(
+        if binding.actor_policy not in {"subject_only", "group_members"}:
+            return BetaSpaceIntakeResult(BetaSpaceDisposition.ACTOR_MISMATCH, **scope)
+        if binding.actor_policy == "subject_only" and not hmac.compare_digest(
             source.telegram_user_id.encode(),
             binding.subject_telegram_user_id.encode(),
         ):

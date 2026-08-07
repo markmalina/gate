@@ -195,6 +195,24 @@ def test_cross_space_events_keep_exact_tenant_space_and_actor_scope() -> None:
     ]
 
 
+def test_group_member_policy_accepts_two_owner_actors_in_one_space() -> None:
+    store = MemoryStore()
+    store.bindings[SPACE_A.telegram_chat_id] = replace(
+        SPACE_A, state="consented", actor_policy="group_members"
+    )
+    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+
+    first = run(service, update(update_id=18, user_id=70001, text="Дата свадьбы"))
+    second = run(service, update(update_id=19, user_id=70002, text="Площадка в Минске"))
+
+    assert first.disposition == BetaSpaceDisposition.FACT_ACCEPTED
+    assert second.disposition == BetaSpaceDisposition.FACT_ACCEPTED
+    assert store.facts == [
+        ("tenant-a", "space-a", "70001", "text"),
+        ("tenant-a", "space-a", "70002", "text"),
+    ]
+
+
 def test_duplicate_inline_callback_creates_no_second_event_or_delivery() -> None:
     store = MemoryStore()
     service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
