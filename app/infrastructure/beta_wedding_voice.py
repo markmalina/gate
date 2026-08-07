@@ -90,6 +90,8 @@ class SqlBetaWeddingVoiceStore:
             state="receipt_pending",
         )
         self._session.add(job)
+        # Delivery references this job by raw UUID, not an ORM relationship.
+        await self._session.flush()
         public = _job(job, binding.telegram_chat_id)
         self._session.add(
             BetaWeddingVoiceDeliveryModel(
