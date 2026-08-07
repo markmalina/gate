@@ -63,6 +63,55 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
     assert build_aqub_public_webhook_url({}) is None
 
 
+@pytest.mark.parametrize(
+    "public_base_url",
+    [
+        "http://gate.example",
+        "file:///tmp/gate",
+        "https:///missing-host",
+        "/relative/path",
+        "https://user:password@gate.example",
+        "https://bad host.example",
+        " https://gate.example",
+        "https://gate.example ",
+        "https://localhost",
+        "https://gate..example",
+        "https://gate.example?unsafe=true",
+        "https://gate.example#fragment",
+        "https://gate.example:99999",
+    ],
+)
+@pytest.mark.anyio
+async def test_invalid_public_url_makes_zero_provider_calls(
+    monkeypatch: pytest.MonkeyPatch,
+    public_base_url: str,
+) -> None:
+    monkeypatch.setenv("PUBLIC_BASE_URL", public_base_url)
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise AssertionError("provider must not be called")
+
+    state = AQUBProviderReadinessState()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        result = await reconcile_aqub_telegram_provider(
+            _settings(),
+            http_client,
+            state,
+        )
+
+    assert result == "skipped_configuration_incomplete"
+    assert calls == []
+    assert state.snapshot().configured is False
+    assert (
+        state.snapshot().error_code
+        is AQUBProviderErrorCode.CONFIGURATION_INCOMPLETE
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "settings",
