@@ -95,7 +95,6 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://gate.exam\nple/",
         "https://gate.example:\r443/",
         "https://gate.example/line\nfeed",
-        "https://gate.exa\x00mple/",
         "https://gate.example:\x1f443/",
         "https://gate.exa\x7fmple/",
     ],
@@ -135,6 +134,13 @@ def test_public_origin_with_port_constructs_exact_webhook_path() -> None:
     assert build_aqub_public_webhook_url(
         {"PUBLIC_BASE_URL": "https://gate.example:8443/"}
     ) == "https://gate.example:8443/telegram/aqub/preflight"
+
+
+def test_nul_control_is_rejected_by_url_builder() -> None:
+    # POSIX forbids NUL in an environment value, so exercise the pure boundary.
+    assert build_aqub_public_webhook_url(
+        {"PUBLIC_BASE_URL": "https://gate.exa\x00mple/"}
+    ) is None
 
 
 @pytest.mark.anyio
