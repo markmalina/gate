@@ -1,4 +1,7 @@
-"""Signed AQUB live transport contracts layered on the isolated preflight route."""
+"""Signed AQUB live transport contracts layered on the isolated preflight route.
+
+The live path is activation-gated; importing this module alone has no provider effect.
+"""
 
 from __future__ import annotations
 
