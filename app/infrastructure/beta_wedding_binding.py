@@ -381,11 +381,7 @@ async def beta_wedding_space_operational_status(
             "privacy_mode_confirmed": settings.gate_beta_privacy_mode_confirmed,
             "space_enabled": binding_live,
             "space_ready": binding_live,
-            "model_runtime_enabled": settings.gate_beta_model_runtime_enabled,
-            "model_data_gate_approved": (
-                settings.gate_beta_model_data_gate_approved
-            ),
-            "delivery_enabled": settings.gate_beta_delivery_enabled,
+            "delivery_enabled": binding_live,
         },
         "configured": {
             "chat_binding": binding is not None,
