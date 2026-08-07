@@ -117,7 +117,7 @@ def _valid_public_host(hostname: str | None) -> bool:
         address = ipaddress.ip_address(canonical)
         if isinstance(address, ipaddress.IPv6Address) and address.scope_id is not None:
             return False
-        return address.is_global
+        return _is_global_unicast(address)
     except ValueError:
         pass
     labels = canonical.split(".")
@@ -134,6 +134,19 @@ def _valid_public_host(hostname: str | None) -> bool:
 
 def _contains_ascii_control_or_space(value: str) -> bool:
     return any(ord(character) <= 0x20 or ord(character) == 0x7F for character in value)
+
+
+def _is_global_unicast(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    return address.is_global and not (
+        address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_private
+    )
 
 
 def _valid_explicit_port(netloc: str) -> bool:
