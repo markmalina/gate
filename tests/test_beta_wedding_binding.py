@@ -13,8 +13,8 @@ from app.infrastructure.beta_wedding_binding import (
     BetaWeddingBindingError,
     extract_beta_wedding_activation_candidate,
     extract_beta_wedding_creator,
-    extract_beta_wedding_source_candidate,
     extract_beta_wedding_group_candidate,
+    extract_beta_wedding_source_candidate,
     prepare_beta_wedding_binding,
 )
 
