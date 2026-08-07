@@ -6,6 +6,7 @@ import hmac
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,11 @@ from app.application.beta_space_intake import (
     BetaSpaceDisposition,
     DeliverBetaSpaceConsent,
     ProcessBetaSpaceUpdate,
+)
+from app.application.beta_wedding_reply import (
+    BetaWeddingContextMessage,
+    BetaWeddingReplyModel,
+    RespondToBetaWeddingMessage,
 )
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
@@ -34,10 +40,17 @@ from app.infrastructure.beta_space import (
     beta_space_production_ready,
 )
 from app.infrastructure.beta_wedding_binding import (
+    BETA_WEDDING_TENANT_REF,
     BetaWeddingBindingError,
     extract_beta_wedding_activation_candidate,
     extract_beta_wedding_source_candidate,
     prepare_beta_wedding_binding,
+)
+from app.infrastructure.beta_wedding_reply import (
+    BetaWeddingModelError,
+    OpenAIResponsesBetaWeddingModel,
+    SqlBetaWeddingReplyStore,
+    beta_wedding_reply_enabled,
 )
 from app.services.telegram import TelegramClient
 
@@ -56,6 +69,24 @@ def get_beta_telegram_client(request: Request) -> TelegramClient:
     if not isinstance(telegram, TelegramClient):
         raise RuntimeError("Beta Telegram client is not initialized")
     return telegram
+
+
+def get_beta_model_http_client(request: Request) -> httpx.AsyncClient:
+    client = getattr(request.app.state, "beta_model_http_client", None)
+    if not isinstance(client, httpx.AsyncClient):
+        raise RuntimeError("Beta model HTTP client is not initialized")
+    return client
+
+
+class _UnavailableBetaWeddingModel:
+    async def propose(
+        self,
+        *,
+        current: BetaWeddingContextMessage,
+        context: tuple[BetaWeddingContextMessage, ...],
+    ) -> str:
+        del current, context
+        raise BetaWeddingModelError("beta_wedding_model_unavailable")
 
 
 def get_beta_space_store(
@@ -206,6 +237,39 @@ async def beta_telegram_webhook(
             telegram=beta_telegram,
             enabled=beta_space_production_ready(settings),
         ).execute(delivery_id=intake.delivery_id, now=received_at)
+
+    wedding_reply = None
+    if (
+        intake.disposition is BetaSpaceDisposition.FACT_ACCEPTED
+        and intake.tenant_ref == BETA_WEDDING_TENANT_REF
+    ):
+        reply_enabled = beta_wedding_reply_enabled(settings)
+        if not reply_enabled:
+            wedding_reply = "disabled"
+        else:
+            if beta_telegram is None:
+                beta_telegram = get_beta_telegram_client(request)
+            try:
+                model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
+                    http_client=get_beta_model_http_client(request),
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    model=settings.gate_beta_model_profile,
+                    max_output_tokens=settings.gate_beta_model_max_output_tokens,
+                    timeout_seconds=settings.gate_beta_model_timeout_seconds,
+                )
+            except BetaWeddingModelError:
+                model = _UnavailableBetaWeddingModel()
+            reply_result = await RespondToBetaWeddingMessage(
+                store=SqlBetaWeddingReplyStore(session),
+                model=model,
+                telegram=beta_telegram,
+                enabled=reply_enabled,
+            ).execute(
+                receipt_id=acceptance.receipt_id,
+                now=received_at,
+            )
+            wedding_reply = reply_result.disposition.value
     return {
         "ok": True,
         "accepted": True,
@@ -213,6 +277,7 @@ async def beta_telegram_webhook(
         "space_processing": intake.disposition.value,
         "callback_delivery": callback_delivery,
         "delivery": delivery,
+        "wedding_reply": wedding_reply,
     }
 
 
