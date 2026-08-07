@@ -72,3 +72,27 @@ async def test_status_is_bounded_and_secret_free() -> None:
     }
     assert "secret-token" not in response.body.decode()
     assert "secret-webhook" not in response.body.decode()
+
+
+@pytest.mark.anyio
+async def test_incomplete_startup_state_is_not_reported_ready() -> None:
+    state = AQUBProviderReadinessState(enabled=True)
+    state.fail(AQUBProviderErrorCode.CONFIGURATION_INCOMPLETE)
+    app = FastAPI()
+    app.state.aqub_provider_readiness = state
+
+    response = await aqub_provider_health(
+        _request(app),
+        authorization="Bearer synthetic-admin-token",
+        settings=Settings(
+            _env_file=None,
+            ADMIN_BEARER_TOKEN="synthetic-admin-token",
+        ),
+    )
+
+    assert response.status_code == 503
+    payload = json.loads(response.body)
+    assert payload["enabled"] is True
+    assert payload["configured"] is False
+    assert payload["ready"] is False
+    assert payload["error_code"] == "configuration_incomplete"
