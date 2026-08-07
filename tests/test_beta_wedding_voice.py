@@ -28,14 +28,24 @@ class Store:
         del receipt_id, now
         return self.job, BetaWeddingPhaseReservation(True, "receipt", "chat", "receipt")
 
-    async def claim_phase(self, *, job_id: str, phase: BetaWeddingVoicePhase, now: datetime):
+    async def claim_phase(
+        self, *, job_id: str, phase: BetaWeddingVoicePhase, now: datetime
+    ):
         del job_id, now
         self.steps.append(f"claim:{phase}")
         if phase is BetaWeddingVoicePhase.STRUCTURED_RESULT:
             return BetaWeddingPhaseReservation(True, "result", "chat", "structured")
         return None
 
-    async def settle_phase(self, *, delivery_id: str, outcome: str, telegram_message_id: str | None, error_code: str | None, now: datetime) -> None:
+    async def settle_phase(
+        self,
+        *,
+        delivery_id: str,
+        outcome: str,
+        telegram_message_id: str | None,
+        error_code: str | None,
+        now: datetime,
+    ) -> None:
         del telegram_message_id, error_code, now
         self.steps.append(f"settle:{delivery_id}:{outcome}")
 
@@ -44,12 +54,16 @@ class Store:
         self.steps.append("claim:transcription")
         return self.job
 
-    async def persist_structured_result(self, *, job_id: str, transcript: str, structured_text: str, now: datetime) -> bool:
+    async def persist_structured_result(
+        self, *, job_id: str, transcript: str, structured_text: str, now: datetime
+    ) -> bool:
         del job_id, transcript, structured_text, now
         self.steps.append("persist:structured")
         return True
 
-    async def settle_transcription_failure(self, *, job_id: str, error_code: str, now: datetime) -> None:
+    async def settle_transcription_failure(
+        self, *, job_id: str, error_code: str, now: datetime
+    ) -> None:
         del job_id, error_code, now
         self.steps.append("transcription:failed")
 
