@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import httpx
+import pytest
 from app.core.config import Settings
 from app.services.telegram_aqub_webhook import (
     AQUB_ALLOWED_UPDATES,
@@ -14,8 +16,6 @@ from app.services.telegram_aqub_webhook import (
     reconcile_aqub_telegram_provider,
     reconcile_aqub_telegram_provider_with_retries,
 )
-import httpx
-import pytest
 
 
 @pytest.fixture
