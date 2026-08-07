@@ -95,6 +95,7 @@ def build_aqub_public_webhook_url(environ: Mapping[str, str]) -> str | None:
         or not parsed.netloc
         or parsed.username is not None
         or parsed.password is not None
+        or not _valid_explicit_port(parsed.netloc)
         or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
@@ -116,6 +117,21 @@ def _valid_public_host(hostname: str | None) -> bool:
         return False
     labels = hostname.rstrip(".").split(".")
     return bool(labels) and all(_DNS_LABEL.fullmatch(label) for label in labels)
+
+
+def _valid_explicit_port(netloc: str) -> bool:
+    """Reject an authority port delimiter unless decimal digits follow it."""
+
+    if netloc.startswith("["):
+        bracket = netloc.find("]")
+        if bracket < 0:
+            return False
+        suffix = netloc[bracket + 1 :]
+        return not suffix or bool(re.fullmatch(r":[0-9]+", suffix))
+    if ":" not in netloc:
+        return True
+    host, _, port_text = netloc.rpartition(":")
+    return bool(host) and bool(re.fullmatch(r"[0-9]+", port_text))
 
 
 async def reconcile_aqub_telegram_provider(
