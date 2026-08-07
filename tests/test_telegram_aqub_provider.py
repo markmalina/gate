@@ -114,6 +114,10 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://0x7f.0.0.1/",
         "https://0177.1/",
         "https://008.008.008.008/",
+        "https://[2001:4860:4860::8888%25eth0]/",
+        "https://[2001:4860:4860::8888%eth0]/",
+        "[2001:4860:4860::8888%25eth0]",
+        "https://[2001:4860:4860::8888%251]/",
     ],
 )
 @pytest.mark.anyio
@@ -157,6 +161,12 @@ def test_canonical_global_ipv4_constructs_exact_webhook_path() -> None:
     assert build_aqub_public_webhook_url(
         {"PUBLIC_BASE_URL": "https://8.8.8.8/"}
     ) == "https://8.8.8.8/telegram/aqub/preflight"
+
+
+def test_bare_global_ipv6_constructs_exact_webhook_path() -> None:
+    assert build_aqub_public_webhook_url(
+        {"PUBLIC_BASE_URL": "https://[2001:4860:4860::8888]/"}
+    ) == "https://[2001:4860:4860::8888]/telegram/aqub/preflight"
 
 
 def test_nul_control_is_rejected_by_url_builder() -> None:
