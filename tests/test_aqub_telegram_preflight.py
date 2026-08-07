@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from app.api.aqub_telegram_preflight import router
 from app.api.telegram_ingress import get_telegram_receipt_store
 from app.application.telegram_processing import (
@@ -13,6 +11,8 @@ from app.application.telegram_processing import (
     TelegramReceiptAcceptance,
 )
 from app.core.config import Settings, get_settings
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 READY_AT = datetime(2026, 8, 7, 8, 0, tzinfo=UTC)
 
