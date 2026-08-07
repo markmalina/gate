@@ -125,18 +125,6 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="GATE_BETA_CANARY_ENABLED",
     )
-    gate_beta_delivery_enabled: bool = Field(
-        default=False,
-        validation_alias="GATE_BETA_DELIVERY_ENABLED",
-    )
-    gate_beta_model_runtime_enabled: bool = Field(
-        default=False,
-        validation_alias="GATE_BETA_MODEL_RUNTIME_ENABLED",
-    )
-    gate_beta_model_data_gate_approved: bool = Field(
-        default=False,
-        validation_alias="GATE_BETA_MODEL_DATA_GATE_APPROVED",
-    )
     gate_beta_model_profile: str = Field(
         default="gpt-5.6-luna",
         min_length=1,
