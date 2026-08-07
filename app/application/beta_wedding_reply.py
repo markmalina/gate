@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any, Protocol
 
 JsonObject = dict[str, Any]
 _MAX_TELEGRAM_TEXT_CHARS = 4_096
+_MINSK_TZ = timezone(timedelta(hours=3))
 
 
 class BetaWeddingReplyDisposition(StrEnum):
@@ -32,6 +33,8 @@ class BetaWeddingReplyReservation:
     media_kind: str | None = None
     sender_label: str | None = None
     current_text: str | None = field(default=None, repr=False)
+    source_timestamp: datetime | None = None
+    voice_duration_seconds: int | None = None
     context: tuple[BetaWeddingContextMessage, ...] = field(
         default=(), repr=False
     )
@@ -136,7 +139,7 @@ class RespondToBetaWeddingMessage:
                 candidate = _text_fallback(current.text)
                 result_code = "beta_wedding_model_fallback"
         else:
-            candidate = _media_acknowledgement(reservation.media_kind)
+            candidate = _media_acknowledgement(reservation)
             result_code = "beta_wedding_media_acknowledgement"
 
         candidate = _bounded_candidate(candidate)
@@ -199,19 +202,45 @@ def _text_fallback(text: str) -> str:
     compact = " ".join(text.split())
     if len(compact) > 320:
         compact = compact[:319].rstrip() + "…"
-    return (
-        "Приняла и сохранила в общей памяти. "
-        f"Я поняла сообщение так: {compact}"
+    return "\n".join(
+        (
+            "Я поняла так:",
+            f"- Факты: {compact}",
+            "- Решения: не выделены.",
+            "- Задачи: не выделены.",
+            "- Вопросы: не выделены.",
+            "Сохранила именно эту структуру в памяти свадьбы.",
+        )
     )
 
 
-def _media_acknowledgement(media_kind: str) -> str:
+def _media_acknowledgement(reservation: BetaWeddingReplyReservation) -> str:
     labels = {
         "voice": "голосовое сообщение",
         "photo": "фотографию",
         "document": "документ",
     }
-    label = labels.get(media_kind, "материал")
+    label = labels.get(reservation.media_kind or "", "материал")
+    if reservation.media_kind == "voice":
+        source_time = (
+            reservation.source_timestamp.astimezone(_MINSK_TZ).strftime("%d.%m.%Y %H:%M МСК")
+            if reservation.source_timestamp is not None
+            else "время не подтверждено"
+        )
+        duration = (
+            f"{reservation.voice_duration_seconds} с"
+            if reservation.voice_duration_seconds is not None
+            else "длительность не подтверждена"
+        )
+        return "\n".join(
+            (
+                "Приняла голосовое сообщение:",
+                f"- От: {reservation.sender_label or 'Участник'}",
+                f"- Время: {source_time}",
+                f"- Длительность: {duration}",
+                "Содержимое ещё не распознано; этот приём сохранён отдельно.",
+            )
+        )
     return (
         f"Приняла {label} и сохранила его в общей памяти. "
         "Сейчас я зафиксировала сам материал; понимание его содержания "
