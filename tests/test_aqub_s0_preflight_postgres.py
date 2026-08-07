@@ -6,9 +6,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app.application.aqub_s0_preflight import (
     AQUBPreflightCommand,
     AQUBPreflightRole,
@@ -27,6 +24,8 @@ from app.models.domain import (
     TelegramReceipt,
     TelegramReceiptStatus,
 )
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 @pytest.fixture
