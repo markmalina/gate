@@ -79,6 +79,11 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://gate.example?unsafe=true",
         "https://gate.example#fragment",
         "https://gate.example:99999",
+        "https://gate.example/base",
+        "https://gate.example/a b",
+        "https://gate.example/a%20b",
+        "https://gate.example/%2F",
+        "https://gate.example//",
     ],
 )
 @pytest.mark.anyio
@@ -110,6 +115,12 @@ async def test_invalid_public_url_makes_zero_provider_calls(
         state.snapshot().error_code
         is AQUBProviderErrorCode.CONFIGURATION_INCOMPLETE
     )
+
+
+def test_public_origin_with_port_constructs_exact_webhook_path() -> None:
+    assert build_aqub_public_webhook_url(
+        {"PUBLIC_BASE_URL": "https://gate.example:8443/"}
+    ) == "https://gate.example:8443/telegram/aqub/preflight"
 
 
 @pytest.mark.anyio
