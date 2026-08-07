@@ -875,7 +875,9 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                 bot_username = self._settings.telegram_beta_bot_username
                 connector_enabled = self._settings.gate_beta_connector_enabled
                 shadow_worker_enabled = self._settings.gate_beta_shadow_worker_enabled
-                delivery_enabled = self._settings.gate_beta_delivery_enabled
+                # Wedding replies are handled by the isolated Beta ingress.
+                # Do not activate the legacy generic canary delivery path.
+                delivery_enabled = False
                 privacy_mode_confirmed = self._settings.gate_beta_privacy_mode_confirmed
                 credentials_ready = bool(
                     self._settings.telegram_beta_bot_token.get_secret_value()
