@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from app.application.beta_wedding_voice import (
     BetaWeddingPhaseReservation,
     BetaWeddingVoiceDisposition,
