@@ -256,7 +256,9 @@ async def beta_telegram_webhook(
         if _is_wedding_voice_message(update):
             downloader = TelegramVoiceDownloadAdapter(
                 credential=settings.telegram_beta_bot_token.get_secret_value(),
-                api_base_url=os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org"),
+                api_base_url=os.getenv(
+                    "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                ),
                 client=http_client,
             )
             voice_result = await ProcessBetaWeddingVoice(
@@ -310,7 +312,9 @@ async def beta_telegram_webhook(
 class _WeddingVoiceTelegram:
     """Small MVP adapter: send through the bound Beta bot, download its voice file."""
 
-    def __init__(self, telegram: TelegramClient, downloader: TelegramVoiceDownloadAdapter) -> None:
+    def __init__(
+        self, telegram: TelegramClient, downloader: TelegramVoiceDownloadAdapter
+    ) -> None:
         self._telegram = telegram
         self._downloader = downloader
 
@@ -349,7 +353,11 @@ async def accept_beta_telegram_receipt(
     ):
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
     update_id = update.get("update_id")
-    if type(update_id) is not int or update_id < 0 or update_id > TELEGRAM_UPDATE_ID_MAX:
+    if (
+        type(update_id) is not int
+        or update_id < 0
+        or update_id > TELEGRAM_UPDATE_ID_MAX
+    ):
         raise HTTPException(status_code=400, detail="Invalid Telegram update id")
     if not _is_group_update(update):
         # Telegram retries every non-2xx webhook response. Authenticated updates
@@ -366,12 +374,13 @@ async def accept_beta_telegram_receipt(
             )
         )
     except TelegramReceiptError:
-        raise HTTPException(status_code=400, detail="Invalid Telegram receipt envelope") from None
+        raise HTTPException(
+            status_code=400, detail="Invalid Telegram receipt envelope"
+        ) from None
     except Exception:
         raise HTTPException(
             status_code=503, detail="Durable Telegram receipt is unavailable"
         ) from None
-
 
 
 async def _settle_beta_consent_callback(
@@ -418,6 +427,7 @@ async def _settle_beta_consent_callback(
         return "unknown"
     return "answered"
 
+
 def _is_group_update(update: JsonObject) -> bool:
     update_kinds = {key for key in update if key != "update_id"}
     if update_kinds not in ({"message"}, {"my_chat_member"}, {"callback_query"}):
@@ -433,7 +443,9 @@ def _is_group_update(update: JsonObject) -> bool:
     callback = update.get("callback_query")
     if isinstance(callback, dict):
         callback_message = callback.get("message")
-        chat = callback_message.get("chat") if isinstance(callback_message, dict) else None
+        chat = (
+            callback_message.get("chat") if isinstance(callback_message, dict) else None
+        )
         return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
     return False
 
