@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
@@ -22,6 +23,7 @@ from app.application.beta_wedding_reply import (
     BetaWeddingReplyModel,
     RespondToBetaWeddingMessage,
 )
+from app.application.beta_wedding_voice import ProcessBetaWeddingVoice
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
@@ -50,6 +52,12 @@ from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
     OpenAIResponsesBetaWeddingModel,
     SqlBetaWeddingReplyStore,
+)
+from app.infrastructure.beta_wedding_voice import SqlBetaWeddingVoiceStore
+from app.infrastructure.beta_wedding_voice_provider import (
+    OpenAIBetaWeddingVoiceStructurer,
+    OpenAIBetaWeddingVoiceTranscriber,
+    TelegramVoiceDownloadAdapter,
 )
 from app.services.telegram import TelegramClient
 
@@ -244,26 +252,52 @@ async def beta_telegram_webhook(
     ):
         if beta_telegram is None:
             beta_telegram = get_beta_telegram_client(request)
-        try:
-            model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
-                http_client=get_beta_model_http_client(request),
-                api_key=settings.openai_api_key.get_secret_value(),
-                api_base_url=settings.openai_api_base_url,
-                model=settings.gate_beta_model_profile,
-                max_output_tokens=settings.gate_beta_model_max_output_tokens,
-                timeout_seconds=settings.gate_beta_model_timeout_seconds,
+        http_client = get_beta_model_http_client(request)
+        if _is_wedding_voice_message(update):
+            downloader = TelegramVoiceDownloadAdapter(
+                credential=settings.telegram_beta_bot_token.get_secret_value(),
+                api_base_url=os.getenv(
+                    "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                ),
+                client=http_client,
             )
-        except BetaWeddingModelError:
-            model = _UnavailableBetaWeddingModel()
-        reply_result = await RespondToBetaWeddingMessage(
-            store=SqlBetaWeddingReplyStore(session),
-            model=model,
-            telegram=beta_telegram,
-        ).execute(
-            receipt_id=acceptance.receipt_id,
-            now=received_at,
-        )
-        wedding_reply = reply_result.disposition.value
+            voice_result = await ProcessBetaWeddingVoice(
+                store=SqlBetaWeddingVoiceStore(session),
+                telegram=_WeddingVoiceTelegram(beta_telegram, downloader),
+                transcriber=OpenAIBetaWeddingVoiceTranscriber(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    client=http_client,
+                ),
+                structurer=OpenAIBetaWeddingVoiceStructurer(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    model=settings.gate_beta_model_profile,
+                    client=http_client,
+                ),
+            ).execute(receipt_id=acceptance.receipt_id, now=received_at)
+            wedding_reply = voice_result.disposition.value
+        else:
+            try:
+                model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
+                    http_client=http_client,
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    model=settings.gate_beta_model_profile,
+                    max_output_tokens=settings.gate_beta_model_max_output_tokens,
+                    timeout_seconds=settings.gate_beta_model_timeout_seconds,
+                )
+            except BetaWeddingModelError:
+                model = _UnavailableBetaWeddingModel()
+            reply_result = await RespondToBetaWeddingMessage(
+                store=SqlBetaWeddingReplyStore(session),
+                model=model,
+                telegram=beta_telegram,
+            ).execute(
+                receipt_id=acceptance.receipt_id,
+                now=received_at,
+            )
+            wedding_reply = reply_result.disposition.value
     return {
         "ok": True,
         "accepted": True,
@@ -273,6 +307,27 @@ async def beta_telegram_webhook(
         "delivery": delivery,
         "wedding_reply": wedding_reply,
     }
+
+
+class _WeddingVoiceTelegram:
+    """Small MVP adapter: send through the bound Beta bot, download its voice file."""
+
+    def __init__(
+        self, telegram: TelegramClient, downloader: TelegramVoiceDownloadAdapter
+    ) -> None:
+        self._telegram = telegram
+        self._downloader = downloader
+
+    async def send_plain_message(self, *, chat_id: str, text: str) -> JsonObject:
+        return await self._telegram.send_plain_message(chat_id=chat_id, text=text)
+
+    async def download_voice(self, *, file_id: str) -> bytes:
+        return await self._downloader.download_voice(file_id=file_id)
+
+
+def _is_wedding_voice_message(update: JsonObject) -> bool:
+    message = update.get("message")
+    return isinstance(message, dict) and isinstance(message.get("voice"), dict)
 
 
 async def accept_beta_telegram_receipt(
@@ -298,7 +353,11 @@ async def accept_beta_telegram_receipt(
     ):
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
     update_id = update.get("update_id")
-    if type(update_id) is not int or update_id < 0 or update_id > TELEGRAM_UPDATE_ID_MAX:
+    if (
+        type(update_id) is not int
+        or update_id < 0
+        or update_id > TELEGRAM_UPDATE_ID_MAX
+    ):
         raise HTTPException(status_code=400, detail="Invalid Telegram update id")
     if not _is_group_update(update):
         # Telegram retries every non-2xx webhook response. Authenticated updates
@@ -315,12 +374,13 @@ async def accept_beta_telegram_receipt(
             )
         )
     except TelegramReceiptError:
-        raise HTTPException(status_code=400, detail="Invalid Telegram receipt envelope") from None
+        raise HTTPException(
+            status_code=400, detail="Invalid Telegram receipt envelope"
+        ) from None
     except Exception:
         raise HTTPException(
             status_code=503, detail="Durable Telegram receipt is unavailable"
         ) from None
-
 
 
 async def _settle_beta_consent_callback(
@@ -367,6 +427,7 @@ async def _settle_beta_consent_callback(
         return "unknown"
     return "answered"
 
+
 def _is_group_update(update: JsonObject) -> bool:
     update_kinds = {key for key in update if key != "update_id"}
     if update_kinds not in ({"message"}, {"my_chat_member"}, {"callback_query"}):
@@ -382,7 +443,9 @@ def _is_group_update(update: JsonObject) -> bool:
     callback = update.get("callback_query")
     if isinstance(callback, dict):
         callback_message = callback.get("message")
-        chat = callback_message.get("chat") if isinstance(callback_message, dict) else None
+        chat = (
+            callback_message.get("chat") if isinstance(callback_message, dict) else None
+        )
         return isinstance(chat, dict) and chat.get("type") in {"group", "supergroup"}
     return False
 

@@ -216,7 +216,7 @@ async def test_model_failure_still_sends_bounded_acceptance() -> None:
 
     assert result.disposition is BetaWeddingReplyDisposition.SENT
     assert telegram.messages[0][1].startswith(
-        "Приняла и сохранила в общей памяти."
+        "Я поняла так:"
     )
     assert store.staged[0][2] == "beta_wedding_model_fallback"
 

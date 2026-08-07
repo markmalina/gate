@@ -17,6 +17,7 @@ from app.models import (  # noqa: F401
     become_recovery,
     beta_context,
     beta_space,
+    beta_wedding_voice,
     billing,
     canonical,
     relationship_crm,

@@ -6,7 +6,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
@@ -47,8 +47,10 @@ _SYSTEM_INSTRUCTIONS = """
 неопределённостях.
 
 Всегда возвращай один содержательный ответ на русском языке.
-- Если текущее сообщение сообщает информацию, начни с «Приняла.» и в 1–3
-  предложениях сформулируй, что именно ты поняла и сохранила.
+- Если текущее сообщение сообщает информацию, начни с «Я поняла так:» и
+  используй ровно четыре маркированных строки: «Факты», «Решения», «Задачи»,
+  «Вопросы». В каждой явно укажи найденное содержание либо «не выделены».
+  Заверши фразой «Сохранила именно эту структуру в памяти свадьбы.»
 - Если это вопрос или прямое обращение к Бете, сначала ответь по существу,
   используя только предоставленную память и текущее сообщение; затем при
   необходимости предложи один следующий шаг.
@@ -90,10 +92,7 @@ class SqlBetaWeddingReplyStore:
                 .select_from(BetaSpaceEventModel)
                 .join(
                     BetaSpaceBindingModel,
-                    (
-                        BetaSpaceBindingModel.id
-                        == BetaSpaceEventModel.binding_id
-                    )
+                    (BetaSpaceBindingModel.id == BetaSpaceEventModel.binding_id)
                     & (
                         BetaSpaceBindingModel.workspace_id
                         == BetaSpaceEventModel.workspace_id
@@ -106,8 +105,7 @@ class SqlBetaWeddingReplyStore:
                 .where(
                     BetaSpaceEventModel.receipt_id == parsed_receipt_id,
                     BetaSpaceEventModel.event_kind == "fact",
-                    BetaSpaceBindingModel.tenant_ref
-                    == BETA_WEDDING_TENANT_REF,
+                    BetaSpaceBindingModel.tenant_ref == BETA_WEDDING_TENANT_REF,
                     BetaSpaceBindingModel.state == "consented",
                 )
                 .with_for_update(of=BetaSpaceEventModel)
@@ -133,7 +131,7 @@ class SqlBetaWeddingReplyStore:
         if current is None:
             await self._session.rollback()
             return None
-        sender_label, current_text = current
+        sender_label, current_text, source_timestamp, voice_duration_seconds = current
         context = await self._context(
             binding=binding,
             current_event_id=event.id,
@@ -161,6 +159,8 @@ class SqlBetaWeddingReplyStore:
             media_kind=event.media_kind,
             sender_label=sender_label,
             current_text=current_text,
+            source_timestamp=source_timestamp,
+            voice_duration_seconds=voice_duration_seconds,
             context=context,
         )
 
@@ -200,17 +200,13 @@ class SqlBetaWeddingReplyStore:
             await self._session.rollback()
             raise RuntimeError("beta_wedding_reply_state_conflict")
         row.state = outcome
-        row.provider_message_id = (
-            telegram_message_id if outcome == "sent" else None
-        )
+        row.provider_message_id = telegram_message_id if outcome == "sent" else None
         row.error_code = error_code
         row.settled_at = now
         row.updated_at = now
         await self._session.commit()
 
-    async def _locked_reply(
-        self, reply_id: str
-    ) -> BetaSpaceReplyModel | None:
+    async def _locked_reply(self, reply_id: str) -> BetaSpaceReplyModel | None:
         try:
             parsed = uuid.UUID(reply_id)
         except ValueError:
@@ -238,8 +234,7 @@ class SqlBetaWeddingReplyStore:
                     TelegramReceipt.id == BetaSpaceEventModel.receipt_id,
                 )
                 .where(
-                    BetaSpaceEventModel.workspace_id
-                    == binding.workspace_id,
+                    BetaSpaceEventModel.workspace_id == binding.workspace_id,
                     BetaSpaceEventModel.binding_id == binding.id,
                     BetaSpaceEventModel.event_kind == "fact",
                     BetaSpaceEventModel.media_kind == "text",
@@ -261,7 +256,7 @@ class SqlBetaWeddingReplyStore:
             )
             if projection is None:
                 continue
-            sender_label, projected_text = projection
+            sender_label, projected_text, _source_timestamp, _duration = projection
             if projected_text is None:
                 continue
             remaining = _MAX_CONTEXT_CHARS - total_chars
@@ -295,9 +290,7 @@ class OpenAIResponsesBetaWeddingModel:
             raise BetaWeddingModelError("beta_wedding_model_credentials_missing")
         base_url = api_base_url.rstrip("/")
         if base_url != "https://api.openai.com/v1":
-            raise BetaWeddingModelError(
-                "beta_wedding_model_api_base_not_approved"
-            )
+            raise BetaWeddingModelError("beta_wedding_model_api_base_not_approved")
         if not model or model != model.strip() or len(model) > 128:
             raise BetaWeddingModelError("beta_wedding_model_profile_invalid")
         if max_output_tokens < 64 or max_output_tokens > 4096:
@@ -317,9 +310,7 @@ class OpenAIResponsesBetaWeddingModel:
         current: BetaWeddingContextMessage,
         context: tuple[BetaWeddingContextMessage, ...],
     ) -> str:
-        memory = "\n".join(
-            f"{item.sender_label}: {item.text}" for item in context
-        )
+        memory = "\n".join(f"{item.sender_label}: {item.text}" for item in context)
         if not memory:
             memory = "(пока нет предыдущих текстовых данных)"
         payload = {
@@ -356,9 +347,7 @@ class OpenAIResponsesBetaWeddingModel:
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            raise BetaWeddingModelError(
-                "beta_wedding_model_request_failed"
-            ) from exc
+            raise BetaWeddingModelError("beta_wedding_model_request_failed") from exc
         if len(response.content) > _MAX_PROVIDER_BODY_BYTES:
             raise BetaWeddingModelError("beta_wedding_model_response_too_large")
         provider = _json_object(response)
@@ -367,14 +356,10 @@ class OpenAIResponsesBetaWeddingModel:
         try:
             parsed = json.loads(_output_text(provider))
         except json.JSONDecodeError as exc:
-            raise BetaWeddingModelError(
-                "beta_wedding_model_contract_invalid"
-            ) from exc
+            raise BetaWeddingModelError("beta_wedding_model_contract_invalid") from exc
         text = parsed.get("text") if isinstance(parsed, dict) else None
         if not isinstance(text, str) or not text.strip():
-            raise BetaWeddingModelError(
-                "beta_wedding_model_contract_invalid"
-            )
+            raise BetaWeddingModelError("beta_wedding_model_contract_invalid")
         return text
 
 
@@ -382,7 +367,7 @@ def _message_projection(
     payload: object,
     *,
     expected_chat_id: str,
-) -> tuple[str, str | None] | None:
+) -> tuple[str, str | None, datetime | None, int | None] | None:
     if not isinstance(payload, dict):
         return None
     message = payload.get("message")
@@ -406,16 +391,31 @@ def _message_projection(
     ]
     sender_label = "Участник" if not names else " ".join(names)[:128]
     text = message.get("text")
-    return sender_label, text if isinstance(text, str) else None
+    timestamp = message.get("date")
+    source_timestamp = (
+        datetime.fromtimestamp(timestamp, UTC)
+        if type(timestamp) is int and timestamp >= 0
+        else None
+    )
+    voice = message.get("voice")
+    duration = (
+        voice.get("duration")
+        if isinstance(voice, dict) and type(voice.get("duration")) is int
+        else None
+    )
+    return (
+        sender_label,
+        text if isinstance(text, str) else None,
+        source_timestamp,
+        duration,
+    )
 
 
 def _json_object(response: httpx.Response) -> dict[str, Any]:
     try:
         value = response.json()
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise BetaWeddingModelError(
-            "beta_wedding_model_response_invalid"
-        ) from exc
+        raise BetaWeddingModelError("beta_wedding_model_response_invalid") from exc
     if not isinstance(value, dict):
         raise BetaWeddingModelError("beta_wedding_model_response_invalid")
     return cast(dict[str, Any], value)
