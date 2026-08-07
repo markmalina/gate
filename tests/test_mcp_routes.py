@@ -123,8 +123,6 @@ async def _beta_katya_status(
             "privacy_mode_confirmed": False,
             "space_enabled": False,
             "space_ready": False,
-            "model_runtime_enabled": False,
-            "model_data_gate_approved": False,
             "delivery_enabled": False,
         },
         "configured": {
@@ -156,6 +154,8 @@ async def _beta_wedding_status(
             "privacy_mode_confirmed": True,
             "space_enabled": False,
             "space_ready": False,
+            "model_runtime_enabled": False,
+            "model_data_gate_approved": False,
             "delivery_enabled": False,
         },
         "configured": {
