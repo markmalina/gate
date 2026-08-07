@@ -131,6 +131,8 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://10.0.0.1/",
         "https://[fc00::1]/",
         "https://240.0.0.1/",
+        "https://[fec0::1]/",
+        "https://[feff:ffff::1]/",
     ],
 )
 @pytest.mark.anyio
