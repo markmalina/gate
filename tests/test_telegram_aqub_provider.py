@@ -107,6 +107,13 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://host.local/",
         "https://host.localdomain/",
         "https://localhost.localdomain/",
+        "https://127.1/",
+        "https://0177.0.0.1/",
+        "https://2130706433/",
+        "https://0x7f000001/",
+        "https://0x7f.0.0.1/",
+        "https://0177.1/",
+        "https://008.008.008.008/",
     ],
 )
 @pytest.mark.anyio
@@ -144,6 +151,12 @@ def test_public_origin_with_port_constructs_exact_webhook_path() -> None:
     assert build_aqub_public_webhook_url(
         {"PUBLIC_BASE_URL": "https://gate.example:8443/"}
     ) == "https://gate.example:8443/telegram/aqub/preflight"
+
+
+def test_canonical_global_ipv4_constructs_exact_webhook_path() -> None:
+    assert build_aqub_public_webhook_url(
+        {"PUBLIC_BASE_URL": "https://8.8.8.8/"}
+    ) == "https://8.8.8.8/telegram/aqub/preflight"
 
 
 def test_nul_control_is_rejected_by_url_builder() -> None:
