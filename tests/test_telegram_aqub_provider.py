@@ -89,6 +89,15 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://gate.example:not-a-port/",
         "gate.example:not-a-port",
         "https://gate.example:+443/",
+        "https://gate.exa\tmple/",
+        "https://gate.example:\t443/",
+        "gate.example:\t443",
+        "https://gate.exam\nple/",
+        "https://gate.example:\r443/",
+        "https://gate.example/line\nfeed",
+        "https://gate.exa\x00mple/",
+        "https://gate.example:\x1f443/",
+        "https://gate.exa\x7fmple/",
     ],
 )
 @pytest.mark.anyio
