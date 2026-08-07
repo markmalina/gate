@@ -12,7 +12,6 @@ _MAX_TELEGRAM_TEXT_CHARS = 4_096
 
 
 class BetaWeddingReplyDisposition(StrEnum):
-    DISABLED = "disabled"
     NOT_APPLICABLE = "not_applicable"
     DUPLICATE = "duplicate"
     SENT = "sent"
@@ -93,21 +92,14 @@ class RespondToBetaWeddingMessage:
         store: BetaWeddingReplyStore,
         model: BetaWeddingReplyModel,
         telegram: BetaWeddingReplyTelegram,
-        enabled: bool,
     ) -> None:
         self._store = store
         self._model = model
         self._telegram = telegram
-        self._enabled = enabled
 
     async def execute(
         self, *, receipt_id: str, now: datetime
     ) -> BetaWeddingReplyResult:
-        if not self._enabled:
-            return BetaWeddingReplyResult(
-                BetaWeddingReplyDisposition.DISABLED,
-                "beta_wedding_reply_disabled",
-            )
         reservation = await self._store.reserve_reply(
             receipt_id=receipt_id, now=now
         )

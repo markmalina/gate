@@ -401,12 +401,6 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                             "privacy_mode_confirmed": {"type": "boolean"},
                             "space_enabled": {"type": "boolean"},
                             "space_ready": {"type": "boolean"},
-                            "model_runtime_enabled": {
-                                "type": "boolean",
-                            },
-                            "model_data_gate_approved": {
-                                "type": "boolean",
-                            },
                             "delivery_enabled": {
                                 "type": "boolean",
                             },

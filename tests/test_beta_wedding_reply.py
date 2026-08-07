@@ -134,7 +134,6 @@ async def test_text_event_gets_one_contextual_reply() -> None:
         store=store,
         model=model,
         telegram=telegram,
-        enabled=True,
     ).execute(
         receipt_id="00000000-0000-0000-0000-000000000401",
         now=datetime(2026, 8, 7, 7, 0, tzinfo=UTC),
@@ -169,7 +168,6 @@ async def test_media_event_is_always_acknowledged_without_model() -> None:
         store=store,
         model=model,
         telegram=telegram,
-        enabled=True,
     ).execute(
         receipt_id="00000000-0000-0000-0000-000000000402",
         now=datetime(2026, 8, 7, 7, 1, tzinfo=UTC),
@@ -190,7 +188,6 @@ async def test_duplicate_event_creates_no_model_call_or_send() -> None:
         store=store,
         model=model,
         telegram=telegram,
-        enabled=True,
     ).execute(
         receipt_id="00000000-0000-0000-0000-000000000403",
         now=datetime(2026, 8, 7, 7, 2, tzinfo=UTC),
@@ -212,7 +209,6 @@ async def test_model_failure_still_sends_bounded_acceptance() -> None:
         store=store,
         model=model,
         telegram=telegram,
-        enabled=True,
     ).execute(
         receipt_id="00000000-0000-0000-0000-000000000404",
         now=datetime(2026, 8, 7, 7, 3, tzinfo=UTC),
@@ -234,7 +230,6 @@ async def test_ambiguous_send_is_terminal_unknown() -> None:
         store=store,
         model=FakeModel(),
         telegram=telegram,
-        enabled=True,
     ).execute(
         receipt_id="00000000-0000-0000-0000-000000000405",
         now=datetime(2026, 8, 7, 7, 4, tzinfo=UTC),
