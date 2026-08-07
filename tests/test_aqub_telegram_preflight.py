@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.api.aqub_telegram_preflight import router
-from app.api.telegram_ingress import get_telegram_receipt_store
-from app.application.telegram_processing import (
-    AcceptTelegramReceiptCommand,
-    TelegramReceiptAcceptance,
+from app.api.aqub_telegram_preflight import get_aqub_preflight_store, router
+from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
+from app.application.aqub_s0_preflight import (
+    AQUBDurableAcceptance,
+    AQUBPreflightCommand,
+    AQUBReceiptStatus,
+    AQUBStoreDisposition,
 )
 from app.core.config import Settings, get_settings
 from fastapi import FastAPI
@@ -19,25 +21,29 @@ READY_AT = datetime(2026, 8, 7, 8, 0, tzinfo=UTC)
 
 class DurableStore:
     def __init__(self) -> None:
-        self.commands: list[AcceptTelegramReceiptCommand] = []
-        self.acceptances: dict[tuple[str, int], TelegramReceiptAcceptance] = {}
+        self.commands: list[AQUBPreflightCommand] = []
+        self.acceptances: dict[str, AQUBDurableAcceptance] = {}
 
-    async def create_if_absent(
-        self, command: AcceptTelegramReceiptCommand
-    ) -> TelegramReceiptAcceptance:
+    async def accept(self, command: AQUBPreflightCommand) -> AQUBDurableAcceptance:
         self.commands.append(command)
-        key = (command.bot_key, command.update_id)
+        key = command.external_id
         existing = self.acceptances.get(key)
         if existing is not None:
-            return TelegramReceiptAcceptance(
-                receipt_id=existing.receipt_id,
-                outbox_event_id=existing.outbox_event_id,
-                duplicate=True,
+            return AQUBDurableAcceptance(
+                status=AQUBReceiptStatus.COMMITTED,
+                disposition=AQUBStoreDisposition.DUPLICATE,
+                command_receipt_id=existing.command_receipt_id,
+                root_event_id=existing.root_event_id,
+                correlation_id=existing.correlation_id,
+                causation_id=existing.causation_id,
             )
-        created = TelegramReceiptAcceptance(
-            receipt_id="raw-receipt SECRET-RECEIPT",
-            outbox_event_id="raw-outbox SECRET-OUTBOX",
-            duplicate=False,
+        created = AQUBDurableAcceptance(
+            status=AQUBReceiptStatus.COMMITTED,
+            disposition=AQUBStoreDisposition.CREATED,
+            command_receipt_id="raw-receipt SECRET-RECEIPT",
+            root_event_id="raw-root SECRET-ROOT",
+            correlation_id="raw-correlation SECRET-CORRELATION",
+            causation_id="raw-causation SECRET-CAUSATION",
         )
         self.acceptances[key] = created
         return created
@@ -77,7 +83,7 @@ def _client(settings: Settings, store: DurableStore) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_telegram_receipt_store] = lambda: store
+    app.dependency_overrides[get_aqub_preflight_store] = lambda: store
     return TestClient(app)
 
 
@@ -112,10 +118,13 @@ def test_enabled_exact_route_owns_once_and_duplicate_reuses_receipt() -> None:
         == first_body["receipt"]["command_receipt_ref"]
     )
     assert first_body["receipt"]["delivery_status"] == "not_run"
-    assert [command.bot_key for command in store.commands] == [
-        "telegram_aqub_preflight",
-        "telegram_aqub_preflight",
-    ]
+    assert [command.external_id for command in store.commands] == ["500", "500"]
+    assert first_body["receipt"]["result_json"]["command"] == "aqub_ping"
+    assert second_body["receipt"]["result_json"]["command"] == "aqub_ping"
+
+
+def test_aqub_route_does_not_enter_existing_dispatch_chain() -> None:
+    assert all("aqub" not in route for route in TELEGRAM_WEBHOOK_CHAIN)
 
 
 def test_disabled_or_unbound_route_touches_no_storage() -> None:
