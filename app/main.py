@@ -44,6 +44,10 @@ from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.services.telegram_alpha_webhook import (
     reconcile_alpha_telegram_webhook_with_retries,
 )
+from app.services.telegram_aqub_webhook import (
+    AQUBProviderReadinessState,
+    reconcile_aqub_telegram_provider_with_retries,
+)
 from app.services.telegram_beta_webhook import (
     reconcile_beta_telegram_webhook_with_retries,
 )
@@ -62,12 +66,18 @@ logger = logging.getLogger(__name__)
 async def _reconcile_all_telegram_webhooks(
     settings: Settings,
     http_client: httpx.AsyncClient,
+    aqub_provider_readiness: AQUBProviderReadinessState,
 ) -> None:
     await asyncio.gather(
         reconcile_telegram_webhook_with_retries(settings, http_client),
         reconcile_alpha_telegram_webhook_with_retries(settings, http_client),
         reconcile_beta_telegram_webhook_with_retries(settings, http_client),
         reconcile_become_telegram_webhook_with_retries(settings, http_client),
+        reconcile_aqub_telegram_provider_with_retries(
+            settings,
+            http_client,
+            aqub_provider_readiness,
+        ),
     )
 
 
@@ -121,6 +131,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         enabled=reply_sequence_worker_enabled,
     )
     _app.state.worker_health_registry = worker_health
+    aqub_provider_readiness = AQUBProviderReadinessState(
+        enabled=settings.gate_aqub_s0_preflight_enabled
+    )
+    _app.state.aqub_provider_readiness = aqub_provider_readiness
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
         try:
@@ -165,7 +179,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         database_runtime.engine
                     )
                     reconciliation_task = asyncio.create_task(
-                        _reconcile_all_telegram_webhooks(settings, http_client)
+                        _reconcile_all_telegram_webhooks(
+                            settings,
+                            http_client,
+                            aqub_provider_readiness,
+                        )
                     )
                     if alpha_transcription_enabled:
                         alpha_transcription_task = asyncio.create_task(
@@ -237,6 +255,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         finally:
             delattr(_app.state, "database_runtime")
             delattr(_app.state, "worker_health_registry")
+            delattr(_app.state, "aqub_provider_readiness")
 
 
 async def telegram_http_exception_handler(
