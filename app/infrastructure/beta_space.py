@@ -348,6 +348,7 @@ class SqlBetaSpaceStore:
             await self._session.rollback()
             return BetaSpaceReservation(False)
         event_id = uuid.uuid4()
+        checkpoint_sequence = await self._next_checkpoint_sequence(row)
         result = await self._session.execute(
             insert(BetaSpaceEventModel)
             .values(
