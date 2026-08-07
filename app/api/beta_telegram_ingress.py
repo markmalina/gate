@@ -8,9 +8,6 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_db_session
 from app.api.telegram_ingress import get_telegram_receipt_store
 from app.application.beta_space_intake import (
@@ -60,6 +57,8 @@ from app.infrastructure.beta_wedding_voice_provider import (
     TelegramVoiceDownloadAdapter,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 BETA_TELEGRAM_WEBHOOK_PATH = "/telegram/beta/webhook"
 TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
