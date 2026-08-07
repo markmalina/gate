@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.application.aqub_s0_preflight import (
+    AQUB_BOT_USERNAME,
     AQUB_OWNED_PATH,
+    AQUB_PING_COMMAND,
     AQUBPreflightInbound,
     AQUBPreflightResult,
     AQUBPreflightStore,
@@ -47,20 +49,8 @@ async def aqub_telegram_preflight(
     settings: Settings = settings_dependency,
     store: AQUBPreflightStore = store_dependency,
 ) -> JsonObject:
-    """Own one exact AQUB ping before any legacy/canary processing exists."""
+    """Own the exact AQUB ping, including a safe first-contact bootstrap path."""
 
-    try:
-        binding = build_aqub_s0_binding(settings)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB preflight binding is incomplete",
-        ) from None
-    if not binding.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB preflight is disabled",
-        )
     configured_secret = settings.telegram_aqub_webhook_secret.get_secret_value()
     if not configured_secret:
         raise HTTPException(
@@ -82,7 +72,29 @@ async def aqub_telegram_preflight(
         raise HTTPException(status_code=400, detail="Invalid Telegram update") from None
     if not isinstance(raw_update, dict):
         raise HTTPException(status_code=400, detail="Invalid Telegram update")
+
     received_at = datetime.now(UTC)
+    projected = _project_inbound(
+        cast(JsonObject, raw_update),
+        bot_username=AQUB_BOT_USERNAME,
+        received_at=received_at,
+    )
+
+    try:
+        binding = build_aqub_s0_binding(settings)
+    except ValueError:
+        if _is_bootstrap_ping(projected):
+            return _bootstrap_response(projected)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB preflight binding is incomplete",
+        ) from None
+
+    if not binding.enabled:
+        if _is_bootstrap_ping(projected):
+            return _bootstrap_response(projected)
+        return _unowned_response(reason="aqub_bootstrap_waiting")
+
     inbound = _project_inbound(
         cast(JsonObject, raw_update),
         bot_username=binding.bot_username,
@@ -141,6 +153,23 @@ def _project_inbound(
     )
 
 
+def _is_bootstrap_ping(inbound: AQUBPreflightInbound | None) -> bool:
+    return inbound is not None and inbound.command == AQUB_PING_COMMAND
+
+
+def _bootstrap_response(inbound: AQUBPreflightInbound | None) -> JsonObject:
+    if inbound is None:
+        return _unowned_response(reason="aqub_bootstrap_invalid")
+    return {
+        "method": "sendMessage",
+        "chat_id": int(inbound.chat_id),
+        "text": (
+            "AQUB bootstrap принят. Скопируйте эту строку в ChatGPT:\n"
+            f"AQUB_BIND chat_id={inbound.chat_id} alpha_user_id={inbound.actor_id}"
+        ),
+    }
+
+
 def _response(result: AQUBPreflightResult) -> JsonObject:
     response: JsonObject = {
         "ok": True,
@@ -160,12 +189,12 @@ def _response(result: AQUBPreflightResult) -> JsonObject:
     return response
 
 
-def _unowned_response() -> JsonObject:
+def _unowned_response(*, reason: str = "aqub_route_not_owned") -> JsonObject:
     return {
         "ok": True,
         "owned": False,
         "accepted": False,
-        "reason": "aqub_route_not_owned",
+        "reason": reason,
         "legacy_dispatch": None,
         "canary_dispatch": None,
     }
