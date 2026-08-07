@@ -7,7 +7,7 @@ import hmac
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
@@ -91,11 +91,11 @@ def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDel
         raise AQUBLiveDeliveryError("aqub_delivery_bad_text")
     return ParsedAQUBDelivery(
         command_id=command_id,
-        idempotency_key=cast(str, idempotency_key),
-        chat_ref=cast(str, chat_ref),
-        assignment_ref=cast(str, assignment_ref),
-        step_ref=cast(str, step_ref),
-        text=cast(str, text_value),
+        idempotency_key=idempotency_key,
+        chat_ref=chat_ref,
+        assignment_ref=assignment_ref,
+        step_ref=step_ref,
+        text=text_value,
         request_sha256=hashlib.sha256(raw_body).hexdigest(),
     )
 
@@ -116,7 +116,7 @@ class AQUBLiveDeliveryService:
 
     async def deliver(self, command: ParsedAQUBDelivery) -> JsonObject:
         row_id = uuid4()
-        statement = insert(AQUBLiveDelivery).values(
+        statement: Any = insert(AQUBLiveDelivery).values(
             id=row_id,
             command_id=command.command_id,
             idempotency_key=command.idempotency_key,
@@ -127,7 +127,7 @@ class AQUBLiveDeliveryService:
             text_sha256=hashlib.sha256(command.text.encode()).hexdigest(),
             state="pending",
         )
-        statement = statement.on_conflict_do_nothing(  # type: ignore[attr-defined]
+        statement = statement.on_conflict_do_nothing(
             index_elements=["idempotency_key"]
         ).returning(AQUBLiveDelivery.id)
         inserted_id = await self._session.scalar(statement)
@@ -306,9 +306,12 @@ def _telegram_message_id(response: JsonObject) -> int:
     if response.get("ok") is not True:
         raise RuntimeError("telegram_send_not_ok")
     result = response.get("result")
-    if not isinstance(result, dict) or type(result.get("message_id")) is not int:
+    if not isinstance(result, dict):
         raise RuntimeError("telegram_send_message_id_missing")
-    return cast(int, result["message_id"])
+    message_id = result.get("message_id")
+    if type(message_id) is not int:
+        raise RuntimeError("telegram_send_message_id_missing")
+    return message_id
 
 
 def _opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:
