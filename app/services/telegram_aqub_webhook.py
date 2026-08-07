@@ -15,6 +15,7 @@ import httpx
 
 from app.application.aqub_s0_preflight import AQUB_BOT_USERNAME, AQUB_OWNED_PATH
 from app.core.config import Settings
+from app.infrastructure.aqub_s0_preflight import build_aqub_s0_binding
 
 logger = logging.getLogger(__name__)
 AQUB_ALLOWED_UPDATES = ["message", "my_chat_member"]
@@ -92,6 +93,15 @@ async def reconcile_aqub_telegram_provider(
     state.set(AQUBProviderReadinessSnapshot(enabled=enabled))
     if not enabled:
         return "skipped_preflight_disabled"
+
+    try:
+        binding = build_aqub_s0_binding(settings)
+    except ValueError:
+        state.fail(AQUBProviderErrorCode.CONFIGURATION_INCOMPLETE)
+        return "skipped_configuration_incomplete"
+    if not binding.enabled:
+        state.fail(AQUBProviderErrorCode.CONFIGURATION_INCOMPLETE)
+        return "skipped_configuration_incomplete"
 
     token = settings.telegram_aqub_bot_token.get_secret_value().strip()
     secret = settings.telegram_aqub_webhook_secret.get_secret_value().strip()
