@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.aqub_s0_preflight import (
+    AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
     AQUBPreflightBinding,
     AQUBPreflightCommand,
@@ -21,6 +22,13 @@ from app.core.config import Settings
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 AQUB_PREFLIGHT_BOT_KEY = "telegram_aqub_preflight"
+
+# Release-pinned from the owner-confirmed live bootstrap receipt on 2026-08-07.
+# ACE remains explicitly unbound until a real ACE actor supplies independent evidence.
+AQUB_RELEASE_GROUP_CHAT_ID = "-5052983997"
+AQUB_RELEASE_ALPHA_USER_ID = "7819816320"
+AQUB_RELEASE_ACE_USER_ID = "__unbound_ace__"
+AQUB_RELEASE_READY_AT = datetime(2026, 8, 7, 13, 17, tzinfo=UTC)
 
 
 class SqlAQUBPreflightReceiptStore:
@@ -96,8 +104,35 @@ class SqlAQUBPreflightReceiptStore:
         )
 
 
+def _release_pin_available(settings: Settings) -> bool:
+    """Use the confirmed release pin only while no operator binding exists."""
+
+    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value()
+    return (
+        not settings.gate_aqub_s0_preflight_enabled
+        and settings.telegram_aqub_bot_username == AQUB_BOT_USERNAME
+        and bool(settings.telegram_aqub_webhook_secret.get_secret_value())
+        and len(signing_key.encode()) >= 32
+        and not settings.gate_aqub_group_chat_id.get_secret_value().strip()
+        and not settings.gate_aqub_alpha_user_id.get_secret_value().strip()
+        and not settings.gate_aqub_ace_user_id.get_secret_value().strip()
+    )
+
+
 def build_aqub_s0_binding(settings: Settings) -> AQUBPreflightBinding:
-    """Construct an enabled binding only when every release-pinned value exists."""
+    """Construct the explicit binding or the owner-confirmed release pin."""
+
+    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value()
+    if _release_pin_available(settings):
+        return AQUBPreflightBinding(
+            enabled=True,
+            bot_username=AQUB_BOT_USERNAME,
+            group_chat_id=AQUB_RELEASE_GROUP_CHAT_ID,
+            ace_user_id=AQUB_RELEASE_ACE_USER_ID,
+            alpha_user_id=AQUB_RELEASE_ALPHA_USER_ID,
+            ready_at=AQUB_RELEASE_READY_AT,
+            receipt_signing_key=signing_key.encode(),
+        )
 
     if not settings.gate_aqub_s0_preflight_enabled:
         return AQUBPreflightBinding()
@@ -113,7 +148,5 @@ def build_aqub_s0_binding(settings: Settings) -> AQUBPreflightBinding:
         ace_user_id=settings.gate_aqub_ace_user_id.get_secret_value(),
         alpha_user_id=settings.gate_aqub_alpha_user_id.get_secret_value(),
         ready_at=ready_at,
-        receipt_signing_key=(
-            settings.gate_aqub_receipt_signing_key.get_secret_value().encode()
-        ),
+        receipt_signing_key=signing_key.encode(),
     )
