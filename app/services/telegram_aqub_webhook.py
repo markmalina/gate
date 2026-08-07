@@ -109,13 +109,20 @@ def build_aqub_public_webhook_url(environ: Mapping[str, str]) -> str | None:
 def _valid_public_host(hostname: str | None) -> bool:
     if hostname is None or hostname != hostname.strip() or len(hostname) > 253:
         return False
+    canonical = hostname.casefold()
+    if canonical.endswith("."):
+        return False
     try:
-        return ipaddress.ip_address(hostname).is_global
+        return ipaddress.ip_address(canonical).is_global
     except ValueError:
         pass
-    if hostname.casefold() == "localhost" or "." not in hostname:
+    if (
+        "." not in canonical
+        or canonical in {"localhost", "local", "localdomain"}
+        or canonical.endswith((".localhost", ".local", ".localdomain"))
+    ):
         return False
-    labels = hostname.rstrip(".").split(".")
+    labels = canonical.split(".")
     return bool(labels) and all(_DNS_LABEL.fullmatch(label) for label in labels)
 
 
