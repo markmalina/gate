@@ -54,10 +54,18 @@ class Runtime:
         self.raw_bodies: list[bytes] = []
         self.signatures: list[str] = []
 
-    async def post_envelope(self, *, raw_body: bytes, signature: str) -> dict[str, object]:
+    async def post_envelope(
+        self,
+        *,
+        raw_body: bytes,
+        signature: str,
+    ) -> dict[str, object]:
         self.raw_bodies.append(raw_body)
         self.signatures.append(signature)
-        return {"ok": True, "result": {"kind": "status", "reply_text": "AQUB ok"}}
+        return {
+            "ok": True,
+            "result": {"kind": "status", "reply_text": "AQUB ok"},
+        }
 
 
 def binding() -> AQUBPreflightBinding:
@@ -86,8 +94,8 @@ def inbound(*, text: str = "/status", update_id: int = 9001) -> AQUBPreflightInb
                 "message_id": 66,
                 "from": {"id": 999, "is_bot": True},
                 "text": (
-                    "AQUB: пришлите программу ответом на это сообщение по шаблону из минимум двух шагов "
-                    "(до 3500 символов)."
+                    "AQUB: пришлите программу ответом на это сообщение по шаблону "
+                    "из минимум двух шагов (до 3500 символов)."
                 ),
             },
         },
@@ -108,7 +116,11 @@ def inbound(*, text: str = "/status", update_id: int = 9001) -> AQUBPreflightInb
 async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -> None:
     store = Store()
     runtime = Runtime()
-    adapter = AQUBLiveIngressAdapter(binding=binding(), store=store, runtime=runtime)
+    adapter = AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    )
 
     result = await adapter.handle(inbound())
 
@@ -130,7 +142,13 @@ async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -
     assert envelope["reply_to_message_id"].startswith("message:")
     assert envelope["reply_context"] == "program_prompt"
     serialized = raw.decode()
-    for forbidden in ("-5052983997", "7819816320", '"message_id":77', '"message_id":66'):
+    forbidden_values = (
+        "-5052983997",
+        "7819816320",
+        '"message_id":77',
+        '"message_id":66',
+    )
+    for forbidden in forbidden_values:
         assert forbidden not in serialized
 
 
@@ -138,7 +156,11 @@ async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -
 async def test_exact_live_replay_reuses_gate_receipt_and_same_opaque_refs() -> None:
     store = Store()
     runtime = Runtime()
-    adapter = AQUBLiveIngressAdapter(binding=binding(), store=store, runtime=runtime)
+    adapter = AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    )
 
     first = await adapter.handle(inbound())
     second = await adapter.handle(inbound())
@@ -164,7 +186,9 @@ async def test_unbound_actor_is_not_forwarded_or_stored() -> None:
         received_at=value.received_at,
     )
     result = await AQUBLiveIngressAdapter(
-        binding=binding(), store=store, runtime=runtime
+        binding=binding(),
+        store=store,
+        runtime=runtime,
     ).handle(value)
 
     assert result.accepted is False
