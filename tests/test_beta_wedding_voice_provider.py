@@ -1,6 +1,5 @@
 import httpx
 import pytest
-
 from app.infrastructure.beta_wedding_voice_provider import OpenAIBetaWeddingVoiceStructurer
 
 
