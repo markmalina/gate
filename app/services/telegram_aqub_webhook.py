@@ -79,7 +79,7 @@ def build_aqub_public_webhook_url(environ: Mapping[str, str]) -> str | None:
         or environ.get("RAILWAY_STATIC_URL")
         or ""
     )
-    if not raw_value or raw_value != raw_value.strip():
+    if not raw_value or _contains_ascii_control_or_space(raw_value):
         return None
     if "://" not in raw_value:
         if any(marker in raw_value for marker in ("/", "?", "#", "@")):
@@ -117,6 +117,10 @@ def _valid_public_host(hostname: str | None) -> bool:
         return False
     labels = hostname.rstrip(".").split(".")
     return bool(labels) and all(_DNS_LABEL.fullmatch(label) for label in labels)
+
+
+def _contains_ascii_control_or_space(value: str) -> bool:
+    return any(ord(character) <= 0x20 or ord(character) == 0x7F for character in value)
 
 
 def _valid_explicit_port(netloc: str) -> bool:
