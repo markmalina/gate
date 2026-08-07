@@ -127,24 +127,55 @@ def test_aqub_route_does_not_enter_existing_dispatch_chain() -> None:
     assert all("aqub" not in route for route in TELEGRAM_WEBHOOK_CHAIN)
 
 
-def test_disabled_or_unbound_route_touches_no_storage() -> None:
-    disabled_store = DurableStore()
-    with _client(
-        _settings(GATE_AQUB_S0_PREFLIGHT_ENABLED=False), disabled_store
-    ) as client:
-        disabled = _post(client, _update())
-    assert disabled.status_code == 503
-    assert disabled_store.commands == []
+def test_disabled_exact_ping_returns_bootstrap_binding_without_storage() -> None:
+    store = DurableStore()
+    with _client(_settings(GATE_AQUB_S0_PREFLIGHT_ENABLED=False), store) as client:
+        response = _post(client, _update())
 
-    unbound_store = DurableStore()
-    with _client(_settings(), unbound_store) as client:
-        unbound = _post(
+    assert response.status_code == 200
+    body = response.json()
+    assert body["method"] == "sendMessage"
+    assert body["chat_id"] == -1007001
+    assert "AQUB_BIND chat_id=-1007001 alpha_user_id=7003" in body["text"]
+    assert store.commands == []
+
+
+def test_incomplete_binding_exact_ping_returns_bootstrap_binding_without_storage() -> None:
+    store = DurableStore()
+    with _client(_settings(GATE_AQUB_GROUP_CHAT_ID=""), store) as client:
+        response = _post(client, _update())
+
+    assert response.status_code == 200
+    assert response.json()["method"] == "sendMessage"
+    assert response.json()["chat_id"] == -1007001
+    assert store.commands == []
+
+
+def test_disabled_non_ping_is_unowned_and_does_not_disclose_binding() -> None:
+    store = DurableStore()
+    with _client(_settings(GATE_AQUB_S0_PREFLIGHT_ENABLED=False), store) as client:
+        response = _post(client, _update(text="обычное сообщение"))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["owned"] is False
+    assert body["reason"] == "aqub_bootstrap_waiting"
+    assert "chat_id" not in body
+    assert "method" not in body
+    assert store.commands == []
+
+
+def test_configured_unbound_route_touches_no_storage() -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
             client,
             _update(chat={"id": -1007999, "type": "supergroup"}),
         )
-    assert unbound.status_code == 200
-    assert unbound.json()["owned"] is False
-    assert unbound_store.commands == []
+
+    assert response.status_code == 200
+    assert response.json()["owned"] is False
+    assert store.commands == []
 
 
 def test_http_receipt_redacts_every_raw_identifier_text_and_secret() -> None:
