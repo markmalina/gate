@@ -13,6 +13,7 @@ on:
       - "alembic/versions/0087_become_pilot_slice3_learner.py"
       - "alembic/versions/0088_beta_wedding_replies.py"
       - "alembic/versions/0089_beta_wedding_voice_phases.py"
+      - "alembic/versions/0090_beta_wedding_checkpoints.py"
       - "app/application/beta_wedding_voice.py"
       - "app/infrastructure/beta_wedding_voice.py"
       - "app/infrastructure/beta_wedding_voice_provider.py"
@@ -119,7 +120,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0089_beta_wedding_voice_phases (head)"
+          alembic heads | grep -F "0090_beta_wedding_checkpoints (head)"
           alembic upgrade head
           alembic check
 

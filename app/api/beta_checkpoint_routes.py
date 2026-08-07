@@ -20,6 +20,10 @@ from app.infrastructure.beta_checkpoint_batches import (
     acknowledge_beta_checkpoint_batch,
     next_beta_checkpoint_batch,
 )
+from app.infrastructure.beta_space_checkpoint_batches import (
+    acknowledge_beta_space_checkpoint_batch,
+    next_beta_space_checkpoint_batch,
+)
 
 router = APIRouter(prefix="/internal/beta/checkpoints")
 settings_dependency = Depends(get_settings)
@@ -82,12 +86,22 @@ async def next_checkpoint(
     await _authorize(authorization, settings)
     try:
         async with session.begin():
-            payload = await next_beta_checkpoint_batch(
-                session,
-                installation_ref=request.installation_ref,
-                expected_user_workspace_id=request.user_workspace_id,
-                expected_group_id=request.group_id,
-            )
+            try:
+                payload = await next_beta_checkpoint_batch(
+                    session,
+                    installation_ref=request.installation_ref,
+                    expected_user_workspace_id=request.user_workspace_id,
+                    expected_group_id=request.group_id,
+                )
+            except BetaCheckpointBatchError as exc:
+                if exc.code != "beta_checkpoint_binding_not_active":
+                    raise
+                payload = await next_beta_space_checkpoint_batch(
+                    session,
+                    installation_ref=request.installation_ref,
+                    expected_user_workspace_id=request.user_workspace_id,
+                    expected_group_id=request.group_id,
+                )
     except BetaCheckpointBatchError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -119,16 +133,30 @@ async def acknowledge_checkpoint(
     await _authorize(authorization, settings)
     try:
         async with session.begin():
-            payload = await acknowledge_beta_checkpoint_batch(
-                session,
-                installation_ref=request.installation_ref,
-                expected_user_workspace_id=request.user_workspace_id,
-                expected_group_id=request.group_id,
-                sequence_start=request.sequence_start,
-                sequence_end=request.sequence_end,
-                ciphertext_sha256=request.ciphertext_sha256,
-                github_commit_sha=request.github_commit_sha,
-            )
+            try:
+                payload = await acknowledge_beta_checkpoint_batch(
+                    session,
+                    installation_ref=request.installation_ref,
+                    expected_user_workspace_id=request.user_workspace_id,
+                    expected_group_id=request.group_id,
+                    sequence_start=request.sequence_start,
+                    sequence_end=request.sequence_end,
+                    ciphertext_sha256=request.ciphertext_sha256,
+                    github_commit_sha=request.github_commit_sha,
+                )
+            except BetaCheckpointBatchError as exc:
+                if exc.code != "beta_checkpoint_binding_not_active":
+                    raise
+                payload = await acknowledge_beta_space_checkpoint_batch(
+                    session,
+                    installation_ref=request.installation_ref,
+                    expected_user_workspace_id=request.user_workspace_id,
+                    expected_group_id=request.group_id,
+                    sequence_start=request.sequence_start,
+                    sequence_end=request.sequence_end,
+                    ciphertext_sha256=request.ciphertext_sha256,
+                    github_commit_sha=request.github_commit_sha,
+                )
     except BetaCheckpointBatchError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

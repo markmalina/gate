@@ -24,6 +24,10 @@ BETA_WEDDING_SPACE_REF = "spc_fcdd8e57a7e832840afcc187fb1d4b2c"
 BETA_WEDDING_TENANT_REF = "beta-user-mark-wedding-001"
 BETA_WEDDING_INSTALLATION_REF = "installation-4de1df8a77f8468d8b30e8a41db876aa"
 BETA_WEDDING_STORAGE_REF = "beta-group-wedding-minsk-001"
+BETA_WEDDING_CHECKPOINT_RECIPIENT_PEM = """-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VuAyEAJOsuz1/C1RbIFfazec4EdZlXFFWln8UdWPJ1jddC3Fo=
+-----END PUBLIC KEY-----
+"""
 BETA_WEDDING_GROUP_TITLE = "Свадьба в Минске"
 BETA_WEDDING_ACTIVATION_TEXT = "Бета, начинаем собирать свадьбу в Минске."
 
@@ -286,6 +290,7 @@ async def prepare_beta_wedding_binding(
             consent_sha256=hashlib.sha256(
                 BETA_WEDDING_ACTIVATION_TEXT.encode()
             ).hexdigest(),
+            checkpoint_recipient_pem=BETA_WEDDING_CHECKPOINT_RECIPIENT_PEM,
             state="consented",
             ready_at=now,
             consented_at=now,

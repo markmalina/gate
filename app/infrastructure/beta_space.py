@@ -295,6 +295,7 @@ class SqlBetaSpaceStore:
             await self._session.rollback()
             return BetaSpaceReservation(False)
         event_id = uuid.uuid4()
+        checkpoint_sequence = await self._next_checkpoint_sequence(row)
         result = await self._session.execute(
             insert(BetaSpaceEventModel)
             .values(
@@ -309,6 +310,7 @@ class SqlBetaSpaceStore:
                 event_kind="consent",
                 media_kind="text",
                 payload_sha256=source.payload_sha256,
+                checkpoint_sequence=checkpoint_sequence,
                 occurred_at=source.occurred_at,
                 received_at=source.received_at,
             )
@@ -346,6 +348,7 @@ class SqlBetaSpaceStore:
             await self._session.rollback()
             return BetaSpaceReservation(False)
         event_id = uuid.uuid4()
+        checkpoint_sequence = await self._next_checkpoint_sequence(row)
         result = await self._session.execute(
             insert(BetaSpaceEventModel)
             .values(
@@ -360,6 +363,7 @@ class SqlBetaSpaceStore:
                 event_kind="fact",
                 media_kind=source.media_kind,
                 payload_sha256=source.payload_sha256,
+                checkpoint_sequence=checkpoint_sequence,
                 occurred_at=source.occurred_at,
                 received_at=source.received_at,
             )
@@ -431,6 +435,15 @@ class SqlBetaSpaceStore:
             await self._session.rollback()
             raise RuntimeError("beta_consent_delivery_state_conflict")
         await self._session.commit()
+
+    async def _next_checkpoint_sequence(
+        self, binding: BetaSpaceBindingModel
+    ) -> int:
+        current = await self._session.scalar(
+            select(func.coalesce(func.max(BetaSpaceEventModel.checkpoint_sequence), 0))
+            .where(BetaSpaceEventModel.binding_id == binding.id)
+        )
+        return int(current or 0) + 1
 
     async def _locked_binding(
         self, binding: BetaSpaceBinding
