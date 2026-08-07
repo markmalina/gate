@@ -50,7 +50,6 @@ from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
     OpenAIResponsesBetaWeddingModel,
     SqlBetaWeddingReplyStore,
-    beta_wedding_reply_enabled,
 )
 from app.services.telegram import TelegramClient
 
@@ -243,33 +242,28 @@ async def beta_telegram_webhook(
         intake.disposition is BetaSpaceDisposition.FACT_ACCEPTED
         and intake.tenant_ref == BETA_WEDDING_TENANT_REF
     ):
-        reply_enabled = beta_wedding_reply_enabled(settings)
-        if not reply_enabled:
-            wedding_reply = "disabled"
-        else:
-            if beta_telegram is None:
-                beta_telegram = get_beta_telegram_client(request)
-            try:
-                model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
-                    http_client=get_beta_model_http_client(request),
-                    api_key=settings.openai_api_key.get_secret_value(),
-                    api_base_url=settings.openai_api_base_url,
-                    model=settings.gate_beta_model_profile,
-                    max_output_tokens=settings.gate_beta_model_max_output_tokens,
-                    timeout_seconds=settings.gate_beta_model_timeout_seconds,
-                )
-            except BetaWeddingModelError:
-                model = _UnavailableBetaWeddingModel()
-            reply_result = await RespondToBetaWeddingMessage(
-                store=SqlBetaWeddingReplyStore(session),
-                model=model,
-                telegram=beta_telegram,
-                enabled=reply_enabled,
-            ).execute(
-                receipt_id=acceptance.receipt_id,
-                now=received_at,
+        if beta_telegram is None:
+            beta_telegram = get_beta_telegram_client(request)
+        try:
+            model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
+                http_client=get_beta_model_http_client(request),
+                api_key=settings.openai_api_key.get_secret_value(),
+                api_base_url=settings.openai_api_base_url,
+                model=settings.gate_beta_model_profile,
+                max_output_tokens=settings.gate_beta_model_max_output_tokens,
+                timeout_seconds=settings.gate_beta_model_timeout_seconds,
             )
-            wedding_reply = reply_result.disposition.value
+        except BetaWeddingModelError:
+            model = _UnavailableBetaWeddingModel()
+        reply_result = await RespondToBetaWeddingMessage(
+            store=SqlBetaWeddingReplyStore(session),
+            model=model,
+            telegram=beta_telegram,
+        ).execute(
+            receipt_id=acceptance.receipt_id,
+            now=received_at,
+        )
+        wedding_reply = reply_result.disposition.value
     return {
         "ok": True,
         "accepted": True,
