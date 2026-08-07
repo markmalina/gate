@@ -49,7 +49,7 @@ async def aqub_telegram_preflight(
     settings: Settings = settings_dependency,
     store: AQUBPreflightStore = store_dependency,
 ) -> JsonObject:
-    """Own the exact AQUB ping, including a safe first-contact bootstrap path."""
+    """Own the exact AQUB ping, including bootstrap and committed receipt replies."""
 
     configured_secret = settings.telegram_aqub_webhook_secret.get_secret_value()
     if not configured_secret:
@@ -107,7 +107,7 @@ async def aqub_telegram_preflight(
         binding=binding,
         store=store,
     ).handle(inbound)
-    return _response(result)
+    return _response(result, chat_id=inbound.chat_id)
 
 
 def _project_inbound(
@@ -170,7 +170,28 @@ def _bootstrap_response(inbound: AQUBPreflightInbound | None) -> JsonObject:
     }
 
 
-def _response(result: AQUBPreflightResult) -> JsonObject:
+def _response(result: AQUBPreflightResult, *, chat_id: str) -> JsonObject:
+    if result.accepted and result.reply_text is not None and result.receipt is not None:
+        receipt = result.receipt
+        duplicate = "true" if receipt.duplicate else "false"
+        return {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": (
+                f"{result.reply_text}\n"
+                "Скопируйте receipt в ChatGPT:\n"
+                "AQUB_RECEIPT "
+                f"status={receipt.status} "
+                f"role={receipt.role} "
+                f"duplicate={duplicate} "
+                f"receipt_ref={receipt.command_receipt_ref} "
+                f"root_ref={receipt.root_event_ref} "
+                f"chat_ref={receipt.chat_ref} "
+                f"actor_ref={receipt.actor_ref} "
+                f"signature={receipt.signature}"
+            ),
+        }
+
     response: JsonObject = {
         "ok": True,
         "owned": result.owned,
@@ -179,13 +200,6 @@ def _response(result: AQUBPreflightResult) -> JsonObject:
         "legacy_dispatch": result.legacy_dispatch,
         "canary_dispatch": result.canary_dispatch,
     }
-    if result.reply_text is not None:
-        response["reply"] = result.reply_text
-    if result.receipt is not None:
-        response["receipt"] = {
-            **result.receipt.unsigned_dict(),
-            "signature": result.receipt.signature,
-        }
     return response
 
 
