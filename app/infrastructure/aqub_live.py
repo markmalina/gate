@@ -7,7 +7,7 @@ import hmac
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
@@ -58,7 +58,7 @@ def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDel
     if len(raw_body) > 64 * 1024:
         raise AQUBLiveDeliveryError("aqub_delivery_too_large", status_code=413)
     try:
-        value = json.loads(raw_body)
+        value: Any = json.loads(raw_body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_json") from exc
     if (
@@ -75,7 +75,7 @@ def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDel
     chat_ref = value.get("chat_ref")
     assignment_ref = value.get("assignment_ref")
     step_ref = value.get("step_ref")
-    text = value.get("text")
+    text_value = value.get("text")
     if not isinstance(idempotency_key, str) or not (1 <= len(idempotency_key) <= 255):
         raise AQUBLiveDeliveryError("aqub_delivery_bad_idempotency_key")
     if not isinstance(chat_ref, str) or not chat_ref:
@@ -87,15 +87,15 @@ def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDel
         raise AQUBLiveDeliveryError("aqub_delivery_bad_assignment_ref")
     if not isinstance(step_ref, str) or not step_ref:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_step_ref")
-    if not isinstance(text, str) or not (1 <= len(text) <= MAX_TELEGRAM_TEXT):
+    if not isinstance(text_value, str) or not (1 <= len(text_value) <= MAX_TELEGRAM_TEXT):
         raise AQUBLiveDeliveryError("aqub_delivery_bad_text")
     return ParsedAQUBDelivery(
         command_id=command_id,
-        idempotency_key=idempotency_key,
-        chat_ref=chat_ref,
-        assignment_ref=assignment_ref,
-        step_ref=step_ref,
-        text=text,
+        idempotency_key=cast(str, idempotency_key),
+        chat_ref=cast(str, chat_ref),
+        assignment_ref=cast(str, assignment_ref),
+        step_ref=cast(str, step_ref),
+        text=cast(str, text_value),
         request_sha256=hashlib.sha256(raw_body).hexdigest(),
     )
 
@@ -107,7 +107,7 @@ class AQUBLiveDeliveryService:
         session: AsyncSession,
         telegram: TelegramClient,
         signing_key: bytes,
-        raw_chat_id: str = AQUB_RELEASE_GROUP_CHAT_ID,
+        raw_chat_id: int = int(AQUB_RELEASE_GROUP_CHAT_ID),
     ) -> None:
         self._session = session
         self._telegram = telegram
@@ -116,22 +116,21 @@ class AQUBLiveDeliveryService:
 
     async def deliver(self, command: ParsedAQUBDelivery) -> JsonObject:
         row_id = uuid4()
-        inserted_id = await self._session.scalar(
-            insert(AQUBLiveDelivery)
-            .values(
-                id=row_id,
-                command_id=command.command_id,
-                idempotency_key=command.idempotency_key,
-                request_sha256=command.request_sha256,
-                chat_ref=command.chat_ref,
-                assignment_ref=command.assignment_ref,
-                step_ref=command.step_ref,
-                text_sha256=hashlib.sha256(command.text.encode()).hexdigest(),
-                state="pending",
-            )
-            .on_conflict_do_nothing(index_elements=["idempotency_key"])
-            .returning(AQUBLiveDelivery.id)
+        statement = insert(AQUBLiveDelivery).values(
+            id=row_id,
+            command_id=command.command_id,
+            idempotency_key=command.idempotency_key,
+            request_sha256=command.request_sha256,
+            chat_ref=command.chat_ref,
+            assignment_ref=command.assignment_ref,
+            step_ref=command.step_ref,
+            text_sha256=hashlib.sha256(command.text.encode()).hexdigest(),
+            state="pending",
         )
+        statement = statement.on_conflict_do_nothing(  # type: ignore[attr-defined]
+            index_elements=["idempotency_key"]
+        ).returning(AQUBLiveDelivery.id)
+        inserted_id = await self._session.scalar(statement)
         created = inserted_id is not None
         await self._session.commit()
 
@@ -309,7 +308,7 @@ def _telegram_message_id(response: JsonObject) -> int:
     result = response.get("result")
     if not isinstance(result, dict) or type(result.get("message_id")) is not int:
         raise RuntimeError("telegram_send_message_id_missing")
-    return result["message_id"]
+    return cast(int, result["message_id"])
 
 
 def _opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:
