@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.core.config import get_settings
@@ -29,7 +29,14 @@ class FakeTelegram:
         self.calls: list[tuple[str, str]] = []
         self.message_id = 7001
 
-    async def send_plain_message(self, *, chat_id: str, text: str, business_connection_id=None):
+    async def send_plain_message(
+        self,
+        *,
+        chat_id: str,
+        text: str,
+        business_connection_id: str | None = None,
+    ) -> dict[str, object]:
+        del business_connection_id
         self.calls.append((chat_id, text))
         return {"ok": True, "result": {"message_id": self.message_id}}
 
@@ -39,7 +46,13 @@ def _opaque(signing_key: bytes, kind: str, raw: str) -> str:
     return f"{kind}:{digest}"
 
 
-def _command(signing_key: bytes, *, command_id=None, key: str = "assignment:test:1", text_value: str = "Exercise"):
+def _command(
+    signing_key: bytes,
+    *,
+    command_id: UUID | None = None,
+    key: str = "assignment:test:1",
+    text_value: str = "Exercise",
+) -> ParsedAQUBDelivery:
     command_id = command_id or uuid4()
     raw = f"{command_id}|{key}|{text_value}".encode()
     return ParsedAQUBDelivery(
@@ -91,16 +104,23 @@ async def test_live_delivery_sends_once_and_exact_replay_returns_same_receipts()
         assert first["ack"]["status"] == "committed"
         assert first["terminal"]["status"] == "sent"
         assert first["terminal"]["delivered_message_ref"] == _opaque(
-            signing_key, "message", str(telegram.message_id)
+            signing_key,
+            "message",
+            str(telegram.message_id),
         )
         assert duplicate["ack"]["status"] == "duplicate"
-        assert duplicate["ack"]["command_receipt_ref"] == first["ack"]["command_receipt_ref"]
+        assert (
+            duplicate["ack"]["command_receipt_ref"]
+            == first["ack"]["command_receipt_ref"]
+        )
         assert duplicate["terminal"] == first["terminal"]
         assert telegram.calls == [(AQUB_RELEASE_GROUP_CHAT_ID, command.text)]
     finally:
         await engine.dispose()
         async with admin_engine.begin() as connection:
-            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            await connection.execute(
+                text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            )
         await admin_engine.dispose()
 
 
@@ -147,5 +167,7 @@ async def test_live_delivery_mutated_replay_fails_closed_without_second_send() -
     finally:
         await engine.dispose()
         async with admin_engine.begin() as connection:
-            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            await connection.execute(
+                text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            )
         await admin_engine.dispose()
