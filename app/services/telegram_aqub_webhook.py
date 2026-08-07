@@ -111,10 +111,13 @@ def _valid_public_host(hostname: str | None) -> bool:
     if hostname is None or hostname != hostname.strip() or len(hostname) > 253:
         return False
     canonical = hostname.casefold()
-    if canonical.endswith("."):
+    if canonical.endswith(".") or "%" in canonical:
         return False
     try:
-        return ipaddress.ip_address(canonical).is_global
+        address = ipaddress.ip_address(canonical)
+        if isinstance(address, ipaddress.IPv6Address) and address.scope_id is not None:
+            return False
+        return address.is_global
     except ValueError:
         pass
     labels = canonical.split(".")
