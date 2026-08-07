@@ -175,7 +175,7 @@ async def reconcile_aqub_telegram_provider(
 ) -> str:
     """Verify the pinned bot and Privacy Mode before setting its webhook."""
 
-    enabled = settings.gate_aqub_s0_preflight_enabled
+    enabled = bool(getattr(settings, "gate_aqub_s0_preflight_enabled", False))
     state.set(AQUBProviderReadinessSnapshot(enabled=enabled))
     if not enabled:
         return "skipped_preflight_disabled"
