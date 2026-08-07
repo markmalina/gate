@@ -97,6 +97,16 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         "https://gate.example/line\nfeed",
         "https://gate.example:\x1f443/",
         "https://gate.exa\x7fmple/",
+        "https://localhost./",
+        "https://localhost../",
+        "https://LOCALHOST./",
+        "https://LoCaLhOsT/",
+        "localhost.",
+        "https://local/",
+        "https://localdomain/",
+        "https://host.local/",
+        "https://host.localdomain/",
+        "https://localhost.localdomain/",
     ],
 )
 @pytest.mark.anyio
