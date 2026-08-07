@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -30,6 +31,11 @@ def _settings(**changes: object) -> Settings:
         "TELEGRAM_AQUB_BOT_USERNAME": "@AQubAgentBot",
         "TELEGRAM_AQUB_BOT_TOKEN": "aqub-secret-token",
         "TELEGRAM_AQUB_WEBHOOK_SECRET": "aqub-secret-webhook",
+        "GATE_AQUB_GROUP_CHAT_ID": "-1007001",
+        "GATE_AQUB_ACE_USER_ID": "7002",
+        "GATE_AQUB_ALPHA_USER_ID": "7003",
+        "GATE_AQUB_S0_READY_AT": datetime(2026, 8, 7, tzinfo=UTC).isoformat(),
+        "GATE_AQUB_RECEIPT_SIGNING_KEY": "0123456789abcdef0123456789abcdef",
     }
     values.update(changes)
     return Settings(**values)
@@ -64,6 +70,15 @@ def test_public_url_uses_existing_precedence_and_exact_owned_path() -> None:
         _settings(GATE_AQUB_S0_PREFLIGHT_ENABLED=False),
         _settings(TELEGRAM_AQUB_BOT_TOKEN=""),
         _settings(TELEGRAM_AQUB_WEBHOOK_SECRET=""),
+        _settings(TELEGRAM_AQUB_BOT_USERNAME="@WrongBot"),
+        _settings(GATE_AQUB_GROUP_CHAT_ID=""),
+        _settings(GATE_AQUB_ACE_USER_ID=""),
+        _settings(GATE_AQUB_ALPHA_USER_ID=""),
+        _settings(GATE_AQUB_ALPHA_USER_ID="7002"),
+        _settings(GATE_AQUB_S0_READY_AT=""),
+        _settings(GATE_AQUB_S0_READY_AT="not-a-timestamp"),
+        _settings(GATE_AQUB_S0_READY_AT="2026-08-07T12:00:00"),
+        _settings(GATE_AQUB_RECEIPT_SIGNING_KEY="short"),
     ],
 )
 async def test_dormant_or_incomplete_configuration_makes_zero_provider_calls(
@@ -86,6 +101,41 @@ async def test_dormant_or_incomplete_configuration_makes_zero_provider_calls(
     assert result.startswith("skipped_")
     assert calls == []
     assert state.snapshot().ready is False
+    assert state.snapshot().configured is False
+    if settings.gate_aqub_s0_preflight_enabled:
+        assert (
+            state.snapshot().error_code
+            is AQUBProviderErrorCode.CONFIGURATION_INCOMPLETE
+        )
+    else:
+        assert state.snapshot().error_code is None
+
+
+@pytest.mark.anyio
+async def test_missing_public_url_makes_zero_provider_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("PUBLIC_BASE_URL", "RAILWAY_PUBLIC_DOMAIN", "RAILWAY_STATIC_URL"):
+        monkeypatch.delenv(name, raising=False)
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise AssertionError("provider must not be called")
+
+    state = AQUBProviderReadinessState()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http_client:
+        result = await reconcile_aqub_telegram_provider(
+            _settings(),
+            http_client,
+            state,
+        )
+
+    assert result == "skipped_configuration_incomplete"
+    assert calls == []
+    assert state.snapshot().configured is False
 
 
 @pytest.mark.anyio
