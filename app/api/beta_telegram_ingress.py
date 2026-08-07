@@ -19,6 +19,7 @@ from app.application.beta_space_intake import (
 )
 from app.application.beta_wedding_reply import (
     BetaWeddingContextMessage,
+    BetaWeddingReplyModel,
     RespondToBetaWeddingMessage,
 )
 from app.application.telegram_processing import (
@@ -249,7 +250,7 @@ async def beta_telegram_webhook(
             if beta_telegram is None:
                 beta_telegram = get_beta_telegram_client(request)
             try:
-                model = OpenAIResponsesBetaWeddingModel(
+                model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
                     http_client=get_beta_model_http_client(request),
                     api_key=settings.openai_api_key.get_secret_value(),
                     api_base_url=settings.openai_api_base_url,
