@@ -365,6 +365,7 @@ def _signature(signing_key: bytes, value: Mapping[str, Any]) -> str:
 def _canonical(value: Mapping[str, Any]) -> bytes:
     return json.dumps(
         value,
+        allow_nan=False,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
