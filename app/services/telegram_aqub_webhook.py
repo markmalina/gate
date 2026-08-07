@@ -34,6 +34,7 @@ class AQUBProviderErrorCode(StrEnum):
     IDENTITY_MISMATCH = "identity_mismatch"
     GROUP_JOIN_DISABLED = "group_join_disabled"
     PRIVACY_MODE_DISABLED = "privacy_mode_disabled"
+    GROUP_MESSAGE_READ_DISABLED = "group_message_read_disabled"
     WEBHOOK_REJECTED = "webhook_rejected"
 
 
@@ -173,7 +174,7 @@ async def reconcile_aqub_telegram_provider(
     http_client: httpx.AsyncClient,
     state: AQUBProviderReadinessState,
 ) -> str:
-    """Verify the pinned bot and Privacy Mode before setting its webhook."""
+    """Verify the pinned bot can read ordinary group messages before webhook setup."""
 
     enabled = bool(getattr(settings, "gate_aqub_s0_preflight_enabled", False))
     state.set(AQUBProviderReadinessSnapshot(enabled=enabled))
@@ -222,6 +223,7 @@ async def reconcile_aqub_telegram_provider(
         raise AQUBProviderPreflightError(AQUBProviderErrorCode.IDENTITY_MISMATCH)
 
     can_join_groups = identity.get("can_join_groups") is True
+    can_read_all_group_messages = identity.get("can_read_all_group_messages") is True
     privacy_mode_enabled = identity.get("can_read_all_group_messages") is False
     state.set(
         AQUBProviderReadinessSnapshot(
@@ -235,9 +237,11 @@ async def reconcile_aqub_telegram_provider(
     if not can_join_groups:
         state.fail(AQUBProviderErrorCode.GROUP_JOIN_DISABLED)
         raise AQUBProviderPreflightError(AQUBProviderErrorCode.GROUP_JOIN_DISABLED)
-    if not privacy_mode_enabled:
-        state.fail(AQUBProviderErrorCode.PRIVACY_MODE_DISABLED)
-        raise AQUBProviderPreflightError(AQUBProviderErrorCode.PRIVACY_MODE_DISABLED)
+    if not can_read_all_group_messages:
+        state.fail(AQUBProviderErrorCode.GROUP_MESSAGE_READ_DISABLED)
+        raise AQUBProviderPreflightError(
+            AQUBProviderErrorCode.GROUP_MESSAGE_READ_DISABLED
+        )
 
     try:
         webhook_response = await http_client.post(
@@ -265,7 +269,7 @@ async def reconcile_aqub_telegram_provider(
             configured=True,
             identity_verified=True,
             can_join_groups=True,
-            privacy_mode_enabled=True,
+            privacy_mode_enabled=False,
             webhook_configured=True,
             ready=True,
         )

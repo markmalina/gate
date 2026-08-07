@@ -47,7 +47,7 @@ def _identity(**changes: object) -> dict[str, object]:
         "is_bot": True,
         "username": "AQubAgentBot",
         "can_join_groups": True,
-        "can_read_all_group_messages": False,
+        "can_read_all_group_messages": True,
     }
     result.update(changes)
     return {"ok": True, "result": result}
@@ -328,6 +328,7 @@ async def test_get_me_precedes_exact_webhook_and_no_send_message(
     assert "aqub-secret-webhook" in set_payload
     assert all(update in set_payload for update in AQUB_ALLOWED_UPDATES)
     assert state.snapshot().ready is True
+    assert state.snapshot().privacy_mode_enabled is False
     assert state.snapshot().error_code is None
     assert "aqub-secret-token" not in repr(state.snapshot())
     assert "aqub-secret-webhook" not in repr(state.snapshot())
@@ -344,12 +345,12 @@ async def test_get_me_precedes_exact_webhook_and_no_send_message(
             AQUBProviderErrorCode.GROUP_JOIN_DISABLED,
         ),
         (
-            _identity(can_read_all_group_messages=True),
-            AQUBProviderErrorCode.PRIVACY_MODE_DISABLED,
+            _identity(can_read_all_group_messages=False),
+            AQUBProviderErrorCode.GROUP_MESSAGE_READ_DISABLED,
         ),
         (
             _identity(can_read_all_group_messages=None),
-            AQUBProviderErrorCode.PRIVACY_MODE_DISABLED,
+            AQUBProviderErrorCode.GROUP_MESSAGE_READ_DISABLED,
         ),
     ],
 )
