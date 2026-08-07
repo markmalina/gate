@@ -1,6 +1,6 @@
 """Add AQUB live Telegram delivery ledger.
 
-Revision ID: 0087_aqub_live_delivery
+Revision ID: 0090_beta_wedding_checkpoints_a
 Revises: 0090_beta_wedding_checkpoints
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0087_aqub_live_delivery"
+revision: str = "0090_beta_wedding_checkpoints_a"
 down_revision: str | Sequence[str] | None = "0090_beta_wedding_checkpoints"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
