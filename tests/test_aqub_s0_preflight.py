@@ -203,7 +203,7 @@ async def test_duplicate_reuses_store_result_without_claiming_delivery() -> None
 
 @pytest.mark.anyio
 async def test_uncommitted_store_result_cannot_create_receipt_or_reply() -> None:
-    with pytest.raises(RuntimeError, match="aqub_store_not_committed"):
+    with pytest.raises(RuntimeError, match="aqub_store_status_invalid"):
         await AQUBS0PreflightAdapter(
             binding=_binding(),
             store=FakeStore(status="pending"),  # type: ignore[arg-type]
