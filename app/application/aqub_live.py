@@ -7,7 +7,7 @@ import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -68,10 +68,10 @@ class HttpAQUBRuntimeClient:
             )
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"aqub_runtime_http_{response.status_code}")
-        value = response.json()
+        value: Any = response.json()
         if not isinstance(value, dict) or value.get("ok") is not True:
             raise RuntimeError("aqub_runtime_response_invalid")
-        return value
+        return cast(JsonObject, value)
 
 
 class AQUBLiveIngressAdapter:
