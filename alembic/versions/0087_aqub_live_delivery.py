@@ -29,11 +29,26 @@ def upgrade() -> None:
         sa.Column("assignment_ref", sa.String(length=255), nullable=False),
         sa.Column("step_ref", sa.String(length=255), nullable=False),
         sa.Column("text_sha256", sa.String(length=64), nullable=False),
-        sa.Column("state", sa.String(length=32), server_default="pending", nullable=False),
+        sa.Column(
+            "state",
+            sa.String(length=32),
+            server_default="pending",
+            nullable=False,
+        ),
         sa.Column("provider_message_id", sa.String(length=255), nullable=True),
         sa.Column("error_code", sa.String(length=128), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
             "state IN ('pending','sending','sent','failed','unknown')",
@@ -45,13 +60,18 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("command_id", name="uq_aqub_live_delivery_command"),
-        sa.UniqueConstraint("idempotency_key", name="uq_aqub_live_delivery_idempotency"),
+        sa.UniqueConstraint(
+            "idempotency_key",
+            name="uq_aqub_live_delivery_idempotency",
+        ),
     )
 
 
 def downgrade() -> None:
     connection = op.get_bind()
-    count = connection.execute(sa.text("SELECT count(*) FROM aqub_live_deliveries")).scalar_one()
+    count = connection.execute(
+        sa.text("SELECT count(*) FROM aqub_live_deliveries")
+    ).scalar_one()
     if count:
         raise RuntimeError("aqub_live_delivery_data_blocks_downgrade")
     op.drop_table("aqub_live_deliveries")
