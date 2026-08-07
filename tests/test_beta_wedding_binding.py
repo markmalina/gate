@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-
 from app.infrastructure.beta_wedding_binding import (
     BETA_WEDDING_ACTIVATION_TEXT,
     BETA_WEDDING_GROUP_TITLE,
