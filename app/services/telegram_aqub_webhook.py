@@ -146,6 +146,10 @@ def _is_global_unicast(
         or address.is_loopback
         or address.is_link_local
         or address.is_private
+        or (
+            isinstance(address, ipaddress.IPv6Address)
+            and address.is_site_local
+        )
     )
 
 
