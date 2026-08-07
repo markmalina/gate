@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     telegram_become_webhook_secret: SecretStr = Field(
         default=SecretStr(""), validation_alias="TELEGRAM_BECOME_WEBHOOK_SECRET"
     )
+    telegram_aqub_bot_token: SecretStr = Field(
+        default=SecretStr(""), validation_alias="TELEGRAM_AQUB_BOT_TOKEN"
+    )
     telegram_aqub_bot_username: str = Field(
         default="", validation_alias="TELEGRAM_AQUB_BOT_USERNAME"
     )
