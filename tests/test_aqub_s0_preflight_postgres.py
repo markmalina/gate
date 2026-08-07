@@ -19,7 +19,6 @@ from app.infrastructure.aqub_s0_preflight import (
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 from app.models.domain import (
-    Base,
     TelegramOutboxEvent,
     TelegramReceipt,
     TelegramReceiptStatus,
@@ -75,7 +74,8 @@ async def test_terminal_receipt_is_idempotent_and_never_queued() -> None:
     )
     try:
         async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(TelegramReceipt.__table__.create)
+            await connection.run_sync(TelegramOutboxEvent.__table__.create)
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
         async with session_factory() as session:
