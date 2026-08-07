@@ -3298,14 +3298,6 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- fact_count: {beta_wedding['fact_count']}",
             f"- reply_sent_count: {beta_wedding['reply_sent_count']}",
             f"- reply_unknown_count: {beta_wedding['reply_unknown_count']}",
-            (
-                "- model_runtime_enabled: "
-                f"{beta_wedding['gates']['model_runtime_enabled']}"
-            ),
-            (
-                "- model_data_gate_approved: "
-                f"{beta_wedding['gates']['model_data_gate_approved']}"
-            ),
             f"- delivery_enabled: {beta_wedding['gates']['delivery_enabled']}",
         ]
     )
