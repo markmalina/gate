@@ -378,21 +378,6 @@ class OpenAIResponsesBetaWeddingModel:
         return text
 
 
-def beta_wedding_reply_enabled(settings: Any) -> bool:
-    """Require all independent Beta reply, privacy, model and delivery gates."""
-
-    return all(
-        (
-            settings.gate_env == "production",
-            settings.gate_beta_connector_enabled,
-            settings.gate_beta_privacy_mode_confirmed,
-            settings.gate_beta_delivery_enabled,
-            settings.gate_beta_model_runtime_enabled,
-            settings.gate_beta_model_data_gate_approved,
-        )
-    )
-
-
 def _message_projection(
     payload: object,
     *,
