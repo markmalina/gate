@@ -258,7 +258,6 @@ async def prepare_beta_wedding_binding(
         if (
             existing.state != "consented"
             or existing.telegram_chat_id != candidate.telegram_chat_id
-            or existing.subject_telegram_user_id != candidate.telegram_user_id
         ):
             raise BetaWeddingBindingError("beta_wedding_binding_conflict")
         return "already_bound"

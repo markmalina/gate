@@ -159,7 +159,7 @@ async def test_wedding_binding_exact_retry_is_idempotent():
 
 
 @pytest.mark.anyio
-async def test_wedding_binding_conflicting_retry_fails_closed():
+async def test_wedding_binding_second_group_member_is_idempotent():
     workspace = SimpleNamespace(
         id=UUID("00000000-0000-0000-0000-000000000001")
     )
@@ -173,6 +173,33 @@ async def test_wedding_binding_conflicting_retry_fails_closed():
     )
     session = BindingSession([workspace, connector, existing])
 
+    result = await prepare_beta_wedding_binding(
+        session,  # type: ignore[arg-type]
+        workspace_key="workspace",
+        now=datetime(2026, 8, 6, 18, 50, tzinfo=UTC),
+        candidate=BetaWeddingActivationCandidate("-100496001", "496002"),
+    )
+
+    assert result == "already_bound"
+    assert session.added == []
+    assert session.commits == 0
+
+
+@pytest.mark.anyio
+async def test_wedding_binding_different_chat_fails_closed():
+    workspace = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000001")
+    )
+    connector = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000002")
+    )
+    existing = SimpleNamespace(
+        state="consented",
+        telegram_chat_id="-100496001",
+        subject_telegram_user_id="496002",
+    )
+    session = BindingSession([workspace, connector, existing])
+
     with pytest.raises(
         BetaWeddingBindingError,
         match="beta_wedding_binding_conflict",
@@ -181,7 +208,7 @@ async def test_wedding_binding_conflicting_retry_fails_closed():
             session,  # type: ignore[arg-type]
             workspace_key="workspace",
             now=datetime(2026, 8, 6, 18, 50, tzinfo=UTC),
-            candidate=BetaWeddingActivationCandidate("-100496001", "496002"),
+            candidate=BetaWeddingActivationCandidate("-100496999", "496002"),
         )
 
     assert session.added == []
