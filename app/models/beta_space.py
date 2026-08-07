@@ -18,7 +18,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.domain import Base
@@ -71,6 +71,10 @@ class BetaSpaceBindingModel(Base):
     telegram_chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
     subject_telegram_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     consent_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    checkpoint_recipient_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checkpoint_last_exported_sequence: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
     state: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'ready'")
     )
@@ -96,6 +100,10 @@ class BetaSpaceEventModel(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("receipt_id", name="uq_beta_space_event_receipt"),
+        UniqueConstraint(
+            "binding_id", "checkpoint_sequence",
+            name="uq_beta_space_event_checkpoint_sequence",
+        ),
         UniqueConstraint("binding_id", "update_id", name="uq_beta_space_event_update"),
         UniqueConstraint(
             "binding_id", "telegram_message_id", name="uq_beta_space_event_message"
@@ -131,12 +139,60 @@ class BetaSpaceEventModel(Base):
     event_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     media_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    checkpoint_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+
+class BetaSpaceCheckpointExportModel(Base):
+    """One encrypted Wedding Space checkpoint awaiting an exact Git ack."""
+
+    __tablename__ = "beta_space_checkpoint_exports"
+    __table_args__ = (
+        UniqueConstraint(
+            "binding_id", "sequence_start",
+            name="uq_beta_space_checkpoint_export_start",
+        ),
+        CheckConstraint(
+            "sequence_end >= sequence_start",
+            name="ck_beta_space_checkpoint_export_range",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'acknowledged')",
+            name="ck_beta_space_checkpoint_export_state",
+        ),
+        Index(
+            "ix_beta_space_checkpoint_export_pending",
+            "binding_id", "state", "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    binding_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("beta_space_bindings.id", ondelete="CASCADE"), nullable=False
+    )
+    group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sequence_start: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sequence_end: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_count: Mapped[int] = mapped_column(nullable=False)
+    container: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    ciphertext_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'pending'")
+    )
+    github_commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 class BetaSpaceReplyModel(Base):
     """At-most-once generated reply and Telegram delivery for one Space event."""
