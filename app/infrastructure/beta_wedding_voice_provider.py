@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
@@ -146,9 +147,7 @@ class OpenAIBetaWeddingVoiceStructurer:
             timeout=30,
         )
         payload = _object(response)
-        raw = payload.get("output_text")
-        if not isinstance(raw, str):
-            raise BetaWeddingVoiceProviderError("voice_structurer_output_missing")
+        raw = _output_text(payload)
         try:
             text = json.loads(raw).get("text")
         except (TypeError, json.JSONDecodeError) as exc:
@@ -169,3 +168,27 @@ def _object(response: httpx.Response) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise BetaWeddingVoiceProviderError("voice_provider_response_invalid")
     return cast(dict[str, Any], value)
+
+
+def _output_text(provider: Mapping[str, Any]) -> str:
+    direct = provider.get("output_text")
+    if isinstance(direct, str) and direct:
+        return direct
+    output = provider.get("output")
+    if not isinstance(output, list):
+        raise BetaWeddingVoiceProviderError("voice_structurer_output_missing")
+    for item in output:
+        if not isinstance(item, Mapping) or item.get("type") != "message":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if (
+                isinstance(part, Mapping)
+                and part.get("type") == "output_text"
+                and isinstance(part.get("text"), str)
+            ):
+                return cast(str, part["text"])
+    raise BetaWeddingVoiceProviderError("voice_structurer_output_missing")
+
