@@ -10,7 +10,7 @@ import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import httpx
 
@@ -74,7 +74,7 @@ class HttpAQUBRuntimeClient:
         value: Any = response.json()
         if not isinstance(value, dict) or value.get("ok") is not True:
             raise RuntimeError("aqub_runtime_response_invalid")
-        return cast(JsonObject, value)
+        return {str(key): item for key, item in value.items()}
 
 
 class AQUBLiveIngressAdapter:
