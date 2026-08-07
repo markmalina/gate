@@ -6,7 +6,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
@@ -47,8 +47,10 @@ _SYSTEM_INSTRUCTIONS = """
 неопределённостях.
 
 Всегда возвращай один содержательный ответ на русском языке.
-- Если текущее сообщение сообщает информацию, начни с «Приняла.» и в 1–3
-  предложениях сформулируй, что именно ты поняла и сохранила.
+- Если текущее сообщение сообщает информацию, начни с «Я поняла так:» и
+  используй ровно четыре маркированных строки: «Факты», «Решения», «Задачи»,
+  «Вопросы». В каждой явно укажи найденное содержание либо «не выделены».
+  Заверши фразой «Сохранила именно эту структуру в памяти свадьбы.»
 - Если это вопрос или прямое обращение к Бете, сначала ответь по существу,
   используя только предоставленную память и текущее сообщение; затем при
   необходимости предложи один следующий шаг.
@@ -133,7 +135,7 @@ class SqlBetaWeddingReplyStore:
         if current is None:
             await self._session.rollback()
             return None
-        sender_label, current_text = current
+        sender_label, current_text, source_timestamp, voice_duration_seconds = current
         context = await self._context(
             binding=binding,
             current_event_id=event.id,
@@ -161,6 +163,8 @@ class SqlBetaWeddingReplyStore:
             media_kind=event.media_kind,
             sender_label=sender_label,
             current_text=current_text,
+            source_timestamp=source_timestamp,
+            voice_duration_seconds=voice_duration_seconds,
             context=context,
         )
 
@@ -261,7 +265,7 @@ class SqlBetaWeddingReplyStore:
             )
             if projection is None:
                 continue
-            sender_label, projected_text = projection
+            sender_label, projected_text, _source_timestamp, _duration = projection
             if projected_text is None:
                 continue
             remaining = _MAX_CONTEXT_CHARS - total_chars
@@ -382,7 +386,7 @@ def _message_projection(
     payload: object,
     *,
     expected_chat_id: str,
-) -> tuple[str, str | None] | None:
+) -> tuple[str, str | None, datetime | None, int | None] | None:
     if not isinstance(payload, dict):
         return None
     message = payload.get("message")
@@ -406,7 +410,24 @@ def _message_projection(
     ]
     sender_label = "Участник" if not names else " ".join(names)[:128]
     text = message.get("text")
-    return sender_label, text if isinstance(text, str) else None
+    timestamp = message.get("date")
+    source_timestamp = (
+        datetime.fromtimestamp(timestamp, UTC)
+        if type(timestamp) is int and timestamp >= 0
+        else None
+    )
+    voice = message.get("voice")
+    duration = (
+        voice.get("duration")
+        if isinstance(voice, dict) and type(voice.get("duration")) is int
+        else None
+    )
+    return (
+        sender_label,
+        text if isinstance(text, str) else None,
+        source_timestamp,
+        duration,
+    )
 
 
 def _json_object(response: httpx.Response) -> dict[str, Any]:
