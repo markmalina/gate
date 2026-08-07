@@ -102,6 +102,17 @@ def _post(client: TestClient, update: dict[str, object]):
     )
 
 
+def _receipt_fields(text: str) -> dict[str, str]:
+    receipt_line = next(
+        line for line in text.splitlines() if line.startswith("AQUB_RECEIPT ")
+    )
+    return {
+        key: value
+        for item in receipt_line.removeprefix("AQUB_RECEIPT ").split()
+        for key, value in [item.split("=", 1)]
+    }
+
+
 def test_enabled_exact_route_owns_once_and_duplicate_reuses_receipt() -> None:
     store = DurableStore()
     with _client(_settings(), store) as client:
@@ -112,20 +123,20 @@ def test_enabled_exact_route_owns_once_and_duplicate_reuses_receipt() -> None:
     assert second.status_code == 200
     first_body = first.json()
     second_body = second.json()
-    assert first_body["owned"] is True
-    assert first_body["accepted"] is True
-    assert first_body["legacy_dispatch"] is False
-    assert first_body["canary_dispatch"] is False
-    assert first_body["receipt"]["duplicate"] is False
-    assert second_body["receipt"]["duplicate"] is True
-    assert (
-        second_body["receipt"]["command_receipt_ref"]
-        == first_body["receipt"]["command_receipt_ref"]
-    )
-    assert first_body["receipt"]["delivery_status"] == "not_run"
+    assert first_body["method"] == "sendMessage"
+    assert second_body["method"] == "sendMessage"
+    assert first_body["chat_id"] == -1007001
+    assert second_body["chat_id"] == -1007001
+
+    first_receipt = _receipt_fields(first_body["text"])
+    second_receipt = _receipt_fields(second_body["text"])
+    assert first_receipt["status"] == "committed"
+    assert first_receipt["role"] == "alpha"
+    assert first_receipt["duplicate"] == "false"
+    assert second_receipt["duplicate"] == "true"
+    assert second_receipt["receipt_ref"] == first_receipt["receipt_ref"]
+    assert second_receipt["root_ref"] == first_receipt["root_ref"]
     assert [command.external_id for command in store.commands] == ["500", "500"]
-    assert first_body["receipt"]["result_json"]["command"] == "aqub_ping"
-    assert second_body["receipt"]["result_json"]["command"] == "aqub_ping"
 
 
 def test_aqub_route_does_not_enter_existing_dispatch_chain() -> None:
@@ -195,10 +206,12 @@ def test_release_pin_commits_confirmed_alpha_without_inventing_ace() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["owned"] is True
-    assert body["accepted"] is True
-    assert body["reason"] == "aqub_ping_committed"
-    assert body["receipt"]["role"] == "alpha"
+    assert body["method"] == "sendMessage"
+    assert body["chat_id"] == int(AQUB_RELEASE_GROUP_CHAT_ID)
+    receipt = _receipt_fields(body["text"])
+    assert receipt["status"] == "committed"
+    assert receipt["role"] == "alpha"
+    assert receipt["duplicate"] == "false"
     assert len(store.commands) == 1
     assert store.commands[0].role.value == "alpha"
 
@@ -216,12 +229,13 @@ def test_configured_unbound_route_touches_no_storage() -> None:
     assert store.commands == []
 
 
-def test_http_receipt_redacts_every_raw_identifier_text_and_secret() -> None:
+def test_visible_receipt_reply_redacts_every_raw_identifier_text_and_secret() -> None:
     store = DurableStore()
     with _client(_settings(), store) as client:
         response = _post(client, _update())
 
-    receipt_text = str(response.json()["receipt"])
+    reply_text = response.json()["text"]
+    assert "AQUB_RECEIPT " in reply_text
     for forbidden in (
         "SECRET-RECEIPT",
         "SECRET-OUTBOX",
@@ -231,4 +245,4 @@ def test_http_receipt_redacts_every_raw_identifier_text_and_secret() -> None:
         "7003",
         "/aqub_ping",
     ):
-        assert forbidden not in receipt_text
+        assert forbidden not in reply_text
