@@ -62,7 +62,13 @@ class _MappingResult:
 
 
 class _ReadOnlySession:
-    def __init__(self, row: dict[str, int] | None = None) -> None:
+    def __init__(
+        self,
+        row: dict[str, int] | None = None,
+        *,
+        alembic_head: str | None = EXPECTED_ALEMBIC_HEAD,
+    ) -> None:
+        self.alembic_head = alembic_head
         self.row = row or {
             "candidate_total_count": 0,
             "candidate_count": 0,
@@ -86,9 +92,9 @@ class _ReadOnlySession:
     async def begin_nested(self) -> AsyncIterator[None]:
         yield
 
-    async def scalar(self, statement: object) -> str:
+    async def scalar(self, statement: object) -> str | None:
         self.statements.append(str(statement))
-        return EXPECTED_ALEMBIC_HEAD
+        return self.alembic_head
 
     async def execute(
         self, statement: object, parameters: dict[str, Any]
@@ -216,6 +222,26 @@ async def test_default_off_evidence_is_observed_redacted_and_read_only() -> None
     assert requests[0].url.path == "/healthz"
     assert len(session.statements) == 2
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in session.statements)
+
+
+@pytest.mark.anyio
+async def test_newer_linear_migration_head_preserves_slice3_readiness() -> None:
+    session = _ReadOnlySession(alembic_head="0093_beta_checkpoint_dispatch")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_relations_health())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await become_slice3_production_evidence(
+            session,  # type: ignore[arg-type]
+            settings=_settings(),
+            http_client=client,
+        )
+
+    assert result["ready"] is True
+    assert result["error_code"] is None
+    assert result["expected_alembic_head"] == EXPECTED_ALEMBIC_HEAD
+    assert result["alembic_head"] == "0093_beta_checkpoint_dispatch"
 
 
 @pytest.mark.anyio
