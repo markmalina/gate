@@ -4,7 +4,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 preDeployCommand = "alembic upgrade head"
-startCommand = "/bin/sh -c 'uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+startCommand = "/bin/sh -c 'GATE_AQUB_RUNTIME_URL=https://aqub-production.up.railway.app uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 healthcheckPath = "/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
