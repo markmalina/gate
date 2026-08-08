@@ -14,12 +14,12 @@ import httpx
 
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
+    AQUBStoreDisposition,
     AQUBTransportBinding,
     AQUBTransportCommand,
     AQUBTransportInbound,
     AQUBTransportRole,
     AQUBTransportStore,
-    AQUBStoreDisposition,
 )
 from app.application.telegram_processing import canonical_telegram_payload_digest
 

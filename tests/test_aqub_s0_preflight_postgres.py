@@ -7,9 +7,9 @@ from uuid import uuid4
 
 import pytest
 from app.application.aqub_transport import (
+    AQUBStoreDisposition,
     AQUBTransportCommand,
     AQUBTransportRole,
-    AQUBStoreDisposition,
 )
 from app.application.telegram_processing import canonical_telegram_payload_digest
 from app.core.config import get_settings

@@ -17,10 +17,10 @@ from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUB_PING_COMMAND,
     AQUBDurableAcceptance,
-    AQUBTransportBinding,
-    AQUBTransportCommand,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
+    AQUBTransportBinding,
+    AQUBTransportCommand,
 )
 from app.application.telegram_processing import canonical_telegram_payload_digest
 from app.core.config import Settings

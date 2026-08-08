@@ -9,8 +9,8 @@ import pytest
 from app.core.config import Settings
 from app.services.telegram_aqub_webhook import (
     AQUB_ALLOWED_UPDATES,
-    AQUBProviderErrorCode,
     AQUBProviderError,
+    AQUBProviderErrorCode,
     AQUBProviderReadinessState,
     build_aqub_public_webhook_url,
     reconcile_aqub_telegram_provider,

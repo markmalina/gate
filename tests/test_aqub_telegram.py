@@ -6,18 +6,18 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.api.aqub_telegram import (
-    get_aqub_transport_store,
     get_aqub_production_binding,
+    get_aqub_transport_store,
     router,
 )
 from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
-    AQUBTransportBinding,
-    AQUBTransportCommand,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
+    AQUBTransportBinding,
+    AQUBTransportCommand,
 )
 from app.core.config import Settings, get_settings
 from fastapi import FastAPI
