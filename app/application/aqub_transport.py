@@ -1,7 +1,8 @@
 """AQUB Telegram transport contracts and diagnostic ping boundary.
 
 Provider identifiers remain inside Gate while durable receipts expose only
-opaque references to the AQUB runtime.
+opaque references to the AQUB runtime. The historical webhook URL remains a
+compatibility address, not an architectural phase name.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any, Protocol
 
 AQUB_BOT_USERNAME = "@AQubAgentBot"
 AQUB_PING_COMMAND = "/aqub_ping"
-AQUB_OWNED_PATH = "/telegram/aqub/preflight"
+AQUB_TELEGRAM_WEBHOOK_PATH = "/telegram/aqub/preflight"
 AQUB_RECEIPT_SOURCE = "telegram_bot_api"
 
 JsonObject = dict[str, Any]
@@ -99,7 +100,7 @@ class AQUBTransportCommand:
     command: str = field(repr=False)
     occurred_at: datetime
     received_at: datetime
-    owned_path: str = AQUB_OWNED_PATH
+    owned_path: str = AQUB_TELEGRAM_WEBHOOK_PATH
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -174,8 +175,6 @@ class AQUBTransportResult:
     reason: str
     reply_text: str | None = None
     receipt: AQUBCommittedReceipt | None = None
-    legacy_dispatch: bool | None = None
-    canary_dispatch: bool | None = None
 
 
 class AQUBDiagnosticPingAdapter:
@@ -273,10 +272,9 @@ class AQUBDiagnosticPingAdapter:
             ),
             "occurred_at": inbound.occurred_at.isoformat(),
             "received_at": inbound.received_at.isoformat(),
-            "owned_path": AQUB_OWNED_PATH,
+            "owned_path": AQUB_TELEGRAM_WEBHOOK_PATH,
             "duplicate": duplicate,
             "result_json": redacted_result,
-            # A committed command receipt is not evidence of Telegram delivery.
             "delivery_status": AQUBDeliveryStatus.NOT_RUN.value,
         }
         receipt = AQUBCommittedReceipt(
@@ -293,7 +291,7 @@ class AQUBDiagnosticPingAdapter:
             actor_ref=str(unsigned["actor_ref"]),
             occurred_at=inbound.occurred_at.isoformat(),
             received_at=inbound.received_at.isoformat(),
-            owned_path=AQUB_OWNED_PATH,
+            owned_path=AQUB_TELEGRAM_WEBHOOK_PATH,
             duplicate=duplicate,
             result_json=redacted_result,
             delivery_status=AQUBDeliveryStatus.NOT_RUN.value,
@@ -305,8 +303,6 @@ class AQUBDiagnosticPingAdapter:
             reason="aqub_ping_committed",
             reply_text=f"AQUB: связь {role.value} подтверждена.",
             receipt=receipt,
-            legacy_dispatch=False,
-            canary_dispatch=False,
         )
 
     def _bound_role(self, inbound: AQUBTransportInbound) -> AQUBTransportRole | None:
@@ -330,8 +326,6 @@ def _owned_rejection(reason: str) -> AQUBTransportResult:
         owned=True,
         accepted=False,
         reason=reason,
-        legacy_dispatch=False,
-        canary_dispatch=False,
     )
 
 
