@@ -112,13 +112,59 @@ def _binding(*, recipient_pem: str) -> SimpleNamespace:
 def _rows(count: int) -> list[tuple[SimpleNamespace, SimpleNamespace, None, None]]:
     return [
         (
-            SimpleNamespace(checkpoint_sequence=sequence),
+            SimpleNamespace(
+                checkpoint_sequence=sequence,
+                media_kind="text",
+            ),
             SimpleNamespace(),
             None,
             None,
         )
         for sequence in range(1, count + 1)
     ]
+
+
+@pytest.mark.anyio
+async def test_checkpoint_stops_before_nonterminal_material_without_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private = X25519PrivateKey.generate()
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    binding = _binding(recipient_pem=public_pem)
+    rows = [
+        (
+            SimpleNamespace(checkpoint_sequence=1, media_kind="text"),
+            SimpleNamespace(),
+            None,
+            None,
+        ),
+        (
+            SimpleNamespace(checkpoint_sequence=2, media_kind="document"),
+            SimpleNamespace(),
+            None,
+            SimpleNamespace(state="processing"),
+        ),
+    ]
+    events = [_canonical_event(1, text="готово"), _canonical_event(2)]
+    session = _CheckpointSession(binding=binding, rows=rows)
+    _install_projection(monkeypatch, events)
+
+    result = await next_beta_space_checkpoint_batch(
+        session,  # type: ignore[arg-type]
+        installation_ref=binding.installation_ref,
+        expected_user_workspace_id=binding.tenant_ref,
+        expected_group_id=binding.storage_ref,
+    )
+
+    assert result is not None
+    assert result["sequence_start"] == 1
+    assert result["sequence_end"] == 1
+    assert result["event_count"] == 1
+    assert result["accepted_sequence"] == 2
+    assert result["checkpoint_lag_events"] == 1
 
 
 def _install_projection(
@@ -226,6 +272,7 @@ def test_material_projection_truncates_extraction_and_preserves_structure() -> N
     receipt = SimpleNamespace(payload={"message": {"document": {}}})
     structured = "Решение: сохранить структурированный результат полностью."
     material = SimpleNamespace(
+        state="structured",
         media_kind="document",
         extracted_text="Д" * 100_000,
         structured_text=structured,
