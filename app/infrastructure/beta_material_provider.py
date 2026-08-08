@@ -236,53 +236,28 @@ class OpenAIBetaMaterialStructurer:
                 "model": self._model,
                 "store": False,
                 "tools": [],
-                "max_output_tokens": 1_024,
+                "max_output_tokens": 2_048,
                 "instructions": (
                     "Ты Бета, универсальная помощница по сбору и использованию "
                     "информации. Не привязывай структуру к свадьбе или иной теме. "
                     "Верни по-русски «Я поняла так:» и разделы: Кратко, Факты, "
                     "Решения, Задачи, Вопросы, Даты и суммы, Риски. "
-                    "Пропускай пустые разделы и никогда не добавляй фактов."
+                    "Пропускай пустые разделы и никогда не добавляй фактов. "
+                    "Ответ должен быть обычным текстом не длиннее 3500 символов."
                 ),
                 "input": (
                     f"Тип материала: {media_kind}\n"
                     f"Извлечённое содержание:\n{_bounded(extracted_text)}"
                 ),
-                "text": {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "beta_material_structure",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "text": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 4096,
-                                }
-                            },
-                            "required": ["text"],
-                            "additionalProperties": False,
-                        },
-                    }
-                },
             },
             timeout=30,
         )
-        raw = _output_text(_object(response))
-        try:
-            value = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise BetaMaterialProviderError(
-                "beta_material_structurer_contract_invalid"
-            ) from exc
-        text = value.get("text") if isinstance(value, dict) else None
-        if not isinstance(text, str) or not text.strip():
+        text = _output_text(_object(response)).strip()
+        if not text:
             raise BetaMaterialProviderError(
                 "beta_material_structurer_contract_invalid"
             )
-        return text.strip()
+        return text
 
 
 def extract_document_text(
