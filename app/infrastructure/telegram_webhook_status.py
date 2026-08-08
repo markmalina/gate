@@ -228,4 +228,3 @@ async def get_beta_provider_probe(
         "telegram_private_data_exposed": False,
         "secrets_exposed": False,
     }
-
