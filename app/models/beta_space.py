@@ -337,6 +337,11 @@ class BetaCheckpointDispatchIntentModel(Base):
             "dispatched_sequence >= 0 AND dispatched_sequence <= accepted_sequence",
             name="ck_beta_checkpoint_dispatch_intent_dispatched",
         ),
+        CheckConstraint(
+            "wake_generation >= 1 AND dispatched_wake_generation >= 0 AND "
+            "dispatched_wake_generation <= wake_generation",
+            name="ck_beta_checkpoint_dispatch_intent_wake_generation",
+        ),
         Index(
             "ix_beta_checkpoint_dispatch_intent_due",
             "state",
@@ -347,6 +352,12 @@ class BetaCheckpointDispatchIntentModel(Base):
     space_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     accepted_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     dispatched_sequence: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    wake_generation: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("1")
+    )
+    dispatched_wake_generation: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
     )
     state: Mapped[str] = mapped_column(
