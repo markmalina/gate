@@ -402,15 +402,13 @@ def _select_media(message: JsonObject) -> tuple[str | None, object]:
     if isinstance(photos, list) and photos:
         candidates = [item for item in photos if isinstance(item, dict)]
         if candidates:
-            return "photo", max(
-                candidates,
-                key=lambda item: (
-                    item.get("file_size")
-                    if type(item.get("file_size")) is int
-                    else 0
-                ),
-            )
+            return "photo", max(candidates, key=_photo_file_size)
     return None, None
+
+
+def _photo_file_size(item: dict[Any, Any]) -> int:
+    value = item.get("file_size")
+    return value if type(value) is int else 0
 
 
 def _uuid(value: str) -> uuid.UUID | None:
