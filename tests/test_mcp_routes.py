@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator, FormatChecker
 
+from app.api import mcp_routes
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
@@ -920,7 +921,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "openWorldHint": False,
     }
     assert tools[15]["annotations"] == {
-        "readOnlyHint": False,
+        "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
@@ -929,6 +930,120 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         MCP_TOOL_SCOPES["gate_beta_get_provider_probe"]
         == "gate:agents:manage"
     )
+
+
+@pytest.mark.anyio
+async def test_beta_provider_probe_cannot_create_unanchored_wedding_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = {
+        "provider": "telegram_bot_api",
+        "provider_calls": 2,
+        "call_surface": {
+            "read_methods": ["getWebhookInfo", "getMe"],
+            "mutations_allowed": False,
+        },
+        "webhook": {
+            "configured": True,
+            "exact_match": True,
+            "actual_origin_match": True,
+            "url_host": "gate.example",
+            "url_path": "/telegram/beta/webhook",
+            "expected_path": "/telegram/beta/webhook",
+            "allowed_updates": ["message", "my_chat_member", "callback_query"],
+            "pending_update_count": 0,
+            "max_connections": 40,
+            "has_custom_certificate": False,
+            "last_error": {
+                "present": False,
+                "date": None,
+                "message": None,
+            },
+        },
+        "identity": {
+            "username_match": True,
+            "can_join_groups": True,
+            "can_read_all_group_messages": True,
+            "ordinary_group_messages_available": True,
+            "privacy_mode_enabled": False,
+        },
+        "provider_identifiers_exposed": False,
+        "telegram_private_data_exposed": False,
+        "secrets_exposed": False,
+    }
+
+    async def read_probe(**_kwargs: object) -> dict[str, object]:
+        return probe
+
+    class HttpClientContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    def unexpected_telegram_client(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("read-only provider probe constructed a Telegram client")
+
+    class UnexpectedSession:
+        def __getattr__(self, _name: str) -> object:
+            raise AssertionError("read-only provider probe touched the database")
+
+    monkeypatch.setattr(mcp_routes, "get_beta_provider_probe", read_probe)
+    monkeypatch.setattr(
+        mcp_routes,
+        "build_telegram_http_client",
+        lambda: HttpClientContext(),
+    )
+    monkeypatch.setattr(mcp_routes, "TelegramClient", unexpected_telegram_client)
+
+    result = await mcp_routes._beta_get_provider_probe_tool_result(
+        request_id="probe",
+        arguments={"confirmed": True},
+        principal=SimpleNamespace(
+            access_scope=SimpleNamespace(workspace_id="mark-personal")
+        ),
+        session=UnexpectedSession(),  # type: ignore[arg-type]
+        settings=SimpleNamespace(
+            gate_env="production",
+            gate_beta_connector_enabled=True,
+        ),  # type: ignore[arg-type]
+    )
+
+    activation = result["result"]["structuredContent"]["activation"]
+    assert activation == {
+        "state": "binding_creation_disabled",
+        "candidate_count": 0,
+        "binding_created": False,
+        "prompt_required": False,
+        "prompt_delivery": "not_attempted",
+        "private_identifiers_exposed": False,
+        "private_payload_exposed": False,
+        "consent_digest_exposed": False,
+    }
+    _assert_valid_output(
+        "gate_beta_get_provider_probe",
+        result["result"]["structuredContent"],
+    )
+
+    probe["webhook"]["allowed_updates"] = ["message", "my_chat_member"]
+    missing_callback = await mcp_routes._beta_get_provider_probe_tool_result(
+        request_id="probe-without-callback",
+        arguments={"confirmed": True},
+        principal=SimpleNamespace(
+            access_scope=SimpleNamespace(workspace_id="mark-personal")
+        ),
+        session=UnexpectedSession(),  # type: ignore[arg-type]
+        settings=SimpleNamespace(
+            gate_env="production",
+            gate_beta_connector_enabled=True,
+        ),  # type: ignore[arg-type]
+    )
+
+    assert missing_callback["result"]["isError"] is True
+    assert missing_callback["result"]["structuredContent"] == {
+        "error": "beta_binding_provider_not_exact"
+    }
 
 
 @pytest.mark.anyio

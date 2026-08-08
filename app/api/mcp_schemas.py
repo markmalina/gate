@@ -1916,32 +1916,17 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                     },
                     "provider_calls": {
                         "type": "integer",
-                        "minimum": 2,
-                        "maximum": 5,
+                        "const": 2,
                     },
                     "call_surface": _object(
                         {
                             "read_methods": {
                                 "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "enum": ["getWebhookInfo", "getMe"],
-                                },
-                                "minItems": 2,
-                                "maxItems": 2,
-                                "uniqueItems": True,
-                            },
-                            "mutation_methods": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "enum": ["setWebhook"],
-                                },
-                                "maxItems": 1,
-                                "uniqueItems": True,
+                                "const": ["getWebhookInfo", "getMe"],
                             },
                             "mutations_allowed": {
                                 "type": "boolean",
+                                "const": False,
                             },
                         },
                         required=["read_methods", "mutations_allowed"],
@@ -1970,6 +1955,8 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                                     "minLength": 1,
                                     "maxLength": 64,
                                 },
+                                "contains": {"const": "callback_query"},
+                                "minContains": 1,
                                 "maxItems": 32,
                             },
                             "pending_update_count": {
@@ -2028,24 +2015,23 @@ BETA_PROVIDER_PROBE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
                 {
                     "state": {
                         "type": "string",
-                        "enum": [
-                            "awaiting_candidate",
-                            "already_bound",
-                            "bound_awaiting_consent",
-                            "prompt_delivery_unknown",
-                            "prompt_sent_awaiting_callback_binding",
-                        ],
+                        "const": "binding_creation_disabled",
                     },
                     "candidate_count": {
                         "type": "integer",
-                        "minimum": 0,
-                        "maximum": 1,
+                        "const": 0,
                     },
-                    "binding_created": {"type": "boolean"},
-                    "prompt_required": {"type": "boolean"},
+                    "binding_created": {
+                        "type": "boolean",
+                        "const": False,
+                    },
+                    "prompt_required": {
+                        "type": "boolean",
+                        "const": False,
+                    },
                     "prompt_delivery": {
                         "type": "string",
-                        "enum": ["not_attempted", "sent", "unknown"],
+                        "const": "not_attempted",
                     },
                     "private_identifiers_exposed": {
                         "type": "boolean",

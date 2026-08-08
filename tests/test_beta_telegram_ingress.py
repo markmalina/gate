@@ -185,12 +185,15 @@ def test_private_callback_is_ignored_before_storage() -> None:
     assert store.commands == []
 
 
-def test_wedding_activation_is_not_stored_as_fact(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unbound_wedding_message_cannot_create_binding_or_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     store = CapturingStore()
     update = {
         "update_id": 496003,
         "message": {
             "message_id": 1,
+            "date": 1_786_040_000,
             "chat": {
                 "id": -100496001,
                 "type": "supergroup",
@@ -209,14 +212,25 @@ def test_wedding_activation_is_not_stored_as_fact(monkeypatch: pytest.MonkeyPatc
     async def receive() -> dict[str, object]:
         return {"type": "http.request", "body": payload, "more_body": False}
 
-    async def prepare_binding(*_args: object, **_kwargs: object) -> str:
-        return "created"
+    class UnboundSpaceStore:
+        def __init__(self) -> None:
+            self.resolve_calls: list[str] = []
 
-    monkeypatch.setattr(
-        beta_ingress,
-        "prepare_beta_wedding_binding",
-        prepare_binding,
-    )
+        async def resolve_binding(self, *, telegram_chat_id: str) -> None:
+            self.resolve_calls.append(telegram_chat_id)
+            return None
+
+    space_store = UnboundSpaceStore()
+
+    async def unexpected_drain(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("unbound updates must not trigger provider dispatch")
+
+    def unexpected_provider(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("unbound updates must not acquire a provider client")
+
+    monkeypatch.setattr(beta_ingress, "_drain_beta_checkpoint_dispatch", unexpected_drain)
+    monkeypatch.setattr(beta_ingress, "get_beta_telegram_client", unexpected_provider)
+    monkeypatch.setattr(beta_ingress, "get_beta_model_http_client", unexpected_provider)
     request = Request(
         {
             "type": "http",
@@ -231,9 +245,12 @@ def test_wedding_activation_is_not_stored_as_fact(monkeypatch: pytest.MonkeyPatc
         beta_ingress.beta_telegram_webhook(
             request=request,
             x_telegram_secret="beta-secret",
-            settings=_settings(),
+            settings=_settings(
+                GATE_ENV="production",
+                GATE_BETA_PRIVACY_MODE_CONFIRMED=True,
+            ),
             receipt_store=store,
-            beta_space_store=cast(beta_ingress.SqlBetaSpaceStore, object()),
+            beta_space_store=cast(beta_ingress.SqlBetaSpaceStore, space_store),
             session=cast(beta_ingress.AsyncSession, object()),
         )
     )
@@ -242,7 +259,10 @@ def test_wedding_activation_is_not_stored_as_fact(monkeypatch: pytest.MonkeyPatc
         "ok": True,
         "accepted": True,
         "duplicate": False,
-        "ignored": True,
-        "reason": "beta_wedding_binding_created",
+        "space_processing": "unbound_chat",
+        "callback_delivery": None,
+        "delivery": None,
+        "wedding_reply": None,
     }
     assert len(store.commands) == 1
+    assert space_store.resolve_calls == ["-100496001"]

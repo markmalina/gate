@@ -56,10 +56,6 @@ from app.infrastructure.beta_space import (
 )
 from app.infrastructure.beta_wedding_binding import (
     BETA_WEDDING_TENANT_REF,
-    BetaWeddingBindingError,
-    extract_beta_wedding_activation_candidate,
-    extract_beta_wedding_source_candidate,
-    prepare_beta_wedding_binding,
 )
 from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
@@ -148,47 +144,6 @@ async def beta_telegram_webhook(
             "accepted": False,
             "ignored": True,
             "reason": "unsupported_update",
-        }
-    wedding_source_candidate = extract_beta_wedding_source_candidate(update)
-    if wedding_source_candidate is not None:
-        try:
-            await prepare_beta_wedding_binding(
-                session,
-                workspace_key=settings.gate_workspace_id,
-                now=received_at,
-                candidate=wedding_source_candidate,
-            )
-        except BetaWeddingBindingError as exc:
-            return {
-                "ok": True,
-                "accepted": True,
-                "duplicate": acceptance.duplicate,
-                "ignored": True,
-                "reason": exc.code,
-            }
-    wedding_candidate = extract_beta_wedding_activation_candidate(update)
-    if wedding_candidate is not None:
-        try:
-            binding_result = await prepare_beta_wedding_binding(
-                session,
-                workspace_key=settings.gate_workspace_id,
-                now=received_at,
-                candidate=wedding_candidate,
-            )
-        except BetaWeddingBindingError as exc:
-            return {
-                "ok": True,
-                "accepted": True,
-                "duplicate": acceptance.duplicate,
-                "ignored": True,
-                "reason": exc.code,
-            }
-        return {
-            "ok": True,
-            "accepted": True,
-            "duplicate": acceptance.duplicate,
-            "ignored": True,
-            "reason": f"beta_wedding_binding_{binding_result}",
         }
     beta_telegram = None
     callback_owner = extract_beta_callback_owner_candidate(update)
@@ -308,7 +263,11 @@ async def beta_telegram_webhook(
                 now=received_at,
             )
             wedding_reply = reply_result.disposition.value
-    await _drain_beta_checkpoint_dispatch(request, settings)
+    if intake.disposition in {
+        BetaSpaceDisposition.CONSENT_ACCEPTED,
+        BetaSpaceDisposition.FACT_ACCEPTED,
+    }:
+        await _drain_beta_checkpoint_dispatch(request, settings)
     return {
         "ok": True,
         "accepted": True,
