@@ -120,6 +120,22 @@ class Settings(BaseSettings):
     gate_beta_connector_enabled: bool = Field(
         default=False, validation_alias="GATE_BETA_CONNECTOR_ENABLED"
     )
+    gate_beta_checkpoint_dispatch_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_BETA_CHECKPOINT_DISPATCH_ENABLED",
+    )
+    gate_beta_checkpoint_github_app_id: str = Field(
+        default="",
+        validation_alias="GATE_BETA_CHECKPOINT_GITHUB_APP_ID",
+    )
+    gate_beta_checkpoint_github_installation_id: str = Field(
+        default="",
+        validation_alias="GATE_BETA_CHECKPOINT_GITHUB_INSTALLATION_ID",
+    )
+    gate_beta_checkpoint_github_private_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_BETA_CHECKPOINT_GITHUB_PRIVATE_KEY",
+    )
     gate_become_connector_enabled: bool = Field(
         default=False, validation_alias="GATE_BECOME_CONNECTOR_ENABLED"
     )
