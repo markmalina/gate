@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.beta_checkpoint_dispatch import (
-    BetaCheckpointDispatchError,
     BetaCheckpointDispatchEnvelope,
+    BetaCheckpointDispatchError,
 )
 from app.models.beta_space import BetaCheckpointDispatchIntentModel
 
