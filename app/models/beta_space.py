@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from app.models.domain import Base
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -22,8 +23,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.domain import Base
 
 
 class BetaSpaceBindingModel(Base):
@@ -326,7 +325,7 @@ class BetaCheckpointDispatchIntentModel(Base):
     __tablename__ = "beta_checkpoint_dispatch_intents"
     __table_args__ = (
         CheckConstraint(
-            "state IN ('pending','sending','sent')",
+            "state IN ('pending','sending','sent','failed','unknown')",
             name="ck_beta_checkpoint_dispatch_intent_state",
         ),
         CheckConstraint(
@@ -355,9 +354,94 @@ class BetaCheckpointDispatchIntentModel(Base):
     attempt_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("5")
+    )
     last_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     next_attempt_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BetaSpaceWorkItemModel(Base):
+    """One durable, leased continuation created with an accepted Space event."""
+
+    __tablename__ = "beta_space_work_items"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_beta_space_work_item_dedupe"),
+        CheckConstraint(
+            "kind IN ('candidate_consent','callback_delivery',"
+            "'consent_delivery','reply','material')",
+            name="ck_beta_space_work_item_kind",
+        ),
+        CheckConstraint(
+            "state IN ('pending','leased','retry','completed','failed','unknown')",
+            name="ck_beta_space_work_item_state",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts >= 1",
+            name="ck_beta_space_work_item_attempts",
+        ),
+        CheckConstraint(
+            "(state = 'leased' AND lease_expires_at IS NOT NULL) OR "
+            "(state != 'leased' AND lease_expires_at IS NULL)",
+            name="ck_beta_space_work_item_lease",
+        ),
+        Index(
+            "ix_beta_space_work_item_due",
+            "state",
+            "next_attempt_at",
+            "lease_expires_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("telegram_receipts.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("beta_space_events.id", ondelete="RESTRICT"), nullable=True
+    )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
+    )
+    binding_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("beta_space_bindings.id", ondelete="RESTRICT"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'pending'")
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("5")
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
