@@ -10,6 +10,7 @@ from app.models import (  # noqa: F401
     alpha_preflight,
     alpha_transcription,
     alpha_voice,
+    aqub,
     aqub_live,
     become,
     become_learner_invitation,
