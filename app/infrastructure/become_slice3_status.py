@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 
 EXPECTED_ALEMBIC_HEAD = "0087_become_pilot_slice3_learner"
+# This is the Slice 3 schema introduction revision, not the forever-current
+# repository head. Successful reads below prove the required tables still exist.
 EXPECTED_RELATIONS_SOURCE_SHA = "337323ea854ca0ede76bb9eb8f31591c440e5168"
 STATUS_SCHEMA = "gate.become-pilot-slice3-production-evidence@1"
 RELATIONS_HEALTH_SCHEMA = "become.i4-service-health@1"
@@ -223,7 +225,7 @@ async def become_slice3_production_evidence(
     )
     ready = bool(
         source_sha_exact
-        and alembic_head == EXPECTED_ALEMBIC_HEAD
+        and alembic_head is not None
         and gates_default_off
         and caps_zero
         and local_counts_zero
@@ -233,8 +235,8 @@ async def become_slice3_production_evidence(
     error_code: str | None = None
     if not source_sha_exact:
         error_code = "slice3_gate_source_sha_invalid"
-    elif alembic_head != EXPECTED_ALEMBIC_HEAD:
-        error_code = "slice3_alembic_head_mismatch"
+    elif alembic_head is None:
+        error_code = "slice3_alembic_head_unavailable"
     elif not gates_default_off:
         error_code = "slice3_gate_enabled"
     elif not caps_zero:
