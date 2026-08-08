@@ -57,7 +57,7 @@ def test_exact_standard_private_beta_workflow_claims_are_accepted() -> None:
 def test_malformed_checkpoint_repository_setting_fails_closed() -> None:
     settings = Settings(
         _env_file=None,
-        gate_beta_checkpoint_oidc_repository="AlphaCenter/beta/extra",
+        GATE_BETA_CHECKPOINT_OIDC_REPOSITORY="AlphaCenter/beta/extra",
     )
     with pytest.raises(
         GitHubOidcError,
