@@ -141,7 +141,7 @@ jobs:
       - name: Assert contact sync container runs unprivileged
         run: docker run --rm --entrypoint sh gate-contact-sync:ci -c 'test "$(id -u)" -ne 0'
 
-  aqub-s0-preflight:
+  aqub-transport:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -195,12 +195,16 @@ jobs:
           path: /tmp/aqub-mypy.log
           if-no-files-found: error
           retention-days: 1
-      - name: AQUB targeted preflight tests
+      - name: AQUB targeted transport tests
         run: >-
           pytest
-          tests/test_aqub_s0_preflight.py
-          tests/test_aqub_telegram_preflight.py
-          tests/test_aqub_s0_preflight_postgres.py
+          tests/test_aqub_transport.py
+          tests/test_aqub_telegram.py
+          tests/test_aqub_transport_postgres.py
+          tests/test_aqub_installation_binding_postgres.py
+          tests/test_aqub_command_contract.py
+          tests/test_aqub_provider_privacy.py
+          tests/test_aqub_http_pool.py
           tests/test_telegram_aqub_provider.py
           tests/test_aqub_provider_status.py
           tests/test_aqub_live.py
