@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
@@ -33,6 +34,12 @@ from app.application.telegram_processing import (
 )
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import TelegramConnectorKey
+from app.infrastructure.beta_checkpoint_dispatch import (
+    GitHubAppBetaCheckpointDispatcher,
+)
+from app.infrastructure.beta_checkpoint_dispatch_drain import (
+    SessionFactoryBetaCheckpointDispatchDrain,
+)
 from app.infrastructure.beta_candidate_binding import (
     extract_beta_callback_owner_candidate,
     prepare_beta_katya_candidate_binding,
@@ -63,6 +70,8 @@ from app.services.telegram import TelegramClient
 
 BETA_TELEGRAM_WEBHOOK_PATH = "/telegram/beta/webhook"
 TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -299,6 +308,7 @@ async def beta_telegram_webhook(
                 now=received_at,
             )
             wedding_reply = reply_result.disposition.value
+    await _drain_beta_checkpoint_dispatch(request, settings)
     return {
         "ok": True,
         "accepted": True,
@@ -308,6 +318,52 @@ async def beta_telegram_webhook(
         "delivery": delivery,
         "wedding_reply": wedding_reply,
     }
+
+
+async def _drain_beta_checkpoint_dispatch(
+    request: Request,
+    settings: Settings,
+) -> None:
+    """Best-effort wake-up after durable acceptance; scheduled fallback remains."""
+
+    if not settings.gate_beta_checkpoint_dispatch_enabled:
+        return
+    app_id = settings.gate_beta_checkpoint_github_app_id
+    installation_id = settings.gate_beta_checkpoint_github_installation_id
+    private_key = (
+        settings.gate_beta_checkpoint_github_private_key.get_secret_value()
+    )
+    if not app_id or not installation_id or not private_key:
+        logger.warning("Beta checkpoint dispatch disabled: configuration incomplete")
+        return
+    try:
+        dispatcher = GitHubAppBetaCheckpointDispatcher(
+            client=get_beta_model_http_client(request),
+            app_id=app_id,
+            installation_id=installation_id,
+            private_key_pem=private_key,
+        )
+        result = await SessionFactoryBetaCheckpointDispatchDrain(
+            request.app.state.database_runtime.session_factory,
+            dispatcher,
+        ).drain_once()
+    except Exception as exc:
+        logger.warning(
+            "Beta checkpoint dispatch deferred: error_type=%s",
+            exc.__class__.__name__,
+        )
+        return
+    if result.disposition == "sent":
+        logger.info(
+            "Beta checkpoint dispatch sent: space=%s sequence=%s",
+            result.space_id,
+            result.accepted_sequence,
+        )
+    elif result.disposition == "deferred":
+        logger.warning(
+            "Beta checkpoint dispatch deferred: code=%s",
+            result.error_code,
+        )
 
 
 class _BetaMaterialTelegram:
