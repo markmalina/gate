@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -10,6 +11,9 @@ from app.application.beta_wedding_reply import (
 )
 from app.infrastructure.beta_wedding_reply import (
     OpenAIResponsesBetaWeddingModel,
+    SqlBetaWeddingReplyStore,
+    _query_terms,
+    _select_context,
 )
 
 
@@ -244,6 +248,133 @@ async def test_ambiguous_send_is_terminal_unknown() -> None:
             "beta_wedding_delivery_unknown",
         )
     ]
+
+
+
+def _context_row(
+    index: int,
+    text: str,
+    *,
+    event_id: str | None = None,
+    chat_id: str = "-100496001",
+) -> tuple[object, object]:
+    event = SimpleNamespace(id=event_id or f"event-{index:03d}")
+    receipt = SimpleNamespace(
+        payload={
+            "message": {
+                "chat": {"id": chat_id},
+                "from": {
+                    "is_bot": False,
+                    "first_name": "Участник",
+                },
+                "text": text,
+            }
+        }
+    )
+    return event, receipt
+
+
+def test_full_space_retrieval_keeps_recent_and_selects_old_relevant_fact() -> None:
+    rows = [
+        _context_row(index, f"Недавняя заметка {index}")
+        for index in range(8)
+    ]
+    rows.extend(
+        _context_row(index, f"Старая нерелевантная заметка {index}")
+        for index in range(8, 25)
+    )
+    rows.append(
+        _context_row(
+            25,
+            "Бюджет площадки утверждён: 120 000 рублей.",
+        )
+    )
+
+    context = _select_context(
+        rows,
+        current_text="Какой бюджет площадки мы утвердили?",
+        expected_chat_id="-100496001",
+    )
+
+    texts = [item.text for item in context]
+    assert "Бюджет площадки утверждён: 120 000 рублей." in texts
+    assert "Старая нерелевантная заметка 24" not in texts
+    assert all(f"Недавняя заметка {index}" in texts for index in range(8))
+    assert len(texts) == 9
+
+
+def test_full_space_retrieval_deduplicates_recent_and_relevant_identity() -> None:
+    rows = [
+        _context_row(0, "Площадка рядом с озером.", event_id="same-event"),
+        _context_row(1, "Свежая заметка"),
+    ]
+    rows.extend(
+        _context_row(index, f"Ещё заметка {index}")
+        for index in range(2, 8)
+    )
+    rows.append(
+        _context_row(
+            8,
+            "Площадка рядом с озером.",
+            event_id="same-event",
+        )
+    )
+
+    context = _select_context(
+        rows,
+        current_text="Какая площадка рядом с озером?",
+        expected_chat_id="-100496001",
+    )
+
+    assert sum(item.text == "Площадка рядом с озером." for item in context) == 1
+
+
+def test_full_space_retrieval_stopword_query_uses_recent_only() -> None:
+    rows = [
+        _context_row(index, f"Недавняя заметка {index}")
+        for index in range(8)
+    ]
+    rows.append(_context_row(8, "Старый бюджет площадки"))
+
+    context = _select_context(
+        rows,
+        current_text="Что это и как?",
+        expected_chat_id="-100496001",
+    )
+
+    assert _query_terms("Что это и как?") == frozenset()
+    assert len(context) == 8
+    assert all("Недавняя заметка" in item.text for item in context)
+
+
+def test_full_space_retrieval_is_chat_scoped_and_prompt_bounded() -> None:
+    rows = [
+        _context_row(0, "а" * 13_000),
+        _context_row(
+            1,
+            "Бюджет другого Space — 999.",
+            chat_id="-100999999",
+        ),
+    ]
+
+    context = _select_context(
+        rows,
+        current_text="Какой бюджет?",
+        expected_chat_id="-100496001",
+    )
+
+    assert sum(len(item.text) for item in context) == 12_000
+    assert "999" not in "".join(item.text for item in context)
+
+
+def test_full_space_retrieval_source_keeps_exact_dual_scope() -> None:
+    import inspect
+
+    source = inspect.getsource(SqlBetaWeddingReplyStore._context)
+
+    assert "BetaSpaceEventModel.workspace_id == binding.workspace_id" in source
+    assert "BetaSpaceEventModel.binding_id == binding.id" in source
+    assert ".limit(_MAX_FULL_SPACE_CANDIDATES)" in source
 
 
 @pytest.mark.anyio
