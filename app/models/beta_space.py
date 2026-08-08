@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     LargeBinary,
     String,
     Text,
@@ -311,6 +312,53 @@ class BetaConsentDeliveryModel(Base):
     provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BetaCheckpointDispatchIntentModel(Base):
+    """One coalesced, content-free checkpoint wake-up intent per Beta Space."""
+
+    __tablename__ = "beta_checkpoint_dispatch_intents"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('pending','sending','sent')",
+            name="ck_beta_checkpoint_dispatch_intent_state",
+        ),
+        CheckConstraint(
+            "accepted_sequence >= 1",
+            name="ck_beta_checkpoint_dispatch_intent_sequence",
+        ),
+        CheckConstraint(
+            "dispatched_sequence >= 0 AND dispatched_sequence <= accepted_sequence",
+            name="ck_beta_checkpoint_dispatch_intent_dispatched",
+        ),
+        Index(
+            "ix_beta_checkpoint_dispatch_intent_due",
+            "state",
+            "next_attempt_at",
+        ),
+    )
+
+    space_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    accepted_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    dispatched_sequence: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'pending'")
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
