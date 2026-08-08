@@ -4,12 +4,9 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 import httpx
 import jwt
 import pytest
-
 from app.infrastructure.beta_checkpoint_dispatch import (
     BETA_CHECKPOINT_DISPATCH_EVENT,
     BETA_CHECKPOINT_DISPATCH_SCHEMA,
@@ -17,6 +14,8 @@ from app.infrastructure.beta_checkpoint_dispatch import (
     GitHubAppBetaCheckpointDispatcher,
     build_beta_checkpoint_dispatch,
 )
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 NOW = datetime(2026, 8, 8, 17, 10, tzinfo=UTC)
 SPACE_ID = "spc_fcdd8e57a7e832840afcc187fb1d4b2c"
