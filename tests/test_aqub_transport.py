@@ -6,17 +6,17 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
+    AQUBDiagnosticPingAdapter,
     AQUBDurableAcceptance,
+    AQUBReceiptStatus,
+    AQUBStoreDisposition,
     AQUBTransportBinding,
     AQUBTransportInbound,
     AQUBTransportRole,
-    AQUBReceiptStatus,
-    AQUBDiagnosticPingAdapter,
-    AQUBStoreDisposition,
 )
 
 READY_AT = datetime(2026, 8, 7, 10, 0, tzinfo=UTC)
-SIGNING_KEY = b"s0-repository-test-signing-key!!"
+SIGNING_KEY = b"transport-repository-test-key-32bytes!!"
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def _inbound(**overrides) -> AQUBTransportInbound:
 
 
 @pytest.mark.anyio
-async def test_default_off_binding_owns_nothing() -> None:
+async def test_disabled_binding_owns_nothing() -> None:
     store = FakeStore()
     result = await AQUBDiagnosticPingAdapter(
         binding=AQUBTransportBinding(),
@@ -102,9 +102,7 @@ async def test_exact_alpha_ping_is_committed_signed_and_exclusive() -> None:
 
     assert result.owned is True
     assert result.accepted is True
-    assert result.legacy_dispatch is False
-    assert result.canary_dispatch is False
-    assert result.reply_text == "AQUB S0: связь alpha подтверждена."
+    assert result.reply_text == "AQUB: связь alpha подтверждена."
     assert len(store.commands) == 1
     assert store.commands[0].role is AQUBTransportRole.ALPHA
     assert store.commands[0].occurred_at >= READY_AT
@@ -179,9 +177,6 @@ async def test_only_exact_route_can_be_owned(change, expected_owned) -> None:
     assert result.owned is expected_owned
     assert result.accepted is False
     assert store.commands == []
-    if result.owned:
-        assert result.legacy_dispatch is False
-        assert result.canary_dispatch is False
 
 
 @pytest.mark.anyio
