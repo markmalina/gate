@@ -14,6 +14,13 @@ on:
       - "alembic/versions/0088_beta_wedding_replies.py"
       - "alembic/versions/0089_beta_wedding_voice_phases.py"
       - "alembic/versions/0090_beta_wedding_checkpoints.py"
+      - "alembic/versions/0091_beta_universal_material.py"
+      - "app/application/beta_material.py"
+      - "app/infrastructure/beta_material.py"
+      - "app/infrastructure/beta_material_provider.py"
+      - "app/models/beta_material.py"
+      - "tests/test_beta_material.py"
+      - "tests/test_beta_material_provider.py"
       - "app/application/beta_wedding_voice.py"
       - "app/infrastructure/beta_wedding_voice.py"
       - "app/infrastructure/beta_wedding_voice_provider.py"
@@ -120,7 +127,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0090_beta_wedding_checkpoints_a (head)"
+          alembic heads | grep -F "0091_beta_universal_material (head)"
           alembic upgrade head
           alembic check
 
