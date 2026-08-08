@@ -6,7 +6,6 @@ import logging
 
 import httpx
 import pytest
-
 from app.core.config import Settings
 from app.services.telegram_aqub_webhook import (
     AQUB_ALLOWED_UPDATES,
