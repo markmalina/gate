@@ -1,0 +1,37 @@
+name: Temporary AQUB workflow-head update
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/temporary-aqub-workflow-head-update.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-workflow:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Advance exact-head workflow assertion and remove this workflow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/become-quest-exact-head.yml")
+          text = path.read_text(encoding="utf-8")
+          old = 'alembic heads | grep -F "0091_beta_universal_material (head)"'
+          new = 'alembic heads | grep -F "0092_aqub_installation_binding (head)"'
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one stale workflow head assertion, got {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+          git rm .github/workflows/temporary-aqub-workflow-head-update.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/become-quest-exact-head.yml
+          git commit -m "ci(db): advance exact migration head assertion"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
