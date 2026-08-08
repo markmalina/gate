@@ -201,7 +201,7 @@ async def aqub_live_delivery(
 
 
 def _process_http_client(request: Request) -> httpx.AsyncClient:
-    client = getattr(request.app.state, "beta_model_http_client", None)
+    client = getattr(request.app.state, "http_client", None)
     if not isinstance(client, httpx.AsyncClient):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
