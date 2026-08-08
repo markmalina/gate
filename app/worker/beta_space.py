@@ -11,6 +11,9 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.api.beta_telegram_ingress import (
     _BetaMaterialTelegram,
     _settle_beta_consent_callback,
@@ -65,8 +68,6 @@ from app.models.beta_space import (
 )
 from app.models.domain import TelegramReceipt
 from app.services.telegram import TelegramClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
