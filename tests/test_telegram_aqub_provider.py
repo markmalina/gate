@@ -10,7 +10,7 @@ from app.core.config import Settings
 from app.services.telegram_aqub_webhook import (
     AQUB_ALLOWED_UPDATES,
     AQUBProviderErrorCode,
-    AQUBProviderPreflightError,
+    AQUBProviderError,
     AQUBProviderReadinessState,
     build_aqub_public_webhook_url,
     reconcile_aqub_telegram_provider,
@@ -185,7 +185,7 @@ async def test_identity_or_privacy_mismatch_fails_before_set_webhook(
 
     state = AQUBProviderReadinessState()
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
-        with pytest.raises(AQUBProviderPreflightError) as raised:
+        with pytest.raises(AQUBProviderError) as raised:
             await reconcile_aqub_telegram_provider(_settings(), http_client, state)
 
     assert raised.value.code is error_code

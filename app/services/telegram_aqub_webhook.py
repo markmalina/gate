@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from app.application.aqub_transport import AQUB_BOT_USERNAME, AQUB_OWNED_PATH
+from app.application.aqub_transport import AQUB_BOT_USERNAME, AQUB_TELEGRAM_WEBHOOK_PATH
 from app.core.config import Settings
 from app.infrastructure.aqub_installation import aqub_receipt_signing_key
 
@@ -38,7 +38,7 @@ class AQUBProviderErrorCode(StrEnum):
     WEBHOOK_REJECTED = "webhook_rejected"
 
 
-class AQUBProviderPreflightError(RuntimeError):
+class AQUBProviderError(RuntimeError):
     """One stable provider error that contains no provider response data."""
 
     def __init__(self, code: AQUBProviderErrorCode) -> None:
@@ -105,7 +105,7 @@ def build_aqub_public_webhook_url(environ: Mapping[str, str]) -> str | None:
         or not _valid_public_host(parsed.hostname)
     ):
         return None
-    return f"https://{parsed.netloc}{AQUB_OWNED_PATH}"
+    return f"https://{parsed.netloc}{AQUB_TELEGRAM_WEBHOOK_PATH}"
 
 
 def _valid_public_host(hostname: str | None) -> bool:
@@ -201,19 +201,19 @@ async def reconcile_aqub_telegram_provider(
         )
         identity_response.raise_for_status()
         identity = _telegram_object(identity_response.json())
-    except AQUBProviderPreflightError as exc:
+    except AQUBProviderError as exc:
         state.fail(exc.code)
         raise
     except (httpx.HTTPError, ValueError) as exc:
         state.fail(AQUBProviderErrorCode.PROVIDER_REQUEST_FAILED)
-        raise AQUBProviderPreflightError(
+        raise AQUBProviderError(
             AQUBProviderErrorCode.PROVIDER_REQUEST_FAILED
         ) from exc
 
     normalized_username = _normalize_provider_username(identity.get("username"))
     if identity.get("is_bot") is not True or normalized_username != AQUB_BOT_USERNAME:
         state.fail(AQUBProviderErrorCode.IDENTITY_MISMATCH)
-        raise AQUBProviderPreflightError(AQUBProviderErrorCode.IDENTITY_MISMATCH)
+        raise AQUBProviderError(AQUBProviderErrorCode.IDENTITY_MISMATCH)
 
     can_join_groups = identity.get("can_join_groups") is True
     can_read_all_group_messages = identity.get("can_read_all_group_messages") is True
@@ -229,10 +229,10 @@ async def reconcile_aqub_telegram_provider(
     )
     if not can_join_groups:
         state.fail(AQUBProviderErrorCode.GROUP_JOIN_DISABLED)
-        raise AQUBProviderPreflightError(AQUBProviderErrorCode.GROUP_JOIN_DISABLED)
+        raise AQUBProviderError(AQUBProviderErrorCode.GROUP_JOIN_DISABLED)
     if not can_read_all_group_messages:
         state.fail(AQUBProviderErrorCode.GROUP_MESSAGE_READ_DISABLED)
-        raise AQUBProviderPreflightError(
+        raise AQUBProviderError(
             AQUBProviderErrorCode.GROUP_MESSAGE_READ_DISABLED
         )
 
@@ -249,12 +249,12 @@ async def reconcile_aqub_telegram_provider(
         )
         webhook_response.raise_for_status()
         _telegram_true(webhook_response.json())
-    except AQUBProviderPreflightError as exc:
+    except AQUBProviderError as exc:
         state.fail(exc.code)
         raise
     except (httpx.HTTPError, ValueError) as exc:
         state.fail(AQUBProviderErrorCode.WEBHOOK_REJECTED)
-        raise AQUBProviderPreflightError(AQUBProviderErrorCode.WEBHOOK_REJECTED) from exc
+        raise AQUBProviderError(AQUBProviderErrorCode.WEBHOOK_REJECTED) from exc
 
     state.set(
         AQUBProviderReadinessSnapshot(
@@ -292,7 +292,7 @@ async def reconcile_aqub_telegram_provider_with_retries(
             )
         except asyncio.CancelledError:
             raise
-        except AQUBProviderPreflightError as exc:
+        except AQUBProviderError as exc:
             logger.warning(
                 "AQUB Telegram provider preflight failed: attempt=%s code=%s",
                 attempt,
@@ -314,10 +314,10 @@ def _normalize_provider_username(value: Any) -> str | None:
 
 def _telegram_object(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict) or payload.get("ok") is not True:
-        raise AQUBProviderPreflightError(AQUBProviderErrorCode.PROVIDER_REJECTED)
+        raise AQUBProviderError(AQUBProviderErrorCode.PROVIDER_REJECTED)
     result = payload.get("result")
     if not isinstance(result, dict):
-        raise AQUBProviderPreflightError(
+        raise AQUBProviderError(
             AQUBProviderErrorCode.PROVIDER_RESPONSE_INVALID
         )
     return result
@@ -329,4 +329,4 @@ def _telegram_true(payload: Any) -> None:
         or payload.get("ok") is not True
         or payload.get("result") is not True
     ):
-        raise AQUBProviderPreflightError(AQUBProviderErrorCode.WEBHOOK_REJECTED)
+        raise AQUBProviderError(AQUBProviderErrorCode.WEBHOOK_REJECTED)
