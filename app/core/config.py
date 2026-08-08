@@ -413,7 +413,7 @@ class Settings(BaseSettings):
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_AUDIENCE",
     )
     gate_beta_checkpoint_oidc_repository: str = Field(
-        default="markmalina/beta",
+        default="AlphaCenter/beta",
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_REPOSITORY",
     )
     gate_beta_checkpoint_oidc_repository_id: str = Field(
@@ -421,7 +421,7 @@ class Settings(BaseSettings):
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_ID",
     )
     gate_beta_checkpoint_oidc_repository_owner_id: str = Field(
-        default="23397294",
+        default="310893851",
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_OWNER_ID",
     )
     gate_beta_checkpoint_oidc_ref: str = Field(
@@ -430,7 +430,7 @@ class Settings(BaseSettings):
     )
     gate_beta_checkpoint_oidc_workflow_ref: str = Field(
         default=(
-            "markmalina/beta/.github/workflows/"
+            "AlphaCenter/beta/.github/workflows/"
             "checkpoint-context.yml@refs/heads/main"
         ),
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF",
