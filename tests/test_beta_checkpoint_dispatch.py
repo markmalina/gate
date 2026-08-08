@@ -10,7 +10,6 @@ import httpx
 import jwt
 import pytest
 
-
 from app.infrastructure.beta_checkpoint_dispatch import (
     BETA_CHECKPOINT_DISPATCH_EVENT,
     BETA_CHECKPOINT_DISPATCH_SCHEMA,
