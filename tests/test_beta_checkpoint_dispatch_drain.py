@@ -1,5 +1,7 @@
 """PostgreSQL proof for coalesced Beta checkpoint dispatch draining."""
 
+# ruff: noqa: I001
+
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
