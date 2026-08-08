@@ -34,15 +34,15 @@ from app.application.telegram_processing import (
 )
 from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import TelegramConnectorKey
+from app.infrastructure.beta_candidate_binding import (
+    extract_beta_callback_owner_candidate,
+    prepare_beta_katya_candidate_binding,
+)
 from app.infrastructure.beta_checkpoint_dispatch import (
     GitHubAppBetaCheckpointDispatcher,
 )
 from app.infrastructure.beta_checkpoint_dispatch_drain import (
     SessionFactoryBetaCheckpointDispatchDrain,
-)
-from app.infrastructure.beta_candidate_binding import (
-    extract_beta_callback_owner_candidate,
-    prepare_beta_katya_candidate_binding,
 )
 from app.infrastructure.beta_material import SqlBetaMaterialStore
 from app.infrastructure.beta_material_provider import (
