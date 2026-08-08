@@ -131,9 +131,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         enabled=reply_sequence_worker_enabled,
     )
     _app.state.worker_health_registry = worker_health
-    aqub_provider_readiness = AQUBProviderReadinessState(
-        enabled=bool(getattr(settings, "gate_aqub_s0_preflight_enabled", False))
-    )
+    aqub_provider_readiness = AQUBProviderReadinessState(enabled=True)
     _app.state.aqub_provider_readiness = aqub_provider_readiness
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime

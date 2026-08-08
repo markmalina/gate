@@ -1,9 +1,8 @@
-"""Default-off AQUB S0 Telegram preflight boundary.
+"""AQUB Telegram transport contracts and diagnostic ping boundary.
 
-This module deliberately stops at the Gate transport boundary.  It proves that
-one exact bot/group/actor binding can own ``/aqub_ping`` and durably commit an
-inbound command without invoking the AQUB domain engine, Telegram delivery, or
-any legacy/canary dispatcher.
+Provider identifiers remain inside Gate while durable receipts expose only
+opaque references to the AQUB runtime. The historical webhook URL remains a
+compatibility address, not an architectural phase name.
 """
 
 from __future__ import annotations
@@ -19,13 +18,13 @@ from typing import Any, Protocol
 
 AQUB_BOT_USERNAME = "@AQubAgentBot"
 AQUB_PING_COMMAND = "/aqub_ping"
-AQUB_OWNED_PATH = "/telegram/aqub/preflight"
+AQUB_TELEGRAM_WEBHOOK_PATH = "/telegram/aqub/preflight"
 AQUB_RECEIPT_SOURCE = "telegram_bot_api"
 
 JsonObject = dict[str, Any]
 
 
-class AQUBPreflightRole(StrEnum):
+class AQUBTransportRole(StrEnum):
     ACE = "ace"
     ALPHA = "alpha"
     CANDIDATE = "candidate"
@@ -45,8 +44,8 @@ class AQUBDeliveryStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True, repr=False)
-class AQUBPreflightBinding:
-    """Release-pinned owner-only binding; blank defaults keep it dormant."""
+class AQUBTransportBinding:
+    """Durable installation binding resolved by the Gate provider boundary."""
 
     enabled: bool = False
     bot_username: str = ""
@@ -74,7 +73,7 @@ class AQUBPreflightBinding:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
-class AQUBPreflightInbound:
+class AQUBTransportInbound:
     """Trusted ingress projection. Provider identifiers never enter receipts."""
 
     bot_username: str
@@ -88,7 +87,7 @@ class AQUBPreflightInbound:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
-class AQUBPreflightCommand:
+class AQUBTransportCommand:
     """Raw durable-store request, never suitable for logs or receipts."""
 
     source: str
@@ -97,11 +96,11 @@ class AQUBPreflightCommand:
     payload: Mapping[str, Any] = field(repr=False)
     chat_id: str = field(repr=False)
     actor_id: str = field(repr=False)
-    role: AQUBPreflightRole
+    role: AQUBTransportRole
     command: str = field(repr=False)
     occurred_at: datetime
     received_at: datetime
-    owned_path: str = AQUB_OWNED_PATH
+    owned_path: str = AQUB_TELEGRAM_WEBHOOK_PATH
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -116,8 +115,8 @@ class AQUBDurableAcceptance:
     causation_id: str = field(repr=False)
 
 
-class AQUBPreflightStore(Protocol):
-    async def accept(self, command: AQUBPreflightCommand) -> AQUBDurableAcceptance: ...
+class AQUBTransportStore(Protocol):
+    async def accept(self, command: AQUBTransportCommand) -> AQUBDurableAcceptance: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,32 +169,30 @@ class AQUBCommittedReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class AQUBPreflightResult:
+class AQUBTransportResult:
     owned: bool
     accepted: bool
     reason: str
     reply_text: str | None = None
     receipt: AQUBCommittedReceipt | None = None
-    legacy_dispatch: bool | None = None
-    canary_dispatch: bool | None = None
 
 
-class AQUBS0PreflightAdapter:
-    """Own only the exact AQUB S0 binding and never perform provider effects."""
+class AQUBDiagnosticPingAdapter:
+    """Handle the diagnostic ping without performing provider effects."""
 
     def __init__(
         self,
         *,
-        binding: AQUBPreflightBinding,
-        store: AQUBPreflightStore,
+        binding: AQUBTransportBinding,
+        store: AQUBTransportStore,
     ) -> None:
         self._binding = binding
         self._store = store
 
-    async def handle(self, inbound: AQUBPreflightInbound) -> AQUBPreflightResult:
+    async def handle(self, inbound: AQUBTransportInbound) -> AQUBTransportResult:
         role = self._bound_role(inbound)
         if role is None:
-            return AQUBPreflightResult(
+            return AQUBTransportResult(
                 owned=False,
                 accepted=False,
                 reason="aqub_route_not_owned",
@@ -213,7 +210,7 @@ class AQUBS0PreflightAdapter:
 
         payload_sha256 = hashlib.sha256(_canonical(inbound.payload)).hexdigest()
         acceptance = await self._store.accept(
-            AQUBPreflightCommand(
+            AQUBTransportCommand(
                 source=AQUB_RECEIPT_SOURCE,
                 external_id=inbound.external_id,
                 payload_sha256=payload_sha256,
@@ -275,10 +272,9 @@ class AQUBS0PreflightAdapter:
             ),
             "occurred_at": inbound.occurred_at.isoformat(),
             "received_at": inbound.received_at.isoformat(),
-            "owned_path": AQUB_OWNED_PATH,
+            "owned_path": AQUB_TELEGRAM_WEBHOOK_PATH,
             "duplicate": duplicate,
             "result_json": redacted_result,
-            # A committed command receipt is not evidence of Telegram delivery.
             "delivery_status": AQUBDeliveryStatus.NOT_RUN.value,
         }
         receipt = AQUBCommittedReceipt(
@@ -295,23 +291,21 @@ class AQUBS0PreflightAdapter:
             actor_ref=str(unsigned["actor_ref"]),
             occurred_at=inbound.occurred_at.isoformat(),
             received_at=inbound.received_at.isoformat(),
-            owned_path=AQUB_OWNED_PATH,
+            owned_path=AQUB_TELEGRAM_WEBHOOK_PATH,
             duplicate=duplicate,
             result_json=redacted_result,
             delivery_status=AQUBDeliveryStatus.NOT_RUN.value,
             signature=_signature(self._binding.receipt_signing_key, unsigned),
         )
-        return AQUBPreflightResult(
+        return AQUBTransportResult(
             owned=True,
             accepted=True,
             reason="aqub_ping_committed",
-            reply_text=f"AQUB S0: связь {role.value} подтверждена.",
+            reply_text=f"AQUB: связь {role.value} подтверждена.",
             receipt=receipt,
-            legacy_dispatch=False,
-            canary_dispatch=False,
         )
 
-    def _bound_role(self, inbound: AQUBPreflightInbound) -> AQUBPreflightRole | None:
+    def _bound_role(self, inbound: AQUBTransportInbound) -> AQUBTransportRole | None:
         binding = self._binding
         if (
             not binding.enabled
@@ -321,19 +315,17 @@ class AQUBS0PreflightAdapter:
         ):
             return None
         if inbound.actor_id == binding.ace_user_id:
-            return AQUBPreflightRole.ACE
+            return AQUBTransportRole.ACE
         if inbound.actor_id == binding.alpha_user_id:
-            return AQUBPreflightRole.ALPHA
+            return AQUBTransportRole.ALPHA
         return None
 
 
-def _owned_rejection(reason: str) -> AQUBPreflightResult:
-    return AQUBPreflightResult(
+def _owned_rejection(reason: str) -> AQUBTransportResult:
+    return AQUBTransportResult(
         owned=True,
         accepted=False,
         reason=reason,
-        legacy_dispatch=False,
-        canary_dispatch=False,
     )
 
 

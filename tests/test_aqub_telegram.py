@@ -5,19 +5,19 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.api.aqub_telegram_preflight import (
-    get_aqub_preflight_store,
+from app.api.aqub_telegram import (
     get_aqub_production_binding,
+    get_aqub_transport_store,
     router,
 )
 from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
-from app.application.aqub_s0_preflight import (
+from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
-    AQUBPreflightBinding,
-    AQUBPreflightCommand,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
+    AQUBTransportBinding,
+    AQUBTransportCommand,
 )
 from app.core.config import Settings, get_settings
 from fastapi import FastAPI
@@ -31,10 +31,10 @@ TEST_SIGNING_KEY = b"0123456789abcdef0123456789abcdef-test"
 
 class DurableStore:
     def __init__(self) -> None:
-        self.commands: list[AQUBPreflightCommand] = []
+        self.commands: list[AQUBTransportCommand] = []
         self.acceptances: dict[str, AQUBDurableAcceptance] = {}
 
-    async def accept(self, command: AQUBPreflightCommand) -> AQUBDurableAcceptance:
+    async def accept(self, command: AQUBTransportCommand) -> AQUBDurableAcceptance:
         self.commands.append(command)
         key = command.external_id
         existing = self.acceptances.get(key)
@@ -71,8 +71,8 @@ def _settings(**changes: object) -> Settings:
     return Settings(**values)
 
 
-def _binding() -> AQUBPreflightBinding:
-    return AQUBPreflightBinding(
+def _binding() -> AQUBTransportBinding:
+    return AQUBTransportBinding(
         enabled=True,
         bot_username=AQUB_BOT_USERNAME,
         group_chat_id=TEST_CHAT_ID,
@@ -99,7 +99,7 @@ def _client(settings: Settings, store: DurableStore) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_aqub_preflight_store] = lambda: store
+    app.dependency_overrides[get_aqub_transport_store] = lambda: store
     app.dependency_overrides[get_aqub_production_binding] = _binding
     return TestClient(app)
 

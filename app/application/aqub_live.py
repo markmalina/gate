@@ -12,14 +12,14 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.application.aqub_s0_preflight import (
+from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
-    AQUBPreflightBinding,
-    AQUBPreflightCommand,
-    AQUBPreflightInbound,
-    AQUBPreflightRole,
-    AQUBPreflightStore,
     AQUBStoreDisposition,
+    AQUBTransportBinding,
+    AQUBTransportCommand,
+    AQUBTransportInbound,
+    AQUBTransportRole,
+    AQUBTransportStore,
 )
 from app.application.telegram_processing import canonical_telegram_payload_digest
 
@@ -95,15 +95,15 @@ class AQUBLiveIngressAdapter:
     def __init__(
         self,
         *,
-        binding: AQUBPreflightBinding,
-        store: AQUBPreflightStore,
+        binding: AQUBTransportBinding,
+        store: AQUBTransportStore,
         runtime: AQUBRuntimeClient,
     ) -> None:
         self._binding = binding
         self._store = store
         self._runtime = runtime
 
-    async def handle(self, inbound: AQUBPreflightInbound) -> AQUBLiveForwardResult:
+    async def handle(self, inbound: AQUBTransportInbound) -> AQUBLiveForwardResult:
         role = _bound_role(self._binding, inbound)
         if role is None:
             return AQUBLiveForwardResult(
@@ -116,7 +116,7 @@ class AQUBLiveIngressAdapter:
         payload = dict(inbound.payload)
         payload_sha256 = canonical_telegram_payload_digest(payload)
         acceptance = await self._store.accept(
-            AQUBPreflightCommand(
+            AQUBTransportCommand(
                 source="telegram_bot_api",
                 external_id=inbound.external_id,
                 payload_sha256=payload_sha256,
@@ -154,16 +154,16 @@ class AQUBLiveIngressAdapter:
         )
 
 
-def _candidate_input_allowed(inbound: AQUBPreflightInbound) -> bool:
+def _candidate_input_allowed(inbound: AQUBTransportInbound) -> bool:
     if _CANDIDATE_COMMAND_RE.match(inbound.command.strip()) is not None:
         return True
     return _reply_context(inbound.payload) == "program_prompt"
 
 
 def _bound_role(
-    binding: AQUBPreflightBinding,
-    inbound: AQUBPreflightInbound,
-) -> AQUBPreflightRole | None:
+    binding: AQUBTransportBinding,
+    inbound: AQUBTransportInbound,
+) -> AQUBTransportRole | None:
     if (
         not binding.enabled
         or inbound.bot_username != AQUB_BOT_USERNAME
@@ -172,15 +172,15 @@ def _bound_role(
     ):
         return None
     if inbound.actor_id == binding.alpha_user_id:
-        return AQUBPreflightRole.ALPHA
+        return AQUBTransportRole.ALPHA
     if inbound.actor_id == binding.ace_user_id and binding.ace_user_id != "__unbound_ace__":
-        return AQUBPreflightRole.ACE
+        return AQUBTransportRole.ACE
     if _candidate_input_allowed(inbound):
-        return AQUBPreflightRole.CANDIDATE
+        return AQUBTransportRole.CANDIDATE
     return None
 
 
-def _validate_time(binding: AQUBPreflightBinding, inbound: AQUBPreflightInbound) -> None:
+def _validate_time(binding: AQUBTransportBinding, inbound: AQUBTransportInbound) -> None:
     if inbound.occurred_at.utcoffset() is None or inbound.received_at.utcoffset() is None:
         raise RuntimeError("aqub_timestamp_invalid")
     if binding.ready_at is None or inbound.occurred_at < binding.ready_at:
@@ -213,9 +213,9 @@ def _reply_context(payload: Mapping[str, Any]) -> str | None:
 
 def _build_signed_envelope_body(
     *,
-    binding: AQUBPreflightBinding,
-    inbound: AQUBPreflightInbound,
-    role: AQUBPreflightRole,
+    binding: AQUBTransportBinding,
+    inbound: AQUBTransportInbound,
+    role: AQUBTransportRole,
     command_receipt_id: str,
     payload_sha256: str,
 ) -> bytes:

@@ -9,13 +9,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.application.aqub_live import AQUBLiveIngressAdapter
-from app.application.aqub_s0_preflight import (
+from app.application.aqub_transport import (
     AQUBDurableAcceptance,
-    AQUBPreflightBinding,
-    AQUBPreflightCommand,
-    AQUBPreflightInbound,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
+    AQUBTransportBinding,
+    AQUBTransportCommand,
+    AQUBTransportInbound,
 )
 
 SIGNING_KEY = b"0123456789abcdef0123456789abcdef-live-test"
@@ -28,10 +28,10 @@ TEST_CANDIDATE_ID = "987654321"
 
 class Store:
     def __init__(self) -> None:
-        self.commands: list[AQUBPreflightCommand] = []
+        self.commands: list[AQUBTransportCommand] = []
         self._created: AQUBDurableAcceptance | None = None
 
-    async def accept(self, command: AQUBPreflightCommand) -> AQUBDurableAcceptance:
+    async def accept(self, command: AQUBTransportCommand) -> AQUBDurableAcceptance:
         self.commands.append(command)
         if self._created is not None:
             return AQUBDurableAcceptance(
@@ -72,8 +72,8 @@ class Runtime:
         }
 
 
-def binding() -> AQUBPreflightBinding:
-    return AQUBPreflightBinding(
+def binding() -> AQUBTransportBinding:
+    return AQUBTransportBinding(
         enabled=True,
         bot_username="@AQubAgentBot",
         group_chat_id=TEST_CHAT_ID,
@@ -91,7 +91,7 @@ def inbound(
     actor_id: str = TEST_ALPHA_ID,
     chat_id: str = TEST_CHAT_ID,
     include_program_prompt_reply: bool = True,
-) -> AQUBPreflightInbound:
+) -> AQUBTransportInbound:
     occurred = READY_AT + timedelta(seconds=1)
     message: dict[str, object] = {
         "message_id": 77,
@@ -110,7 +110,7 @@ def inbound(
             ),
         }
     payload = {"update_id": update_id, "message": message}
-    return AQUBPreflightInbound(
+    return AQUBTransportInbound(
         bot_username="@AQubAgentBot",
         external_id=str(update_id),
         chat_id=chat_id,

@@ -123,21 +123,6 @@ class Settings(BaseSettings):
     gate_become_connector_enabled: bool = Field(
         default=False, validation_alias="GATE_BECOME_CONNECTOR_ENABLED"
     )
-    gate_aqub_s0_preflight_enabled: bool = Field(
-        default=False, validation_alias="GATE_AQUB_S0_PREFLIGHT_ENABLED"
-    )
-    gate_aqub_group_chat_id: SecretStr = Field(
-        default=SecretStr(""), validation_alias="GATE_AQUB_GROUP_CHAT_ID"
-    )
-    gate_aqub_ace_user_id: SecretStr = Field(
-        default=SecretStr(""), validation_alias="GATE_AQUB_ACE_USER_ID"
-    )
-    gate_aqub_alpha_user_id: SecretStr = Field(
-        default=SecretStr(""), validation_alias="GATE_AQUB_ALPHA_USER_ID"
-    )
-    gate_aqub_s0_ready_at: str = Field(
-        default="", validation_alias="GATE_AQUB_S0_READY_AT"
-    )
     gate_aqub_receipt_signing_key: SecretStr = Field(
         default=SecretStr(""),
         validation_alias="GATE_AQUB_RECEIPT_SIGNING_KEY",
