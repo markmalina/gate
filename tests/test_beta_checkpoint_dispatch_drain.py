@@ -43,6 +43,34 @@ class _Dispatcher:
         )
 
 
+class _WakeDuringDispatch(_Dispatcher):
+    def __init__(self, sessions: async_sessionmaker) -> None:
+        super().__init__()
+        self._sessions = sessions
+        self._wake_once = True
+
+    async def dispatch(
+        self, *, space_id: str, accepted_sequence: int
+    ) -> BetaCheckpointDispatchEnvelope:
+        envelope = await super().dispatch(
+            space_id=space_id,
+            accepted_sequence=accepted_sequence,
+        )
+        if self._wake_once:
+            self._wake_once = False
+            async with self._sessions.begin() as session:
+                intent = await session.get(
+                    BetaCheckpointDispatchIntentModel,
+                    space_id,
+                    with_for_update=True,
+                )
+                assert intent is not None
+                assert intent.state == "sending"
+                intent.wake_generation += 1
+                intent.updated_at = NOW + timedelta(seconds=1)
+        return envelope
+
+
 @pytest.mark.anyio
 async def test_dispatch_drain_is_idle_without_intent_and_sends_highest_sequence() -> None:
     database_url = get_settings().database_url
@@ -142,6 +170,66 @@ async def test_dispatch_failure_defers_with_backoff_then_retries_same_sequence()
             assert intent.state == "sent"
             assert intent.attempt_count == 2
             assert intent.dispatched_sequence == 18
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        await admin.dispose()
+
+
+@pytest.mark.anyio
+async def test_wake_created_during_dispatch_is_not_lost_on_settlement() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for checkpoint dispatch PostgreSQL test")
+    schema = f"beta_dispatch_generation_{uuid4().hex}"
+    admin = create_async_engine(database_url)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(
+        database_url,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions.begin() as session:
+            session.add(
+                BetaCheckpointDispatchIntentModel(
+                    space_id=SPACE_ID,
+                    accepted_sequence=17,
+                    dispatched_sequence=0,
+                    wake_generation=1,
+                    dispatched_wake_generation=0,
+                    state="pending",
+                    next_attempt_at=NOW,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+        dispatcher = _WakeDuringDispatch(sessions)
+        drain = SessionFactoryBetaCheckpointDispatchDrain(sessions, dispatcher)
+
+        first = await drain.drain_once(now=NOW)
+        assert first.disposition == "sent"
+        async with sessions() as session:
+            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            assert intent is not None
+            assert intent.state == "pending"
+            assert intent.dispatched_sequence == 17
+            assert intent.wake_generation == 2
+            assert intent.dispatched_wake_generation == 1
+
+        second = await drain.drain_once(now=NOW + timedelta(seconds=2))
+        assert second.disposition == "sent"
+        assert dispatcher.calls == [(SPACE_ID, 17), (SPACE_ID, 17)]
+        async with sessions() as session:
+            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            assert intent is not None
+            assert intent.state == "sent"
+            assert intent.wake_generation == 2
+            assert intent.dispatched_wake_generation == 2
     finally:
         await engine.dispose()
         async with admin.begin() as connection:
