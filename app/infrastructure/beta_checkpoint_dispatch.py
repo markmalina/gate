@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Callable, Final
+from typing import Final
 
 import httpx
 import jwt
