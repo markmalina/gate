@@ -107,7 +107,10 @@ class SqlAQUBPreflightReceiptStore:
 def build_aqub_s0_binding(settings: Settings) -> AQUBPreflightBinding:
     """Return the single permanent owner-confirmed AQUB production binding."""
 
-    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value()
+    signing_secret = getattr(settings, "gate_aqub_receipt_signing_key", None)
+    if signing_secret is None:
+        raise ValueError("AQUB signing key is unavailable")
+    signing_key = signing_secret.get_secret_value()
     return AQUBPreflightBinding(
         enabled=True,
         bot_username=AQUB_BOT_USERNAME,
