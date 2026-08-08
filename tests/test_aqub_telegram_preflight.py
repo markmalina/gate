@@ -5,9 +5,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.api.aqub_telegram_preflight import get_aqub_preflight_store, router
 from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
 from app.application.aqub_s0_preflight import (
@@ -22,6 +19,8 @@ from app.infrastructure.aqub_s0_preflight import (
     AQUB_RELEASE_GROUP_CHAT_ID,
     AQUB_RELEASE_READY_AT,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class DurableStore:
