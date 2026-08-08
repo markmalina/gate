@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,7 +115,10 @@ class SqlAQUBPreflightReceiptStore:
 def aqub_receipt_signing_key(settings: Settings) -> bytes:
     """Return the permanent AQUB transport signing key without provider IDs."""
 
-    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value().strip()
+    secret: object = getattr(settings, "gate_aqub_receipt_signing_key", None)
+    if not isinstance(secret, SecretStr):
+        raise ValueError("AQUB signing key is unavailable")
+    signing_key = secret.get_secret_value().strip()
     encoded = signing_key.encode()
     if len(encoded) < 32:
         raise ValueError("AQUB signing key is unavailable")
