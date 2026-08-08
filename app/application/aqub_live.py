@@ -26,8 +26,8 @@ from app.application.telegram_processing import canonical_telegram_payload_diges
 AQUB_GATE_ENVELOPE_SCHEMA = "aqub.gate-envelope.v1"
 AQUB_DELIVERY_COMMAND_SCHEMA = "aqub.delivery-command.v1"
 AQUB_PROGRAM_PROMPT_TEXT = (
-    "AQUB: пришлите программу ответом на это сообщение по шаблону из минимум двух шагов "
-    "(до 3500 символов)."
+    "AQUB: пришлите программу следующим сообщением. Достаточно минимум двух "
+    "нумерованных шагов (до 3500 символов)."
 )
 AQUB_RUNTIME_INBOUND_PATH = "/gate/inbound"
 AQUB_GATE_DELIVERY_PATH = "/internal/aqub/deliver"
@@ -36,6 +36,7 @@ _CANDIDATE_COMMAND_RE = re.compile(
     r"^(?:/ace_join_[0-9a-f]{12}(?:@AQubAgentBot)?$|/program(?:@AQubAgentBot)?(?:\s|$)|/confirm_program_\d{6}(?:@AQubAgentBot)?$|/status(?:@AQubAgentBot)?$|/help(?:@AQubAgentBot)?$)",
     re.IGNORECASE,
 )
+_PROGRAM_STEP_RE = re.compile(r"(?m)^\s*(\d+)\.\s+\S")
 
 JsonObject = dict[str, Any]
 
@@ -154,10 +155,20 @@ class AQUBLiveIngressAdapter:
         )
 
 
+def _program_like_text(text: str) -> bool:
+    positions = [int(match.group(1)) for match in _PROGRAM_STEP_RE.finditer(text)]
+    if len(positions) < 2 or positions[0] != 1:
+        return False
+    return all(position == index for index, position in enumerate(positions, start=1))
+
+
 def _candidate_input_allowed(inbound: AQUBTransportInbound) -> bool:
-    if _CANDIDATE_COMMAND_RE.match(inbound.command.strip()) is not None:
+    text = inbound.command.strip()
+    if _CANDIDATE_COMMAND_RE.match(text) is not None:
         return True
-    return _reply_context(inbound.payload) == "program_prompt"
+    if _reply_context(inbound.payload) == "program_prompt":
+        return True
+    return _program_like_text(text)
 
 
 def _bound_role(
