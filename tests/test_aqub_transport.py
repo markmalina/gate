@@ -4,14 +4,14 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.application.aqub_s0_preflight import (
+from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
-    AQUBPreflightBinding,
-    AQUBPreflightInbound,
-    AQUBPreflightRole,
+    AQUBTransportBinding,
+    AQUBTransportInbound,
+    AQUBTransportRole,
     AQUBReceiptStatus,
-    AQUBS0PreflightAdapter,
+    AQUBDiagnosticPingAdapter,
     AQUBStoreDisposition,
 )
 
@@ -47,7 +47,7 @@ class FakeStore:
         )
 
 
-def _binding(**overrides) -> AQUBPreflightBinding:
+def _binding(**overrides) -> AQUBTransportBinding:
     values = {
         "enabled": True,
         "bot_username": AQUB_BOT_USERNAME,
@@ -58,10 +58,10 @@ def _binding(**overrides) -> AQUBPreflightBinding:
         "receipt_signing_key": SIGNING_KEY,
     }
     values.update(overrides)
-    return AQUBPreflightBinding(**values)
+    return AQUBTransportBinding(**values)
 
 
-def _inbound(**overrides) -> AQUBPreflightInbound:
+def _inbound(**overrides) -> AQUBTransportInbound:
     values = {
         "bot_username": AQUB_BOT_USERNAME,
         "external_id": "telegram-update-9001",
@@ -76,14 +76,14 @@ def _inbound(**overrides) -> AQUBPreflightInbound:
         "received_at": READY_AT + timedelta(seconds=1),
     }
     values.update(overrides)
-    return AQUBPreflightInbound(**values)
+    return AQUBTransportInbound(**values)
 
 
 @pytest.mark.anyio
 async def test_default_off_binding_owns_nothing() -> None:
     store = FakeStore()
-    result = await AQUBS0PreflightAdapter(
-        binding=AQUBPreflightBinding(),
+    result = await AQUBDiagnosticPingAdapter(
+        binding=AQUBTransportBinding(),
         store=store,
     ).handle(_inbound())
 
@@ -96,7 +96,7 @@ async def test_default_off_binding_owns_nothing() -> None:
 async def test_exact_alpha_ping_is_committed_signed_and_exclusive() -> None:
     store = FakeStore()
     binding = _binding()
-    result = await AQUBS0PreflightAdapter(binding=binding, store=store).handle(
+    result = await AQUBDiagnosticPingAdapter(binding=binding, store=store).handle(
         _inbound()
     )
 
@@ -106,7 +106,7 @@ async def test_exact_alpha_ping_is_committed_signed_and_exclusive() -> None:
     assert result.canary_dispatch is False
     assert result.reply_text == "AQUB S0: связь alpha подтверждена."
     assert len(store.commands) == 1
-    assert store.commands[0].role is AQUBPreflightRole.ALPHA
+    assert store.commands[0].role is AQUBTransportRole.ALPHA
     assert store.commands[0].occurred_at >= READY_AT
 
     receipt = result.receipt
@@ -120,12 +120,12 @@ async def test_exact_alpha_ping_is_committed_signed_and_exclusive() -> None:
 @pytest.mark.anyio
 async def test_exact_ace_binding_gets_ace_role() -> None:
     store = FakeStore()
-    result = await AQUBS0PreflightAdapter(
+    result = await AQUBDiagnosticPingAdapter(
         binding=_binding(), store=store
     ).handle(_inbound(actor_id="111-secret-ace"))
 
     assert result.accepted is True
-    assert store.commands[0].role is AQUBPreflightRole.ACE
+    assert store.commands[0].role is AQUBTransportRole.ACE
     assert result.receipt is not None
     assert result.receipt.role == "ace"
 
@@ -133,7 +133,7 @@ async def test_exact_ace_binding_gets_ace_role() -> None:
 @pytest.mark.anyio
 async def test_receipt_contains_no_raw_ids_text_or_signing_key() -> None:
     store = FakeStore()
-    result = await AQUBS0PreflightAdapter(
+    result = await AQUBDiagnosticPingAdapter(
         binding=_binding(), store=store
     ).handle(_inbound())
 
@@ -172,7 +172,7 @@ async def test_receipt_contains_no_raw_ids_text_or_signing_key() -> None:
 )
 async def test_only_exact_route_can_be_owned(change, expected_owned) -> None:
     store = FakeStore()
-    result = await AQUBS0PreflightAdapter(
+    result = await AQUBDiagnosticPingAdapter(
         binding=_binding(), store=store
     ).handle(_inbound(**change))
 
@@ -187,7 +187,7 @@ async def test_only_exact_route_can_be_owned(change, expected_owned) -> None:
 @pytest.mark.anyio
 async def test_duplicate_reuses_store_result_without_claiming_delivery() -> None:
     store = FakeStore(disposition=AQUBStoreDisposition.DUPLICATE)
-    result = await AQUBS0PreflightAdapter(
+    result = await AQUBDiagnosticPingAdapter(
         binding=_binding(), store=store
     ).handle(_inbound())
 
@@ -204,7 +204,7 @@ async def test_duplicate_reuses_store_result_without_claiming_delivery() -> None
 @pytest.mark.anyio
 async def test_uncommitted_store_result_cannot_create_receipt_or_reply() -> None:
     with pytest.raises(RuntimeError, match="aqub_store_status_invalid"):
-        await AQUBS0PreflightAdapter(
+        await AQUBDiagnosticPingAdapter(
             binding=_binding(),
             store=FakeStore(status="pending"),  # type: ignore[arg-type]
         ).handle(_inbound())
@@ -213,7 +213,7 @@ async def test_uncommitted_store_result_cannot_create_receipt_or_reply() -> None
 @pytest.mark.anyio
 async def test_arbitrary_store_disposition_cannot_enter_result_json() -> None:
     with pytest.raises(RuntimeError, match="aqub_store_disposition_invalid"):
-        await AQUBS0PreflightAdapter(
+        await AQUBDiagnosticPingAdapter(
             binding=_binding(),
             store=FakeStore(
                 disposition="SECRET-ARBITRARY-RESULT"  # type: ignore[arg-type]

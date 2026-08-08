@@ -6,16 +6,16 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from app.application.aqub_s0_preflight import (
-    AQUBPreflightCommand,
-    AQUBPreflightRole,
+from app.application.aqub_transport import (
+    AQUBTransportCommand,
+    AQUBTransportRole,
     AQUBStoreDisposition,
 )
 from app.application.telegram_processing import canonical_telegram_payload_digest
 from app.core.config import get_settings
-from app.infrastructure.aqub_s0_preflight import (
-    AQUB_PREFLIGHT_BOT_KEY,
-    SqlAQUBPreflightReceiptStore,
+from app.infrastructure.aqub_installation import (
+    AQUB_RECEIPT_BOT_KEY,
+    SqlAQUBTransportReceiptStore,
 )
 from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 from app.models.domain import (
@@ -32,7 +32,7 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _command() -> AQUBPreflightCommand:
+def _command() -> AQUBTransportCommand:
     occurred_at = datetime(2026, 8, 7, 8, 0, tzinfo=UTC)
     payload = {
         "update_id": 987654321,
@@ -43,14 +43,14 @@ def _command() -> AQUBPreflightCommand:
             "text": "/aqub_ping",
         },
     }
-    return AQUBPreflightCommand(
+    return AQUBTransportCommand(
         source="telegram_bot_api",
         external_id=str(payload["update_id"]),
         payload_sha256=canonical_telegram_payload_digest(payload),
         payload=payload,
         chat_id="-1007001",
         actor_id="7003",
-        role=AQUBPreflightRole.ALPHA,
+        role=AQUBTransportRole.ALPHA,
         command="/aqub_ping",
         occurred_at=occurred_at,
         received_at=occurred_at + timedelta(seconds=1),
@@ -79,7 +79,7 @@ async def test_terminal_receipt_is_idempotent_and_never_queued() -> None:
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
         async with session_factory() as session:
-            store = SqlAQUBPreflightReceiptStore(session)
+            store = SqlAQUBTransportReceiptStore(session)
             first = await store.accept(_command())
             duplicate = await store.accept(_command())
 
@@ -92,18 +92,18 @@ async def test_terminal_receipt_is_idempotent_and_never_queued() -> None:
             receipt_count = await session.scalar(
                 select(func.count())
                 .select_from(TelegramReceipt)
-                .where(TelegramReceipt.bot_key == AQUB_PREFLIGHT_BOT_KEY)
+                .where(TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY)
             )
             outbox_count = await session.scalar(
                 select(func.count())
                 .select_from(TelegramOutboxEvent)
                 .join(TelegramReceipt)
-                .where(TelegramReceipt.bot_key == AQUB_PREFLIGHT_BOT_KEY)
+                .where(TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY)
             )
             receipt = (
                 await session.execute(
                     select(TelegramReceipt).where(
-                        TelegramReceipt.bot_key == AQUB_PREFLIGHT_BOT_KEY
+                        TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY
                     )
                 )
             ).scalar_one()

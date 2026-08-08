@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest
 from app.core.config import Settings, get_settings
-from app.infrastructure.aqub_s0_preflight import (
-    AQUB_PREFLIGHT_BOT_KEY,
+from app.infrastructure.aqub_installation import (
+    AQUB_RECEIPT_BOT_KEY,
     load_aqub_production_binding,
 )
 from app.models.aqub import AQUBInstallationBinding
@@ -84,7 +84,7 @@ async def _insert_receipt(
 ) -> TelegramReceipt:
     receipt = TelegramReceipt(
         id=uuid4(),
-        bot_key=AQUB_PREFLIGHT_BOT_KEY,
+        bot_key=AQUB_RECEIPT_BOT_KEY,
         update_id=update_id,
         payload=payload,
         status=TelegramReceiptStatus.PROCESSED.value,

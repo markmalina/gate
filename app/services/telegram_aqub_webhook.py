@@ -15,9 +15,9 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from app.application.aqub_s0_preflight import AQUB_BOT_USERNAME, AQUB_OWNED_PATH
+from app.application.aqub_transport import AQUB_BOT_USERNAME, AQUB_OWNED_PATH
 from app.core.config import Settings
-from app.infrastructure.aqub_s0_preflight import aqub_receipt_signing_key
+from app.infrastructure.aqub_installation import aqub_receipt_signing_key
 
 logger = logging.getLogger(__name__)
 AQUB_ALLOWED_UPDATES = ["message", "my_chat_member"]

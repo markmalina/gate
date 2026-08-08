@@ -13,12 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.aqub_s0_preflight import (
+from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUB_PING_COMMAND,
     AQUBDurableAcceptance,
-    AQUBPreflightBinding,
-    AQUBPreflightCommand,
+    AQUBTransportBinding,
+    AQUBTransportCommand,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
 )
@@ -27,7 +27,7 @@ from app.core.config import Settings
 from app.models.aqub import AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
-AQUB_PREFLIGHT_BOT_KEY = "telegram_aqub_preflight"
+AQUB_RECEIPT_BOT_KEY = "telegram_aqub_preflight"
 AQUB_UNBOUND_ACE_USER_ID = "__unbound_ace__"
 
 
@@ -39,13 +39,13 @@ class AQUBBindingEvidence:
     bound_at: datetime
 
 
-class SqlAQUBPreflightReceiptStore:
+class SqlAQUBTransportReceiptStore:
     """Commit an AQUB terminal receipt without entering the common worker queue."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def accept(self, command: AQUBPreflightCommand) -> AQUBDurableAcceptance:
+    async def accept(self, command: AQUBTransportCommand) -> AQUBDurableAcceptance:
         try:
             update_id = int(command.external_id)
         except ValueError as exc:
@@ -59,7 +59,7 @@ class SqlAQUBPreflightReceiptStore:
                 insert(TelegramReceipt)
                 .values(
                     id=receipt_id,
-                    bot_key=AQUB_PREFLIGHT_BOT_KEY,
+                    bot_key=AQUB_RECEIPT_BOT_KEY,
                     update_id=update_id,
                     payload=payload,
                     status=TelegramReceiptStatus.PROCESSED.value,
@@ -79,7 +79,7 @@ class SqlAQUBPreflightReceiptStore:
                             TelegramReceipt.status,
                             TelegramReceipt.processed_at,
                         ).where(
-                            TelegramReceipt.bot_key == AQUB_PREFLIGHT_BOT_KEY,
+                            TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                             TelegramReceipt.update_id == update_id,
                         )
                     )
@@ -108,7 +108,7 @@ class SqlAQUBPreflightReceiptStore:
             command_receipt_id=durable_id,
             root_event_id=durable_id,
             correlation_id=durable_id,
-            causation_id=f"{AQUB_PREFLIGHT_BOT_KEY}:{update_id}",
+            causation_id=f"{AQUB_RECEIPT_BOT_KEY}:{update_id}",
         )
 
 
@@ -136,7 +136,7 @@ def binding_evidence_from_receipt(receipt: TelegramReceipt) -> AQUBBindingEviden
     """Extract owner-confirmed binding evidence from a historical accepted ping."""
 
     if (
-        receipt.bot_key != AQUB_PREFLIGHT_BOT_KEY
+        receipt.bot_key != AQUB_RECEIPT_BOT_KEY
         or receipt.status != TelegramReceiptStatus.PROCESSED.value
         or receipt.processed_at is None
     ):
@@ -179,7 +179,7 @@ async def _stored_binding(
 ) -> AQUBInstallationBinding | None:
     value = await session.scalar(
         select(AQUBInstallationBinding).where(
-            AQUBInstallationBinding.bot_key == AQUB_PREFLIGHT_BOT_KEY
+            AQUBInstallationBinding.bot_key == AQUB_RECEIPT_BOT_KEY
         )
     )
     return value if isinstance(value, AQUBInstallationBinding) else None
@@ -192,7 +192,7 @@ async def _latest_historical_evidence(
         await session.scalars(
             select(TelegramReceipt)
             .where(
-                TelegramReceipt.bot_key == AQUB_PREFLIGHT_BOT_KEY,
+                TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                 TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
                 TelegramReceipt.processed_at.is_not(None),
             )
@@ -210,7 +210,7 @@ async def _latest_historical_evidence(
 async def load_aqub_production_binding(
     session: AsyncSession,
     settings: Settings,
-) -> AQUBPreflightBinding:
+) -> AQUBTransportBinding:
     """Load or atomically bootstrap the permanent AQUB installation binding.
 
     Bootstrap is allowed only from a historical terminal AQUB receipt. Such a
@@ -229,7 +229,7 @@ async def load_aqub_production_binding(
             insert(AQUBInstallationBinding)
             .values(
                 id=uuid4(),
-                bot_key=AQUB_PREFLIGHT_BOT_KEY,
+                bot_key=AQUB_RECEIPT_BOT_KEY,
                 group_chat_id=evidence.group_chat_id,
                 alpha_user_id=evidence.alpha_user_id,
                 evidence_receipt_id=evidence.receipt_id,
@@ -242,7 +242,7 @@ async def load_aqub_production_binding(
     if stored is None:
         raise RuntimeError("AQUB installation binding bootstrap failed")
 
-    return AQUBPreflightBinding(
+    return AQUBTransportBinding(
         enabled=True,
         bot_username=AQUB_BOT_USERNAME,
         group_chat_id=stored.group_chat_id,

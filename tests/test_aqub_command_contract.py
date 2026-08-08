@@ -7,15 +7,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.application.aqub_live import _candidate_input_allowed
-from app.application.aqub_s0_preflight import AQUBPreflightInbound
+from app.application.aqub_transport import AQUBTransportInbound
 
 FIXTURE = Path("contracts/telegram-commands.v1.json")
 CANDIDATE_BASES = {"/status", "/program", "/confirm_program"}
 
 
-def _inbound(text: str) -> AQUBPreflightInbound:
+def _inbound(text: str) -> AQUBTransportInbound:
     now = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
-    return AQUBPreflightInbound(
+    return AQUBTransportInbound(
         bot_username="@AQubAgentBot",
         external_id="1",
         chat_id="-1001234567890",

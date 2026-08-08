@@ -18,14 +18,14 @@ from app.application.aqub_live import (
     AQUBLiveIngressAdapter,
     HttpAQUBRuntimeClient,
 )
-from app.application.aqub_s0_preflight import (
+from app.application.aqub_transport import (
     AQUB_OWNED_PATH,
     AQUB_PING_COMMAND,
-    AQUBPreflightBinding,
-    AQUBPreflightInbound,
-    AQUBPreflightResult,
-    AQUBPreflightStore,
-    AQUBS0PreflightAdapter,
+    AQUBTransportBinding,
+    AQUBTransportInbound,
+    AQUBTransportResult,
+    AQUBTransportStore,
+    AQUBDiagnosticPingAdapter,
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_live import (
@@ -34,8 +34,8 @@ from app.infrastructure.aqub_live import (
     parse_aqub_delivery,
     verify_aqub_signature,
 )
-from app.infrastructure.aqub_s0_preflight import (
-    SqlAQUBPreflightReceiptStore,
+from app.infrastructure.aqub_installation import (
+    SqlAQUBTransportReceiptStore,
     aqub_receipt_signing_key,
     load_aqub_production_binding,
 )
@@ -47,16 +47,16 @@ JsonObject = dict[str, Any]
 db_session_dependency = Depends(get_db_session)
 
 
-def get_aqub_preflight_store(
+def get_aqub_transport_store(
     session: AsyncSession = db_session_dependency,
-) -> AQUBPreflightStore:
-    return SqlAQUBPreflightReceiptStore(session)
+) -> AQUBTransportStore:
+    return SqlAQUBTransportReceiptStore(session)
 
 
 async def get_aqub_production_binding(
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
-) -> AQUBPreflightBinding:
+) -> AQUBTransportBinding:
     """Resolve the installation binding from Gate persistence or fail closed."""
 
     try:
@@ -68,7 +68,7 @@ async def get_aqub_production_binding(
         ) from None
 
 
-store_dependency = Depends(get_aqub_preflight_store)
+store_dependency = Depends(get_aqub_transport_store)
 binding_dependency = Depends(get_aqub_production_binding)
 
 
@@ -79,8 +79,8 @@ async def aqub_telegram_preflight(
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
     ] = None,
     settings: Settings = settings_dependency,
-    store: AQUBPreflightStore = store_dependency,
-    binding: AQUBPreflightBinding = binding_dependency,
+    store: AQUBTransportStore = store_dependency,
+    binding: AQUBTransportBinding = binding_dependency,
 ) -> JsonObject:
     """Own the exact AQUB route from the durable installation binding."""
 
@@ -116,7 +116,7 @@ async def aqub_telegram_preflight(
         return _unowned_response()
 
     if inbound.command == AQUB_PING_COMMAND:
-        result = await AQUBS0PreflightAdapter(
+        result = await AQUBDiagnosticPingAdapter(
             binding=binding,
             store=store,
         ).handle(inbound)
@@ -151,7 +151,7 @@ async def aqub_live_delivery(
     x_aqub_signature: Annotated[str | None, Header(alias="X-AQUB-Signature")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
-    binding: AQUBPreflightBinding = binding_dependency,
+    binding: AQUBTransportBinding = binding_dependency,
 ) -> JsonObject:
     """Accept one signed AQUB delivery command and settle it through Telegram."""
 
@@ -215,7 +215,7 @@ def _project_inbound(
     *,
     bot_username: str,
     received_at: datetime,
-) -> AQUBPreflightInbound | None:
+) -> AQUBTransportInbound | None:
     update_id = update.get("update_id")
     message = update.get("message")
     if type(update_id) is not int or update_id < 0 or not isinstance(message, dict):
@@ -241,7 +241,7 @@ def _project_inbound(
         occurred_at = datetime.fromtimestamp(occurred_epoch, tz=UTC)
     except (OverflowError, OSError, ValueError):
         return None
-    return AQUBPreflightInbound(
+    return AQUBTransportInbound(
         bot_username=bot_username,
         external_id=str(update_id),
         chat_id=str(chat["id"]),
@@ -253,7 +253,7 @@ def _project_inbound(
     )
 
 
-def _response(result: AQUBPreflightResult, *, chat_id: str) -> JsonObject:
+def _response(result: AQUBTransportResult, *, chat_id: str) -> JsonObject:
     if result.accepted and result.reply_text is not None and result.receipt is not None:
         receipt = result.receipt
         duplicate = "true" if receipt.duplicate else "false"
