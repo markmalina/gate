@@ -11,6 +11,9 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.beta_wedding_reply import (
     BetaWeddingContextMessage,
     BetaWeddingReplyReservation,
@@ -22,8 +25,6 @@ from app.models.beta_space import (
     BetaSpaceReplyModel,
 )
 from app.models.domain import TelegramReceipt
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 _MAX_RECENT_CONTEXT_EVENTS = 8
 _MAX_FULL_SPACE_CANDIDATES = 200
