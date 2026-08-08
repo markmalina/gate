@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -26,8 +27,55 @@ CONTAINER_VERSION = "beta.x25519-aes256gcm@1"
 MANIFEST_VERSION = "beta.portable-checkpoint-manifest@1"
 EVENT_VERSION = "beta.context-event@1"
 HKDF_INFO = b"beta.portable-checkpoint@1"
-MAX_EXPORT_EVENTS = 500
+MAX_CHECKPOINT_EVENTS = 50
+MAX_EXPORT_EVENTS = MAX_CHECKPOINT_EVENTS
+MAX_EVENT_CONTENT_CODE_POINTS = 65_536
+MAX_EVENT_SEQUENCE = 999_999_999_999
 MAX_PLAINTEXT_BYTES = 2_000_000
+
+_EVENT_KEYS = frozenset(
+    {
+        "schema_version",
+        "event_id",
+        "group_id",
+        "sequence",
+        "kind",
+        "occurred_at",
+        "recorded_at",
+        "actor_ref",
+        "content",
+        "provenance",
+        "supersedes",
+        "tombstones",
+    }
+)
+_CONTENT_KEYS = frozenset({"format", "text", "language"})
+_PROVENANCE_KEYS = frozenset(
+    {"source", "source_event_ref", "content_sha256", "idempotency_key"}
+)
+_EVENT_KINDS = frozenset(
+    {
+        "message.inbound",
+        "message.outbound",
+        "fact",
+        "decision",
+        "correction",
+        "tombstone",
+        "boundary",
+    }
+)
+_CONTENT_FORMATS = frozenset({"structured_text", "system"})
+_PROVENANCE_SOURCES = frozenset({"telegram", "beta", "import"})
+_EVENT_ID = re.compile(r"^beta-event-[a-f0-9]{32}$")
+_GROUP_ID = re.compile(r"^beta-group-[a-z0-9-]+-[0-9]{3}$")
+_ACTOR_REF = re.compile(r"^actor-[a-f0-9]{16,64}$")
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
+_IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
+_CANONICAL_TIMESTAMP = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:"
+    r"[0-5][0-9]\.[0-9]{3}Z$"
+)
+
 
 class BetaCheckpointExportError(RuntimeError):
     """Fail-closed public error with no private context in its message."""
@@ -125,7 +173,9 @@ def _build_portable_checkpoint(
     recipient_public_key: bytes,
     created_at: str,
 ) -> dict[str, Any]:
-    _assert_contiguous_from_origin(events)
+    _validate_portable_event_stream(group_id=group_id, events=events)
+    if not _is_canonical_timestamp(created_at):
+        raise BetaCheckpointExportError("beta_checkpoint_timestamp_invalid")
     try:
         recipient = serialization.load_pem_public_key(recipient_public_key)
     except (TypeError, ValueError) as exc:
@@ -195,18 +245,198 @@ def _assert_contiguous_from_origin(events: Sequence[dict[str, Any]]) -> None:
     if not events:
         raise BetaCheckpointExportError("beta_checkpoint_context_empty")
     group_id = events[0].get("group_id")
-    sequence_start = events[0].get("sequence")
-    if not isinstance(sequence_start, int) or sequence_start < 1:
+    if not isinstance(group_id, str):
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+    _validate_portable_event_stream(group_id=group_id, events=events)
+
+
+def _validate_portable_event_stream(
+    *,
+    group_id: str,
+    events: Sequence[dict[str, Any]],
+) -> None:
+    """Validate the exact Beta v1 plaintext contract without mutating it."""
+
+    if not events:
+        raise BetaCheckpointExportError("beta_checkpoint_context_empty")
+    if len(events) > MAX_EXPORT_EVENTS:
+        raise BetaCheckpointExportError("beta_checkpoint_event_limit_exceeded")
+    if not isinstance(group_id, str) or _GROUP_ID.fullmatch(group_id) is None:
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+
+    first_event = events[0]
+    if not isinstance(first_event, dict):
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+    first_sequence = first_event.get("sequence")
+    if (
+        type(first_sequence) is not int
+        or first_sequence < 1
+        or first_sequence > MAX_EVENT_SEQUENCE
+    ):
         raise BetaCheckpointExportError("beta_checkpoint_context_not_contiguous")
+
+    event_ids: set[str] = set()
+    batch_event_ids = {
+        event.get("event_id")
+        for event in events
+        if isinstance(event, dict)
+        and isinstance(event.get("event_id"), str)
+    }
+    idempotency_keys: set[str] = set()
+    source_event_refs: set[str] = set()
     for offset, event in enumerate(events):
+        _validate_portable_event(event)
+        event_id = event["event_id"]
+        sequence = event["sequence"]
+        provenance = event["provenance"]
+        assert isinstance(event_id, str)
+        assert type(sequence) is int
+        assert isinstance(provenance, dict)
+        idempotency_key = provenance["idempotency_key"]
+        source_event_ref = provenance["source_event_ref"]
+        assert isinstance(idempotency_key, str)
+        assert isinstance(source_event_ref, str)
+        target = event["supersedes"] or event["tombstones"]
+
         if (
-            event.get("schema_version") != EVENT_VERSION
-            or event.get("group_id") != group_id
-            or event.get("sequence") != sequence_start + offset
+            event["group_id"] != group_id
+            or sequence != first_sequence + offset
+            or event_id in event_ids
+            or idempotency_key in idempotency_keys
+            or source_event_ref in source_event_refs
+            or (
+                target is not None
+                and (
+                    (first_sequence == 1 and target not in event_ids)
+                    or (target in batch_event_ids and target not in event_ids)
+                )
+            )
         ):
             raise BetaCheckpointExportError(
                 "beta_checkpoint_context_not_contiguous"
             )
+        event_ids.add(event_id)
+        idempotency_keys.add(idempotency_key)
+        source_event_refs.add(source_event_ref)
+
+
+def _validate_portable_event(event: dict[str, Any]) -> None:
+    if not isinstance(event, dict) or set(event) != _EVENT_KEYS:
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+
+    content = event.get("content")
+    provenance = event.get("provenance")
+    if (
+        not isinstance(content, dict)
+        or set(content) != _CONTENT_KEYS
+        or not isinstance(provenance, dict)
+        or set(provenance) != _PROVENANCE_KEYS
+    ):
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+
+    text_value = content.get("text")
+    language = content.get("language")
+    supersedes = event.get("supersedes")
+    tombstones = event.get("tombstones")
+    kind = event.get("kind")
+    sequence = event.get("sequence")
+    source_event_ref = provenance.get("source_event_ref")
+    content_sha256 = provenance.get("content_sha256")
+    idempotency_key = provenance.get("idempotency_key")
+    if kind == "correction":
+        target_shape_valid = isinstance(supersedes, str) and tombstones is None
+    elif kind == "tombstone":
+        target_shape_valid = isinstance(tombstones, str) and supersedes is None
+    else:
+        target_shape_valid = supersedes is None and tombstones is None
+
+    if (
+        event.get("schema_version") != EVENT_VERSION
+        or not _matches(_EVENT_ID, event.get("event_id"))
+        or not _matches(_GROUP_ID, event.get("group_id"))
+        or type(sequence) is not int
+        or sequence < 1
+        or sequence > MAX_EVENT_SEQUENCE
+        or not isinstance(kind, str)
+        or kind not in _EVENT_KINDS
+        or not _is_canonical_timestamp(event.get("occurred_at"))
+        or not _is_canonical_timestamp(event.get("recorded_at"))
+        or not _matches(_ACTOR_REF, event.get("actor_ref"))
+        or not isinstance(content.get("format"), str)
+        or content.get("format") not in _CONTENT_FORMATS
+        or not isinstance(text_value, str)
+        or len(text_value) > MAX_EVENT_CONTENT_CODE_POINTS
+        or not (
+            language is None
+            or (isinstance(language, str) and len(language) <= 32)
+        )
+        or not isinstance(provenance.get("source"), str)
+        or provenance.get("source") not in _PROVENANCE_SOURCES
+        or not isinstance(source_event_ref, str)
+        or not 8 <= len(source_event_ref) <= 128
+        or not _matches(_SHA256, content_sha256)
+        or not _matches(_IDEMPOTENCY_KEY, idempotency_key)
+        or not _nullable_event_id(supersedes)
+        or not _nullable_event_id(tombstones)
+        or not target_shape_valid
+    ):
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+
+    try:
+        expected_sha256 = hashlib.sha256(text_value.encode("utf-8")).hexdigest()
+    except UnicodeEncodeError as exc:
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid") from exc
+    if content_sha256 != expected_sha256:
+        raise BetaCheckpointExportError("beta_checkpoint_event_invalid")
+
+
+def _matches(pattern: re.Pattern[str], value: Any) -> bool:
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def _nullable_event_id(value: Any) -> bool:
+    return value is None or _matches(_EVENT_ID, value)
+
+
+def _is_canonical_timestamp(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = _CANONICAL_TIMESTAMP.fullmatch(value)
+    if match is None:
+        return False
+    year, month, day, hour, minute, second = (
+        int(part)
+        for part in (
+            value[0:4],
+            value[5:7],
+            value[8:10],
+            value[11:13],
+            value[14:16],
+            value[17:19],
+        )
+    )
+    leap_year = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    days_by_month = (
+        31,
+        29 if leap_year else 28,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    )
+    return (
+        1 <= month <= 12
+        and 1 <= day <= days_by_month[month - 1]
+        and 0 <= hour <= 23
+        and 0 <= minute <= 59
+        and 0 <= second <= 59
+    )
 
 
 def _stable_json(value: Any) -> str:

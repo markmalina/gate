@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.beta_checkpoint_batches import BetaCheckpointBatchError
 from app.infrastructure.beta_checkpoint_export import (
+    MAX_CHECKPOINT_EVENTS,
+    MAX_EVENT_CONTENT_CODE_POINTS,
     BetaCheckpointExportError,
     _build_portable_checkpoint,
     _iso_datetime,
@@ -27,9 +29,12 @@ from app.models.beta_space import (
 from app.models.beta_wedding_voice import BetaWeddingVoiceJobModel
 from app.models.domain import TelegramReceipt
 
-MAX_BATCH_EVENTS = 50
+MAX_BATCH_EVENTS = MAX_CHECKPOINT_EVENTS
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_MATERIAL_TRUNCATION_MARKER = (
+    "\n[Извлечённое содержание усечено до лимита checkpoint.]"
+)
 
 
 class BetaSpaceCheckpointBatchError(BetaCheckpointBatchError):
@@ -314,10 +319,10 @@ def _event_text(
 ) -> str:
     if material is not None:
         if material.extracted_text and material.structured_text:
-            return (
-                f"Извлечённое содержание ({material.media_kind}):\n"
-                f"{material.extracted_text}\n\n"
-                f"Структура Беты:\n{material.structured_text}"
+            return _bounded_material_projection(
+                media_kind=material.media_kind,
+                extracted_text=material.extracted_text,
+                structured_text=material.structured_text,
             )
         return (
             f"Получен материал типа {material.media_kind}; "
@@ -341,6 +346,32 @@ def _event_text(
     if not isinstance(text_value, str) or not text_value:
         raise BetaSpaceCheckpointBatchError("beta_checkpoint_event_invalid")
     return text_value
+
+
+def _bounded_material_projection(
+    *,
+    media_kind: str,
+    extracted_text: str,
+    structured_text: str,
+) -> str:
+    """Keep the complete structure and deterministically bound raw extraction."""
+
+    prefix = f"Извлечённое содержание ({media_kind}):\n"
+    structured_section = f"\n\nСтруктура Беты:\n{structured_text}"
+    complete = f"{prefix}{extracted_text}{structured_section}"
+    if len(complete) <= MAX_EVENT_CONTENT_CODE_POINTS:
+        return complete
+
+    extracted_budget = MAX_EVENT_CONTENT_CODE_POINTS - len(
+        prefix + _MATERIAL_TRUNCATION_MARKER + structured_section
+    )
+    if extracted_budget < 0:
+        raise BetaSpaceCheckpointBatchError("beta_checkpoint_event_invalid")
+    bounded_extraction = extracted_text[:extracted_budget].rstrip()
+    return (
+        f"{prefix}{bounded_extraction}"
+        f"{_MATERIAL_TRUNCATION_MARKER}{structured_section}"
+    )
 
 
 def _batch_payload(

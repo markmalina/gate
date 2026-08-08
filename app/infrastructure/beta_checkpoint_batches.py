@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.beta_checkpoint_export import (
+    MAX_CHECKPOINT_EVENTS,
     BetaCheckpointExportError,
     _build_portable_checkpoint,
     _iso_datetime,
@@ -23,7 +24,7 @@ from app.models.beta_context import (
     BetaContextEventModel,
 )
 
-MAX_BATCH_EVENTS = 50
+MAX_BATCH_EVENTS = MAX_CHECKPOINT_EVENTS
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 

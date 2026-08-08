@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
-from datetime import UTC, datetime
 
 import pytest
 from app.infrastructure.beta_checkpoint_export import (
@@ -18,53 +18,35 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 
 def _events(group_id: str) -> list[dict[str, object]]:
+    texts = ("owner smoke", "smoke passed")
     return [
         {
             "schema_version": EVENT_VERSION,
-            "event_id": "beta-event-1",
+            "event_id": f"beta-event-{sequence:032x}",
             "group_id": group_id,
-            "sequence": 1,
-            "kind": "message.inbound",
-            "occurred_at": "2026-07-26T07:36:31.000Z",
-            "recorded_at": "2026-07-26T07:36:31.100Z",
-            "actor_ref": "actor-a",
+            "sequence": sequence,
+            "kind": kind,
+            "occurred_at": f"2026-07-26T07:36:3{sequence}.000Z",
+            "recorded_at": f"2026-07-26T07:36:3{sequence}.100Z",
+            "actor_ref": f"actor-{sequence:016x}",
             "content": {
                 "format": "structured_text",
-                "text": "owner smoke",
+                "text": text,
                 "language": "ru",
             },
             "provenance": {
                 "source": "telegram",
-                "source_event_ref": "gate-event-a",
-                "content_sha256": "a" * 64,
-                "idempotency_key": "gate.context.a",
+                "source_event_ref": f"gate-event-{sequence:016x}",
+                "content_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "idempotency_key": f"gate.context.{sequence:016x}",
             },
             "supersedes": None,
             "tombstones": None,
-        },
-        {
-            "schema_version": EVENT_VERSION,
-            "event_id": "beta-event-2",
-            "group_id": group_id,
-            "sequence": 2,
-            "kind": "message.outbound",
-            "occurred_at": "2026-07-26T07:36:32.000Z",
-            "recorded_at": "2026-07-26T07:36:32.100Z",
-            "actor_ref": "actor-b",
-            "content": {
-                "format": "structured_text",
-                "text": "smoke passed",
-                "language": "ru",
-            },
-            "provenance": {
-                "source": "telegram",
-                "source_event_ref": "gate-event-b",
-                "content_sha256": "b" * 64,
-                "idempotency_key": "gate.context.b",
-            },
-            "supersedes": None,
-            "tombstones": None,
-        },
+        }
+        for sequence, kind, text in (
+            (1, "message.inbound", texts[0]),
+            (2, "message.outbound", texts[1]),
+        )
     ]
 
 
@@ -139,7 +121,7 @@ def test_checkpoint_rejects_non_contiguous_input() -> None:
             group_id=group_id,
             events=events,
             recipient_public_key=recipient,
-            created_at=datetime.now(UTC).isoformat(),
+            created_at="2026-07-26T07:37:00.000Z",
         )
 
     assert exc.value.code == "beta_checkpoint_context_not_contiguous"

@@ -16,7 +16,9 @@ GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
 GITHUB_OIDC_JWKS_URL = (
     "https://token.actions.githubusercontent.com/.well-known/jwks"
 )
-_ALLOWED_EVENTS = frozenset({"schedule", "workflow_dispatch"})
+_ALLOWED_EVENTS = frozenset(
+    {"repository_dispatch", "schedule", "workflow_dispatch"}
+)
 
 
 class GitHubOidcError(RuntimeError):
