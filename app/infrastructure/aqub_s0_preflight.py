@@ -114,13 +114,11 @@ class SqlAQUBPreflightReceiptStore:
 def aqub_receipt_signing_key(settings: Settings) -> bytes:
     """Return the permanent AQUB transport signing key without provider IDs."""
 
-    signing_secret = getattr(settings, "gate_aqub_receipt_signing_key", None)
-    if signing_secret is None:
+    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value().strip()
+    encoded = signing_key.encode()
+    if len(encoded) < 32:
         raise ValueError("AQUB signing key is unavailable")
-    signing_key = signing_secret.get_secret_value().strip()
-    if len(signing_key.encode()) < 32:
-        raise ValueError("AQUB signing key is unavailable")
-    return signing_key.encode()
+    return encoded
 
 
 def _message_mapping(payload: Any) -> Mapping[str, Any] | None:
@@ -175,11 +173,12 @@ def binding_evidence_from_receipt(receipt: TelegramReceipt) -> AQUBBindingEviden
 async def _stored_binding(
     session: AsyncSession,
 ) -> AQUBInstallationBinding | None:
-    return await session.scalar(
+    value = await session.scalar(
         select(AQUBInstallationBinding).where(
             AQUBInstallationBinding.bot_key == AQUB_PREFLIGHT_BOT_KEY
         )
     )
+    return value if isinstance(value, AQUBInstallationBinding) else None
 
 
 async def _latest_historical_evidence(
