@@ -1,6 +1,6 @@
 """Add durable generations to coalesced Beta checkpoint wake-ups.
 
-Revision ID: 0095_beta_checkpoint_wake_generation
+Revision ID: 0095_beta_checkpoint_wake
 Revises: 0094_beta_durable_workers
 """
 
@@ -11,7 +11,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0095_beta_checkpoint_wake_generation"
+revision: str = "0095_beta_checkpoint_wake"
 down_revision: str | Sequence[str] | None = "0094_beta_durable_workers"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
