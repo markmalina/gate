@@ -1,4 +1,4 @@
-"""AQUB Telegram ingress: diagnostic ping plus permanent live runtime forwarding."""
+"""AQUB Telegram ingress and permanent live runtime forwarding."""
 
 from __future__ import annotations
 
@@ -19,25 +19,25 @@ from app.application.aqub_live import (
     HttpAQUBRuntimeClient,
 )
 from app.application.aqub_transport import (
-    AQUB_OWNED_PATH,
     AQUB_PING_COMMAND,
+    AQUB_TELEGRAM_WEBHOOK_PATH,
+    AQUBDiagnosticPingAdapter,
     AQUBTransportBinding,
     AQUBTransportInbound,
     AQUBTransportResult,
     AQUBTransportStore,
-    AQUBDiagnosticPingAdapter,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.aqub_installation import (
+    SqlAQUBTransportReceiptStore,
+    aqub_receipt_signing_key,
+    load_aqub_production_binding,
+)
 from app.infrastructure.aqub_live import (
     AQUBLiveDeliveryError,
     AQUBLiveDeliveryService,
     parse_aqub_delivery,
     verify_aqub_signature,
-)
-from app.infrastructure.aqub_installation import (
-    SqlAQUBTransportReceiptStore,
-    aqub_receipt_signing_key,
-    load_aqub_production_binding,
 )
 from app.services.telegram import TelegramClient
 
@@ -72,8 +72,8 @@ store_dependency = Depends(get_aqub_transport_store)
 binding_dependency = Depends(get_aqub_production_binding)
 
 
-@router.post(AQUB_OWNED_PATH)
-async def aqub_telegram_preflight(
+@router.post(AQUB_TELEGRAM_WEBHOOK_PATH)
+async def aqub_telegram_ingress(
     request: Request,
     x_telegram_secret: Annotated[
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
@@ -82,7 +82,7 @@ async def aqub_telegram_preflight(
     store: AQUBTransportStore = store_dependency,
     binding: AQUBTransportBinding = binding_dependency,
 ) -> JsonObject:
-    """Own the exact AQUB route from the durable installation binding."""
+    """Own the AQUB Telegram route from the durable installation binding."""
 
     configured_secret = settings.telegram_aqub_webhook_secret.get_secret_value()
     if not configured_secret:
@@ -120,7 +120,7 @@ async def aqub_telegram_preflight(
             binding=binding,
             store=store,
         ).handle(inbound)
-        return _response(result, chat_id=inbound.chat_id)
+        return _diagnostic_response(result, chat_id=inbound.chat_id)
 
     runtime_url = os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
     if not runtime_url:
@@ -253,7 +253,7 @@ def _project_inbound(
     )
 
 
-def _response(result: AQUBTransportResult, *, chat_id: str) -> JsonObject:
+def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonObject:
     if result.accepted and result.reply_text is not None and result.receipt is not None:
         receipt = result.receipt
         duplicate = "true" if receipt.duplicate else "false"
@@ -274,14 +274,11 @@ def _response(result: AQUBTransportResult, *, chat_id: str) -> JsonObject:
                 f"signature={receipt.signature}"
             ),
         }
-
     return {
         "ok": True,
         "owned": result.owned,
         "accepted": result.accepted,
         "reason": result.reason,
-        "legacy_dispatch": result.legacy_dispatch,
-        "canary_dispatch": result.canary_dispatch,
     }
 
 
@@ -305,8 +302,6 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         "accepted": True,
         "reason": result.reason,
         "duplicate": result.duplicate,
-        "legacy_dispatch": False,
-        "canary_dispatch": False,
     }
 
 
@@ -316,8 +311,6 @@ def _unowned_response(*, reason: str = "aqub_route_not_owned") -> JsonObject:
         "owned": False,
         "accepted": False,
         "reason": reason,
-        "legacy_dispatch": None,
-        "canary_dispatch": None,
     }
 
 
