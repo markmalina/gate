@@ -17,16 +17,6 @@ GITHUB_OIDC_JWKS_URL = (
     "https://token.actions.githubusercontent.com/.well-known/jwks"
 )
 _ALLOWED_EVENTS = frozenset({"schedule", "workflow_dispatch"})
-_CURRENT_REPOSITORY = "AlphaCenter/beta"
-_LEGACY_REPOSITORY = "markmalina/beta"
-_CURRENT_REPOSITORY_OWNER_ID = "310893851"
-_LEGACY_REPOSITORY_OWNER_ID = "23397294"
-_CURRENT_WORKFLOW_REF = (
-    "AlphaCenter/beta/.github/workflows/checkpoint-context.yml@refs/heads/main"
-)
-_LEGACY_WORKFLOW_REF = (
-    "markmalina/beta/.github/workflows/checkpoint-context.yml@refs/heads/main"
-)
 
 
 class GitHubOidcError(RuntimeError):
@@ -89,22 +79,9 @@ def _decode(token: str, settings: Settings) -> dict[str, Any]:
 
 
 def _authorize_claims(claims: dict[str, Any], settings: Settings) -> None:
-    repository = _canonical_transfer_value(
-        settings.gate_beta_checkpoint_oidc_repository,
-        legacy=_LEGACY_REPOSITORY,
-        current=_CURRENT_REPOSITORY,
+    repository_owner, separator, repository_name = (
+        settings.gate_beta_checkpoint_oidc_repository.partition("/")
     )
-    repository_owner_id = _canonical_transfer_value(
-        settings.gate_beta_checkpoint_oidc_repository_owner_id,
-        legacy=_LEGACY_REPOSITORY_OWNER_ID,
-        current=_CURRENT_REPOSITORY_OWNER_ID,
-    )
-    workflow_ref = _canonical_transfer_value(
-        settings.gate_beta_checkpoint_oidc_workflow_ref,
-        legacy=_LEGACY_WORKFLOW_REF,
-        current=_CURRENT_WORKFLOW_REF,
-    )
-    repository_owner, separator, repository_name = repository.partition("/")
     if (
         separator != "/"
         or not repository_owner
@@ -114,25 +91,25 @@ def _authorize_claims(claims: dict[str, Any], settings: Settings) -> None:
         raise GitHubOidcError("beta_checkpoint_oidc_configuration_invalid")
     expected_subjects = {
         (
-            f"repo:{repository}:"
+            f"repo:{settings.gate_beta_checkpoint_oidc_repository}:"
             f"ref:{settings.gate_beta_checkpoint_oidc_ref}"
         ),
         (
             f"repo:{repository_owner}@"
-            f"{repository_owner_id}"
+            f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
             f"/{repository_name}@{settings.gate_beta_checkpoint_oidc_repository_id}"
             f":ref:{settings.gate_beta_checkpoint_oidc_ref}"
         ),
     }
     expected = {
-        "repository": repository,
+        "repository": settings.gate_beta_checkpoint_oidc_repository,
         "repository_id": settings.gate_beta_checkpoint_oidc_repository_id,
         "repository_owner_id": (
-            repository_owner_id
+            settings.gate_beta_checkpoint_oidc_repository_owner_id
         ),
         "repository_visibility": "private",
         "ref": settings.gate_beta_checkpoint_oidc_ref,
-        "workflow_ref": workflow_ref,
+        "workflow_ref": settings.gate_beta_checkpoint_oidc_workflow_ref,
     }
     if (
         claims.get("sub") not in expected_subjects
@@ -141,12 +118,6 @@ def _authorize_claims(claims: dict[str, Any], settings: Settings) -> None:
         raise GitHubOidcError("beta_checkpoint_oidc_claim_mismatch")
     if claims.get("event_name") not in _ALLOWED_EVENTS:
         raise GitHubOidcError("beta_checkpoint_oidc_event_not_allowed")
-
-
-def _canonical_transfer_value(value: str, *, legacy: str, current: str) -> str:
-    """Migrate one exact pre-transfer identity value without accepting aliases."""
-
-    return current if value == legacy else value
 
 
 @lru_cache(maxsize=1)
