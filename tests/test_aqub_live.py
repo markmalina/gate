@@ -80,15 +80,21 @@ def binding() -> AQUBPreflightBinding:
     )
 
 
-def inbound(*, text: str = "/status", update_id: int = 9001) -> AQUBPreflightInbound:
+def inbound(
+    *,
+    text: str = "/status",
+    update_id: int = 9001,
+    actor_id: str = "7819816320",
+    chat_id: str = "-5052983997",
+) -> AQUBPreflightInbound:
     occurred = READY_AT + timedelta(seconds=1)
     payload = {
         "update_id": update_id,
         "message": {
             "message_id": 77,
             "date": int(occurred.timestamp()),
-            "chat": {"id": -5052983997, "type": "supergroup"},
-            "from": {"id": 7819816320, "is_bot": False},
+            "chat": {"id": int(chat_id), "type": "supergroup"},
+            "from": {"id": int(actor_id), "is_bot": False},
             "text": text,
             "reply_to_message": {
                 "message_id": 66,
@@ -103,8 +109,8 @@ def inbound(*, text: str = "/status", update_id: int = 9001) -> AQUBPreflightInb
     return AQUBPreflightInbound(
         bot_username="@AQubAgentBot",
         external_id=str(update_id),
-        chat_id="-5052983997",
-        actor_id="7819816320",
+        chat_id=chat_id,
+        actor_id=actor_id,
         command=text,
         payload=payload,
         occurred_at=occurred,
@@ -171,20 +177,38 @@ async def test_exact_live_replay_reuses_gate_receipt_and_same_opaque_refs() -> N
 
 
 @pytest.mark.anyio
-async def test_unbound_actor_is_not_forwarded_or_stored() -> None:
+async def test_unbound_group_actor_is_forwarded_as_opaque_candidate() -> None:
     store = Store()
     runtime = Runtime()
-    value = inbound()
-    value = AQUBPreflightInbound(
-        bot_username=value.bot_username,
-        external_id=value.external_id,
-        chat_id=value.chat_id,
+    candidate_id = "123456789"
+    value = inbound(text="/ace_join_123456", actor_id=candidate_id)
+
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    ).handle(value)
+
+    assert result.accepted is True
+    assert result.reason == "aqub_live_committed"
+    assert len(store.commands) == 1
+    assert len(runtime.raw_bodies) == 1
+    envelope = json.loads(runtime.raw_bodies[0])
+    assert envelope["role"] == "candidate"
+    assert envelope["actor_ref"].startswith("actor:")
+    assert candidate_id not in runtime.raw_bodies[0].decode()
+
+
+@pytest.mark.anyio
+async def test_actor_outside_pinned_group_is_not_forwarded_or_stored() -> None:
+    store = Store()
+    runtime = Runtime()
+    value = inbound(
+        text="/ace_join_123456",
         actor_id="123456789",
-        command=value.command,
-        payload=value.payload,
-        occurred_at=value.occurred_at,
-        received_at=value.received_at,
+        chat_id="-5052983998",
     )
+
     result = await AQUBLiveIngressAdapter(
         binding=binding(),
         store=store,
