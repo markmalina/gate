@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -22,6 +23,7 @@ from app.services.telegram import TelegramApiError, TelegramClient
 JsonObject = dict[str, Any]
 MAX_TELEGRAM_TEXT = 4096
 SENDING_UNKNOWN_AFTER = timedelta(seconds=30)
+_RETRYABLE_TELEGRAM_ERROR = re.compile(r"^telegram_(?:[0-9]+|error)$")
 
 
 class AQUBLiveDeliveryError(ValueError):
@@ -147,8 +149,29 @@ class AQUBLiveDeliveryService:
             )
         if row.state == "sent":
             return self._settled_response(row, duplicate=True)
-        if row.state in {"failed", "unknown"}:
-            return self._settled_response(row, duplicate=not created)
+        if row.state == "unknown":
+            return self._settled_response(row, duplicate=True)
+        if row.state == "failed":
+            if not _retryable_provider_failure(row.error_code):
+                return self._settled_response(row, duplicate=True)
+            await self._session.execute(
+                update(AQUBLiveDelivery)
+                .where(
+                    AQUBLiveDelivery.id == row.id,
+                    AQUBLiveDelivery.state == "failed",
+                )
+                .values(
+                    state="pending",
+                    provider_message_id=None,
+                    error_code=None,
+                    settled_at=None,
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            await self._session.commit()
+            row = await self._load(command.idempotency_key)
+            if row is None:
+                raise RuntimeError("aqub_delivery_retry_missing")
         if row.state == "sending":
             now = datetime.now(UTC)
             updated_at = row.updated_at
@@ -206,13 +229,13 @@ class AQUBLiveDeliveryService:
             failed = await self._load(command.idempotency_key)
             if failed is None:
                 raise RuntimeError("aqub_delivery_failed_missing") from exc
-            return self._settled_response(failed, duplicate=False)
+            return self._settled_response(failed, duplicate=not created)
         except Exception as exc:
-            await self._settle_failed(row.id, "telegram_send_failed")
-            failed = await self._load(command.idempotency_key)
-            if failed is None:
-                raise RuntimeError("aqub_delivery_failed_missing") from exc
-            return self._settled_response(failed, duplicate=False)
+            await self._settle_unknown(row.id, "send_outcome_unknown")
+            unknown = await self._load(command.idempotency_key)
+            if unknown is None:
+                raise RuntimeError("aqub_delivery_unknown_missing") from exc
+            return self._settled_response(unknown, duplicate=not created)
 
         await self._session.execute(
             update(AQUBLiveDelivery)
@@ -232,7 +255,7 @@ class AQUBLiveDeliveryService:
         sent = await self._load(command.idempotency_key)
         if sent is None:
             raise RuntimeError("aqub_delivery_sent_missing")
-        return self._settled_response(sent, duplicate=False)
+        return self._settled_response(sent, duplicate=not created)
 
     async def _load(self, idempotency_key: str) -> AQUBLiveDelivery | None:
         value: Any = await self._session.scalar(
@@ -255,6 +278,22 @@ class AQUBLiveDeliveryService:
             )
             .values(
                 state="failed",
+                error_code=error_code,
+                settled_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await self._session.commit()
+
+    async def _settle_unknown(self, row_id: UUID, error_code: str) -> None:
+        await self._session.execute(
+            update(AQUBLiveDelivery)
+            .where(
+                AQUBLiveDelivery.id == row_id,
+                AQUBLiveDelivery.state == "sending",
+            )
+            .values(
+                state="unknown",
                 error_code=error_code,
                 settled_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
@@ -305,6 +344,10 @@ class AQUBLiveDeliveryService:
                 "reason": row.error_code or row.state,
             }
         return {"ack": ack, "terminal": terminal}
+
+
+def _retryable_provider_failure(error_code: str | None) -> bool:
+    return bool(error_code and _RETRYABLE_TELEGRAM_ERROR.fullmatch(error_code))
 
 
 def _telegram_message_id(response: JsonObject) -> int:
