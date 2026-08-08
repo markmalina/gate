@@ -1,4 +1,4 @@
-"""AQUB Telegram ingress: preflight ping plus isolated live runtime forwarding."""
+"""AQUB Telegram ingress: preflight ping plus permanent live runtime forwarding."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ async def aqub_telegram_preflight(
     settings: Settings = settings_dependency,
     store: AQUBPreflightStore = store_dependency,
 ) -> JsonObject:
-    """Own the exact AQUB route; keep ping semantics and optionally forward live input."""
+    """Own the exact AQUB route; ping stays diagnostic, all other owned input is live."""
 
     configured_secret = settings.telegram_aqub_webhook_secret.get_secret_value()
     if not configured_secret:
@@ -101,13 +101,8 @@ async def aqub_telegram_preflight(
             return _bootstrap_response(projected)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB preflight binding is incomplete",
+            detail="AQUB production binding is incomplete",
         ) from None
-
-    if not binding.enabled:
-        if _is_bootstrap_ping(projected):
-            return _bootstrap_response(projected)
-        return _unowned_response(reason="aqub_bootstrap_waiting")
 
     inbound = _project_inbound(
         cast(JsonObject, raw_update),
@@ -117,7 +112,7 @@ async def aqub_telegram_preflight(
     if inbound is None:
         return _unowned_response()
 
-    if inbound.command == AQUB_PING_COMMAND or not _env_enabled("GATE_AQUB_LIVE_ENABLED"):
+    if inbound.command == AQUB_PING_COMMAND:
         result = await AQUBS0PreflightAdapter(
             binding=binding,
             store=store,
@@ -153,11 +148,6 @@ async def aqub_live_delivery(
 ) -> JsonObject:
     """Accept one signed AQUB delivery command and settle it through Telegram."""
 
-    if not _env_enabled("GATE_AQUB_DELIVERY_ENABLED"):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB live delivery is disabled",
-        )
     signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value().encode()
     if len(signing_key) < 32:
         raise HTTPException(
@@ -328,7 +318,3 @@ def _secrets_match(*, provided: str, configured: str) -> bool:
         return hmac.compare_digest(provided.encode(), configured.encode())
     except UnicodeError:
         return False
-
-
-def _env_enabled(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
