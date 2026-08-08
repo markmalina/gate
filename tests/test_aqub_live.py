@@ -8,7 +8,10 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.application.aqub_live import AQUBLiveIngressAdapter
+from app.application.aqub_live import (
+    AQUB_PROGRAM_PROMPT_TEXT,
+    AQUBLiveIngressAdapter,
+)
 from app.application.aqub_transport import (
     AQUBDurableAcceptance,
     AQUBReceiptStatus,
@@ -104,10 +107,7 @@ def inbound(
         message["reply_to_message"] = {
             "message_id": 66,
             "from": {"id": 999, "is_bot": True},
-            "text": (
-                "AQUB: пришлите программу ответом на это сообщение по шаблону "
-                "из минимум двух шагов (до 3500 символов)."
-            ),
+            "text": AQUB_PROGRAM_PROMPT_TEXT,
         }
     payload = {"update_id": update_id, "message": message}
     return AQUBTransportInbound(
@@ -229,7 +229,7 @@ async def test_program_prompt_reply_from_candidate_is_forwarded() -> None:
     store = Store()
     runtime = Runtime()
     value = inbound(
-        text="Название программы: Тест",
+        text="1. Первый шаг\n2. Второй шаг",
         actor_id=TEST_CANDIDATE_ID,
         update_id=9003,
         include_program_prompt_reply=True,
@@ -244,22 +244,47 @@ async def test_program_prompt_reply_from_candidate_is_forwarded() -> None:
 
 
 @pytest.mark.anyio
-async def test_ordinary_unbound_group_chatter_is_not_forwarded_or_stored() -> None:
+async def test_natural_numbered_program_from_candidate_is_forwarded_without_reply() -> None:
     store = Store()
     runtime = Runtime()
     value = inbound(
-        text="обычное сообщение в группе",
+        text=(
+            "1. Встань, разведи руки, повернись 21 раз.\n"
+            "2. Ляг на спину, подними прямые ноги и голову — 21 раз.\n"
+            "3. Встань на колени, прогнись назад — 21 раз."
+        ),
         actor_id=TEST_CANDIDATE_ID,
-        update_id=9004,
+        update_id=9005,
         include_program_prompt_reply=False,
     )
     result = await AQUBLiveIngressAdapter(
         binding=binding(), store=store, runtime=runtime
     ).handle(value)
-    assert result.accepted is False
-    assert result.reason == "aqub_route_not_owned"
-    assert store.commands == []
-    assert runtime.raw_bodies == []
+    assert result.accepted is True
+    envelope = json.loads(runtime.raw_bodies[0])
+    assert envelope["role"] == "candidate"
+    assert envelope["reply_context"] is None
+    assert envelope["text"].startswith("1. Встань")
+
+
+@pytest.mark.anyio
+async def test_ordinary_unbound_group_chatter_is_not_forwarded_or_stored() -> None:
+    for text in ("обычное сообщение в группе", "1. Только один пункт"):
+        store = Store()
+        runtime = Runtime()
+        value = inbound(
+            text=text,
+            actor_id=TEST_CANDIDATE_ID,
+            update_id=9004,
+            include_program_prompt_reply=False,
+        )
+        result = await AQUBLiveIngressAdapter(
+            binding=binding(), store=store, runtime=runtime
+        ).handle(value)
+        assert result.accepted is False
+        assert result.reason == "aqub_route_not_owned"
+        assert store.commands == []
+        assert runtime.raw_bodies == []
 
 
 @pytest.mark.anyio
