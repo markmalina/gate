@@ -29,6 +29,7 @@ async def test_runtime_transport_reuses_supplied_http_client_for_multiple_posts(
         second = await runtime.post_envelope(raw_body=b"{}", signature="sig-2")
         assert shared.is_closed is False
 
+    assert shared.is_closed is True
     assert first["ok"] is True
     assert second["ok"] is True
     assert [request.url.path for request in requests] == ["/gate/inbound", "/gate/inbound"]
