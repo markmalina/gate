@@ -7,6 +7,10 @@ from typing import cast
 
 import pytest
 from app.api import beta_telegram_ingress as beta_ingress
+from app.application.beta_space_intake import (
+    BetaSpaceBinding,
+    BetaSpaceReservation,
+)
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     TelegramReceiptAcceptance,
@@ -260,9 +264,89 @@ def test_unbound_wedding_message_cannot_create_binding_or_effects(
         "accepted": True,
         "duplicate": False,
         "space_processing": "unbound_chat",
-        "callback_delivery": None,
-        "delivery": None,
-        "wedding_reply": None,
+        "work_queued": False,
     }
     assert len(store.commands) == 1
     assert space_store.resolve_calls == ["-100496001"]
+
+
+def test_bound_fact_webhook_only_admits_durable_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CapturingStore()
+    update = {
+        "update_id": 496004,
+        "message": {
+            "message_id": 2,
+            "date": 1_786_040_001,
+            "chat": {"id": -100496001, "type": "supergroup"},
+            "from": {"id": 496002, "is_bot": False},
+            "text": "Бета, сохрани этот факт.",
+        },
+    }
+    payload = json.dumps(update).encode()
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": payload, "more_body": False}
+
+    class BoundSpaceStore:
+        async def resolve_binding(self, *, telegram_chat_id: str) -> BetaSpaceBinding:
+            assert telegram_chat_id == "-100496001"
+            return BetaSpaceBinding(
+                binding_id="00000000-0000-0000-0000-000000000001",
+                workspace_id="00000000-0000-0000-0000-000000000002",
+                tenant_ref="beta-user-mark-wedding-001",
+                space_ref="spc_fcdd8e57a7e832840afcc187fb1d4b2c",
+                installation_ref="installation-test",
+                telegram_chat_id=telegram_chat_id,
+                subject_telegram_user_id="496002",
+                consent_sha256="a" * 64,
+                ready_at=datetime(2026, 8, 1, tzinfo=UTC),
+                state="consented",
+                actor_policy="group_members",
+            )
+
+        async def append_fact(self, **_kwargs: object) -> BetaSpaceReservation:
+            return BetaSpaceReservation(
+                True,
+                "00000000-0000-0000-0000-000000000003",
+            )
+
+    def unexpected_effect(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("webhook must not call a provider, Telegram, or GitHub")
+
+    monkeypatch.setattr(beta_ingress, "get_beta_telegram_client", unexpected_effect)
+    monkeypatch.setattr(beta_ingress, "get_beta_model_http_client", unexpected_effect)
+    monkeypatch.setattr(beta_ingress, "_drain_beta_checkpoint_dispatch", unexpected_effect)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": beta_ingress.BETA_TELEGRAM_WEBHOOK_PATH,
+            "headers": [],
+        },
+        receive,
+    )
+    result = asyncio.run(
+        beta_ingress.beta_telegram_webhook(
+            request=request,
+            x_telegram_secret="beta-secret",
+            settings=_settings(
+                GATE_ENV="production",
+                GATE_BETA_PRIVACY_MODE_CONFIRMED=True,
+            ),
+            receipt_store=store,
+            beta_space_store=cast(
+                beta_ingress.SqlBetaSpaceStore,
+                BoundSpaceStore(),
+            ),
+            session=cast(beta_ingress.AsyncSession, object()),
+        )
+    )
+    assert result == {
+        "ok": True,
+        "accepted": True,
+        "duplicate": False,
+        "space_processing": "fact_accepted",
+        "work_queued": True,
+    }
