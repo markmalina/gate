@@ -21,6 +21,7 @@ from app.application.beta_space_intake import (
 )
 from app.core.config import Settings
 from app.models.beta_space import (
+    BetaCheckpointDispatchIntentModel,
     BetaConsentDeliveryModel,
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
@@ -337,6 +338,11 @@ class SqlBetaSpaceStore:
         row.state = "consented"
         row.consented_at = source.received_at
         row.updated_at = source.received_at
+        await self._enqueue_checkpoint_dispatch(
+            space_id=row.space_ref,
+            accepted_sequence=checkpoint_sequence,
+            now=source.received_at,
+        )
         await self._session.commit()
         return BetaSpaceReservation(True, str(event_id), str(delivery_id))
 
@@ -374,8 +380,49 @@ class SqlBetaSpaceStore:
         if created is None:
             await self._session.rollback()
             return BetaSpaceReservation(False)
+        await self._enqueue_checkpoint_dispatch(
+            space_id=row.space_ref,
+            accepted_sequence=checkpoint_sequence,
+            now=source.received_at,
+        )
         await self._session.commit()
         return BetaSpaceReservation(True, str(event_id))
+
+    async def _enqueue_checkpoint_dispatch(
+        self, *, space_id: str, accepted_sequence: int, now: datetime
+    ) -> None:
+        """Coalesce wake-ups in the same transaction as canonical acceptance."""
+
+        excluded = insert(BetaCheckpointDispatchIntentModel).excluded
+        await self._session.execute(
+            insert(BetaCheckpointDispatchIntentModel)
+            .values(
+                space_id=space_id,
+                accepted_sequence=accepted_sequence,
+                dispatched_sequence=0,
+                state="pending",
+                attempt_count=0,
+                next_attempt_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=[BetaCheckpointDispatchIntentModel.space_id],
+                set_={
+                    "accepted_sequence": func.greatest(
+                        BetaCheckpointDispatchIntentModel.accepted_sequence,
+                        excluded.accepted_sequence,
+                    ),
+                    "state": "pending",
+                    "last_error_code": None,
+                    "next_attempt_at": func.least(
+                        BetaCheckpointDispatchIntentModel.next_attempt_at,
+                        excluded.next_attempt_at,
+                    ),
+                    "updated_at": excluded.updated_at,
+                },
+            )
+        )
 
     async def claim_consent_delivery(
         self, *, delivery_id: str, now: datetime
