@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -318,7 +318,7 @@ def _text_terms(text: str) -> frozenset[str]:
 
 
 def _select_context(
-    rows: list[tuple[Any, Any]],
+    rows: Sequence[tuple[Any, Any]],
     *,
     current_text: str,
     expected_chat_id: str,
