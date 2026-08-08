@@ -9,20 +9,24 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 
 def _claims(settings: Settings) -> dict[str, object]:
+    repository_owner, repository_name = (
+        settings.gate_beta_checkpoint_oidc_repository.split("/", maxsplit=1)
+    )
     return {
         "sub": (
-            "repo:markmalina@23397294/beta@1312239432:"
-            "ref:refs/heads/main"
+            f"repo:{repository_owner}@"
+            f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
+            f"/{repository_name}@{settings.gate_beta_checkpoint_oidc_repository_id}:"
+            f"ref:{settings.gate_beta_checkpoint_oidc_ref}"
         ),
-        "repository": "markmalina/beta",
-        "repository_id": "1312239432",
-        "repository_owner_id": "23397294",
+        "repository": settings.gate_beta_checkpoint_oidc_repository,
+        "repository_id": settings.gate_beta_checkpoint_oidc_repository_id,
+        "repository_owner_id": (
+            settings.gate_beta_checkpoint_oidc_repository_owner_id
+        ),
         "repository_visibility": "private",
-        "ref": "refs/heads/main",
-        "workflow_ref": (
-            "markmalina/beta/.github/workflows/"
-            "checkpoint-context.yml@refs/heads/main"
-        ),
+        "ref": settings.gate_beta_checkpoint_oidc_ref,
+        "workflow_ref": settings.gate_beta_checkpoint_oidc_workflow_ref,
         "event_name": "workflow_dispatch",
         "aud": settings.gate_beta_checkpoint_oidc_audience,
     }
@@ -33,13 +37,31 @@ def test_exact_private_beta_workflow_claims_are_accepted() -> None:
     _authorize_claims(_claims(settings), settings)
 
 
+def test_checkpoint_oidc_defaults_target_transferred_repository() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.gate_beta_checkpoint_oidc_repository == "AlphaCenter/beta"
+    assert settings.gate_beta_checkpoint_oidc_repository_id == "1312239432"
+    assert settings.gate_beta_checkpoint_oidc_repository_owner_id == "310893851"
+    assert settings.gate_beta_checkpoint_oidc_workflow_ref == (
+        "AlphaCenter/beta/.github/workflows/"
+        "checkpoint-context.yml@refs/heads/main"
+    )
+
+
 @pytest.mark.parametrize(
     ("claim", "value"),
     [
+        ("sub", "repo:attacker@9/beta@9:ref:refs/heads/main"),
         ("repository", "attacker/beta"),
         ("repository_id", "9"),
+        ("repository_owner_id", "9"),
         ("repository_visibility", "public"),
         ("ref", "refs/pull/9/merge"),
+        (
+            "workflow_ref",
+            "attacker/beta/.github/workflows/"
+            "checkpoint-context.yml@refs/heads/main",
+        ),
         ("event_name", "pull_request"),
     ],
 )
