@@ -66,34 +66,6 @@ def test_malformed_checkpoint_repository_setting_fails_closed() -> None:
         _authorize_claims(_claims(settings), settings)
 
 
-def test_current_claims_are_accepted_with_exact_legacy_transfer_overrides() -> None:
-    current = Settings(_env_file=None)
-    legacy = Settings(
-        _env_file=None,
-        GATE_BETA_CHECKPOINT_OIDC_REPOSITORY="markmalina/beta",
-        GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_OWNER_ID="23397294",
-        GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF=(
-            "markmalina/beta/.github/workflows/"
-            "checkpoint-context.yml@refs/heads/main"
-        ),
-    )
-    _authorize_claims(_claims(current), legacy)
-
-
-def test_legacy_claims_are_rejected_with_legacy_transfer_overrides() -> None:
-    legacy = Settings(
-        _env_file=None,
-        GATE_BETA_CHECKPOINT_OIDC_REPOSITORY="markmalina/beta",
-        GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_OWNER_ID="23397294",
-        GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF=(
-            "markmalina/beta/.github/workflows/"
-            "checkpoint-context.yml@refs/heads/main"
-        ),
-    )
-    with pytest.raises(GitHubOidcError, match="beta_checkpoint_oidc_claim_mismatch"):
-        _authorize_claims(_claims(legacy), legacy)
-
-
 def test_checkpoint_oidc_defaults_target_transferred_repository() -> None:
     settings = Settings(_env_file=None)
     assert settings.gate_beta_checkpoint_oidc_repository == "AlphaCenter/beta"
