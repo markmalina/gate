@@ -1,4 +1,4 @@
-"""Gate persistence and safe configuration for the AQUB S0 preflight."""
+"""Gate persistence and permanent AQUB production binding."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 AQUB_PREFLIGHT_BOT_KEY = "telegram_aqub_preflight"
 
-# Release-pinned from the owner-confirmed live bootstrap receipt on 2026-08-07.
-# ACE remains explicitly unbound until a real ACE actor supplies independent evidence.
+# Permanent production binding, pinned from owner-confirmed live evidence on 2026-08-07.
+# Provider identifiers stay inside Gate. ACE remains unbound until a real ACE is enrolled.
 AQUB_RELEASE_GROUP_CHAT_ID = "-5052983997"
 AQUB_RELEASE_ALPHA_USER_ID = "7819816320"
 AQUB_RELEASE_ACE_USER_ID = "__unbound_ace__"
@@ -104,49 +104,19 @@ class SqlAQUBPreflightReceiptStore:
         )
 
 
-def _release_pin_available(settings: Settings) -> bool:
-    """Use the confirmed release pin only while no operator binding exists."""
-
-    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value()
-    return (
-        not settings.gate_aqub_s0_preflight_enabled
-        and settings.telegram_aqub_bot_username == AQUB_BOT_USERNAME
-        and bool(settings.telegram_aqub_webhook_secret.get_secret_value())
-        and len(signing_key.encode()) >= 32
-        and not settings.gate_aqub_group_chat_id.get_secret_value().strip()
-        and not settings.gate_aqub_alpha_user_id.get_secret_value().strip()
-        and not settings.gate_aqub_ace_user_id.get_secret_value().strip()
-    )
-
-
 def build_aqub_s0_binding(settings: Settings) -> AQUBPreflightBinding:
-    """Construct the explicit binding or the owner-confirmed release pin."""
+    """Return the single permanent owner-confirmed AQUB production binding."""
 
-    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value()
-    if _release_pin_available(settings):
-        return AQUBPreflightBinding(
-            enabled=True,
-            bot_username=AQUB_BOT_USERNAME,
-            group_chat_id=AQUB_RELEASE_GROUP_CHAT_ID,
-            ace_user_id=AQUB_RELEASE_ACE_USER_ID,
-            alpha_user_id=AQUB_RELEASE_ALPHA_USER_ID,
-            ready_at=AQUB_RELEASE_READY_AT,
-            receipt_signing_key=signing_key.encode(),
-        )
-
-    if not settings.gate_aqub_s0_preflight_enabled:
-        return AQUBPreflightBinding()
-    ready_text = settings.gate_aqub_s0_ready_at.strip()
-    try:
-        ready_at = datetime.fromisoformat(ready_text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("aqub_ready_at_invalid") from exc
+    signing_secret = getattr(settings, "gate_aqub_receipt_signing_key", None)
+    if signing_secret is None:
+        raise ValueError("AQUB signing key is unavailable")
+    signing_key = signing_secret.get_secret_value()
     return AQUBPreflightBinding(
         enabled=True,
-        bot_username=settings.telegram_aqub_bot_username,
-        group_chat_id=settings.gate_aqub_group_chat_id.get_secret_value(),
-        ace_user_id=settings.gate_aqub_ace_user_id.get_secret_value(),
-        alpha_user_id=settings.gate_aqub_alpha_user_id.get_secret_value(),
-        ready_at=ready_at,
+        bot_username=AQUB_BOT_USERNAME,
+        group_chat_id=AQUB_RELEASE_GROUP_CHAT_ID,
+        ace_user_id=AQUB_RELEASE_ACE_USER_ID,
+        alpha_user_id=AQUB_RELEASE_ALPHA_USER_ID,
+        ready_at=AQUB_RELEASE_READY_AT,
         receipt_signing_key=signing_key.encode(),
     )

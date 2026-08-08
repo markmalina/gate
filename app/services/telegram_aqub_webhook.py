@@ -1,4 +1,4 @@
-"""Default-dormant provider preflight for the isolated AQUB Telegram bot."""
+"""Permanent provider reconciliation for the isolated AQUB Telegram bot."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class AQUBProviderPreflightError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class AQUBProviderReadinessSnapshot:
-    enabled: bool = False
+    enabled: bool = True
     configured: bool = False
     identity_verified: bool = False
     can_join_groups: bool = False
@@ -61,7 +61,7 @@ class AQUBProviderReadinessSnapshot:
 class AQUBProviderReadinessState:
     """Process-local, secret-free AQUB provider readiness observation."""
 
-    def __init__(self, *, enabled: bool = False) -> None:
+    def __init__(self, *, enabled: bool = True) -> None:
         self._snapshot = AQUBProviderReadinessSnapshot(enabled=enabled)
 
     def snapshot(self) -> AQUBProviderReadinessSnapshot:
@@ -174,13 +174,9 @@ async def reconcile_aqub_telegram_provider(
     http_client: httpx.AsyncClient,
     state: AQUBProviderReadinessState,
 ) -> str:
-    """Verify the pinned bot can read ordinary group messages before webhook setup."""
+    """Verify the pinned production bot and reconcile its webhook."""
 
-    enabled = bool(getattr(settings, "gate_aqub_s0_preflight_enabled", False))
-    state.set(AQUBProviderReadinessSnapshot(enabled=enabled))
-    if not enabled:
-        return "skipped_preflight_disabled"
-
+    state.set(AQUBProviderReadinessSnapshot(enabled=True))
     try:
         binding = build_aqub_s0_binding(settings)
     except ValueError:
