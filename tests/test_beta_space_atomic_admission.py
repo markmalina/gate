@@ -54,6 +54,7 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
                     is_active=True,
                 )
             )
+            await session.flush()
             session.add(
                 TransportConnector(
                     id=connector_id,
