@@ -127,7 +127,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0091_beta_universal_material (head)"
+          alembic heads | grep -F "0092_aqub_installation_binding (head)"
           alembic upgrade head
           alembic check
 
