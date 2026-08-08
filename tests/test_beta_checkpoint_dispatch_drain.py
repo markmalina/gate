@@ -147,3 +147,54 @@ async def test_dispatch_failure_defers_with_backoff_then_retries_same_sequence()
         async with admin.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         await admin.dispose()
+
+
+@pytest.mark.anyio
+async def test_expired_sending_dispatch_becomes_unknown_without_resend() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for checkpoint dispatch PostgreSQL test")
+    schema = f"beta_dispatch_stale_{uuid4().hex}"
+    admin = create_async_engine(database_url)
+    async with admin.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(
+        database_url,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions.begin() as session:
+            session.add(
+                BetaCheckpointDispatchIntentModel(
+                    space_id=SPACE_ID,
+                    accepted_sequence=19,
+                    dispatched_sequence=18,
+                    state="sending",
+                    attempt_count=1,
+                    lease_expires_at=NOW - timedelta(seconds=1),
+                    next_attempt_at=NOW,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+        dispatcher = _Dispatcher()
+        result = await SessionFactoryBetaCheckpointDispatchDrain(
+            sessions, dispatcher
+        ).drain_once(now=NOW)
+        assert result.disposition == "unknown"
+        assert result.error_code == "beta_checkpoint_dispatch_lease_expired"
+        assert dispatcher.calls == []
+        async with sessions() as session:
+            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            assert intent is not None
+            assert intent.state == "unknown"
+            assert intent.lease_expires_at is None
+            assert intent.settled_at == NOW
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        await admin.dispose()
