@@ -1,0 +1,47 @@
+name: Temporary AQUB head-fixture update
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/temporary-aqub-head-fixture-update.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-fixtures:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Update only current-head assertions and remove this workflow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          files = (
+              Path("tests/test_become_quest_migration.py"),
+              Path("tests/test_become_transcript_review_postgres.py"),
+              Path("tests/test_become_learner_invitation_postgres.py"),
+          )
+          old = 'heads[0].startswith("0091_beta_universal_material")'
+          new = 'heads[0].startswith("0092_aqub_installation_binding")'
+          changed = 0
+          for path in files:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one stale head assertion, got {count}")
+              path.write_text(text.replace(old, new), encoding="utf-8")
+              changed += count
+          if changed != 3:
+              raise SystemExit(f"expected three fixture updates, got {changed}")
+          PY
+          git rm .github/workflows/temporary-aqub-head-fixture-update.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_become_quest_migration.py tests/test_become_transcript_review_postgres.py tests/test_become_learner_invitation_postgres.py
+          git commit -m "test(db): advance exact migration head fixtures"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
