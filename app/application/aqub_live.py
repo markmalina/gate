@@ -10,7 +10,7 @@ import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -33,8 +33,10 @@ AQUB_PROGRAM_PROMPT_TEXT = (
 )
 AQUB_RUNTIME_INBOUND_PATH = "/gate/inbound"
 AQUB_GATE_DELIVERY_PATH = "/internal/aqub/deliver"
+AQUB_CANDIDATE_ROLE = "candidate"
 
 JsonObject = dict[str, Any]
+AQUBLiveRole = AQUBPreflightRole | str
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +113,7 @@ class AQUBLiveIngressAdapter:
                 payload=payload,
                 chat_id=inbound.chat_id,
                 actor_id=inbound.actor_id,
-                role=role,
+                role=cast(AQUBPreflightRole, role),
                 command=inbound.command,
                 occurred_at=inbound.occurred_at,
                 received_at=inbound.received_at,
@@ -142,10 +144,14 @@ class AQUBLiveIngressAdapter:
         )
 
 
+def _role_value(role: AQUBLiveRole) -> str:
+    return role.value if isinstance(role, AQUBPreflightRole) else role
+
+
 def _bound_role(
     binding: AQUBPreflightBinding,
     inbound: AQUBPreflightInbound,
-) -> AQUBPreflightRole | None:
+) -> AQUBLiveRole | None:
     if (
         not binding.enabled
         or inbound.bot_username != AQUB_BOT_USERNAME
@@ -153,11 +159,14 @@ def _bound_role(
         or inbound.chat_id != binding.group_chat_id
     ):
         return None
-    if inbound.actor_id == binding.ace_user_id:
-        return AQUBPreflightRole.ACE
     if inbound.actor_id == binding.alpha_user_id:
         return AQUBPreflightRole.ALPHA
-    return None
+    if inbound.actor_id == binding.ace_user_id and binding.ace_user_id != "__unbound_ace__":
+        return AQUBPreflightRole.ACE
+    # Product onboarding deliberately does not require a raw Telegram ID for every Ace.
+    # Any other human actor in the one pinned AQUB group is forwarded only as an opaque
+    # candidate. AQUB itself decides whether that actor may claim an outstanding invite.
+    return AQUB_CANDIDATE_ROLE
 
 
 def _validate_time(binding: AQUBPreflightBinding, inbound: AQUBPreflightInbound) -> None:
@@ -195,7 +204,7 @@ def _build_signed_envelope_body(
     *,
     binding: AQUBPreflightBinding,
     inbound: AQUBPreflightInbound,
-    role: AQUBPreflightRole,
+    role: AQUBLiveRole,
     command_receipt_id: str,
     payload_sha256: str,
 ) -> bytes:
@@ -221,7 +230,7 @@ def _build_signed_envelope_body(
             "actor",
             inbound.actor_id,
         ),
-        "role": role.value,
+        "role": _role_value(role),
         "update_id": _opaque_ref(
             binding.receipt_signing_key,
             "external",
