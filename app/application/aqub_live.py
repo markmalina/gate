@@ -1,13 +1,11 @@
-"""Signed AQUB live transport contracts layered on the isolated preflight route.
-
-The live path is activation-gated; importing this module alone has no provider effect.
-"""
+"""Signed AQUB live transport contracts layered on the isolated preflight route."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -33,6 +31,11 @@ AQUB_PROGRAM_PROMPT_TEXT = (
 )
 AQUB_RUNTIME_INBOUND_PATH = "/gate/inbound"
 AQUB_GATE_DELIVERY_PATH = "/internal/aqub/deliver"
+
+_CANDIDATE_COMMAND_RE = re.compile(
+    r"^(?:/ace_join_[0-9a-f]{12}(?:@AQubAgentBot)?$|/program(?:@AQubAgentBot)?(?:\s|$)|/confirm_program_\d{6}(?:@AQubAgentBot)?$|/status(?:@AQubAgentBot)?$|/help(?:@AQubAgentBot)?$)",
+    re.IGNORECASE,
+)
 
 JsonObject = dict[str, Any]
 
@@ -142,6 +145,12 @@ class AQUBLiveIngressAdapter:
         )
 
 
+def _candidate_input_allowed(inbound: AQUBPreflightInbound) -> bool:
+    if _CANDIDATE_COMMAND_RE.match(inbound.command.strip()) is not None:
+        return True
+    return _reply_context(inbound.payload) == "program_prompt"
+
+
 def _bound_role(
     binding: AQUBPreflightBinding,
     inbound: AQUBPreflightInbound,
@@ -153,10 +162,12 @@ def _bound_role(
         or inbound.chat_id != binding.group_chat_id
     ):
         return None
-    if inbound.actor_id == binding.ace_user_id:
-        return AQUBPreflightRole.ACE
     if inbound.actor_id == binding.alpha_user_id:
         return AQUBPreflightRole.ALPHA
+    if inbound.actor_id == binding.ace_user_id and binding.ace_user_id != "__unbound_ace__":
+        return AQUBPreflightRole.ACE
+    if _candidate_input_allowed(inbound):
+        return AQUBPreflightRole.CANDIDATE
     return None
 
 
