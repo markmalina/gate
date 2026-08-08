@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     LargeBinary,
     String,
     Text,
