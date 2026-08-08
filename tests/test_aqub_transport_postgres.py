@@ -1,4 +1,4 @@
-"""PostgreSQL proof that AQUB preflight receipts never enter the common queue."""
+"""PostgreSQL proof that AQUB transport receipts stay outside the common queue."""
 
 from __future__ import annotations
 
