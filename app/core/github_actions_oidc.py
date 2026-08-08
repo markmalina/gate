@@ -89,14 +89,19 @@ def _authorize_claims(claims: dict[str, Any], settings: Settings) -> None:
         or "/" in repository_name
     ):
         raise GitHubOidcError("beta_checkpoint_oidc_configuration_invalid")
-    expected_sub = (
-        f"repo:{repository_owner}@"
-        f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
-        f"/{repository_name}@{settings.gate_beta_checkpoint_oidc_repository_id}"
-        f":ref:{settings.gate_beta_checkpoint_oidc_ref}"
-    )
+    expected_subjects = {
+        (
+            f"repo:{settings.gate_beta_checkpoint_oidc_repository}:"
+            f"ref:{settings.gate_beta_checkpoint_oidc_ref}"
+        ),
+        (
+            f"repo:{repository_owner}@"
+            f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
+            f"/{repository_name}@{settings.gate_beta_checkpoint_oidc_repository_id}"
+            f":ref:{settings.gate_beta_checkpoint_oidc_ref}"
+        ),
+    }
     expected = {
-        "sub": expected_sub,
         "repository": settings.gate_beta_checkpoint_oidc_repository,
         "repository_id": settings.gate_beta_checkpoint_oidc_repository_id,
         "repository_owner_id": (
@@ -106,7 +111,10 @@ def _authorize_claims(claims: dict[str, Any], settings: Settings) -> None:
         "ref": settings.gate_beta_checkpoint_oidc_ref,
         "workflow_ref": settings.gate_beta_checkpoint_oidc_workflow_ref,
     }
-    if any(claims.get(name) != value for name, value in expected.items()):
+    if (
+        claims.get("sub") not in expected_subjects
+        or any(claims.get(name) != value for name, value in expected.items())
+    ):
         raise GitHubOidcError("beta_checkpoint_oidc_claim_mismatch")
     if claims.get("event_name") not in _ALLOWED_EVENTS:
         raise GitHubOidcError("beta_checkpoint_oidc_event_not_allowed")
