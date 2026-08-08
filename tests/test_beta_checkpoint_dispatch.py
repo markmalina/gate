@@ -87,7 +87,11 @@ def test_github_app_sender_mints_short_lived_token_then_dispatches_once() -> Non
                 encoded,
                 public_key,
                 algorithms=["RS256"],
-                options={"verify_aud": False},
+                options={
+                    "verify_aud": False,
+                    "verify_exp": False,
+                    "verify_iat": False,
+                },
             )
             assert claims["iss"] == "1357"
             assert claims["exp"] - claims["iat"] == 570
