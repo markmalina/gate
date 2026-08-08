@@ -11,7 +11,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from app.models.beta_context import BetaContextBindingModel, BetaContextEventModel
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
@@ -21,6 +20,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.beta_context import BetaContextBindingModel, BetaContextEventModel
 
 CONTAINER_VERSION = "beta.x25519-aes256gcm@1"
 MANIFEST_VERSION = "beta.portable-checkpoint-manifest@1"
