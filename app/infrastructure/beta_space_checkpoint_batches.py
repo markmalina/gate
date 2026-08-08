@@ -264,7 +264,7 @@ def _portable_wedding_event(
     event: BetaSpaceEventModel,
     receipt: TelegramReceipt,
     voice: BetaWeddingVoiceJobModel | None,
-    material: BetaMaterialJobModel | None,
+    material: BetaMaterialJobModel | None = None,
 ) -> dict[str, Any]:
     text_value = _event_text(
         event=event,
