@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.api.telegram_ingress import get_telegram_receipt_store
+from app.application.beta_material import ProcessBetaMaterial
 from app.application.beta_space_intake import (
     BetaSpaceDisposition,
     DeliverBetaSpaceConsent,
@@ -23,7 +24,6 @@ from app.application.beta_wedding_reply import (
     BetaWeddingReplyModel,
     RespondToBetaWeddingMessage,
 )
-from app.application.beta_wedding_voice import ProcessBetaWeddingVoice
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
     AcceptTelegramReceiptService,
@@ -36,6 +36,12 @@ from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.beta_candidate_binding import (
     extract_beta_callback_owner_candidate,
     prepare_beta_katya_candidate_binding,
+)
+from app.infrastructure.beta_material import SqlBetaMaterialStore
+from app.infrastructure.beta_material_provider import (
+    OpenAIBetaMaterialExtractor,
+    OpenAIBetaMaterialStructurer,
+    TelegramMaterialDownloadAdapter,
 )
 from app.infrastructure.beta_space import (
     SqlBetaSpaceStore,
@@ -52,12 +58,6 @@ from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
     OpenAIResponsesBetaWeddingModel,
     SqlBetaWeddingReplyStore,
-)
-from app.infrastructure.beta_wedding_voice import SqlBetaWeddingVoiceStore
-from app.infrastructure.beta_wedding_voice_provider import (
-    OpenAIBetaWeddingVoiceStructurer,
-    OpenAIBetaWeddingVoiceTranscriber,
-    TelegramVoiceDownloadAdapter,
 )
 from app.services.telegram import TelegramClient
 
@@ -253,30 +253,31 @@ async def beta_telegram_webhook(
         if beta_telegram is None:
             beta_telegram = get_beta_telegram_client(request)
         http_client = get_beta_model_http_client(request)
-        if _is_wedding_voice_message(update):
-            downloader = TelegramVoiceDownloadAdapter(
+        if _is_beta_material_message(update):
+            downloader = TelegramMaterialDownloadAdapter(
                 credential=settings.telegram_beta_bot_token.get_secret_value(),
                 api_base_url=os.getenv(
                     "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
                 ),
                 client=http_client,
             )
-            voice_result = await ProcessBetaWeddingVoice(
-                store=SqlBetaWeddingVoiceStore(session),
-                telegram=_WeddingVoiceTelegram(beta_telegram, downloader),
-                transcriber=OpenAIBetaWeddingVoiceTranscriber(
+            material_result = await ProcessBetaMaterial(
+                store=SqlBetaMaterialStore(session),
+                telegram=_BetaMaterialTelegram(beta_telegram, downloader),
+                extractor=OpenAIBetaMaterialExtractor(
                     api_key=settings.openai_api_key.get_secret_value(),
                     api_base_url=settings.openai_api_base_url,
                     client=http_client,
+                    vision_model=settings.gate_beta_model_profile,
                 ),
-                structurer=OpenAIBetaWeddingVoiceStructurer(
+                structurer=OpenAIBetaMaterialStructurer(
                     api_key=settings.openai_api_key.get_secret_value(),
                     api_base_url=settings.openai_api_base_url,
                     model=settings.gate_beta_model_profile,
                     client=http_client,
                 ),
             ).execute(receipt_id=acceptance.receipt_id, now=received_at)
-            wedding_reply = voice_result.disposition.value
+            wedding_reply = material_result.disposition.value
         else:
             try:
                 model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
@@ -309,11 +310,13 @@ async def beta_telegram_webhook(
     }
 
 
-class _WeddingVoiceTelegram:
-    """Small MVP adapter: send through the bound Beta bot, download its voice file."""
+class _BetaMaterialTelegram:
+    """Send through the bound Beta bot and download one exact material."""
 
     def __init__(
-        self, telegram: TelegramClient, downloader: TelegramVoiceDownloadAdapter
+        self,
+        telegram: TelegramClient,
+        downloader: TelegramMaterialDownloadAdapter,
     ) -> None:
         self._telegram = telegram
         self._downloader = downloader
@@ -321,13 +324,19 @@ class _WeddingVoiceTelegram:
     async def send_plain_message(self, *, chat_id: str, text: str) -> JsonObject:
         return await self._telegram.send_plain_message(chat_id=chat_id, text=text)
 
-    async def download_voice(self, *, file_id: str) -> bytes:
-        return await self._downloader.download_voice(file_id=file_id)
+    async def download_file(self, *, file_id: str) -> bytes:
+        return await self._downloader.download_file(file_id=file_id)
 
 
-def _is_wedding_voice_message(update: JsonObject) -> bool:
+def _is_beta_material_message(update: JsonObject) -> bool:
     message = update.get("message")
-    return isinstance(message, dict) and isinstance(message.get("voice"), dict)
+    if not isinstance(message, dict):
+        return False
+    return (
+        isinstance(message.get("voice"), dict)
+        or isinstance(message.get("document"), dict)
+        or isinstance(message.get("photo"), list)
+    )
 
 
 async def accept_beta_telegram_receipt(
