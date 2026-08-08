@@ -13,10 +13,11 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
-from app.application.beta_material import BetaMaterialJob
 from docx import Document
 from openpyxl import load_workbook  # type: ignore[import-untyped]
 from pypdf import PdfReader
+
+from app.application.beta_material import BetaMaterialJob
 
 MAX_MATERIAL_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 100_000
