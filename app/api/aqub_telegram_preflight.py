@@ -1,8 +1,9 @@
-"""Default-off HTTP ingress for the AQUB Sprint 0 Telegram preflight."""
+"""AQUB Telegram ingress: preflight ping plus isolated live runtime forwarding."""
 
 from __future__ import annotations
 
 import hmac
+import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
@@ -10,6 +11,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
+from app.application.aqub_live import (
+    AQUB_GATE_DELIVERY_PATH,
+    AQUBLiveForwardResult,
+    AQUBLiveIngressAdapter,
+    HttpAQUBRuntimeClient,
+)
 from app.application.aqub_s0_preflight import (
     AQUB_BOT_USERNAME,
     AQUB_OWNED_PATH,
@@ -20,10 +27,17 @@ from app.application.aqub_s0_preflight import (
     AQUBS0PreflightAdapter,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.aqub_live import (
+    AQUBLiveDeliveryError,
+    AQUBLiveDeliveryService,
+    parse_aqub_delivery,
+    verify_aqub_signature,
+)
 from app.infrastructure.aqub_s0_preflight import (
     SqlAQUBPreflightReceiptStore,
     build_aqub_s0_binding,
 )
+from app.services.telegram import TelegramClient, build_telegram_http_client
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -49,7 +63,7 @@ async def aqub_telegram_preflight(
     settings: Settings = settings_dependency,
     store: AQUBPreflightStore = store_dependency,
 ) -> JsonObject:
-    """Own the exact AQUB ping, including bootstrap and committed receipt replies."""
+    """Own the exact AQUB route; keep ping semantics and optionally forward live input."""
 
     configured_secret = settings.telegram_aqub_webhook_secret.get_secret_value()
     if not configured_secret:
@@ -103,11 +117,82 @@ async def aqub_telegram_preflight(
     if inbound is None:
         return _unowned_response()
 
-    result = await AQUBS0PreflightAdapter(
-        binding=binding,
-        store=store,
-    ).handle(inbound)
-    return _response(result, chat_id=inbound.chat_id)
+    if inbound.command == AQUB_PING_COMMAND or not _env_enabled("GATE_AQUB_LIVE_ENABLED"):
+        result = await AQUBS0PreflightAdapter(
+            binding=binding,
+            store=store,
+        ).handle(inbound)
+        return _response(result, chat_id=inbound.chat_id)
+
+    runtime_url = os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
+    if not runtime_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB runtime URL is unavailable",
+        )
+    try:
+        live = await AQUBLiveIngressAdapter(
+            binding=binding,
+            store=store,
+            runtime=HttpAQUBRuntimeClient(base_url=runtime_url),
+        ).handle(inbound)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc)[:160],
+        ) from None
+    return _live_response(live, chat_id=inbound.chat_id)
+
+
+@router.post(AQUB_GATE_DELIVERY_PATH)
+async def aqub_live_delivery(
+    request: Request,
+    x_aqub_signature: Annotated[str | None, Header(alias="X-AQUB-Signature")] = None,
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+) -> JsonObject:
+    """Accept one signed AQUB delivery command and settle it through Telegram."""
+
+    if not _env_enabled("GATE_AQUB_DELIVERY_ENABLED"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB live delivery is disabled",
+        )
+    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value().encode()
+    if len(signing_key) < 32:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB signing key is unavailable",
+        )
+    if x_aqub_signature is None:
+        raise HTTPException(status_code=401, detail="AQUB signature is required")
+    raw_body = await request.body()
+    try:
+        verify_aqub_signature(
+            raw_body=raw_body,
+            signature=x_aqub_signature,
+            signing_key=signing_key,
+        )
+        command = parse_aqub_delivery(raw_body, signing_key=signing_key)
+    except AQUBLiveDeliveryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from None
+
+    token = settings.telegram_aqub_bot_token.get_secret_value()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB Telegram token is unavailable",
+        )
+    try:
+        async with build_telegram_http_client() as http_client:
+            telegram = TelegramClient(token, http_client=http_client)
+            return await AQUBLiveDeliveryService(
+                session=session,
+                telegram=telegram,
+                signing_key=signing_key,
+            ).deliver(command)
+    except AQUBLiveDeliveryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.code) from None
 
 
 def _project_inbound(
@@ -192,7 +277,7 @@ def _response(result: AQUBPreflightResult, *, chat_id: str) -> JsonObject:
             ),
         }
 
-    response: JsonObject = {
+    return {
         "ok": True,
         "owned": result.owned,
         "accepted": result.accepted,
@@ -200,7 +285,31 @@ def _response(result: AQUBPreflightResult, *, chat_id: str) -> JsonObject:
         "legacy_dispatch": result.legacy_dispatch,
         "canary_dispatch": result.canary_dispatch,
     }
-    return response
+
+
+def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject:
+    if not result.accepted:
+        return _unowned_response(reason=result.reason)
+    downstream = result.downstream or {}
+    domain = downstream.get("result")
+    if isinstance(domain, dict) and isinstance(domain.get("reply_text"), str):
+        response: JsonObject = {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": domain["reply_text"],
+        }
+        if domain.get("force_reply") is True:
+            response["reply_markup"] = {"force_reply": True, "selective": True}
+        return response
+    return {
+        "ok": True,
+        "owned": True,
+        "accepted": True,
+        "reason": result.reason,
+        "duplicate": result.duplicate,
+        "legacy_dispatch": False,
+        "canary_dispatch": False,
+    }
 
 
 def _unowned_response(*, reason: str = "aqub_route_not_owned") -> JsonObject:
@@ -219,3 +328,7 @@ def _secrets_match(*, provided: str, configured: str) -> bool:
         return hmac.compare_digest(provided.encode(), configured.encode())
     except UnicodeError:
         return False
+
+
+def _env_enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
