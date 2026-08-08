@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
+from sqlalchemy import case, func, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.beta_space_intake import (
     CONSENT_RESPONSE,
     BetaConsentDeliveryJob,
@@ -24,9 +28,6 @@ from app.models.beta_space import (
     BetaSpaceWorkItemModel,
 )
 from app.models.canonical import TransportConnector, Workspace
-from sqlalchemy import case, func, select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 BETA_SPACE_REF = "spc_32443e2deeeaf0bd6ff0012c1e3b39e1"
 BETA_TENANT_REF = "beta-user-katya-001"
