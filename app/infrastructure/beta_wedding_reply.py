@@ -318,7 +318,7 @@ def _text_terms(text: str) -> frozenset[str]:
 
 
 def _select_context(
-    rows: Sequence[tuple[Any, Any]],
+    rows: Sequence[Any],
     *,
     current_text: str,
     expected_chat_id: str,
