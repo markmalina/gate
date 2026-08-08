@@ -19,7 +19,6 @@ from app.application.aqub_live import (
     HttpAQUBRuntimeClient,
 )
 from app.application.aqub_s0_preflight import (
-    AQUB_BOT_USERNAME,
     AQUB_OWNED_PATH,
     AQUB_PING_COMMAND,
     AQUBPreflightBinding,
@@ -54,7 +53,23 @@ def get_aqub_preflight_store(
     return SqlAQUBPreflightReceiptStore(session)
 
 
+async def get_aqub_production_binding(
+    settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
+) -> AQUBPreflightBinding:
+    """Resolve the installation binding from Gate persistence or fail closed."""
+
+    try:
+        return await load_aqub_production_binding(session, settings)
+    except (RuntimeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB production binding is unavailable",
+        ) from None
+
+
 store_dependency = Depends(get_aqub_preflight_store)
+binding_dependency = Depends(get_aqub_production_binding)
 
 
 @router.post(AQUB_OWNED_PATH)
@@ -64,8 +79,8 @@ async def aqub_telegram_preflight(
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
     ] = None,
     settings: Settings = settings_dependency,
-    session: AsyncSession = db_session_dependency,
     store: AQUBPreflightStore = store_dependency,
+    binding: AQUBPreflightBinding = binding_dependency,
 ) -> JsonObject:
     """Own the exact AQUB route from the durable installation binding."""
 
@@ -91,7 +106,6 @@ async def aqub_telegram_preflight(
     if not isinstance(raw_update, dict):
         raise HTTPException(status_code=400, detail="Invalid Telegram update")
 
-    binding = await _production_binding(session, settings)
     received_at = datetime.now(UTC)
     inbound = _project_inbound(
         cast(JsonObject, raw_update),
@@ -137,6 +151,7 @@ async def aqub_live_delivery(
     x_aqub_signature: Annotated[str | None, Header(alias="X-AQUB-Signature")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
+    binding: AQUBPreflightBinding = binding_dependency,
 ) -> JsonObject:
     """Accept one signed AQUB delivery command and settle it through Telegram."""
 
@@ -150,7 +165,6 @@ async def aqub_live_delivery(
     if x_aqub_signature is None:
         raise HTTPException(status_code=401, detail="AQUB signature is required")
     raw_body = await request.body()
-    binding = await _production_binding(session, settings)
     try:
         verify_aqub_signature(
             raw_body=raw_body,
@@ -184,19 +198,6 @@ async def aqub_live_delivery(
         ).deliver(command)
     except AQUBLiveDeliveryError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from None
-
-
-async def _production_binding(
-    session: AsyncSession,
-    settings: Settings,
-) -> AQUBPreflightBinding:
-    try:
-        return await load_aqub_production_binding(session, settings)
-    except (RuntimeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB production binding is unavailable",
-        ) from None
 
 
 def _process_http_client(request: Request) -> httpx.AsyncClient:
