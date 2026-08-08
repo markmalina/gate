@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import csv
 import io
@@ -12,11 +13,10 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
+from app.application.beta_material import BetaMaterialJob
 from docx import Document
 from openpyxl import load_workbook  # type: ignore[import-untyped]
 from pypdf import PdfReader
-
-from app.application.beta_material import BetaMaterialJob
 
 MAX_MATERIAL_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 100_000
@@ -118,7 +118,8 @@ class OpenAIBetaMaterialExtractor:
         if job.media_kind == "voice":
             return await self._transcribe(content)
         mime_type = _resolved_mime(job)
-        deterministic = extract_document_text(
+        deterministic = await asyncio.to_thread(
+            extract_document_text,
             content=content,
             mime_type=mime_type,
             file_name=job.file_name,
