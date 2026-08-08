@@ -33,7 +33,7 @@ AQUB_RUNTIME_INBOUND_PATH = "/gate/inbound"
 AQUB_GATE_DELIVERY_PATH = "/internal/aqub/deliver"
 
 _CANDIDATE_COMMAND_RE = re.compile(
-    r"^(?:/ace_join_[0-9a-f]{12}|/program(?:\s|$)|/confirm_program_\d{6}(?:@AQubAgentBot)?$|/status(?:@AQubAgentBot)?$|/help(?:@AQubAgentBot)?$)",
+    r"^(?:/ace_join_[0-9a-f]{12}(?:@AQubAgentBot)?$|/program(?:@AQubAgentBot)?(?:\s|$)|/confirm_program_\d{6}(?:@AQubAgentBot)?$|/status(?:@AQubAgentBot)?$|/help(?:@AQubAgentBot)?$)",
     re.IGNORECASE,
 )
 
