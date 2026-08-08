@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -25,8 +26,47 @@ from app.models.beta_space import (
 )
 from app.models.domain import TelegramReceipt
 
-_MAX_CONTEXT_EVENTS = 20
+_MAX_RECENT_CONTEXT_EVENTS = 8
+_MAX_FULL_SPACE_CANDIDATES = 200
+_MAX_RELEVANT_CONTEXT_EVENTS = 12
 _MAX_CONTEXT_CHARS = 12_000
+_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+_QUERY_STOPWORDS = frozenset(
+    {
+        "что",
+        "где",
+        "когда",
+        "как",
+        "какой",
+        "какая",
+        "какие",
+        "кто",
+        "это",
+        "этот",
+        "эта",
+        "эти",
+        "для",
+        "или",
+        "про",
+        "бета",
+        "скажи",
+        "пожалуйста",
+        "есть",
+        "уже",
+        "был",
+        "была",
+        "были",
+        "будет",
+        "мне",
+        "наш",
+        "наша",
+        "наши",
+        "его",
+        "они",
+        "она",
+        "оно",
+    }
+)
 _MAX_PROVIDER_BODY_BYTES = 1_000_000
 _RESULT_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -135,6 +175,7 @@ class SqlBetaWeddingReplyStore:
         context = await self._context(
             binding=binding,
             current_event_id=event.id,
+            current_text=current_text or "",
         )
         reply_id = uuid.uuid4()
         request_sha256 = hashlib.sha256(
@@ -225,6 +266,7 @@ class SqlBetaWeddingReplyStore:
         *,
         binding: BetaSpaceBindingModel,
         current_event_id: uuid.UUID,
+        current_text: str,
     ) -> tuple[BetaWeddingContextMessage, ...]:
         rows = (
             await self._session.execute(
@@ -244,33 +286,113 @@ class SqlBetaWeddingReplyStore:
                     BetaSpaceEventModel.occurred_at.desc(),
                     BetaSpaceEventModel.id.desc(),
                 )
-                .limit(_MAX_CONTEXT_EVENTS)
+                .limit(_MAX_FULL_SPACE_CANDIDATES)
             )
         ).all()
-        selected: list[BetaWeddingContextMessage] = []
-        total_chars = 0
-        for _event, receipt in rows:
-            projection = _message_projection(
-                receipt.payload,
-                expected_chat_id=binding.telegram_chat_id,
-            )
-            if projection is None:
-                continue
-            sender_label, projected_text, _source_timestamp, _duration = projection
-            if projected_text is None:
-                continue
-            remaining = _MAX_CONTEXT_CHARS - total_chars
-            if remaining <= 0:
-                break
-            bounded = projected_text[:remaining]
-            selected.append(
+        return _select_context(
+            rows,
+            current_text=current_text,
+            expected_chat_id=binding.telegram_chat_id,
+        )
+
+
+def _query_terms(text: str) -> frozenset[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for token in _TOKEN_RE.findall(text.casefold()):
+        if len(token) < 3 or token in _QUERY_STOPWORDS or token in seen:
+            continue
+        seen.add(token)
+        terms.append(token)
+        if len(terms) == 24:
+            break
+    return frozenset(terms)
+
+
+def _text_terms(text: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for token in _TOKEN_RE.findall(text.casefold())
+        if len(token) >= 3 and token not in _QUERY_STOPWORDS
+    )
+
+
+def _select_context(
+    rows: list[tuple[Any, Any]],
+    *,
+    current_text: str,
+    expected_chat_id: str,
+) -> tuple[BetaWeddingContextMessage, ...]:
+    projected: list[tuple[int, str, BetaWeddingContextMessage]] = []
+    for position, (event, receipt) in enumerate(rows):
+        projection = _message_projection(
+            receipt.payload,
+            expected_chat_id=expected_chat_id,
+        )
+        if projection is None:
+            continue
+        sender_label, projected_text, _source_timestamp, _duration = projection
+        if projected_text is None:
+            continue
+        event_id = str(event.id)
+        projected.append(
+            (
+                position,
+                event_id,
                 BetaWeddingContextMessage(
                     sender_label=sender_label,
-                    text=bounded,
-                )
+                    text=projected_text,
+                ),
             )
-            total_chars += len(bounded)
-        return tuple(reversed(selected))
+        )
+
+    recent = projected[:_MAX_RECENT_CONTEXT_EVENTS]
+    recent_ids = {event_id for _position, event_id, _message in recent}
+    query_terms = _query_terms(current_text)
+    relevant: list[
+        tuple[int, int, str, BetaWeddingContextMessage]
+    ] = []
+    if query_terms:
+        for position, event_id, message in projected[_MAX_RECENT_CONTEXT_EVENTS:]:
+            if event_id in recent_ids:
+                continue
+            overlap = len(query_terms.intersection(_text_terms(message.text)))
+            if overlap:
+                relevant.append((overlap, position, event_id, message))
+        relevant.sort(key=lambda item: (-item[0], item[1], item[2]))
+
+    prioritized = recent + [
+        (position, event_id, message)
+        for _score, position, event_id, message in relevant[
+            :_MAX_RELEVANT_CONTEXT_EVENTS
+        ]
+    ]
+    selected: list[tuple[int, BetaWeddingContextMessage]] = []
+    selected_ids: set[str] = set()
+    total_chars = 0
+    for position, event_id, message in prioritized:
+        if event_id in selected_ids:
+            continue
+        remaining = _MAX_CONTEXT_CHARS - total_chars
+        if remaining <= 0:
+            break
+        bounded_text = message.text[:remaining]
+        if not bounded_text:
+            continue
+        selected_ids.add(event_id)
+        selected.append(
+            (
+                position,
+                BetaWeddingContextMessage(
+                    sender_label=message.sender_label,
+                    text=bounded_text,
+                ),
+            )
+        )
+        total_chars += len(bounded_text)
+
+    selected.sort(key=lambda item: item[0], reverse=True)
+    return tuple(message for _position, message in selected)
 
 
 class OpenAIResponsesBetaWeddingModel:
