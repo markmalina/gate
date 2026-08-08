@@ -7,16 +7,17 @@ from functools import lru_cache
 from typing import Any
 
 import jwt
+from app.core.config import Settings
 from jwt import PyJWKClient
 from jwt.exceptions import InvalidTokenError, PyJWKClientError
-
-from app.core.config import Settings
 
 GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
 GITHUB_OIDC_JWKS_URL = (
     "https://token.actions.githubusercontent.com/.well-known/jwks"
 )
-_ALLOWED_EVENTS = frozenset({"schedule", "workflow_dispatch"})
+_ALLOWED_EVENTS = frozenset(
+    {"repository_dispatch", "schedule", "workflow_dispatch"}
+)
 
 
 class GitHubOidcError(RuntimeError):
