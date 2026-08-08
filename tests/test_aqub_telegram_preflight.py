@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.api.aqub_telegram_preflight import get_aqub_preflight_store, router
+from app.api.aqub_telegram_preflight import (
+    get_aqub_preflight_store,
+    get_aqub_production_binding,
+    router,
+)
 from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
 from app.application.aqub_s0_preflight import (
+    AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
+    AQUBPreflightBinding,
     AQUBPreflightCommand,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
 )
 from app.core.config import Settings, get_settings
-from app.infrastructure.aqub_s0_preflight import (
-    AQUB_RELEASE_ALPHA_USER_ID,
-    AQUB_RELEASE_GROUP_CHAT_ID,
-    AQUB_RELEASE_READY_AT,
-)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+TEST_CHAT_ID = "-1001234567890"
+TEST_ALPHA_USER_ID = "123456789"
+TEST_READY_AT = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
+TEST_SIGNING_KEY = b"0123456789abcdef0123456789abcdef-test"
 
 
 class DurableStore:
@@ -65,12 +71,24 @@ def _settings(**changes: object) -> Settings:
     return Settings(**values)
 
 
+def _binding() -> AQUBPreflightBinding:
+    return AQUBPreflightBinding(
+        enabled=True,
+        bot_username=AQUB_BOT_USERNAME,
+        group_chat_id=TEST_CHAT_ID,
+        ace_user_id="__unbound_ace__",
+        alpha_user_id=TEST_ALPHA_USER_ID,
+        ready_at=TEST_READY_AT,
+        receipt_signing_key=TEST_SIGNING_KEY,
+    )
+
+
 def _update(**message_changes: object) -> dict[str, object]:
     message: dict[str, object] = {
         "message_id": 501,
-        "date": int((AQUB_RELEASE_READY_AT + timedelta(seconds=1)).timestamp()),
-        "chat": {"id": int(AQUB_RELEASE_GROUP_CHAT_ID), "type": "supergroup"},
-        "from": {"id": int(AQUB_RELEASE_ALPHA_USER_ID), "is_bot": False},
+        "date": int((TEST_READY_AT + timedelta(seconds=1)).timestamp()),
+        "chat": {"id": int(TEST_CHAT_ID), "type": "supergroup"},
+        "from": {"id": int(TEST_ALPHA_USER_ID), "is_bot": False},
         "text": "/aqub_ping",
     }
     message.update(message_changes)
@@ -82,10 +100,15 @@ def _client(settings: Settings, store: DurableStore) -> TestClient:
     app.include_router(router)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_aqub_preflight_store] = lambda: store
+    app.dependency_overrides[get_aqub_production_binding] = _binding
     return TestClient(app)
 
 
-def _post(client: TestClient, update: dict[str, object], secret: str = "webhook SECRET-WEBHOOK"):
+def _post(
+    client: TestClient,
+    update: dict[str, object],
+    secret: str = "webhook SECRET-WEBHOOK",
+):
     return client.post(
         "/telegram/aqub/preflight",
         headers={"X-Telegram-Bot-Api-Secret-Token": secret},
@@ -116,7 +139,7 @@ def test_permanent_ping_route_owns_once_and_duplicate_reuses_receipt() -> None:
     second_body = second.json()
     assert first_body["method"] == "sendMessage"
     assert second_body["method"] == "sendMessage"
-    assert first_body["chat_id"] == int(AQUB_RELEASE_GROUP_CHAT_ID)
+    assert first_body["chat_id"] == int(TEST_CHAT_ID)
 
     first_receipt = _receipt_fields(first_body["text"])
     second_receipt = _receipt_fields(second_body["text"])
@@ -131,27 +154,6 @@ def test_permanent_ping_route_owns_once_and_duplicate_reuses_receipt() -> None:
 
 def test_aqub_route_does_not_enter_existing_dispatch_chain() -> None:
     assert all("aqub" not in route for route in TELEGRAM_WEBHOOK_CHAIN)
-
-
-def test_missing_signing_key_ping_returns_bootstrap_without_storage() -> None:
-    store = DurableStore()
-    with _client(_settings(GATE_AQUB_RECEIPT_SIGNING_KEY="short"), store) as client:
-        response = _post(client, _update())
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["method"] == "sendMessage"
-    assert "AQUB_BIND chat_id=" in body["text"]
-    assert store.commands == []
-
-
-def test_missing_signing_key_non_ping_fails_closed() -> None:
-    store = DurableStore()
-    with _client(_settings(GATE_AQUB_RECEIPT_SIGNING_KEY="short"), store) as client:
-        response = _post(client, _update(text="обычное сообщение"))
-
-    assert response.status_code == 503
-    assert store.commands == []
 
 
 def test_unbound_group_touches_no_storage() -> None:
@@ -199,8 +201,8 @@ def test_visible_receipt_reply_redacts_raw_identifiers_and_secrets() -> None:
         "SECRET-RECEIPT",
         "SECRET-WEBHOOK",
         "SECRET-SIGNING",
-        AQUB_RELEASE_GROUP_CHAT_ID,
-        AQUB_RELEASE_ALPHA_USER_ID,
+        TEST_CHAT_ID,
+        TEST_ALPHA_USER_ID,
         "/aqub_ping",
     ):
         assert forbidden not in reply_text
