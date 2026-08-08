@@ -63,6 +63,7 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
                     is_enabled=True,
                 )
             )
+            await session.flush()
             session.add(
                 TelegramReceipt(
                     id=receipt_id,
