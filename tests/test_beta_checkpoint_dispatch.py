@@ -4,11 +4,12 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 import httpx
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+
 
 from app.infrastructure.beta_checkpoint_dispatch import (
     BETA_CHECKPOINT_DISPATCH_EVENT,
