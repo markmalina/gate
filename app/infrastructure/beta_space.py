@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,6 +25,7 @@ from app.models.beta_space import (
     BetaConsentDeliveryModel,
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
+    BetaSpaceWorkItemModel,
 )
 from app.models.canonical import TransportConnector, Workspace
 
@@ -335,6 +336,24 @@ class SqlBetaSpaceStore:
                 state="pending",
             )
         )
+        self._add_work_item(
+            dedupe_key=f"consent-delivery:{delivery_id}",
+            receipt_id=uuid.UUID(source.receipt_id),
+            event_id=event_id,
+            workspace_id=row.workspace_id,
+            binding_id=row.id,
+            kind="consent_delivery",
+            now=source.received_at,
+        )
+        self._add_work_item(
+            dedupe_key=f"callback-delivery:{event_id}",
+            receipt_id=uuid.UUID(source.receipt_id),
+            event_id=event_id,
+            workspace_id=row.workspace_id,
+            binding_id=row.id,
+            kind="callback_delivery",
+            now=source.received_at,
+        )
         row.state = "consented"
         row.consented_at = source.received_at
         row.updated_at = source.received_at
@@ -380,6 +399,15 @@ class SqlBetaSpaceStore:
         if created is None:
             await self._session.rollback()
             return BetaSpaceReservation(False)
+        self._add_work_item(
+            dedupe_key=f"{source.media_kind}:{event_id}",
+            receipt_id=uuid.UUID(source.receipt_id),
+            event_id=event_id,
+            workspace_id=row.workspace_id,
+            binding_id=row.id,
+            kind="reply" if source.media_kind == "text" else "material",
+            now=source.received_at,
+        )
         await self._enqueue_checkpoint_dispatch(
             space_id=row.space_ref,
             accepted_sequence=checkpoint_sequence,
@@ -387,6 +415,91 @@ class SqlBetaSpaceStore:
         )
         await self._session.commit()
         return BetaSpaceReservation(True, str(event_id))
+
+    async def enqueue_candidate_consent(
+        self, *, receipt_id: str, now: datetime
+    ) -> bool:
+        """Persist one retryable owner-verification continuation for an unbound callback."""
+
+        parsed = uuid.UUID(receipt_id)
+        inserted = await self._session.scalar(
+            insert(BetaSpaceWorkItemModel)
+            .values(
+                id=uuid.uuid4(),
+                dedupe_key=f"candidate-consent:{parsed}",
+                receipt_id=parsed,
+                kind="candidate_consent",
+                state="pending",
+                attempt_count=0,
+                max_attempts=5,
+                next_attempt_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[BetaSpaceWorkItemModel.dedupe_key]
+            )
+            .returning(BetaSpaceWorkItemModel.id)
+        )
+        await self._session.commit()
+        return inserted is not None
+
+    async def enqueue_callback_delivery(
+        self, *, receipt_id: str, now: datetime
+    ) -> bool:
+        """Persist one callback acknowledgement when consent is declined."""
+
+        parsed = uuid.UUID(receipt_id)
+        inserted = await self._session.scalar(
+            insert(BetaSpaceWorkItemModel)
+            .values(
+                id=uuid.uuid4(),
+                dedupe_key=f"callback-delivery:{parsed}",
+                receipt_id=parsed,
+                kind="callback_delivery",
+                state="pending",
+                attempt_count=0,
+                max_attempts=5,
+                next_attempt_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[BetaSpaceWorkItemModel.dedupe_key]
+            )
+            .returning(BetaSpaceWorkItemModel.id)
+        )
+        await self._session.commit()
+        return inserted is not None
+
+    def _add_work_item(
+        self,
+        *,
+        dedupe_key: str,
+        receipt_id: uuid.UUID,
+        event_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        binding_id: uuid.UUID,
+        kind: str,
+        now: datetime,
+    ) -> None:
+        self._session.add(
+            BetaSpaceWorkItemModel(
+                id=uuid.uuid4(),
+                dedupe_key=dedupe_key,
+                receipt_id=receipt_id,
+                event_id=event_id,
+                workspace_id=workspace_id,
+                binding_id=binding_id,
+                kind=kind,
+                state="pending",
+                attempt_count=0,
+                max_attempts=5,
+                next_attempt_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
 
     async def _enqueue_checkpoint_dispatch(
         self, *, space_id: str, accepted_sequence: int, now: datetime
@@ -413,7 +526,13 @@ class SqlBetaSpaceStore:
                         BetaCheckpointDispatchIntentModel.accepted_sequence,
                         excluded.accepted_sequence,
                     ),
-                    "state": "pending",
+                    "state": case(
+                        (
+                            BetaCheckpointDispatchIntentModel.state == "sending",
+                            "sending",
+                        ),
+                        else_="pending",
+                    ),
                     "last_error_code": None,
                     "next_attempt_at": func.least(
                         BetaCheckpointDispatchIntentModel.next_attempt_at,

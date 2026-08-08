@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import csv
 import io
@@ -118,7 +119,8 @@ class OpenAIBetaMaterialExtractor:
         if job.media_kind == "voice":
             return await self._transcribe(content)
         mime_type = _resolved_mime(job)
-        deterministic = extract_document_text(
+        deterministic = await asyncio.to_thread(
+            extract_document_text,
             content=content,
             mime_type=mime_type,
             file_name=job.file_name,

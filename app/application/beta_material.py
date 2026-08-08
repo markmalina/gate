@@ -47,6 +47,7 @@ class BetaMaterialPhaseReservation:
     delivery_id: str | None = field(default=None, repr=False)
     telegram_chat_id: str | None = field(default=None, repr=False)
     candidate_text: str | None = field(default=None, repr=False)
+    resume_from: str = "receipt"
 
 
 class BetaMaterialStore(Protocol):
@@ -137,15 +138,42 @@ class ProcessBetaMaterial:
                 "beta_material_not_applicable",
             )
         job, receipt = reserved
-        if not receipt.created:
+        if receipt.resume_from == "terminal":
             return BetaMaterialResult(
                 BetaMaterialDisposition.DUPLICATE,
                 "beta_material_duplicate",
             )
-        if not await self._send(reservation=receipt, now=now):
+        if receipt.resume_from == "receipt":
+            if not receipt.created:
+                return BetaMaterialResult(
+                    BetaMaterialDisposition.DUPLICATE,
+                    "beta_material_duplicate",
+                )
+            if not await self._send(reservation=receipt, now=now):
+                return BetaMaterialResult(
+                    BetaMaterialDisposition.UNKNOWN,
+                    "beta_material_receipt_unknown",
+                )
+
+        if receipt.resume_from == "result":
+            result = await self._store.claim_phase(
+                job_id=job.job_id,
+                phase=BetaMaterialPhase.STRUCTURED_RESULT,
+                now=now,
+            )
+            if result is None:
+                return BetaMaterialResult(
+                    BetaMaterialDisposition.DUPLICATE,
+                    "beta_material_delivery_duplicate",
+                )
+            if not await self._send(reservation=result, now=now):
+                return BetaMaterialResult(
+                    BetaMaterialDisposition.UNKNOWN,
+                    "beta_material_result_unknown",
+                )
             return BetaMaterialResult(
-                BetaMaterialDisposition.UNKNOWN,
-                "beta_material_receipt_unknown",
+                BetaMaterialDisposition.SENT,
+                "beta_material_structured_result_sent",
             )
 
         claimed = await self._store.claim_processing(job_id=job.job_id, now=now)

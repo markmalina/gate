@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hmac
 import logging
-import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
@@ -14,16 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.api.telegram_ingress import get_telegram_receipt_store
-from app.application.beta_material import ProcessBetaMaterial
 from app.application.beta_space_intake import (
     BetaSpaceDisposition,
-    DeliverBetaSpaceConsent,
     ProcessBetaSpaceUpdate,
 )
 from app.application.beta_wedding_reply import (
     BetaWeddingContextMessage,
-    BetaWeddingReplyModel,
-    RespondToBetaWeddingMessage,
 )
 from app.application.telegram_processing import (
     AcceptTelegramReceiptCommand,
@@ -36,7 +31,6 @@ from app.core.config import Settings, get_settings
 from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.beta_candidate_binding import (
     extract_beta_callback_owner_candidate,
-    prepare_beta_katya_candidate_binding,
 )
 from app.infrastructure.beta_checkpoint_dispatch import (
     GitHubAppBetaCheckpointDispatcher,
@@ -44,23 +38,15 @@ from app.infrastructure.beta_checkpoint_dispatch import (
 from app.infrastructure.beta_checkpoint_dispatch_drain import (
     SessionFactoryBetaCheckpointDispatchDrain,
 )
-from app.infrastructure.beta_material import SqlBetaMaterialStore
 from app.infrastructure.beta_material_provider import (
-    OpenAIBetaMaterialExtractor,
-    OpenAIBetaMaterialStructurer,
     TelegramMaterialDownloadAdapter,
 )
 from app.infrastructure.beta_space import (
     SqlBetaSpaceStore,
     beta_space_production_ready,
 )
-from app.infrastructure.beta_wedding_binding import (
-    BETA_WEDDING_TENANT_REF,
-)
 from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
-    OpenAIResponsesBetaWeddingModel,
-    SqlBetaWeddingReplyStore,
 )
 from app.services.telegram import TelegramClient
 
@@ -145,41 +131,6 @@ async def beta_telegram_webhook(
             "ignored": True,
             "reason": "unsupported_update",
         }
-    beta_telegram = None
-    callback_owner = extract_beta_callback_owner_candidate(update)
-    if callback_owner is not None:
-        beta_telegram = get_beta_telegram_client(request)
-        member_response = await beta_telegram.get_chat_member(
-            chat_id=callback_owner.telegram_chat_id,
-            user_id=callback_owner.telegram_user_id,
-        )
-        member = member_response.get("result")
-        member_user = member.get("user") if isinstance(member, dict) else None
-        member_user_id = (
-            member_user.get("id") if isinstance(member_user, dict) else None
-        )
-        if (
-            not isinstance(member, dict)
-            or member.get("status") != "creator"
-            or not isinstance(member_user, dict)
-            or member_user.get("is_bot") is not False
-            or type(member_user_id) is not int
-            or str(member_user_id) != callback_owner.telegram_user_id
-        ):
-            return {
-                "ok": True,
-                "accepted": True,
-                "duplicate": acceptance.duplicate,
-                "ignored": True,
-                "reason": "callback_owner_not_exact",
-            }
-        await prepare_beta_katya_candidate_binding(
-            session,
-            workspace_key=settings.gate_workspace_id,
-            now=received_at,
-            telegram_chat_id=callback_owner.telegram_chat_id,
-            telegram_user_id=callback_owner.telegram_user_id,
-        )
     intake = await ProcessBetaSpaceUpdate(
         store=beta_space_store,
         production_ready=beta_space_production_ready(settings),
@@ -188,94 +139,33 @@ async def beta_telegram_webhook(
         receipt_id=acceptance.receipt_id,
         received_at=received_at,
     )
-    callback_delivery = None
-    if intake.disposition in {
-        BetaSpaceDisposition.CONSENT_ACCEPTED,
-        BetaSpaceDisposition.CONSENT_DECLINED,
-    }:
-        beta_telegram = get_beta_telegram_client(request)
-        callback_delivery = await _settle_beta_consent_callback(
-            telegram=beta_telegram,
-            update=update,
-            disposition=intake.disposition,
-        )
-    delivery = None
-    if intake.delivery_id is not None:
-        if beta_telegram is None:
-            beta_telegram = get_beta_telegram_client(request)
-        delivery = await DeliverBetaSpaceConsent(
-            store=beta_space_store,
-            telegram=beta_telegram,
-            enabled=beta_space_production_ready(settings),
-        ).execute(delivery_id=intake.delivery_id, now=received_at)
-
-    wedding_reply = None
-    if (
-        intake.disposition is BetaSpaceDisposition.FACT_ACCEPTED
-        and intake.tenant_ref == BETA_WEDDING_TENANT_REF
-    ):
-        if beta_telegram is None:
-            beta_telegram = get_beta_telegram_client(request)
-        http_client = get_beta_model_http_client(request)
-        if _is_beta_material_message(update):
-            downloader = TelegramMaterialDownloadAdapter(
-                credential=settings.telegram_beta_bot_token.get_secret_value(),
-                api_base_url=os.getenv(
-                    "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
-                ),
-                client=http_client,
-            )
-            material_result = await ProcessBetaMaterial(
-                store=SqlBetaMaterialStore(session),
-                telegram=_BetaMaterialTelegram(beta_telegram, downloader),
-                extractor=OpenAIBetaMaterialExtractor(
-                    api_key=settings.openai_api_key.get_secret_value(),
-                    api_base_url=settings.openai_api_base_url,
-                    client=http_client,
-                    vision_model=settings.gate_beta_model_profile,
-                ),
-                structurer=OpenAIBetaMaterialStructurer(
-                    api_key=settings.openai_api_key.get_secret_value(),
-                    api_base_url=settings.openai_api_base_url,
-                    model=settings.gate_beta_model_profile,
-                    client=http_client,
-                ),
-            ).execute(receipt_id=acceptance.receipt_id, now=received_at)
-            wedding_reply = material_result.disposition.value
-        else:
-            try:
-                model: BetaWeddingReplyModel = OpenAIResponsesBetaWeddingModel(
-                    http_client=http_client,
-                    api_key=settings.openai_api_key.get_secret_value(),
-                    api_base_url=settings.openai_api_base_url,
-                    model=settings.gate_beta_model_profile,
-                    max_output_tokens=settings.gate_beta_model_max_output_tokens,
-                    timeout_seconds=settings.gate_beta_model_timeout_seconds,
-                )
-            except BetaWeddingModelError:
-                model = _UnavailableBetaWeddingModel()
-            reply_result = await RespondToBetaWeddingMessage(
-                store=SqlBetaWeddingReplyStore(session),
-                model=model,
-                telegram=beta_telegram,
-            ).execute(
+    candidate_queued = False
+    if intake.disposition is BetaSpaceDisposition.UNBOUND_CHAT:
+        callback_owner = extract_beta_callback_owner_candidate(update)
+        if callback_owner is not None:
+            candidate_queued = await beta_space_store.enqueue_candidate_consent(
                 receipt_id=acceptance.receipt_id,
                 now=received_at,
             )
-            wedding_reply = reply_result.disposition.value
-    if intake.disposition in {
-        BetaSpaceDisposition.CONSENT_ACCEPTED,
-        BetaSpaceDisposition.FACT_ACCEPTED,
-    }:
-        await _drain_beta_checkpoint_dispatch(request, settings)
+    elif intake.disposition is BetaSpaceDisposition.CONSENT_DECLINED:
+        candidate_queued = await beta_space_store.enqueue_callback_delivery(
+            receipt_id=acceptance.receipt_id,
+            now=received_at,
+        )
     return {
         "ok": True,
         "accepted": True,
         "duplicate": acceptance.duplicate,
         "space_processing": intake.disposition.value,
-        "callback_delivery": callback_delivery,
-        "delivery": delivery,
-        "wedding_reply": wedding_reply,
+        "work_queued": (
+            candidate_queued
+            or intake.disposition
+            in {
+                BetaSpaceDisposition.CONSENT_ACCEPTED,
+                BetaSpaceDisposition.CONSENT_DECLINED,
+                BetaSpaceDisposition.FACT_ACCEPTED,
+            }
+        ),
     }
 
 

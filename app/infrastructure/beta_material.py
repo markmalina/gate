@@ -69,9 +69,15 @@ class SqlBetaMaterialStore:
             .with_for_update()
         )
         if existing is not None:
+            resume_from = {
+                "receipt_sent": "processing",
+                "processing": "processing",
+                "structured": "result",
+                "failed": "result",
+            }.get(existing.state, "terminal")
             await self._session.rollback()
             return _job(existing, binding.telegram_chat_id), (
-                BetaMaterialPhaseReservation(False)
+                BetaMaterialPhaseReservation(False, resume_from=resume_from)
             )
         projection = _material_projection(
             receipt.payload,
@@ -122,7 +128,7 @@ class SqlBetaMaterialStore:
         self, *, job_id: str, now: datetime
     ) -> BetaMaterialJob | None:
         job = await self._job_locked(job_id)
-        if job is None or job.state != "receipt_sent":
+        if job is None or job.state not in {"receipt_sent", "processing"}:
             await self._session.rollback()
             return None
         chat_id = await self._active_chat(job.binding_id)
@@ -209,7 +215,7 @@ class SqlBetaMaterialStore:
         job = await self._job_locked(job_id)
         if (
             job is None
-            or job.state != "structured"
+            or job.state not in {"structured", "failed"}
             or phase is not BetaMaterialPhase.STRUCTURED_RESULT
         ):
             await self._session.rollback()

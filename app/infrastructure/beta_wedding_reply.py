@@ -160,7 +160,7 @@ class SqlBetaWeddingReplyStore:
             .where(BetaSpaceReplyModel.event_id == event.id)
             .with_for_update()
         )
-        if existing is not None:
+        if existing is not None and existing.state != "generating":
             await self._session.rollback()
             return BetaWeddingReplyReservation(created=False)
 
@@ -177,21 +177,22 @@ class SqlBetaWeddingReplyStore:
             current_event_id=event.id,
             current_text=current_text or "",
         )
-        reply_id = uuid.uuid4()
+        reply_id = existing.id if existing is not None else uuid.uuid4()
         request_sha256 = hashlib.sha256(
             f"{binding.id}:{event.id}:{event.payload_sha256}".encode()
         ).hexdigest()
-        self._session.add(
-            BetaSpaceReplyModel(
-                id=reply_id,
-                workspace_id=binding.workspace_id,
-                binding_id=binding.id,
-                event_id=event.id,
-                request_sha256=request_sha256,
-                state="generating",
-                reserved_at=now,
+        if existing is None:
+            self._session.add(
+                BetaSpaceReplyModel(
+                    id=reply_id,
+                    workspace_id=binding.workspace_id,
+                    binding_id=binding.id,
+                    event_id=event.id,
+                    request_sha256=request_sha256,
+                    state="generating",
+                    reserved_at=now,
+                )
             )
-        )
         await self._session.commit()
         return BetaWeddingReplyReservation(
             created=True,

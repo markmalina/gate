@@ -17,6 +17,13 @@ from app.infrastructure.beta_checkpoint_dispatch import (
 from app.models.beta_space import BetaCheckpointDispatchIntentModel
 
 MAX_BACKOFF_SECONDS = 900
+DISPATCH_LEASE = timedelta(minutes=2)
+_AMBIGUOUS_CODES = frozenset(
+    {
+        "beta_checkpoint_dispatch_unavailable",
+        "beta_checkpoint_dispatch_response_oversized",
+    }
+)
 
 
 class BetaCheckpointDispatcher(Protocol):
@@ -52,8 +59,24 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             intent = await session.scalar(
                 select(BetaCheckpointDispatchIntentModel)
                 .where(
-                    BetaCheckpointDispatchIntentModel.state == "pending",
-                    BetaCheckpointDispatchIntentModel.next_attempt_at <= observed_at,
+                    (
+                        (
+                            BetaCheckpointDispatchIntentModel.state == "pending"
+                        )
+                        & (
+                            BetaCheckpointDispatchIntentModel.next_attempt_at
+                            <= observed_at
+                        )
+                    )
+                    | (
+                        (
+                            BetaCheckpointDispatchIntentModel.state == "sending"
+                        )
+                        & (
+                            BetaCheckpointDispatchIntentModel.lease_expires_at
+                            <= observed_at
+                        )
+                    ),
                     BetaCheckpointDispatchIntentModel.accepted_sequence
                     > BetaCheckpointDispatchIntentModel.dispatched_sequence,
                 )
@@ -67,8 +90,33 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             )
             if intent is None:
                 return BetaCheckpointDispatchDrainResult("idle")
+            if intent.state == "sending":
+                intent.state = "unknown"
+                intent.lease_expires_at = None
+                intent.last_error_code = "beta_checkpoint_dispatch_lease_expired"
+                intent.settled_at = observed_at
+                intent.updated_at = observed_at
+                return BetaCheckpointDispatchDrainResult(
+                    "unknown",
+                    intent.space_id,
+                    intent.accepted_sequence,
+                    intent.last_error_code,
+                )
+            if intent.attempt_count >= intent.max_attempts:
+                intent.state = "failed"
+                intent.lease_expires_at = None
+                intent.last_error_code = "beta_checkpoint_dispatch_attempts_exhausted"
+                intent.settled_at = observed_at
+                intent.updated_at = observed_at
+                return BetaCheckpointDispatchDrainResult(
+                    "failed",
+                    intent.space_id,
+                    intent.accepted_sequence,
+                    intent.last_error_code,
+                )
             intent.state = "sending"
             intent.attempt_count += 1
+            intent.lease_expires_at = observed_at + DISPATCH_LEASE
             intent.updated_at = observed_at
             space_id = intent.space_id
             accepted_sequence = intent.accepted_sequence
@@ -80,15 +128,24 @@ class SessionFactoryBetaCheckpointDispatchDrain:
                 accepted_sequence=accepted_sequence,
             )
         except asyncio.CancelledError:
-            await self._defer(
+            await self._unknown(
                 space_id=space_id,
                 accepted_sequence=accepted_sequence,
-                attempt_count=attempt_count,
                 error_code="beta_checkpoint_dispatch_cancelled",
                 now=observed_at,
             )
             raise
         except BetaCheckpointDispatchError as exc:
+            if exc.code in _AMBIGUOUS_CODES:
+                await self._unknown(
+                    space_id=space_id,
+                    accepted_sequence=accepted_sequence,
+                    error_code=exc.code,
+                    now=observed_at,
+                )
+                return BetaCheckpointDispatchDrainResult(
+                    "unknown", space_id, accepted_sequence, exc.code
+                )
             await self._defer(
                 space_id=space_id,
                 accepted_sequence=accepted_sequence,
@@ -100,15 +157,14 @@ class SessionFactoryBetaCheckpointDispatchDrain:
                 "deferred", space_id, accepted_sequence, exc.code
             )
         except Exception:
-            await self._defer(
+            await self._unknown(
                 space_id=space_id,
                 accepted_sequence=accepted_sequence,
-                attempt_count=attempt_count,
                 error_code="beta_checkpoint_dispatch_unavailable",
                 now=observed_at,
             )
             return BetaCheckpointDispatchDrainResult(
-                "deferred",
+                "unknown",
                 space_id,
                 accepted_sequence,
                 "beta_checkpoint_dispatch_unavailable",
@@ -152,6 +208,10 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             )
             intent.last_error_code = None
             intent.next_attempt_at = observed_at
+            intent.lease_expires_at = None
+            intent.settled_at = (
+                observed_at if intent.state == "sent" else None
+            )
             intent.updated_at = observed_at
         return BetaCheckpointDispatchDrainResult(
             "sent", space_id, accepted_sequence
@@ -176,6 +236,29 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             if intent is None:
                 return
             intent.state = "pending"
+            intent.lease_expires_at = None
             intent.last_error_code = error_code
             intent.next_attempt_at = now + timedelta(seconds=delay)
+            intent.updated_at = now
+
+    async def _unknown(
+        self,
+        *,
+        space_id: str,
+        accepted_sequence: int,
+        error_code: str,
+        now: datetime,
+    ) -> None:
+        async with self._sessions.begin() as session:
+            intent = await session.get(
+                BetaCheckpointDispatchIntentModel,
+                space_id,
+                with_for_update=True,
+            )
+            if intent is None or intent.accepted_sequence < accepted_sequence:
+                return
+            intent.state = "unknown"
+            intent.lease_expires_at = None
+            intent.last_error_code = error_code
+            intent.settled_at = now
             intent.updated_at = now

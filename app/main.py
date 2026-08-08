@@ -56,6 +56,7 @@ from app.services.telegram_become_webhook import (
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
+from app.worker.beta_space import run_beta_space_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.telegram_processing import run_telegram_worker_loop
@@ -156,6 +157,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reply_sequence_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
+                beta_space_task: asyncio.Task[None] | None = None
                 try:
                     # Neutral process-wide name for shared outbound HTTP. Keep the
                     # Beta alias until its ingress is migrated independently.
@@ -193,6 +195,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 session_factory=database_runtime.session_factory,
                             )
                         )
+                    if getattr(settings, "gate_beta_connector_enabled", False):
+                        beta_space_task = asyncio.create_task(
+                            run_beta_space_worker_loop(
+                                settings=settings,
+                                sessions=database_runtime.session_factory,
+                                telegram=_app.state.beta_telegram_client,
+                                http_client=http_client,
+                            )
+                        )
                     if telegram_worker_enabled:
                         worker_task = asyncio.create_task(
                             run_telegram_worker_loop(
@@ -219,6 +230,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     yield
                 finally:
                     try:
+                        if beta_space_task is not None:
+                            if not beta_space_task.done():
+                                beta_space_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await beta_space_task
                         if alpha_transcription_task is not None:
                             if not alpha_transcription_task.done():
                                 alpha_transcription_task.cancel()
