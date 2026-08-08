@@ -79,9 +79,20 @@ def _decode(token: str, settings: Settings) -> dict[str, Any]:
 
 
 def _authorize_claims(claims: dict[str, Any], settings: Settings) -> None:
+    repository_owner, separator, repository_name = (
+        settings.gate_beta_checkpoint_oidc_repository.partition("/")
+    )
+    if (
+        separator != "/"
+        or not repository_owner
+        or not repository_name
+        or "/" in repository_name
+    ):
+        raise GitHubOidcError("beta_checkpoint_oidc_configuration_invalid")
     expected_sub = (
-        f"repo:markmalina@{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
-        f"/beta@{settings.gate_beta_checkpoint_oidc_repository_id}"
+        f"repo:{repository_owner}@"
+        f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
+        f"/{repository_name}@{settings.gate_beta_checkpoint_oidc_repository_id}"
         f":ref:{settings.gate_beta_checkpoint_oidc_ref}"
     )
     expected = {
