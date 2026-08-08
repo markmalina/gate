@@ -58,20 +58,29 @@ class AQUBRuntimeClient(Protocol):
 
 
 class HttpAQUBRuntimeClient:
-    def __init__(self, *, base_url: str, timeout_seconds: float = 8.0) -> None:
+    """AQUB runtime transport backed by the process-owned HTTP connection pool."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        http_client: httpx.AsyncClient,
+        timeout_seconds: float = 8.0,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._http_client = http_client
         self._timeout_seconds = timeout_seconds
 
     async def post_envelope(self, *, raw_body: bytes, signature: str) -> JsonObject:
-        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.post(
-                f"{self._base_url}{AQUB_RUNTIME_INBOUND_PATH}",
-                content=raw_body,
-                headers={
-                    "content-type": "application/json",
-                    "x-aqub-signature": signature,
-                },
-            )
+        response = await self._http_client.post(
+            f"{self._base_url}{AQUB_RUNTIME_INBOUND_PATH}",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "x-aqub-signature": signature,
+            },
+            timeout=self._timeout_seconds,
+        )
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(f"aqub_runtime_http_{response.status_code}")
         value: Any = response.json()

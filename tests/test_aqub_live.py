@@ -20,6 +20,10 @@ from app.application.aqub_s0_preflight import (
 
 SIGNING_KEY = b"0123456789abcdef0123456789abcdef-live-test"
 READY_AT = datetime(2026, 8, 7, 13, 17, tzinfo=UTC)
+TEST_CHAT_ID = "-1001234567890"
+TEST_OTHER_CHAT_ID = "-1001234567891"
+TEST_ALPHA_ID = "123456789"
+TEST_CANDIDATE_ID = "987654321"
 
 
 class Store:
@@ -72,9 +76,9 @@ def binding() -> AQUBPreflightBinding:
     return AQUBPreflightBinding(
         enabled=True,
         bot_username="@AQubAgentBot",
-        group_chat_id="-5052983997",
+        group_chat_id=TEST_CHAT_ID,
         ace_user_id="__unbound_ace__",
-        alpha_user_id="7819816320",
+        alpha_user_id=TEST_ALPHA_ID,
         ready_at=READY_AT,
         receipt_signing_key=SIGNING_KEY,
     )
@@ -84,8 +88,8 @@ def inbound(
     *,
     text: str = "/status",
     update_id: int = 9001,
-    actor_id: str = "7819816320",
-    chat_id: str = "-5052983997",
+    actor_id: str = TEST_ALPHA_ID,
+    chat_id: str = TEST_CHAT_ID,
     include_program_prompt_reply: bool = True,
 ) -> AQUBPreflightInbound:
     occurred = READY_AT + timedelta(seconds=1)
@@ -149,8 +153,8 @@ async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -
     assert envelope["reply_context"] == "program_prompt"
     serialized = raw.decode()
     forbidden_values = (
-        "-5052983997",
-        "7819816320",
+        TEST_CHAT_ID,
+        TEST_ALPHA_ID,
         '"message_id":77',
         '"message_id":66',
     )
@@ -180,10 +184,9 @@ async def test_exact_live_replay_reuses_gate_receipt_and_same_opaque_refs() -> N
 async def test_unbound_group_actor_is_forwarded_as_opaque_candidate_for_ace_claim() -> None:
     store = Store()
     runtime = Runtime()
-    candidate_id = "123456789"
     value = inbound(
         text="/ace_join_abcdef123456",
-        actor_id=candidate_id,
+        actor_id=TEST_CANDIDATE_ID,
         include_program_prompt_reply=False,
     )
 
@@ -200,7 +203,7 @@ async def test_unbound_group_actor_is_forwarded_as_opaque_candidate_for_ace_clai
     envelope = json.loads(runtime.raw_bodies[0])
     assert envelope["role"] == "candidate"
     assert envelope["actor_ref"].startswith("actor:")
-    assert candidate_id not in runtime.raw_bodies[0].decode()
+    assert TEST_CANDIDATE_ID not in runtime.raw_bodies[0].decode()
 
 
 @pytest.mark.anyio
@@ -210,7 +213,7 @@ async def test_claimed_ace_command_family_can_continue_as_candidate_transport() 
         runtime = Runtime()
         value = inbound(
             text=text,
-            actor_id="123456789",
+            actor_id=TEST_CANDIDATE_ID,
             update_id=9002,
             include_program_prompt_reply=False,
         )
@@ -227,7 +230,7 @@ async def test_program_prompt_reply_from_candidate_is_forwarded() -> None:
     runtime = Runtime()
     value = inbound(
         text="Название программы: Тест",
-        actor_id="123456789",
+        actor_id=TEST_CANDIDATE_ID,
         update_id=9003,
         include_program_prompt_reply=True,
     )
@@ -246,7 +249,7 @@ async def test_ordinary_unbound_group_chatter_is_not_forwarded_or_stored() -> No
     runtime = Runtime()
     value = inbound(
         text="обычное сообщение в группе",
-        actor_id="123456789",
+        actor_id=TEST_CANDIDATE_ID,
         update_id=9004,
         include_program_prompt_reply=False,
     )
@@ -265,8 +268,8 @@ async def test_actor_outside_pinned_group_is_not_forwarded_or_stored() -> None:
     runtime = Runtime()
     value = inbound(
         text="/ace_join_abcdef123456",
-        actor_id="123456789",
-        chat_id="-5052983998",
+        actor_id=TEST_CANDIDATE_ID,
+        chat_id=TEST_OTHER_CHAT_ID,
         include_program_prompt_reply=False,
     )
 

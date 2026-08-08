@@ -13,11 +13,12 @@ from app.infrastructure.aqub_live import (
     AQUBLiveDeliveryService,
     ParsedAQUBDelivery,
 )
-from app.infrastructure.aqub_s0_preflight import AQUB_RELEASE_GROUP_CHAT_ID
 from app.models.aqub_live import AQUBLiveDelivery
 from app.services.telegram import TelegramApiError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+TEST_CHAT_ID = "-1001234567890"
 
 
 @pytest.fixture
@@ -103,11 +104,20 @@ def _command(
     return ParsedAQUBDelivery(
         command_id=command_id,
         idempotency_key=key,
-        chat_ref=_opaque(signing_key, "chat", AQUB_RELEASE_GROUP_CHAT_ID),
+        chat_ref=_opaque(signing_key, "chat", TEST_CHAT_ID),
         assignment_ref="assignment:opaque",
         step_ref="step:opaque",
         text=text_value,
         request_sha256=hashlib.sha256(raw).hexdigest(),
+    )
+
+
+def _service(session, telegram, signing_key: bytes) -> AQUBLiveDeliveryService:
+    return AQUBLiveDeliveryService(
+        session=session,
+        telegram=telegram,
+        signing_key=signing_key,
+        raw_chat_id=TEST_CHAT_ID,
     )
 
 
@@ -146,17 +156,9 @@ async def test_live_delivery_sends_once_and_exact_replay_returns_same_receipts()
         command = _command(signing_key)
 
         async with sessions() as session:
-            first = await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+            first = await _service(session, telegram, signing_key).deliver(command)
         async with sessions() as session:
-            duplicate = await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+            duplicate = await _service(session, telegram, signing_key).deliver(command)
 
         assert first["ack"]["status"] == "committed"
         assert first["terminal"]["status"] == "sent"
@@ -171,7 +173,7 @@ async def test_live_delivery_sends_once_and_exact_replay_returns_same_receipts()
             == first["ack"]["command_receipt_ref"]
         )
         assert duplicate["terminal"] == first["terminal"]
-        assert telegram.calls == [(AQUB_RELEASE_GROUP_CHAT_ID, command.text)]
+        assert telegram.calls == [(TEST_CHAT_ID, command.text)]
     finally:
         await _drop_schema(schema, admin_engine, engine)
 
@@ -190,17 +192,9 @@ async def test_definitive_telegram_failure_retries_exact_command_and_then_sends(
         command = _command(signing_key, key="retryable-key")
 
         async with sessions() as session:
-            failed = await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+            failed = await _service(session, telegram, signing_key).deliver(command)
         async with sessions() as session:
-            retried = await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+            retried = await _service(session, telegram, signing_key).deliver(command)
 
         assert failed["ack"]["status"] == "committed"
         assert failed["terminal"]["status"] == "failed"
@@ -226,17 +220,9 @@ async def test_unknown_send_outcome_is_not_retried_on_exact_replay() -> None:
         command = _command(signing_key, key="unknown-key")
 
         async with sessions() as session:
-            first = await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+            first = await _service(session, telegram, signing_key).deliver(command)
         async with sessions() as session:
-            duplicate = await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+            duplicate = await _service(session, telegram, signing_key).deliver(command)
 
         assert first["terminal"]["status"] == "failed"
         assert first["terminal"]["reason"] == "send_outcome_unknown"
@@ -262,18 +248,10 @@ async def test_live_delivery_mutated_replay_fails_closed_without_second_send() -
         mutated = _command(signing_key, key="stable-key", text_value="Changed")
 
         async with sessions() as session:
-            await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(original)
+            await _service(session, telegram, signing_key).deliver(original)
         async with sessions() as session:
             with pytest.raises(AQUBLiveDeliveryError) as raised:
-                await AQUBLiveDeliveryService(
-                    session=session,
-                    telegram=telegram,
-                    signing_key=signing_key,
-                ).deliver(mutated)
+                await _service(session, telegram, signing_key).deliver(mutated)
 
         assert raised.value.code == "aqub_delivery_mutated_replay"
         assert raised.value.status_code == 409

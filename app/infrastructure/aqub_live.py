@@ -16,7 +16,6 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.aqub_live import AQUB_DELIVERY_COMMAND_SCHEMA
-from app.infrastructure.aqub_s0_preflight import AQUB_RELEASE_GROUP_CHAT_ID
 from app.models.aqub_live import AQUBLiveDelivery
 from app.services.telegram import TelegramApiError, TelegramClient
 
@@ -56,7 +55,12 @@ def verify_aqub_signature(*, raw_body: bytes, signature: str, signing_key: bytes
         raise AQUBLiveDeliveryError("aqub_bad_signature", status_code=401)
 
 
-def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDelivery:
+def parse_aqub_delivery(
+    raw_body: bytes,
+    *,
+    signing_key: bytes,
+    raw_chat_id: str,
+) -> ParsedAQUBDelivery:
     if len(raw_body) > 64 * 1024:
         raise AQUBLiveDeliveryError("aqub_delivery_too_large", status_code=413)
     try:
@@ -82,7 +86,9 @@ def parse_aqub_delivery(raw_body: bytes, *, signing_key: bytes) -> ParsedAQUBDel
         raise AQUBLiveDeliveryError("aqub_delivery_bad_idempotency_key")
     if not isinstance(chat_ref, str) or not chat_ref:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_chat_ref")
-    expected_chat_ref = _opaque_ref(signing_key, "chat", AQUB_RELEASE_GROUP_CHAT_ID)
+    if not raw_chat_id:
+        raise AQUBLiveDeliveryError("aqub_delivery_binding_missing", status_code=503)
+    expected_chat_ref = _opaque_ref(signing_key, "chat", raw_chat_id)
     if chat_ref != expected_chat_ref:
         raise AQUBLiveDeliveryError("aqub_delivery_chat_mismatch", status_code=403)
     if not isinstance(assignment_ref, str) or not assignment_ref:
@@ -109,8 +115,10 @@ class AQUBLiveDeliveryService:
         session: AsyncSession,
         telegram: TelegramClient,
         signing_key: bytes,
-        raw_chat_id: str = AQUB_RELEASE_GROUP_CHAT_ID,
+        raw_chat_id: str,
     ) -> None:
+        if not raw_chat_id:
+            raise ValueError("AQUB raw chat binding is required")
         self._session = session
         self._telegram = telegram
         self._signing_key = signing_key

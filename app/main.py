@@ -159,6 +159,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
                 try:
+                    # Neutral process-wide name for shared outbound HTTP. Keep the
+                    # Beta alias until its ingress is migrated independently.
+                    _app.state.http_client = http_client
                     _app.state.beta_model_http_client = http_client
                     api_base_url = os.getenv(
                         "TELEGRAM_API_BASE_URL",
@@ -252,6 +255,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                             delattr(_app.state, "beta_telegram_client")
                         if hasattr(_app.state, "beta_model_http_client"):
                             delattr(_app.state, "beta_model_http_client")
+                        if hasattr(_app.state, "http_client"):
+                            delattr(_app.state, "http_client")
         finally:
             delattr(_app.state, "database_runtime")
             delattr(_app.state, "worker_health_registry")

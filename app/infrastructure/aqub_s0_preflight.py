@@ -1,16 +1,21 @@
-"""Gate persistence and permanent AQUB production binding."""
+"""Gate persistence and durable AQUB production installation binding."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from uuid import uuid4
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+from uuid import UUID, uuid4
 
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.aqub_s0_preflight import (
     AQUB_BOT_USERNAME,
+    AQUB_PING_COMMAND,
     AQUBDurableAcceptance,
     AQUBPreflightBinding,
     AQUBPreflightCommand,
@@ -19,16 +24,19 @@ from app.application.aqub_s0_preflight import (
 )
 from app.application.telegram_processing import canonical_telegram_payload_digest
 from app.core.config import Settings
+from app.models.aqub import AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 AQUB_PREFLIGHT_BOT_KEY = "telegram_aqub_preflight"
+AQUB_UNBOUND_ACE_USER_ID = "__unbound_ace__"
 
-# Permanent production binding, pinned from owner-confirmed live evidence on 2026-08-07.
-# Provider identifiers stay inside Gate. ACE remains unbound until a real ACE is enrolled.
-AQUB_RELEASE_GROUP_CHAT_ID = "-5052983997"
-AQUB_RELEASE_ALPHA_USER_ID = "7819816320"
-AQUB_RELEASE_ACE_USER_ID = "__unbound_ace__"
-AQUB_RELEASE_READY_AT = datetime(2026, 8, 7, 13, 17, tzinfo=UTC)
+
+@dataclass(frozen=True, slots=True)
+class AQUBBindingEvidence:
+    receipt_id: UUID
+    group_chat_id: str
+    alpha_user_id: str
+    bound_at: datetime
 
 
 class SqlAQUBPreflightReceiptStore:
@@ -104,19 +112,142 @@ class SqlAQUBPreflightReceiptStore:
         )
 
 
-def build_aqub_s0_binding(settings: Settings) -> AQUBPreflightBinding:
-    """Return the single permanent owner-confirmed AQUB production binding."""
+def aqub_receipt_signing_key(settings: Settings) -> bytes:
+    """Return the permanent AQUB transport signing key without provider IDs."""
 
-    signing_secret = getattr(settings, "gate_aqub_receipt_signing_key", None)
-    if signing_secret is None:
+    secret: object = getattr(settings, "gate_aqub_receipt_signing_key", None)
+    if not isinstance(secret, SecretStr):
         raise ValueError("AQUB signing key is unavailable")
-    signing_key = signing_secret.get_secret_value()
+    signing_key = secret.get_secret_value().strip()
+    encoded = signing_key.encode()
+    if len(encoded) < 32:
+        raise ValueError("AQUB signing key is unavailable")
+    return encoded
+
+
+def _message_mapping(payload: Any) -> Mapping[str, Any] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    message = payload.get("message")
+    return message if isinstance(message, Mapping) else None
+
+
+def binding_evidence_from_receipt(receipt: TelegramReceipt) -> AQUBBindingEvidence | None:
+    """Extract owner-confirmed binding evidence from a historical accepted ping."""
+
+    if (
+        receipt.bot_key != AQUB_PREFLIGHT_BOT_KEY
+        or receipt.status != TelegramReceiptStatus.PROCESSED.value
+        or receipt.processed_at is None
+    ):
+        return None
+    message = _message_mapping(receipt.payload)
+    if message is None:
+        return None
+    text = message.get("text")
+    if not isinstance(text, str):
+        return None
+    token = text.strip().split(maxsplit=1)[0] if text.strip() else ""
+    if token.split("@", maxsplit=1)[0] != AQUB_PING_COMMAND:
+        return None
+
+    chat = message.get("chat")
+    sender = message.get("from")
+    if not isinstance(chat, Mapping) or not isinstance(sender, Mapping):
+        return None
+    if chat.get("type") not in {"group", "supergroup"} or sender.get("is_bot") is True:
+        return None
+    chat_id = chat.get("id")
+    sender_id = sender.get("id")
+    if (
+        not isinstance(chat_id, int)
+        or isinstance(chat_id, bool)
+        or not isinstance(sender_id, int)
+        or isinstance(sender_id, bool)
+    ):
+        return None
+    return AQUBBindingEvidence(
+        receipt_id=receipt.id,
+        group_chat_id=str(chat_id),
+        alpha_user_id=str(sender_id),
+        bound_at=receipt.processed_at,
+    )
+
+
+async def _stored_binding(
+    session: AsyncSession,
+) -> AQUBInstallationBinding | None:
+    value = await session.scalar(
+        select(AQUBInstallationBinding).where(
+            AQUBInstallationBinding.bot_key == AQUB_PREFLIGHT_BOT_KEY
+        )
+    )
+    return value if isinstance(value, AQUBInstallationBinding) else None
+
+
+async def _latest_historical_evidence(
+    session: AsyncSession,
+) -> AQUBBindingEvidence | None:
+    receipts = (
+        await session.scalars(
+            select(TelegramReceipt)
+            .where(
+                TelegramReceipt.bot_key == AQUB_PREFLIGHT_BOT_KEY,
+                TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
+                TelegramReceipt.processed_at.is_not(None),
+            )
+            .order_by(TelegramReceipt.processed_at.desc(), TelegramReceipt.id.desc())
+            .limit(64)
+        )
+    ).all()
+    for receipt in receipts:
+        evidence = binding_evidence_from_receipt(receipt)
+        if evidence is not None:
+            return evidence
+    return None
+
+
+async def load_aqub_production_binding(
+    session: AsyncSession,
+    settings: Settings,
+) -> AQUBPreflightBinding:
+    """Load or atomically bootstrap the permanent AQUB installation binding.
+
+    Bootstrap is allowed only from a historical terminal AQUB receipt. Such a
+    receipt could exist only after the former exclusive binding had already
+    accepted the provider update, so a new arbitrary actor/group cannot claim
+    ownership merely by being the first request after deployment.
+    """
+
+    signing_key = aqub_receipt_signing_key(settings)
+    stored = await _stored_binding(session)
+    if stored is None:
+        evidence = await _latest_historical_evidence(session)
+        if evidence is None:
+            raise ValueError("AQUB installation binding evidence is unavailable")
+        await session.execute(
+            insert(AQUBInstallationBinding)
+            .values(
+                id=uuid4(),
+                bot_key=AQUB_PREFLIGHT_BOT_KEY,
+                group_chat_id=evidence.group_chat_id,
+                alpha_user_id=evidence.alpha_user_id,
+                evidence_receipt_id=evidence.receipt_id,
+                bound_at=evidence.bound_at,
+            )
+            .on_conflict_do_nothing()
+        )
+        await session.commit()
+        stored = await _stored_binding(session)
+    if stored is None:
+        raise RuntimeError("AQUB installation binding bootstrap failed")
+
     return AQUBPreflightBinding(
         enabled=True,
         bot_username=AQUB_BOT_USERNAME,
-        group_chat_id=AQUB_RELEASE_GROUP_CHAT_ID,
-        ace_user_id=AQUB_RELEASE_ACE_USER_ID,
-        alpha_user_id=AQUB_RELEASE_ALPHA_USER_ID,
-        ready_at=AQUB_RELEASE_READY_AT,
-        receipt_signing_key=signing_key.encode(),
+        group_chat_id=stored.group_chat_id,
+        ace_user_id=AQUB_UNBOUND_ACE_USER_ID,
+        alpha_user_id=stored.alpha_user_id,
+        ready_at=stored.bound_at,
+        receipt_signing_key=signing_key,
     )
