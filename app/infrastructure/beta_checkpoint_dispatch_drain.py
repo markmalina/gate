@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.infrastructure.beta_checkpoint_dispatch import (
     BetaCheckpointDispatchEnvelope,
     BetaCheckpointDispatchError,
 )
 from app.models.beta_space import BetaCheckpointDispatchIntentModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 MAX_BACKOFF_SECONDS = 900
 DISPATCH_LEASE = timedelta(minutes=2)
