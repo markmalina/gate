@@ -28,6 +28,7 @@ JsonObject = dict[str, Any]
 class AQUBPreflightRole(StrEnum):
     ACE = "ace"
     ALPHA = "alpha"
+    CANDIDATE = "candidate"
 
 
 class AQUBReceiptStatus(StrEnum):
