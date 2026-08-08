@@ -7,11 +7,10 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
-
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
-BETA_ALLOWED_UPDATES = ["message", "my_chat_member"]
+BETA_ALLOWED_UPDATES = ["message", "my_chat_member", "callback_query"]
 
 
 def build_beta_public_webhook_url(environ: Mapping[str, str]) -> str | None:

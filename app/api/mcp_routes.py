@@ -94,25 +94,9 @@ from app.infrastructure.beta_checkpoint_export import (
     BetaCheckpointExportError,
     export_beta_space_checkpoint,
 )
-from app.infrastructure.beta_candidate_binding import (
-    BETA_CONSENT_PROMPT,
-    BETA_CONSENT_REPLY_MARKUP,
-    BetaCandidateBindingError,
-    BetaCandidateBindingResult,
-    extract_beta_katya_creator,
-    find_beta_katya_group_candidates,
-    prepare_beta_katya_candidate_binding,
-    revoke_beta_katya_binding_after_unknown_prompt,
-)
 from app.infrastructure.beta_space import beta_katya_space_operational_status
 from app.infrastructure.beta_wedding_binding import (
-    BetaWeddingActivationCandidate,
-    BetaWeddingBindingError,
     beta_wedding_space_operational_status,
-    extract_beta_wedding_creator,
-    find_beta_wedding_group_candidates,
-    find_beta_wedding_source_candidates,
-    prepare_beta_wedding_binding,
 )
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
@@ -128,7 +112,6 @@ from app.infrastructure.telegram_voice import (
 from app.infrastructure.telegram_voice_status import telegram_voice_operational_status
 from app.infrastructure.telegram_webhook_status import (
     TelegramWebhookStatusError,
-    ensure_beta_callback_query_allowed,
     get_alpha_webhook_status,
     get_beta_provider_probe,
 )
@@ -159,7 +142,7 @@ from app.models.domain import (
     TelegramUpdate,
     TelegramVoiceArchive,
 )
-from app.services.telegram import TelegramApiError, TelegramClient, build_telegram_http_client
+from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
     TelegramVoiceError,
@@ -1619,6 +1602,7 @@ async def _beta_get_provider_probe_tool_result(
     session: AsyncSession,
     settings: Settings,
 ) -> JsonObject:
+    del principal, session
     if set(arguments) != {"confirmed"} or arguments.get("confirmed") is not True:
         return _tool_error_result(
             request_id=request_id,
@@ -1643,6 +1627,7 @@ async def _beta_get_provider_probe_tool_result(
             if (
                 not probe["webhook"]["exact_match"]
                 or not probe["webhook"]["actual_origin_match"]
+                or "callback_query" not in probe["webhook"]["allowed_updates"]
                 or not probe["identity"]["ordinary_group_messages_available"]
                 or probe["identity"]["privacy_mode_enabled"]
             ):
@@ -1651,56 +1636,10 @@ async def _beta_get_provider_probe_tool_result(
                     code="beta_binding_provider_not_exact",
                     message="Beta provider state is not exact",
                 )
-            beta_telegram = TelegramClient(
-                credential=settings.telegram_beta_bot_token.get_secret_value(),
-                http_client=http_client,
-            )
-            wedding_candidate = None
-            try:
-                source_candidates = await find_beta_wedding_source_candidates(
-                    session
-                )
-            except BetaWeddingBindingError as exc:
-                if exc.code != "beta_wedding_source_candidate_missing":
-                    raise
-            else:
-                wedding_candidate = source_candidates[0]
-            if wedding_candidate is None:
-                wedding_candidates = await find_beta_wedding_group_candidates(
-                    session
-                )
-                wedding_group = wedding_candidates[0]
-                try:
-                    administrator_response = (
-                        await beta_telegram.get_chat_administrators(
-                            chat_id=wedding_group.telegram_chat_id,
-                        )
-                    )
-                except TelegramApiError as exc:
-                    raise BetaWeddingBindingError(
-                        "beta_wedding_creator_probe_failed"
-                    ) from exc
-                wedding_creator = extract_beta_wedding_creator(
-                    administrator_response.get("result")
-                )
-                if wedding_creator is None:
-                    raise BetaWeddingBindingError(
-                        "beta_wedding_creator_not_exact"
-                    )
-                wedding_candidate = BetaWeddingActivationCandidate(
-                    telegram_chat_id=wedding_group.telegram_chat_id,
-                    telegram_user_id=wedding_creator,
-                )
-            wedding_state = await prepare_beta_wedding_binding(
-                session,
-                workspace_key=principal.access_scope.workspace_id,
-                now=datetime.now(UTC),
-                candidate=wedding_candidate,
-            )
             wedding_activation = {
-                "state": f"beta_wedding_binding_{wedding_state}",
-                "candidate_count": 1,
-                "binding_created": wedding_state == "created",
+                "state": "binding_creation_disabled",
+                "candidate_count": 0,
+                "binding_created": False,
                 "prompt_required": False,
                 "prompt_delivery": "not_attempted",
                 "private_identifiers_exposed": False,
@@ -1710,136 +1649,20 @@ async def _beta_get_provider_probe_tool_result(
             return _tool_result(
                 {"probe": probe, "activation": wedding_activation},
                 (
-                    "Beta wedding binding: "
+                    "Beta provider probe: "
                     f"activation={wedding_activation['state']}; "
-                    "candidate_count=1; prompt_delivery=not_attempted"
+                    "candidate_count=0; binding_creation=disabled; "
+                    "prompt_delivery=not_attempted"
                 ),
                 request_id,
             )
-            activation = await prepare_beta_katya_candidate_binding(
-                session,
-                workspace_key=principal.access_scope.workspace_id,
-                now=datetime.now(UTC),
-            )
-            prompt_delivery = "not_attempted"
-            if activation.state == "awaiting_candidate":
-                candidates = await find_beta_katya_group_candidates(session)
-                live_match: tuple[object, str] | None = None
-                for group_candidate in candidates:
-                    try:
-                        administrator_response = (
-                            await beta_telegram.get_chat_administrators(
-                                chat_id=group_candidate.telegram_chat_id,
-                            )
-                        )
-                    except TelegramApiError:
-                        continue
-                    subject = extract_beta_katya_creator(
-                        administrator_response.get("result")
-                    )
-                    if subject is not None:
-                        live_match = (group_candidate, subject)
-                        break
-                probe = await ensure_beta_callback_query_allowed(
-                    settings=settings,
-                    http_client=http_client,
-                    current_probe=probe,
-                )
-                if live_match is not None:
-                    group, subject_user_id = live_match
-                    activation = await prepare_beta_katya_candidate_binding(
-                        session,
-                        workspace_key=principal.access_scope.workspace_id,
-                        now=datetime.now(UTC),
-                        telegram_chat_id=group.telegram_chat_id,
-                        telegram_user_id=subject_user_id,
-                    )
-                else:
-                    for group_candidate in candidates:
-                        try:
-                            response = await beta_telegram.send_message(
-                                chat_id=group_candidate.telegram_chat_id,
-                                text=BETA_CONSENT_PROMPT,
-                                reply_markup=BETA_CONSENT_REPLY_MARKUP,
-                            )
-                        except TelegramApiError:
-                            continue
-                        message_id = response.get("result", {}).get("message_id")
-                        if type(message_id) is not int:
-                            raise BetaCandidateBindingError(
-                                "beta_binding_prompt_unconfirmed"
-                            )
-                        prompt_delivery = "sent"
-                        activation = BetaCandidateBindingResult(
-                            "prompt_sent_awaiting_callback_binding",
-                            1,
-                            False,
-                            False,
-                        )
-                        break
-                    else:
-                        raise BetaCandidateBindingError(
-                            "beta_binding_prompt_target_unreachable"
-                        )
-            if activation.prompt_required:
-                if activation.telegram_chat_id is None:
-                    raise BetaCandidateBindingError(
-                        "beta_binding_prompt_target_missing"
-                    )
-                if "callback_query" not in probe["webhook"]["allowed_updates"]:
-                    raise BetaCandidateBindingError(
-                        "beta_binding_callback_admission_missing"
-                    )
-                try:
-                    response = await beta_telegram.send_message(
-                        chat_id=activation.telegram_chat_id,
-                        text=BETA_CONSENT_PROMPT,
-                        reply_markup=BETA_CONSENT_REPLY_MARKUP,
-                    )
-                    message_id = response.get("result", {}).get("message_id")
-                    if type(message_id) is not int:
-                        raise RuntimeError("beta_binding_prompt_unconfirmed")
-                    prompt_delivery = "sent"
-                except Exception:
-                    await revoke_beta_katya_binding_after_unknown_prompt(
-                        session,
-                        workspace_key=principal.access_scope.workspace_id,
-                    )
-                    prompt_delivery = "unknown"
     except TelegramWebhookStatusError as exc:
         return _tool_error_result(
             request_id=request_id,
             code=exc.code,
             message=exc.code,
         )
-    except BetaWeddingBindingError as exc:
-        return _tool_error_result(
-            request_id=request_id,
-            code=exc.code,
-            message="Beta wedding binding failed closed",
-        )
-    except BetaCandidateBindingError as exc:
-        return _tool_error_result(
-            request_id=request_id,
-            code=exc.code,
-            message="Beta candidate binding failed closed",
-        )
-    activation_payload = activation.redacted(prompt_delivery=prompt_delivery)
-    if prompt_delivery == "unknown":
-        activation_payload["state"] = "prompt_delivery_unknown"
-        activation_payload["prompt_required"] = False
-    webhook_state = "exact" if probe["webhook"]["exact_match"] else "mismatch"
-    return _tool_result(
-        {"probe": probe, "activation": activation_payload},
-        (
-            f"Beta provider probe: webhook={webhook_state}; "
-            f"pending={probe['webhook']['pending_update_count']}; "
-            f"activation={activation_payload['state']}; "
-            f"candidate_count={activation_payload['candidate_count']}; "
-            f"prompt_delivery={activation_payload['prompt_delivery']}"
-        ),
-        request_id,
-    )
+
 
 async def _alpha_list_installations_tool_result(
     *,
@@ -2285,13 +2108,13 @@ def _gate_beta_export_space_checkpoint_tool(settings: Settings) -> JsonObject:
 def _gate_beta_get_provider_probe_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_beta_get_provider_probe",
-        "title": "Probe and activate the Katya Beta Space",
+        "title": "Probe the Beta provider",
         "description": (
-            "After exact owner confirmation, probe the configured Beta bot and "
-            "attempt one fail-closed private binding from eligible post-claim "
-            "receipts. It rejects zero, multiple or conflicting candidates, "
-            "never returns Telegram identifiers or payloads, and sends at most "
-            "one non-clinical consent prompt after an exact binding."
+            "After exact owner confirmation, read the configured Beta bot and "
+            "webhook state. New Wedding binding creation stays disabled until "
+            "immutable expected chat and owner identifiers exist; this tool returns "
+            "no Telegram identifiers or payloads, records no consent, and sends "
+            "no message."
         ),
         "inputSchema": {
             "type": "object",
@@ -2305,7 +2128,7 @@ def _gate_beta_get_provider_probe_tool(settings: Settings) -> JsonObject:
             "gate_beta_get_provider_probe"
         ],
         "annotations": {
-            "readOnlyHint": False,
+            "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
             "openWorldHint": True,

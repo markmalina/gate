@@ -27,8 +27,12 @@ class _Response:
 
 
 class _Telegram:
-    def __init__(self) -> None:
+    def __init__(self, webhook_result: dict[str, object] | None = None) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.webhook_result = webhook_result or {
+            "url": "",
+            "allowed_updates": [],
+        }
 
     async def post(self, url: str, *, json: dict[str, object]) -> _Response:
         self.calls.append((url, json))
@@ -36,10 +40,7 @@ class _Telegram:
             return _Response(
                 {
                     "ok": True,
-                    "result": {
-                        "url": "",
-                        "allowed_updates": [],
-                    },
+                    "result": self.webhook_result,
                 }
             )
         return _Response({"ok": True, "result": True})
@@ -61,6 +62,32 @@ def test_beta_public_url_is_separate_from_alpha() -> None:
     assert build_beta_public_webhook_url({"PUBLIC_BASE_URL": "https://gate.example"}) == (
         "https://gate.example/telegram/beta/webhook"
     )
+
+
+def test_beta_allowed_updates_always_admit_callback_queries() -> None:
+    assert BETA_ALLOWED_UPDATES == ["message", "my_chat_member", "callback_query"]
+
+
+@pytest.mark.anyio
+async def test_missing_callback_query_forces_canonical_reconciliation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://gate.example")
+    telegram = _Telegram(
+        {
+            "url": "https://gate.example/telegram/beta/webhook",
+            "allowed_updates": ["message", "my_chat_member"],
+        }
+    )
+
+    result = await reconcile_beta_telegram_webhook(
+        _settings(),
+        telegram,  # type: ignore[arg-type]
+    )
+
+    assert result == "updated"
+    assert len(telegram.calls) == 2
+    assert telegram.calls[1][1]["allowed_updates"] == BETA_ALLOWED_UPDATES
 
 
 @pytest.mark.anyio
