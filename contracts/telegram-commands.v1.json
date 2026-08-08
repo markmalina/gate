@@ -1,0 +1,66 @@
+{
+  "schema_version": "aqub.telegram-commands.v1",
+  "cases": [
+    {
+      "text": "/status",
+      "command_base": "/status",
+      "explicit": true
+    },
+    {
+      "text": "/status@AQubAgentBot",
+      "command_base": "/status",
+      "explicit": true
+    },
+    {
+      "text": "/program Название программы: Тест",
+      "command_base": "/program",
+      "explicit": true
+    },
+    {
+      "text": "/confirm_program_123456",
+      "command_base": "/confirm_program",
+      "explicit": true,
+      "confirmation_code": "123456"
+    },
+    {
+      "text": "/confirm_program_123456@AQubAgentBot",
+      "command_base": "/confirm_program",
+      "explicit": true,
+      "confirmation_code": "123456"
+    },
+    {
+      "text": "/consent_yes_234567",
+      "command_base": "/consent",
+      "explicit": true,
+      "consent": {
+        "decision": "yes",
+        "code": "234567"
+      }
+    },
+    {
+      "text": "/consent no 345678",
+      "command_base": "/consent",
+      "explicit": true,
+      "consent": {
+        "decision": "no",
+        "code": "345678"
+      }
+    },
+    {
+      "text": "/ace_join_ABCDEF123456@AQubAgentBot",
+      "command_base": "/ace_join_ABCDEF123456",
+      "explicit": true,
+      "ace_join_code": "abcdef123456"
+    },
+    {
+      "text": "Сделал.",
+      "command_base": "Сделал.",
+      "explicit": false
+    },
+    {
+      "text": "Выполнил",
+      "command_base": "Выполнил",
+      "explicit": false
+    }
+  ]
+}
