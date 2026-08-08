@@ -181,9 +181,20 @@ async def test_structurer_is_domain_neutral() -> None:
         return httpx.Response(
             200,
             json={
-                "output_text": json.dumps(
-                    {"text": "Я поняла так:\nКратко: универсальный материал"}
-                )
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": (
+                                    "Я поняла так:\n"
+                                    "Кратко: универсальный материал"
+                                ),
+                            }
+                        ],
+                    }
+                ]
             },
         )
 
@@ -205,6 +216,9 @@ async def test_structurer_is_domain_neutral() -> None:
     instructions = str(captured["instructions"]).lower()
     assert "универсальная" in instructions
     assert "не привязывай" in instructions
+    assert "обычным текстом" in instructions
+    assert captured["max_output_tokens"] == 2_048
+    assert "text" not in captured
 
 
 def test_unsupported_and_zip_bomb_fail_with_safe_codes() -> None:
