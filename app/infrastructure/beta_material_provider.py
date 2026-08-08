@@ -12,8 +12,8 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import httpx
-from docx import Document  # type: ignore[import-untyped]
-from openpyxl import load_workbook  # type: ignore[import-untyped]
+from docx import Document
+from openpyxl import load_workbook
 from pypdf import PdfReader  # type: ignore[import-untyped]
 
 from app.application.beta_material import BetaMaterialJob
