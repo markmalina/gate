@@ -1,16 +1,14 @@
-"""Signed AQUB live transport contracts layered on the isolated preflight route.
-
-The live path is activation-gated; importing this module alone has no provider effect.
-"""
+"""Signed AQUB live transport contracts layered on the isolated preflight route."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import httpx
 
@@ -33,10 +31,13 @@ AQUB_PROGRAM_PROMPT_TEXT = (
 )
 AQUB_RUNTIME_INBOUND_PATH = "/gate/inbound"
 AQUB_GATE_DELIVERY_PATH = "/internal/aqub/deliver"
-AQUB_CANDIDATE_ROLE = "candidate"
+
+_CANDIDATE_COMMAND_RE = re.compile(
+    r"^(?:/ace_join_[0-9a-f]{12}|/program(?:\s|$)|/confirm_program_\d{6}(?:@AQubAgentBot)?$|/status(?:@AQubAgentBot)?$|/help(?:@AQubAgentBot)?$)",
+    re.IGNORECASE,
+)
 
 JsonObject = dict[str, Any]
-AQUBLiveRole = AQUBPreflightRole | str
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +114,7 @@ class AQUBLiveIngressAdapter:
                 payload=payload,
                 chat_id=inbound.chat_id,
                 actor_id=inbound.actor_id,
-                role=cast(AQUBPreflightRole, role),
+                role=role,
                 command=inbound.command,
                 occurred_at=inbound.occurred_at,
                 received_at=inbound.received_at,
@@ -144,14 +145,16 @@ class AQUBLiveIngressAdapter:
         )
 
 
-def _role_value(role: AQUBLiveRole) -> str:
-    return role.value if isinstance(role, AQUBPreflightRole) else role
+def _candidate_input_allowed(inbound: AQUBPreflightInbound) -> bool:
+    if _CANDIDATE_COMMAND_RE.match(inbound.command.strip()) is not None:
+        return True
+    return _reply_context(inbound.payload) == "program_prompt"
 
 
 def _bound_role(
     binding: AQUBPreflightBinding,
     inbound: AQUBPreflightInbound,
-) -> AQUBLiveRole | None:
+) -> AQUBPreflightRole | None:
     if (
         not binding.enabled
         or inbound.bot_username != AQUB_BOT_USERNAME
@@ -163,10 +166,9 @@ def _bound_role(
         return AQUBPreflightRole.ALPHA
     if inbound.actor_id == binding.ace_user_id and binding.ace_user_id != "__unbound_ace__":
         return AQUBPreflightRole.ACE
-    # Product onboarding deliberately does not require a raw Telegram ID for every Ace.
-    # Any other human actor in the one pinned AQUB group is forwarded only as an opaque
-    # candidate. AQUB itself decides whether that actor may claim an outstanding invite.
-    return AQUB_CANDIDATE_ROLE
+    if _candidate_input_allowed(inbound):
+        return AQUBPreflightRole.CANDIDATE
+    return None
 
 
 def _validate_time(binding: AQUBPreflightBinding, inbound: AQUBPreflightInbound) -> None:
@@ -204,7 +206,7 @@ def _build_signed_envelope_body(
     *,
     binding: AQUBPreflightBinding,
     inbound: AQUBPreflightInbound,
-    role: AQUBLiveRole,
+    role: AQUBPreflightRole,
     command_receipt_id: str,
     payload_sha256: str,
 ) -> bytes:
@@ -230,7 +232,7 @@ def _build_signed_envelope_body(
             "actor",
             inbound.actor_id,
         ),
-        "role": _role_value(role),
+        "role": role.value,
         "update_id": _opaque_ref(
             binding.receipt_signing_key,
             "external",
