@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import Settings
 from app.models.beta_material import BetaMaterialDeliveryModel, BetaMaterialJobModel
 from app.models.beta_space import (
@@ -10,8 +13,6 @@ from app.models.beta_space import (
     BetaSpaceReplyModel,
 )
 from app.models.canonical import Workspace
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .beta_space import beta_space_production_ready
 

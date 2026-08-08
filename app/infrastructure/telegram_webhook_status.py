@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+
 from app.core.config import Settings
 
 JsonObject = dict[str, Any]
