@@ -1,4 +1,4 @@
-"""AQUB Telegram ingress: preflight ping plus permanent live runtime forwarding."""
+"""AQUB Telegram ingress: diagnostic ping plus permanent live runtime forwarding."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import os
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from app.application.aqub_s0_preflight import (
     AQUB_BOT_USERNAME,
     AQUB_OWNED_PATH,
     AQUB_PING_COMMAND,
+    AQUBPreflightBinding,
     AQUBPreflightInbound,
     AQUBPreflightResult,
     AQUBPreflightStore,
@@ -35,9 +37,10 @@ from app.infrastructure.aqub_live import (
 )
 from app.infrastructure.aqub_s0_preflight import (
     SqlAQUBPreflightReceiptStore,
-    build_aqub_s0_binding,
+    aqub_receipt_signing_key,
+    load_aqub_production_binding,
 )
-from app.services.telegram import TelegramClient, build_telegram_http_client
+from app.services.telegram import TelegramClient
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -61,9 +64,10 @@ async def aqub_telegram_preflight(
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
     ] = None,
     settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
     store: AQUBPreflightStore = store_dependency,
 ) -> JsonObject:
-    """Own the exact AQUB route; ping stays diagnostic, all other owned input is live."""
+    """Own the exact AQUB route from the durable installation binding."""
 
     configured_secret = settings.telegram_aqub_webhook_secret.get_secret_value()
     if not configured_secret:
@@ -87,23 +91,8 @@ async def aqub_telegram_preflight(
     if not isinstance(raw_update, dict):
         raise HTTPException(status_code=400, detail="Invalid Telegram update")
 
+    binding = await _production_binding(session, settings)
     received_at = datetime.now(UTC)
-    projected = _project_inbound(
-        cast(JsonObject, raw_update),
-        bot_username=AQUB_BOT_USERNAME,
-        received_at=received_at,
-    )
-
-    try:
-        binding = build_aqub_s0_binding(settings)
-    except ValueError:
-        if _is_bootstrap_ping(projected):
-            return _bootstrap_response(projected)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB production binding is incomplete",
-        ) from None
-
     inbound = _project_inbound(
         cast(JsonObject, raw_update),
         bot_username=binding.bot_username,
@@ -129,7 +118,10 @@ async def aqub_telegram_preflight(
         live = await AQUBLiveIngressAdapter(
             binding=binding,
             store=store,
-            runtime=HttpAQUBRuntimeClient(base_url=runtime_url),
+            runtime=HttpAQUBRuntimeClient(
+                base_url=runtime_url,
+                http_client=_process_http_client(request),
+            ),
         ).handle(inbound)
     except RuntimeError as exc:
         raise HTTPException(
@@ -148,22 +140,28 @@ async def aqub_live_delivery(
 ) -> JsonObject:
     """Accept one signed AQUB delivery command and settle it through Telegram."""
 
-    signing_key = settings.gate_aqub_receipt_signing_key.get_secret_value().encode()
-    if len(signing_key) < 32:
+    try:
+        signing_key = aqub_receipt_signing_key(settings)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AQUB signing key is unavailable",
-        )
+        ) from None
     if x_aqub_signature is None:
         raise HTTPException(status_code=401, detail="AQUB signature is required")
     raw_body = await request.body()
+    binding = await _production_binding(session, settings)
     try:
         verify_aqub_signature(
             raw_body=raw_body,
             signature=x_aqub_signature,
             signing_key=signing_key,
         )
-        command = parse_aqub_delivery(raw_body, signing_key=signing_key)
+        command = parse_aqub_delivery(
+            raw_body,
+            signing_key=signing_key,
+            raw_chat_id=binding.group_chat_id,
+        )
     except AQUBLiveDeliveryError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from None
 
@@ -173,16 +171,42 @@ async def aqub_live_delivery(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AQUB Telegram token is unavailable",
         )
+    telegram = TelegramClient(
+        token,
+        http_client=_process_http_client(request),
+    )
     try:
-        async with build_telegram_http_client() as http_client:
-            telegram = TelegramClient(token, http_client=http_client)
-            return await AQUBLiveDeliveryService(
-                session=session,
-                telegram=telegram,
-                signing_key=signing_key,
-            ).deliver(command)
+        return await AQUBLiveDeliveryService(
+            session=session,
+            telegram=telegram,
+            signing_key=signing_key,
+            raw_chat_id=binding.group_chat_id,
+        ).deliver(command)
     except AQUBLiveDeliveryError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.code) from None
+
+
+async def _production_binding(
+    session: AsyncSession,
+    settings: Settings,
+) -> AQUBPreflightBinding:
+    try:
+        return await load_aqub_production_binding(session, settings)
+    except (RuntimeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB production binding is unavailable",
+        ) from None
+
+
+def _process_http_client(request: Request) -> httpx.AsyncClient:
+    client = getattr(request.app.state, "beta_model_http_client", None)
+    if not isinstance(client, httpx.AsyncClient):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Gate HTTP transport is unavailable",
+        )
+    return client
 
 
 def _project_inbound(
@@ -226,23 +250,6 @@ def _project_inbound(
         occurred_at=occurred_at,
         received_at=received_at,
     )
-
-
-def _is_bootstrap_ping(inbound: AQUBPreflightInbound | None) -> bool:
-    return inbound is not None and inbound.command == AQUB_PING_COMMAND
-
-
-def _bootstrap_response(inbound: AQUBPreflightInbound | None) -> JsonObject:
-    if inbound is None:
-        return _unowned_response(reason="aqub_bootstrap_invalid")
-    return {
-        "method": "sendMessage",
-        "chat_id": int(inbound.chat_id),
-        "text": (
-            "AQUB bootstrap принят. Скопируйте эту строку в ChatGPT:\n"
-            f"AQUB_BIND chat_id={inbound.chat_id} alpha_user_id={inbound.actor_id}"
-        ),
-    }
 
 
 def _response(result: AQUBPreflightResult, *, chat_id: str) -> JsonObject:
