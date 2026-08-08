@@ -7,6 +7,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.beta_material import (
     BetaMaterialJob,
     BetaMaterialPhase,
@@ -20,8 +23,6 @@ from app.models.beta_material import (
 )
 from app.models.beta_space import BetaSpaceBindingModel, BetaSpaceEventModel
 from app.models.domain import TelegramReceipt
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 JsonObject = dict[str, Any]
 
