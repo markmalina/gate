@@ -6,6 +6,9 @@ import uuid
 from datetime import datetime, timedelta
 from typing import cast
 
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.beta_space_work import (
     BetaSpaceWorkDisposition,
     BetaSpaceWorkFailurePlan,
@@ -17,8 +20,6 @@ from app.models.beta_space import (
     BetaSpaceReplyModel,
     BetaSpaceWorkItemModel,
 )
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 class BetaSpaceWorkStateError(RuntimeError):
