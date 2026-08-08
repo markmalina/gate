@@ -18,6 +18,7 @@ from app.infrastructure.beta_checkpoint_export import (
     _build_portable_checkpoint,
     _iso_datetime,
 )
+from app.models.beta_material import BetaMaterialJobModel
 from app.models.beta_space import (
     BetaSpaceBindingModel,
     BetaSpaceCheckpointExportModel,
@@ -87,6 +88,7 @@ async def next_beta_space_checkpoint_batch(
                 BetaSpaceEventModel,
                 TelegramReceipt,
                 BetaWeddingVoiceJobModel,
+                BetaMaterialJobModel,
             )
             .join(
                 TelegramReceipt,
@@ -95,6 +97,10 @@ async def next_beta_space_checkpoint_batch(
             .outerjoin(
                 BetaWeddingVoiceJobModel,
                 BetaWeddingVoiceJobModel.event_id == BetaSpaceEventModel.id,
+            )
+            .outerjoin(
+                BetaMaterialJobModel,
+                BetaMaterialJobModel.event_id == BetaSpaceEventModel.id,
             )
             .where(
                 BetaSpaceEventModel.binding_id == binding.id,
@@ -108,7 +114,7 @@ async def next_beta_space_checkpoint_batch(
         return None
     if rows[0][0].checkpoint_sequence != sequence_start:
         raise BetaSpaceCheckpointBatchError("beta_checkpoint_event_gap")
-    for offset, (event, _receipt, _voice) in enumerate(rows):
+    for offset, (event, _receipt, _voice, _material) in enumerate(rows):
         if event.checkpoint_sequence != sequence_start + offset:
             raise BetaSpaceCheckpointBatchError("beta_checkpoint_event_gap")
 
@@ -118,8 +124,9 @@ async def next_beta_space_checkpoint_batch(
             event=event,
             receipt=receipt,
             voice=voice,
+            material=material,
         )
-        for event, receipt, voice in rows
+        for event, receipt, voice, material in rows
     ]
     recipient_public_key = binding.checkpoint_recipient_pem
     assert recipient_public_key is not None
@@ -257,8 +264,14 @@ def _portable_wedding_event(
     event: BetaSpaceEventModel,
     receipt: TelegramReceipt,
     voice: BetaWeddingVoiceJobModel | None,
+    material: BetaMaterialJobModel | None,
 ) -> dict[str, Any]:
-    text_value = _event_text(event=event, receipt=receipt, voice=voice)
+    text_value = _event_text(
+        event=event,
+        receipt=receipt,
+        voice=voice,
+        material=material,
+    )
     content = {
         "format": "structured_text",
         "text": text_value,
@@ -297,7 +310,19 @@ def _event_text(
     event: BetaSpaceEventModel,
     receipt: TelegramReceipt,
     voice: BetaWeddingVoiceJobModel | None,
+    material: BetaMaterialJobModel | None,
 ) -> str:
+    if material is not None:
+        if material.extracted_text and material.structured_text:
+            return (
+                f"Извлечённое содержание ({material.media_kind}):\n"
+                f"{material.extracted_text}\n\n"
+                f"Структура Беты:\n{material.structured_text}"
+            )
+        return (
+            f"Получен материал типа {material.media_kind}; "
+            "надёжное извлечение содержания не завершено."
+        )
     if event.media_kind == "voice":
         if voice is not None and voice.transcript_text and voice.structured_text:
             return (
