@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.models.beta_material import BetaMaterialDeliveryModel, BetaMaterialJobModel
 from app.models.beta_space import (
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
@@ -319,6 +320,9 @@ async def beta_wedding_space_operational_status(
     fact_count = 0
     reply_sent_count = 0
     reply_unknown_count = 0
+    material_job_counts: list[dict[str, object]] = []
+    material_delivery_counts: list[dict[str, object]] = []
+    material_delivery_unknown_count = 0
     if workspace_id is not None:
         binding = await session.scalar(
             select(BetaSpaceBindingModel).where(
@@ -366,6 +370,73 @@ async def beta_wedding_space_operational_status(
                 )
                 or 0
             )
+            material_job_rows = (
+                await session.execute(
+                    select(
+                        BetaMaterialJobModel.media_kind,
+                        BetaMaterialJobModel.state,
+                        func.count(BetaMaterialJobModel.id),
+                    )
+                    .where(
+                        BetaMaterialJobModel.workspace_id == workspace_id,
+                        BetaMaterialJobModel.binding_id == binding.id,
+                    )
+                    .group_by(
+                        BetaMaterialJobModel.media_kind,
+                        BetaMaterialJobModel.state,
+                    )
+                    .order_by(
+                        BetaMaterialJobModel.media_kind,
+                        BetaMaterialJobModel.state,
+                    )
+                )
+            ).all()
+            material_job_counts = [
+                {
+                    "media_kind": media_kind,
+                    "state": material_state,
+                    "count": int(count),
+                }
+                for media_kind, material_state, count in material_job_rows
+            ]
+            material_delivery_rows = (
+                await session.execute(
+                    select(
+                        BetaMaterialDeliveryModel.phase,
+                        BetaMaterialDeliveryModel.state,
+                        func.count(BetaMaterialDeliveryModel.id),
+                    )
+                    .join(
+                        BetaMaterialJobModel,
+                        BetaMaterialDeliveryModel.job_id == BetaMaterialJobModel.id,
+                    )
+                    .where(
+                        BetaMaterialJobModel.workspace_id == workspace_id,
+                        BetaMaterialJobModel.binding_id == binding.id,
+                    )
+                    .group_by(
+                        BetaMaterialDeliveryModel.phase,
+                        BetaMaterialDeliveryModel.state,
+                    )
+                    .order_by(
+                        BetaMaterialDeliveryModel.phase,
+                        BetaMaterialDeliveryModel.state,
+                    )
+                )
+            ).all()
+            material_delivery_counts = [
+                {
+                    "phase": phase,
+                    "state": delivery_state,
+                    "count": int(count),
+                }
+                for phase, delivery_state, count in material_delivery_rows
+            ]
+            material_delivery_unknown_count = sum(
+                int(count)
+                for _phase, delivery_state, count in material_delivery_rows
+                if delivery_state == "unknown"
+            )
 
     binding_state = binding.state if binding is not None else "absent"
     binding_live = binding_state == "consented"
@@ -399,6 +470,9 @@ async def beta_wedding_space_operational_status(
         "fact_count": fact_count,
         "reply_sent_count": reply_sent_count,
         "reply_unknown_count": reply_unknown_count,
+        "material_job_counts": material_job_counts,
+        "material_delivery_counts": material_delivery_counts,
+        "material_delivery_unknown_count": material_delivery_unknown_count,
         "private_identifiers_exposed": False,
         "private_payload_exposed": False,
     }

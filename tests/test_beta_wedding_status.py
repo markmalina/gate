@@ -12,12 +12,31 @@ from app.infrastructure.beta_wedding_binding import (
 )
 
 
+class RowResult:
+    def __init__(self, rows: list[tuple[object, object, int]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[object, object, int]]:
+        return self.rows
+
+
 class ScalarSession:
-    def __init__(self, values: list[object]) -> None:
+    def __init__(
+        self,
+        values: list[object],
+        *,
+        row_groups: list[list[tuple[object, object, int]]] | None = None,
+    ) -> None:
         self.values = iter(values)
+        self.row_groups = iter(row_groups or [])
+        self.executed: list[object] = []
 
     async def scalar(self, _statement: object) -> object:
         return next(self.values)
+
+    async def execute(self, statement: object) -> RowResult:
+        self.executed.append(statement)
+        return RowResult(next(self.row_groups))
 
 
 @pytest.fixture
@@ -45,6 +64,9 @@ async def test_wedding_status_is_redacted_while_awaiting_binding() -> None:
     assert result["fact_count"] == 0
     assert result["private_identifiers_exposed"] is False
     assert result["private_payload_exposed"] is False
+    assert result["material_job_counts"] == []
+    assert result["material_delivery_counts"] == []
+    assert result["material_delivery_unknown_count"] == 0
     assert "telegram_chat_id" not in result
     assert "subject_telegram_user_id" not in result
 
@@ -69,7 +91,18 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
             2,
             2,
             0,
-        ]
+        ],
+        row_groups=[
+            [
+                ("document", "structured", 1),
+                ("voice", "failed", 1),
+            ],
+            [
+                ("receipt", "sent", 2),
+                ("structured_result", "sent", 1),
+                ("structured_result", "unknown", 1),
+            ],
+        ],
     )
 
     result = await beta_wedding_space_operational_status(
@@ -89,4 +122,35 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
     assert result["fact_count"] == 2
     assert result["reply_sent_count"] == 2
     assert result["reply_unknown_count"] == 0
+    assert result["material_job_counts"] == [
+        {"media_kind": "document", "state": "structured", "count": 1},
+        {"media_kind": "voice", "state": "failed", "count": 1},
+    ]
+    assert result["material_delivery_counts"] == [
+        {"phase": "receipt", "state": "sent", "count": 2},
+        {"phase": "structured_result", "state": "sent", "count": 1},
+        {"phase": "structured_result", "state": "unknown", "count": 1},
+    ]
+    assert result["material_delivery_unknown_count"] == 1
     assert result["gates"]["delivery_enabled"] is True
+
+    statements = [str(statement) for statement in session.executed]
+    assert len(statements) == 2
+    assert "beta_material_jobs.workspace_id" in statements[0]
+    assert "beta_material_jobs.binding_id" in statements[0]
+    assert "beta_material_jobs.workspace_id" in statements[1]
+    assert "beta_material_jobs.binding_id" in statements[1]
+    assert "JOIN beta_material_jobs" in statements[1]
+
+    serialized = repr(result)
+    for private_name in (
+        "telegram_file_id",
+        "file_name",
+        "sender_label",
+        "candidate_text",
+        "candidate_sha256",
+        "provider_message_id",
+        "error_code",
+        "job_id",
+    ):
+        assert private_name not in serialized
