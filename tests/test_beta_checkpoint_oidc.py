@@ -8,16 +8,28 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 
-def _claims(settings: Settings) -> dict[str, object]:
+def _claims(
+    settings: Settings,
+    *,
+    standard_subject: bool = False,
+) -> dict[str, object]:
     repository_owner, repository_name = (
         settings.gate_beta_checkpoint_oidc_repository.split("/", maxsplit=1)
     )
     return {
         "sub": (
-            f"repo:{repository_owner}@"
-            f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
-            f"/{repository_name}@{settings.gate_beta_checkpoint_oidc_repository_id}:"
-            f"ref:{settings.gate_beta_checkpoint_oidc_ref}"
+            (
+                f"repo:{settings.gate_beta_checkpoint_oidc_repository}:"
+                f"ref:{settings.gate_beta_checkpoint_oidc_ref}"
+            )
+            if standard_subject
+            else (
+                f"repo:{repository_owner}@"
+                f"{settings.gate_beta_checkpoint_oidc_repository_owner_id}"
+                f"/{repository_name}@"
+                f"{settings.gate_beta_checkpoint_oidc_repository_id}:"
+                f"ref:{settings.gate_beta_checkpoint_oidc_ref}"
+            )
         ),
         "repository": settings.gate_beta_checkpoint_oidc_repository,
         "repository_id": settings.gate_beta_checkpoint_oidc_repository_id,
@@ -35,6 +47,23 @@ def _claims(settings: Settings) -> dict[str, object]:
 def test_exact_private_beta_workflow_claims_are_accepted() -> None:
     settings = Settings(_env_file=None)
     _authorize_claims(_claims(settings), settings)
+
+
+def test_exact_standard_private_beta_workflow_claims_are_accepted() -> None:
+    settings = Settings(_env_file=None)
+    _authorize_claims(_claims(settings, standard_subject=True), settings)
+
+
+def test_malformed_checkpoint_repository_setting_fails_closed() -> None:
+    settings = Settings(
+        _env_file=None,
+        GATE_BETA_CHECKPOINT_OIDC_REPOSITORY="AlphaCenter/beta/extra",
+    )
+    with pytest.raises(
+        GitHubOidcError,
+        match="beta_checkpoint_oidc_configuration_invalid",
+    ):
+        _authorize_claims(_claims(settings), settings)
 
 
 def test_checkpoint_oidc_defaults_target_transferred_repository() -> None:
