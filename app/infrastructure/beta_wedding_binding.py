@@ -10,12 +10,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.models.beta_material import BetaMaterialDeliveryModel, BetaMaterialJobModel
 from app.models.beta_space import (
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
     BetaSpaceReplyModel,
 )
-from app.models.beta_material import BetaMaterialDeliveryModel, BetaMaterialJobModel
 from app.models.canonical import TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
 
