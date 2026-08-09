@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 from datetime import UTC, datetime
 
@@ -10,7 +12,9 @@ import pytest
 from app.infrastructure.beta_checkpoint_dispatch import (
     BETA_CHECKPOINT_DISPATCH_EVENT,
     BETA_CHECKPOINT_DISPATCH_SCHEMA,
+    BetaCheckpointArtifactError,
     BetaCheckpointDispatchError,
+    GitHubAppBetaCheckpointArtifactVerifier,
     GitHubAppBetaCheckpointDispatcher,
     build_beta_checkpoint_dispatch,
 )
@@ -190,3 +194,120 @@ def test_sender_requires_explicit_github_app_identity() -> None:
             private_key_pem="",
         )
     assert caught.value.code == "beta_checkpoint_dispatch_configuration_invalid"
+
+
+def test_artifact_verifier_proves_reachable_exact_path_and_bytes() -> None:
+    private_pem, _public_key = _private_key()
+    artifact = b'{"encrypted":"synthetic"}\n'
+    digest = hashlib.sha256(artifact).hexdigest()
+    commit = "a" * 40
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/app/installations/2468/access_tokens":
+            return httpx.Response(201, json={"token": "ghs_synthetic_installation"})
+        assert request.headers["Authorization"] == (
+            "Bearer ghs_synthetic_installation"
+        )
+        if request.url.path.endswith(f"/compare/{commit}...main"):
+            return httpx.Response(200, json={"status": "identical"})
+        assert request.url.path.endswith(
+            f"/spaces/{SPACE_ID}/context/checkpoints/"
+            "000000000001-000000000017.json.enc"
+        )
+        assert request.url.params["ref"] == commit
+        return httpx.Response(
+            200,
+            json={
+                "type": "file",
+                "encoding": "base64",
+                "content": "\n".join(
+                    (
+                        base64.b64encode(artifact).decode()[:12],
+                        base64.b64encode(artifact).decode()[12:],
+                    )
+                ),
+            },
+        )
+
+    async def exercise() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            verifier = GitHubAppBetaCheckpointArtifactVerifier(
+                client=client,
+                app_id="1357",
+                installation_id="2468",
+                private_key_pem=private_pem,
+                now=lambda: NOW,
+            )
+            await verifier.verify(
+                space_id=SPACE_ID,
+                sequence_start=1,
+                sequence_end=17,
+                ciphertext_sha256=digest,
+                github_commit_sha=commit,
+            )
+
+    asyncio.run(exercise())
+    assert len(requests) == 3
+
+
+@pytest.mark.parametrize(
+    ("compare_status", "artifact_status", "artifact", "expected"),
+    [
+        (404, 200, b"expected", "beta_checkpoint_artifact_commit_unreachable"),
+        (200, 404, b"expected", "beta_checkpoint_artifact_missing"),
+        (200, 200, b"wrong", "beta_checkpoint_artifact_hash_mismatch"),
+    ],
+)
+def test_artifact_verifier_rejects_false_commit_path_or_blob_proof(
+    compare_status: int,
+    artifact_status: int,
+    artifact: bytes,
+    expected: str,
+) -> None:
+    private_pem, _public_key = _private_key()
+    commit = "a" * 40
+    expected_bytes = b"expected"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/app/installations/2468/access_tokens":
+            return httpx.Response(201, json={"token": "ghs_synthetic_installation"})
+        if "/compare/" in request.url.path:
+            return httpx.Response(
+                compare_status,
+                json={"status": "identical"},
+            )
+        return httpx.Response(
+            artifact_status,
+            json={
+                "type": "file",
+                "encoding": "base64",
+                "content": base64.b64encode(artifact).decode(),
+            },
+        )
+
+    async def exercise() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            verifier = GitHubAppBetaCheckpointArtifactVerifier(
+                client=client,
+                app_id="1357",
+                installation_id="2468",
+                private_key_pem=private_pem,
+                now=lambda: NOW,
+            )
+            with pytest.raises(BetaCheckpointArtifactError) as caught:
+                await verifier.verify(
+                    space_id=SPACE_ID,
+                    sequence_start=1,
+                    sequence_end=17,
+                    ciphertext_sha256=hashlib.sha256(expected_bytes).hexdigest(),
+                    github_commit_sha=commit,
+                )
+            assert caught.value.code == expected
+
+    asyncio.run(exercise())
