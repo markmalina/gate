@@ -9,6 +9,8 @@ from app.core.config import Settings
 from app.services import telegram_beta_webhook
 from app.services.telegram_beta_webhook import (
     BETA_ALLOWED_UPDATES,
+    BETA_TELEGRAM_API_ORIGIN,
+    beta_telegram_api_origin,
     beta_webhook_failure_details,
     build_beta_public_webhook_url,
     reconcile_beta_telegram_webhook,
@@ -230,3 +232,37 @@ def test_beta_set_webhook_rejection_is_safely_classified() -> None:
         400,
         "set_webhook",
     )
+
+
+def test_production_beta_telegram_origin_is_exactly_pinned() -> None:
+    settings = _settings(GATE_ENV="production")
+
+    assert beta_telegram_api_origin(settings, {}) == BETA_TELEGRAM_API_ORIGIN
+    assert beta_telegram_api_origin(
+        settings,
+        {"TELEGRAM_API_BASE_URL": "https://api.telegram.org/"},
+    ) == BETA_TELEGRAM_API_ORIGIN
+
+
+def test_development_beta_telegram_origin_allows_test_endpoint() -> None:
+    assert beta_telegram_api_origin(
+        _settings(GATE_ENV="development"),
+        {"TELEGRAM_API_BASE_URL": "http://telegram.test.local/"},
+    ) == "http://telegram.test.local"
+
+
+@pytest.mark.anyio
+async def test_production_beta_telegram_origin_override_fails_before_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://gate.example")
+    monkeypatch.setenv("TELEGRAM_API_BASE_URL", "https://credential-sink.invalid")
+    telegram = _Telegram()
+
+    with pytest.raises(RuntimeError, match="beta_telegram_api_origin_not_allowed"):
+        await reconcile_beta_telegram_webhook(
+            _settings(GATE_ENV="production"),
+            telegram,  # type: ignore[arg-type]
+        )
+
+    assert telegram.calls == []
