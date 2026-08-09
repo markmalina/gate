@@ -7,7 +7,7 @@ import hashlib
 import re
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from app.application.beta_material import safe_failure_text
 from app.infrastructure.beta_checkpoint_batches import BetaCheckpointBatchError
@@ -16,6 +16,7 @@ from app.infrastructure.beta_checkpoint_export import (
     MAX_EVENT_CONTENT_CODE_POINTS,
     BetaCheckpointExportError,
     _build_portable_checkpoint,
+    _byte_bounded_event_prefix,
     _iso_datetime,
 )
 from app.models.beta_material import BetaMaterialJobModel
@@ -43,6 +44,18 @@ class BetaSpaceCheckpointBatchError(BetaCheckpointBatchError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class BetaCheckpointArtifactVerifier(Protocol):
+    async def verify(
+        self,
+        *,
+        space_id: str,
+        sequence_start: int,
+        sequence_end: int,
+        ciphertext_sha256: str,
+        github_commit_sha: str,
+    ) -> None: ...
 
 
 async def next_beta_space_checkpoint_batch(
@@ -147,6 +160,13 @@ async def next_beta_space_checkpoint_batch(
         )
         for event, receipt, voice, material in rows
     ]
+    try:
+        events = _byte_bounded_event_prefix(
+            group_id=binding.storage_ref,
+            events=events,
+        )
+    except BetaCheckpointExportError as exc:
+        raise BetaSpaceCheckpointBatchError(exc.code) from exc
     recipient_public_key = binding.checkpoint_recipient_pem
     assert recipient_public_key is not None
     try:
@@ -186,6 +206,7 @@ async def acknowledge_beta_space_checkpoint_batch(
     sequence_end: int,
     ciphertext_sha256: str,
     github_commit_sha: str,
+    artifact_verifier: BetaCheckpointArtifactVerifier | None = None,
 ) -> dict[str, Any]:
     """Advance the Wedding cursor only for one exact durable Git commit."""
 
@@ -240,6 +261,26 @@ async def acknowledge_beta_space_checkpoint_batch(
         or sequence_end > accepted_sequence
     ):
         raise BetaSpaceCheckpointBatchError("beta_checkpoint_ack_not_contiguous")
+
+    if artifact_verifier is None:
+        raise BetaSpaceCheckpointBatchError(
+            "beta_checkpoint_artifact_proof_required"
+        )
+    try:
+        await artifact_verifier.verify(
+            space_id=binding.space_ref,
+            sequence_start=sequence_start,
+            sequence_end=sequence_end,
+            ciphertext_sha256=ciphertext_sha256,
+            github_commit_sha=github_commit_sha,
+        )
+    except Exception as exc:
+        code = getattr(exc, "code", "beta_checkpoint_artifact_unavailable")
+        if not isinstance(code, str) or not code.startswith(
+            "beta_checkpoint_artifact_"
+        ):
+            code = "beta_checkpoint_artifact_unavailable"
+        raise BetaSpaceCheckpointBatchError(code) from exc
 
     batch.state = "acknowledged"
     batch.github_commit_sha = github_commit_sha
