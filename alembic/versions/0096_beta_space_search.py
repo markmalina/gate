@@ -1,6 +1,6 @@
 """Add exact-Space full-history lexical search documents.
 
-Revision ID: 0096_beta_space_search
+Revision ID: 0098_beta_space_search
 Revises: 0097_beta_exact_scope
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0096_beta_space_search"
+revision: str = "0098_beta_space_search"
 down_revision: str | Sequence[str] | None = "0097_beta_exact_scope"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
