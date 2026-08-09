@@ -7,9 +7,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.beta_material import (
     BetaMaterialJob,
     BetaMaterialPhase,
@@ -24,6 +21,8 @@ from app.models.beta_material import (
 )
 from app.models.beta_space import BetaSpaceBindingModel, BetaSpaceEventModel
 from app.models.domain import TelegramReceipt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 JsonObject = dict[str, Any]
 
@@ -326,22 +325,31 @@ class SqlBetaMaterialStore:
                 select(
                     BetaSpaceEventModel.checkpoint_sequence,
                     BetaSpaceBindingModel.space_ref,
+                    BetaSpaceBindingModel.workspace_id,
+                    BetaSpaceBindingModel.id,
                 )
                 .join(
                     BetaSpaceBindingModel,
-                    BetaSpaceBindingModel.id == BetaSpaceEventModel.binding_id,
+                    (BetaSpaceBindingModel.id == BetaSpaceEventModel.binding_id)
+                    & (
+                        BetaSpaceBindingModel.workspace_id
+                        == BetaSpaceEventModel.workspace_id
+                    ),
                 )
                 .where(
                     BetaSpaceEventModel.id == job.event_id,
                     BetaSpaceBindingModel.id == job.binding_id,
+                    BetaSpaceBindingModel.workspace_id == job.workspace_id,
                 )
             )
         ).one_or_none()
         if scope is None:
             raise RuntimeError("beta_material_checkpoint_scope_missing")
-        checkpoint_sequence, space_id = scope
+        checkpoint_sequence, space_id, workspace_id, binding_id = scope
         await enqueue_beta_checkpoint_dispatch(
             self._session,
+            workspace_id=workspace_id,
+            binding_id=binding_id,
             space_id=space_id,
             accepted_sequence=checkpoint_sequence,
             now=now,
