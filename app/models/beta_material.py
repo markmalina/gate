@@ -5,10 +5,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from app.models.domain import Base
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -20,14 +22,22 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.domain import Base
-
 
 class BetaMaterialJobModel(Base):
     """One extracted and structured voice/document/photo for one Space event."""
 
     __tablename__ = "beta_material_jobs"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["event_id", "binding_id", "workspace_id"],
+            [
+                "beta_space_events.id",
+                "beta_space_events.binding_id",
+                "beta_space_events.workspace_id",
+            ],
+            name="fk_beta_material_job_event_scope",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("event_id", name="uq_beta_material_job_event"),
         CheckConstraint(
             "media_kind IN ('voice','document','photo')",
