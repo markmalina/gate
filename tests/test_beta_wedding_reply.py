@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -12,6 +13,7 @@ from app.application.beta_wedding_reply import (
 from app.infrastructure.beta_wedding_reply import (
     OpenAIResponsesBetaWeddingModel,
     SqlBetaWeddingReplyStore,
+    _bounded_search_context,
     _query_terms,
     _select_context,
 )
@@ -372,9 +374,37 @@ def test_full_space_retrieval_source_keeps_exact_dual_scope() -> None:
 
     source = inspect.getsource(SqlBetaWeddingReplyStore._context)
 
-    assert "BetaSpaceEventModel.workspace_id == binding.workspace_id" in source
-    assert "BetaSpaceEventModel.binding_id == binding.id" in source
-    assert ".limit(_MAX_FULL_SPACE_CANDIDATES)" in source
+    assert "BetaSpaceSearchDocumentModel.workspace_id == binding.workspace_id" in source
+    assert "BetaSpaceSearchDocumentModel.binding_id == binding.id" in source
+    assert 'vector.op("@@")(query)' in source
+    assert "_MAX_FULL_SPACE_CANDIDATES" not in source
+
+
+def test_search_projection_context_keeps_recent_and_old_material_bounded() -> None:
+    recent = [
+        SimpleNamespace(
+            event_id=uuid.UUID(int=index + 1),
+            sender_label="Участник",
+            content_text=f"Недавняя заметка {index}",
+            occurred_at=datetime(2026, 8, 9, tzinfo=UTC) + timedelta(seconds=index),
+        )
+        for index in range(8)
+    ]
+    old_material = SimpleNamespace(
+        event_id=uuid.UUID(int=99),
+        sender_label="Материал Марка",
+        content_text="Меню дегустации из обработанного документа.",
+        occurred_at=datetime(2026, 8, 8, tzinfo=UTC),
+    )
+
+    context = _bounded_search_context(
+        recent=recent,  # type: ignore[arg-type]
+        relevant=[old_material],  # type: ignore[list-item]
+    )
+
+    assert context[0].sender_label == "Материал Марка"
+    assert "обработанного документа" in context[0].text
+    assert sum(len(item.text) for item in context) <= 12_000
 
 
 @pytest.mark.anyio
