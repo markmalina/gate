@@ -23,6 +23,7 @@ from app.models.beta_space import (
     BetaCheckpointDispatchIntentModel,
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
+    BetaSpaceSearchDocumentModel,
 )
 from app.models.canonical import TransportConnector, Workspace
 from app.models.domain import Base, TelegramReceipt
@@ -249,6 +250,15 @@ async def test_ack_then_material_completion_exports_final_sequence_once() -> Non
             assert intent.state == "pending"
             assert intent.wake_generation == 3
             assert intent.dispatched_wake_generation == 2
+            search_document = await session.get(
+                BetaSpaceSearchDocumentModel,
+                material_event_id,
+            )
+            assert search_document is not None
+            assert search_document.workspace_id == workspace_id
+            assert search_document.binding_id == binding_id
+            assert "Финальная структура материала." in search_document.content_text
+            assert "Финальное извлечённое содержание." in search_document.content_text
             row = (
                 await session.execute(
                     select(
