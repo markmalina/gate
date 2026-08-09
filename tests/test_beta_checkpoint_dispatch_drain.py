@@ -3,11 +3,11 @@
 # ruff: noqa: I001
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
 from app.infrastructure.beta_checkpoint_dispatch import (
@@ -18,11 +18,54 @@ from app.infrastructure.beta_checkpoint_dispatch import (
 from app.infrastructure.beta_checkpoint_dispatch_drain import (
     SessionFactoryBetaCheckpointDispatchDrain,
 )
-from app.models.beta_space import BetaCheckpointDispatchIntentModel
+from app.models.beta_space import (
+    BetaCheckpointDispatchIntentModel,
+    BetaSpaceBindingModel,
+)
+from app.models.canonical import TransportConnector, Workspace
 from app.models.domain import Base
 
 SPACE_ID = "spc_fcdd8e57a7e832840afcc187fb1d4b2c"
 NOW = datetime(2026, 8, 8, 18, tzinfo=UTC)
+WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000101")
+CONNECTOR_ID = UUID("00000000-0000-0000-0000-000000000102")
+BINDING_ID = UUID("00000000-0000-0000-0000-000000000103")
+
+
+async def _add_scope(session: AsyncSession) -> None:
+    session.add_all(
+        [
+            Workspace(
+                id=WORKSPACE_ID,
+                key="gate",
+                display_name="Gate",
+                is_active=True,
+            ),
+            TransportConnector(
+                id=CONNECTOR_ID,
+                workspace_id=WORKSPACE_ID,
+                connector_key="telegram_beta_group",
+                connector_kind="telegram_bot",
+                is_enabled=True,
+            ),
+            BetaSpaceBindingModel(
+                id=BINDING_ID,
+                workspace_id=WORKSPACE_ID,
+                connector_id=CONNECTOR_ID,
+                tenant_ref="tenant-dispatch",
+                space_ref=SPACE_ID,
+                installation_ref="installation-dispatch",
+                storage_ref="storage-dispatch",
+                telegram_chat_id="-1001",
+                subject_telegram_user_id="7",
+                consent_sha256="a" * 64,
+                state="consented",
+                ready_at=NOW,
+                consented_at=NOW,
+            ),
+        ]
+    )
+    await session.flush()
 
 
 class _Dispatcher:
@@ -61,7 +104,7 @@ class _WakeDuringDispatch(_Dispatcher):
             async with self._sessions.begin() as session:
                 intent = await session.get(
                     BetaCheckpointDispatchIntentModel,
-                    space_id,
+                    (WORKSPACE_ID, BINDING_ID),
                     with_for_update=True,
                 )
                 assert intent is not None
@@ -93,8 +136,11 @@ async def test_dispatch_drain_is_idle_without_intent_and_sends_highest_sequence(
         assert (await drain.drain_once(now=NOW)).disposition == "idle"
 
         async with sessions.begin() as session:
+            await _add_scope(session)
             session.add(
                 BetaCheckpointDispatchIntentModel(
+                    workspace_id=WORKSPACE_ID,
+                    binding_id=BINDING_ID,
                     space_id=SPACE_ID,
                     accepted_sequence=17,
                     dispatched_sequence=0,
@@ -109,7 +155,9 @@ async def test_dispatch_drain_is_idle_without_intent_and_sends_highest_sequence(
         assert dispatcher.calls == [(SPACE_ID, 17)]
         assert (await drain.drain_once(now=NOW)).disposition == "idle"
         async with sessions() as session:
-            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            intent = await session.get(
+                BetaCheckpointDispatchIntentModel, (WORKSPACE_ID, BINDING_ID)
+            )
             assert intent is not None
             assert intent.state == "sent"
             assert intent.dispatched_sequence == 17
@@ -139,8 +187,11 @@ async def test_dispatch_failure_defers_with_backoff_then_retries_same_sequence()
             await connection.run_sync(Base.metadata.create_all)
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with sessions.begin() as session:
+            await _add_scope(session)
             session.add(
                 BetaCheckpointDispatchIntentModel(
+                    workspace_id=WORKSPACE_ID,
+                    binding_id=BINDING_ID,
                     space_id=SPACE_ID,
                     accepted_sequence=18,
                     dispatched_sequence=17,
@@ -195,8 +246,11 @@ async def test_wake_created_during_dispatch_is_not_lost_on_settlement() -> None:
             await connection.run_sync(Base.metadata.create_all)
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with sessions.begin() as session:
+            await _add_scope(session)
             session.add(
                 BetaCheckpointDispatchIntentModel(
+                    workspace_id=WORKSPACE_ID,
+                    binding_id=BINDING_ID,
                     space_id=SPACE_ID,
                     accepted_sequence=17,
                     dispatched_sequence=0,
@@ -214,7 +268,9 @@ async def test_wake_created_during_dispatch_is_not_lost_on_settlement() -> None:
         first = await drain.drain_once(now=NOW)
         assert first.disposition == "sent"
         async with sessions() as session:
-            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            intent = await session.get(
+                BetaCheckpointDispatchIntentModel, (WORKSPACE_ID, BINDING_ID)
+            )
             assert intent is not None
             assert intent.state == "pending"
             assert intent.dispatched_sequence == 17
@@ -225,7 +281,9 @@ async def test_wake_created_during_dispatch_is_not_lost_on_settlement() -> None:
         assert second.disposition == "sent"
         assert dispatcher.calls == [(SPACE_ID, 17), (SPACE_ID, 17)]
         async with sessions() as session:
-            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            intent = await session.get(
+                BetaCheckpointDispatchIntentModel, (WORKSPACE_ID, BINDING_ID)
+            )
             assert intent is not None
             assert intent.state == "sent"
             assert intent.wake_generation == 2
@@ -255,8 +313,11 @@ async def test_expired_sending_dispatch_becomes_unknown_without_resend() -> None
             await connection.run_sync(Base.metadata.create_all)
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with sessions.begin() as session:
+            await _add_scope(session)
             session.add(
                 BetaCheckpointDispatchIntentModel(
+                    workspace_id=WORKSPACE_ID,
+                    binding_id=BINDING_ID,
                     space_id=SPACE_ID,
                     accepted_sequence=19,
                     dispatched_sequence=18,
@@ -276,7 +337,9 @@ async def test_expired_sending_dispatch_becomes_unknown_without_resend() -> None
         assert result.error_code == "beta_checkpoint_dispatch_lease_expired"
         assert dispatcher.calls == []
         async with sessions() as session:
-            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            intent = await session.get(
+                BetaCheckpointDispatchIntentModel, (WORKSPACE_ID, BINDING_ID)
+            )
             assert intent is not None
             assert intent.state == "unknown"
             assert intent.lease_expires_at is None
