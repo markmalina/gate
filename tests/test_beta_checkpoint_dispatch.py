@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 import jwt
@@ -33,6 +34,17 @@ def _private_key() -> tuple[str, object]:
         serialization.NoEncryption(),
     ).decode()
     return private_pem, key.public_key()
+
+
+def test_dispatch_envelope_matches_beta_owned_golden_fixture() -> None:
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/checkpoint-dispatch.v1.json").read_text()
+    )
+    envelope = build_beta_checkpoint_dispatch(
+        space_id=fixture["space_id"],
+        accepted_sequence=fixture["accepted_sequence"],
+    )
+    assert envelope.as_client_payload() == fixture
 
 
 def test_dispatch_envelope_is_exact_content_free_and_deterministic() -> None:
