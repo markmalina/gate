@@ -46,6 +46,9 @@ src = ["app", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.isort]
+detect-same-package = false
+
 [tool.ruff.lint.per-file-ignores]
 "app/api/sprint10_routes.py" = ["E501", "F401", "I001"]
 "tests/test_sprint10_draft_edit.py" = ["I001"]
