@@ -379,6 +379,9 @@ async def prepare_beta_katya_candidate_binding(
             telegram_chat_id=candidate.telegram_chat_id,
             subject_telegram_user_id=candidate.telegram_user_id,
             consent_sha256=hashlib.sha256(KATYA_CONSENT_TEXT.encode()).hexdigest(),
+            actor_policy="subject_only",
+            provenance_state="not_applicable",
+            provenance_evidence_kind="not_applicable",
             state="ready",
             ready_at=now,
         )
