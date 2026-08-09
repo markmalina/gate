@@ -181,6 +181,8 @@ async def test_ack_then_material_completion_exports_final_sequence_once() -> Non
             )
             session.add(
                 BetaCheckpointDispatchIntentModel(
+                    workspace_id=workspace_id,
+                    binding_id=binding_id,
                     space_id=SPACE_ID,
                     accepted_sequence=2,
                     dispatched_sequence=2,
@@ -226,7 +228,9 @@ async def test_ack_then_material_completion_exports_final_sequence_once() -> Non
             )
         assert persisted is True
         async with sessions() as session:
-            intent = await session.get(BetaCheckpointDispatchIntentModel, SPACE_ID)
+            intent = await session.get(
+                BetaCheckpointDispatchIntentModel, (workspace_id, binding_id)
+            )
             assert intent is not None
             assert intent.state == "pending"
             assert intent.wake_generation == 3
