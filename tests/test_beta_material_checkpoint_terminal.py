@@ -34,6 +34,19 @@ INSTALLATION = "installation-test-terminal-material"
 TENANT = "beta-user-mark-wedding-001"
 
 
+class _ArtifactVerifier:
+    async def verify(
+        self,
+        *,
+        space_id: str,
+        sequence_start: int,
+        sequence_end: int,
+        ciphertext_sha256: str,
+        github_commit_sha: str,
+    ) -> None:
+        """Represent the durable Git artifact already proven by this integration fixture."""
+
+
 @pytest.mark.anyio
 async def test_ack_then_material_completion_exports_final_sequence_once() -> None:
     database_url = get_settings().database_url
@@ -216,6 +229,7 @@ async def test_ack_then_material_completion_exports_final_sequence_once() -> Non
                 sequence_end=1,
                 ciphertext_sha256=first["manifest"]["ciphertext_sha256"],
                 github_commit_sha="d" * 40,
+                artifact_verifier=_ArtifactVerifier(),
             )
 
         async with sessions() as session:
@@ -287,6 +301,7 @@ async def test_ack_then_material_completion_exports_final_sequence_once() -> Non
                 sequence_end=2,
                 ciphertext_sha256=second["manifest"]["ciphertext_sha256"],
                 github_commit_sha="f" * 40,
+                artifact_verifier=_ArtifactVerifier(),
             )
         async with sessions.begin() as session:
             assert (
