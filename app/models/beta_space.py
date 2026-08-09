@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from app.models.domain import Base
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -22,8 +23,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.domain import Base
 
 
 class BetaSpaceBindingModel(Base):
@@ -127,6 +126,12 @@ class BetaSpaceEventModel(Base):
             ["beta_space_bindings.id", "beta_space_bindings.workspace_id"],
             name="fk_beta_space_event_binding_workspace",
             ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "id",
+            "binding_id",
+            "workspace_id",
+            name="uq_beta_space_event_id_binding_workspace",
         ),
         UniqueConstraint("receipt_id", name="uq_beta_space_event_receipt"),
         UniqueConstraint(
@@ -234,6 +239,16 @@ class BetaSpaceReplyModel(Base):
             name="fk_beta_space_reply_binding_workspace",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["event_id", "binding_id", "workspace_id"],
+            [
+                "beta_space_events.id",
+                "beta_space_events.binding_id",
+                "beta_space_events.workspace_id",
+            ],
+            name="fk_beta_space_reply_event_scope",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("event_id", name="uq_beta_space_reply_event"),
         UniqueConstraint("request_sha256", name="uq_beta_space_reply_request"),
         CheckConstraint(
@@ -305,6 +320,16 @@ class BetaConsentDeliveryModel(Base):
             name="fk_beta_consent_delivery_binding_workspace",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["event_id", "binding_id", "workspace_id"],
+            [
+                "beta_space_events.id",
+                "beta_space_events.binding_id",
+                "beta_space_events.workspace_id",
+            ],
+            name="fk_beta_consent_delivery_event_scope",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("event_id", name="uq_beta_consent_delivery_event"),
         UniqueConstraint("request_sha256", name="uq_beta_consent_delivery_request"),
         CheckConstraint(
@@ -352,6 +377,12 @@ class BetaCheckpointDispatchIntentModel(Base):
 
     __tablename__ = "beta_checkpoint_dispatch_intents"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["binding_id", "workspace_id"],
+            ["beta_space_bindings.id", "beta_space_bindings.workspace_id"],
+            name="fk_beta_checkpoint_dispatch_binding_workspace",
+            ondelete="CASCADE",
+        ),
         CheckConstraint(
             "state IN ('pending','sending','sent','failed','unknown')",
             name="ck_beta_checkpoint_dispatch_intent_state",
@@ -376,7 +407,13 @@ class BetaCheckpointDispatchIntentModel(Base):
         ),
     )
 
-    space_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True
+    )
+    binding_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True
+    )
+    space_id: Mapped[str] = mapped_column(String(128), nullable=False)
     accepted_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     dispatched_sequence: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
@@ -419,6 +456,16 @@ class BetaSpaceWorkItemModel(Base):
 
     __tablename__ = "beta_space_work_items"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["event_id", "binding_id", "workspace_id"],
+            [
+                "beta_space_events.id",
+                "beta_space_events.binding_id",
+                "beta_space_events.workspace_id",
+            ],
+            name="fk_beta_space_work_item_event_scope",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("dedupe_key", name="uq_beta_space_work_item_dedupe"),
         CheckConstraint(
             "kind IN ('candidate_consent','callback_delivery',"
@@ -437,6 +484,12 @@ class BetaSpaceWorkItemModel(Base):
             "(state = 'leased' AND lease_expires_at IS NOT NULL) OR "
             "(state != 'leased' AND lease_expires_at IS NULL)",
             name="ck_beta_space_work_item_lease",
+        ),
+        CheckConstraint(
+            "(event_id IS NULL AND binding_id IS NULL AND workspace_id IS NULL) OR "
+            "(event_id IS NOT NULL AND binding_id IS NOT NULL "
+            "AND workspace_id IS NOT NULL)",
+            name="ck_beta_space_work_item_scope",
         ),
         Index(
             "ix_beta_space_work_item_due",
