@@ -20,13 +20,13 @@ from app.models.beta_space import (
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
     BetaSpaceReplyModel,
+    BetaSpaceSearchDocumentModel,
 )
 from app.models.domain import TelegramReceipt
-from sqlalchemy import select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _MAX_RECENT_CONTEXT_EVENTS = 8
-_MAX_FULL_SPACE_CANDIDATES = 200
 _MAX_RELEVANT_CONTEXT_EVENTS = 12
 _MAX_CONTEXT_CHARS = 12_000
 _TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
@@ -268,32 +268,87 @@ class SqlBetaWeddingReplyStore:
         current_event_id: uuid.UUID,
         current_text: str,
     ) -> tuple[BetaWeddingContextMessage, ...]:
-        rows = (
-            await self._session.execute(
-                select(BetaSpaceEventModel, TelegramReceipt)
-                .join(
-                    TelegramReceipt,
-                    TelegramReceipt.id == BetaSpaceEventModel.receipt_id,
-                )
-                .where(
-                    BetaSpaceEventModel.workspace_id == binding.workspace_id,
-                    BetaSpaceEventModel.binding_id == binding.id,
-                    BetaSpaceEventModel.event_kind == "fact",
-                    BetaSpaceEventModel.media_kind == "text",
-                    BetaSpaceEventModel.id != current_event_id,
-                )
-                .order_by(
-                    BetaSpaceEventModel.occurred_at.desc(),
-                    BetaSpaceEventModel.id.desc(),
-                )
-                .limit(_MAX_FULL_SPACE_CANDIDATES)
-            )
-        ).all()
-        return _select_context(
-            rows,
-            current_text=current_text,
-            expected_chat_id=binding.telegram_chat_id,
+        scope = (
+            BetaSpaceSearchDocumentModel.workspace_id == binding.workspace_id,
+            BetaSpaceSearchDocumentModel.binding_id == binding.id,
+            BetaSpaceSearchDocumentModel.event_id != current_event_id,
         )
+        recent = list(
+            (
+                await self._session.scalars(
+                    select(BetaSpaceSearchDocumentModel)
+                    .where(*scope)
+                    .order_by(
+                        BetaSpaceSearchDocumentModel.occurred_at.desc(),
+                        BetaSpaceSearchDocumentModel.event_id.desc(),
+                    )
+                    .limit(_MAX_RECENT_CONTEXT_EVENTS)
+                )
+            ).all()
+        )
+        query_terms = _query_terms(current_text)
+        relevant: list[BetaSpaceSearchDocumentModel] = []
+        if query_terms:
+            regconfig: Any = literal_column("'simple'::regconfig")
+            query = func.to_tsquery(regconfig, " | ".join(sorted(query_terms)))
+            vector = func.to_tsvector(
+                regconfig,
+                BetaSpaceSearchDocumentModel.content_text,
+            )
+            statement = select(BetaSpaceSearchDocumentModel).where(
+                *scope,
+                vector.op("@@")(query),
+            )
+            recent_event_ids = [document.event_id for document in recent]
+            if recent_event_ids:
+                statement = statement.where(
+                    BetaSpaceSearchDocumentModel.event_id.not_in(recent_event_ids)
+                )
+            relevant = list(
+                (
+                    await self._session.scalars(
+                        statement.order_by(
+                            func.ts_rank_cd(vector, query).desc(),
+                            BetaSpaceSearchDocumentModel.occurred_at.desc(),
+                            BetaSpaceSearchDocumentModel.event_id.desc(),
+                        ).limit(_MAX_RELEVANT_CONTEXT_EVENTS)
+                    )
+                ).all()
+            )
+        return _bounded_search_context(recent=recent, relevant=relevant)
+
+
+def _bounded_search_context(
+    *,
+    recent: Sequence[BetaSpaceSearchDocumentModel],
+    relevant: Sequence[BetaSpaceSearchDocumentModel],
+) -> tuple[BetaWeddingContextMessage, ...]:
+    """Deduplicate, character-bound and chronologically order selected documents."""
+
+    selected: list[tuple[BetaSpaceSearchDocumentModel, str]] = []
+    selected_ids: set[uuid.UUID] = set()
+    total_chars = 0
+    for document in (*recent, *relevant):
+        if document.event_id in selected_ids:
+            continue
+        remaining = _MAX_CONTEXT_CHARS - total_chars
+        if remaining <= 0:
+            break
+        bounded_text = document.content_text[:remaining]
+        if not bounded_text:
+            continue
+        selected_ids.add(document.event_id)
+        selected.append((document, bounded_text))
+        total_chars += len(bounded_text)
+
+    selected.sort(key=lambda item: (item[0].occurred_at, item[0].event_id))
+    return tuple(
+        BetaWeddingContextMessage(
+            sender_label=document.sender_label,
+            text=bounded_text,
+        )
+        for document, bounded_text in selected
+    )
 
 
 def _query_terms(text: str) -> frozenset[str]:
