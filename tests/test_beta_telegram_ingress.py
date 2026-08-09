@@ -218,10 +218,14 @@ def test_unbound_wedding_message_cannot_create_binding_or_effects(
 
     class UnboundSpaceStore:
         def __init__(self) -> None:
-            self.resolve_calls: list[str] = []
+            self.resolve_calls: list[tuple[str, str, str]] = []
 
-        async def resolve_binding(self, *, telegram_chat_id: str) -> None:
-            self.resolve_calls.append(telegram_chat_id)
+        async def resolve_binding(
+            self, *, workspace_key: str, connector_key: str, telegram_chat_id: str
+        ) -> None:
+            self.resolve_calls.append(
+                (workspace_key, connector_key, telegram_chat_id)
+            )
             return None
 
     space_store = UnboundSpaceStore()
@@ -267,7 +271,9 @@ def test_unbound_wedding_message_cannot_create_binding_or_effects(
         "work_queued": False,
     }
     assert len(store.commands) == 1
-    assert space_store.resolve_calls == ["-100496001"]
+    assert space_store.resolve_calls == [
+        ("mark-personal", "telegram_beta_group", "-100496001")
+    ]
 
 
 def test_bound_fact_webhook_only_admits_durable_work(
@@ -290,11 +296,16 @@ def test_bound_fact_webhook_only_admits_durable_work(
         return {"type": "http.request", "body": payload, "more_body": False}
 
     class BoundSpaceStore:
-        async def resolve_binding(self, *, telegram_chat_id: str) -> BetaSpaceBinding:
+        async def resolve_binding(
+            self, *, workspace_key: str, connector_key: str, telegram_chat_id: str
+        ) -> BetaSpaceBinding:
+            assert workspace_key == "mark-personal"
+            assert connector_key == "telegram_beta_group"
             assert telegram_chat_id == "-100496001"
             return BetaSpaceBinding(
                 binding_id="00000000-0000-0000-0000-000000000001",
                 workspace_id="00000000-0000-0000-0000-000000000002",
+                connector_id="00000000-0000-0000-0000-000000000004",
                 tenant_ref="beta-user-mark-wedding-001",
                 space_ref="spc_fcdd8e57a7e832840afcc187fb1d4b2c",
                 installation_ref="installation-test",
