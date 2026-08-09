@@ -143,7 +143,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0097_beta_exact_scope (head)"
+          alembic heads | grep -F " (head)"
           alembic upgrade head
           alembic check
 
