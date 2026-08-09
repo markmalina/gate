@@ -7,13 +7,11 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.infrastructure.beta_checkpoint_export import (
     MAX_CHECKPOINT_EVENTS,
     BetaCheckpointExportError,
     _build_portable_checkpoint,
+    _byte_bounded_event_prefix,
     _iso_datetime,
     _portable_event,
 )
@@ -23,6 +21,8 @@ from app.models.beta_context import (
     BetaContextCheckpointStateModel,
     BetaContextEventModel,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 MAX_BATCH_EVENTS = MAX_CHECKPOINT_EVENTS
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -116,6 +116,13 @@ async def next_beta_checkpoint_batch(
             raise BetaCheckpointBatchError("beta_checkpoint_event_gap")
 
     events = [_portable_event(row) for row in rows]
+    try:
+        events = _byte_bounded_event_prefix(
+            group_id=binding.group_id,
+            events=events,
+        )
+    except BetaCheckpointExportError as exc:
+        raise BetaCheckpointBatchError(exc.code) from exc
     try:
         checkpoint = _build_portable_checkpoint(
             group_id=binding.group_id,
@@ -220,13 +227,11 @@ async def acknowledge_beta_checkpoint_batch(
     ):
         raise BetaCheckpointBatchError("beta_checkpoint_ack_not_contiguous")
 
-    batch.state = "acknowledged"
-    batch.github_commit_sha = github_commit_sha
-    batch.acknowledged_at = datetime.now(UTC)
-    state.last_exported_sequence = sequence_end
-    state.updated_at = datetime.now(UTC)
-    await session.flush()
-    return _ack_payload(state, batch, replay=False)
+    # The compatibility model has no canonical portable Space path.  Advancing
+    # it from SHA syntax alone would retain B-011, so new ACKs fail closed until
+    # that legacy binding is migrated to an exact Beta Space binding.
+    raise BetaCheckpointBatchError("beta_checkpoint_artifact_proof_required")
+
 
 
 def _require_exact_binding(
