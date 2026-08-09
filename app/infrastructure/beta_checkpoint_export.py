@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from app.models.beta_context import BetaContextBindingModel, BetaContextEventModel
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
@@ -20,8 +21,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.beta_context import BetaContextBindingModel, BetaContextEventModel
 
 CONTAINER_VERSION = "beta.x25519-aes256gcm@1"
 MANIFEST_VERSION = "beta.portable-checkpoint-manifest@1"
@@ -239,6 +238,42 @@ def _build_portable_checkpoint(
         "created_at": created_at,
     }
     return {"container": container, "manifest": manifest}
+
+
+def _byte_bounded_event_prefix(
+    *,
+    group_id: str,
+    events: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return the largest canonical prefix that fits the plaintext limit.
+
+    Validation runs before sizing so an invalid later event cannot be hidden by
+    an earlier byte boundary.  A singleton over the limit is an explicit
+    terminal protocol error; canonical v1's per-event code-point bound keeps
+    that state unreachable for valid current events.
+    """
+
+    _validate_portable_event_stream(group_id=group_id, events=events)
+    selected: list[dict[str, Any]] = []
+    total_bytes = 0
+    for event in events:
+        try:
+            event_bytes = len((_stable_json(event) + "\n").encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise BetaCheckpointExportError(
+                "beta_checkpoint_event_invalid"
+            ) from exc
+        if event_bytes > MAX_PLAINTEXT_BYTES:
+            raise BetaCheckpointExportError(
+                "beta_checkpoint_event_oversized"
+            )
+        if total_bytes + event_bytes > MAX_PLAINTEXT_BYTES:
+            break
+        selected.append(event)
+        total_bytes += event_bytes
+    if not selected:
+        raise BetaCheckpointExportError("beta_checkpoint_event_oversized")
+    return selected
 
 
 def _assert_contiguous_from_origin(events: Sequence[dict[str, Any]]) -> None:
