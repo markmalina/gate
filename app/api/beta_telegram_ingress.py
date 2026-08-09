@@ -8,9 +8,6 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_db_session
 from app.api.telegram_ingress import get_telegram_receipt_store
 from app.application.beta_space_intake import (
@@ -42,6 +39,7 @@ from app.infrastructure.beta_material_provider import (
     TelegramMaterialDownloadAdapter,
 )
 from app.infrastructure.beta_space import (
+    BETA_CONNECTOR_KEY,
     SqlBetaSpaceStore,
     beta_space_production_ready,
 )
@@ -49,6 +47,8 @@ from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 BETA_TELEGRAM_WEBHOOK_PATH = "/telegram/beta/webhook"
 TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
@@ -134,6 +134,8 @@ async def beta_telegram_webhook(
     intake = await ProcessBetaSpaceUpdate(
         store=beta_space_store,
         production_ready=beta_space_production_ready(settings),
+        workspace_key=settings.gate_workspace_id,
+        connector_key=BETA_CONNECTOR_KEY,
     ).execute(
         update=update,
         receipt_id=acceptance.receipt_id,
