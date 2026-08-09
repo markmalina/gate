@@ -33,37 +33,41 @@ BINDING_ID = UUID("00000000-0000-0000-0000-000000000103")
 
 
 async def _add_scope(session: AsyncSession) -> None:
-    session.add_all(
-        [
-            Workspace(
-                id=WORKSPACE_ID,
-                key="gate",
-                display_name="Gate",
-                is_active=True,
-            ),
-            TransportConnector(
-                id=CONNECTOR_ID,
-                workspace_id=WORKSPACE_ID,
-                connector_key="telegram_beta_group",
-                connector_kind="telegram_bot",
-                is_enabled=True,
-            ),
-            BetaSpaceBindingModel(
-                id=BINDING_ID,
-                workspace_id=WORKSPACE_ID,
-                connector_id=CONNECTOR_ID,
-                tenant_ref="tenant-dispatch",
-                space_ref=SPACE_ID,
-                installation_ref="installation-dispatch",
-                storage_ref="storage-dispatch",
-                telegram_chat_id="-1001",
-                subject_telegram_user_id="7",
-                consent_sha256="a" * 64,
-                state="consented",
-                ready_at=NOW,
-                consented_at=NOW,
-            ),
-        ]
+    session.add(
+        Workspace(
+            id=WORKSPACE_ID,
+            key="gate",
+            display_name="Gate",
+            is_active=True,
+        )
+    )
+    await session.flush()
+    session.add(
+        TransportConnector(
+            id=CONNECTOR_ID,
+            workspace_id=WORKSPACE_ID,
+            connector_key="telegram_beta_group",
+            connector_kind="telegram_bot",
+            is_enabled=True,
+        )
+    )
+    await session.flush()
+    session.add(
+        BetaSpaceBindingModel(
+            id=BINDING_ID,
+            workspace_id=WORKSPACE_ID,
+            connector_id=CONNECTOR_ID,
+            tenant_ref="tenant-dispatch",
+            space_ref=SPACE_ID,
+            installation_ref="installation-dispatch",
+            storage_ref="storage-dispatch",
+            telegram_chat_id="-1001",
+            subject_telegram_user_id="7",
+            consent_sha256="a" * 64,
+            state="consented",
+            ready_at=NOW,
+            consented_at=NOW,
+        )
     )
     await session.flush()
 
