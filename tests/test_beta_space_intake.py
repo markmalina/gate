@@ -22,6 +22,7 @@ SYNTHETIC_CONSENT = "Synthetic consent for isolated dental notes"
 SPACE_A = BetaSpaceBinding(
     binding_id="binding-a",
     workspace_id="workspace-a",
+    connector_id="connector-a",
     tenant_ref="tenant-a",
     space_ref="space-a",
     installation_ref="installation-a",
@@ -35,6 +36,7 @@ SPACE_B = replace(
     SPACE_A,
     binding_id="binding-b",
     workspace_id="workspace-b",
+    connector_id="connector-b",
     tenant_ref="tenant-b",
     space_ref="space-b",
     installation_ref="installation-b",
@@ -45,20 +47,26 @@ SPACE_B = replace(
 
 class MemoryStore:
     def __init__(self) -> None:
-        self.bindings = {SPACE_A.telegram_chat_id: SPACE_A, SPACE_B.telegram_chat_id: SPACE_B}
+        self.bindings = {
+            ("workspace-a", "connector-a", SPACE_A.telegram_chat_id): SPACE_A,
+            ("workspace-b", "connector-b", SPACE_B.telegram_chat_id): SPACE_B,
+        }
         self.events: set[tuple[str, int]] = set()
         self.facts: list[tuple[str, str, str, str]] = []
         self.delivery_states = {"delivery-a": "pending"}
 
-    async def resolve_binding(self, *, telegram_chat_id: str):
-        return self.bindings.get(telegram_chat_id)
+    async def resolve_binding(
+        self, *, workspace_key: str, connector_key: str, telegram_chat_id: str
+    ):
+        return self.bindings.get((workspace_key, connector_key, telegram_chat_id))
 
     async def reserve_consent(self, *, binding, source):
         key = (binding.binding_id, source.update_id)
         if key in self.events:
             return BetaSpaceReservation(False)
         self.events.add(key)
-        self.bindings[source.telegram_chat_id] = replace(binding, state="consented")
+        exact_scope = (binding.workspace_id, binding.connector_id, source.telegram_chat_id)
+        self.bindings[exact_scope] = replace(binding, state="consented")
         return BetaSpaceReservation(True, "event-a", "delivery-a")
 
     async def append_fact(self, *, binding, source):
@@ -124,10 +132,25 @@ def run(service, value):
     return asyncio.run(service.execute(update=value, receipt_id="receipt", received_at=NOW))
 
 
+def processor(
+    store: MemoryStore,
+    *,
+    production_ready: bool = True,
+    workspace_key: str = "workspace-a",
+    connector_key: str = "connector-a",
+) -> ProcessBetaSpaceUpdate:
+    return ProcessBetaSpaceUpdate(
+        store=store,
+        production_ready=production_ready,
+        workspace_key=workspace_key,
+        connector_key=connector_key,
+    )
+
+
 def test_typed_consent_never_activates_collection() -> None:
     store = MemoryStore()
-    disabled = ProcessBetaSpaceUpdate(store=store, production_ready=False)
-    enabled = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    disabled = processor(store, production_ready=False)
+    enabled = processor(store)
 
     assert (
         run(disabled, update(text=SYNTHETIC_CONSENT)).disposition
@@ -142,16 +165,17 @@ def test_typed_consent_never_activates_collection() -> None:
 
 def test_inline_consent_before_ready_at_is_stale_but_equality_is_accepted() -> None:
     store = MemoryStore()
-    store.bindings[SPACE_A.telegram_chat_id] = replace(
+    exact_scope = ("workspace-a", "connector-a", SPACE_A.telegram_chat_id)
+    store.bindings[exact_scope] = replace(
         SPACE_A, ready_at=NOW + timedelta(seconds=1)
     )
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     stale = run(service, callback_update(update_id=2, message_id=12))
     assert stale.disposition == BetaSpaceDisposition.PRE_READINESS
     assert store.events == set()
 
-    store.bindings[SPACE_A.telegram_chat_id] = SPACE_A
+    store.bindings[exact_scope] = SPACE_A
     boundary = run(service, callback_update(update_id=3, message_id=13))
     assert boundary.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
     assert store.events == {(SPACE_A.binding_id, 3)}
@@ -159,7 +183,7 @@ def test_inline_consent_before_ready_at_is_stale_but_equality_is_accepted() -> N
 
 def test_negative_routing_never_creates_an_event() -> None:
     store = MemoryStore()
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     assert (
         run(service, update(chat_id=-19999, text=SYNTHETIC_CONSENT)).disposition
@@ -174,9 +198,13 @@ def test_negative_routing_never_creates_an_event() -> None:
 
 def test_cross_space_events_keep_exact_tenant_space_and_actor_scope() -> None:
     store = MemoryStore()
-    store.bindings[SPACE_A.telegram_chat_id] = replace(SPACE_A, state="consented")
-    store.bindings[SPACE_B.telegram_chat_id] = replace(SPACE_B, state="consented")
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    store.bindings[("workspace-a", "connector-a", SPACE_A.telegram_chat_id)] = replace(
+        SPACE_A, state="consented"
+    )
+    store.bindings[("workspace-b", "connector-b", SPACE_B.telegram_chat_id)] = replace(
+        SPACE_B, state="consented"
+    )
+    service = processor(store)
 
     assert (
         run(service, update(update_id=10, kind="voice")).disposition
@@ -184,7 +212,7 @@ def test_cross_space_events_keep_exact_tenant_space_and_actor_scope() -> None:
     )
     assert (
         run(
-            service,
+            processor(store, workspace_key="workspace-b", connector_key="connector-b"),
             update(update_id=11, chat_id=-10002, user_id=70002, kind="document"),
         ).disposition
         == BetaSpaceDisposition.FACT_ACCEPTED
@@ -195,12 +223,45 @@ def test_cross_space_events_keep_exact_tenant_space_and_actor_scope() -> None:
     ]
 
 
+def test_same_chat_id_in_two_connectors_never_crosses_scope() -> None:
+    store = MemoryStore()
+    chat_id = SPACE_A.telegram_chat_id
+    connector_a = replace(SPACE_A, state="consented")
+    connector_b = replace(
+        SPACE_A,
+        binding_id="binding-same-chat-b",
+        connector_id="connector-b",
+        tenant_ref="tenant-same-chat-b",
+        space_ref="space-same-chat-b",
+        installation_ref="installation-same-chat-b",
+        subject_telegram_user_id="70002",
+        state="consented",
+    )
+    store.bindings[("workspace-a", "connector-a", chat_id)] = connector_a
+    store.bindings[("workspace-a", "connector-b", chat_id)] = connector_b
+
+    wrong_actor = run(
+        processor(store, connector_key="connector-a"),
+        update(update_id=12, chat_id=int(chat_id), user_id=70002, text="wrong scope"),
+    )
+    exact_actor = run(
+        processor(store, connector_key="connector-b"),
+        update(update_id=13, chat_id=int(chat_id), user_id=70002, text="exact scope"),
+    )
+
+    assert wrong_actor.disposition == BetaSpaceDisposition.ACTOR_MISMATCH
+    assert exact_actor.disposition == BetaSpaceDisposition.FACT_ACCEPTED
+    assert store.facts == [
+        ("tenant-same-chat-b", "space-same-chat-b", "70002", "text")
+    ]
+
+
 def test_group_member_policy_accepts_two_owner_actors_in_one_space() -> None:
     store = MemoryStore()
-    store.bindings[SPACE_A.telegram_chat_id] = replace(
+    store.bindings[("workspace-a", "connector-a", SPACE_A.telegram_chat_id)] = replace(
         SPACE_A, state="consented", actor_policy="group_members"
     )
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     first = run(service, update(update_id=18, user_id=70001, text="Дата свадьбы"))
     second = run(service, update(update_id=19, user_id=70002, text="Площадка в Минске"))
@@ -215,7 +276,7 @@ def test_group_member_policy_accepts_two_owner_actors_in_one_space() -> None:
 
 def test_duplicate_inline_callback_creates_no_second_event_or_delivery() -> None:
     store = MemoryStore()
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
     value = callback_update(update_id=20, message_id=20)
     first = run(service, value)
     second = run(service, value)
@@ -227,7 +288,7 @@ def test_duplicate_inline_callback_creates_no_second_event_or_delivery() -> None
 
 def test_consent_before_processing_and_other_actor_is_not_attributed() -> None:
     store = MemoryStore()
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     assert (
         run(service, update(update_id=30, kind="photo")).disposition
@@ -280,19 +341,20 @@ def callback_update(
 
 def test_yes_button_accepts_consent_without_typed_text() -> None:
     store = MemoryStore()
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     result = run(service, callback_update())
 
     assert result.disposition == BetaSpaceDisposition.CONSENT_ACCEPTED
     assert result.delivery_id == "delivery-a"
     assert store.events == {(SPACE_A.binding_id, 101)}
-    assert store.bindings[SPACE_A.telegram_chat_id].state == "consented"
+    exact_scope = ("workspace-a", "connector-a", SPACE_A.telegram_chat_id)
+    assert store.bindings[exact_scope].state == "consented"
 
 
 def test_no_button_does_not_enable_collection() -> None:
     store = MemoryStore()
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     result = run(
         service,
@@ -302,12 +364,13 @@ def test_no_button_does_not_enable_collection() -> None:
     assert result.disposition == BetaSpaceDisposition.CONSENT_DECLINED
     assert result.delivery_id is None
     assert store.events == set()
-    assert store.bindings[SPACE_A.telegram_chat_id].state == "ready"
+    exact_scope = ("workspace-a", "connector-a", SPACE_A.telegram_chat_id)
+    assert store.bindings[exact_scope].state == "ready"
 
 
 def test_callback_from_other_actor_is_rejected() -> None:
     store = MemoryStore()
-    service = ProcessBetaSpaceUpdate(store=store, production_ready=True)
+    service = processor(store)
 
     result = run(service, callback_update(update_id=103, user_id=79999))
 

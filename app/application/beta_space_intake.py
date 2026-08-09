@@ -46,6 +46,7 @@ class BetaSpaceDisposition(StrEnum):
 class BetaSpaceBinding:
     binding_id: str
     workspace_id: str
+    connector_id: str
     tenant_ref: str
     space_ref: str
     installation_ref: str
@@ -92,7 +93,13 @@ class BetaConsentDeliveryJob:
 
 
 class BetaSpaceStore(Protocol):
-    async def resolve_binding(self, *, telegram_chat_id: str) -> BetaSpaceBinding | None: ...
+    async def resolve_binding(
+        self,
+        *,
+        workspace_key: str,
+        connector_key: str,
+        telegram_chat_id: str,
+    ) -> BetaSpaceBinding | None: ...
 
     async def reserve_consent(
         self, *, binding: BetaSpaceBinding, source: BetaSpaceSource
@@ -125,9 +132,18 @@ class BetaTelegram(Protocol):
 class ProcessBetaSpaceUpdate:
     """Route an ordinary Beta group message into exactly one bound Space."""
 
-    def __init__(self, *, store: BetaSpaceStore, production_ready: bool) -> None:
+    def __init__(
+        self,
+        *,
+        store: BetaSpaceStore,
+        production_ready: bool,
+        workspace_key: str,
+        connector_key: str,
+    ) -> None:
         self._store = store
         self._production_ready = production_ready
+        self._workspace_key = workspace_key
+        self._connector_key = connector_key
 
     async def execute(
         self, *, update: JsonObject, receipt_id: str, received_at: datetime
@@ -150,6 +166,8 @@ class ProcessBetaSpaceUpdate:
             source, text = source_and_text
             consent_decision = None
         binding = await self._store.resolve_binding(
+            workspace_key=self._workspace_key,
+            connector_key=self._connector_key,
             telegram_chat_id=source.telegram_chat_id
         )
         if binding is None:

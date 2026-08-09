@@ -15,6 +15,17 @@ on:
       - "alembic/versions/0089_beta_wedding_voice_phases.py"
       - "alembic/versions/0090_beta_wedding_checkpoints.py"
       - "alembic/versions/0091_beta_universal_material.py"
+      - "alembic/versions/0097_beta_exact_scope.py"
+      - "app/application/beta_space_intake.py"
+      - "app/infrastructure/beta_space.py"
+      - "app/infrastructure/beta_checkpoint_dispatch_drain.py"
+      - "app/worker/beta_space.py"
+      - "app/models/beta_space.py"
+      - "tests/test_beta_space_intake.py"
+      - "tests/test_beta_space_atomic_admission.py"
+      - "tests/test_beta_checkpoint_dispatch_drain.py"
+      - "tests/test_beta_material_checkpoint_terminal.py"
+      - "tests/test_beta_exact_scope.py"
       - "app/application/beta_material.py"
       - "app/infrastructure/beta_material.py"
       - "app/infrastructure/beta_material_provider.py"
@@ -124,10 +135,15 @@ jobs:
       - name: Test Quest state, persistence, replay, and migration safety
         run: pytest tests/test_become_program_draft.py tests/test_become_transcript_review.py tests/test_become_voice_transcription.py tests/test_become_telegram_ingress.py tests/test_telegram_become_webhook.py tests/test_become_quest.py tests/test_become_quest_postgres.py tests/test_become_quest_migration.py tests/test_become_transcript_review_postgres.py tests/test_become_learner_invitation.py tests/test_become_learner_invitation_postgres.py tests/test_beta_space_intake.py tests/test_telegram_worker_runtime.py
 
+      - name: Validate exact Beta binding scope on the literal PR head
+        run: |
+          ruff check app/application/beta_space_intake.py app/api/beta_telegram_ingress.py app/infrastructure/beta_space.py app/infrastructure/beta_checkpoint_dispatch_drain.py app/infrastructure/beta_material.py app/models/beta_space.py app/models/beta_material.py app/models/beta_wedding_voice.py app/worker/beta_space.py tests/test_beta_space_intake.py tests/test_beta_space_atomic_admission.py tests/test_beta_telegram_ingress.py tests/test_beta_checkpoint_dispatch_drain.py tests/test_beta_material_checkpoint_terminal.py tests/test_beta_exact_scope.py alembic/versions/0097_beta_exact_scope.py
+          pytest tests/test_beta_space_intake.py tests/test_beta_space_atomic_admission.py tests/test_beta_telegram_ingress.py tests/test_beta_checkpoint_dispatch_drain.py tests/test_beta_material_checkpoint_terminal.py tests/test_beta_exact_scope.py
+
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0096_beta_binding_provenance (head)"
+          alembic heads | grep -F "0097_beta_exact_scope (head)"
           alembic upgrade head
           alembic check
 

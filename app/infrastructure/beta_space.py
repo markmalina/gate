@@ -8,10 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import case, func, select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.application.beta_space_intake import (
     CONSENT_RESPONSE,
     BetaConsentDeliveryJob,
@@ -28,6 +24,9 @@ from app.models.beta_space import (
     BetaSpaceWorkItemModel,
 )
 from app.models.canonical import TransportConnector, Workspace
+from sqlalchemy import case, func, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 BETA_SPACE_REF = "spc_32443e2deeeaf0bd6ff0012c1e3b39e1"
 BETA_TENANT_REF = "beta-user-katya-001"
@@ -275,6 +274,8 @@ async def reconcile_beta_katya_space_binding(
 async def enqueue_beta_checkpoint_dispatch(
     session: AsyncSession,
     *,
+    workspace_id: uuid.UUID,
+    binding_id: uuid.UUID,
     space_id: str,
     accepted_sequence: int,
     now: datetime,
@@ -285,6 +286,8 @@ async def enqueue_beta_checkpoint_dispatch(
     await session.execute(
         insert(BetaCheckpointDispatchIntentModel)
         .values(
+            workspace_id=workspace_id,
+            binding_id=binding_id,
             space_id=space_id,
             accepted_sequence=accepted_sequence,
             dispatched_sequence=0,
@@ -297,7 +300,10 @@ async def enqueue_beta_checkpoint_dispatch(
             updated_at=now,
         )
         .on_conflict_do_update(
-            index_elements=[BetaCheckpointDispatchIntentModel.space_id],
+            index_elements=[
+                BetaCheckpointDispatchIntentModel.workspace_id,
+                BetaCheckpointDispatchIntentModel.binding_id,
+            ],
             set_={
                 "accepted_sequence": func.greatest(
                     BetaCheckpointDispatchIntentModel.accepted_sequence,
@@ -331,9 +337,32 @@ class SqlBetaSpaceStore:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def resolve_binding(self, *, telegram_chat_id: str) -> BetaSpaceBinding | None:
+    async def resolve_binding(
+        self,
+        *,
+        workspace_key: str,
+        connector_key: str,
+        telegram_chat_id: str,
+    ) -> BetaSpaceBinding | None:
         row = await self._session.scalar(
-            select(BetaSpaceBindingModel).where(
+            select(BetaSpaceBindingModel)
+            .join(
+                Workspace,
+                Workspace.id == BetaSpaceBindingModel.workspace_id,
+            )
+            .join(
+                TransportConnector,
+                (TransportConnector.id == BetaSpaceBindingModel.connector_id)
+                & (
+                    TransportConnector.workspace_id
+                    == BetaSpaceBindingModel.workspace_id
+                ),
+            )
+            .where(
+                Workspace.key == workspace_key,
+                Workspace.is_active.is_(True),
+                TransportConnector.connector_key == connector_key,
+                TransportConnector.is_enabled.is_(True),
                 BetaSpaceBindingModel.telegram_chat_id == telegram_chat_id,
                 BetaSpaceBindingModel.state.in_(("ready", "consented")),
             )
@@ -413,6 +442,8 @@ class SqlBetaSpaceStore:
         row.consented_at = source.received_at
         row.updated_at = source.received_at
         await self._enqueue_checkpoint_dispatch(
+            workspace_id=row.workspace_id,
+            binding_id=row.id,
             space_id=row.space_ref,
             accepted_sequence=checkpoint_sequence,
             now=source.received_at,
@@ -464,6 +495,8 @@ class SqlBetaSpaceStore:
             now=source.received_at,
         )
         await self._enqueue_checkpoint_dispatch(
+            workspace_id=row.workspace_id,
+            binding_id=row.id,
             space_id=row.space_ref,
             accepted_sequence=checkpoint_sequence,
             now=source.received_at,
@@ -557,12 +590,20 @@ class SqlBetaSpaceStore:
         )
 
     async def _enqueue_checkpoint_dispatch(
-        self, *, space_id: str, accepted_sequence: int, now: datetime
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        binding_id: uuid.UUID,
+        space_id: str,
+        accepted_sequence: int,
+        now: datetime,
     ) -> None:
         """Coalesce wake-ups in the same transaction as canonical acceptance."""
 
         await enqueue_beta_checkpoint_dispatch(
             self._session,
+            workspace_id=workspace_id,
+            binding_id=binding_id,
             space_id=space_id,
             accepted_sequence=accepted_sequence,
             now=now,
@@ -647,6 +688,7 @@ class SqlBetaSpaceStore:
                 .where(
                     BetaSpaceBindingModel.id == uuid.UUID(binding.binding_id),
                     BetaSpaceBindingModel.workspace_id == uuid.UUID(binding.workspace_id),
+                    BetaSpaceBindingModel.connector_id == uuid.UUID(binding.connector_id),
                     BetaSpaceBindingModel.tenant_ref == binding.tenant_ref,
                     BetaSpaceBindingModel.space_ref == binding.space_ref,
                     BetaSpaceBindingModel.telegram_chat_id == binding.telegram_chat_id,
@@ -663,6 +705,7 @@ def _binding(row: BetaSpaceBindingModel) -> BetaSpaceBinding:
     return BetaSpaceBinding(
         binding_id=str(row.id),
         workspace_id=str(row.workspace_id),
+        connector_id=str(row.connector_id),
         tenant_ref=row.tenant_ref,
         space_ref=row.space_ref,
         installation_ref=row.installation_ref,
