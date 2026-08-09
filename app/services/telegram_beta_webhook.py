@@ -12,6 +12,7 @@ from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 BETA_ALLOWED_UPDATES = ["message", "my_chat_member", "callback_query"]
+BETA_TELEGRAM_API_ORIGIN = "https://api.telegram.org"
 
 
 def build_beta_public_webhook_url(environ: Mapping[str, str]) -> str | None:
@@ -25,6 +26,20 @@ def build_beta_public_webhook_url(environ: Mapping[str, str]) -> str | None:
         return None
     base_url = raw_value if "://" in raw_value else f"https://{raw_value}"
     return f"{base_url.rstrip('/')}/telegram/beta/webhook"
+
+
+def beta_telegram_api_origin(
+    settings: Settings,
+    environ: Mapping[str, str],
+) -> str:
+    """Resolve a test override while pinning production to Telegram HTTPS."""
+
+    override = environ.get("TELEGRAM_API_BASE_URL", "").strip().rstrip("/")
+    if settings.gate_env == "production":
+        if override and override != BETA_TELEGRAM_API_ORIGIN:
+            raise RuntimeError("beta_telegram_api_origin_not_allowed")
+        return BETA_TELEGRAM_API_ORIGIN
+    return override or BETA_TELEGRAM_API_ORIGIN
 
 
 async def reconcile_beta_telegram_webhook(
@@ -45,7 +60,7 @@ async def reconcile_beta_telegram_webhook(
     if webhook_url is None:
         return "skipped_missing_public_domain"
 
-    api_base = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org").rstrip("/")
+    api_base = beta_telegram_api_origin(settings, os.environ)
     bot_api_base = f"{api_base}/bot{token}"
     info_response = await http_client.post(f"{bot_api_base}/getWebhookInfo", json={})
     info_response.raise_for_status()
