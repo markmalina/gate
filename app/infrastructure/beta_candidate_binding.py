@@ -7,12 +7,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.beta_space_intake import KATYA_CONSENT_TEXT
 from app.models.beta_space import BetaSpaceBindingModel
 from app.models.canonical import TransportConnector, Workspace
 from app.models.domain import TelegramReceipt
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .beta_space import (
     BETA_CONNECTOR_KEY,
