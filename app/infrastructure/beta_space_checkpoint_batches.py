@@ -9,9 +9,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.beta_material import safe_failure_text
 from app.infrastructure.beta_checkpoint_batches import BetaCheckpointBatchError
 from app.infrastructure.beta_checkpoint_export import (
@@ -29,6 +26,8 @@ from app.models.beta_space import (
 )
 from app.models.beta_wedding_voice import BetaWeddingVoiceJobModel
 from app.models.domain import TelegramReceipt
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 MAX_BATCH_EVENTS = MAX_CHECKPOINT_EVENTS
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
