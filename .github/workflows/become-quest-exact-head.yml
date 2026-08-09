@@ -127,7 +127,7 @@ jobs:
       - name: Prove the single migration head and schema convergence
         run: |
           test "$(alembic heads | wc -l)" -eq 1
-          alembic heads | grep -F "0095_beta_checkpoint_wake (head)"
+          alembic heads | grep -F "0096_beta_binding_provenance (head)"
           alembic upgrade head
           alembic check
 
