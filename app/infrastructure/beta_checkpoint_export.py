@@ -241,6 +241,42 @@ def _build_portable_checkpoint(
     return {"container": container, "manifest": manifest}
 
 
+def _byte_bounded_event_prefix(
+    *,
+    group_id: str,
+    events: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return the largest canonical prefix that fits the plaintext limit.
+
+    Validation runs before sizing so an invalid later event cannot be hidden by
+    an earlier byte boundary.  A singleton over the limit is an explicit
+    terminal protocol error; canonical v1's per-event code-point bound keeps
+    that state unreachable for valid current events.
+    """
+
+    _validate_portable_event_stream(group_id=group_id, events=events)
+    selected: list[dict[str, Any]] = []
+    total_bytes = 0
+    for event in events:
+        try:
+            event_bytes = len((_stable_json(event) + "\n").encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise BetaCheckpointExportError(
+                "beta_checkpoint_event_invalid"
+            ) from exc
+        if event_bytes > MAX_PLAINTEXT_BYTES:
+            raise BetaCheckpointExportError(
+                "beta_checkpoint_event_oversized"
+            )
+        if total_bytes + event_bytes > MAX_PLAINTEXT_BYTES:
+            break
+        selected.append(event)
+        total_bytes += event_bytes
+    if not selected:
+        raise BetaCheckpointExportError("beta_checkpoint_event_oversized")
+    return selected
+
+
 def _assert_contiguous_from_origin(events: Sequence[dict[str, Any]]) -> None:
     if not events:
         raise BetaCheckpointExportError("beta_checkpoint_context_empty")

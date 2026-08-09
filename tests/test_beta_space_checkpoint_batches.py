@@ -98,15 +98,46 @@ class _MissingPendingSession:
         self.flushed = True
 
 
+class _AckSession:
+    def __init__(self, binding: Any, batch: Any, accepted_sequence: int) -> None:
+        self._scalar_values = [binding, batch, accepted_sequence]
+        self.flushed = False
+
+    async def scalar(self, _statement: Any) -> Any:
+        return self._scalar_values.pop(0)
+
+    async def flush(self) -> None:
+        self.flushed = True
+
+
 def _binding(*, recipient_pem: str) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
         installation_ref="installation-4de1df8a77f8468d8b30e8a41db876aa",
         tenant_ref="workspace-beta-001",
+        space_ref="spc_fcdd8e57a7e832840afcc187fb1d4b2c",
         storage_ref=GROUP_ID,
         checkpoint_last_exported_sequence=0,
         checkpoint_recipient_pem=recipient_pem,
+        updated_at=None,
     )
+
+
+class _ArtifactVerifier:
+    def __init__(self, *, error_code: str | None = None) -> None:
+        self.error_code = error_code
+        self.calls: list[dict[str, Any]] = []
+
+    async def verify(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
+        if self.error_code is not None:
+            raise SimpleNamespaceError(self.error_code)
+
+
+class SimpleNamespaceError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 def _rows(count: int) -> list[tuple[SimpleNamespace, SimpleNamespace, None, None]]:
@@ -122,6 +153,85 @@ def _rows(count: int) -> list[tuple[SimpleNamespace, SimpleNamespace, None, None
         )
         for sequence in range(1, count + 1)
     ]
+
+
+@pytest.mark.anyio
+async def test_ack_advances_only_after_exact_artifact_verification() -> None:
+    binding = _binding(recipient_pem="synthetic-public-key")
+    batch = SimpleNamespace(
+        group_id=GROUP_ID,
+        sequence_start=1,
+        sequence_end=4,
+        ciphertext_sha256="c" * 64,
+        state="pending",
+        github_commit_sha=None,
+        acknowledged_at=None,
+    )
+    verifier = _ArtifactVerifier()
+    session = _AckSession(binding, batch, accepted_sequence=4)
+
+    result = await acknowledge_beta_space_checkpoint_batch(
+        session,  # type: ignore[arg-type]
+        installation_ref=binding.installation_ref,
+        expected_user_workspace_id=binding.tenant_ref,
+        expected_group_id=binding.storage_ref,
+        sequence_start=1,
+        sequence_end=4,
+        ciphertext_sha256="c" * 64,
+        github_commit_sha="d" * 40,
+        artifact_verifier=verifier,
+    )
+
+    assert verifier.calls == [
+        {
+            "space_id": binding.space_ref,
+            "sequence_start": 1,
+            "sequence_end": 4,
+            "ciphertext_sha256": "c" * 64,
+            "github_commit_sha": "d" * 40,
+        }
+    ]
+    assert batch.state == "acknowledged"
+    assert binding.checkpoint_last_exported_sequence == 4
+    assert session.flushed is True
+    assert result["last_exported_sequence"] == 4
+
+
+@pytest.mark.anyio
+async def test_false_artifact_proof_never_advances_cursor() -> None:
+    binding = _binding(recipient_pem="synthetic-public-key")
+    batch = SimpleNamespace(
+        group_id=GROUP_ID,
+        sequence_start=1,
+        sequence_end=1,
+        ciphertext_sha256="c" * 64,
+        state="pending",
+        github_commit_sha=None,
+        acknowledged_at=None,
+    )
+    verifier = _ArtifactVerifier(
+        error_code="beta_checkpoint_artifact_hash_mismatch"
+    )
+    session = _AckSession(binding, batch, accepted_sequence=1)
+
+    with pytest.raises(BetaSpaceCheckpointBatchError) as caught:
+        await acknowledge_beta_space_checkpoint_batch(
+            session,  # type: ignore[arg-type]
+            installation_ref=binding.installation_ref,
+            expected_user_workspace_id=binding.tenant_ref,
+            expected_group_id=binding.storage_ref,
+            sequence_start=1,
+            sequence_end=1,
+            ciphertext_sha256="c" * 64,
+            github_commit_sha="d" * 40,
+            artifact_verifier=verifier,
+        )
+
+    assert caught.value.code == "beta_checkpoint_artifact_hash_mismatch"
+    assert batch.state == "pending"
+    assert batch.github_commit_sha is None
+    assert binding.checkpoint_last_exported_sequence == 0
+    assert session.flushed is False
 
 
 @pytest.mark.anyio
@@ -165,6 +275,59 @@ async def test_checkpoint_stops_before_nonterminal_material_without_gap(
     assert result["event_count"] == 1
     assert result["accepted_sequence"] == 2
     assert result["checkpoint_lag_events"] == 1
+
+
+@pytest.mark.anyio
+async def test_checkpoint_uses_largest_canonical_byte_bounded_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private = X25519PrivateKey.generate()
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    events = [
+        _canonical_event(sequence, text="🙂" * 65_536)
+        for sequence in range(1, 11)
+    ]
+    session = _CheckpointSession(
+        binding=_binding(recipient_pem=public_pem),
+        rows=_rows(len(events)),
+    )
+    _install_projection(monkeypatch, events)
+
+    result = await next_beta_space_checkpoint_batch(
+        session,  # type: ignore[arg-type]
+        installation_ref=session.binding.installation_ref,
+        expected_user_workspace_id=session.binding.tenant_ref,
+        expected_group_id=session.binding.storage_ref,
+    )
+
+    assert result is not None
+    assert 1 <= result["event_count"] < len(events)
+    assert result["sequence_start"] == 1
+    assert result["sequence_end"] == result["event_count"]
+    assert result["checkpoint_lag_events"] == len(events) - result["event_count"]
+    assert len(session.added) == 1
+
+
+def test_byte_bounded_prefix_rejects_oversized_singleton_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = _canonical_event(1)
+    monkeypatch.setattr(
+        beta_checkpoint_export,
+        "MAX_PLAINTEXT_BYTES",
+        1,
+    )
+
+    with pytest.raises(beta_checkpoint_export.BetaCheckpointExportError) as caught:
+        beta_checkpoint_export._byte_bounded_event_prefix(
+            group_id=GROUP_ID,
+            events=[event],
+        )
+
+    assert caught.value.code == "beta_checkpoint_event_oversized"
 
 
 def _install_projection(
