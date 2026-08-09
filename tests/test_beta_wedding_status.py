@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -13,10 +14,10 @@ from app.infrastructure.beta_wedding_binding import (
 
 
 class RowResult:
-    def __init__(self, rows: list[tuple[object, object, int]]) -> None:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
         self.rows = rows
 
-    def all(self) -> list[tuple[object, object, int]]:
+    def all(self) -> list[tuple[object, ...]]:
         return self.rows
 
 
@@ -25,7 +26,7 @@ class ScalarSession:
         self,
         values: list[object],
         *,
-        row_groups: list[list[tuple[object, object, int]]] | None = None,
+        row_groups: list[list[tuple[object, ...]]] | None = None,
     ) -> None:
         self.values = iter(values)
         self.row_groups = iter(row_groups or [])
@@ -85,7 +86,9 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         actor_policy="group_members",
         provenance_state="verified",
         provenance_evidence_kind="authenticated_control_plane",
+        checkpoint_last_exported_sequence=1,
     )
+    fixed_now = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
     session = ScalarSession(
         [
             UUID("00000000-0000-0000-0000-000000000001"),
@@ -94,6 +97,15 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
             2,
             2,
             0,
+            4,
+            2,
+            1,
+            fixed_now - timedelta(minutes=5),
+            fixed_now - timedelta(minutes=2),
+            4,
+            2,
+            1,
+            1,
         ],
         row_groups=[
             [
@@ -105,6 +117,11 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
                 ("structured_result", "sent", 1),
                 ("structured_result", "unknown", 1),
             ],
+            [
+                ("telegram_timeout", 2),
+                ("schema_invalid", 1),
+            ],
+            [("github_rate_limit", 3)],
         ],
     )
 
@@ -112,6 +129,7 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         session,  # type: ignore[arg-type]
         workspace_key="workspace",
         settings=settings,
+        now=fixed_now,
     )
 
     assert result["state"] == "active"
@@ -140,15 +158,28 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         {"phase": "structured_result", "state": "unknown", "count": 1},
     ]
     assert result["material_delivery_unknown_count"] == 1
+    assert result["queue_depth"] == 3
+    assert result["checkpoint_lag"] == 3
+    assert result["oldest_nonterminal_age_seconds"] == 300
+    assert result["attempts"] == 6
+    assert result["stale_recovery_count"] == 2
+    assert result["terminal_error_categories"] == {
+        "external_transient": 5,
+        "validation": 1,
+    }
     assert result["gates"]["delivery_enabled"] is True
 
     statements = [str(statement) for statement in session.executed]
-    assert len(statements) == 2
+    assert len(statements) == 4
     assert "beta_material_jobs.workspace_id" in statements[0]
     assert "beta_material_jobs.binding_id" in statements[0]
     assert "beta_material_jobs.workspace_id" in statements[1]
     assert "beta_material_jobs.binding_id" in statements[1]
     assert "JOIN beta_material_jobs" in statements[1]
+    assert "beta_space_work_items.workspace_id" in statements[2]
+    assert "beta_space_work_items.binding_id" in statements[2]
+    assert "beta_checkpoint_dispatch_intents.workspace_id" in statements[3]
+    assert "beta_checkpoint_dispatch_intents.binding_id" in statements[3]
 
     serialized = repr(result)
     for private_name in (
@@ -159,6 +190,9 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         "candidate_sha256",
         "provider_message_id",
         "error_code",
+        "telegram_timeout",
+        "schema_invalid",
+        "github_rate_limit",
         "job_id",
     ):
         assert private_name not in serialized
@@ -178,6 +212,7 @@ async def test_wedding_status_quarantines_legacy_mutable_provenance() -> None:
         actor_policy="group_members",
         provenance_state="quarantined",
         provenance_evidence_kind="legacy_mutable_telegram",
+        checkpoint_last_exported_sequence=17,
     )
     session = ScalarSession(
         [
@@ -187,8 +222,17 @@ async def test_wedding_status_quarantines_legacy_mutable_provenance() -> None:
             17,
             7,
             0,
+            17,
+            0,
+            0,
+            None,
+            None,
+            0,
+            0,
+            0,
+            0,
         ],
-        row_groups=[[], []],
+        row_groups=[[], [], [], []],
     )
 
     result = await beta_wedding_space_operational_status(

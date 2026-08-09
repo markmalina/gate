@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.models.beta_material import BetaMaterialDeliveryModel, BetaMaterialJobModel
 from app.models.beta_space import (
+    BetaCheckpointDispatchIntentModel,
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
     BetaSpaceReplyModel,
+    BetaSpaceWorkItemModel,
 )
 from app.models.canonical import Workspace
 
@@ -32,11 +36,27 @@ def wedding_binding_is_verified(binding: BetaSpaceBindingModel | None) -> bool:
     )
 
 
+def _terminal_error_category(error_code: str) -> str:
+    """Collapse an internal error code into a non-sensitive operator category."""
+
+    normalized = error_code.casefold()
+    if any(token in normalized for token in ("timeout", "rate", "unavailable", "retry")):
+        return "external_transient"
+    if any(token in normalized for token in ("telegram", "delivery", "send")):
+        return "transport"
+    if any(token in normalized for token in ("provider", "model", "transcript")):
+        return "provider"
+    if any(token in normalized for token in ("invalid", "schema", "contract", "validation")):
+        return "validation"
+    return "internal"
+
+
 async def beta_wedding_space_operational_status(
     session: AsyncSession,
     *,
     workspace_key: str,
     settings: Settings,
+    now: datetime | None = None,
 ) -> dict[str, object]:
     """Return redacted wedding activation state and isolated event counts."""
 
@@ -54,6 +74,13 @@ async def beta_wedding_space_operational_status(
     material_job_counts: list[dict[str, object]] = []
     material_delivery_counts: list[dict[str, object]] = []
     material_delivery_unknown_count = 0
+    checkpoint_lag = 0
+    queue_depth = 0
+    oldest_nonterminal_age_seconds: int | None = None
+    attempts = 0
+    stale_recovery_count = 0
+    terminal_error_categories: dict[str, int] = {}
+    status_now = now or datetime.now(UTC)
     if workspace_id is not None:
         binding = await session.scalar(
             select(BetaSpaceBindingModel).where(
@@ -169,6 +196,150 @@ async def beta_wedding_space_operational_status(
                 if delivery_state == "unknown"
             )
 
+            max_checkpoint_sequence = int(
+                await session.scalar(
+                    select(func.max(BetaSpaceEventModel.checkpoint_sequence)).where(
+                        BetaSpaceEventModel.workspace_id == workspace_id,
+                        BetaSpaceEventModel.binding_id == binding.id,
+                    )
+                )
+                or 0
+            )
+            checkpoint_lag = max(
+                0,
+                max_checkpoint_sequence
+                - int(binding.checkpoint_last_exported_sequence or 0),
+            )
+            work_queue_depth = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceWorkItemModel.id)).where(
+                        BetaSpaceWorkItemModel.workspace_id == workspace_id,
+                        BetaSpaceWorkItemModel.binding_id == binding.id,
+                        BetaSpaceWorkItemModel.state.in_(("pending", "leased", "retry")),
+                    )
+                )
+                or 0
+            )
+            dispatch_queue_depth = int(
+                await session.scalar(
+                    select(func.count()).where(
+                        BetaCheckpointDispatchIntentModel.workspace_id == workspace_id,
+                        BetaCheckpointDispatchIntentModel.binding_id == binding.id,
+                        BetaCheckpointDispatchIntentModel.state.in_(("pending", "sending")),
+                    )
+                )
+                or 0
+            )
+            queue_depth = work_queue_depth + dispatch_queue_depth
+            oldest_work_at = await session.scalar(
+                select(func.min(BetaSpaceWorkItemModel.created_at)).where(
+                    BetaSpaceWorkItemModel.workspace_id == workspace_id,
+                    BetaSpaceWorkItemModel.binding_id == binding.id,
+                    BetaSpaceWorkItemModel.state.in_(("pending", "leased", "retry")),
+                )
+            )
+            oldest_dispatch_at = await session.scalar(
+                select(func.min(BetaCheckpointDispatchIntentModel.created_at)).where(
+                    BetaCheckpointDispatchIntentModel.workspace_id == workspace_id,
+                    BetaCheckpointDispatchIntentModel.binding_id == binding.id,
+                    BetaCheckpointDispatchIntentModel.state.in_(("pending", "sending")),
+                )
+            )
+            oldest_nonterminal_at = min(
+                (
+                    timestamp
+                    for timestamp in (oldest_work_at, oldest_dispatch_at)
+                    if timestamp is not None
+                ),
+                default=None,
+            )
+            if oldest_nonterminal_at is not None:
+                oldest_nonterminal_age_seconds = max(
+                    0,
+                    int((status_now - oldest_nonterminal_at).total_seconds()),
+                )
+            work_attempts = int(
+                await session.scalar(
+                    select(func.coalesce(func.sum(BetaSpaceWorkItemModel.attempt_count), 0)).where(
+                        BetaSpaceWorkItemModel.workspace_id == workspace_id,
+                        BetaSpaceWorkItemModel.binding_id == binding.id,
+                    )
+                )
+                or 0
+            )
+            dispatch_attempts = int(
+                await session.scalar(
+                    select(
+                        func.coalesce(
+                            func.sum(BetaCheckpointDispatchIntentModel.attempt_count),
+                            0,
+                        )
+                    ).where(
+                        BetaCheckpointDispatchIntentModel.workspace_id == workspace_id,
+                        BetaCheckpointDispatchIntentModel.binding_id == binding.id,
+                    )
+                )
+                or 0
+            )
+            attempts = work_attempts + dispatch_attempts
+            work_stale_recoveries = int(
+                await session.scalar(
+                    select(func.count(BetaSpaceWorkItemModel.id)).where(
+                        BetaSpaceWorkItemModel.workspace_id == workspace_id,
+                        BetaSpaceWorkItemModel.binding_id == binding.id,
+                        BetaSpaceWorkItemModel.attempt_count > 1,
+                    )
+                )
+                or 0
+            )
+            dispatch_stale_recoveries = int(
+                await session.scalar(
+                    select(func.count()).where(
+                        BetaCheckpointDispatchIntentModel.workspace_id == workspace_id,
+                        BetaCheckpointDispatchIntentModel.binding_id == binding.id,
+                        BetaCheckpointDispatchIntentModel.attempt_count > 1,
+                    )
+                )
+                or 0
+            )
+            stale_recovery_count = work_stale_recoveries + dispatch_stale_recoveries
+            terminal_rows = (
+                await session.execute(
+                    select(
+                        BetaSpaceWorkItemModel.last_error_code,
+                        func.count(BetaSpaceWorkItemModel.id),
+                    )
+                    .where(
+                        BetaSpaceWorkItemModel.workspace_id == workspace_id,
+                        BetaSpaceWorkItemModel.binding_id == binding.id,
+                        BetaSpaceWorkItemModel.state.in_(("failed", "unknown")),
+                        BetaSpaceWorkItemModel.last_error_code.is_not(None),
+                    )
+                    .group_by(BetaSpaceWorkItemModel.last_error_code)
+                )
+            ).all()
+            dispatch_terminal_rows = (
+                await session.execute(
+                    select(
+                        BetaCheckpointDispatchIntentModel.last_error_code,
+                        func.count(),
+                    )
+                    .where(
+                        BetaCheckpointDispatchIntentModel.workspace_id == workspace_id,
+                        BetaCheckpointDispatchIntentModel.binding_id == binding.id,
+                        BetaCheckpointDispatchIntentModel.state.in_(("failed", "unknown")),
+                        BetaCheckpointDispatchIntentModel.last_error_code.is_not(None),
+                    )
+                    .group_by(BetaCheckpointDispatchIntentModel.last_error_code)
+                )
+            ).all()
+            for error_code, count in (*terminal_rows, *dispatch_terminal_rows):
+                category = _terminal_error_category(str(error_code))
+                terminal_error_categories[category] = (
+                    terminal_error_categories.get(category, 0) + int(count)
+                )
+            terminal_error_categories = dict(sorted(terminal_error_categories.items()))
+
     binding_state = binding.state if binding is not None else "absent"
     provenance_state = (
         binding.provenance_state if binding is not None else "absent"
@@ -217,6 +388,12 @@ async def beta_wedding_space_operational_status(
         "material_job_counts": material_job_counts,
         "material_delivery_counts": material_delivery_counts,
         "material_delivery_unknown_count": material_delivery_unknown_count,
+        "queue_depth": queue_depth,
+        "checkpoint_lag": checkpoint_lag,
+        "oldest_nonterminal_age_seconds": oldest_nonterminal_age_seconds,
+        "attempts": attempts,
+        "stale_recovery_count": stale_recovery_count,
+        "terminal_error_categories": terminal_error_categories,
         "private_identifiers_exposed": False,
         "private_payload_exposed": False,
     }
