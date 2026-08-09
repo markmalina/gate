@@ -7,6 +7,9 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.infrastructure.beta_checkpoint_export import (
     MAX_CHECKPOINT_EVENTS,
     BetaCheckpointExportError,
@@ -21,8 +24,6 @@ from app.models.beta_context import (
     BetaContextCheckpointStateModel,
     BetaContextEventModel,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 MAX_BATCH_EVENTS = MAX_CHECKPOINT_EVENTS
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
