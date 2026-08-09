@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.ext.asyncio import AsyncSession
-
+import httpx
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
 from app.core.github_actions_oidc import (
@@ -20,10 +16,26 @@ from app.infrastructure.beta_checkpoint_batches import (
     acknowledge_beta_checkpoint_batch,
     next_beta_checkpoint_batch,
 )
+from app.infrastructure.beta_checkpoint_dispatch import (
+    BetaCheckpointArtifactError,
+    GitHubAppBetaCheckpointArtifactVerifier,
+)
 from app.infrastructure.beta_space_checkpoint_batches import (
     acknowledge_beta_space_checkpoint_batch,
     next_beta_space_checkpoint_batch,
 )
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/internal/beta/checkpoints")
 settings_dependency = Depends(get_settings)
@@ -122,6 +134,7 @@ async def next_checkpoint(
 @router.post("/ack")
 async def acknowledge_checkpoint(
     request: CheckpointAckRequest,
+    http_request: Request,
     authorization: Annotated[
         str | None, Header(alias="Authorization")
     ] = None,
@@ -132,6 +145,21 @@ async def acknowledge_checkpoint(
 
     await _authorize(authorization, settings)
     try:
+        http_client = getattr(http_request.app.state, "http_client", None)
+        if not isinstance(http_client, httpx.AsyncClient):
+            raise BetaCheckpointArtifactError(
+                "beta_checkpoint_artifact_client_unavailable"
+            )
+        artifact_verifier = GitHubAppBetaCheckpointArtifactVerifier(
+            client=http_client,
+            app_id=settings.gate_beta_checkpoint_github_app_id,
+            installation_id=(
+                settings.gate_beta_checkpoint_github_installation_id
+            ),
+            private_key_pem=(
+                settings.gate_beta_checkpoint_github_private_key.get_secret_value()
+            ),
+        )
         async with session.begin():
             try:
                 payload = await acknowledge_beta_checkpoint_batch(
@@ -156,8 +184,9 @@ async def acknowledge_checkpoint(
                     sequence_end=request.sequence_end,
                     ciphertext_sha256=request.ciphertext_sha256,
                     github_commit_sha=request.github_commit_sha,
+                    artifact_verifier=artifact_verifier,
                 )
-    except BetaCheckpointBatchError as exc:
+    except (BetaCheckpointBatchError, BetaCheckpointArtifactError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.code,
