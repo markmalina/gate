@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from app.models.domain import Base
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -22,8 +23,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.domain import Base
 
 
 class BetaSpaceBindingModel(Base):
@@ -47,8 +46,25 @@ class BetaSpaceBindingModel(Base):
         UniqueConstraint("installation_ref", name="uq_beta_space_binding_installation"),
         UniqueConstraint("storage_ref", name="uq_beta_space_binding_storage"),
         CheckConstraint(
-            "state IN ('ready','consented','revoked')",
+            "state IN ('ready','consented','revoked','quarantined')",
             name="ck_beta_space_binding_state",
+        ),
+        CheckConstraint(
+            "actor_policy IN ('subject_only','group_members')",
+            name="ck_beta_space_binding_actor_policy",
+        ),
+        CheckConstraint(
+            "provenance_state IN ('not_applicable','verified','quarantined')",
+            name="ck_beta_space_binding_provenance_state",
+        ),
+        CheckConstraint(
+            "(provenance_state = 'not_applicable' AND "
+            "provenance_evidence_kind = 'not_applicable') OR "
+            "(provenance_state = 'verified' AND "
+            "provenance_evidence_kind = 'authenticated_control_plane') OR "
+            "(provenance_state = 'quarantined' AND "
+            "provenance_evidence_kind = 'legacy_mutable_telegram')",
+            name="ck_beta_space_binding_provenance_evidence",
         ),
         CheckConstraint(
             "char_length(consent_sha256) = 64",
@@ -56,7 +72,8 @@ class BetaSpaceBindingModel(Base):
         ),
         CheckConstraint(
             "(state = 'consented' AND consented_at IS NOT NULL) OR "
-            "(state != 'consented' AND consented_at IS NULL)",
+            "(state = 'quarantined') OR "
+            "(state NOT IN ('consented','quarantined') AND consented_at IS NULL)",
             name="ck_beta_space_binding_consented_at",
         ),
     )
@@ -73,6 +90,15 @@ class BetaSpaceBindingModel(Base):
     telegram_chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
     subject_telegram_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     consent_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_policy: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'subject_only'")
+    )
+    provenance_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'not_applicable'")
+    )
+    provenance_evidence_kind: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'not_applicable'")
+    )
     checkpoint_recipient_pem: Mapped[str | None] = mapped_column(Text, nullable=True)
     checkpoint_last_exported_sequence: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")

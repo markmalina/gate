@@ -8,10 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import case, func, select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.application.beta_space_intake import (
     CONSENT_RESPONSE,
     BetaConsentDeliveryJob,
@@ -28,13 +24,15 @@ from app.models.beta_space import (
     BetaSpaceWorkItemModel,
 )
 from app.models.canonical import TransportConnector, Workspace
+from sqlalchemy import case, func, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 BETA_SPACE_REF = "spc_32443e2deeeaf0bd6ff0012c1e3b39e1"
 BETA_TENANT_REF = "beta-user-katya-001"
 BETA_INSTALLATION_REF = "installation-99feb906e18094b42dccf9f3636dcfcf"
 BETA_STORAGE_REF = "beta-group-katya-dental-001"
 BETA_CONNECTOR_KEY = "telegram_beta_group"
-BETA_GROUP_MEMBER_TENANT_REFS = frozenset({"beta-user-mark-wedding-001"})
 
 
 class BetaSpaceConfigurationError(RuntimeError):
@@ -263,6 +261,9 @@ async def reconcile_beta_katya_space_binding(
                 telegram_chat_id=chat_id,
                 subject_telegram_user_id=user_id,
                 consent_sha256=consent_sha,
+                actor_policy="subject_only",
+                provenance_state="not_applicable",
+                provenance_evidence_kind="not_applicable",
                 state="ready",
                 ready_at=observed_at,
             )
@@ -669,11 +670,7 @@ def _binding(row: BetaSpaceBindingModel) -> BetaSpaceBinding:
         consent_sha256=row.consent_sha256,
         ready_at=row.ready_at,
         state=row.state,
-        actor_policy=(
-            "group_members"
-            if row.tenant_ref in BETA_GROUP_MEMBER_TENANT_REFS
-            else "subject_only"
-        ),
+        actor_policy=row.actor_policy,
     )
 
 

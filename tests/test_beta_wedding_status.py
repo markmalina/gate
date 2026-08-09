@@ -82,6 +82,9 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
     binding = SimpleNamespace(
         id=UUID("00000000-0000-0000-0000-000000000496"),
         state="consented",
+        actor_policy="group_members",
+        provenance_state="verified",
+        provenance_evidence_kind="authenticated_control_plane",
     )
     session = ScalarSession(
         [
@@ -117,7 +120,12 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         "chat_binding": True,
         "subject_binding": True,
         "activation_digest": True,
+        "actor_policy_explicit": True,
+        "provenance_recorded": True,
     }
+    assert result["actor_policy"] == "group_members"
+    assert result["provenance_state"] == "verified"
+    assert result["provenance_evidence"] == "authenticated_control_plane"
     assert result["event_count"] == 2
     assert result["fact_count"] == 2
     assert result["reply_sent_count"] == 2
@@ -154,3 +162,46 @@ async def test_wedding_status_reports_active_without_private_values() -> None:
         "job_id",
     ):
         assert private_name not in serialized
+
+
+@pytest.mark.anyio
+async def test_wedding_status_quarantines_legacy_mutable_provenance() -> None:
+    settings = Settings(
+        _env_file=None,
+        GATE_ENV="production",
+        GATE_BETA_CONNECTOR_ENABLED=True,
+        GATE_BETA_PRIVACY_MODE_CONFIRMED=True,
+    )
+    binding = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000496"),
+        state="quarantined",
+        actor_policy="group_members",
+        provenance_state="quarantined",
+        provenance_evidence_kind="legacy_mutable_telegram",
+    )
+    session = ScalarSession(
+        [
+            UUID("00000000-0000-0000-0000-000000000001"),
+            binding,
+            17,
+            17,
+            7,
+            0,
+        ],
+        row_groups=[[], []],
+    )
+
+    result = await beta_wedding_space_operational_status(
+        session,  # type: ignore[arg-type]
+        workspace_key="workspace",
+        settings=settings,
+    )
+
+    assert result["state"] == "quarantined"
+    assert result["production_ready"] is False
+    assert result["gates"]["space_enabled"] is False
+    assert result["gates"]["delivery_enabled"] is False
+    assert result["event_count"] == 17
+    assert result["fact_count"] == 17
+    assert result["private_identifiers_exposed"] is False
+    assert result["private_payload_exposed"] is False

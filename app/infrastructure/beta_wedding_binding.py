@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import Settings
 from app.models.beta_material import BetaMaterialDeliveryModel, BetaMaterialJobModel
 from app.models.beta_space import (
@@ -13,11 +10,25 @@ from app.models.beta_space import (
     BetaSpaceReplyModel,
 )
 from app.models.canonical import Workspace
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .beta_space import beta_space_production_ready
 
 BETA_WEDDING_SPACE_REF = "spc_fcdd8e57a7e832840afcc187fb1d4b2c"
 BETA_WEDDING_TENANT_REF = "beta-user-mark-wedding-001"
+
+
+def wedding_binding_is_verified(binding: BetaSpaceBindingModel | None) -> bool:
+    """Require stored policy plus authenticated, immutable control-plane evidence."""
+
+    return bool(
+        binding is not None
+        and binding.state == "consented"
+        and binding.actor_policy == "group_members"
+        and binding.provenance_state == "verified"
+        and binding.provenance_evidence_kind == "authenticated_control_plane"
+    )
 
 
 async def beta_wedding_space_operational_status(
@@ -158,13 +169,19 @@ async def beta_wedding_space_operational_status(
             )
 
     binding_state = binding.state if binding is not None else "absent"
-    binding_live = binding_state == "consented"
+    provenance_state = (
+        binding.provenance_state if binding is not None else "absent"
+    )
+    actor_policy = binding.actor_policy if binding is not None else "absent"
+    binding_live = wedding_binding_is_verified(binding)
     if not beta_space_production_ready(settings):
         state = "connector_not_ready"
     elif binding is None:
         state = "awaiting_binding"
     elif binding_live:
         state = "active"
+    elif provenance_state == "quarantined" or binding_state == "quarantined":
+        state = "quarantined"
     else:
         state = "revoked"
 
@@ -182,8 +199,15 @@ async def beta_wedding_space_operational_status(
             "chat_binding": binding is not None,
             "subject_binding": binding is not None,
             "activation_digest": binding is not None,
+            "actor_policy_explicit": binding is not None,
+            "provenance_recorded": binding is not None,
         },
         "binding_state": binding_state,
+        "actor_policy": actor_policy,
+        "provenance_state": provenance_state,
+        "provenance_evidence": (
+            binding.provenance_evidence_kind if binding is not None else "absent"
+        ),
         "production_ready": beta_space_production_ready(settings) and binding_live,
         "event_count": event_count,
         "fact_count": fact_count,
