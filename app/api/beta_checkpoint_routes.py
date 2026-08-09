@@ -5,6 +5,19 @@ from __future__ import annotations
 from typing import Annotated
 
 import httpx
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
 from app.core.github_actions_oidc import (
@@ -24,18 +37,6 @@ from app.infrastructure.beta_space_checkpoint_batches import (
     acknowledge_beta_space_checkpoint_batch,
     next_beta_space_checkpoint_batch,
 )
-from fastapi import (
-    APIRouter,
-    Depends,
-    Header,
-    HTTPException,
-    Request,
-    Response,
-    status,
-)
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/internal/beta/checkpoints")
 settings_dependency = Depends(get_settings)
