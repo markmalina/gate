@@ -12,6 +12,8 @@ from app.infrastructure.beta_space import (
     SqlBetaSpaceStore,
     enqueue_beta_checkpoint_dispatch,
 )
+from app.models import agent as _agent_models  # noqa: F401
+from app.models import alpha as _alpha_models  # noqa: F401
 from app.models.beta_space import (
     BetaCheckpointDispatchIntentModel,
     BetaSpaceBindingModel,
