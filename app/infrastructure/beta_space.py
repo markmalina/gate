@@ -21,9 +21,11 @@ from app.models.beta_space import (
     BetaConsentDeliveryModel,
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
+    BetaSpaceSearchDocumentModel,
     BetaSpaceWorkItemModel,
 )
 from app.models.canonical import TransportConnector, Workspace
+from app.models.domain import TelegramReceipt
 from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -485,6 +487,35 @@ class SqlBetaSpaceStore:
         if created is None:
             await self._session.rollback()
             return BetaSpaceReservation(False)
+        if source.media_kind == "text":
+            payload = await self._session.scalar(
+                select(TelegramReceipt.payload).where(
+                    TelegramReceipt.id == uuid.UUID(source.receipt_id)
+                )
+            )
+            projection = _text_search_projection(
+                payload,
+                expected_chat_id=source.telegram_chat_id,
+            )
+            if projection is None:
+                await self._session.rollback()
+                raise BetaSpaceConfigurationError(
+                    "beta_space_text_projection_invalid"
+                )
+            sender_label, content_text = projection
+            self._session.add(
+                BetaSpaceSearchDocumentModel(
+                    event_id=event_id,
+                    workspace_id=row.workspace_id,
+                    binding_id=row.id,
+                    source_kind="text",
+                    sender_label=sender_label,
+                    content_text=content_text,
+                    occurred_at=source.occurred_at,
+                    created_at=source.received_at,
+                    updated_at=source.received_at,
+                )
+            )
         self._add_work_item(
             dedupe_key=f"{source.media_kind}:{event_id}",
             receipt_id=uuid.UUID(source.receipt_id),
@@ -699,6 +730,39 @@ class SqlBetaSpaceStore:
                 .with_for_update()
             ),
         )
+
+
+def _text_search_projection(
+    payload: object,
+    *,
+    expected_chat_id: str,
+) -> tuple[str, str] | None:
+    """Extract one Telegram text document without trusting payload scope."""
+
+    if not isinstance(payload, dict):
+        return None
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return None
+    chat = message.get("chat")
+    actor = message.get("from")
+    content = message.get("text")
+    if (
+        not isinstance(chat, dict)
+        or str(chat.get("id")) != expected_chat_id
+        or not isinstance(actor, dict)
+        or actor.get("is_bot") is not False
+        or not isinstance(content, str)
+        or not content.strip()
+    ):
+        return None
+    names = [
+        value.strip()
+        for value in (actor.get("first_name"), actor.get("last_name"))
+        if isinstance(value, str) and value.strip()
+    ]
+    sender_label = "Участник" if not names else " ".join(names)[:128]
+    return sender_label, content
 
 
 def _binding(row: BetaSpaceBindingModel) -> BetaSpaceBinding:

@@ -13,6 +13,7 @@ from app.models.beta_space import (
     BetaCheckpointDispatchIntentModel,
     BetaSpaceBindingModel,
     BetaSpaceEventModel,
+    BetaSpaceSearchDocumentModel,
     BetaSpaceWorkItemModel,
 )
 from app.models.canonical import TransportConnector, Workspace
@@ -70,7 +71,17 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
                     id=receipt_id,
                     bot_key="telegram_beta_group",
                     update_id=101,
-                    payload={"update_id": 101},
+                    payload={
+                        "update_id": 101,
+                        "message": {
+                            "chat": {"id": -1001},
+                            "from": {
+                                "is_bot": False,
+                                "first_name": "Марк",
+                            },
+                            "text": "Бюджет площадки утверждён.",
+                        },
+                    },
                     received_at=NOW,
                 )
             )
@@ -129,6 +140,14 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
             assert work.kind == "reply"
             assert work.state == "pending"
             assert work.receipt_id == receipt_id
+            search_document = await session.scalar(
+                select(BetaSpaceSearchDocumentModel)
+            )
+            assert search_document is not None
+            assert search_document.workspace_id == workspace_id
+            assert search_document.binding_id == binding_id
+            assert search_document.sender_label == "Марк"
+            assert search_document.content_text == "Бюджет площадки утверждён."
             dispatch = await session.get(
                 BetaCheckpointDispatchIntentModel,
                 (workspace_id, binding_id),
@@ -143,7 +162,14 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
                     id=second_receipt_id,
                     bot_key="telegram_beta_group",
                     update_id=102,
-                    payload={"update_id": 102},
+                    payload={
+                        "update_id": 102,
+                        "message": {
+                            "chat": {"id": -1001},
+                            "from": {"is_bot": False},
+                            "text": "Эта проекция должна откатиться.",
+                        },
+                    },
                     received_at=NOW,
                 )
             )
@@ -171,6 +197,12 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
         async with sessions() as session:
             assert await session.scalar(select(func.count(BetaSpaceEventModel.id))) == 1
             assert await session.scalar(select(func.count(BetaSpaceWorkItemModel.id))) == 1
+            assert (
+                await session.scalar(
+                    select(func.count(BetaSpaceSearchDocumentModel.event_id))
+                )
+                == 1
+            )
     finally:
         await engine.dispose()
         async with admin.begin() as connection:
