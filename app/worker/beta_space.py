@@ -11,9 +11,6 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.api.beta_telegram_ingress import (
     _BetaMaterialTelegram,
     _settle_beta_consent_callback,
@@ -55,7 +52,11 @@ from app.infrastructure.beta_material_provider import (
     OpenAIBetaMaterialStructurer,
     TelegramMaterialDownloadAdapter,
 )
-from app.infrastructure.beta_space import SqlBetaSpaceStore, beta_space_production_ready
+from app.infrastructure.beta_space import (
+    BETA_CONNECTOR_KEY,
+    SqlBetaSpaceStore,
+    beta_space_production_ready,
+)
 from app.infrastructure.beta_space_work import SessionFactoryBetaSpaceWorkQueue
 from app.infrastructure.beta_wedding_reply import (
     BetaWeddingModelError,
@@ -68,6 +69,8 @@ from app.models.beta_space import (
 )
 from app.models.domain import TelegramReceipt
 from app.services.telegram import TelegramClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +158,8 @@ class BetaSpaceWorkProcessor:
                 intake = await ProcessBetaSpaceUpdate(
                     store=store,
                     production_ready=beta_space_production_ready(self._settings),
+                    workspace_key=self._settings.gate_workspace_id,
+                    connector_key=BETA_CONNECTOR_KEY,
                 ).execute(
                     update=update,
                     receipt_id=item.receipt_id,
