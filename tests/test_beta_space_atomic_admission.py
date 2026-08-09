@@ -94,6 +94,7 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
         binding = BetaSpaceBinding(
             binding_id=str(binding_id),
             workspace_id=str(workspace_id),
+            connector_id=str(connector_id),
             tenant_ref="beta-user-mark-wedding-001",
             space_ref=SPACE_ID,
             installation_ref="installation-test",
@@ -130,7 +131,7 @@ async def test_fact_and_typed_work_commit_together_or_not_at_all() -> None:
             assert work.receipt_id == receipt_id
             dispatch = await session.get(
                 BetaCheckpointDispatchIntentModel,
-                SPACE_ID,
+                (workspace_id, binding_id),
             )
             assert dispatch is not None
             assert dispatch.accepted_sequence == 1
