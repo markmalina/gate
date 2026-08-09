@@ -211,6 +211,11 @@ class BetaSpaceSearchDocumentModel(Base):
             "occurred_at",
             "event_id",
         ),
+        Index(
+            "ix_beta_space_search_lexical",
+            text("to_tsvector('simple'::regconfig, content_text)"),
+            postgresql_using="gin",
+        ),
     )
 
     event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -228,13 +233,6 @@ class BetaSpaceSearchDocumentModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-
-
-Index(
-    "ix_beta_space_search_lexical",
-    func.to_tsvector("simple", BetaSpaceSearchDocumentModel.content_text),
-    postgresql_using="gin",
-)
 
 
 class BetaSpaceCheckpointExportModel(Base):
