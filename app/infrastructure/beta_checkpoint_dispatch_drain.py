@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.beta_checkpoint_dispatch import (
     BetaCheckpointDispatchEnvelope,
     BetaCheckpointDispatchError,
 )
 from app.models.beta_space import BetaCheckpointDispatchIntentModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 MAX_BACKOFF_SECONDS = 900
 DISPATCH_LEASE = timedelta(minutes=2)
@@ -125,6 +125,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             intent.lease_expires_at = observed_at + DISPATCH_LEASE
             intent.updated_at = observed_at
             space_id = intent.space_id
+            workspace_id = intent.workspace_id
+            binding_id = intent.binding_id
             accepted_sequence = intent.accepted_sequence
             wake_generation = intent.wake_generation
             attempt_count = intent.attempt_count
@@ -137,6 +139,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         except asyncio.CancelledError:
             await self._unknown(
                 space_id=space_id,
+                workspace_id=workspace_id,
+                binding_id=binding_id,
                 accepted_sequence=accepted_sequence,
                 error_code="beta_checkpoint_dispatch_cancelled",
                 now=observed_at,
@@ -146,6 +150,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             if exc.code in _AMBIGUOUS_CODES:
                 await self._unknown(
                     space_id=space_id,
+                    workspace_id=workspace_id,
+                    binding_id=binding_id,
                     accepted_sequence=accepted_sequence,
                     error_code=exc.code,
                     now=observed_at,
@@ -155,6 +161,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
                 )
             await self._defer(
                 space_id=space_id,
+                workspace_id=workspace_id,
+                binding_id=binding_id,
                 accepted_sequence=accepted_sequence,
                 attempt_count=attempt_count,
                 error_code=exc.code,
@@ -166,6 +174,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         except Exception:
             await self._unknown(
                 space_id=space_id,
+                workspace_id=workspace_id,
+                binding_id=binding_id,
                 accepted_sequence=accepted_sequence,
                 error_code="beta_checkpoint_dispatch_unavailable",
                 now=observed_at,
@@ -183,6 +193,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         ):
             await self._defer(
                 space_id=space_id,
+                workspace_id=workspace_id,
+                binding_id=binding_id,
                 accepted_sequence=accepted_sequence,
                 attempt_count=attempt_count,
                 error_code="beta_checkpoint_dispatch_result_mismatch",
@@ -198,7 +210,7 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         async with self._sessions.begin() as session:
             intent = await session.get(
                 BetaCheckpointDispatchIntentModel,
-                space_id,
+                (workspace_id, binding_id),
                 with_for_update=True,
             )
             if intent is None:
@@ -236,6 +248,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         self,
         *,
         space_id: str,
+        workspace_id: uuid.UUID,
+        binding_id: uuid.UUID,
         accepted_sequence: int,
         attempt_count: int,
         error_code: str,
@@ -245,7 +259,7 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         async with self._sessions.begin() as session:
             intent = await session.get(
                 BetaCheckpointDispatchIntentModel,
-                space_id,
+                (workspace_id, binding_id),
                 with_for_update=True,
             )
             if intent is None:
@@ -260,6 +274,8 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         self,
         *,
         space_id: str,
+        workspace_id: uuid.UUID,
+        binding_id: uuid.UUID,
         accepted_sequence: int,
         error_code: str,
         now: datetime,
@@ -267,7 +283,7 @@ class SessionFactoryBetaCheckpointDispatchDrain:
         async with self._sessions.begin() as session:
             intent = await session.get(
                 BetaCheckpointDispatchIntentModel,
-                space_id,
+                (workspace_id, binding_id),
                 with_for_update=True,
             )
             if intent is None or intent.accepted_sequence < accepted_sequence:
