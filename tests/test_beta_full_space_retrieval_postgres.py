@@ -37,13 +37,6 @@ async def test_full_history_finds_old_text_and_terminal_material_in_exact_space(
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
-            await connection.execute(
-                text(
-                    "CREATE INDEX ix_beta_space_search_lexical "
-                    "ON beta_space_search_documents USING gin "
-                    "(to_tsvector('simple'::regconfig, content_text))"
-                )
-            )
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         workspace_id = uuid.uuid4()
         other_workspace_id = uuid.uuid4()
