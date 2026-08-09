@@ -19,9 +19,14 @@ from app.models.beta_material import (
     BetaMaterialDeliveryModel,
     BetaMaterialJobModel,
 )
-from app.models.beta_space import BetaSpaceBindingModel, BetaSpaceEventModel
+from app.models.beta_space import (
+    BetaSpaceBindingModel,
+    BetaSpaceEventModel,
+    BetaSpaceSearchDocumentModel,
+)
 from app.models.domain import TelegramReceipt
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 JsonObject = dict[str, Any]
@@ -157,6 +162,13 @@ class SqlBetaMaterialStore:
         ):
             await self._session.rollback()
             return False
+        content_text = _material_search_text(
+            extracted_text=extracted_text,
+            structured_text=structured_text,
+        )
+        if content_text is None:
+            await self._session.rollback()
+            return False
         job.source_file_sha256 = source_file_sha256
         job.extracted_text = extracted_text
         job.structured_text = structured_text
@@ -173,6 +185,33 @@ class SqlBetaMaterialStore:
                 candidate_text=structured_text,
                 candidate_sha256=_sha(structured_text),
                 state="pending",
+            )
+        )
+        excluded = insert(BetaSpaceSearchDocumentModel).excluded
+        await self._session.execute(
+            insert(BetaSpaceSearchDocumentModel)
+            .values(
+                event_id=job.event_id,
+                workspace_id=job.workspace_id,
+                binding_id=job.binding_id,
+                source_kind=job.media_kind,
+                sender_label=job.sender_label,
+                content_text=content_text,
+                occurred_at=job.occurred_at,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=[BetaSpaceSearchDocumentModel.event_id],
+                set_={
+                    "workspace_id": excluded.workspace_id,
+                    "binding_id": excluded.binding_id,
+                    "source_kind": excluded.source_kind,
+                    "sender_label": excluded.sender_label,
+                    "content_text": excluded.content_text,
+                    "occurred_at": excluded.occurred_at,
+                    "updated_at": excluded.updated_at,
+                },
             )
         )
         await self._wake_checkpoint(job=job, now=now)
@@ -455,6 +494,23 @@ def _select_media(message: JsonObject) -> tuple[str | None, object]:
 def _photo_file_size(item: dict[Any, Any]) -> int:
     value = item.get("file_size")
     return value if type(value) is int else 0
+
+
+def _material_search_text(
+    *,
+    extracted_text: str,
+    structured_text: str,
+) -> str | None:
+    """Keep both terminal representations searchable without duplicating equals."""
+
+    structured = structured_text.strip()
+    extracted = extracted_text.strip()
+    parts = [value for value in (structured, extracted) if value]
+    if not parts:
+        return None
+    if len(parts) == 2 and parts[0] == parts[1]:
+        return parts[0]
+    return "\n\n".join(parts)
 
 
 def _uuid(value: str) -> uuid.UUID | None:
