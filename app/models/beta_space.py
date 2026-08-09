@@ -230,6 +230,13 @@ class BetaSpaceSearchDocumentModel(Base):
     )
 
 
+Index(
+    "ix_beta_space_search_lexical",
+    func.to_tsvector("simple", BetaSpaceSearchDocumentModel.content_text),
+    postgresql_using="gin",
+)
+
+
 class BetaSpaceCheckpointExportModel(Base):
     """One encrypted Wedding Space checkpoint awaiting an exact Git ack."""
 
