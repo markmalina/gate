@@ -77,8 +77,14 @@ class SessionFactoryBetaCheckpointDispatchDrain:
                             <= observed_at
                         )
                     ),
-                    BetaCheckpointDispatchIntentModel.accepted_sequence
-                    > BetaCheckpointDispatchIntentModel.dispatched_sequence,
+                    (
+                        BetaCheckpointDispatchIntentModel.accepted_sequence
+                        > BetaCheckpointDispatchIntentModel.dispatched_sequence
+                    )
+                    | (
+                        BetaCheckpointDispatchIntentModel.wake_generation
+                        > BetaCheckpointDispatchIntentModel.dispatched_wake_generation
+                    ),
                 )
                 .order_by(
                     BetaCheckpointDispatchIntentModel.next_attempt_at,
@@ -120,6 +126,7 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             intent.updated_at = observed_at
             space_id = intent.space_id
             accepted_sequence = intent.accepted_sequence
+            wake_generation = intent.wake_generation
             attempt_count = intent.attempt_count
 
         try:
@@ -201,9 +208,17 @@ class SessionFactoryBetaCheckpointDispatchDrain:
             intent.dispatched_sequence = max(
                 intent.dispatched_sequence, accepted_sequence
             )
+            intent.dispatched_wake_generation = max(
+                intent.dispatched_wake_generation,
+                wake_generation,
+            )
             intent.state = (
                 "pending"
-                if intent.accepted_sequence > intent.dispatched_sequence
+                if (
+                    intent.accepted_sequence > intent.dispatched_sequence
+                    or intent.wake_generation
+                    > intent.dispatched_wake_generation
+                )
                 else "sent"
             )
             intent.last_error_code = None

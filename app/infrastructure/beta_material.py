@@ -17,6 +17,7 @@ from app.application.beta_material import (
     material_receipt_text,
     safe_failure_text,
 )
+from app.infrastructure.beta_space import enqueue_beta_checkpoint_dispatch
 from app.models.beta_material import (
     BetaMaterialDeliveryModel,
     BetaMaterialJobModel,
@@ -175,6 +176,7 @@ class SqlBetaMaterialStore:
                 state="pending",
             )
         )
+        await self._wake_checkpoint(job=job, now=now)
         await self._session.commit()
         return True
 
@@ -204,6 +206,7 @@ class SqlBetaMaterialStore:
             reserved_at=now,
         )
         self._session.add(delivery)
+        await self._wake_checkpoint(job=job, now=now)
         await self._session.commit()
         return BetaMaterialPhaseReservation(
             True, str(delivery.id), chat_id, candidate
@@ -314,6 +317,35 @@ class SqlBetaMaterialStore:
             )
         )
         return value if isinstance(value, str) else None
+
+    async def _wake_checkpoint(
+        self, *, job: BetaMaterialJobModel, now: datetime
+    ) -> None:
+        scope = (
+            await self._session.execute(
+                select(
+                    BetaSpaceEventModel.checkpoint_sequence,
+                    BetaSpaceBindingModel.space_ref,
+                )
+                .join(
+                    BetaSpaceBindingModel,
+                    BetaSpaceBindingModel.id == BetaSpaceEventModel.binding_id,
+                )
+                .where(
+                    BetaSpaceEventModel.id == job.event_id,
+                    BetaSpaceBindingModel.id == job.binding_id,
+                )
+            )
+        ).one_or_none()
+        if scope is None:
+            raise RuntimeError("beta_material_checkpoint_scope_missing")
+        checkpoint_sequence, space_id = scope
+        await enqueue_beta_checkpoint_dispatch(
+            self._session,
+            space_id=space_id,
+            accepted_sequence=checkpoint_sequence,
+            now=now,
+        )
 
 
 def _job(row: BetaMaterialJobModel, chat_id: str) -> BetaMaterialJob:

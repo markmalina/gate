@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.beta_material import safe_failure_text
 from app.infrastructure.beta_checkpoint_batches import BetaCheckpointBatchError
 from app.infrastructure.beta_checkpoint_export import (
     MAX_CHECKPOINT_EVENTS,
@@ -122,6 +123,20 @@ async def next_beta_space_checkpoint_batch(
     for offset, (event, _receipt, _voice, _material) in enumerate(rows):
         if event.checkpoint_sequence != sequence_start + offset:
             raise BetaSpaceCheckpointBatchError("beta_checkpoint_event_gap")
+
+    ready_rows = []
+    for row in rows:
+        event, _receipt, voice, material = row
+        if not _checkpoint_projection_terminal(
+            event=event,
+            voice=voice,
+            material=material,
+        ):
+            break
+        ready_rows.append(row)
+    rows = ready_rows
+    if not rows:
+        return None
 
     events = [
         _portable_wedding_event(
@@ -318,6 +333,11 @@ def _event_text(
     material: BetaMaterialJobModel | None,
 ) -> str:
     if material is not None:
+        if material.state == "failed":
+            return safe_failure_text(
+                material.media_kind,
+                material.error_code or "beta_material_processing_failed",
+            )
         if material.extracted_text and material.structured_text:
             return _bounded_material_projection(
                 media_kind=material.media_kind,
@@ -346,6 +366,23 @@ def _event_text(
     if not isinstance(text_value, str) or not text_value:
         raise BetaSpaceCheckpointBatchError("beta_checkpoint_event_invalid")
     return text_value
+
+
+def _checkpoint_projection_terminal(
+    *,
+    event: BetaSpaceEventModel,
+    voice: BetaWeddingVoiceJobModel | None,
+    material: BetaMaterialJobModel | None,
+) -> bool:
+    """Never let a placeholder become the durable final material projection."""
+
+    if event.media_kind == "text":
+        return True
+    if material is not None:
+        return material.state in {"structured", "failed"}
+    if event.media_kind == "voice" and voice is not None:
+        return voice.state in {"structured", "failed"}
+    return False
 
 
 def _bounded_material_projection(

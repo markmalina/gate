@@ -270,6 +270,59 @@ async def reconcile_beta_katya_space_binding(
     return BetaSpaceBindingReconciliation("created", BETA_SPACE_REF)
 
 
+async def enqueue_beta_checkpoint_dispatch(
+    session: AsyncSession,
+    *,
+    space_id: str,
+    accepted_sequence: int,
+    now: datetime,
+) -> None:
+    """Append one durable wake generation without inventing a Space sequence."""
+
+    excluded = insert(BetaCheckpointDispatchIntentModel).excluded
+    await session.execute(
+        insert(BetaCheckpointDispatchIntentModel)
+        .values(
+            space_id=space_id,
+            accepted_sequence=accepted_sequence,
+            dispatched_sequence=0,
+            wake_generation=1,
+            dispatched_wake_generation=0,
+            state="pending",
+            attempt_count=0,
+            next_attempt_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        .on_conflict_do_update(
+            index_elements=[BetaCheckpointDispatchIntentModel.space_id],
+            set_={
+                "accepted_sequence": func.greatest(
+                    BetaCheckpointDispatchIntentModel.accepted_sequence,
+                    excluded.accepted_sequence,
+                ),
+                "wake_generation": (
+                    BetaCheckpointDispatchIntentModel.wake_generation + 1
+                ),
+                "state": case(
+                    (
+                        BetaCheckpointDispatchIntentModel.state == "sending",
+                        "sending",
+                    ),
+                    else_="pending",
+                ),
+                "last_error_code": None,
+                "next_attempt_at": func.least(
+                    BetaCheckpointDispatchIntentModel.next_attempt_at,
+                    excluded.next_attempt_at,
+                ),
+                "settled_at": None,
+                "updated_at": excluded.updated_at,
+            },
+        )
+    )
+
+
 class SqlBetaSpaceStore:
     """Exact-scope store; no operation supports an unscoped scan or fallback."""
 
@@ -506,42 +559,13 @@ class SqlBetaSpaceStore:
     ) -> None:
         """Coalesce wake-ups in the same transaction as canonical acceptance."""
 
-        excluded = insert(BetaCheckpointDispatchIntentModel).excluded
-        await self._session.execute(
-            insert(BetaCheckpointDispatchIntentModel)
-            .values(
-                space_id=space_id,
-                accepted_sequence=accepted_sequence,
-                dispatched_sequence=0,
-                state="pending",
-                attempt_count=0,
-                next_attempt_at=now,
-                created_at=now,
-                updated_at=now,
-            )
-            .on_conflict_do_update(
-                index_elements=[BetaCheckpointDispatchIntentModel.space_id],
-                set_={
-                    "accepted_sequence": func.greatest(
-                        BetaCheckpointDispatchIntentModel.accepted_sequence,
-                        excluded.accepted_sequence,
-                    ),
-                    "state": case(
-                        (
-                            BetaCheckpointDispatchIntentModel.state == "sending",
-                            "sending",
-                        ),
-                        else_="pending",
-                    ),
-                    "last_error_code": None,
-                    "next_attempt_at": func.least(
-                        BetaCheckpointDispatchIntentModel.next_attempt_at,
-                        excluded.next_attempt_at,
-                    ),
-                    "updated_at": excluded.updated_at,
-                },
-            )
+        await enqueue_beta_checkpoint_dispatch(
+            self._session,
+            space_id=space_id,
+            accepted_sequence=accepted_sequence,
+            now=now,
         )
+
 
     async def claim_consent_delivery(
         self, *, delivery_id: str, now: datetime
