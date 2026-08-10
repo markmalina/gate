@@ -11,8 +11,8 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
+from math import isfinite
 from typing import Any, Never
 
 JsonObject = dict[str, Any]
@@ -177,7 +177,11 @@ class AQUBV2Route:
     def __post_init__(self) -> None:
         _assert_opaque_ref(self.installation_ref, "installation", "installation_ref")
         _assert_opaque_ref(self.cube_ref, "cube", "cube_ref")
-        _assert_route_generation(self.route_generation)
+        object.__setattr__(
+            self,
+            "route_generation",
+            _assert_route_generation(self.route_generation),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -546,9 +550,16 @@ def _assert_uuid(value: object, label: str) -> None:
         raise AQUBContractV2Error(f"AQUB_V2_BAD_UUID:{label}")
 
 
-def _assert_route_generation(value: object) -> None:
-    if type(value) is not int or not 1 <= value <= 2_147_483_647:
+def _assert_route_generation(value: object) -> int:
+    if type(value) is int:
+        normalized = value
+    elif type(value) is float and isfinite(value) and value.is_integer():
+        normalized = int(value)
+    else:
         _fail("AQUB_V2_BAD_ROUTE_GENERATION")
+    if not 1 <= normalized <= 2_147_483_647:
+        _fail("AQUB_V2_BAD_ROUTE_GENERATION")
+    return normalized
 
 
 def _assert_datetime(value: object, label: str) -> None:
@@ -559,12 +570,19 @@ def _assert_datetime(value: object, label: str) -> None:
         maximum=24,
         pattern=_CANONICAL_UTC_RE,
     )
-    try:
-        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise AQUBContractV2Error(f"AQUB_V2_BAD_DATETIME:{label}") from exc
-    canonical = parsed.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    if canonical != timestamp:
+    year = int(timestamp[0:4])
+    month = int(timestamp[5:7])
+    day = int(timestamp[8:10])
+    hour = int(timestamp[11:13])
+    minute = int(timestamp[14:16])
+    second = int(timestamp[17:19])
+    if not 1 <= month <= 12 or hour > 23 or minute > 59 or second > 59:
+        raise AQUBContractV2Error(f"AQUB_V2_BAD_DATETIME:{label}")
+    days_in_month = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    maximum_day = days_in_month[month - 1]
+    if month == 2 and (year % 400 == 0 or year % 4 == 0 and year % 100 != 0):
+        maximum_day = 29
+    if not 1 <= day <= maximum_day:
         raise AQUBContractV2Error(f"AQUB_V2_BAD_DATETIME:{label}")
 
 
@@ -578,14 +596,16 @@ def _assert_idempotency_key(value: object) -> None:
     )
 
 
-def _assert_routing(value: Mapping[str, Any]) -> None:
+def _assert_routing(value: JsonObject) -> None:
     _assert_opaque_ref(
         value.get("installation_ref"),
         "installation",
         "installation_ref",
     )
     _assert_opaque_ref(value.get("cube_ref"), "cube", "cube_ref")
-    _assert_route_generation(value.get("route_generation"))
+    value["route_generation"] = _assert_route_generation(
+        value.get("route_generation")
+    )
 
 
 def _assert_text_content(value: object, label: str) -> None:
@@ -694,9 +714,7 @@ def _string_value(value: object) -> str:
 
 
 def _integer_value(value: object) -> int:
-    _assert_route_generation(value)
-    assert isinstance(value, int)
-    return value
+    return _assert_route_generation(value)
 
 
 def _fail(code: str) -> Never:

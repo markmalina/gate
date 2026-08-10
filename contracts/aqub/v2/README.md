@@ -42,6 +42,11 @@ are returned to callers, and every public semantic operation revalidates its inp
 Canonical serialization uses ASCII JSON escapes. This preserves the accepted AQUB
 JavaScript/schema behavior for ordinary Unicode, supplementary code points and lone
 UTF-16 surrogate escapes without exposing Python UTF-8 encoding failures.
+Schema-valid integral JSON spellings such as `3.0` and `3e0` are normalized to the
+canonical integer `3`; booleans, fractional/non-finite numbers and out-of-range
+values remain invalid. Timestamp validation covers the full four-digit proleptic
+Gregorian domain accepted by AQUB, including leap year `0000`, without relying on
+Python's narrower `datetime` year range.
 
 Activation, shadow traffic, persistence and cutover require later bounded work with
 fresh route evidence, exact contract tests, duplicate protection, reconciliation and

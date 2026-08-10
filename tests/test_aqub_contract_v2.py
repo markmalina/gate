@@ -387,6 +387,47 @@ def test_route_generation_rejects_bool_and_serializer_never_normalizes() -> None
             serialize_contract_json_v2(document)
 
 
+@pytest.mark.parametrize("numeric_spelling", ["3.0", "3e0"])
+def test_integral_json_route_generation_matches_schema_and_aqub_js(
+    numeric_spelling: str,
+) -> None:
+    command = _fixture("delivery-command.valid.json")
+    command["route_generation"] = 3.0
+    _validator("delivery-command.v2.schema.json").validate(command)
+    assert parse_delivery_command_v2(command).to_wire()["route_generation"] == 3
+
+    canonical = json.dumps(
+        _fixture("delivery-command.valid.json"),
+        separators=(",", ":"),
+    ).encode()
+    wire = canonical.replace(
+        b'"route_generation":3',
+        f'"route_generation":{numeric_spelling}'.encode(),
+    )
+    parsed = parse_contract_json_v2(wire)
+    serialized = serialize_contract_json_v2(parsed)
+
+    assert type(parsed.to_wire()["route_generation"]) is int
+    assert b'"route_generation":3' in serialized
+    assert f'"route_generation":{numeric_spelling}'.encode() not in serialized
+    assert map_opaque_binding_evidence_v2(
+        {**_route_evidence(), "route_generation": 3.0}
+    ).route_generation == 3
+
+
+@pytest.mark.parametrize(
+    "invalid_generation",
+    [True, 1.5, float("nan"), float("inf"), float("-inf"), 0, 2_147_483_648],
+)
+def test_route_generation_rejects_nonintegral_nonfinite_bool_and_bounds(
+    invalid_generation: object,
+) -> None:
+    command = _fixture("delivery-command.valid.json")
+    command["route_generation"] = invalid_generation
+    with pytest.raises(AQUBContractV2Error, match="ROUTE_GENERATION"):
+        parse_delivery_command_v2(command)
+
+
 def test_document_construction_immutability_and_public_revalidation() -> None:
     with pytest.raises(AQUBContractV2Error, match="CONSTRUCTION_FORBIDDEN"):
         AQUBV2Document(
@@ -536,6 +577,56 @@ def test_timestamp_parity_rejects_noncanonical_and_leap_second(
         with pytest.raises(ValidationError):
             _validator("transport-envelope.v2.schema.json").validate(envelope)
     with pytest.raises(AQUBContractV2Error):
+        parse_transport_envelope_v2(envelope)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "0000-01-01T00:00:00.000Z",
+        "0000-02-29T23:59:59.999Z",
+        "0004-02-29T12:00:00.000Z",
+        "2000-02-29T12:00:00.000Z",
+    ],
+)
+def test_proleptic_gregorian_year_zero_matches_schema_and_aqub_js(
+    timestamp: str,
+) -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["occurred_at"] = timestamp
+
+    _validator("transport-envelope.v2.schema.json").validate(envelope)
+    parsed = parse_transport_envelope_v2(envelope)
+    assert parsed.to_wire()["occurred_at"] == timestamp
+    assert parse_contract_json_v2(serialize_contract_json_v2(parsed)).to_wire()[
+        "occurred_at"
+    ] == timestamp
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "0000-02-30T12:00:00.000Z",
+        "0001-02-29T12:00:00.000Z",
+        "1900-02-29T12:00:00.000Z",
+        "2000-02-30T12:00:00.000Z",
+        "0000-04-31T12:00:00.000Z",
+        "0000-00-01T12:00:00.000Z",
+        "0000-13-01T12:00:00.000Z",
+        "0000-01-00T12:00:00.000Z",
+        "0000-01-01T24:00:00.000Z",
+        "0000-01-01T23:60:00.000Z",
+    ],
+)
+def test_proleptic_gregorian_invalid_calendar_values_fail_closed(
+    timestamp: str,
+) -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["occurred_at"] = timestamp
+
+    # The mirrored schema carries a date-time format annotation; the accepted
+    # AQUB validator and Gate both apply the explicit semantic calendar fence.
+    with pytest.raises(AQUBContractV2Error, match="DATETIME"):
         parse_transport_envelope_v2(envelope)
 
 
