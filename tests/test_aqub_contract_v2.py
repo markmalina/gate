@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
@@ -628,6 +629,40 @@ def test_proleptic_gregorian_invalid_calendar_values_fail_closed(
     # AQUB validator and Gate both apply the explicit semantic calendar fence.
     with pytest.raises(AQUBContractV2Error, match="DATETIME"):
         parse_transport_envelope_v2(envelope)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "٢٠٢٦-08-10T12:00:00.000Z",
+        "2026-٠٨-10T12:00:00.000Z",
+        "2026-08-١٠T12:00:00.000Z",
+        "2026-08-10T١٢:00:00.000Z",
+        "2026-08-10T12:٠٠:00.000Z",
+        "2026-08-10T12:00:٠٠.000Z",
+        "2026-08-10T12:00:00.٠٠٠Z",
+        "2٠26-0٨-1٠T1٢:0٠:00.0٠0Z",
+    ],
+)
+def test_non_ascii_timestamp_digits_fail_schema_aqub_and_gate_parity(
+    timestamp: str,
+) -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["occurred_at"] = timestamp
+    schema = _schema("transport-envelope.v2.schema.json")
+    pattern = schema["$defs"]["timestamp"]["pattern"]
+
+    assert isinstance(pattern, str)
+    # JSON Schema patterns use ECMA-262 semantics, where \d is ASCII-only.
+    assert re.fullmatch(pattern, timestamp, flags=re.ASCII) is None
+    with pytest.raises(AQUBContractV2Error) as object_error:
+        parse_transport_envelope_v2(envelope)
+    assert object_error.value.code == "AQUB_V2_BAD_STRING:occurred_at"
+    with pytest.raises(AQUBContractV2Error) as byte_error:
+        parse_contract_json_v2(
+            json.dumps(envelope, ensure_ascii=True).encode("ascii")
+        )
+    assert byte_error.value.code == "AQUB_V2_BAD_STRING:occurred_at"
 
 
 def test_uuid_version_and_variant_parity() -> None:
