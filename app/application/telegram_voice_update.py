@@ -12,7 +12,7 @@ from app.application.telegram_voice_transcription import (
 )
 
 JsonObject = dict[str, Any]
-_MESSAGE_KEYS = ("message", "business_message")
+TELEGRAM_VOICE_MESSAGE_KEYS = ("message", "business_message")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +29,7 @@ def extract_telegram_voice(update: JsonObject) -> TelegramVoiceEnvelope | None:
 
     messages = [
         (key, update.get(key))
-        for key in _MESSAGE_KEYS
+        for key in TELEGRAM_VOICE_MESSAGE_KEYS
         if isinstance(update.get(key), dict)
     ]
     if not messages:
