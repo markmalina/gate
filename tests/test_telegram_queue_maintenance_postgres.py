@@ -9,6 +9,7 @@ from app.application.telegram_queue_maintenance import (
     TelegramStaleClaimRecovery,
 )
 from app.core.config import get_settings
+from app.infrastructure.telegram_processing import SqlTelegramProcessingQueue
 from app.infrastructure.telegram_queue_maintenance import (
     SqlTelegramQueueHealthReader,
     SqlTelegramQueueMaintenance,
@@ -96,6 +97,7 @@ async def test_health_and_recovery_are_bounded_and_redacted() -> None:
                     recovered_at=now,
                     max_attempts=5,
                     limit=100,
+                    require_non_voice_payload=True,
                 )
             )
         assert recovery.recovered == 2
@@ -139,9 +141,191 @@ async def test_health_and_recovery_are_bounded_and_redacted() -> None:
             "dead_lettered": 1,
             "max_attempts": 5,
             "limit": 100,
+            "non_voice_payload_required": True,
             "persisted_voice_transcript_required": False,
             "missing_voice_archive_required": False,
         }
+        assert "payload" not in audit.metadata_
+    finally:
+        await engine.dispose()
+        async with admin_engine.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        await admin_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_non_voice_recovery_is_kill_restart_safe_and_fail_closed() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for PostgreSQL queue maintenance test")
+
+    schema = f"generic_stale_recovery_{uuid4().hex}"
+    admin_engine = create_async_engine(database_url)
+    async with admin_engine.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(
+        database_url,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        now = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
+        project_id = uuid4()
+        account_id = uuid4()
+        fixtures = (
+            (1, {"message": {"text": "safe"}}, 1, 1),
+            (2, {"message": {"voice": {"duration": 3}}}, 1, 1),
+            (3, {"business_message": {"voice": {"duration": 3}}}, 1, 1),
+            (4, {"message": {"text": "mismatched"}}, 1, 2),
+            (5, {"message": {"text": "archive-overlap"}}, 1, 1),
+        )
+
+        async with sessions() as session:
+            session.add_all(
+                [
+                    Project(
+                        id=project_id,
+                        alias="generic-stale-recovery",
+                        name="Generic stale recovery",
+                        adapter_type="test",
+                    ),
+                    Account(
+                        id=account_id,
+                        alias="generic-stale-recovery-account",
+                        owner="owner",
+                        account_type="telegram_business",
+                        linked_project_id=project_id,
+                    ),
+                ]
+            )
+            for update_id, message_payload, receipt_attempt, event_attempt in fixtures:
+                receipt = TelegramReceipt(
+                    id=uuid4(),
+                    bot_key="telegram_business",
+                    update_id=update_id,
+                    payload={"update_id": update_id, **message_payload},
+                    status=TelegramReceiptStatus.PROCESSING.value,
+                    attempt_count=receipt_attempt,
+                    received_at=now - timedelta(minutes=10),
+                    processing_started_at=now - timedelta(minutes=9),
+                )
+                session.add(receipt)
+                await session.flush()
+                session.add(
+                    TelegramOutboxEvent(
+                        id=uuid4(),
+                        receipt_id=receipt.id,
+                        status=TelegramOutboxStatus.PROCESSING.value,
+                        attempt_count=event_attempt,
+                        available_at=now - timedelta(minutes=10),
+                        locked_at=now - timedelta(minutes=9),
+                    )
+                )
+                if update_id == 5:
+                    session.add(
+                        TelegramVoiceArchive(
+                            id=uuid4(),
+                            receipt_id=receipt.id,
+                            account_id=account_id,
+                            project_id=project_id,
+                            direction="outbound",
+                            telegram_update_id=update_id,
+                            telegram_message_id=update_id,
+                            chat_id="test-chat-archive-overlap",
+                            business_connection_id="test-connection-archive-overlap",
+                            duration_seconds=3,
+                            filename="voice-archive-overlap.ogg",
+                            media_type="audio/ogg",
+                            size_bytes=5,
+                            sha256=f"{update_id:064x}",
+                            data=b"audio",
+                            transcription_status="transcribed",
+                            transcript_text="stored transcript",
+                            transcript_language="ru",
+                            transcription_model="test-model",
+                            transcription_reason_code="telegram_voice_transcribed",
+                            transcribed_at=now - timedelta(minutes=10),
+                            received_at=now - timedelta(minutes=10),
+                        )
+                    )
+            await session.commit()
+
+        async with sessions() as session:
+            recovery = await SqlTelegramQueueMaintenance(session).recover_stale(
+                RecoverStaleTelegramClaimsCommand(
+                    stale_before=now - timedelta(minutes=5),
+                    recovered_at=now,
+                    max_attempts=5,
+                    limit=100,
+                    require_non_voice_payload=True,
+                )
+            )
+        assert recovery == TelegramStaleClaimRecovery(
+            recovered=2,
+            retry_scheduled=1,
+            dead_lettered=1,
+        )
+
+        # First restarted worker exclusively claims the recovered retry row.
+        async with sessions() as session:
+            claimed = await SqlTelegramProcessingQueue(session).claim_due(now=now)
+        assert claimed is not None
+        assert claimed.update_id == 1
+        assert claimed.attempt == 2
+
+        # A second restart cannot claim the same row or either excluded voice row.
+        async with sessions() as session:
+            duplicate = await SqlTelegramProcessingQueue(session).claim_due(now=now)
+        assert duplicate is None
+
+        async with sessions() as session:
+            receipts = (
+                await session.execute(
+                    select(TelegramReceipt).order_by(TelegramReceipt.update_id)
+                )
+            ).scalars().all()
+            events = (
+                await session.execute(
+                    select(TelegramOutboxEvent)
+                    .join(
+                        TelegramReceipt,
+                        TelegramReceipt.id == TelegramOutboxEvent.receipt_id,
+                    )
+                    .order_by(TelegramReceipt.update_id)
+                )
+            ).scalars().all()
+            audit = (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action
+                        == "telegram_queue_stale_claims_recovered"
+                    )
+                )
+            ).scalar_one()
+
+        assert [receipt.status for receipt in receipts] == [
+            TelegramReceiptStatus.PROCESSING.value,
+            TelegramReceiptStatus.PROCESSING.value,
+            TelegramReceiptStatus.PROCESSING.value,
+            TelegramReceiptStatus.DEAD_LETTER.value,
+            TelegramReceiptStatus.PROCESSING.value,
+        ]
+        assert [event.status for event in events] == [
+            TelegramOutboxStatus.PROCESSING.value,
+            TelegramOutboxStatus.PROCESSING.value,
+            TelegramOutboxStatus.PROCESSING.value,
+            TelegramOutboxStatus.DEAD_LETTER.value,
+            TelegramOutboxStatus.PROCESSING.value,
+        ]
+        assert [receipt.attempt_count for receipt in receipts] == [2, 1, 1, 1, 1]
+        assert receipts[3].last_error_code == "worker_claim_inconsistent"
+        assert events[3].last_error_code == "worker_claim_inconsistent"
+        assert audit.metadata_["non_voice_payload_required"] is True
+        assert audit.metadata_["recovered"] == 2
+        assert audit.metadata_["retry_scheduled"] == 1
+        assert audit.metadata_["dead_lettered"] == 1
         assert "payload" not in audit.metadata_
     finally:
         await engine.dispose()

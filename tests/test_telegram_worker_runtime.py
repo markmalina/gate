@@ -108,7 +108,10 @@ class RecordingStaleRecovery(RecoverStaleTelegramClaimsService):
         command: RecoverStaleTelegramClaimsCommand,
     ) -> TelegramStaleClaimRecovery:
         self.commands.append(command)
-        recovered = int(command.require_missing_voice_archive)
+        recovered = int(
+            command.require_non_voice_payload
+            or command.require_missing_voice_archive
+        )
         return TelegramStaleClaimRecovery(
             recovered=recovered,
             retry_scheduled=recovered,
@@ -237,6 +240,43 @@ def test_enabled_worker_checks_exact_mayak_recovery_before_new_claim() -> None:
     assert result.disposition == "idle"
     assert recovery.calls == 1
     assert queue.claim_count == 1
+
+
+def test_enabled_worker_recovers_one_safe_stale_non_voice_before_claim(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = Settings(_env_file=None, GATE_TELEGRAM_WORKER_ENABLED=True)
+    queue = EmptyQueue()
+    recovery = RecordingStaleRecovery()
+    now = datetime(2026, 7, 29, 10, 30, tzinfo=UTC)
+    runtime_logger = logging.getLogger("gate.worker.generic-recovery")
+
+    with caplog.at_level(logging.INFO, logger=runtime_logger.name):
+        result = asyncio.run(
+            run_telegram_worker_once(
+                settings=settings,
+                queue=queue,
+                identity_reader=FakeIdentityReader(),
+                generic_stale_recovery=recovery,
+                now=now,
+                runtime_logger=runtime_logger,
+            )
+        )
+
+    assert result.disposition == "idle"
+    assert queue.claim_count == 1
+    assert recovery.commands == [
+        RecoverStaleTelegramClaimsCommand(
+            stale_before=datetime(2026, 7, 29, 10, 25, tzinfo=UTC),
+            recovered_at=now,
+            max_attempts=5,
+            limit=1,
+            require_non_voice_payload=True,
+        )
+    ]
+    assert "recovered=1 retry_scheduled=1 dead_lettered=0" in caplog.text
+    assert "payload" not in caplog.text
+    assert "receipt" not in caplog.text
 
 
 def test_enabled_worker_recovers_one_safe_stale_voice_before_claim() -> None:

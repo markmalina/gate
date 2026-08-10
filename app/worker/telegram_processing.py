@@ -1044,6 +1044,7 @@ async def run_telegram_worker_once(
     business_text_inbox: TelegramBusinessTextInboxProjector | None = None,
     universal_mayak: ProcessUniversalMayakPrivateMessageService | None = None,
     mayak_delivery_recovery: TelegramBusinessUniversalMayakDelivery | None = None,
+    generic_stale_recovery: RecoverStaleTelegramClaimsService | None = None,
     stale_recovery: RecoverStaleTelegramClaimsService | None = None,
     now: datetime | None = None,
     runtime_logger: logging.Logger = logger,
@@ -1053,6 +1054,24 @@ async def run_telegram_worker_once(
     if not settings.gate_telegram_worker_enabled:
         return TelegramWorkerRuntimeResult(enabled=False, disposition="disabled")
     iteration_at = now or datetime.now(UTC)
+    if generic_stale_recovery is not None:
+        generic_recovery = await generic_stale_recovery.execute(
+            RecoverStaleTelegramClaimsCommand(
+                stale_before=iteration_at - timedelta(minutes=5),
+                recovered_at=iteration_at,
+                max_attempts=5,
+                limit=1,
+                require_non_voice_payload=True,
+            )
+        )
+        if generic_recovery.recovered:
+            runtime_logger.info(
+                "Recovered stale non-voice processing claim: "
+                "recovered=%s retry_scheduled=%s dead_lettered=%s",
+                generic_recovery.recovered,
+                generic_recovery.retry_scheduled,
+                generic_recovery.dead_lettered,
+            )
     if stale_recovery is not None:
         recovery = await stale_recovery.execute(
             RecoverStaleTelegramClaimsCommand(
@@ -1968,6 +1987,9 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                         mayak_delivery_recovery=universal_mayak_delivery,
                         voice_updates=voice_updates,
                         voice_archive=voice_archive,
+                        generic_stale_recovery=RecoverStaleTelegramClaimsService(
+                            SqlTelegramQueueMaintenance(session)
+                        ),
                         stale_recovery=(
                             RecoverStaleTelegramClaimsService(
                                 SqlTelegramQueueMaintenance(session)
@@ -1989,6 +2011,9 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
                 canonical_store=canonical_store,
                 business_text_parity=business_text_parity,
                 business_text_inbox=business_text_inbox,
+                generic_stale_recovery=RecoverStaleTelegramClaimsService(
+                    SqlTelegramQueueMaintenance(session)
+                ),
             )
         await _drain_beta_context(sessions)
         return result

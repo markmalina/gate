@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.telegram_queue_maintenance import (
@@ -11,7 +11,9 @@ from app.application.telegram_queue_maintenance import (
     TelegramQueueHealthReader,
     TelegramQueueMaintenance,
     TelegramStaleClaimRecovery,
+    validate_stale_recovery_command,
 )
+from app.application.telegram_voice_update import TELEGRAM_VOICE_MESSAGE_KEYS
 from app.models.domain import (
     AuditLog,
     TelegramOutboxEvent,
@@ -82,6 +84,7 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
         self,
         command: RecoverStaleTelegramClaimsCommand,
     ) -> TelegramStaleClaimRecovery:
+        validate_stale_recovery_command(command)
         try:
             query = (
                 select(TelegramOutboxEvent, TelegramReceipt)
@@ -128,10 +131,28 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                     TelegramVoiceArchive.id.is_(None),
                 )
                 query_limit += 1
-            else:
-                query = query.where(
-                    TelegramOutboxEvent.locked_at <= command.stale_before
+            elif command.require_non_voice_payload:
+                non_voice_payload = and_(
+                    *(
+                        TelegramReceipt.payload[message_key]["voice"].is_(None)
+                        for message_key in TELEGRAM_VOICE_MESSAGE_KEYS
+                    )
                 )
+                no_voice_archive = ~(
+                    select(TelegramVoiceArchive.id)
+                    .where(
+                        TelegramVoiceArchive.receipt_id == TelegramReceipt.id
+                    )
+                    .correlate(TelegramReceipt)
+                    .exists()
+                )
+                query = query.where(
+                    TelegramOutboxEvent.locked_at <= command.stale_before,
+                    non_voice_payload,
+                    no_voice_archive,
+                )
+            else:  # pragma: no cover - guarded by exhaustive command validation
+                raise AssertionError("stale recovery scope is not exhaustive")
             result = await self._session.execute(
                 query.order_by(
                     TelegramOutboxEvent.locked_at,
@@ -209,6 +230,9 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                             "dead_lettered": recovery.dead_lettered,
                             "max_attempts": command.max_attempts,
                             "limit": command.limit,
+                            "non_voice_payload_required": (
+                                command.require_non_voice_payload
+                            ),
                             "persisted_voice_transcript_required": (
                                 command.require_persisted_voice_transcript
                             ),

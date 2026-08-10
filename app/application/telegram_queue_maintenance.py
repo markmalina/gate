@@ -38,6 +38,7 @@ class RecoverStaleTelegramClaimsCommand:
     recovered_at: datetime
     max_attempts: int = 5
     limit: int = 100
+    require_non_voice_payload: bool = False
     require_persisted_voice_transcript: bool = False
     require_missing_voice_archive: bool = False
 
@@ -61,6 +62,28 @@ class TelegramQueueMaintenance(Protocol):
         """Retry or dead-letter at most the requested number of stale claims."""
 
 
+def validate_stale_recovery_command(
+    command: RecoverStaleTelegramClaimsCommand,
+) -> None:
+    """Fail closed unless bounds and exactly one recovery scope are explicit."""
+
+    if command.stale_before >= command.recovered_at:
+        raise ValueError("stale_before must be earlier than recovered_at")
+    if command.max_attempts < 1:
+        raise ValueError("max_attempts must be positive")
+    if not 1 <= command.limit <= 1000:
+        raise ValueError("limit must be between 1 and 1000")
+    scope_count = sum(
+        (
+            command.require_non_voice_payload,
+            command.require_persisted_voice_transcript,
+            command.require_missing_voice_archive,
+        )
+    )
+    if scope_count != 1:
+        raise ValueError("exactly one stale recovery scope must be selected")
+
+
 class RecoverStaleTelegramClaimsService:
     """Validate recovery bounds before entering the persistence adapter."""
 
@@ -71,15 +94,5 @@ class RecoverStaleTelegramClaimsService:
         self,
         command: RecoverStaleTelegramClaimsCommand,
     ) -> TelegramStaleClaimRecovery:
-        if command.stale_before >= command.recovered_at:
-            raise ValueError("stale_before must be earlier than recovered_at")
-        if command.max_attempts < 1:
-            raise ValueError("max_attempts must be positive")
-        if not 1 <= command.limit <= 1000:
-            raise ValueError("limit must be between 1 and 1000")
-        if (
-            command.require_persisted_voice_transcript
-            and command.require_missing_voice_archive
-        ):
-            raise ValueError("voice recovery predicates are mutually exclusive")
+        validate_stale_recovery_command(command)
         return await self._maintenance.recover_stale(command)

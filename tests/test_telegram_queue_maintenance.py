@@ -9,6 +9,7 @@ from app.application.telegram_queue_maintenance import (
     RecoverStaleTelegramClaimsService,
     TelegramStaleClaimRecovery,
 )
+from app.infrastructure.telegram_queue_maintenance import SqlTelegramQueueMaintenance
 
 
 class RecordingMaintenance:
@@ -27,6 +28,30 @@ class RecordingMaintenance:
         )
 
 
+class EmptyRows:
+    def all(self) -> list[tuple[object, object]]:
+        return []
+
+
+class RecordingSession:
+    def __init__(self) -> None:
+        self.statements: list[object] = []
+        self.commits = 0
+
+    async def execute(self, statement: object) -> EmptyRows:
+        self.statements.append(statement)
+        return EmptyRows()
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        raise AssertionError("valid empty recovery must not roll back")
+
+    def add(self, _value: object) -> None:
+        raise AssertionError("empty recovery must not write an audit row")
+
+
 def _command(**overrides: object) -> RecoverStaleTelegramClaimsCommand:
     recovered_at = datetime(2026, 7, 14, 12, 0, tzinfo=UTC)
     values = {
@@ -34,6 +59,7 @@ def _command(**overrides: object) -> RecoverStaleTelegramClaimsCommand:
         "recovered_at": recovered_at,
         "max_attempts": 5,
         "limit": 100,
+        "require_non_voice_payload": True,
         **overrides,
     }
     return RecoverStaleTelegramClaimsCommand(**values)
@@ -50,6 +76,30 @@ def test_valid_recovery_is_delegated_once() -> None:
     assert len(maintenance.commands) == 1
 
 
+def test_non_voice_sql_scope_is_inbound_only() -> None:
+    session = RecordingSession()
+
+    result = asyncio.run(
+        SqlTelegramQueueMaintenance(session).recover_stale(  # type: ignore[arg-type]
+            _command()
+        )
+    )
+
+    assert result == TelegramStaleClaimRecovery(
+        recovered=0,
+        retry_scheduled=0,
+        dead_lettered=0,
+    )
+    assert session.commits == 1
+    assert len(session.statements) == 1
+    statement = str(session.statements[0])
+    assert "telegram_outbox_events" in statement
+    assert "telegram_receipts" in statement
+    assert "send_attempts" not in statement
+    assert "agent_send_attempts" not in statement
+    assert "delivery_commands" not in statement
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -59,7 +109,10 @@ def test_valid_recovery_is_delegated_once() -> None:
         _command(max_attempts=0),
         _command(limit=0),
         _command(limit=1001),
+        _command(require_non_voice_payload=False),
+        _command(require_persisted_voice_transcript=True),
         _command(
+            require_non_voice_payload=False,
             require_persisted_voice_transcript=True,
             require_missing_voice_archive=True,
         ),
