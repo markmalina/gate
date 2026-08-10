@@ -138,9 +138,18 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                         for message_key in TELEGRAM_VOICE_MESSAGE_KEYS
                     )
                 )
+                no_voice_archive = ~(
+                    select(TelegramVoiceArchive.id)
+                    .where(
+                        TelegramVoiceArchive.receipt_id == TelegramReceipt.id
+                    )
+                    .correlate(TelegramReceipt)
+                    .exists()
+                )
                 query = query.where(
                     TelegramOutboxEvent.locked_at <= command.stale_before,
                     non_voice_payload,
+                    no_voice_archive,
                 )
             else:  # pragma: no cover - guarded by exhaustive command validation
                 raise AssertionError("stale recovery scope is not exhaustive")
