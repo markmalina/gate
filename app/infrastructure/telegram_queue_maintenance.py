@@ -138,31 +138,9 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                         for message_key in TELEGRAM_VOICE_MESSAGE_KEYS
                     )
                 )
-                non_ambiguous_receipt = or_(
-                    TelegramReceipt.last_error_code.is_(None),
-                    and_(
-                        TelegramReceipt.last_error_code.not_ilike("%unknown%"),
-                        TelegramReceipt.last_error_code.not_ilike(
-                            "%possibly_sent%"
-                        ),
-                    ),
-                )
-                non_ambiguous_event = or_(
-                    TelegramOutboxEvent.last_error_code.is_(None),
-                    and_(
-                        TelegramOutboxEvent.last_error_code.not_ilike("%unknown%"),
-                        TelegramOutboxEvent.last_error_code.not_ilike(
-                            "%possibly_sent%"
-                        ),
-                    ),
-                )
                 query = query.where(
                     TelegramOutboxEvent.locked_at <= command.stale_before,
-                    TelegramOutboxEvent.attempt_count
-                    == TelegramReceipt.attempt_count,
                     non_voice_payload,
-                    non_ambiguous_receipt,
-                    non_ambiguous_event,
                 )
             else:  # pragma: no cover - guarded by exhaustive command validation
                 raise AssertionError("stale recovery scope is not exhaustive")
