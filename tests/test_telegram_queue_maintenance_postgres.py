@@ -172,14 +172,34 @@ async def test_non_voice_recovery_is_kill_restart_safe_and_fail_closed() -> None
             await connection.run_sync(Base.metadata.create_all)
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         now = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
+        project_id = uuid4()
+        account_id = uuid4()
         fixtures = (
             (1, {"message": {"text": "safe"}}, 1, 1),
             (2, {"message": {"voice": {"duration": 3}}}, 1, 1),
             (3, {"business_message": {"voice": {"duration": 3}}}, 1, 1),
             (4, {"message": {"text": "mismatched"}}, 1, 2),
+            (5, {"message": {"text": "archive-overlap"}}, 1, 1),
         )
 
         async with sessions() as session:
+            session.add_all(
+                [
+                    Project(
+                        id=project_id,
+                        alias="generic-stale-recovery",
+                        name="Generic stale recovery",
+                        adapter_type="test",
+                    ),
+                    Account(
+                        id=account_id,
+                        alias="generic-stale-recovery-account",
+                        owner="owner",
+                        account_type="telegram_business",
+                        linked_project_id=project_id,
+                    ),
+                ]
+            )
             for update_id, message_payload, receipt_attempt, event_attempt in fixtures:
                 receipt = TelegramReceipt(
                     id=uuid4(),
@@ -203,6 +223,33 @@ async def test_non_voice_recovery_is_kill_restart_safe_and_fail_closed() -> None
                         locked_at=now - timedelta(minutes=9),
                     )
                 )
+                if update_id == 5:
+                    session.add(
+                        TelegramVoiceArchive(
+                            id=uuid4(),
+                            receipt_id=receipt.id,
+                            account_id=account_id,
+                            project_id=project_id,
+                            direction="outbound",
+                            telegram_update_id=update_id,
+                            telegram_message_id=update_id,
+                            chat_id="test-chat-archive-overlap",
+                            business_connection_id="test-connection-archive-overlap",
+                            duration_seconds=3,
+                            filename="voice-archive-overlap.ogg",
+                            media_type="audio/ogg",
+                            size_bytes=5,
+                            sha256=f"{update_id:064x}",
+                            data=b"audio",
+                            transcription_status="transcribed",
+                            transcript_text="stored transcript",
+                            transcript_language="ru",
+                            transcription_model="test-model",
+                            transcription_reason_code="telegram_voice_transcribed",
+                            transcribed_at=now - timedelta(minutes=10),
+                            received_at=now - timedelta(minutes=10),
+                        )
+                    )
             await session.commit()
 
         async with sessions() as session:
@@ -263,14 +310,16 @@ async def test_non_voice_recovery_is_kill_restart_safe_and_fail_closed() -> None
             TelegramReceiptStatus.PROCESSING.value,
             TelegramReceiptStatus.PROCESSING.value,
             TelegramReceiptStatus.DEAD_LETTER.value,
+            TelegramReceiptStatus.PROCESSING.value,
         ]
         assert [event.status for event in events] == [
             TelegramOutboxStatus.PROCESSING.value,
             TelegramOutboxStatus.PROCESSING.value,
             TelegramOutboxStatus.PROCESSING.value,
             TelegramOutboxStatus.DEAD_LETTER.value,
+            TelegramOutboxStatus.PROCESSING.value,
         ]
-        assert [receipt.attempt_count for receipt in receipts] == [2, 1, 1, 1]
+        assert [receipt.attempt_count for receipt in receipts] == [2, 1, 1, 1, 1]
         assert receipts[3].last_error_code == "worker_claim_inconsistent"
         assert events[3].last_error_code == "worker_claim_inconsistent"
         assert audit.metadata_["non_voice_payload_required"] is True
