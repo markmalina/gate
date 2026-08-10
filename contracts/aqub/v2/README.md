@@ -33,6 +33,13 @@ explicit synthetic-rehearsal seam. The seam defaults to disabled and cannot be
 enabled by a boolean or environment string. No current router, worker, settings or
 application composition imports it.
 
+The byte parser rejects input above 512 KiB before decoding. This ceiling still
+admits the contract maximum of 32,768 Unicode code points when every supplementary
+character is represented by a 12-byte JSON surrogate pair, with more than 128 KiB
+left for the other bounded fields and syntax. Validated documents retain only
+immutable canonical JSON bytes; construction is validator-owned, detached mappings
+are returned to callers, and every public semantic operation revalidates its input.
+
 Activation, shadow traffic, persistence and cutover require later bounded work with
 fresh route evidence, exact contract tests, duplicate protection, reconciliation and
 separate operational authority.

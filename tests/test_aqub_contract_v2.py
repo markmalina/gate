@@ -6,17 +6,20 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import Any
 
 import pytest
 from app.application.aqub_contract_v2 import (
+    AQUB_V2_MAX_JSON_BYTES,
     AQUBContractV2Adapter,
     AQUBContractV2Error,
     AQUBV2AdapterMode,
     AQUBV2DeliveryAction,
     AQUBV2Document,
     assert_delivery_correlation_v2,
+    assert_route_match_v2,
     delivery_disposition_v2,
     map_opaque_binding_evidence_v2,
     parse_contract_json_v2,
@@ -167,9 +170,6 @@ def test_positive_fixtures_round_trip_exactly(
     parsed = parser(fixture)
 
     assert parsed.to_wire() == fixture
-    assert json.dumps(
-        parsed.to_wire(), ensure_ascii=False, separators=(",", ":")
-    ) == json.dumps(fixture, ensure_ascii=False, separators=(",", ":"))
     detached = parsed.to_wire()
     detached["schema_version"] = "mutated"
     assert parsed.to_wire() == fixture
@@ -262,17 +262,85 @@ def test_byte_parser_rejects_duplicates_nonfinite_values_and_non_object_roots() 
         b'{"schema_version":"aqub.transport-envelope.v2",'
         b'"schema_version":"aqub.delivery-command.v2"}'
     )
+    with pytest.raises(AQUBContractV2Error) as duplicate_error:
+        parse_contract_json_v2(duplicate)
+    assert duplicate_error.value.code == "AQUB_V2_DUPLICATE_PROPERTY"
+    assert "schema_version" not in str(duplicate_error.value)
+
     for payload in (
-        duplicate,
         b'{"schema_version":"aqub.transport-envelope.v2","value":NaN}',
         b'{"schema_version":"aqub.transport-envelope.v2","value":Infinity}',
         b"[]",
         b"null",
         b'"aqub.transport-envelope.v2"',
         b"\xff",
+        b"[" * 1_100 + b"]" * 1_100,
+        b'{"route_generation":' + b"9" * 5_000 + b"}",
     ):
         with pytest.raises(AQUBContractV2Error):
             parse_contract_json_v2(payload)
+
+
+def test_byte_parser_has_predecode_ceiling_with_escaped_text_headroom() -> None:
+    maximum = _fixture("delivery-command.valid.json")
+    maximum["payload"]["text"] = "😀" * 32_768
+    escaped = json.dumps(
+        maximum,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+
+    assert len(escaped) < AQUB_V2_MAX_JSON_BYTES
+    assert parse_contract_json_v2(escaped).to_wire() == maximum
+
+    exact_ceiling = escaped + b" " * (AQUB_V2_MAX_JSON_BYTES - len(escaped))
+    assert len(exact_ceiling) == AQUB_V2_MAX_JSON_BYTES
+    assert parse_contract_json_v2(exact_ceiling).to_wire() == maximum
+
+    with pytest.raises(AQUBContractV2Error) as too_large:
+        parse_contract_json_v2(exact_ceiling + b" ")
+    assert too_large.value.code == "AQUB_V2_JSON_TOO_LARGE"
+
+
+def test_byte_parser_rejects_unpaired_unicode_surrogate_stably() -> None:
+    command = _fixture("delivery-command.valid.json")
+    command["payload"]["text"] = "\ud800"
+    payload = json.dumps(command, ensure_ascii=True).encode("ascii")
+
+    with pytest.raises(AQUBContractV2Error) as error:
+        parse_contract_json_v2(payload)
+    assert error.value.code == "AQUB_V2_BAD_UNICODE"
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "parser"),
+    [
+        ("delivery-ack.committed.json", parse_delivery_ack_v2),
+        ("delivery-receipt.sent.json", parse_delivery_receipt_v2),
+        ("delivery-receipt.failed.json", parse_delivery_receipt_v2),
+        ("delivery-receipt.unknown.json", parse_delivery_receipt_v2),
+    ],
+)
+@pytest.mark.parametrize("malformed_status", [{}, []])
+def test_malformed_status_has_controlled_contract_error(
+    fixture_name: str,
+    parser: Parser,
+    malformed_status: object,
+) -> None:
+    candidate = _fixture(fixture_name)
+    candidate["status"] = malformed_status
+
+    with pytest.raises(ValidationError):
+        schema_name = (
+            "delivery-ack.v2.schema.json"
+            if "ack" in fixture_name
+            else "delivery-receipt.v2.schema.json"
+        )
+        _validator(schema_name).validate(candidate)
+    with pytest.raises(AQUBContractV2Error):
+        parser(candidate)
+    with pytest.raises(AQUBContractV2Error):
+        parse_contract_json_v2(json.dumps(candidate).encode("utf-8"))
 
 
 def test_route_generation_rejects_bool_and_serializer_never_normalizes() -> None:
@@ -283,24 +351,81 @@ def test_route_generation_rejects_bool_and_serializer_never_normalizes() -> None
     with pytest.raises(AQUBContractV2Error, match="ROUTE_GENERATION"):
         parse_transport_envelope_v2(envelope)
 
-    valid = parse_transport_envelope_v2(_fixture("transport-envelope.valid.json"))
-    invalid_wire = valid.to_wire()
-    invalid_wire["occurred_at"] = "2026-08-10T12:00:60.000Z"
-    forged = AQUBV2Document(
-        schema_version="aqub.transport-envelope.v2",
-        _wire=invalid_wire,
-    )
-    with pytest.raises(AQUBContractV2Error):
-        serialize_contract_json_v2(forged)
+    for field_name, invalid_value in (
+        ("occurred_at", "2026-08-10T12:00:60.000Z"),
+        ("actor_ref", "actor:12345678"),
+    ):
+        document = parse_transport_envelope_v2(
+            _fixture("transport-envelope.valid.json")
+        )
+        invalid_wire = document.to_wire()
+        invalid_wire[field_name] = invalid_value
+        object.__setattr__(
+            document,
+            "_canonical_json",
+            json.dumps(
+                invalid_wire,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+        )
+        with pytest.raises(AQUBContractV2Error):
+            serialize_contract_json_v2(document)
 
-    invalid_ref = valid.to_wire()
-    invalid_ref["actor_ref"] = "actor:12345678"
-    forged = AQUBV2Document(
-        schema_version="aqub.transport-envelope.v2",
-        _wire=invalid_ref,
+
+def test_document_construction_immutability_and_public_revalidation() -> None:
+    with pytest.raises(AQUBContractV2Error, match="CONSTRUCTION_FORBIDDEN"):
+        AQUBV2Document(
+            schema_version="aqub.transport-envelope.v2",
+            _canonical_json=b"{}",
+        )
+
+    envelope = parse_transport_envelope_v2(_fixture("transport-envelope.valid.json"))
+    with pytest.raises(FrozenInstanceError):
+        envelope._canonical_json = b"{}"  # type: ignore[misc]
+
+    forged_wire = envelope.to_wire()
+    forged_wire["actor_ref"] = "actor:12345678"
+    object.__setattr__(
+        envelope,
+        "_canonical_json",
+        json.dumps(forged_wire, sort_keys=True, separators=(",", ":")).encode(),
     )
     with pytest.raises(AQUBContractV2Error):
-        serialize_contract_json_v2(forged)
+        assert_route_match_v2(
+            envelope,
+            map_opaque_binding_evidence_v2(_route_evidence()),
+        )
+
+    command = parse_delivery_command_v2(_fixture("delivery-command.valid.json"))
+    ack = parse_delivery_ack_v2(_fixture("delivery-ack.committed.json"))
+    forged_ack = ack.to_wire()
+    forged_ack["status"] = []
+    object.__setattr__(
+        ack,
+        "_canonical_json",
+        json.dumps(forged_ack, sort_keys=True, separators=(",", ":")).encode(),
+    )
+    with pytest.raises(AQUBContractV2Error):
+        assert_delivery_correlation_v2(command, ack)
+
+    receipt = parse_delivery_receipt_v2(
+        _fixture("delivery-receipt.unknown.json")
+    )
+    forged_receipt = receipt.to_wire()
+    forged_receipt["retry_disposition"] = "do_not_retry"
+    object.__setattr__(
+        receipt,
+        "_canonical_json",
+        json.dumps(
+            forged_receipt,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode(),
+    )
+    with pytest.raises(AQUBContractV2Error):
+        delivery_disposition_v2(receipt)
 
 
 def test_explicit_synthetic_seam_maps_only_opaque_route_evidence() -> None:

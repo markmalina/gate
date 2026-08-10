@@ -17,6 +17,12 @@ from typing import Any, Never
 
 JsonObject = dict[str, Any]
 
+# A 32,768-code-point text can occupy 393,216 bytes when every supplementary
+# character is represented as a JSON surrogate pair (12 ASCII bytes). 512 KiB
+# leaves more than 128 KiB for the bounded envelope fields and JSON syntax while
+# placing a deterministic ceiling on allocation before UTF-8 decoding.
+AQUB_V2_MAX_JSON_BYTES = 512 * 1024
+
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
@@ -130,17 +136,36 @@ class AQUBV2DeliveryAction(StrEnum):
     RECONCILE = "reconcile"
 
 
-@dataclass(frozen=True, slots=True, repr=False)
+@dataclass(frozen=True, slots=True, repr=False, init=False)
 class AQUBV2Document:
-    """Validated JSON document whose private wire value is not logged by repr."""
+    """Validated document backed by private immutable canonical JSON bytes.
 
-    schema_version: str
-    _wire: Mapping[str, Any] = field(repr=False)
+    Construction is restricted to the validators in this module. Public
+    semantic operations revalidate the bytes as an additional forged-object
+    fence before trusting the schema or routing fields.
+    """
+
+    _schema_version: str = field(repr=False)
+    _canonical_json: bytes = field(repr=False)
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise AQUBContractV2Error("AQUB_V2_DOCUMENT_CONSTRUCTION_FORBIDDEN")
+
+    @property
+    def schema_version(self) -> str:
+        return self._schema_version
 
     def to_wire(self) -> JsonObject:
-        """Return a detached JSON object with exactly the validated fields."""
+        """Revalidate and return a detached object with the accepted fields."""
 
-        return _clone_json_object(self._wire)
+        try:
+            value = _decode_contract_json_bytes(self._canonical_json)
+            validated = parse_contract_object_v2(value)
+            if validated.schema_version != self._schema_version:
+                _fail("AQUB_V2_DOCUMENT_INVALID")
+        except (AttributeError, AQUBContractV2Error) as exc:
+            raise AQUBContractV2Error("AQUB_V2_DOCUMENT_INVALID") from exc
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,7 +281,11 @@ def parse_delivery_ack_v2(value: Mapping[str, Any]) -> AQUBV2Document:
     _assert_routing(ack)
     _assert_datetime(ack["observed_at"], "observed_at")
     status = ack["status"]
-    if status not in {"committed", "duplicate", "rejected"}:
+    if not isinstance(status, str) or status not in {
+        "committed",
+        "duplicate",
+        "rejected",
+    }:
         _fail("AQUB_V2_BAD_ACK_STATUS")
     if status == "rejected":
         _assert_reason_code(ack["reason_code"])
@@ -279,7 +308,7 @@ def parse_delivery_receipt_v2(value: Mapping[str, Any]) -> AQUBV2Document:
     )
 
     status = receipt["status"]
-    if status not in {"sent", "failed", "unknown"}:
+    if not isinstance(status, str) or status not in {"sent", "failed", "unknown"}:
         _fail("AQUB_V2_BAD_DELIVERY_STATUS")
     if status == "sent":
         _assert_retry_disposition(receipt, "do_not_retry")
@@ -320,25 +349,13 @@ def parse_contract_json_v2(payload: bytes) -> AQUBV2Document:
     two implementations cannot interpret the same bytes differently.
     """
 
-    if type(payload) is not bytes:
-        _fail("AQUB_V2_BAD_JSON_BYTES")
-    try:
-        text = payload.decode("utf-8", errors="strict")
-        value = json.loads(
-            text,
-            object_pairs_hook=_strict_json_object,
-            parse_constant=_reject_json_constant,
-        )
-    except AQUBContractV2Error:
-        raise
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise AQUBContractV2Error("AQUB_V2_BAD_JSON_BYTES") from exc
-    if not isinstance(value, Mapping):
-        _fail("AQUB_V2_BAD_OBJECT")
+    value = _decode_contract_json_bytes(payload)
     return parse_contract_object_v2(value)
 
 
 def parse_contract_object_v2(value: Mapping[str, Any]) -> AQUBV2Document:
+    if not isinstance(value, Mapping):
+        _fail("AQUB_V2_BAD_OBJECT")
     schema_version = value.get("schema_version")
     if schema_version == "aqub.transport-envelope.v2":
         return parse_transport_envelope_v2(value)
@@ -354,17 +371,8 @@ def parse_contract_object_v2(value: Mapping[str, Any]) -> AQUBV2Document:
 def serialize_contract_json_v2(document: AQUBV2Document) -> bytes:
     """Return deterministic UTF-8 JSON after revalidating the exact wire value."""
 
-    validated = parse_contract_object_v2(document.to_wire())
-    try:
-        return json.dumps(
-            validated.to_wire(),
-            allow_nan=False,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:  # pragma: no cover - parser fences this
-        raise AQUBContractV2Error("AQUB_V2_BAD_JSON") from exc
+    validated = _revalidate_document(document)
+    return validated._canonical_json
 
 
 def map_opaque_binding_evidence_v2(value: Mapping[str, Any]) -> AQUBV2Route:
@@ -388,28 +396,41 @@ def map_opaque_binding_evidence_v2(value: Mapping[str, Any]) -> AQUBV2Route:
 def assert_route_match_v2(
     document: AQUBV2Document, expected: AQUBV2Route
 ) -> AQUBV2Document:
-    wire = document.to_wire()
+    validated = _revalidate_document(document)
+    if type(expected) is not AQUBV2Route:
+        _fail("AQUB_V2_ROUTE_EVIDENCE_INVALID")
+    try:
+        expected = AQUBV2Route(
+            installation_ref=expected.installation_ref,
+            cube_ref=expected.cube_ref,
+            route_generation=expected.route_generation,
+        )
+    except (AttributeError, AQUBContractV2Error) as exc:
+        raise AQUBContractV2Error("AQUB_V2_ROUTE_EVIDENCE_INVALID") from exc
+    wire = validated.to_wire()
     if (
         wire.get("installation_ref") != expected.installation_ref
         or wire.get("cube_ref") != expected.cube_ref
         or wire.get("route_generation") != expected.route_generation
     ):
         _fail("AQUB_V2_ROUTE_MISMATCH")
-    return document
+    return validated
 
 
 def assert_delivery_correlation_v2(
     command: AQUBV2Document, fact: AQUBV2Document
 ) -> AQUBV2Document:
-    if command.schema_version != "aqub.delivery-command.v2":
+    validated_command = _revalidate_document(command)
+    validated_fact = _revalidate_document(fact)
+    if validated_command.schema_version != "aqub.delivery-command.v2":
         _fail("AQUB_V2_BAD_SCHEMA")
-    if fact.schema_version not in {
+    if validated_fact.schema_version not in {
         "aqub.delivery-ack.v2",
         "aqub.delivery-receipt.v2",
     }:
         _fail("AQUB_V2_BAD_SCHEMA")
-    command_wire = command.to_wire()
-    fact_wire = fact.to_wire()
+    command_wire = validated_command.to_wire()
+    fact_wire = validated_fact.to_wire()
     for key in (
         "command_id",
         "idempotency_key",
@@ -419,24 +440,42 @@ def assert_delivery_correlation_v2(
     ):
         if fact_wire.get(key) != command_wire.get(key):
             _fail("AQUB_V2_DELIVERY_CORRELATION_MISMATCH")
-    return fact
+    return validated_fact
 
 
 def delivery_disposition_v2(receipt: AQUBV2Document) -> AQUBV2DeliveryAction:
-    if receipt.schema_version != "aqub.delivery-receipt.v2":
+    parsed = _revalidate_document(receipt)
+    if parsed.schema_version != "aqub.delivery-receipt.v2":
         _fail("AQUB_V2_BAD_SCHEMA")
-    parsed = parse_delivery_receipt_v2(receipt.to_wire())
     if parsed.to_wire()["status"] == "unknown":
         return AQUBV2DeliveryAction.RECONCILE
     return AQUBV2DeliveryAction.SETTLED
 
 
 def _document(value: Mapping[str, Any]) -> AQUBV2Document:
-    wire = _clone_json_object(value)
-    return AQUBV2Document(
-        schema_version=_string_value(wire["schema_version"]),
-        _wire=wire,
+    canonical_json = _canonical_json_bytes(value)
+    document = object.__new__(AQUBV2Document)
+    object.__setattr__(
+        document,
+        "_schema_version",
+        _string_value(value["schema_version"]),
     )
+    object.__setattr__(document, "_canonical_json", canonical_json)
+    return document
+
+
+def _revalidate_document(document: AQUBV2Document) -> AQUBV2Document:
+    if type(document) is not AQUBV2Document:
+        _fail("AQUB_V2_DOCUMENT_INVALID")
+    try:
+        wire = document.to_wire()
+        schema_version = document.schema_version
+    except (AttributeError, AQUBContractV2Error) as exc:
+        raise AQUBContractV2Error("AQUB_V2_DOCUMENT_INVALID") from exc
+    validated = parse_contract_object_v2(wire)
+    if validated.schema_version != schema_version:
+        _fail("AQUB_V2_DOCUMENT_INVALID")
+    return validated
 
 
 def _object(value: object, label: str) -> JsonObject:
@@ -473,10 +512,12 @@ def _assert_string(
     maximum: int = 256,
     pattern: re.Pattern[str] | None = None,
 ) -> str:
-    if (
-        not isinstance(value, str)
-        or not minimum <= len(value) <= maximum
-        or (pattern is not None and pattern.fullmatch(value) is None)
+    if not isinstance(value, str):
+        raise AQUBContractV2Error(f"AQUB_V2_BAD_STRING:{label}")
+    if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
+        raise AQUBContractV2Error("AQUB_V2_BAD_UNICODE")
+    if not minimum <= len(value) <= maximum or (
+        pattern is not None and pattern.fullmatch(value) is None
     ):
         raise AQUBContractV2Error(f"AQUB_V2_BAD_STRING:{label}")
     return value
@@ -602,28 +643,44 @@ def _assert_absent(value: Mapping[str, Any], fields: set[str]) -> None:
         _fail("AQUB_V2_CONFLICTING_DELIVERY_FACT")
 
 
-def _clone_json_object(value: Mapping[str, Any]) -> JsonObject:
+def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
     try:
-        cloned = json.loads(
-            json.dumps(
-                dict(value),
-                allow_nan=False,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        )
-    except (TypeError, ValueError) as exc:
+        return json.dumps(
+            dict(value),
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
         raise AQUBContractV2Error("AQUB_V2_BAD_JSON") from exc
-    if not isinstance(cloned, dict):
+
+
+def _decode_contract_json_bytes(payload: bytes) -> JsonObject:
+    if type(payload) is not bytes:
+        _fail("AQUB_V2_BAD_JSON_BYTES")
+    if len(payload) > AQUB_V2_MAX_JSON_BYTES:
+        _fail("AQUB_V2_JSON_TOO_LARGE")
+    try:
+        value = json.loads(
+            payload.decode("utf-8", errors="strict"),
+            object_pairs_hook=_strict_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except AQUBContractV2Error:
+        raise
+    except (UnicodeDecodeError, ValueError, OverflowError, RecursionError) as exc:
+        raise AQUBContractV2Error("AQUB_V2_BAD_JSON_BYTES") from exc
+    if not isinstance(value, dict):
         _fail("AQUB_V2_BAD_OBJECT")
-    return cloned
+    return value
 
 
 def _strict_json_object(pairs: list[tuple[str, Any]]) -> JsonObject:
     value: JsonObject = {}
     for key, nested in pairs:
         if key in value:
-            raise AQUBContractV2Error(f"AQUB_V2_DUPLICATE_PROPERTY:{key}")
+            raise AQUBContractV2Error("AQUB_V2_DUPLICATE_PROPERTY")
         value[key] = nested
     return value
 
