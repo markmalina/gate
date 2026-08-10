@@ -34,6 +34,7 @@ def _command(**overrides: object) -> RecoverStaleTelegramClaimsCommand:
         "recovered_at": recovered_at,
         "max_attempts": 5,
         "limit": 100,
+        "require_non_voice_payload": True,
         **overrides,
     }
     return RecoverStaleTelegramClaimsCommand(**values)
@@ -59,7 +60,10 @@ def test_valid_recovery_is_delegated_once() -> None:
         _command(max_attempts=0),
         _command(limit=0),
         _command(limit=1001),
+        _command(require_non_voice_payload=False),
+        _command(require_persisted_voice_transcript=True),
         _command(
+            require_non_voice_payload=False,
             require_persisted_voice_transcript=True,
             require_missing_voice_archive=True,
         ),
