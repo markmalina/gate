@@ -1,0 +1,60 @@
+# AQUB contract v2 mirror for Gate
+
+This directory pins the neutral Gate/AQUB transport contract accepted in
+`markmalina/aqub` PR #43 and merged as
+`cadd5f0ff9731b1114e85e95023ddb3f5d5099ba`.
+
+The four schemas and six synthetic positive fixtures are byte-identical mirrors of
+the upstream Git blobs listed in `provenance.json`. They are copied here so Gate can
+run contract parity and privacy tests without a network dependency or mutable branch
+reference.
+
+## Ownership boundary
+
+Gate owns channel identity, opaque installation bindings, transport envelopes,
+transport idempotency, delivery attempts, reconciliation and terminal transport
+receipts. AQUB owns Cube context, participants, consent, programs, progress, memory,
+model policy and the meaning of a response.
+
+The mirrored contract carries only opaque installation/Cube/conversation/message
+references, route generation, bounded text transport and transport facts. It must
+not acquire roles, programs, progress, prompts, model policy or raw provider IDs.
+
+## Runtime status
+
+- runtime wiring: **absent**;
+- route or binding activation: **absent**;
+- configuration/environment switch: **absent**;
+- database migration: **absent**;
+- Telegram/provider effect: **not authorized**.
+
+`app/application/aqub_contract_v2.py` exposes a pure parser/serializer and an
+explicit synthetic-rehearsal seam. The seam defaults to disabled and cannot be
+enabled by a boolean or environment string. No current router, worker, settings or
+application composition imports it.
+
+The byte parser rejects input above 512 KiB before decoding. This ceiling still
+admits the contract maximum of 32,768 Unicode code points when every supplementary
+character is represented by a 12-byte JSON surrogate pair, with more than 128 KiB
+left for the other bounded fields and syntax. Validated documents retain only
+immutable canonical JSON bytes; construction is validator-owned, detached mappings
+are returned to callers, and every public semantic operation revalidates its input.
+Canonical serialization uses ASCII JSON escapes. This preserves the accepted AQUB
+JavaScript/schema behavior for ordinary Unicode, supplementary code points and lone
+UTF-16 surrogate escapes without exposing Python UTF-8 encoding failures.
+Schema-valid integral JSON spellings such as `3.0` and `3e0` are normalized to the
+canonical integer `3`; booleans, fractional/non-finite numbers and out-of-range
+values remain invalid. Timestamp validation covers the full four-digit proleptic
+Gregorian domain accepted by AQUB, including leap year `0000`, without relying on
+Python's narrower `datetime` year range.
+
+Activation, shadow traffic, persistence and cutover require later bounded work with
+fresh route evidence, exact contract tests, duplicate protection, reconciliation and
+separate operational authority.
+
+## Delivery invariant
+
+`sent` and `failed` are settled at the AQUB boundary with `do_not_retry`. `unknown`
+means the provider effect may have happened; it requires `reconcile_only` and an
+opaque `reconciliation_ref`. Gate must never convert `unknown` to `failed` or blindly
+retry it.

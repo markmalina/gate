@@ -1,0 +1,14 @@
+{
+  "schema_version": "aqub.delivery-receipt.v2",
+  "receipt_ref": "receipt:opaque_delivery_receipt_unknown_01",
+  "command_id": "11111111-1111-4111-8111-111111111111",
+  "idempotency_key": "delivery/test/0001",
+  "installation_ref": "installation:opaque_installation_01",
+  "cube_ref": "cube:opaque_cube_01",
+  "route_generation": 3,
+  "observed_at": "2026-08-10T12:00:05.000Z",
+  "status": "unknown",
+  "retry_disposition": "reconcile_only",
+  "transport_receipt_ref": "receipt:opaque_provider_receipt_unknown_01",
+  "reconciliation_ref": "reconcile:opaque_reconciliation_01"
+}

@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqub.internal/contracts/transport-envelope.v2.schema.json",
+  "title": "AQUB neutral transport envelope v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "envelope_ref",
+    "installation_ref",
+    "cube_ref",
+    "route_generation",
+    "event_ref",
+    "occurred_at",
+    "conversation_ref",
+    "actor_ref",
+    "message_ref",
+    "reply_to_message_ref",
+    "transport_receipt_ref",
+    "payload_sha256",
+    "content"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "aqub.transport-envelope.v2"
+    },
+    "envelope_ref": {
+      "$ref": "#/$defs/envelope_ref"
+    },
+    "installation_ref": {
+      "$ref": "#/$defs/installation_ref"
+    },
+    "cube_ref": {
+      "$ref": "#/$defs/cube_ref"
+    },
+    "route_generation": {
+      "$ref": "#/$defs/route_generation"
+    },
+    "event_ref": {
+      "$ref": "#/$defs/event_ref"
+    },
+    "occurred_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "conversation_ref": {
+      "$ref": "#/$defs/conversation_ref"
+    },
+    "actor_ref": {
+      "$ref": "#/$defs/actor_ref"
+    },
+    "message_ref": {
+      "$ref": "#/$defs/message_ref"
+    },
+    "reply_to_message_ref": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/message_ref"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "transport_receipt_ref": {
+      "$ref": "#/$defs/receipt_ref"
+    },
+    "payload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "media_type", "text"],
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 129,
+          "pattern": "^[a-z][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      }
+    }
+  },
+  "$defs": {
+    "route_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5][0-9]\\.\\d{3}Z$",
+      "minLength": 24,
+      "maxLength": 24
+    },
+    "envelope_ref": {
+      "type": "string",
+      "pattern": "^envelope:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 137
+    },
+    "installation_ref": {
+      "type": "string",
+      "pattern": "^installation:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 141
+    },
+    "cube_ref": {
+      "type": "string",
+      "pattern": "^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 133
+    },
+    "event_ref": {
+      "type": "string",
+      "pattern": "^event:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 134
+    },
+    "conversation_ref": {
+      "type": "string",
+      "pattern": "^conversation:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 141
+    },
+    "actor_ref": {
+      "type": "string",
+      "pattern": "^actor:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 134
+    },
+    "message_ref": {
+      "type": "string",
+      "pattern": "^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 136
+    },
+    "receipt_ref": {
+      "type": "string",
+      "pattern": "^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 136
+    }
+  }
+}

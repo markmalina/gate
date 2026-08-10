@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqub.internal/contracts/delivery-ack.v2.schema.json",
+  "title": "AQUB delivery acknowledgement v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "ack_ref",
+    "command_id",
+    "idempotency_key",
+    "installation_ref",
+    "cube_ref",
+    "route_generation",
+    "observed_at",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "aqub.delivery-ack.v2"
+    },
+    "ack_ref": {
+      "type": "string",
+      "pattern": "^ack:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 132
+    },
+    "command_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:~/-]{7,255}$"
+    },
+    "installation_ref": {
+      "type": "string",
+      "pattern": "^installation:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 141
+    },
+    "cube_ref": {
+      "type": "string",
+      "pattern": "^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 133
+    },
+    "route_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5][0-9]\\.\\d{3}Z$",
+      "minLength": 24,
+      "maxLength": 24
+    },
+    "status": {
+      "enum": ["committed", "duplicate", "rejected"]
+    },
+    "reason_code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,95}$",
+      "maxLength": 96
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "rejected"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["reason_code"]
+      },
+      "else": {
+        "not": {
+          "required": ["reason_code"]
+        }
+      }
+    }
+  ]
+}
