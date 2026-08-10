@@ -1,0 +1,20 @@
+{
+  "schema_version": "aqub.transport-envelope.v2",
+  "envelope_ref": "envelope:opaque_envelope_01",
+  "installation_ref": "installation:opaque_installation_01",
+  "cube_ref": "cube:opaque_cube_01",
+  "route_generation": 3,
+  "event_ref": "event:opaque_event_01",
+  "occurred_at": "2026-08-10T12:00:00.000Z",
+  "conversation_ref": "conversation:opaque_conversation_01",
+  "actor_ref": "actor:opaque_actor_01",
+  "message_ref": "message:opaque_message_01",
+  "reply_to_message_ref": null,
+  "transport_receipt_ref": "receipt:opaque_ingress_receipt_01",
+  "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "content": {
+    "kind": "text",
+    "media_type": "text/plain",
+    "text": "Synthetic transport payload"
+  }
+}

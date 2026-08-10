@@ -1,0 +1,536 @@
+"""Parity and safety tests for the production-inactive AQUB v2 adapter."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable, Mapping
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+import pytest
+from app.application.aqub_contract_v2 import (
+    AQUBContractV2Adapter,
+    AQUBContractV2Error,
+    AQUBV2AdapterMode,
+    AQUBV2DeliveryAction,
+    AQUBV2Document,
+    assert_delivery_correlation_v2,
+    delivery_disposition_v2,
+    map_opaque_binding_evidence_v2,
+    parse_contract_json_v2,
+    parse_delivery_ack_v2,
+    parse_delivery_command_v2,
+    parse_delivery_receipt_v2,
+    parse_transport_envelope_v2,
+    serialize_contract_json_v2,
+)
+from jsonschema import Draft202012Validator, FormatChecker, ValidationError
+
+ROOT = Path(__file__).parents[1]
+CONTRACT_ROOT = ROOT / "contracts" / "aqub" / "v2"
+SCHEMA_ROOT = CONTRACT_ROOT / "schemas"
+FIXTURE_ROOT = CONTRACT_ROOT / "fixtures"
+
+Parser = Callable[[Mapping[str, Any]], AQUBV2Document]
+
+CASES: tuple[tuple[str, str, Parser], ...] = (
+    (
+        "transport-envelope.valid.json",
+        "transport-envelope.v2.schema.json",
+        parse_transport_envelope_v2,
+    ),
+    (
+        "delivery-command.valid.json",
+        "delivery-command.v2.schema.json",
+        parse_delivery_command_v2,
+    ),
+    (
+        "delivery-ack.committed.json",
+        "delivery-ack.v2.schema.json",
+        parse_delivery_ack_v2,
+    ),
+    (
+        "delivery-receipt.sent.json",
+        "delivery-receipt.v2.schema.json",
+        parse_delivery_receipt_v2,
+    ),
+    (
+        "delivery-receipt.failed.json",
+        "delivery-receipt.v2.schema.json",
+        parse_delivery_receipt_v2,
+    ),
+    (
+        "delivery-receipt.unknown.json",
+        "delivery-receipt.v2.schema.json",
+        parse_delivery_receipt_v2,
+    ),
+)
+
+
+def _load(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def _fixture(name: str) -> dict[str, Any]:
+    return _load(FIXTURE_ROOT / name)
+
+
+def _schema(name: str) -> dict[str, Any]:
+    return _load(SCHEMA_ROOT / name)
+
+
+def _validator(name: str) -> Draft202012Validator:
+    return Draft202012Validator(
+        _schema(name),
+        format_checker=FormatChecker(),
+    )
+
+
+def _route_evidence() -> dict[str, Any]:
+    command = _fixture("delivery-command.valid.json")
+    return {
+        "binding_ref": "binding:opaque_binding_01",
+        "installation_ref": command["installation_ref"],
+        "cube_ref": command["cube_ref"],
+        "route_generation": command["route_generation"],
+    }
+
+
+def _git_blob_sha(path: Path) -> str:
+    content = path.read_bytes()
+    header = f"blob {len(content)}\0".encode()
+    return hashlib.sha1(header + content, usedforsecurity=False).hexdigest()
+
+
+def _collect_keys(value: object, output: set[str] | None = None) -> set[str]:
+    result = output if output is not None else set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            result.add(key)
+            _collect_keys(nested, result)
+    elif isinstance(value, list):
+        for nested in value:
+            _collect_keys(nested, result)
+    return result
+
+
+def test_provenance_pins_exact_accepted_aqub_artifacts() -> None:
+    provenance = _load(CONTRACT_ROOT / "provenance.json")
+
+    assert provenance["schema_version"] == "gate.aqub-contract-v2-provenance.v1"
+    assert provenance["upstream"] == {
+        "repository": "markmalina/aqub",
+        "pull_request": 43,
+        "accepted_head": "9f22609a905a8e12bf886376fb9d486699aa818a",
+        "merge_commit": "cadd5f0ff9731b1114e85e95023ddb3f5d5099ba",
+    }
+    assert provenance["runtime_wiring"] is False
+    assert provenance["route_activation"] is False
+    assert provenance["external_effects_authorized"] is False
+
+    artifacts = provenance["mirrored_artifacts"]
+    assert isinstance(artifacts, list)
+    assert len(artifacts) == 10
+    for artifact in artifacts:
+        assert isinstance(artifact, dict)
+        local_path = ROOT / artifact["local_path"]
+        assert local_path.is_file()
+        assert _git_blob_sha(local_path) == artifact["upstream_blob_sha"]
+
+    assert provenance["source_references"] == [
+        {
+            "path": "src/gate-adapter/contracts-v2.js",
+            "blob_sha": "2135d7ec1527d45424d1453d061ff61a34b99fec",
+        },
+        {
+            "path": "docs/decisions/0002-aqub-gate-ownership-and-contract-v2.md",
+            "blob_sha": "ad51c4bec7aaeea4f1253026a2334f9fc6318d83",
+        },
+    ]
+
+
+@pytest.mark.parametrize(("fixture_name", "schema_name", "parser"), CASES)
+def test_positive_fixtures_round_trip_exactly(
+    fixture_name: str,
+    schema_name: str,
+    parser: Parser,
+) -> None:
+    fixture = _fixture(fixture_name)
+    schema = _schema(schema_name)
+    Draft202012Validator.check_schema(schema)
+    _validator(schema_name).validate(fixture)
+
+    parsed = parser(fixture)
+
+    assert parsed.to_wire() == fixture
+    assert json.dumps(
+        parsed.to_wire(), ensure_ascii=False, separators=(",", ":")
+    ) == json.dumps(fixture, ensure_ascii=False, separators=(",", ":"))
+    detached = parsed.to_wire()
+    detached["schema_version"] = "mutated"
+    assert parsed.to_wire() == fixture
+
+    encoded_once = serialize_contract_json_v2(parsed)
+    encoded_twice = serialize_contract_json_v2(parsed)
+    assert encoded_once == encoded_twice
+    assert parse_contract_json_v2(encoded_once).to_wire() == fixture
+
+
+@pytest.mark.parametrize(("fixture_name", "schema_name", "parser"), CASES[:4])
+def test_root_required_keys_match_schema_and_python(
+    fixture_name: str,
+    schema_name: str,
+    parser: Parser,
+) -> None:
+    fixture = _fixture(fixture_name)
+    schema = _schema(schema_name)
+    required = schema["required"]
+    assert isinstance(required, list)
+
+    for key in required:
+        candidate = deepcopy(fixture)
+        candidate.pop(key)
+        with pytest.raises(ValidationError):
+            _validator(schema_name).validate(candidate)
+        with pytest.raises(AQUBContractV2Error):
+            parser(candidate)
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "schema_name", "parser", "nested_key"),
+    [
+        (
+            "transport-envelope.valid.json",
+            "transport-envelope.v2.schema.json",
+            parse_transport_envelope_v2,
+            "content",
+        ),
+        (
+            "delivery-command.valid.json",
+            "delivery-command.v2.schema.json",
+            parse_delivery_command_v2,
+            "payload",
+        ),
+    ],
+)
+def test_nested_required_keys_match_schema_and_python(
+    fixture_name: str,
+    schema_name: str,
+    parser: Parser,
+    nested_key: str,
+) -> None:
+    fixture = _fixture(fixture_name)
+    schema = _schema(schema_name)
+    required = schema["properties"][nested_key]["required"]
+    assert isinstance(required, list)
+    for key in required:
+        candidate = deepcopy(fixture)
+        nested = candidate[nested_key]
+        assert isinstance(nested, dict)
+        nested.pop(key)
+        with pytest.raises(ValidationError):
+            _validator(schema_name).validate(candidate)
+        with pytest.raises(AQUBContractV2Error):
+            parser(candidate)
+
+
+def test_adapter_is_default_disabled_and_not_runtime_wired() -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    evidence = _route_evidence()
+
+    with pytest.raises(AQUBContractV2Error, match="adapter_disabled"):
+        AQUBContractV2Adapter().rehearse_ingress(envelope, evidence)
+    with pytest.raises(AQUBContractV2Error, match="mode_invalid"):
+        AQUBContractV2Adapter(mode="synthetic_rehearsal")  # type: ignore[arg-type]
+    with pytest.raises(AQUBContractV2Error, match="mode_invalid"):
+        AQUBContractV2Adapter(mode=True)  # type: ignore[arg-type]
+
+    runtime_paths = [ROOT / "app" / "main.py", ROOT / "app" / "core" / "config.py"]
+    runtime_paths.extend((ROOT / "app" / "api").rglob("*.py"))
+    runtime_paths.extend((ROOT / "app" / "worker").rglob("*.py"))
+    assert runtime_paths
+    for path in runtime_paths:
+        assert "aqub_contract_v2" not in path.read_text(encoding="utf-8"), path
+
+
+def test_byte_parser_rejects_duplicates_nonfinite_values_and_non_object_roots() -> None:
+    duplicate = (
+        b'{"schema_version":"aqub.transport-envelope.v2",'
+        b'"schema_version":"aqub.delivery-command.v2"}'
+    )
+    for payload in (
+        duplicate,
+        b'{"schema_version":"aqub.transport-envelope.v2","value":NaN}',
+        b'{"schema_version":"aqub.transport-envelope.v2","value":Infinity}',
+        b"[]",
+        b"null",
+        b'"aqub.transport-envelope.v2"',
+        b"\xff",
+    ):
+        with pytest.raises(AQUBContractV2Error):
+            parse_contract_json_v2(payload)
+
+
+def test_route_generation_rejects_bool_and_serializer_never_normalizes() -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["route_generation"] = True
+    with pytest.raises(ValidationError):
+        _validator("transport-envelope.v2.schema.json").validate(envelope)
+    with pytest.raises(AQUBContractV2Error, match="ROUTE_GENERATION"):
+        parse_transport_envelope_v2(envelope)
+
+    valid = parse_transport_envelope_v2(_fixture("transport-envelope.valid.json"))
+    invalid_wire = valid.to_wire()
+    invalid_wire["occurred_at"] = "2026-08-10T12:00:60.000Z"
+    forged = AQUBV2Document(
+        schema_version="aqub.transport-envelope.v2",
+        _wire=invalid_wire,
+    )
+    with pytest.raises(AQUBContractV2Error):
+        serialize_contract_json_v2(forged)
+
+    invalid_ref = valid.to_wire()
+    invalid_ref["actor_ref"] = "actor:12345678"
+    forged = AQUBV2Document(
+        schema_version="aqub.transport-envelope.v2",
+        _wire=invalid_ref,
+    )
+    with pytest.raises(AQUBContractV2Error):
+        serialize_contract_json_v2(forged)
+
+
+def test_explicit_synthetic_seam_maps_only_opaque_route_evidence() -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    evidence = _route_evidence()
+    adapter = AQUBContractV2Adapter(
+        mode=AQUBV2AdapterMode.SYNTHETIC_REHEARSAL
+    )
+
+    assert adapter.rehearse_ingress(envelope, evidence).to_wire() == envelope
+    route = map_opaque_binding_evidence_v2(evidence)
+    assert route.installation_ref == envelope["installation_ref"]
+    assert route.cube_ref == envelope["cube_ref"]
+    assert route.route_generation == envelope["route_generation"]
+
+    raw = deepcopy(evidence)
+    raw["telegram_chat_id"] = -100123456
+    with pytest.raises(AQUBContractV2Error, match="EXTRA_PROPERTY"):
+        map_opaque_binding_evidence_v2(raw)
+
+    stale = deepcopy(evidence)
+    stale["route_generation"] -= 1
+    with pytest.raises(AQUBContractV2Error, match="ROUTE_MISMATCH"):
+        adapter.rehearse_ingress(envelope, stale)
+
+
+def test_delivery_correlation_preserves_all_route_and_idempotency_fences() -> None:
+    command_wire = _fixture("delivery-command.valid.json")
+    ack_wire = _fixture("delivery-ack.committed.json")
+    adapter = AQUBContractV2Adapter(
+        mode=AQUBV2AdapterMode.SYNTHETIC_REHEARSAL
+    )
+    adapter.rehearse_delivery(command_wire, ack_wire, _route_evidence())
+
+    command = parse_delivery_command_v2(command_wire)
+    for key, replacement in (
+        ("command_id", "22222222-2222-4222-8222-222222222222"),
+        ("idempotency_key", "delivery/test/other"),
+        ("installation_ref", "installation:opaque_installation_02"),
+        ("cube_ref", "cube:opaque_cube_02"),
+        ("route_generation", 2),
+    ):
+        mismatch = deepcopy(ack_wire)
+        mismatch[key] = replacement
+        parsed = parse_delivery_ack_v2(mismatch)
+        with pytest.raises(AQUBContractV2Error, match="CORRELATION_MISMATCH"):
+            assert_delivery_correlation_v2(command, parsed)
+
+
+def test_unknown_is_reconcile_only_and_never_collapses_to_retry() -> None:
+    unknown = _fixture("delivery-receipt.unknown.json")
+    sent = parse_delivery_receipt_v2(_fixture("delivery-receipt.sent.json"))
+    failed = parse_delivery_receipt_v2(_fixture("delivery-receipt.failed.json"))
+    parsed_unknown = parse_delivery_receipt_v2(unknown)
+
+    assert delivery_disposition_v2(parsed_unknown) is AQUBV2DeliveryAction.RECONCILE
+    assert delivery_disposition_v2(sent) is AQUBV2DeliveryAction.SETTLED
+    assert delivery_disposition_v2(failed) is AQUBV2DeliveryAction.SETTLED
+    assert parsed_unknown.to_wire()["reconciliation_ref"] == unknown[
+        "reconciliation_ref"
+    ]
+
+    retry = deepcopy(unknown)
+    retry["retry_disposition"] = "do_not_retry"
+    with pytest.raises(AQUBContractV2Error, match="REQUIRES_RECONCILIATION"):
+        parse_delivery_receipt_v2(retry)
+
+    collapsed = deepcopy(unknown)
+    collapsed["status"] = "failed"
+    with pytest.raises(AQUBContractV2Error):
+        parse_delivery_receipt_v2(collapsed)
+
+    blind_retry = deepcopy(unknown)
+    blind_retry["automatic_retry"] = True
+    with pytest.raises(AQUBContractV2Error, match="EXTRA_PROPERTY"):
+        parse_delivery_receipt_v2(blind_retry)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "2026-08-10 12:00:00.000Z",
+        "2026-08-10T15:00:00.000+03:00",
+        "2026-02-30T12:00:00.000Z",
+        "2026-08-10T12:00:00Z",
+        "2026-08-10T12:00:60.000Z",
+    ],
+)
+def test_timestamp_parity_rejects_noncanonical_and_leap_second(
+    timestamp: str,
+) -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["occurred_at"] = timestamp
+    if timestamp != "2026-02-30T12:00:00.000Z":
+        with pytest.raises(ValidationError):
+            _validator("transport-envelope.v2.schema.json").validate(envelope)
+    with pytest.raises(AQUBContractV2Error):
+        parse_transport_envelope_v2(envelope)
+
+
+def test_uuid_version_and_variant_parity() -> None:
+    valid = _fixture("delivery-command.valid.json")
+    valid["command_id"] = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+    _validator("delivery-command.v2.schema.json").validate(valid)
+    assert parse_delivery_command_v2(valid).to_wire() == valid
+
+    for invalid_uuid in (
+        "11111111-1111-7111-8111-111111111111",
+        "11111111-1111-4111-7111-111111111111",
+    ):
+        invalid = _fixture("delivery-command.valid.json")
+        invalid["command_id"] = invalid_uuid
+        with pytest.raises(ValidationError):
+            _validator("delivery-command.v2.schema.json").validate(invalid)
+        with pytest.raises(AQUBContractV2Error):
+            parse_delivery_command_v2(invalid)
+
+
+def test_unicode_text_length_counts_code_points_like_json_schema() -> None:
+    maximum = _fixture("transport-envelope.valid.json")
+    maximum["content"]["text"] = "😀" * 32_768
+    assert len(maximum["content"]["text"]) == 32_768
+    _validator("transport-envelope.v2.schema.json").validate(maximum)
+    assert parse_transport_envelope_v2(maximum).to_wire() == maximum
+
+    too_long = deepcopy(maximum)
+    too_long["content"]["text"] += "😀"
+    with pytest.raises(ValidationError):
+        _validator("transport-envelope.v2.schema.json").validate(too_long)
+    with pytest.raises(AQUBContractV2Error):
+        parse_transport_envelope_v2(too_long)
+
+
+def test_opaque_reference_minimum_and_maximum_match_schema() -> None:
+    schema_name = "transport-envelope.v2.schema.json"
+    minimum = _fixture("transport-envelope.valid.json")
+    minimum["actor_ref"] = "actor:A1234567"
+    _validator(schema_name).validate(minimum)
+    parse_transport_envelope_v2(minimum)
+
+    maximum = _fixture("transport-envelope.valid.json")
+    maximum["installation_ref"] = f"installation:A{'b' * 127}"
+    assert len(maximum["installation_ref"]) == 141
+    _validator(schema_name).validate(maximum)
+    parse_transport_envelope_v2(maximum)
+
+    for field_name, value in (
+        ("actor_ref", "actor:A123456"),
+        ("installation_ref", f"installation:A{'b' * 128}"),
+    ):
+        invalid = _fixture("transport-envelope.valid.json")
+        invalid[field_name] = value
+        with pytest.raises(ValidationError):
+            _validator(schema_name).validate(invalid)
+        with pytest.raises(AQUBContractV2Error):
+            parse_transport_envelope_v2(invalid)
+
+
+@pytest.mark.parametrize("digest", ["A" * 64, "a" * 63, "g" * 64])
+def test_payload_digest_shape_fails_closed_in_schema_and_python(digest: str) -> None:
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["payload_sha256"] = digest
+    with pytest.raises(ValidationError):
+        _validator("transport-envelope.v2.schema.json").validate(envelope)
+    with pytest.raises(AQUBContractV2Error):
+        parse_transport_envelope_v2(envelope)
+
+
+def test_conditional_ack_and_outcome_fields_match_schemas() -> None:
+    rejected = _fixture("delivery-ack.committed.json")
+    rejected["status"] = "rejected"
+    with pytest.raises(ValidationError):
+        _validator("delivery-ack.v2.schema.json").validate(rejected)
+    with pytest.raises(AQUBContractV2Error):
+        parse_delivery_ack_v2(rejected)
+
+    rejected["reason_code"] = "ROUTE_STALE"
+    _validator("delivery-ack.v2.schema.json").validate(rejected)
+    parse_delivery_ack_v2(rejected)
+
+    for fixture_name, forbidden_field in (
+        ("delivery-receipt.sent.json", "failure_code"),
+        ("delivery-receipt.failed.json", "reconciliation_ref"),
+        ("delivery-receipt.unknown.json", "delivered_message_ref"),
+    ):
+        receipt = _fixture(fixture_name)
+        receipt[forbidden_field] = "message:opaque_conflicting_fact_01"
+        with pytest.raises(ValidationError):
+            _validator("delivery-receipt.v2.schema.json").validate(receipt)
+        with pytest.raises(AQUBContractV2Error):
+            parse_delivery_receipt_v2(receipt)
+
+
+def test_extra_product_provider_and_raw_identifier_fields_are_unrepresentable() -> None:
+    forbidden = {
+        "role",
+        "program_ref",
+        "progress",
+        "assignment_ref",
+        "step_ref",
+        "model_policy",
+        "prompt",
+        "telegram_chat_id",
+        "telegram_user_id",
+        "provider_payload",
+        "bot_token",
+        "secret",
+    }
+    values = [
+        _schema(schema_name)
+        for schema_name in (
+            "transport-envelope.v2.schema.json",
+            "delivery-command.v2.schema.json",
+            "delivery-ack.v2.schema.json",
+            "delivery-receipt.v2.schema.json",
+        )
+    ]
+    values.extend(_fixture(fixture_name) for fixture_name, _, _ in CASES)
+    assert not (_collect_keys(values) & forbidden)
+
+    envelope = _fixture("transport-envelope.valid.json")
+    envelope["telegram_chat_id"] = -100123456
+    with pytest.raises(ValidationError):
+        _validator("transport-envelope.v2.schema.json").validate(envelope)
+    with pytest.raises(AQUBContractV2Error, match="EXTRA_PROPERTY"):
+        parse_transport_envelope_v2(envelope)
+
+    raw_ref = _fixture("transport-envelope.valid.json")
+    raw_ref["actor_ref"] = "actor:12345678"
+    with pytest.raises(ValidationError):
+        _validator("transport-envelope.v2.schema.json").validate(raw_ref)
+    with pytest.raises(AQUBContractV2Error):
+        parse_transport_envelope_v2(raw_ref)

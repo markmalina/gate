@@ -1,0 +1,75 @@
+{
+  "schema_version": "gate.aqub-contract-v2-provenance.v1",
+  "recorded_on": "2026-08-10",
+  "upstream": {
+    "repository": "markmalina/aqub",
+    "pull_request": 43,
+    "accepted_head": "9f22609a905a8e12bf886376fb9d486699aa818a",
+    "merge_commit": "cadd5f0ff9731b1114e85e95023ddb3f5d5099ba"
+  },
+  "mirrored_artifacts": [
+    {
+      "upstream_path": "contracts/transport-envelope.v2.schema.json",
+      "local_path": "contracts/aqub/v2/schemas/transport-envelope.v2.schema.json",
+      "upstream_blob_sha": "4a487739c35e6d3ea9131258ab15663f9c77b16b"
+    },
+    {
+      "upstream_path": "contracts/delivery-command.v2.schema.json",
+      "local_path": "contracts/aqub/v2/schemas/delivery-command.v2.schema.json",
+      "upstream_blob_sha": "bb7e5d45d0209084f6407a30934499427f644cbb"
+    },
+    {
+      "upstream_path": "contracts/delivery-ack.v2.schema.json",
+      "local_path": "contracts/aqub/v2/schemas/delivery-ack.v2.schema.json",
+      "upstream_blob_sha": "c7b5a330e04bd12f3473ca836ed2ea140f3c0332"
+    },
+    {
+      "upstream_path": "contracts/delivery-receipt.v2.schema.json",
+      "local_path": "contracts/aqub/v2/schemas/delivery-receipt.v2.schema.json",
+      "upstream_blob_sha": "f1335194f6441f18743b01d1b212bb500d7c6232"
+    },
+    {
+      "upstream_path": "contracts/fixtures/v2/transport-envelope.valid.json",
+      "local_path": "contracts/aqub/v2/fixtures/transport-envelope.valid.json",
+      "upstream_blob_sha": "4e678fc052aa302dc646c047a3a5d05aad87f0ad"
+    },
+    {
+      "upstream_path": "contracts/fixtures/v2/delivery-command.valid.json",
+      "local_path": "contracts/aqub/v2/fixtures/delivery-command.valid.json",
+      "upstream_blob_sha": "130202ce3f8b98cf29fa2897d01cf348658fecb2"
+    },
+    {
+      "upstream_path": "contracts/fixtures/v2/delivery-ack.committed.json",
+      "local_path": "contracts/aqub/v2/fixtures/delivery-ack.committed.json",
+      "upstream_blob_sha": "d5eb281926d2d3f7c51dc15a5593dca05e96c3d0"
+    },
+    {
+      "upstream_path": "contracts/fixtures/v2/delivery-receipt.sent.json",
+      "local_path": "contracts/aqub/v2/fixtures/delivery-receipt.sent.json",
+      "upstream_blob_sha": "47fdbc7df3b3e14b6693db855a734ec04adccade"
+    },
+    {
+      "upstream_path": "contracts/fixtures/v2/delivery-receipt.failed.json",
+      "local_path": "contracts/aqub/v2/fixtures/delivery-receipt.failed.json",
+      "upstream_blob_sha": "c9a2c182c8ee96bcdcca3cd393fa804cc19796d8"
+    },
+    {
+      "upstream_path": "contracts/fixtures/v2/delivery-receipt.unknown.json",
+      "local_path": "contracts/aqub/v2/fixtures/delivery-receipt.unknown.json",
+      "upstream_blob_sha": "e33057cf54f3388b5c909361f75a51fe003f1293"
+    }
+  ],
+  "source_references": [
+    {
+      "path": "src/gate-adapter/contracts-v2.js",
+      "blob_sha": "2135d7ec1527d45424d1453d061ff61a34b99fec"
+    },
+    {
+      "path": "docs/decisions/0002-aqub-gate-ownership-and-contract-v2.md",
+      "blob_sha": "ad51c4bec7aaeea4f1253026a2334f9fc6318d83"
+    }
+  ],
+  "runtime_wiring": false,
+  "route_activation": false,
+  "external_effects_authorized": false
+}

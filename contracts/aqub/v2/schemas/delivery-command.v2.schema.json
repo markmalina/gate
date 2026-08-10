@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqub.internal/contracts/delivery-command.v2.schema.json",
+  "title": "AQUB neutral delivery command v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command_id",
+    "idempotency_key",
+    "installation_ref",
+    "cube_ref",
+    "route_generation",
+    "conversation_ref",
+    "requested_at",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "aqub.delivery-command.v2"
+    },
+    "command_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:~/-]{7,255}$"
+    },
+    "installation_ref": {
+      "$ref": "#/$defs/installation_ref"
+    },
+    "cube_ref": {
+      "$ref": "#/$defs/cube_ref"
+    },
+    "route_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "conversation_ref": {
+      "$ref": "#/$defs/conversation_ref"
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5][0-9]\\.\\d{3}Z$",
+      "minLength": 24,
+      "maxLength": 24
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "media_type", "text", "reply_to_message_ref"],
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 129,
+          "pattern": "^[a-z][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "reply_to_message_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/message_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "installation_ref": {
+      "type": "string",
+      "pattern": "^installation:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 141
+    },
+    "cube_ref": {
+      "type": "string",
+      "pattern": "^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 133
+    },
+    "conversation_ref": {
+      "type": "string",
+      "pattern": "^conversation:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 141
+    },
+    "message_ref": {
+      "type": "string",
+      "pattern": "^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 136
+    }
+  }
+}

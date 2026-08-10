@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aqub.internal/contracts/delivery-receipt.v2.schema.json",
+  "title": "AQUB delivery receipt v2",
+  "description": "The unknown outcome means a provider side effect may have occurred (possibly sent) and must be reconciled without automatic retry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_ref",
+    "command_id",
+    "idempotency_key",
+    "installation_ref",
+    "cube_ref",
+    "route_generation",
+    "observed_at",
+    "status",
+    "retry_disposition",
+    "transport_receipt_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "aqub.delivery-receipt.v2"
+    },
+    "receipt_ref": {
+      "$ref": "#/$defs/receipt_ref"
+    },
+    "command_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z][A-Za-z0-9._:~/-]{7,255}$"
+    },
+    "installation_ref": {
+      "$ref": "#/$defs/installation_ref"
+    },
+    "cube_ref": {
+      "$ref": "#/$defs/cube_ref"
+    },
+    "route_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:[0-5][0-9]\\.\\d{3}Z$",
+      "minLength": 24,
+      "maxLength": 24
+    },
+    "status": {
+      "enum": ["sent", "failed", "unknown"]
+    },
+    "retry_disposition": {
+      "enum": ["do_not_retry", "reconcile_only"]
+    },
+    "transport_receipt_ref": {
+      "$ref": "#/$defs/receipt_ref"
+    },
+    "delivered_message_ref": {
+      "$ref": "#/$defs/message_ref"
+    },
+    "failure_code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,95}$",
+      "maxLength": 96
+    },
+    "reconciliation_ref": {
+      "$ref": "#/$defs/reconciliation_ref"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "sent"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "retry_disposition": {
+            "const": "do_not_retry"
+          }
+        },
+        "required": ["delivered_message_ref"],
+        "not": {
+          "anyOf": [
+            {
+              "required": ["failure_code"]
+            },
+            {
+              "required": ["reconciliation_ref"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "retry_disposition": {
+            "const": "do_not_retry"
+          }
+        },
+        "required": ["failure_code"],
+        "not": {
+          "anyOf": [
+            {
+              "required": ["delivered_message_ref"]
+            },
+            {
+              "required": ["reconciliation_ref"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "unknown"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "retry_disposition": {
+            "const": "reconcile_only"
+          }
+        },
+        "required": ["reconciliation_ref"],
+        "not": {
+          "anyOf": [
+            {
+              "required": ["delivered_message_ref"]
+            },
+            {
+              "required": ["failure_code"]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "installation_ref": {
+      "type": "string",
+      "pattern": "^installation:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 141
+    },
+    "cube_ref": {
+      "type": "string",
+      "pattern": "^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 133
+    },
+    "receipt_ref": {
+      "type": "string",
+      "pattern": "^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 136
+    },
+    "message_ref": {
+      "type": "string",
+      "pattern": "^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 136
+    },
+    "reconciliation_ref": {
+      "type": "string",
+      "pattern": "^reconcile:[A-Za-z][A-Za-z0-9._~-]{7,127}$",
+      "maxLength": 138
+    }
+  }
+}
