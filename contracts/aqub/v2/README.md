@@ -39,6 +39,9 @@ character is represented by a 12-byte JSON surrogate pair, with more than 128 Ki
 left for the other bounded fields and syntax. Validated documents retain only
 immutable canonical JSON bytes; construction is validator-owned, detached mappings
 are returned to callers, and every public semantic operation revalidates its input.
+Canonical serialization uses ASCII JSON escapes. This preserves the accepted AQUB
+JavaScript/schema behavior for ordinary Unicode, supplementary code points and lone
+UTF-16 surrogate escapes without exposing Python UTF-8 encoding failures.
 
 Activation, shadow traffic, persistence and cutover require later bounded work with
 fresh route evidence, exact contract tests, duplicate protection, reconciliation and

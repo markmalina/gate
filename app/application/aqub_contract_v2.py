@@ -514,8 +514,6 @@ def _assert_string(
 ) -> str:
     if not isinstance(value, str):
         raise AQUBContractV2Error(f"AQUB_V2_BAD_STRING:{label}")
-    if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
-        raise AQUBContractV2Error("AQUB_V2_BAD_UNICODE")
     if not minimum <= len(value) <= maximum or (
         pattern is not None and pattern.fullmatch(value) is None
     ):
@@ -648,7 +646,7 @@ def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
         return json.dumps(
             dict(value),
             allow_nan=False,
-            ensure_ascii=False,
+            ensure_ascii=True,
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")

@@ -302,14 +302,27 @@ def test_byte_parser_has_predecode_ceiling_with_escaped_text_headroom() -> None:
     assert too_large.value.code == "AQUB_V2_JSON_TOO_LARGE"
 
 
-def test_byte_parser_rejects_unpaired_unicode_surrogate_stably() -> None:
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\ud800",
+        "\udfff",
+        "😀",
+        "Привет, AQUB — 你好",
+        "Привет, AQUB — 你好 😀 \ud800 \udfff",
+    ],
+)
+def test_unicode_matches_aqub_js_and_ascii_serialization_is_safe(text: str) -> None:
     command = _fixture("delivery-command.valid.json")
-    command["payload"]["text"] = "\ud800"
+    command["payload"]["text"] = text
     payload = json.dumps(command, ensure_ascii=True).encode("ascii")
 
-    with pytest.raises(AQUBContractV2Error) as error:
-        parse_contract_json_v2(payload)
-    assert error.value.code == "AQUB_V2_BAD_UNICODE"
+    _validator("delivery-command.v2.schema.json").validate(command)
+    parsed = parse_contract_json_v2(payload)
+    serialized = serialize_contract_json_v2(parsed)
+
+    assert serialized.isascii()
+    assert parse_contract_json_v2(serialized).to_wire()["payload"]["text"] == text
 
 
 @pytest.mark.parametrize(
