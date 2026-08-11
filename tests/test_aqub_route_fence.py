@@ -136,7 +136,10 @@ def test_stale_generation_and_route_mismatches_fail_closed() -> None:
     )
 
     mismatch_cases = (
-        (replace(old_bot, installation_ref="installation:other_bot_01"), "INSTALLATION"),
+        (
+            replace(old_bot, installation_ref="installation:other_bot_01"),
+            "INSTALLATION",
+        ),
         (replace(old_bot, cube_ref="cube:other_cube_01"), "CUBE"),
         (replace(old_bot, route_generation=2), "GENERATION_STALE"),
         (replace(old_bot, binding_ref="binding:other_binding_01"), "BINDING_MISMATCH"),
