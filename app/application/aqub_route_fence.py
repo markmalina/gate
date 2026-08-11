@@ -229,7 +229,7 @@ def installation_scoped_idempotency_key(
     ):
         raise AQUBRouteFenceError("AQUB_ROUTE_IDEMPOTENCY_KEY_INVALID")
     digest = hashlib.sha256(
-        f"{installation_ref}\0{idempotency_key}".encode("utf-8")
+        f"{installation_ref}\0{idempotency_key}".encode()
     ).hexdigest()
     return f"gate-aqub-v2/{digest}"
 
