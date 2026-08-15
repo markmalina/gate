@@ -48,9 +48,7 @@ class AQUBFoodDeliveryV2Adapter:
         route = map_opaque_binding_evidence_v2(binding_evidence)
         assert_route_match_v2(document, route)
 
-        digest = hashlib.sha256(
-            wire["idempotency_key"].encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha256(wire["idempotency_key"].encode("utf-8")).hexdigest()
         ack = {
             "schema_version": "aqub.delivery-ack.v2",
             "ack_ref": f"ack:{digest}",
