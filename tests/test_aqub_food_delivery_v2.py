@@ -46,9 +46,7 @@ def test_food_acceptance_is_disabled_by_default() -> None:
 
 def test_synthetic_acceptance_returns_correlated_ack() -> None:
     command = _command()
-    adapter = AQUBFoodDeliveryV2Adapter(
-        mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL
-    )
+    adapter = AQUBFoodDeliveryV2Adapter(mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL)
     ack = adapter.rehearse_acceptance(
         command,
         _evidence(command),
@@ -67,9 +65,7 @@ def test_synthetic_acceptance_returns_correlated_ack() -> None:
 
 def test_duplicate_is_explicit_and_never_sends() -> None:
     command = _command()
-    adapter = AQUBFoodDeliveryV2Adapter(
-        mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL
-    )
+    adapter = AQUBFoodDeliveryV2Adapter(mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL)
     ack = adapter.rehearse_acceptance(
         command,
         _evidence(command),
@@ -82,9 +78,7 @@ def test_duplicate_is_explicit_and_never_sends() -> None:
 def test_generic_program_command_cannot_enter_food_seam() -> None:
     command = _command()
     command["idempotency_key"] = "delivery/program/0001"
-    adapter = AQUBFoodDeliveryV2Adapter(
-        mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL
-    )
+    adapter = AQUBFoodDeliveryV2Adapter(mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL)
     with pytest.raises(AQUBContractV2Error, match="AQUB_FOOD_DELIVERY_SCOPE_REQUIRED"):
         adapter.rehearse_acceptance(
             command,
@@ -97,9 +91,7 @@ def test_stale_route_generation_fails_closed() -> None:
     command = _command()
     evidence = _evidence(command)
     evidence["route_generation"] = 2
-    adapter = AQUBFoodDeliveryV2Adapter(
-        mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL
-    )
+    adapter = AQUBFoodDeliveryV2Adapter(mode=AQUBFoodDeliveryV2Mode.SYNTHETIC_REHEARSAL)
     with pytest.raises(AQUBContractV2Error, match="ROUTE_MISMATCH"):
         adapter.rehearse_acceptance(
             command,
