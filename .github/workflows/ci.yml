@@ -209,6 +209,7 @@ jobs:
           tests/test_telegram_aqub_provider.py
           tests/test_aqub_provider_status.py
           tests/test_aqub_live.py
+          tests/test_aqub_food_delivery_v2.py
           tests/test_aqub_live_delivery_postgres.py
 
   windows-enrollment:
