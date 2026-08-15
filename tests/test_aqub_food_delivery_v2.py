@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.application.aqub_contract_v2 import AQUBContractV2Error
 from app.application.aqub_food_delivery_v2 import (
     AQUBFoodDeliveryV2Adapter,
