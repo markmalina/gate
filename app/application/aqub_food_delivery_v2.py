@@ -51,7 +51,7 @@ class AQUBFoodDeliveryV2Adapter:
         digest = hashlib.sha256(wire["idempotency_key"].encode("utf-8")).hexdigest()
         ack = {
             "schema_version": "aqub.delivery-ack.v2",
-            "ack_ref": f"ack:{digest}",
+            "ack_ref": f"ack:a{digest}",
             "command_id": wire["command_id"],
             "idempotency_key": wire["idempotency_key"],
             "installation_ref": wire["installation_ref"],
