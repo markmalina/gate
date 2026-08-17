@@ -16,6 +16,7 @@ from app.application.canonical_messaging import (
     WorkOwnershipDecision,
     WorkRoute,
 )
+from app.application.telegram_message_content import extract_telegram_message_text
 from app.application.work_ownership import (
     DirectionEvidence,
     ShadowWorkOwnershipEvaluation,
@@ -77,12 +78,7 @@ def project_telegram_canonical_message(
 
     sender_id = _sender_id(selected)
     direction = _canonical_direction(direction_evidence)
-    text_value = selected.get("text")
-    text_content = (
-        text_value
-        if isinstance(text_value, str) and bool(text_value.strip())
-        else None
-    )
+    text_content = extract_telegram_message_text(selected)
     text_present = text_content is not None
     input_origin = _input_origin(selected)
     occurred_at = _occurred_at(selected.get("date"), fallback=received_at)
