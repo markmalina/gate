@@ -13,6 +13,7 @@ from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api.admin_auth import require_admin_bearer
 from app.api.deps import get_db_session
+from app.application.telegram_message_content import extract_telegram_message_text
 from app.core.config import Settings, get_settings
 from app.models.domain import (
     AuditLog,
@@ -1301,8 +1302,7 @@ def _extract_message_event(
         chat_id,
     )
 
-    text_value = message.get("text")
-    text = text_value if isinstance(text_value, str) else None
+    text = extract_telegram_message_text(message)
     business_connection_id = _optional_string(message.get("business_connection_id"))
 
     return TelegramUpdateEvent(
