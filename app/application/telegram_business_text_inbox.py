@@ -18,6 +18,7 @@ from app.application.telegram_ingress_identity import (
     build_telegram_business_identity_command,
 )
 from app.application.telegram_ingress_shadow import classify_telegram_ingress
+from app.application.telegram_message_content import extract_telegram_message_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +121,8 @@ def is_telegram_business_text_cutover_update(
     ):
         return False
     _, message = _single_message(update)
-    text_content = message.get("text")
-    normalized_text = text_content.strip() if isinstance(text_content, str) else ""
+    text_content = extract_telegram_message_text(message)
+    normalized_text = text_content.strip() if text_content is not None else ""
     return bool(normalized_text) and normalized_text.casefold() != "ping" and "voice" not in message
 
 
