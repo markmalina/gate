@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 
+from app.application.telegram_message_content import extract_telegram_message_text
 from app.application.work_ownership import DirectionEvidence
 
 TELEGRAM_SAFE_PROVIDER_ID_MAX = (1 << 52) - 1
@@ -186,11 +187,11 @@ def build_telegram_business_identity_command(
     sender = project_telegram_sender_identity(selected)
     if sender.sender_id is None:
         return None
-    text = selected.get("text")
+    text_content = extract_telegram_message_text(selected)
     return ResolveTelegramIngressIdentityCommand(
         business_connection_id=business_connection_id,
         sender_id=sender.sender_id,
-        text_present=isinstance(text, str) and bool(text),
+        text_present=text_content is not None,
         sender_kind=sender.kind,
     )
 

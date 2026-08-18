@@ -6,6 +6,7 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.application.telegram_message_content import extract_telegram_message_text
 from app.core.config import Settings
 from app.models.domain import (
     DEFAULT_PROJECT_ID,
@@ -171,7 +172,7 @@ def build_telegram_ingress_routing_context(
         handler=decision.handler,
     )
     event_type = decision.event_type
-    text_present = isinstance(message.get("text"), str) and bool(message["text"])
+    text_present = extract_telegram_message_text(message) is not None
     is_business_message = (
         decision.handler == SPRINT14_BUSINESS
         and event_type in {"message", "business_message"}
