@@ -7,6 +7,7 @@ on:
       - ".github/workflows/aqub-v2-slice4.yml"
       - "alembic/versions/0100_aqub_v2_delivery_ledger.py"
       - "alembic/versions/0101_aqub_v2_delivery_capabilities.py"
+      - "alembic/versions/0102_aqub_v2_data_lifecycle.py"
       - "app/api/aqub_delivery_v2_internal.py"
       - "app/application/aqub_contract_v2.py"
       - "app/application/aqub_delivery_v2.py"
@@ -18,9 +19,13 @@ on:
       - "contracts/aqub/v2/fixtures/delivery-command.valid.json"
       - "contracts/aqub/v2/schemas/delivery-command.v2.schema.json"
       - "docs/runbooks/aqub-v2-slice5-rollout.md"
+      - "docs/privacy/aqub-v2-data-manifest.json"
+      - "docs/privacy/aqub-v2-policy-decisions.md"
+      - "docs/decisions/0015-aqub-v2-data-lifecycle.md"
       - "tests/test_aqub_contract_v2.py"
       - "tests/test_aqub_delivery_v2.py"
       - "tests/test_aqub_delivery_v2_internal.py"
+      - "tests/test_aqub_data_lifecycle_v2.py"
 
 permissions:
   contents: read
@@ -80,6 +85,7 @@ jobs:
           tests/test_aqub_contract_v2.py
           tests/test_aqub_delivery_v2.py
           tests/test_aqub_delivery_v2_internal.py
+          tests/test_aqub_data_lifecycle_v2.py
       - name: Migration and schema drift rehearsal
         run: |
           alembic upgrade head
