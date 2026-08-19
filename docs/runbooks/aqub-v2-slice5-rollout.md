@@ -14,8 +14,10 @@ create secrets, seed routes, change a webhook or call Telegram.
    `payload.delivery_type` enum.
 4. Apply Gate migration 0100 and then 0101, in that exact order, with the
    migration identity. Never run 0101 alone.
-5. Apply and verify AQUB migration 022 before starting an AQUB runtime that can
-   claim Food outbox rows.
+5. Apply and verify AQUB migrations 022 and then 023, in that exact order,
+   before starting an AQUB runtime that can claim Food outbox rows. Migration
+   023 is the terminal Food delivery receipt/enum change paired to this Gate
+   candidate.
 6. Keep Gate acceptance disabled, all route rows held/absent, and every
    provider/worker path disabled while identities and ACLs are verified.
 
@@ -87,8 +89,10 @@ The working bot-name hypothesis is not evidence and must not be inserted here.
 
 ## Media blocker
 
-The boundary remains text-only. Caption-as-text is allowed, but photo bytes,
-raw `file_id`, download URLs and base64 are forbidden. A separate media Work
-must first approve opaque reference, access, retention and deletion semantics.
-Photo is **NO-GO** in this candidate; if Work G is accepted, its first Gate
-migration number is reserved as 0102.
+The boundary is limited to text-message delivery. Caption-only ingestion is not
+approved here: its current upstream receipt can retain photo provider
+identifiers and therefore needs a separate thin review. Photo bytes, raw
+`file_id`, download URLs and base64 are forbidden. A separate media Work must
+first approve opaque reference, access, retention and deletion semantics.
+Photo and caption are **NO-GO** in this candidate; if Work G is accepted, its
+first Gate migration number is reserved as 0102.
