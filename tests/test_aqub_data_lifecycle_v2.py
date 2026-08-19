@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from runpy import run_path
 from uuid import UUID, uuid4
 
@@ -127,8 +128,10 @@ async def test_redaction_is_default_off_idempotent_restart_safe_and_anti_replay(
     receipt = unknown_receipt(document)
     policy_version = "synthetic-gate-lifecycle-v1"
     consent_ref = "consent:asynthetic0"
-    retention_deadline = "2026-08-19T11:59:00.000Z"
-    observed_at = "2026-08-19T12:02:00.000Z"
+    send_started_at = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
+    settled_at = datetime(2026, 8, 19, 12, 0, 1, tzinfo=UTC)
+    retention_deadline = datetime(2026, 8, 19, 11, 59, tzinfo=UTC)
+    observed_at = datetime(2026, 8, 19, 12, 2, tzinfo=UTC)
     function_sql = (
         f"SELECT {schema}.redact_aqub_v2_delivery("
         "$1,$2,$3,$4,$5,$6::timestamptz,$7,$8::timestamptz) AS receipt"
@@ -158,14 +161,14 @@ async def test_redaction_is_default_off_idempotent_restart_safe_and_anti_replay(
                 """UPDATE aqub_v2_delivery_ledger
                       SET state='sending',send_started_at=$2::timestamptz,updated_at=$2
                     WHERE command_id=$1""",
-                (command_id, "2026-08-19T12:00:00.000Z"),
+                (command_id, send_started_at),
             )
             await connection.exec_driver_sql(
                 """UPDATE aqub_v2_delivery_ledger
                       SET state='unknown',receipt_json=$2::jsonb,
                           settled_at=$3::timestamptz,updated_at=$3
                     WHERE command_id=$1""",
-                (command_id, json.dumps(receipt), "2026-08-19T12:00:01.000Z"),
+                (command_id, json.dumps(receipt), settled_at),
             )
             await connection.exec_driver_sql(
                 f"""INSERT INTO {schema}.aqub_v2_lifecycle_policy(
@@ -240,7 +243,7 @@ async def test_redaction_is_default_off_idempotent_restart_safe_and_anti_replay(
             replay = (
                 await connection.exec_driver_sql(
                     function_sql,
-                    (*parameters[:-1], "2026-08-19T12:03:00.000Z"),
+                    (*parameters[:-1], datetime(2026, 8, 19, 12, 3, tzinfo=UTC)),
                 )
             ).scalar_one()
             await connection.exec_driver_sql("RESET ROLE")
