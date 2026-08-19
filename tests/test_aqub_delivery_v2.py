@@ -10,13 +10,18 @@ from runpy import run_path
 from uuid import UUID, uuid4
 
 import pytest
-from app.application.aqub_contract_v2 import AQUBContractV2Error, AQUBV2Route
+from app.application.aqub_contract_v2 import (
+    AQUBContractV2Error,
+    AQUBV2Route,
+    parse_delivery_command_v2,
+)
 from app.application.aqub_delivery_v2 import (
     AQUBV2DeliveryExecutor,
     AQUBV2DeliveryExecutorError,
     AQUBV2DeliveryMode,
     AQUBV2OutcomeUnknown,
 )
+from app.application.aqub_delivery_v2_store import AQUBV2DeliverySQLStore
 from app.core.config import get_settings
 from app.models.aqub_delivery_v2 import AQUBV2DeliveryLedger, AQUBV2RouteAuthority
 from sqlalchemy import func, select, update
@@ -73,6 +78,7 @@ def command(*, command_id: UUID | None = None, key: str = "food/reply/stable", t
         "conversation_ref": "conversation:aopaque0",
         "requested_at": "2026-08-19T12:00:00.000Z",
         "payload": {
+            "delivery_type": "food.fact_reply",
             "kind": "text",
             "media_type": "text/plain",
             "text": text,
@@ -128,6 +134,21 @@ async def schema_engine(database_url: str):
             await connection.exec_driver_sql(statement)
         for statement in migration["CAPABILITY_STATEMENTS"]:
             await connection.exec_driver_sql(statement)
+        capabilities = run_path(
+            "alembic/versions/0101_aqub_v2_delivery_capabilities.py"
+        )
+        await connection.exec_driver_sql("GRANT gate_aqub_v2_owner TO CURRENT_USER")
+        await connection.exec_driver_sql(
+            "ALTER TYPE aqub_v2_delivery_type OWNER TO gate_aqub_v2_owner"
+        )
+        await connection.exec_driver_sql(
+            capabilities["DELIVERY_INSERT_GUARD_FUNCTION_SQL"]
+        )
+        for statement in capabilities["capability_statements"](schema):
+            await connection.exec_driver_sql(statement)
+        await connection.exec_driver_sql(
+            "REVOKE gate_aqub_v2_owner FROM CURRENT_USER"
+        )
     return schema, admin, engine
 
 
@@ -317,6 +338,10 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
         command_null_cases = (
             ("schema", lambda value: value.__setitem__("schema_version", None)),
             ("route", lambda value: value.__setitem__("route_generation", None)),
+            (
+                "delivery-type",
+                lambda value: value["payload"].__setitem__("delivery_type", None),
+            ),
             ("kind", lambda value: value["payload"].__setitem__("kind", None)),
             ("text", lambda value: value["payload"].__setitem__("text", None)),
         )
@@ -551,4 +576,71 @@ def test_v2_executor_has_no_runtime_or_provider_wiring() -> None:
     assert "httpx" not in source
     assert "os.environ" not in source
     assert "chat_id" not in source
-    assert "aqub_delivery_v2" not in Path("app/main.py").read_text(encoding="utf-8")
+    main_source = Path("app/main.py").read_text(encoding="utf-8")
+    assert "app.application.aqub_delivery_v2 import" not in main_source
+    assert "aqub_delivery_v2_internal_router" in main_source
+
+
+@pytest.mark.anyio
+async def test_sql_capability_store_isolated_route_idempotency_and_unknown() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    schema, admin, engine = await schema_engine(database_url)
+    try:
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as route_session:
+            await seed_route(route_session)
+
+        delivery = command(key="food/reply/capability")
+        async with sessions() as session:
+            store = AQUBV2DeliverySQLStore(session, schema=schema)
+            first = await store.accept(parse_delivery_command_v2(delivery))
+            duplicate = await store.accept(parse_delivery_command_v2(delivery))
+            changed = command(
+                command_id=UUID(delivery["command_id"]),
+                key=delivery["idempotency_key"],
+                text="changed",
+            )
+            conflict = await store.accept(parse_delivery_command_v2(changed))
+            dispatch = await store.begin_dispatch(UUID(delivery["command_id"]))
+            unknown = await store.mark_unknown(UUID(delivery["command_id"]))
+            no_blind_resend = await store.begin_dispatch(UUID(delivery["command_id"]))
+
+        assert first["ack"]["status"] == "committed"
+        assert duplicate["ack"]["status"] == "duplicate"
+        assert conflict["ack"]["status"] == "rejected"
+        assert conflict["ack"]["reason_code"] == "AQUB_V2_IDEMPOTENCY_CONFLICT"
+        assert dispatch["kind"] == "dispatch"
+        assert unknown["kind"] == "unknown"
+        assert unknown["receipt"]["retry_disposition"] == "reconcile_only"
+        assert no_blind_resend["kind"] == "not_dispatchable"
+        assert "conversation_ref" not in json.dumps(first, sort_keys=True)
+        assert "conversation_ref" not in json.dumps(unknown, sort_keys=True)
+
+        async with engine.connect() as connection:
+            runtime_insert = await connection.scalar(
+                select(
+                    func.has_table_privilege(
+                        "gate_aqub_v2_runtime",
+                        f"{schema}.aqub_v2_delivery_ledger",
+                        "INSERT",
+                    )
+                )
+            )
+            runtime_accept = await connection.scalar(
+                select(
+                    func.has_function_privilege(
+                        "gate_aqub_v2_runtime",
+                        (
+                            f"{schema}.accept_aqub_v2_delivery"
+                            "(uuid,jsonb,bytea,text,text,timestamptz)"
+                        ),
+                        "EXECUTE",
+                    )
+                )
+            )
+        assert runtime_insert is False
+        assert runtime_accept is True
+    finally:
+        await drop_schema(schema, admin, engine)

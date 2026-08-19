@@ -6,10 +6,21 @@ on:
     paths:
       - ".github/workflows/aqub-v2-slice4.yml"
       - "alembic/versions/0100_aqub_v2_delivery_ledger.py"
+      - "alembic/versions/0101_aqub_v2_delivery_capabilities.py"
+      - "app/api/aqub_delivery_v2_internal.py"
+      - "app/application/aqub_contract_v2.py"
       - "app/application/aqub_delivery_v2.py"
+      - "app/application/aqub_delivery_v2_store.py"
+      - "app/core/config.py"
+      - "app/main.py"
       - "app/models/aqub_delivery_v2.py"
       - "app/models/__init__.py"
+      - "contracts/aqub/v2/fixtures/delivery-command.valid.json"
+      - "contracts/aqub/v2/schemas/delivery-command.v2.schema.json"
+      - "docs/runbooks/aqub-v2-slice5-rollout.md"
+      - "tests/test_aqub_contract_v2.py"
       - "tests/test_aqub_delivery_v2.py"
+      - "tests/test_aqub_delivery_v2_internal.py"
 
 permissions:
   contents: read
@@ -64,7 +75,11 @@ jobs:
           ruff check .
           mypy app
       - name: Focused crash, idempotency, route and tamper rehearsal
-        run: pytest tests/test_aqub_delivery_v2.py
+        run: >-
+          pytest
+          tests/test_aqub_contract_v2.py
+          tests/test_aqub_delivery_v2.py
+          tests/test_aqub_delivery_v2_internal.py
       - name: Migration and schema drift rehearsal
         run: |
           alembic upgrade head

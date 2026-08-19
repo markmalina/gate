@@ -8,6 +8,7 @@
   "conversation_ref": "conversation:opaque_conversation_01",
   "requested_at": "2026-08-10T12:00:01.000Z",
   "payload": {
+    "delivery_type": "food.fact_reply",
     "kind": "text",
     "media_type": "text/plain",
     "text": "Synthetic delivery payload",

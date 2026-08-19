@@ -15,6 +15,7 @@ from starlette.responses import Response
 import httpx
 
 from app.api.alpha_admin_routes import router as alpha_admin_router
+from app.api.aqub_delivery_v2_internal import router as aqub_delivery_v2_internal_router
 from app.api.beta_checkpoint_routes import router as beta_checkpoint_router
 from app.api.contact_snapshot_routes import router as contact_snapshot_router
 from app.api.dropbox_call_routes import router as dropbox_call_router
@@ -381,6 +382,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(owner_one_off_transcription_router)
     app.include_router(alpha_admin_router)
+    app.include_router(aqub_delivery_v2_internal_router)
     app.include_router(beta_checkpoint_router)
     include_telegram_ingress(app)
     app.include_router(sprint12_router)

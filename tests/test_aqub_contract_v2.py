@@ -683,6 +683,33 @@ def test_uuid_version_and_variant_parity() -> None:
             parse_delivery_command_v2(invalid)
 
 
+@pytest.mark.parametrize(
+    "delivery_type",
+    (
+        "food.clarification",
+        "food.fact_reply",
+        "food.correction_reply",
+        "food.day_summary",
+        "food.omark_check",
+    ),
+)
+def test_food_delivery_type_closed_enum_parity(delivery_type: str) -> None:
+    command = _fixture("delivery-command.valid.json")
+    command["payload"]["delivery_type"] = delivery_type
+    _validator("delivery-command.v2.schema.json").validate(command)
+    assert parse_delivery_command_v2(command).to_wire() == command
+
+
+def test_unreviewed_food_delivery_type_fails_schema_and_python() -> None:
+    command = _fixture("delivery-command.valid.json")
+    command["payload"]["delivery_type"] = "food.unreviewed"
+    with pytest.raises(ValidationError):
+        _validator("delivery-command.v2.schema.json").validate(command)
+    with pytest.raises(AQUBContractV2Error) as error:
+        parse_delivery_command_v2(command)
+    assert error.value.code == "AQUB_V2_BAD_DELIVERY_TYPE"
+
+
 def test_unicode_text_length_counts_code_points_like_json_schema() -> None:
     maximum = _fixture("transport-envelope.valid.json")
     maximum["content"]["text"] = "😀" * 32_768

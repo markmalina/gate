@@ -72,7 +72,16 @@ _COMMAND_KEYS = frozenset(
     }
 )
 _PAYLOAD_KEYS = frozenset(
-    {"kind", "media_type", "text", "reply_to_message_ref"}
+    {"kind", "media_type", "text", "reply_to_message_ref", "delivery_type"}
+)
+AQUB_V2_DELIVERY_TYPES = frozenset(
+    {
+        "food.clarification",
+        "food.fact_reply",
+        "food.correction_reply",
+        "food.day_summary",
+        "food.omark_check",
+    }
 )
 _ACK_KEYS = frozenset(
     {
@@ -627,6 +636,14 @@ def _assert_text_content(value: object, label: str) -> None:
 def _assert_delivery_payload(value: object) -> None:
     payload = _object(value, "payload")
     _assert_exact_keys(payload, _PAYLOAD_KEYS, _PAYLOAD_KEYS, "payload")
+    delivery_type = _assert_string(
+        payload["delivery_type"],
+        "payload.delivery_type",
+        minimum=15,
+        maximum=32,
+    )
+    if delivery_type not in AQUB_V2_DELIVERY_TYPES:
+        _fail("AQUB_V2_BAD_DELIVERY_TYPE")
     if payload["kind"] != "text":
         _fail("AQUB_V2_BAD_CONTENT_KIND")
     _assert_string(

@@ -143,6 +143,21 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias="GATE_AQUB_RECEIPT_SIGNING_KEY",
     )
+    gate_aqub_v2_delivery_endpoint_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_AQUB_V2_DELIVERY_ENDPOINT_ENABLED",
+    )
+    gate_aqub_v2_delivery_hmac_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_AQUB_V2_DELIVERY_HMAC_SECRET",
+    )
+    gate_aqub_v2_database_schema: str = Field(
+        default="public",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+        validation_alias="GATE_AQUB_V2_DATABASE_SCHEMA",
+    )
     gate_beta_installation_key: str = Field(
         default="", validation_alias="GATE_BETA_INSTALLATION_KEY"
     )

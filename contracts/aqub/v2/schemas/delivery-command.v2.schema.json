@@ -54,8 +54,18 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "media_type", "text", "reply_to_message_ref"],
+      "required": ["delivery_type", "kind", "media_type", "text", "reply_to_message_ref"],
       "properties": {
+        "delivery_type": {
+          "type": "string",
+          "enum": [
+            "food.clarification",
+            "food.fact_reply",
+            "food.correction_reply",
+            "food.day_summary",
+            "food.omark_check"
+          ]
+        },
         "kind": {
           "const": "text"
         },
