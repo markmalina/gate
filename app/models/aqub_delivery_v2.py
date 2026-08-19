@@ -8,15 +8,19 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Integer,
     LargeBinary,
     String,
+    Text,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.domain import Base
@@ -56,25 +60,83 @@ class AQUBV2DeliveryLedger(Base):
             "state IN ('committed','sending','sent','failed','unknown','rejected')",
             name="ck_aqub_v2_delivery_state",
         ),
+        CheckConstraint(
+            "(content_redacted_at IS NULL AND conversation_ref IS NOT NULL "
+            "AND cube_ref IS NOT NULL AND command_canonical IS NOT NULL "
+            "AND command_json IS NOT NULL AND ack_ref IS NOT NULL "
+            "AND lifecycle_policy_version IS NULL "
+            "AND lifecycle_consent_ref IS NULL "
+            "AND lifecycle_receipt_ref IS NULL) OR "
+            "(content_redacted_at IS NOT NULL AND conversation_ref IS NULL "
+            "AND cube_ref IS NULL AND command_canonical IS NULL "
+            "AND command_json IS NULL AND ack_ref IS NULL "
+            "AND receipt_json IS NULL AND lifecycle_policy_version IS NOT NULL "
+            "AND lifecycle_consent_ref IS NOT NULL "
+            "AND lifecycle_receipt_ref IS NOT NULL)",
+            name="ck_aqub_v2_delivery_lifecycle_content",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     command_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True, nullable=False)
     installation_ref: Mapped[str] = mapped_column(String(255), nullable=False)
-    conversation_ref: Mapped[str] = mapped_column(String(255), nullable=False)
-    cube_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    conversation_ref: Mapped[str | None] = mapped_column(String(255))
+    cube_ref: Mapped[str | None] = mapped_column(String(255))
     route_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     command_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    command_canonical: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    command_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    command_canonical: Mapped[bytes | None] = mapped_column(LargeBinary)
+    command_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
-    ack_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    ack_ref: Mapped[str | None] = mapped_column(String(255))
     send_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     receipt_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    lifecycle_policy_version: Mapped[str | None] = mapped_column(Text)
+    lifecycle_consent_ref: Mapped[str | None] = mapped_column(Text)
+    lifecycle_receipt_ref: Mapped[str | None] = mapped_column(Text)
+    content_redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AQUBV2LifecyclePolicy(Base):
+    __tablename__ = "aqub_v2_lifecycle_policy"
+
+    policy_version: Mapped[str] = mapped_column(Text, primary_key=True)
+    policy_digest: Mapped[str] = mapped_column(Text, nullable=False)
+    mode: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    policy_complete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    retention_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tombstone_fields: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    policy_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AQUBV2LifecycleReceipt(Base):
+    __tablename__ = "aqub_v2_lifecycle_receipt"
+
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    receipt_ref: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    record_digest: Mapped[str] = mapped_column(Text, nullable=False)
+    command_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    policy_version: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("aqub_v2_lifecycle_policy.policy_version"),
+        nullable=False,
+    )
+    consent_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    prior_state: Mapped[str] = mapped_column(Text, nullable=False)
+    outcome: Mapped[str] = mapped_column(Text, nullable=False)
+    receipt_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class AQUBV2RouteAuthority(Base):
