@@ -725,12 +725,20 @@ async def test_route_update_serializes_accept_and_begin_rechecks_fail_closed() -
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with sessions() as route_session:
             await seed_route(route_session)
+            current_epoch = await route_session.scalar(
+                select(AQUBV2RouteAuthority.authority_epoch).where(
+                    AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
+                    AQUBV2RouteAuthority.conversation_ref
+                    == "conversation:aopaque0",
+                )
+            )
+        assert current_epoch is not None
 
         raced_accept = command(key="food/reply/accept-route-race")
         async with sessions() as route_writer, sessions() as accepting_session:
             await route_writer.execute(
                 update(AQUBV2RouteAuthority)
-                .values(state="hold", authority_epoch=2)
+                .values(state="hold", authority_epoch=current_epoch + 1)
                 .where(
                     AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
                     AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
@@ -763,7 +771,7 @@ async def test_route_update_serializes_accept_and_begin_rechecks_fail_closed() -
         async with sessions() as restore_session:
             await restore_session.execute(
                 update(AQUBV2RouteAuthority)
-                .values(state="active", authority_epoch=3)
+                .values(state="active", authority_epoch=current_epoch + 2)
                 .where(
                     AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
                     AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
@@ -783,7 +791,7 @@ async def test_route_update_serializes_accept_and_begin_rechecks_fail_closed() -
         async with sessions() as route_writer, sessions() as dispatch_session:
             await route_writer.execute(
                 update(AQUBV2RouteAuthority)
-                .values(state="hold", authority_epoch=4)
+                .values(state="hold", authority_epoch=current_epoch + 3)
                 .where(
                     AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
                     AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
