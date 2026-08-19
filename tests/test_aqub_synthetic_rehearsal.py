@@ -149,8 +149,12 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
                 value = command(label)
                 body = raw(value)
 
-                def checkpoint(name: str, _command: object) -> None:
-                    if name == crash_boundary:
+                def checkpoint(
+                    name: str,
+                    _command: object,
+                    boundary: str | None = crash_boundary,
+                ) -> None:
+                    if name == boundary:
                         raise SyntheticCrash
 
                 gate = service(path, checkpoint=checkpoint)
