@@ -106,7 +106,9 @@ retention/deletion, corrections and audit receipts before code is added.
 
 ## Consequences
 
-- Migration 0101 must follow 0100; it never edits the reviewed 0100 file.
+- Migration revision `0101_aqub_v2_capabilities` must follow 0100; it never
+  edits the reviewed 0100 file. The shortened revision identifier fits the
+  repository's 32-character Alembic version column.
 - AQUB must add the same mandatory delivery-type field and acknowledged-row
   recovery before pairing.
 - Ops credential split remains a hard blocker for runtime activation.

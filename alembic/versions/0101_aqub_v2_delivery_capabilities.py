@@ -1,6 +1,6 @@
 """Add the runtime-safe AQUB v2 delivery capability surface.
 
-Revision ID: 0101_aqub_v2_delivery_capabilities
+Revision ID: 0101_aqub_v2_capabilities
 Revises: 0100_aqub_v2_delivery_ledger
 """
 
@@ -11,7 +11,7 @@ import re
 from alembic import op
 from sqlalchemy import text
 
-revision = "0101_aqub_v2_delivery_capabilities"
+revision = "0101_aqub_v2_capabilities"
 down_revision = "0100_aqub_v2_delivery_ledger"
 branch_labels = None
 depends_on = None

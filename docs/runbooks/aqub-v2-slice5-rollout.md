@@ -14,8 +14,9 @@ create secrets, seed routes, change a webhook or call Telegram.
    `payload.delivery_type` enum and can enumerate aged `acknowledged` rows,
    replay the stored command, and apply `sent|failed|unknown` receipts without
    returning the row to a provider-send state.
-4. Apply Gate migration 0100 and then 0101, in that exact order, with the
-   migration identity. Never run 0101 alone.
+4. Apply Gate migration 0100 and then revision
+   `0101_aqub_v2_capabilities`, in that exact order, with the migration
+   identity. Never run 0101 alone.
 5. Apply and verify AQUB migrations 022 and then 023, in that exact order,
    before starting an AQUB runtime that can claim Food outbox rows. Migration
    023 is the terminal Food delivery receipt/enum change paired to this Gate
