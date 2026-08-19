@@ -21,10 +21,16 @@ strict command document and its SHA-256. Route authority can only be inserted
 held at epoch one. Transition triggers revalidate exact correlated receipt
 shape before storing terminal evidence. The no-login
 `gate_aqub_v2_runtime` capability has read-only grants; it deliberately has no
-table mutation or security-definer bypass. A separate no-login owner capability
-is the only non-migration principal granted insert/update, and remains unwired.
+table mutation or security-definer bypass. Tables and guard functions are
+transferred to a separate no-login owner capability, and the migration
+principal's temporary owner membership is revoked before upgrade completes.
+The owner capability is the only principal granted insert/update and remains
+unwired.
 
 This slice does not import the executor from the application composition,
 register an HTTP route, configure a provider, or seed route authority. It is
 not deployable delivery functionality and does not authorize a canary. Future
 runtime wiring and route-authority maintenance require a separate review.
+Production readiness is explicitly NO-GO until the distinct migration/runtime
+credential plan in `docs/runbooks/aqub-v2-slice4-rollout.md` is implemented and
+independently accepted.

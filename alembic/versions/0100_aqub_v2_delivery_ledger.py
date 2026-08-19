@@ -275,6 +275,13 @@ DO $$ BEGIN
   END IF;
 END $$
 """,
+    "GRANT gate_aqub_v2_owner TO CURRENT_USER",
+    "ALTER TABLE aqub_v2_route_authority OWNER TO gate_aqub_v2_owner",
+    "ALTER TABLE aqub_v2_delivery_ledger OWNER TO gate_aqub_v2_owner",
+    "ALTER FUNCTION assert_aqub_v2_delivery_receipt(jsonb,jsonb,text) OWNER TO gate_aqub_v2_owner",
+    "ALTER FUNCTION enforce_aqub_v2_delivery_insert() OWNER TO gate_aqub_v2_owner",
+    "ALTER FUNCTION enforce_aqub_v2_delivery_transition() OWNER TO gate_aqub_v2_owner",
+    "ALTER FUNCTION enforce_aqub_v2_route_authority_transition() OWNER TO gate_aqub_v2_owner",
     """
 DO $$ BEGIN
   EXECUTE format(
@@ -284,9 +291,11 @@ DO $$ BEGIN
 END $$
 """,
     "REVOKE ALL ON aqub_v2_route_authority,aqub_v2_delivery_ledger FROM PUBLIC",
+    "REVOKE ALL ON aqub_v2_route_authority,aqub_v2_delivery_ledger FROM CURRENT_USER",
     "GRANT SELECT ON aqub_v2_route_authority,aqub_v2_delivery_ledger TO gate_aqub_v2_runtime",
     "GRANT SELECT,INSERT,UPDATE ON "
     "aqub_v2_route_authority,aqub_v2_delivery_ledger TO gate_aqub_v2_owner",
+    "REVOKE gate_aqub_v2_owner FROM CURRENT_USER",
 )
 
 
@@ -300,9 +309,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("GRANT gate_aqub_v2_owner TO CURRENT_USER")
     op.execute("DROP FUNCTION enforce_aqub_v2_route_authority_transition() CASCADE")
     op.execute("DROP FUNCTION enforce_aqub_v2_delivery_transition() CASCADE")
     op.execute("DROP FUNCTION enforce_aqub_v2_delivery_insert() CASCADE")
     op.execute("DROP FUNCTION assert_aqub_v2_delivery_receipt(jsonb,jsonb,text) CASCADE")
     op.drop_table("aqub_v2_delivery_ledger")
     op.drop_table("aqub_v2_route_authority")
+    op.execute("REVOKE gate_aqub_v2_owner FROM CURRENT_USER")

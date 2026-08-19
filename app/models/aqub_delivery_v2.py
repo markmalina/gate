@@ -8,10 +8,10 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
-    LargeBinary,
     CheckConstraint,
     DateTime,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     func,

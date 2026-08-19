@@ -189,6 +189,12 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
         assert provider.calls == []
 
         async with engine.connect() as connection:
+            owner_result = await connection.exec_driver_sql(
+                """SELECT tableowner FROM pg_tables
+                     WHERE schemaname=current_schema()
+                       AND tablename='aqub_v2_delivery_ledger'"""
+            )
+            table_owner = owner_result.scalar_one()
             runtime_can_insert = await connection.scalar(
                 select(
                     func.has_table_privilege(
@@ -207,6 +213,7 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
                     )
                 )
             )
+        assert table_owner == "gate_aqub_v2_owner"
         assert runtime_can_insert is False
         assert runtime_can_update is False
 
