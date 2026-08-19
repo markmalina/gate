@@ -166,6 +166,18 @@ class AQUBV2DeliveryExecutor:
         if row is None:
             raise RuntimeError("AQUB v2 delivery reservation missing")
         now = self._clock()
+        if row.content_redacted_at is not None:
+            rejected = _ack(
+                command,
+                status="rejected",
+                ack_ref=_opaque(
+                    "ack",
+                    f"redacted:{command['installation_ref']}:{command['idempotency_key']}",
+                ),
+                now=now,
+                reason="AQUB_V2_CONTENT_REDACTED",
+            )
+            return {"ack": rejected, "receipt": None}
         if row.command_sha256 != command_sha or str(row.command_id) != command["command_id"]:
             rejected = _ack(
                 command,
@@ -178,6 +190,8 @@ class AQUBV2DeliveryExecutor:
                 reason="AQUB_V2_IDEMPOTENCY_CONFLICT",
             )
             return {"ack": rejected, "receipt": None}
+        if row.ack_ref is None:
+            raise RuntimeError("AQUB v2 unredacted reservation missing acknowledgement")
         ack = _ack(
             command,
             status="committed" if inserted is not None else "duplicate",
@@ -197,12 +211,15 @@ class AQUBV2DeliveryExecutor:
             raise AQUBV2DeliveryExecutorError("AQUB_V2_COMMAND_NOT_FOUND")
         if row.state != "committed":
             return {"kind": "not_dispatchable", "state": row.state, "receipt": row.receipt_json}
+        if row.command_json is None:
+            raise AQUBV2DeliveryExecutorError("AQUB_V2_CONTENT_REDACTED")
+        command = dict(row.command_json)
         try:
-            await self._assert_current_route(dict(row.command_json))
+            await self._assert_current_route(command)
         except AQUBV2DeliveryExecutorError as exc:
             now = self._clock()
             receipt = _receipt(
-                dict(row.command_json),
+                command,
                 status="failed",
                 now=now,
                 failure_code=exc.code,
@@ -218,7 +235,6 @@ class AQUBV2DeliveryExecutor:
         row.send_started_at = now
         row.updated_at = now
         await self._session.commit()
-        command = dict(row.command_json)
         try:
             delivered_message_ref = await self._provider(command)
             receipt = _receipt(
@@ -281,6 +297,8 @@ class AQUBV2DeliveryExecutor:
         )
         if self._clock() - started < stale_after:
             return {"kind": "in_progress"}
+        if row.command_json is None:
+            raise AQUBV2DeliveryExecutorError("AQUB_V2_CONTENT_REDACTED")
         receipt = _receipt(dict(row.command_json), status="unknown", now=self._clock())
         row.state = "unknown"
         row.receipt_json = receipt
@@ -302,6 +320,8 @@ class AQUBV2DeliveryExecutor:
         )
         if row is None or row.state != "unknown":
             raise AQUBV2DeliveryExecutorError("AQUB_V2_UNKNOWN_REQUIRED")
+        if row.command_json is None:
+            raise AQUBV2DeliveryExecutorError("AQUB_V2_CONTENT_REDACTED")
         command_doc = parse_delivery_command_v2(row.command_json)
         assert_delivery_correlation_v2(command_doc, receipt_doc)
         row.state = receipt["status"]
@@ -338,3 +358,4 @@ class AQUBV2DeliveryExecutor:
             or route.route_generation != command["route_generation"]
         ):
             raise AQUBV2DeliveryExecutorError("AQUB_V2_ROUTE_NOT_ACTIVE")
+
