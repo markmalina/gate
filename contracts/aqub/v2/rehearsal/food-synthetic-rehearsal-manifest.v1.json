@@ -1,0 +1,170 @@
+{
+  "schema_version": "aqub.food-synthetic-rehearsal-manifest.v1",
+  "generated_for": "Work I",
+  "scope": "repository-only",
+  "mode": "synthetic_rehearsal",
+  "exact_dependencies": {
+    "startup_work_i": "7113b93376bd19cb671a6b721a73ea53ed05f699",
+    "aqub_work_h": "b9448e247207f9d0db159fe142857bc80db48b20",
+    "aqub_stacked_base": "f68d408a1a4e8cc2394a2843c8d657d9794c2d87",
+    "gate_work_h": "74c572f73fb6d78756d125f08f66af7a4adb2eeb",
+    "gate_stacked_base": "2054956963b19f671086dc707fd7043334b6cf56",
+    "ops_credential_contract_evidence": "10b8d6f62ea8173f4d2663228066c604f196e4fe"
+  },
+  "shared_fixture": {
+    "schema_version": "aqub.delivery-command.v2",
+    "sha256": "0e55aa5ae186d2d79b905447daa70075afa38cd2efb6951ee6ade8b03279be60",
+    "copies_byte_identical": true
+  },
+  "identity_class": "synthetic_opaque_only",
+  "hmac": {
+    "secret_class": "test_only",
+    "algorithm": "HMAC-SHA256",
+    "signed_material": "exact_raw_body",
+    "live_secret_fallback": false
+  },
+  "database_roles": {
+    "migration_identity": "synthetic_migration",
+    "runtime_identity": "synthetic_runtime",
+    "distinct": true,
+    "inherited_from_work_h_least_privilege_contract": true
+  },
+  "end_to_end_loop": {
+    "stages": [
+      "text_food_input",
+      "inference",
+      "confirmation_or_correction",
+      "aqub_outbox",
+      "signed_gate_accept",
+      "gate_durable_ledger",
+      "provider_spy",
+      "sent_failed_or_unknown",
+      "aqub_terminal_or_reconciliation",
+      "day_summary",
+      "one_omark_return_step"
+    ],
+    "delivery_commands": 4,
+    "provider_spy_calls": 4,
+    "provider_spy_calls_per_idempotency_key_max": 1,
+    "omark_return_steps": 1
+  },
+  "crash_matrix": [
+    {
+      "id": "before_gate_accept",
+      "recovery_action": "replay_exact_stored_command",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 2,
+      "gate_transition_count": 3,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "after_gate_commit_before_aqub_ack",
+      "recovery_action": "duplicate_accept_returns_durable_state",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 2,
+      "gate_transition_count": 3,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "after_aqub_ack_before_gate_dispatch",
+      "recovery_action": "duplicate_accept_then_dispatch_once",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 2,
+      "gate_transition_count": 3,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "after_gate_send_boundary_before_provider_result",
+      "recovery_action": "mark_unknown_then_reconcile_only",
+      "gate_intermediate": "unknown",
+      "aqub_intermediate": "unknown",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 3,
+      "gate_transition_count": 4,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "after_provider_result_before_gate_settle",
+      "recovery_action": "mark_unknown_then_reconcile_provider_evidence",
+      "gate_intermediate": "unknown",
+      "aqub_intermediate": "unknown",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 3,
+      "gate_transition_count": 4,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "after_gate_terminal_before_aqub_terminal",
+      "recovery_action": "duplicate_accept_returns_terminal_receipt",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 2,
+      "gate_transition_count": 3,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "during_unknown_reconciliation",
+      "recovery_action": "duplicate_accept_returns_reconciled_terminal",
+      "gate_intermediate": "unknown",
+      "aqub_intermediate": "unknown",
+      "gate_final": "sent",
+      "aqub_final": "sent",
+      "provider_spy_calls": 1,
+      "aqub_transition_count": 3,
+      "gate_transition_count": 4,
+      "blind_provider_retry_forbidden": true,
+      "next_legal_action": "none"
+    },
+    {
+      "id": "during_consent_revoke_and_delete",
+      "recovery_action": "cancel_before_provider_then_redact",
+      "gate_final": "redacted",
+      "aqub_final": "redacted",
+      "provider_spy_calls": 0,
+      "aqub_transition_count": 3,
+      "gate_transition_count": 2,
+      "blind_provider_retry_forbidden": true,
+      "replay_after_redaction": "rejected",
+      "next_legal_action": "none"
+    }
+  ],
+  "invariants": {
+    "maximum_provider_calls_per_idempotency_key": 1,
+    "acknowledged_without_recovery_owner": 0,
+    "unknown_is_reconcile_only": true,
+    "terminal_receipt_is_correlated": true,
+    "redaction_blocks_replay": true,
+    "photos_captions_media": "NO_GO",
+    "real_identifiers": 0,
+    "live_provider_calls": 0
+  },
+  "runtime_surface": {
+    "aqub_default_enabled": false,
+    "gate_default_mode": "disabled",
+    "gate_live_endpoint_default_enabled": false,
+    "runtime_imports_added": 0,
+    "workers_added": 0,
+    "routes_added": 0,
+    "migrations_added": 0,
+    "secrets_changed": 0,
+    "telegram_messages": 0
+  }
+}
+
