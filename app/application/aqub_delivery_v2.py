@@ -232,18 +232,22 @@ class AQUBV2DeliveryExecutor:
         except Exception:
             receipt = _receipt(command, status="failed", now=self._clock())
             state = "failed"
-        settled = await self._session.execute(
+        settled_id = await self._session.scalar(
             update(AQUBV2DeliveryLedger)
-            .where(AQUBV2DeliveryLedger.id == row.id, AQUBV2DeliveryLedger.state == "sending")
+            .where(
+                AQUBV2DeliveryLedger.id == row.id,
+                AQUBV2DeliveryLedger.state == "sending",
+            )
             .values(
                 state=state,
                 receipt_json=receipt,
                 settled_at=self._clock(),
                 updated_at=self._clock(),
             )
+            .returning(AQUBV2DeliveryLedger.id)
         )
         await self._session.commit()
-        if settled.rowcount != 1:
+        if settled_id is None:
             current = await self._session.scalar(
                 select(AQUBV2DeliveryLedger).where(AQUBV2DeliveryLedger.id == row.id)
             )
