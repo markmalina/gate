@@ -81,6 +81,29 @@ def command(*, command_id: UUID | None = None, key: str = "food/reply/stable", t
     }
 
 
+def receipt(delivery: dict[str, object], status: str) -> dict[str, object]:
+    value: dict[str, object] = {
+        "schema_version": "aqub.delivery-receipt.v2",
+        "receipt_ref": "receipt:aopaque0",
+        "command_id": delivery["command_id"],
+        "idempotency_key": delivery["idempotency_key"],
+        "installation_ref": delivery["installation_ref"],
+        "cube_ref": delivery["cube_ref"],
+        "route_generation": delivery["route_generation"],
+        "observed_at": "2026-08-19T12:00:01.000Z",
+        "status": status,
+        "retry_disposition": "reconcile_only" if status == "unknown" else "do_not_retry",
+        "transport_receipt_ref": "receipt:atransport0",
+    }
+    if status == "sent":
+        value["delivered_message_ref"] = "message:aopaque0"
+    elif status == "failed":
+        value["failure_code"] = "PROVIDER_REJECTED"
+    else:
+        value["reconciliation_ref"] = "reconcile:aopaque0"
+    return value
+
+
 ROUTE = AQUBV2Route(
     installation_ref="installation:aopaque0",
     cube_ref="cube:aopaque0",
@@ -291,6 +314,43 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
             ),
             "command evidence is invalid or uncorrelated",
         )
+        command_null_cases = (
+            ("schema", lambda value: value.__setitem__("schema_version", None)),
+            ("route", lambda value: value.__setitem__("route_generation", None)),
+            ("kind", lambda value: value["payload"].__setitem__("kind", None)),
+            ("text", lambda value: value["payload"].__setitem__("text", None)),
+        )
+        for label, mutate in command_null_cases:
+            null_command = command(key=f"food/reply/null-{label}")
+            mutate(null_command)
+            null_canonical = json.dumps(
+                null_command,
+                allow_nan=False,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            await assert_sql_rejected(
+                engine,
+                """INSERT INTO aqub_v2_delivery_ledger(
+                       id,command_id,installation_ref,conversation_ref,cube_ref,
+                       route_generation,idempotency_key,command_sha256,
+                       command_canonical,command_json,state,ack_ref
+                     ) VALUES ($1,$2,$3,$4,$5,7,$6,$7,$8,$9::jsonb,'committed',$10)""",
+                (
+                    uuid4(),
+                    UUID(null_command["command_id"]),
+                    null_command["installation_ref"],
+                    null_command["conversation_ref"],
+                    null_command["cube_ref"],
+                    null_command["idempotency_key"],
+                    hashlib.sha256(null_canonical).hexdigest(),
+                    null_canonical,
+                    json.dumps(null_command),
+                    f"ack:aopaque-null-{label}",
+                ),
+                "command evidence is invalid or uncorrelated",
+            )
 
         await assert_sql_rejected(
             engine,
@@ -322,6 +382,32 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
             (UUID(original["command_id"]),),
             "receipt evidence is invalid or uncorrelated",
         )
+
+        receipt_null_cases = (
+            ("sent", "observed_at"),
+            ("sent", "transport_receipt_ref"),
+            ("sent", "retry_disposition"),
+            ("sent", "delivered_message_ref"),
+            ("failed", "failure_code"),
+            ("unknown", "reconciliation_ref"),
+            ("unknown", "status"),
+        )
+        for terminal_state, field in receipt_null_cases:
+            null_receipt = receipt(original, terminal_state)
+            null_receipt[field] = None
+            await assert_sql_rejected(
+                engine,
+                """UPDATE aqub_v2_delivery_ledger
+                      SET state=$2,settled_at=now(),receipt_json=$3::jsonb,
+                          updated_at=now()
+                    WHERE command_id=$1""",
+                (
+                    UUID(original["command_id"]),
+                    terminal_state,
+                    json.dumps(null_receipt),
+                ),
+                "receipt evidence is invalid or uncorrelated",
+            )
 
         raw = command(key="food/reply/raw-id")
         raw["payload"]["chat_id"] = "12345"

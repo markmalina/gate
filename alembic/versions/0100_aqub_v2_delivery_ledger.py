@@ -135,28 +135,43 @@ BEGIN
     RAISE EXCEPTION 'AQUB v2 insert must be evidence-free committed state'
       USING ERRCODE='23514';
   END IF;
-  IF command_keys <> 9 OR payload_keys <> 4 OR
-     NEW.command_json->>'schema_version' <> 'aqub.delivery-command.v2' OR
+  IF jsonb_typeof(NEW.command_json) IS DISTINCT FROM 'object' OR
+     jsonb_typeof(NEW.command_json->'payload') IS DISTINCT FROM 'object' OR
+     command_keys <> 9 OR payload_keys <> 4 OR
+     jsonb_typeof(NEW.command_json->'schema_version') IS DISTINCT FROM 'string' OR
+     NEW.command_json->>'schema_version' IS DISTINCT FROM 'aqub.delivery-command.v2' OR
      NOT (NEW.command_json ?& ARRAY['schema_version','command_id','idempotency_key',
        'installation_ref','cube_ref','route_generation','conversation_ref',
        'requested_at','payload']) OR
+     NOT (NEW.command_json->'payload' ?&
+       ARRAY['kind','media_type','text','reply_to_message_ref']) OR
      NEW.command_json->>'command_id' IS DISTINCT FROM NEW.command_id::text OR
      NEW.command_json->>'installation_ref' IS DISTINCT FROM NEW.installation_ref OR
      NEW.command_json->>'conversation_ref' IS DISTINCT FROM NEW.conversation_ref OR
      NEW.command_json->>'cube_ref' IS DISTINCT FROM NEW.cube_ref OR
      NEW.command_json->>'route_generation' IS DISTINCT FROM NEW.route_generation::text OR
-     jsonb_typeof(NEW.command_json->'route_generation') <> 'number' OR
+     jsonb_typeof(NEW.command_json->'route_generation') IS DISTINCT FROM 'number' OR
      NEW.command_json->>'idempotency_key' IS DISTINCT FROM NEW.idempotency_key OR
-     NEW.command_json->>'requested_at' !~
-       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]\\.[0-9]{3}Z$' OR
-     NEW.command_json->'payload'->>'kind' <> 'text' OR
-     NEW.command_json->'payload'->>'media_type' !~
-       '^[a-z][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$' OR
-     jsonb_typeof(NEW.command_json->'payload'->'text') <> 'string' OR
-     length(NEW.command_json->'payload'->>'text') NOT BETWEEN 1 AND 32768 OR
-     (NEW.command_json->'payload'->>'reply_to_message_ref' IS NOT NULL AND
-      NEW.command_json->'payload'->>'reply_to_message_ref' !~
-        '^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$') OR
+     jsonb_typeof(NEW.command_json->'command_id') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(NEW.command_json->'idempotency_key') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(NEW.command_json->'installation_ref') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(NEW.command_json->'conversation_ref') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(NEW.command_json->'cube_ref') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(NEW.command_json->'requested_at') IS DISTINCT FROM 'string' OR
+     COALESCE(NEW.command_json->>'requested_at' !~
+       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]\\.[0-9]{3}Z$',true) OR
+     jsonb_typeof(NEW.command_json->'payload'->'kind') IS DISTINCT FROM 'string' OR
+     NEW.command_json->'payload'->>'kind' IS DISTINCT FROM 'text' OR
+     jsonb_typeof(NEW.command_json->'payload'->'media_type') IS DISTINCT FROM 'string' OR
+     COALESCE(NEW.command_json->'payload'->>'media_type' !~
+       '^[a-z][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$',true) OR
+     jsonb_typeof(NEW.command_json->'payload'->'text') IS DISTINCT FROM 'string' OR
+     COALESCE(length(NEW.command_json->'payload'->>'text') NOT BETWEEN 1 AND 32768,true) OR
+     jsonb_typeof(NEW.command_json->'payload'->'reply_to_message_ref')
+       NOT IN ('string','null') OR
+     (jsonb_typeof(NEW.command_json->'payload'->'reply_to_message_ref')='string' AND
+      COALESCE(NEW.command_json->'payload'->>'reply_to_message_ref' !~
+        '^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$',true)) OR
      convert_from(NEW.command_canonical,'UTF8')::jsonb IS DISTINCT FROM NEW.command_json OR
      encode(sha256(NEW.command_canonical),'hex') IS DISTINCT FROM NEW.command_sha256 THEN
     RAISE EXCEPTION 'AQUB v2 command evidence is invalid or uncorrelated'
@@ -182,8 +197,9 @@ DECLARE receipt_status text;
 BEGIN
   SELECT count(*) INTO receipt_keys FROM jsonb_object_keys(p_receipt);
   receipt_status := p_receipt->>'status';
-  IF jsonb_typeof(p_receipt) <> 'object' OR receipt_keys <> 12 OR
-     p_receipt->>'schema_version' <> 'aqub.delivery-receipt.v2' OR
+  IF jsonb_typeof(p_receipt) IS DISTINCT FROM 'object' OR receipt_keys <> 12 OR
+     jsonb_typeof(p_receipt->'schema_version') IS DISTINCT FROM 'string' OR
+     p_receipt->>'schema_version' IS DISTINCT FROM 'aqub.delivery-receipt.v2' OR
      NOT (p_receipt ?& ARRAY['schema_version','receipt_ref','command_id',
        'idempotency_key','installation_ref','cube_ref','route_generation',
        'observed_at','status','retry_disposition','transport_receipt_ref']) OR
@@ -192,25 +208,39 @@ BEGIN
      p_receipt->>'installation_ref' IS DISTINCT FROM p_command->>'installation_ref' OR
      p_receipt->>'cube_ref' IS DISTINCT FROM p_command->>'cube_ref' OR
      p_receipt->>'route_generation' IS DISTINCT FROM p_command->>'route_generation' OR
-     jsonb_typeof(p_receipt->'route_generation') <> 'number' OR
-     p_receipt->>'receipt_ref' !~ '^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
-     p_receipt->>'transport_receipt_ref' !~
-       '^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
-     p_receipt->>'observed_at' !~
-       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]\\.[0-9]{3}Z$' OR
-     (p_ledger_state='sent' AND (receipt_status <> 'sent' OR
-       p_receipt->>'retry_disposition' <> 'do_not_retry' OR
-       p_receipt->>'delivered_message_ref' !~
-         '^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
+     jsonb_typeof(p_receipt->'route_generation') IS DISTINCT FROM 'number' OR
+     jsonb_typeof(p_receipt->'command_id') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(p_receipt->'idempotency_key') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(p_receipt->'installation_ref') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(p_receipt->'cube_ref') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(p_receipt->'receipt_ref') IS DISTINCT FROM 'string' OR
+     COALESCE(p_receipt->>'receipt_ref' !~
+       '^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$',true) OR
+     jsonb_typeof(p_receipt->'transport_receipt_ref') IS DISTINCT FROM 'string' OR
+     COALESCE(p_receipt->>'transport_receipt_ref' !~
+       '^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$',true) OR
+     jsonb_typeof(p_receipt->'observed_at') IS DISTINCT FROM 'string' OR
+     COALESCE(p_receipt->>'observed_at' !~
+       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]\\.[0-9]{3}Z$',true) OR
+     jsonb_typeof(p_receipt->'status') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(p_receipt->'retry_disposition') IS DISTINCT FROM 'string' OR
+     (p_ledger_state='sent' AND (receipt_status IS DISTINCT FROM 'sent' OR
+       p_receipt->>'retry_disposition' IS DISTINCT FROM 'do_not_retry' OR
+       jsonb_typeof(p_receipt->'delivered_message_ref') IS DISTINCT FROM 'string' OR
+       COALESCE(p_receipt->>'delivered_message_ref' !~
+         '^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$',true) OR
        p_receipt ?| ARRAY['failure_code','reconciliation_ref'])) OR
-     (p_ledger_state IN ('failed','rejected') AND (receipt_status <> 'failed' OR
-       p_receipt->>'retry_disposition' <> 'do_not_retry' OR
-       p_receipt->>'failure_code' !~ '^[A-Z][A-Z0-9_]{2,95}$' OR
+     (p_ledger_state IN ('failed','rejected') AND
+      (receipt_status IS DISTINCT FROM 'failed' OR
+       p_receipt->>'retry_disposition' IS DISTINCT FROM 'do_not_retry' OR
+       jsonb_typeof(p_receipt->'failure_code') IS DISTINCT FROM 'string' OR
+       COALESCE(p_receipt->>'failure_code' !~ '^[A-Z][A-Z0-9_]{2,95}$',true) OR
        p_receipt ?| ARRAY['delivered_message_ref','reconciliation_ref'])) OR
-     (p_ledger_state='unknown' AND (receipt_status <> 'unknown' OR
-       p_receipt->>'retry_disposition' <> 'reconcile_only' OR
-       p_receipt->>'reconciliation_ref' !~
-         '^reconcile:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
+     (p_ledger_state='unknown' AND (receipt_status IS DISTINCT FROM 'unknown' OR
+       p_receipt->>'retry_disposition' IS DISTINCT FROM 'reconcile_only' OR
+       jsonb_typeof(p_receipt->'reconciliation_ref') IS DISTINCT FROM 'string' OR
+       COALESCE(p_receipt->>'reconciliation_ref' !~
+         '^reconcile:[A-Za-z][A-Za-z0-9._~-]{7,127}$',true) OR
        p_receipt ?| ARRAY['delivered_message_ref','failure_code'])) THEN
     RAISE EXCEPTION 'AQUB v2 receipt evidence is invalid or uncorrelated'
       USING ERRCODE='23514';
