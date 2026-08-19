@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.application.aqub_contract_v2 import (
-    AQUBContractV2Error,
     AQUB_V2_MAX_JSON_BYTES,
+    AQUBContractV2Error,
     parse_contract_json_v2,
     parse_delivery_command_v2,
 )
