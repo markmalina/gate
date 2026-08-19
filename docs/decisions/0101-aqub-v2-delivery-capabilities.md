@@ -92,8 +92,10 @@ domain-bound and cannot be reused by reference without expanding credential
 and data ownership.
 
 Photo and caption delivery are therefore **NO-GO** in this candidate. The next
-Gate schema number is reserved: any accepted media-reference Work G must use
-migration 0102, not modify or reuse 0101.
+Gate schema number, 0102, is reserved for the prerequisite Consent/Data
+Lifecycle Work H. Any later accepted media-reference Work G starts at 0103 or
+the next unused migration after re-reading the merged chain; it must not modify
+or reuse 0101.
 
 Raw Telegram `file_id`, bot download URLs and base64 bytes must never cross the
 AQUB contract. Media requires a separate Work defining an opaque `media_ref`,

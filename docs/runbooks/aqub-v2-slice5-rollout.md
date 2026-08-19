@@ -121,5 +121,7 @@ approved here: its current upstream receipt can retain photo provider
 identifiers and therefore needs a separate thin review. Photo bytes, raw
 `file_id`, download URLs and base64 are forbidden. A separate media Work must
 first approve opaque reference, access, retention and deletion semantics.
-Photo and caption are **NO-GO** in this candidate; if Work G is accepted, its
-first Gate migration number is reserved as 0102.
+Photo and caption are **NO-GO** in this candidate. Gate migration 0102 is
+reserved for the prerequisite Consent/Data Lifecycle Work H. If Work G is
+later accepted, it starts at 0103 or the next unused migration after re-reading
+the merged chain.
