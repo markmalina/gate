@@ -26,6 +26,7 @@ from app.models.aqub_delivery_v2 import AQUBV2DeliveryLedger, AQUBV2RouteAuthori
 
 JsonObject = dict[str, Any]
 Provider = Callable[[JsonObject], Awaitable[str]]
+DEFAULT_STALE_AFTER = timedelta(seconds=30)
 
 
 class AQUBV2DeliveryMode(StrEnum):
@@ -231,7 +232,7 @@ class AQUBV2DeliveryExecutor:
         except Exception:
             receipt = _receipt(command, status="failed", now=self._clock())
             state = "failed"
-        await self._session.execute(
+        settled = await self._session.execute(
             update(AQUBV2DeliveryLedger)
             .where(AQUBV2DeliveryLedger.id == row.id, AQUBV2DeliveryLedger.state == "sending")
             .values(
@@ -242,13 +243,22 @@ class AQUBV2DeliveryExecutor:
             )
         )
         await self._session.commit()
+        if settled.rowcount != 1:
+            current = await self._session.scalar(
+                select(AQUBV2DeliveryLedger).where(AQUBV2DeliveryLedger.id == row.id)
+            )
+            return {
+                "kind": "not_settled",
+                "state": current.state if current is not None else "missing",
+                "receipt": current.receipt_json if current is not None else None,
+            }
         return {"kind": state, "receipt": receipt}
 
     async def recover_stale_sending(
         self,
         command_id: UUID,
         *,
-        stale_after: timedelta = timedelta(seconds=30),
+        stale_after: timedelta = DEFAULT_STALE_AFTER,
     ) -> JsonObject:
         self._require_enabled()
         row = await self._session.scalar(

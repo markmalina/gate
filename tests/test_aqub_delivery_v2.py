@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from runpy import run_path
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,6 +18,7 @@ from app.application.aqub_delivery_v2 import (
 from app.core.config import get_settings
 from app.models.aqub_delivery_v2 import AQUBV2DeliveryLedger, AQUBV2RouteAuthority
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
@@ -96,6 +98,9 @@ async def schema_engine(database_url: str):
     async with engine.begin() as connection:
         await connection.run_sync(AQUBV2RouteAuthority.__table__.create)
         await connection.run_sync(AQUBV2DeliveryLedger.__table__.create)
+        migration = run_path("alembic/versions/0100_aqub_v2_delivery_ledger.py")
+        for statement in migration["LEDGER_GUARD_STATEMENTS"]:
+            await connection.exec_driver_sql(statement)
     return schema, admin, engine
 
 
@@ -104,6 +109,14 @@ async def drop_schema(schema: str, admin, engine) -> None:
     async with admin.begin() as connection:
         await connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
     await admin.dispose()
+
+
+async def assert_sql_rejected(engine, statement: str, parameters: tuple[object, ...], match: str):
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        with pytest.raises(DBAPIError, match=match):
+            await connection.exec_driver_sql(statement, parameters)
+        await transaction.rollback()
 
 
 def executor(session, provider: Provider, clock: Clock, *, enabled: bool = True):
@@ -162,6 +175,21 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
         assert mutated["ack"]["reason_code"] == "AQUB_V2_IDEMPOTENCY_CONFLICT"
         assert provider.calls == []
 
+        await assert_sql_rejected(
+            engine,
+            """UPDATE aqub_v2_delivery_ledger
+                  SET command_json=jsonb_set(command_json,'{payload,text}','\"tamper\"')
+                WHERE command_id=$1""",
+            (UUID(original["command_id"]),),
+            "identity is immutable",
+        )
+        await assert_sql_rejected(
+            engine,
+            "UPDATE aqub_v2_delivery_ledger SET state='sent' WHERE command_id=$1",
+            (UUID(original["command_id"]),),
+            "invalid AQUB v2 delivery transition",
+        )
+
         raw = command(key="food/reply/raw-id")
         raw["payload"]["chat_id"] = "12345"
         async with sessions() as session:
@@ -203,6 +231,14 @@ async def test_crash_before_send_dispatches_once_after_restart() -> None:
         assert duplicate["receipt"] == sent["receipt"]
         assert no_resend["kind"] == "not_dispatchable"
         assert len(provider.calls) == 1
+        await assert_sql_rejected(
+            engine,
+            """UPDATE aqub_v2_delivery_ledger
+                  SET send_started_at=NULL
+                WHERE command_id=$1""",
+            (UUID(delivery["command_id"]),),
+            "send boundary is irreversible",
+        )
     finally:
         await drop_schema(schema, admin, engine)
 
@@ -268,6 +304,17 @@ async def test_route_hold_after_commit_rejects_before_provider() -> None:
                 )
             )
             await session.commit()
+            with pytest.raises(DBAPIError, match="authority epoch must increase"):
+                await session.execute(
+                    update(AQUBV2RouteAuthority)
+                    .values(state="active", authority_epoch=2)
+                    .where(
+                        AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
+                        AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
+                    )
+                )
+                await session.commit()
+            await session.rollback()
         async with sessions() as restarted:
             rejected = await executor(restarted, provider, clock).dispatch_committed(
                 UUID(delivery["command_id"])
