@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 MIGRATION = (
     Path(__file__).resolve().parents[1]
     / "alembic"
