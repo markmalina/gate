@@ -61,7 +61,12 @@ def _opaque(kind: str, token: str) -> str:
     return f"{kind}:a{hashlib.sha256(token.encode()).hexdigest()}"
 
 
-def _ack(command: Mapping[str, Any], status: str, observed_at: str, reason: str | None = None):
+def _ack(
+    command: Mapping[str, Any],
+    status: str,
+    observed_at: str,
+    reason: str | None = None,
+) -> JsonObject:
     value: JsonObject = {
         "schema_version": "aqub.delivery-ack.v2",
         "ack_ref": _opaque("ack", f"{command['command_id']}:{status}"),
@@ -84,7 +89,7 @@ def _receipt(
     observed_at: str,
     *,
     failure_code: str | None = None,
-):
+) -> JsonObject:
     token = f"{command['command_id']}:{status}"
     value: JsonObject = {
         "schema_version": "aqub.delivery-receipt.v2",
@@ -234,7 +239,13 @@ class SyntheticGateRehearsal:
                 """
             )
 
-    def accept_raw(self, raw_body: bytes, signature: str, *, provider_outcome: str = "sent"):
+    def accept_raw(
+        self,
+        raw_body: bytes,
+        signature: str,
+        *,
+        provider_outcome: str = "sent",
+    ) -> JsonObject:
         self._require_enabled()
         match = _SIGNATURE_RE.fullmatch(signature)
         expected = hmac.new(self._secret, raw_body, hashlib.sha256).hexdigest()
@@ -283,7 +294,7 @@ class SyntheticGateRehearsal:
                 "receipt": json.loads(row["receipt_json"]) if row["receipt_json"] else None,
             }
 
-    def dispatch(self, command_id: str):
+    def dispatch(self, command_id: str) -> JsonObject:
         self._require_enabled()
         with self._connection() as connection:
             row = connection.execute(
@@ -341,7 +352,7 @@ class SyntheticGateRehearsal:
             raise SyntheticGateError("GATE_SYNTHETIC_SETTLE_FENCE")
         return {"kind": status, "receipt": receipt}
 
-    def recover_sending(self, command_id: str):
+    def recover_sending(self, command_id: str) -> JsonObject:
         self._require_enabled()
         with self._connection() as connection:
             row = connection.execute(
@@ -358,7 +369,7 @@ class SyntheticGateRehearsal:
             )
         return {"kind": "unknown", "receipt": receipt}
 
-    def reconcile(self, command_id: str):
+    def reconcile(self, command_id: str) -> JsonObject:
         self._require_enabled()
         with self._connection() as connection:
             row = connection.execute(
@@ -380,7 +391,11 @@ class SyntheticGateRehearsal:
             )
         return {"kind": "reconciled", "receipt": receipt}
 
-    def cancel(self, command_id: str, reason_code: str = "AQUB_V2_CONSENT_REVOKED"):
+    def cancel(
+        self,
+        command_id: str,
+        reason_code: str = "AQUB_V2_CONSENT_REVOKED",
+    ) -> JsonObject:
         """Stop a synthetic command without crossing or repeating the provider boundary."""
         self._require_enabled()
         with self._connection() as connection:
