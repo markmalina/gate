@@ -178,11 +178,37 @@ def test_provenance_pins_exact_accepted_aqub_artifacts() -> None:
         assert _git_blob_sha(local_path) == expected
 
     assert provenance["candidate_pairing"] == {
-        "repository": "markmalina/aqub",
+        "repository": "AlphaCenter/aqub",
         "pull_request": 175,
-        "exact_head": None,
-        "status": "STOP_PENDING_EXACT_PAIRED_HEAD",
+        "exact_head": "f68d408a1a4e8cc2394a2843c8d657d9794c2d87",
+        "status": "CANDIDATE_EXACT_HEAD_PINNED",
+        "artifacts": [
+            {
+                "upstream_path": "contracts/delivery-command.v2.schema.json",
+                "local_path": (
+                    "contracts/aqub/v2/schemas/delivery-command.v2.schema.json"
+                ),
+                "upstream_blob_sha": "dd37523bb8e4ffd51c5b1e06a298364836878b2e",
+                "local_blob_sha": "72f308f3c7d4ad361a625d9c487dcc648f4be1e3",
+                "comparison": "JSON_VALUE_IDENTICAL",
+            },
+            {
+                "upstream_path": (
+                    "contracts/fixtures/v2/delivery-command.valid.json"
+                ),
+                "local_path": (
+                    "contracts/aqub/v2/fixtures/delivery-command.valid.json"
+                ),
+                "upstream_blob_sha": "bcd5309dd0bd10ca4cd296cdca5c3c117ec1e04d",
+                "local_blob_sha": "bcd5309dd0bd10ca4cd296cdca5c3c117ec1e04d",
+                "comparison": "BYTE_IDENTICAL",
+            },
+        ],
     }
+
+    for artifact in provenance["candidate_pairing"]["artifacts"]:
+        local_path = ROOT / artifact["local_path"]
+        assert _git_blob_sha(local_path) == artifact["local_blob_sha"]
 
     assert provenance["source_references"] == [
         {
