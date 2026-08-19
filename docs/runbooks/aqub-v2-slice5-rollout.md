@@ -90,3 +90,5 @@ The working bot-name hypothesis is not evidence and must not be inserted here.
 The boundary remains text-only. Caption-as-text is allowed, but photo bytes,
 raw `file_id`, download URLs and base64 are forbidden. A separate media Work
 must first approve opaque reference, access, retention and deletion semantics.
+Photo is **NO-GO** in this candidate; if Work G is accepted, its first Gate
+migration number is reserved as 0102.

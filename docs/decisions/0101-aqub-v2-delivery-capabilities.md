@@ -58,6 +58,10 @@ retention/access contract for the photo bytes. Existing BECOME/Beta download
 adapters are bot-token- and domain-bound and cannot be reused by reference
 without expanding credential and data ownership.
 
+Photo delivery is therefore **NO-GO** in this candidate. The next Gate schema
+number is reserved: any accepted media-reference Work G must use migration
+0102, not modify or reuse 0101.
+
 Raw Telegram `file_id`, bot download URLs and base64 bytes must never cross the
 AQUB contract. Media requires a separate Work defining an opaque `media_ref`,
 route/actor authorization, digest and size, bounded retrieval,
