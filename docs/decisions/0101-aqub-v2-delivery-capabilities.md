@@ -52,15 +52,15 @@ an explicit flag/secret/database gate, but it cannot send Telegram messages.
 
 ## Media decision
 
-This slice is text-only. Existing caption extraction can safely reuse a
-Telegram photo caption as text, but Gate has no accepted AQUB-specific
-retention/access contract for the photo bytes. Existing BECOME/Beta download
-adapters are bot-token- and domain-bound and cannot be reused by reference
-without expanding credential and data ownership.
+This slice is limited to text-message delivery. Caption-only ingestion is not
+approved here because its current upstream receipt can retain photo provider
+identifiers. Existing BECOME/Beta download adapters are bot-token- and
+domain-bound and cannot be reused by reference without expanding credential
+and data ownership.
 
-Photo delivery is therefore **NO-GO** in this candidate. The next Gate schema
-number is reserved: any accepted media-reference Work G must use migration
-0102, not modify or reuse 0101.
+Photo and caption delivery are therefore **NO-GO** in this candidate. The next
+Gate schema number is reserved: any accepted media-reference Work G must use
+migration 0102, not modify or reuse 0101.
 
 Raw Telegram `file_id`, bot download URLs and base64 bytes must never cross the
 AQUB contract. Media requires a separate Work defining an opaque `media_ref`,
