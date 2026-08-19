@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from runpy import run_path
@@ -101,6 +103,8 @@ async def schema_engine(database_url: str):
         migration = run_path("alembic/versions/0100_aqub_v2_delivery_ledger.py")
         for statement in migration["LEDGER_GUARD_STATEMENTS"]:
             await connection.exec_driver_sql(statement)
+        for statement in migration["CAPABILITY_STATEMENTS"]:
+            await connection.exec_driver_sql(statement)
     return schema, admin, engine
 
 
@@ -139,8 +143,17 @@ async def seed_route(session) -> None:
             conversation_ref="conversation:aopaque0",
             cube_ref=ROUTE.cube_ref,
             route_generation=ROUTE.route_generation,
-            state="active",
+            state="hold",
             authority_epoch=1,
+        )
+    )
+    await session.commit()
+    await session.execute(
+        update(AQUBV2RouteAuthority)
+        .values(state="active", authority_epoch=2)
+        .where(
+            AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
+            AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
         )
     )
     await session.commit()
@@ -175,6 +188,103 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
         assert mutated["ack"]["reason_code"] == "AQUB_V2_IDEMPOTENCY_CONFLICT"
         assert provider.calls == []
 
+        async with engine.connect() as connection:
+            runtime_can_insert = await connection.scalar(
+                select(
+                    func.has_table_privilege(
+                        "gate_aqub_v2_runtime",
+                        "aqub_v2_delivery_ledger",
+                        "INSERT",
+                    )
+                )
+            )
+            runtime_can_update = await connection.scalar(
+                select(
+                    func.has_table_privilege(
+                        "gate_aqub_v2_runtime",
+                        "aqub_v2_delivery_ledger",
+                        "UPDATE",
+                    )
+                )
+            )
+        assert runtime_can_insert is False
+        assert runtime_can_update is False
+
+        await assert_sql_rejected(
+            engine,
+            """INSERT INTO aqub_v2_route_authority(
+                   installation_ref,conversation_ref,cube_ref,
+                   route_generation,state,authority_epoch
+                 ) VALUES ($1,$2,$3,1,'active',1)""",
+            (
+                "installation:aforged0",
+                "conversation:aforged0",
+                "cube:aforged0",
+            ),
+            "must start held at epoch one",
+        )
+
+        forged = command(key="food/reply/forged-terminal")
+        forged_canonical = json.dumps(
+            forged,
+            allow_nan=False,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        await assert_sql_rejected(
+            engine,
+            """INSERT INTO aqub_v2_delivery_ledger(
+                   id,command_id,installation_ref,conversation_ref,cube_ref,
+                   route_generation,idempotency_key,command_sha256,
+                   command_canonical,command_json,state,ack_ref,settled_at,receipt_json
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,'sent',$11,now(),'{}')""",
+            (
+                uuid4(),
+                UUID(forged["command_id"]),
+                forged["installation_ref"],
+                forged["conversation_ref"],
+                forged["cube_ref"],
+                forged["route_generation"],
+                forged["idempotency_key"],
+                hashlib.sha256(forged_canonical).hexdigest(),
+                forged_canonical,
+                json.dumps(forged),
+                "ack:aopaque-forged",
+            ),
+            "evidence-free committed state",
+        )
+        forged_hash = command(key="food/reply/forged-hash")
+        forged_hash_canonical = json.dumps(
+            forged_hash,
+            allow_nan=False,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        await assert_sql_rejected(
+            engine,
+            """INSERT INTO aqub_v2_delivery_ledger(
+                   id,command_id,installation_ref,conversation_ref,cube_ref,
+                   route_generation,idempotency_key,command_sha256,
+                   command_canonical,command_json,state,ack_ref
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,'committed',$11)""",
+            (
+                uuid4(),
+                UUID(forged_hash["command_id"]),
+                forged_hash["installation_ref"],
+                forged_hash["conversation_ref"],
+                forged_hash["cube_ref"],
+                forged_hash["route_generation"],
+                forged_hash["idempotency_key"],
+                "0" * 64,
+                forged_hash_canonical,
+                json.dumps(forged_hash),
+                "ack:aopaque-forged-hash",
+            ),
+            "command evidence is invalid or uncorrelated",
+        )
+
         await assert_sql_rejected(
             engine,
             """UPDATE aqub_v2_delivery_ledger
@@ -188,6 +298,22 @@ async def test_default_off_and_strict_idempotency_have_zero_implicit_send() -> N
             "UPDATE aqub_v2_delivery_ledger SET state='sent' WHERE command_id=$1",
             (UUID(original["command_id"]),),
             "invalid AQUB v2 delivery transition",
+        )
+
+        async with engine.begin() as connection:
+            await connection.exec_driver_sql(
+                """UPDATE aqub_v2_delivery_ledger
+                      SET state='sending',send_started_at=now(),updated_at=now()
+                    WHERE command_id=$1""",
+                (UUID(original["command_id"]),),
+            )
+        await assert_sql_rejected(
+            engine,
+            """UPDATE aqub_v2_delivery_ledger
+                  SET state='sent',settled_at=now(),receipt_json='{}',updated_at=now()
+                WHERE command_id=$1""",
+            (UUID(original["command_id"]),),
+            "receipt evidence is invalid or uncorrelated",
         )
 
         raw = command(key="food/reply/raw-id")
@@ -297,7 +423,7 @@ async def test_route_hold_after_commit_rejects_before_provider() -> None:
             await executor(session, provider, clock).accept(delivery, ROUTE)
             await session.execute(
                 update(AQUBV2RouteAuthority)
-                .values(state="hold", authority_epoch=2)
+                .values(state="hold", authority_epoch=3)
                 .where(
                     AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
                     AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
@@ -307,7 +433,7 @@ async def test_route_hold_after_commit_rejects_before_provider() -> None:
             with pytest.raises(DBAPIError, match="authority epoch must increase"):
                 await session.execute(
                     update(AQUBV2RouteAuthority)
-                    .values(state="active", authority_epoch=2)
+                    .values(state="active", authority_epoch=3)
                     .where(
                         AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
                         AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",

@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    LargeBinary,
     CheckConstraint,
     DateTime,
     Integer,
@@ -28,6 +29,10 @@ class AQUBV2DeliveryLedger(Base):
         CheckConstraint("route_generation > 0", name="ck_aqub_v2_delivery_generation"),
         CheckConstraint("char_length(command_sha256)=64", name="ck_aqub_v2_command_sha"),
         CheckConstraint(
+            "command_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_aqub_v2_delivery_command_sha_hex",
+        ),
+        CheckConstraint(
             "installation_ref ~ '^installation:[A-Za-z][A-Za-z0-9._~-]{7,127}$'",
             name="ck_aqub_v2_delivery_installation_ref",
         ),
@@ -38,6 +43,14 @@ class AQUBV2DeliveryLedger(Base):
         CheckConstraint(
             "cube_ref ~ '^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$'",
             name="ck_aqub_v2_delivery_cube_ref",
+        ),
+        CheckConstraint(
+            "idempotency_key ~ '^[A-Za-z][A-Za-z0-9._:~/-]{7,255}$'",
+            name="ck_aqub_v2_delivery_idempotency_key",
+        ),
+        CheckConstraint(
+            "ack_ref ~ '^ack:[A-Za-z][A-Za-z0-9._~-]{7,127}$'",
+            name="ck_aqub_v2_delivery_ack_ref",
         ),
         CheckConstraint(
             "state IN ('committed','sending','sent','failed','unknown','rejected')",
@@ -53,6 +66,7 @@ class AQUBV2DeliveryLedger(Base):
     route_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     command_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    command_canonical: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     command_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     ack_ref: Mapped[str] = mapped_column(String(255), nullable=False)

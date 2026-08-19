@@ -136,7 +136,8 @@ class AQUBV2DeliveryExecutor:
         assert_route_match_v2(command_doc, route)
         command = command_doc.to_wire()
         await self._assert_current_route(command)
-        command_sha = hashlib.sha256(serialize_contract_json_v2(command_doc)).hexdigest()
+        command_canonical = serialize_contract_json_v2(command_doc)
+        command_sha = hashlib.sha256(command_canonical).hexdigest()
         row_id = uuid4()
         ack_ref = _opaque("ack", str(row_id))
         statement = (
@@ -150,6 +151,7 @@ class AQUBV2DeliveryExecutor:
                 route_generation=command["route_generation"],
                 idempotency_key=command["idempotency_key"],
                 command_sha256=command_sha,
+                command_canonical=command_canonical,
                 command_json=command,
                 state="committed",
                 ack_ref=ack_ref,

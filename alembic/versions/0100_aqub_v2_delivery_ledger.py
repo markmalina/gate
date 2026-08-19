@@ -45,6 +45,7 @@ CREATE TABLE aqub_v2_delivery_ledger (
   idempotency_key varchar(255) NOT NULL,
   command_sha256 varchar(64) NOT NULL
     CONSTRAINT ck_aqub_v2_command_sha CHECK (char_length(command_sha256)=64),
+  command_canonical bytea NOT NULL,
   command_json jsonb NOT NULL,
   state varchar(32) NOT NULL
     CONSTRAINT ck_aqub_v2_delivery_state
@@ -61,7 +62,13 @@ CREATE TABLE aqub_v2_delivery_ledger (
   CONSTRAINT ck_aqub_v2_delivery_conversation_ref
     CHECK (conversation_ref ~ '^conversation:[A-Za-z][A-Za-z0-9._~-]{7,127}$'),
   CONSTRAINT ck_aqub_v2_delivery_cube_ref
-    CHECK (cube_ref ~ '^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$')
+    CHECK (cube_ref ~ '^cube:[A-Za-z][A-Za-z0-9._~-]{7,127}$'),
+  CONSTRAINT ck_aqub_v2_delivery_idempotency_key
+    CHECK (idempotency_key ~ '^[A-Za-z][A-Za-z0-9._:~/-]{7,255}$'),
+  CONSTRAINT ck_aqub_v2_delivery_ack_ref
+    CHECK (ack_ref ~ '^ack:[A-Za-z][A-Za-z0-9._~-]{7,127}$'),
+  CONSTRAINT ck_aqub_v2_delivery_command_sha_hex
+    CHECK (command_sha256 ~ '^[0-9a-f]{64}$')
 )
 """
 
@@ -71,11 +78,13 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF ROW(NEW.id,NEW.command_id,NEW.installation_ref,NEW.conversation_ref,
          NEW.cube_ref,NEW.route_generation,NEW.idempotency_key,
-         NEW.command_sha256,NEW.command_json,NEW.ack_ref,NEW.created_at)
+         NEW.command_sha256,NEW.command_canonical,NEW.command_json,
+         NEW.ack_ref,NEW.created_at)
      IS DISTINCT FROM
      ROW(OLD.id,OLD.command_id,OLD.installation_ref,OLD.conversation_ref,
          OLD.cube_ref,OLD.route_generation,OLD.idempotency_key,
-         OLD.command_sha256,OLD.command_json,OLD.ack_ref,OLD.created_at) THEN
+         OLD.command_sha256,OLD.command_canonical,OLD.command_json,
+         OLD.ack_ref,OLD.created_at) THEN
     RAISE EXCEPTION 'AQUB v2 delivery identity is immutable' USING ERRCODE='23514';
   END IF;
   IF OLD.send_started_at IS NOT NULL AND
@@ -105,7 +114,107 @@ BEGIN
      (NEW.receipt_json IS NULL OR NEW.settled_at IS NULL) THEN
     RAISE EXCEPTION 'AQUB v2 terminal transition requires evidence' USING ERRCODE='23514';
   END IF;
+  IF NEW.state IN ('sent','failed','unknown','rejected') THEN
+    PERFORM assert_aqub_v2_delivery_receipt(NEW.command_json,NEW.receipt_json,NEW.state);
+  END IF;
   RETURN NEW;
+END
+$$
+"""
+
+DELIVERY_INSERT_GUARD_FUNCTION_SQL = """
+CREATE FUNCTION enforce_aqub_v2_delivery_insert()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE command_keys integer;
+DECLARE payload_keys integer;
+BEGIN
+  SELECT count(*) INTO command_keys FROM jsonb_object_keys(NEW.command_json);
+  SELECT count(*) INTO payload_keys FROM jsonb_object_keys(NEW.command_json->'payload');
+  IF NEW.state <> 'committed' OR NEW.send_started_at IS NOT NULL OR
+     NEW.settled_at IS NOT NULL OR NEW.receipt_json IS NOT NULL THEN
+    RAISE EXCEPTION 'AQUB v2 insert must be evidence-free committed state'
+      USING ERRCODE='23514';
+  END IF;
+  IF command_keys <> 9 OR payload_keys <> 4 OR
+     NEW.command_json->>'schema_version' <> 'aqub.delivery-command.v2' OR
+     NOT (NEW.command_json ?& ARRAY['schema_version','command_id','idempotency_key',
+       'installation_ref','cube_ref','route_generation','conversation_ref',
+       'requested_at','payload']) OR
+     NEW.command_json->>'command_id' IS DISTINCT FROM NEW.command_id::text OR
+     NEW.command_json->>'installation_ref' IS DISTINCT FROM NEW.installation_ref OR
+     NEW.command_json->>'conversation_ref' IS DISTINCT FROM NEW.conversation_ref OR
+     NEW.command_json->>'cube_ref' IS DISTINCT FROM NEW.cube_ref OR
+     NEW.command_json->>'route_generation' IS DISTINCT FROM NEW.route_generation::text OR
+     jsonb_typeof(NEW.command_json->'route_generation') <> 'number' OR
+     NEW.command_json->>'idempotency_key' IS DISTINCT FROM NEW.idempotency_key OR
+     NEW.command_json->>'requested_at' !~
+       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]\\.[0-9]{3}Z$' OR
+     NEW.command_json->'payload'->>'kind' <> 'text' OR
+     NEW.command_json->'payload'->>'media_type' !~
+       '^[a-z][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$' OR
+     jsonb_typeof(NEW.command_json->'payload'->'text') <> 'string' OR
+     length(NEW.command_json->'payload'->>'text') NOT BETWEEN 1 AND 32768 OR
+     (NEW.command_json->'payload'->>'reply_to_message_ref' IS NOT NULL AND
+      NEW.command_json->'payload'->>'reply_to_message_ref' !~
+        '^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$') OR
+     convert_from(NEW.command_canonical,'UTF8')::jsonb IS DISTINCT FROM NEW.command_json OR
+     encode(sha256(NEW.command_canonical),'hex') IS DISTINCT FROM NEW.command_sha256 THEN
+    RAISE EXCEPTION 'AQUB v2 command evidence is invalid or uncorrelated'
+      USING ERRCODE='23514';
+  END IF;
+  RETURN NEW;
+END
+$$
+"""
+
+DELIVERY_INSERT_GUARD_TRIGGER_SQL = """
+CREATE TRIGGER trg_aqub_v2_delivery_insert
+BEFORE INSERT ON aqub_v2_delivery_ledger
+FOR EACH ROW EXECUTE FUNCTION enforce_aqub_v2_delivery_insert()
+"""
+
+RECEIPT_VALIDATOR_SQL = """
+CREATE FUNCTION assert_aqub_v2_delivery_receipt(
+  p_command jsonb,p_receipt jsonb,p_ledger_state text
+) RETURNS void LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE receipt_keys integer;
+DECLARE receipt_status text;
+BEGIN
+  SELECT count(*) INTO receipt_keys FROM jsonb_object_keys(p_receipt);
+  receipt_status := p_receipt->>'status';
+  IF jsonb_typeof(p_receipt) <> 'object' OR receipt_keys <> 12 OR
+     p_receipt->>'schema_version' <> 'aqub.delivery-receipt.v2' OR
+     NOT (p_receipt ?& ARRAY['schema_version','receipt_ref','command_id',
+       'idempotency_key','installation_ref','cube_ref','route_generation',
+       'observed_at','status','retry_disposition','transport_receipt_ref']) OR
+     p_receipt->>'command_id' IS DISTINCT FROM p_command->>'command_id' OR
+     p_receipt->>'idempotency_key' IS DISTINCT FROM p_command->>'idempotency_key' OR
+     p_receipt->>'installation_ref' IS DISTINCT FROM p_command->>'installation_ref' OR
+     p_receipt->>'cube_ref' IS DISTINCT FROM p_command->>'cube_ref' OR
+     p_receipt->>'route_generation' IS DISTINCT FROM p_command->>'route_generation' OR
+     jsonb_typeof(p_receipt->'route_generation') <> 'number' OR
+     p_receipt->>'receipt_ref' !~ '^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
+     p_receipt->>'transport_receipt_ref' !~
+       '^receipt:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
+     p_receipt->>'observed_at' !~
+       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]\\.[0-9]{3}Z$' OR
+     (p_ledger_state='sent' AND (receipt_status <> 'sent' OR
+       p_receipt->>'retry_disposition' <> 'do_not_retry' OR
+       p_receipt->>'delivered_message_ref' !~
+         '^message:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
+       p_receipt ?| ARRAY['failure_code','reconciliation_ref'])) OR
+     (p_ledger_state IN ('failed','rejected') AND (receipt_status <> 'failed' OR
+       p_receipt->>'retry_disposition' <> 'do_not_retry' OR
+       p_receipt->>'failure_code' !~ '^[A-Z][A-Z0-9_]{2,95}$' OR
+       p_receipt ?| ARRAY['delivered_message_ref','reconciliation_ref'])) OR
+     (p_ledger_state='unknown' AND (receipt_status <> 'unknown' OR
+       p_receipt->>'retry_disposition' <> 'reconcile_only' OR
+       p_receipt->>'reconciliation_ref' !~
+         '^reconcile:[A-Za-z][A-Za-z0-9._~-]{7,127}$' OR
+       p_receipt ?| ARRAY['delivered_message_ref','failure_code'])) THEN
+    RAISE EXCEPTION 'AQUB v2 receipt evidence is invalid or uncorrelated'
+      USING ERRCODE='23514';
+  END IF;
 END
 $$
 """
@@ -120,6 +229,13 @@ ROUTE_GUARD_FUNCTION_SQL = """
 CREATE FUNCTION enforce_aqub_v2_route_authority_transition()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF TG_OP='INSERT' THEN
+    IF NEW.state <> 'hold' OR NEW.authority_epoch <> 1 THEN
+      RAISE EXCEPTION 'AQUB v2 route authority must start held at epoch one'
+        USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+  END IF;
   IF ROW(NEW.installation_ref,NEW.conversation_ref) IS DISTINCT FROM
      ROW(OLD.installation_ref,OLD.conversation_ref) THEN
     RAISE EXCEPTION 'AQUB v2 route identity is immutable' USING ERRCODE='23514';
@@ -134,15 +250,43 @@ $$
 
 ROUTE_GUARD_TRIGGER_SQL = """
 CREATE TRIGGER trg_aqub_v2_route_authority_transition
-BEFORE UPDATE ON aqub_v2_route_authority
+BEFORE INSERT OR UPDATE ON aqub_v2_route_authority
 FOR EACH ROW EXECUTE FUNCTION enforce_aqub_v2_route_authority_transition()
 """
 
 LEDGER_GUARD_STATEMENTS = (
+    RECEIPT_VALIDATOR_SQL,
+    DELIVERY_INSERT_GUARD_FUNCTION_SQL,
+    DELIVERY_INSERT_GUARD_TRIGGER_SQL,
     DELIVERY_GUARD_FUNCTION_SQL,
     DELIVERY_GUARD_TRIGGER_SQL,
     ROUTE_GUARD_FUNCTION_SQL,
     ROUTE_GUARD_TRIGGER_SQL,
+)
+
+CAPABILITY_STATEMENTS = (
+    """
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='gate_aqub_v2_owner') THEN
+    CREATE ROLE gate_aqub_v2_owner NOLOGIN NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='gate_aqub_v2_runtime') THEN
+    CREATE ROLE gate_aqub_v2_runtime NOLOGIN NOINHERIT;
+  END IF;
+END $$
+""",
+    """
+DO $$ BEGIN
+  EXECUTE format(
+    'GRANT USAGE ON SCHEMA %I TO gate_aqub_v2_owner,gate_aqub_v2_runtime',
+    current_schema()
+  );
+END $$
+""",
+    "REVOKE ALL ON aqub_v2_route_authority,aqub_v2_delivery_ledger FROM PUBLIC",
+    "GRANT SELECT ON aqub_v2_route_authority,aqub_v2_delivery_ledger TO gate_aqub_v2_runtime",
+    "GRANT SELECT,INSERT,UPDATE ON "
+    "aqub_v2_route_authority,aqub_v2_delivery_ledger TO gate_aqub_v2_owner",
 )
 
 
@@ -151,10 +295,14 @@ def upgrade() -> None:
     op.execute(DELIVERY_LEDGER_SQL)
     for statement in LEDGER_GUARD_STATEMENTS:
         op.execute(statement)
+    for statement in CAPABILITY_STATEMENTS:
+        op.execute(statement)
 
 
 def downgrade() -> None:
     op.execute("DROP FUNCTION enforce_aqub_v2_route_authority_transition() CASCADE")
     op.execute("DROP FUNCTION enforce_aqub_v2_delivery_transition() CASCADE")
+    op.execute("DROP FUNCTION enforce_aqub_v2_delivery_insert() CASCADE")
+    op.execute("DROP FUNCTION assert_aqub_v2_delivery_receipt(jsonb,jsonb,text) CASCADE")
     op.drop_table("aqub_v2_delivery_ledger")
     op.drop_table("aqub_v2_route_authority")
