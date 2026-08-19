@@ -23,6 +23,13 @@ Gate exposes one hidden internal acceptance route:
 - `food.day_summary`;
 - `food.omark_check`.
 
+The same five-value closure is enforced independently by JSON Schema, the
+Python parser and the database insert guard. It is not represented by a
+generated PostgreSQL enum column: casts to user-defined enum types are not
+immutable enough for a generated expression. The immutable canonical command
+bytes plus the exact insert-guard list are the authoritative database
+evidence.
+
 Runtime SQL is limited to five `SECURITY DEFINER` operations:
 
 1. `accept_aqub_v2_delivery`;
@@ -42,6 +49,32 @@ The response is always `{ack, receipt}` for a schema-valid command. Route and
 idempotency refusals are schema-valid `rejected` ACKs. Neither ACK nor receipt
 contains `conversation_ref`; the conversation remains a database-only routing
 predicate.
+
+## Durable recovery query
+
+The signed POST is also the only recovery query. AQUB re-signs and replays its
+stored canonical command bytes with the same command id and idempotency key.
+The existing-row lookup happens before current-route evaluation and returns a
+`duplicate` ACK plus the ledger's current durable receipt:
+
+- `receipt: null` means Gate has no terminal or unknown evidence yet; AQUB
+  remains `acknowledged` and retries this query with bounded backoff;
+- a `sent` or `failed` receipt is terminal evidence;
+- an `unknown/reconcile_only` receipt moves AQUB into its matching unknown
+  recovery path and must never cause a new command or provider resend.
+
+This closes a crash after AQUB persists the ACK but before it persists the
+receipt without adding a second endpoint or expanding secret scope. Gate does
+not infer provider state. AQUB still must enumerate aged `acknowledged` rows,
+replay the stored command, and durably apply any returned receipt.
+
+Receipt correlation is enforced at the SQL boundary, not only by Python. The
+0100 `BEFORE UPDATE` trigger invokes
+`assert_aqub_v2_delivery_receipt(command_json, receipt_json, state)` for every
+terminal or unknown transition. Both `settle_aqub_v2_delivery` and
+`reconcile_aqub_v2_delivery_unknown` therefore reject a schema-valid receipt
+whose command id, idempotency key, installation, cube or route generation does
+not match the locked ledger row.
 
 ## Runtime reachability
 
@@ -70,7 +103,8 @@ retention/deletion, corrections and audit receipts before code is added.
 ## Consequences
 
 - Migration 0101 must follow 0100; it never edits the reviewed 0100 file.
-- AQUB must add the same mandatory delivery-type field before pairing.
+- AQUB must add the same mandatory delivery-type field and acknowledged-row
+  recovery before pairing.
 - Ops credential split remains a hard blocker for runtime activation.
 - No route, credential, webhook, provider, deployment or migration apply is
   authorized by this ADR.

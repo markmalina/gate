@@ -18,24 +18,6 @@ depends_on = None
 
 _SCHEMA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]{0,62}$")
 
-DELIVERY_TYPE_SQL = """
-CREATE TYPE aqub_v2_delivery_type AS ENUM (
-  'food.clarification',
-  'food.fact_reply',
-  'food.correction_reply',
-  'food.day_summary',
-  'food.omark_check'
-)
-"""
-
-ADD_DELIVERY_TYPE_SQL = """
-ALTER TABLE aqub_v2_delivery_ledger
-  ADD COLUMN delivery_type aqub_v2_delivery_type
-  GENERATED ALWAYS AS (
-    (command_json #>> '{payload,delivery_type}')::aqub_v2_delivery_type
-  ) STORED
-"""
-
 DELIVERY_INSERT_GUARD_FUNCTION_SQL = """
 CREATE OR REPLACE FUNCTION enforce_aqub_v2_delivery_insert()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -207,9 +189,7 @@ BEGIN
   IF FOUND THEN
     IF existing.command_id::text IS DISTINCT FROM p_command_json->>'command_id' OR
        existing.command_sha256 IS DISTINCT FROM p_command_sha256 OR
-       existing.command_canonical IS DISTINCT FROM p_command_canonical OR
-       existing.delivery_type::text IS DISTINCT FROM
-         p_command_json->'payload'->>'delivery_type' THEN
+       existing.command_canonical IS DISTINCT FROM p_command_canonical THEN
       RETURN QUERY SELECT
         'rejected'::text,'AQUB_V2_IDEMPOTENCY_CONFLICT'::text,
         p_ack_ref::text,NULL::jsonb;
@@ -265,9 +245,7 @@ BEGIN
    FOR SHARE;
   IF existing.command_id::text IS DISTINCT FROM p_command_json->>'command_id' OR
      existing.command_sha256 IS DISTINCT FROM p_command_sha256 OR
-     existing.command_canonical IS DISTINCT FROM p_command_canonical OR
-     existing.delivery_type::text IS DISTINCT FROM
-       p_command_json->'payload'->>'delivery_type' THEN
+     existing.command_canonical IS DISTINCT FROM p_command_canonical THEN
     RETURN QUERY SELECT
       'rejected'::text,'AQUB_V2_IDEMPOTENCY_CONFLICT'::text,
       p_ack_ref::text,NULL::jsonb;
@@ -549,10 +527,6 @@ def upgrade() -> None:
     bind = op.get_bind()
     schema = bind.execute(text("SELECT current_schema()")).scalar_one()
     op.execute("GRANT gate_aqub_v2_owner TO CURRENT_USER")
-    op.execute(DELIVERY_TYPE_SQL)
-    op.execute("ALTER TYPE aqub_v2_delivery_type OWNER TO gate_aqub_v2_owner")
-    op.execute(ADD_DELIVERY_TYPE_SQL)
-    op.execute("ALTER TABLE aqub_v2_delivery_ledger ALTER COLUMN delivery_type SET NOT NULL")
     op.execute(DELIVERY_INSERT_GUARD_FUNCTION_SQL)
     for statement in capability_statements(schema):
         op.execute(statement)
@@ -575,6 +549,4 @@ def downgrade() -> None:
     ):
         op.execute(f"DROP FUNCTION {q}.{signature}")
     op.execute(LEGACY_DELIVERY_INSERT_GUARD_FUNCTION_SQL)
-    op.execute("ALTER TABLE aqub_v2_delivery_ledger DROP COLUMN delivery_type")
-    op.execute("DROP TYPE aqub_v2_delivery_type")
     op.execute("REVOKE gate_aqub_v2_owner FROM CURRENT_USER")

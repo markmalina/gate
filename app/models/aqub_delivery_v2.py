@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
-    Computed,
     DateTime,
     Integer,
     LargeBinary,
@@ -17,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.domain import Base
@@ -69,21 +68,6 @@ class AQUBV2DeliveryLedger(Base):
     command_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     command_canonical: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     command_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    delivery_type: Mapped[str] = mapped_column(
-        ENUM(
-            "food.clarification",
-            "food.fact_reply",
-            "food.correction_reply",
-            "food.day_summary",
-            "food.omark_check",
-            name="aqub_v2_delivery_type",
-        ),
-        Computed(
-            "(command_json #>> '{payload,delivery_type}')::aqub_v2_delivery_type",
-            persisted=True,
-        ),
-        nullable=False,
-    )
     state: Mapped[str] = mapped_column(String(32), nullable=False)
     ack_ref: Mapped[str] = mapped_column(String(255), nullable=False)
     send_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

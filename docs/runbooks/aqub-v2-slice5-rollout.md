@@ -11,7 +11,9 @@ create secrets, seed routes, change a webhook or call Telegram.
    `1d745030993871906edf2590a835954cfc5eec84`.
 2. Independently accept this stacked PR exact head.
 3. Independently accept the paired AQUB Food head that requires the same closed
-   `payload.delivery_type` enum.
+   `payload.delivery_type` enum and can enumerate aged `acknowledged` rows,
+   replay the stored command, and apply `sent|failed|unknown` receipts without
+   returning the row to a provider-send state.
 4. Apply Gate migration 0100 and then 0101, in that exact order, with the
    migration identity. Never run 0101 alone.
 5. Apply and verify AQUB migrations 022 and then 023, in that exact order,
@@ -64,9 +66,34 @@ With isolated synthetic schemas and no provider:
    correlated rejection before any command is exposed to a provider.
 7. On an active route, begin once, mark the outcome unknown, restart, and prove
    a second begin returns `not_dispatchable`.
-8. Reconcile unknown with one correlated `sent` or `failed` receipt.
-9. Search all HTTP bodies, database errors and test output for raw identifiers,
+8. Replay the stored command through the signed POST. Expect `duplicate` plus
+   the existing `unknown/reconcile_only` receipt, with no new dispatch.
+9. Reconcile unknown with one correlated `sent` or `failed` receipt, replay
+   again, and expect `duplicate` plus that terminal receipt.
+10. Present a schema-valid receipt for a different command to both settle and
+    reconcile capability paths. Expect the 0100 SQL update guard to reject it
+    as uncorrelated.
+11. Search all HTTP bodies, database errors and test output for raw identifiers,
    body text, signature material and `conversation_ref`.
+
+## AQUB acknowledged recovery requirement
+
+After persisting a Gate ACK, AQUB may crash before persisting the receipt. Its
+023 recovery path must select aged `acknowledged` rows in bounded batches,
+re-sign and POST each row's stored canonical command with the original command
+id and idempotency key, then atomically apply any returned receipt.
+
+- `duplicate + null`: remain `acknowledged`, record bounded backoff, and
+  query again later;
+- `duplicate + sent|failed`: persist the terminal receipt;
+- `duplicate + unknown/reconcile_only`: persist `unknown` and enter the
+  existing reconciliation path;
+- a transport timeout has no provider meaning and must not synthesize a
+  receipt, change the idempotency key or return the row to dispatch.
+
+No additional Gate endpoint is required; the same signed POST is the durable
+query and its existing-first lookup remains valid even if the route is later
+held.
 
 ## Activation gate
 

@@ -21,7 +21,10 @@ from app.application.aqub_delivery_v2 import (
     AQUBV2DeliveryMode,
     AQUBV2OutcomeUnknown,
 )
-from app.application.aqub_delivery_v2_store import AQUBV2DeliverySQLStore
+from app.application.aqub_delivery_v2_store import (
+    AQUBV2DeliverySQLStore,
+    AQUBV2DeliveryStoreError,
+)
 from app.core.config import get_settings
 from app.models.aqub_delivery_v2 import AQUBV2DeliveryLedger, AQUBV2RouteAuthority
 from sqlalchemy import func, select, update
@@ -138,9 +141,6 @@ async def schema_engine(database_url: str):
             "alembic/versions/0101_aqub_v2_delivery_capabilities.py"
         )
         await connection.exec_driver_sql("GRANT gate_aqub_v2_owner TO CURRENT_USER")
-        await connection.exec_driver_sql(
-            "ALTER TYPE aqub_v2_delivery_type OWNER TO gate_aqub_v2_owner"
-        )
         await connection.exec_driver_sql(
             capabilities["DELIVERY_INSERT_GUARD_FUNCTION_SQL"]
         )
@@ -605,6 +605,7 @@ async def test_sql_capability_store_isolated_route_idempotency_and_unknown() -> 
             conflict = await store.accept(parse_delivery_command_v2(changed))
             dispatch = await store.begin_dispatch(UUID(delivery["command_id"]))
             unknown = await store.mark_unknown(UUID(delivery["command_id"]))
+            unknown_recovery = await store.accept(parse_delivery_command_v2(delivery))
             no_blind_resend = await store.begin_dispatch(UUID(delivery["command_id"]))
 
         assert first["ack"]["status"] == "committed"
@@ -614,6 +615,8 @@ async def test_sql_capability_store_isolated_route_idempotency_and_unknown() -> 
         assert dispatch["kind"] == "dispatch"
         assert unknown["kind"] == "unknown"
         assert unknown["receipt"]["retry_disposition"] == "reconcile_only"
+        assert unknown_recovery["ack"]["status"] == "duplicate"
+        assert unknown_recovery["receipt"] == unknown["receipt"]
         assert no_blind_resend["kind"] == "not_dispatchable"
         assert "conversation_ref" not in json.dumps(first, sort_keys=True)
         assert "conversation_ref" not in json.dumps(unknown, sort_keys=True)
@@ -642,5 +645,70 @@ async def test_sql_capability_store_isolated_route_idempotency_and_unknown() -> 
             )
         assert runtime_insert is False
         assert runtime_accept is True
+    finally:
+        await drop_schema(schema, admin, engine)
+
+
+@pytest.mark.anyio
+async def test_capability_replay_recovers_terminal_and_sql_rejects_mismatch() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    schema, admin, engine = await schema_engine(database_url)
+    try:
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as route_session:
+            await seed_route(route_session)
+
+        delivery = command(key="food/reply/recovery-query")
+        foreign = command(key="food/reply/foreign-receipt")
+        command_id = UUID(delivery["command_id"])
+        unknown_delivery = command(key="food/reply/recovery-unknown")
+        unknown_command_id = UUID(unknown_delivery["command_id"])
+        async with sessions() as session:
+            store = AQUBV2DeliverySQLStore(session, schema=schema)
+            await store.accept(parse_delivery_command_v2(delivery))
+            await store.begin_dispatch(command_id)
+
+            # The foreign receipt is schema-valid. Only the SQL update guard can
+            # reject its correlation to the locked ledger row.
+            with pytest.raises(
+                AQUBV2DeliveryStoreError,
+                match="AQUB_V2_DELIVERY_STORE_REFUSED",
+            ):
+                await store.settle(command_id, receipt(foreign, "sent"))
+
+            terminal = await store.settle(command_id, receipt(delivery, "sent"))
+            recovered = await store.accept(parse_delivery_command_v2(delivery))
+            no_resend = await store.begin_dispatch(command_id)
+
+            await store.accept(parse_delivery_command_v2(unknown_delivery))
+            await store.begin_dispatch(unknown_command_id)
+            await store.mark_unknown(unknown_command_id)
+            with pytest.raises(
+                AQUBV2DeliveryStoreError,
+                match="AQUB_V2_DELIVERY_STORE_REFUSED",
+            ):
+                await store.reconcile_unknown(
+                    unknown_command_id,
+                    receipt(foreign, "failed"),
+                )
+            reconciled = await store.reconcile_unknown(
+                unknown_command_id,
+                receipt(unknown_delivery, "failed"),
+            )
+            recovered_reconciliation = await store.accept(
+                parse_delivery_command_v2(unknown_delivery)
+            )
+
+        assert terminal["kind"] == "settled"
+        assert recovered["ack"]["status"] == "duplicate"
+        assert recovered["receipt"] == terminal["receipt"]
+        assert no_resend["kind"] == "not_dispatchable"
+        assert no_resend["receipt"] == terminal["receipt"]
+        assert reconciled["kind"] == "reconciled"
+        assert recovered_reconciliation["ack"]["status"] == "duplicate"
+        assert recovered_reconciliation["receipt"] == reconciled["receipt"]
+        assert "conversation_ref" not in json.dumps(recovered, sort_keys=True)
     finally:
         await drop_schema(schema, admin, engine)
