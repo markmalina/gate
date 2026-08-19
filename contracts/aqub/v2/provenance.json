@@ -1,6 +1,6 @@
 {
   "schema_version": "gate.aqub-contract-v2-provenance.v1",
-  "recorded_on": "2026-08-10",
+  "recorded_on": "2026-08-19",
   "upstream": {
     "repository": "markmalina/aqub",
     "pull_request": 43,
@@ -59,6 +59,26 @@
       "upstream_blob_sha": "e33057cf54f3388b5c909361f75a51fe003f1293"
     }
   ],
+  "candidate_overrides": [
+    {
+      "local_path": "contracts/aqub/v2/schemas/delivery-command.v2.schema.json",
+      "base_upstream_blob_sha": "bb7e5d45d0209084f6407a30934499427f644cbb",
+      "candidate_blob_sha": "72f308f3c7d4ad361a625d9c487dcc648f4be1e3",
+      "rationale": "Work B adds the mandatory closed Food delivery_type enum; this is not attributed to accepted AQUB PR 43."
+    },
+    {
+      "local_path": "contracts/aqub/v2/fixtures/delivery-command.valid.json",
+      "base_upstream_blob_sha": "130202ce3f8b98cf29fa2897d01cf348658fecb2",
+      "candidate_blob_sha": "bcd5309dd0bd10ca4cd296cdca5c3c117ec1e04d",
+      "rationale": "Work B fixture exercises the Gate candidate extension and requires an exact paired AQUB head."
+    }
+  ],
+  "candidate_pairing": {
+    "repository": "markmalina/aqub",
+    "pull_request": 175,
+    "exact_head": null,
+    "status": "STOP_PENDING_EXACT_PAIRED_HEAD"
+  },
   "source_references": [
     {
       "path": "src/gate-adapter/contracts-v2.js",
@@ -69,7 +89,8 @@
       "blob_sha": "ad51c4bec7aaeea4f1253026a2334f9fc6318d83"
     }
   ],
-  "runtime_wiring": false,
+  "runtime_wiring": true,
+  "runtime_default_enabled": false,
   "route_activation": false,
   "external_effects_authorized": false
 }

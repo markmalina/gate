@@ -132,18 +132,57 @@ def test_provenance_pins_exact_accepted_aqub_artifacts() -> None:
         "accepted_head": "9f22609a905a8e12bf886376fb9d486699aa818a",
         "merge_commit": "cadd5f0ff9731b1114e85e95023ddb3f5d5099ba",
     }
-    assert provenance["runtime_wiring"] is False
+    assert provenance["runtime_wiring"] is True
+    assert provenance["runtime_default_enabled"] is False
     assert provenance["route_activation"] is False
     assert provenance["external_effects_authorized"] is False
 
     artifacts = provenance["mirrored_artifacts"]
     assert isinstance(artifacts, list)
     assert len(artifacts) == 10
+    overrides = {
+        value["local_path"]: value for value in provenance["candidate_overrides"]
+    }
+    assert overrides == {
+        "contracts/aqub/v2/schemas/delivery-command.v2.schema.json": {
+            "local_path": "contracts/aqub/v2/schemas/delivery-command.v2.schema.json",
+            "base_upstream_blob_sha": "bb7e5d45d0209084f6407a30934499427f644cbb",
+            "candidate_blob_sha": "72f308f3c7d4ad361a625d9c487dcc648f4be1e3",
+            "rationale": (
+                "Work B adds the mandatory closed Food delivery_type enum; "
+                "this is not attributed to accepted AQUB PR 43."
+            ),
+        },
+        "contracts/aqub/v2/fixtures/delivery-command.valid.json": {
+            "local_path": "contracts/aqub/v2/fixtures/delivery-command.valid.json",
+            "base_upstream_blob_sha": "130202ce3f8b98cf29fa2897d01cf348658fecb2",
+            "candidate_blob_sha": "bcd5309dd0bd10ca4cd296cdca5c3c117ec1e04d",
+            "rationale": (
+                "Work B fixture exercises the Gate candidate extension and "
+                "requires an exact paired AQUB head."
+            ),
+        },
+    }
     for artifact in artifacts:
         assert isinstance(artifact, dict)
         local_path = ROOT / artifact["local_path"]
         assert local_path.is_file()
-        assert _git_blob_sha(local_path) == artifact["upstream_blob_sha"]
+        override = overrides.get(artifact["local_path"])
+        expected = (
+            override["candidate_blob_sha"]
+            if override is not None
+            else artifact["upstream_blob_sha"]
+        )
+        if override is not None:
+            assert override["base_upstream_blob_sha"] == artifact["upstream_blob_sha"]
+        assert _git_blob_sha(local_path) == expected
+
+    assert provenance["candidate_pairing"] == {
+        "repository": "markmalina/aqub",
+        "pull_request": 175,
+        "exact_head": None,
+        "status": "STOP_PENDING_EXACT_PAIRED_HEAD",
+    }
 
     assert provenance["source_references"] == [
         {
@@ -239,7 +278,7 @@ def test_nested_required_keys_match_schema_and_python(
             parser(candidate)
 
 
-def test_adapter_is_default_disabled_and_not_runtime_wired() -> None:
+def test_adapter_is_default_disabled_and_only_reviewed_boundary_is_wired() -> None:
     envelope = _fixture("transport-envelope.valid.json")
     evidence = _route_evidence()
 
@@ -250,12 +289,22 @@ def test_adapter_is_default_disabled_and_not_runtime_wired() -> None:
     with pytest.raises(AQUBContractV2Error, match="mode_invalid"):
         AQUBContractV2Adapter(mode=True)  # type: ignore[arg-type]
 
-    runtime_paths = [ROOT / "app" / "main.py", ROOT / "app" / "core" / "config.py"]
-    runtime_paths.extend((ROOT / "app" / "api").rglob("*.py"))
-    runtime_paths.extend((ROOT / "app" / "worker").rglob("*.py"))
-    assert runtime_paths
-    for path in runtime_paths:
-        assert "aqub_contract_v2" not in path.read_text(encoding="utf-8"), path
+    main_source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    config_source = (ROOT / "app" / "core" / "config.py").read_text(encoding="utf-8")
+    boundary_source = (
+        ROOT / "app" / "api" / "aqub_delivery_v2_internal.py"
+    ).read_text(encoding="utf-8")
+    assert "aqub_delivery_v2_internal_router" in main_source
+    assert "app.application.aqub_delivery_v2 import" not in main_source
+    assert "default=False" in config_source
+    assert "GATE_AQUB_V2_DELIVERY_ENDPOINT_ENABLED" in config_source
+    assert "AQUBV2DeliverySQLStore" in boundary_source
+    assert "AQUBV2DeliveryExecutor" not in boundary_source
+    assert "httpx" not in boundary_source
+    for path in (ROOT / "app" / "worker").rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "AQUBContractV2Adapter" not in source, path
+        assert "AQUBV2DeliveryExecutor" not in source, path
 
 
 def test_byte_parser_rejects_duplicates_nonfinite_values_and_non_object_roots() -> None:

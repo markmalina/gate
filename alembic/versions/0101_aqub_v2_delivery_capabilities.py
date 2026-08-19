@@ -149,8 +149,80 @@ def _quoted_schema(schema: str) -> str:
     return '"' + schema.replace('"', '""') + '"'
 
 
+def delivery_transition_guard_statement(
+    schema: str,
+    *,
+    qualify_receipt_validator: bool,
+) -> str:
+    q = _quoted_schema(schema)
+    validator = (
+        f"{q}.assert_aqub_v2_delivery_receipt"
+        if qualify_receipt_validator
+        else "assert_aqub_v2_delivery_receipt"
+    )
+    fixed_search_path = (
+        "\nSET search_path = pg_catalog, pg_temp"
+        if qualify_receipt_validator
+        else ""
+    )
+    ledger_state = "NEW.state::text" if qualify_receipt_validator else "NEW.state"
+    return f"""
+CREATE OR REPLACE FUNCTION {q}.enforce_aqub_v2_delivery_transition()
+RETURNS trigger LANGUAGE plpgsql{fixed_search_path} AS $$
+BEGIN
+  IF ROW(NEW.id,NEW.command_id,NEW.installation_ref,NEW.conversation_ref,
+         NEW.cube_ref,NEW.route_generation,NEW.idempotency_key,
+         NEW.command_sha256,NEW.command_canonical,NEW.command_json,
+         NEW.ack_ref,NEW.created_at)
+     IS DISTINCT FROM
+     ROW(OLD.id,OLD.command_id,OLD.installation_ref,OLD.conversation_ref,
+         OLD.cube_ref,OLD.route_generation,OLD.idempotency_key,
+         OLD.command_sha256,OLD.command_canonical,OLD.command_json,
+         OLD.ack_ref,OLD.created_at) THEN
+    RAISE EXCEPTION 'AQUB v2 delivery identity is immutable' USING ERRCODE='23514';
+  END IF;
+  IF OLD.send_started_at IS NOT NULL AND
+     NEW.send_started_at IS DISTINCT FROM OLD.send_started_at THEN
+    RAISE EXCEPTION 'AQUB v2 send boundary is irreversible' USING ERRCODE='23514';
+  END IF;
+  IF OLD.send_started_at IS NULL AND NEW.send_started_at IS NOT NULL AND
+     NOT (OLD.state='committed' AND NEW.state='sending') THEN
+    RAISE EXCEPTION 'AQUB v2 send boundary requires committed to sending'
+      USING ERRCODE='23514';
+  END IF;
+  IF NEW.state='sending' AND NEW.send_started_at IS NULL THEN
+    RAISE EXCEPTION 'AQUB v2 sending requires boundary evidence' USING ERRCODE='23514';
+  END IF;
+  IF OLD.state=NEW.state AND NEW IS DISTINCT FROM OLD THEN
+    RAISE EXCEPTION 'AQUB v2 same-state mutation is forbidden' USING ERRCODE='23514';
+  END IF;
+  IF NOT (
+    (OLD.state='committed' AND NEW.state IN ('sending','rejected')) OR
+    (OLD.state='sending' AND NEW.state IN ('sent','failed','unknown')) OR
+    (OLD.state='unknown' AND NEW.state IN ('sent','failed'))
+  ) THEN
+    RAISE EXCEPTION 'invalid AQUB v2 delivery transition % -> %',OLD.state,NEW.state
+      USING ERRCODE='23514';
+  END IF;
+  IF NEW.state IN ('sent','failed','unknown','rejected') AND
+     (NEW.receipt_json IS NULL OR NEW.settled_at IS NULL) THEN
+    RAISE EXCEPTION 'AQUB v2 terminal transition requires evidence' USING ERRCODE='23514';
+  END IF;
+  IF NEW.state IN ('sent','failed','unknown','rejected') THEN
+    PERFORM {validator}(NEW.command_json,NEW.receipt_json,{ledger_state});
+  END IF;
+  RETURN NEW;
+END
+$$
+"""
+
+
 def capability_statements(schema: str) -> tuple[str, ...]:
     q = _quoted_schema(schema)
+    transition_guard_sql = delivery_transition_guard_statement(
+        schema,
+        qualify_receipt_validator=True,
+    )
     accept_sql = f"""
 CREATE FUNCTION {q}.accept_aqub_v2_delivery(
   p_row_id uuid,
@@ -484,6 +556,7 @@ $$
 """
 
     functions = (
+        transition_guard_sql,
         failed_receipt_sql,
         unknown_receipt_sql,
         accept_sql,
@@ -507,6 +580,8 @@ $$
         "OWNER TO gate_aqub_v2_owner",
         f"ALTER FUNCTION {q}.reconcile_aqub_v2_delivery_unknown("
         "uuid,jsonb,timestamptz) OWNER TO gate_aqub_v2_owner",
+        f"ALTER FUNCTION {q}.enforce_aqub_v2_delivery_transition() "
+        "OWNER TO gate_aqub_v2_owner",
     )
     revoke_public = tuple(
         statement.replace("ALTER FUNCTION", "REVOKE ALL ON FUNCTION").replace(
@@ -518,7 +593,7 @@ $$
         statement.replace("ALTER FUNCTION", "GRANT EXECUTE ON FUNCTION").replace(
             " OWNER TO gate_aqub_v2_owner", " TO gate_aqub_v2_runtime"
         )
-        for statement in ownership[2:]
+        for statement in ownership[2:-1]
     )
     return functions + ownership + revoke_public + runtime_grants
 
@@ -548,5 +623,11 @@ def downgrade() -> None:
         "build_aqub_v2_failed_receipt(jsonb,timestamptz,text)",
     ):
         op.execute(f"DROP FUNCTION {q}.{signature}")
+    op.execute(
+        delivery_transition_guard_statement(
+            schema,
+            qualify_receipt_validator=False,
+        )
+    )
     op.execute(LEGACY_DELIVERY_INSERT_GUARD_FUNCTION_SQL)
     op.execute("REVOKE gate_aqub_v2_owner FROM CURRENT_USER")
