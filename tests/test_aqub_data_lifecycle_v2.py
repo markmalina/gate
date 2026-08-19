@@ -64,6 +64,19 @@ async def lifecycle_engine(database_url: str):
     async with engine.begin() as connection:
         await connection.run_sync(AQUBV2RouteAuthority.__table__.create)
         await connection.run_sync(AQUBV2DeliveryLedger.__table__.create)
+        await connection.exec_driver_sql(
+            """ALTER TABLE aqub_v2_delivery_ledger
+                 DROP CONSTRAINT ck_aqub_v2_delivery_lifecycle_content,
+                 DROP COLUMN lifecycle_policy_version,
+                 DROP COLUMN lifecycle_consent_ref,
+                 DROP COLUMN lifecycle_receipt_ref,
+                 DROP COLUMN content_redacted_at,
+                 ALTER COLUMN conversation_ref SET NOT NULL,
+                 ALTER COLUMN cube_ref SET NOT NULL,
+                 ALTER COLUMN command_canonical SET NOT NULL,
+                 ALTER COLUMN command_json SET NOT NULL,
+                 ALTER COLUMN ack_ref SET NOT NULL"""
+        )
         ledger = run_path("alembic/versions/0100_aqub_v2_delivery_ledger.py")
         for statement in ledger["LEDGER_GUARD_STATEMENTS"]:
             await connection.exec_driver_sql(statement)
