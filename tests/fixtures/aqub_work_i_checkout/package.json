@@ -1,0 +1,32 @@
+{
+  "name": "aqub",
+  "version": "0.0.15",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "migrate": "node src/migrate.js",
+    "migrate:verify": "node src/verify-migrations.js",
+    "start": "node src/server.js",
+    "check": "node scripts/check-js.js",
+    "check:privacy": "node scripts/privacy-scan.js",
+    "check:hygiene": "node scripts/hygiene.js",
+    "lint": "eslint src scripts test test-support",
+    "format": "prettier --write src scripts test test-support contracts package.json eslint.config.js",
+    "format:check": "prettier --check src scripts test test-support contracts package.json eslint.config.js",
+    "test": "node --test",
+    "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/application/**/*.js' --test-coverage-include='src/domain/**/*.js' --test-coverage-include='src/program/**/*.js' --test-coverage-include='src/live/**/*.js' --test-coverage-include='src/graph/**/*.js' --test-coverage-include='src/gate-adapter/**/*.js' --test-coverage-include='src/persistence/**/*.js' --test-coverage-include='src/security/**/*.js' --test-coverage-include='src/telegram/**/*.js' --test-coverage-include='src/worker/**/*.js' --test-coverage-lines=85 --test-coverage-functions=90 --test-coverage-branches=70",
+    "test:postgres": "node --test test/postgres-s0-2.test.js test/postgres-s0-3.test.js test/postgres-s0-4.test.js test/postgres-s0-5.test.js test/postgres-live-gate.test.js test/postgres-live-program-intake.test.js test/postgres-consent-order-numbering.test.js test/postgres-delivery-unknown.test.js test/postgres-s1-ace-onboarding.test.js test/postgres-s1-ace-invite-edge.test.js test/postgres-s1-join-lifecycle.test.js test/postgres-s1-product-program.test.js test/postgres-s1-single-ace.test.js test/postgres-pro-correctness.test.js test/postgres-pro-db-integrity.test.js test/postgres-pro-runtime-deps.test.js test/postgres-pro-process-recovery.test.js test/postgres-retention.test.js test/postgres-withdrawal-delivery-race.test.js"
+  },
+  "dependencies": {
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "16.5.0",
+    "prettier": "3.9.6"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": "aqub.work-i-source-bundle.v1",
+  "repository": "AlphaCenter/aqub",
+  "head_sha": "830cd6161b27ebbc9b817d72b38090b9f6c9a2c6",
+  "files": [
+    {
+      "path": "package.json",
+      "git_blob_sha1": "b93f5ba13fda7be9b433e1e19ff0bef1c85c1832"
+    },
+    {
+      "path": "src/food/text.js",
+      "git_blob_sha1": "148000a4aa2134a03dfea646927e4b3b70e6a759"
+    },
+    {
+      "path": "src/gate-adapter/contracts-v2.js",
+      "git_blob_sha1": "a00bba17e423cc18bec8201491c858ff37ade0bb"
+    },
+    {
+      "path": "src/omark/food-experience.js",
+      "git_blob_sha1": "b97ca126a7910d339d8a3d65b8353dc836e3226c"
+    },
+    {
+      "path": "src/omark/food-consent-v2.js",
+      "git_blob_sha1": "1ff54473184579bfcd5f806f8c2e08e6c7477c09"
+    },
+    {
+      "path": "src/omark/food-synthetic-integration.js",
+      "git_blob_sha1": "382818bdc459943de78dda6d68a175462846ec61"
+    },
+    {
+      "path": "test-support/omark-food-synthetic-outbox.js",
+      "git_blob_sha1": "ee40c47c0543bc131a23208b806655a7fe7d8862"
+    },
+    {
+      "path": "test/omark-food-two-repo-rehearsal.test.js",
+      "git_blob_sha1": "baaf7e0af5a018f77833d55f2e2dc5aeac668599"
+    },
+    {
+      "path": "contracts/rehearsal/food-synthetic-command.v1.json",
+      "git_blob_sha1": "92facc57febea8b88ffb89e52aa27fc913e5d4c9"
+    },
+    {
+      "path": "contracts/rehearsal/food-synthetic-rehearsal-manifest.v1.json",
+      "git_blob_sha1": "d155567a09d12cdcfb21065f2f130fa4ce1d3d70"
+    }
+  ]
+}

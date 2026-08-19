@@ -1,0 +1,17 @@
+{
+  "schema_version": "aqub.delivery-command.v2",
+  "command_id": "40000000-0000-4000-8000-000000000100",
+  "idempotency_key": "work-i/shared/synthetic-command-v1",
+  "installation_ref": "installation:synthetic_installation_01",
+  "cube_ref": "cube:synthetic_food_cube_01",
+  "route_generation": 1,
+  "conversation_ref": "conversation:synthetic_conversation_01",
+  "requested_at": "2026-08-19T18:30:00.000Z",
+  "payload": {
+    "delivery_type": "food.fact_reply",
+    "kind": "text",
+    "media_type": "text/plain",
+    "text": "Synthetic Food integration rehearsal",
+    "reply_to_message_ref": "message:synthetic_message_01"
+  }
+}

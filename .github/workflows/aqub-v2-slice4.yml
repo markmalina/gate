@@ -31,6 +31,7 @@ on:
       - "tests/test_aqub_data_lifecycle_v2.py"
       - "tests/test_aqub_synthetic_rehearsal.py"
       - "tests/support/aqub_synthetic_rehearsal_bridge.py"
+      - "tests/fixtures/aqub_work_i_checkout/**"
 
 permissions:
   contents: read
@@ -97,24 +98,34 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
-      - name: Checkout literal AQUB rehearsal head
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: AlphaCenter/aqub
-          ref: ${{ env.AQUB_REHEARSAL_HEAD_SHA }}
-          path: work-i-aqub
-          persist-credentials: false
-      - name: Assert literal AQUB rehearsal head
-        run: test "$(git -C work-i-aqub rev-parse HEAD)" = "$AQUB_REHEARSAL_HEAD_SHA"
+      - name: Assert content-addressed AQUB exact-head source bundle
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          root = Path("tests/fixtures/aqub_work_i_checkout")
+          manifest = json.loads((root / "source-manifest.json").read_text())
+          assert manifest["repository"] == "AlphaCenter/aqub"
+          assert manifest["head_sha"] == os.environ["AQUB_REHEARSAL_HEAD_SHA"]
+          for item in manifest["files"]:
+              actual = subprocess.check_output(
+                  ["git", "hash-object", root / item["path"]], text=True
+              ).strip()
+              assert actual == item["git_blob_sha1"], item["path"]
+              print(f"{actual}  {item['path']}")
+          PY
       - name: Real AQUB coordinator to Gate ledger two-repository rehearsal
         run: |
           cmp \
-            work-i-aqub/contracts/rehearsal/food-synthetic-command.v1.json \
+            tests/fixtures/aqub_work_i_checkout/contracts/rehearsal/food-synthetic-command.v1.json \
             contracts/aqub/v2/rehearsal/food-synthetic-command.v1.json
           cmp \
-            work-i-aqub/contracts/rehearsal/food-synthetic-rehearsal-manifest.v1.json \
+            tests/fixtures/aqub_work_i_checkout/contracts/rehearsal/food-synthetic-rehearsal-manifest.v1.json \
             contracts/aqub/v2/rehearsal/food-synthetic-rehearsal-manifest.v1.json
-          cd work-i-aqub
+          cd tests/fixtures/aqub_work_i_checkout
           WORK_I_GATE_CHECKOUT="$GITHUB_WORKSPACE" \
             node --test test/omark-food-two-repo-rehearsal.test.js
       - name: Migration and schema drift rehearsal
