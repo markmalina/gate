@@ -246,7 +246,7 @@ class AQUBV2DeliverySQLStore:
             result = await self._session.execute(text(statement), parameters)
             row = result.mappings().one()
             await self._session.commit()
-            return row
+            return dict(row)
         except SQLAlchemyError as exc:
             await self._session.rollback()
             raise AQUBV2DeliveryStoreError("AQUB_V2_DELIVERY_STORE_REFUSED") from exc
