@@ -127,9 +127,7 @@ class SyntheticProviderSpy:
     def send(self, command: Mapping[str, Any], outcome: str) -> str:
         key = str(command["idempotency_key"])
         terminal = (
-            "sent"
-            if outcome in {"sent", "crash_after_acceptance", "crash_after_result"}
-            else None
+            "sent" if outcome in {"sent", "crash_after_acceptance", "crash_after_result"} else None
         )
         if outcome == "failed":
             terminal = "failed"
@@ -236,8 +234,36 @@ class SyntheticGateRehearsal:
                   outcome TEXT NOT NULL,
                   terminal_status TEXT
                 );
+                CREATE TABLE IF NOT EXISTS synthetic_delivery_transitions(
+                  command_id TEXT NOT NULL,
+                  ordinal INTEGER NOT NULL,
+                  from_state TEXT,
+                  to_state TEXT NOT NULL,
+                  action TEXT NOT NULL,
+                  PRIMARY KEY(command_id,ordinal)
+                );
                 """
             )
+
+    @staticmethod
+    def _record_transition(
+        connection: sqlite3.Connection,
+        command_id: str,
+        from_state: str | None,
+        to_state: str,
+        action: str,
+    ) -> None:
+        row = connection.execute(
+            """SELECT COALESCE(MAX(ordinal),0)+1 AS next_ordinal
+                 FROM synthetic_delivery_transitions WHERE command_id=?""",
+            (command_id,),
+        ).fetchone()
+        connection.execute(
+            """INSERT INTO synthetic_delivery_transitions(
+                 command_id,ordinal,from_state,to_state,action
+               ) VALUES(?,?,?,?,?)""",
+            (command_id, int(row["next_ordinal"]), from_state, to_state, action),
+        )
 
     def accept_raw(
         self,
@@ -271,11 +297,19 @@ class SyntheticGateRehearsal:
                          command_json,state,ack_json,provider_outcome
                        ) VALUES(?,?,?,?,?,?,?,?,?)""",
                     (
-                        command["command_id"], command["installation_ref"],
-                        command["idempotency_key"], digest, raw_body,
+                        command["command_id"],
+                        command["installation_ref"],
+                        command["idempotency_key"],
+                        digest,
+                        raw_body,
                         json.dumps(command, sort_keys=True, separators=(",", ":")),
-                        "committed", json.dumps(ack), provider_outcome,
+                        "committed",
+                        json.dumps(ack),
+                        provider_outcome,
                     ),
+                )
+                self._record_transition(
+                    connection, str(command["command_id"]), None, "committed", "accept"
                 )
                 return {"ack": ack, "receipt": None}
             stored = json.loads(row["command_json"]) if row["command_json"] else command
@@ -323,10 +357,16 @@ class SyntheticGateRehearsal:
                           SET state='failed',receipt_json=? WHERE command_id=?""",
                     (json.dumps(receipt), command_id),
                 )
+                self._record_transition(
+                    connection, command_id, "committed", "failed", "route_fence"
+                )
                 return {"kind": "failed", "receipt": receipt}
             connection.execute(
                 "UPDATE synthetic_delivery_ledger SET state='sending' WHERE command_id=?",
                 (command_id,),
+            )
+            self._record_transition(
+                connection, command_id, "committed", "sending", "provider_boundary"
             )
             outcome = str(row["provider_outcome"])
         self._checkpoint("before_provider", command)
@@ -348,6 +388,10 @@ class SyntheticGateRehearsal:
                      WHERE command_id=? AND state='sending'""",
                 (status, json.dumps(receipt), command_id),
             ).rowcount
+            if changed == 1:
+                self._record_transition(
+                    connection, command_id, "sending", status, "provider_result"
+                )
         if changed != 1:
             raise SyntheticGateError("GATE_SYNTHETIC_SETTLE_FENCE")
         return {"kind": status, "receipt": receipt}
@@ -366,6 +410,9 @@ class SyntheticGateRehearsal:
                 """UPDATE synthetic_delivery_ledger
                       SET state='unknown',receipt_json=? WHERE command_id=?""",
                 (json.dumps(receipt), command_id),
+            )
+            self._record_transition(
+                connection, command_id, "sending", "unknown", "restart_recovery"
             )
         return {"kind": "unknown", "receipt": receipt}
 
@@ -388,6 +435,9 @@ class SyntheticGateRehearsal:
             connection.execute(
                 "UPDATE synthetic_delivery_ledger SET state=?,receipt_json=? WHERE command_id=?",
                 (terminal, json.dumps(receipt), command_id),
+            )
+            self._record_transition(
+                connection, command_id, "unknown", terminal, "provider_reconciliation"
             )
         return {"kind": "reconciled", "receipt": receipt}
 
@@ -418,6 +468,7 @@ class SyntheticGateRehearsal:
                 "UPDATE synthetic_delivery_ledger SET state=?,receipt_json=? WHERE command_id=?",
                 (status, json.dumps(receipt), command_id),
             )
+            self._record_transition(connection, command_id, str(row["state"]), status, "cancel")
         return {"kind": status, "receipt": receipt}
 
     def redact(self, command_id: str) -> None:
@@ -434,6 +485,7 @@ class SyntheticGateRehearsal:
                           receipt_json=NULL,redacted=1 WHERE command_id=?""",
                 (command_id,),
             )
+            self._record_transition(connection, command_id, str(row["state"]), "redacted", "redact")
 
     def snapshot(self, command_id: str) -> JsonObject:
         self._require_enabled()
@@ -443,6 +495,12 @@ class SyntheticGateRehearsal:
                      FROM synthetic_delivery_ledger WHERE command_id=?""",
                 (command_id,),
             ).fetchone()
+            transitions = connection.execute(
+                """SELECT ordinal,from_state,to_state,action
+                     FROM synthetic_delivery_transitions
+                    WHERE command_id=? ORDER BY ordinal""",
+                (command_id,),
+            ).fetchall()
         if row is None:
             raise SyntheticGateError("GATE_SYNTHETIC_COMMAND_NOT_FOUND")
         return {
@@ -451,6 +509,16 @@ class SyntheticGateRehearsal:
             "receipt": json.loads(row["receipt_json"]) if row["receipt_json"] else None,
             "redacted": bool(row["redacted"]),
             "provider_spy_calls": self.provider.call_count(str(row["idempotency_key"])),
+            "transition_count": len(transitions),
+            "transitions": [
+                {
+                    "ordinal": int(item["ordinal"]),
+                    "from": item["from_state"],
+                    "to": item["to_state"],
+                    "action": item["action"],
+                }
+                for item in transitions
+            ],
         }
 
 

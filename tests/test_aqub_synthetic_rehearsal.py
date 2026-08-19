@@ -79,14 +79,11 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
         root = Path(__file__).parents[1]
         manifest = json.loads(
             (
-                root
-                / "contracts/aqub/v2/rehearsal/food-synthetic-rehearsal-manifest.v1.json"
+                root / "contracts/aqub/v2/rehearsal/food-synthetic-rehearsal-manifest.v1.json"
             ).read_text()
         )
         fixture = (root / "contracts/aqub/v2/rehearsal/food-synthetic-command.v1.json").read_bytes()
-        self.assertEqual(
-            hashlib.sha256(fixture).hexdigest(), manifest["shared_fixture"]["sha256"]
-        )
+        self.assertEqual(hashlib.sha256(fixture).hexdigest(), manifest["shared_fixture"]["sha256"])
         self.assertEqual(
             manifest["exact_dependencies"]["aqub_work_h"],
             "b9448e247207f9d0db159fe142857bc80db48b20",
@@ -96,7 +93,36 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
             "74c572f73fb6d78756d125f08f66af7a4adb2eeb",
         )
         self.assertEqual(len(manifest["crash_matrix"]), 8)
+        required_observation_fields = {
+            "intermediate_aqub_state",
+            "intermediate_gate_state",
+            "final_aqub_state",
+            "final_gate_state",
+            "intermediate_aqub_transition_count",
+            "intermediate_gate_transition_count",
+            "final_aqub_transition_count",
+            "final_gate_transition_count",
+            "intermediate_recovery_owner",
+            "recovery_action",
+            "provider_spy_calls",
+            "blind_provider_retry_forbidden",
+            "acknowledged_without_recovery_owner",
+            "next_legal_action",
+            "replay_after_redaction",
+        }
+        self.assertTrue(
+            all(required_observation_fields <= item.keys() for item in manifest["crash_matrix"])
+        )
         self.assertTrue(all(item["provider_spy_calls"] <= 1 for item in manifest["crash_matrix"]))
+        self.assertTrue(
+            all(item["blind_provider_retry_forbidden"] for item in manifest["crash_matrix"])
+        )
+        self.assertTrue(
+            all(
+                item["acknowledged_without_recovery_owner"] == 0
+                for item in manifest["crash_matrix"]
+            )
+        )
         self.assertEqual(manifest["runtime_surface"]["migrations_added"], 0)
 
     def test_default_off_has_no_entrypoint_or_database_effect(self) -> None:
@@ -116,7 +142,10 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
             gate.accept_raw(tampered, signature(body))
         accepted = gate.accept_raw(body, signature(body))
         self.assertEqual(accepted["ack"]["status"], "committed")
-        self.assertEqual(gate.snapshot(str(value["command_id"]))["provider_spy_calls"], 0)
+        snapshot = gate.snapshot(str(value["command_id"]))
+        self.assertEqual(snapshot["provider_spy_calls"], 0)
+        self.assertEqual(snapshot["transition_count"], 1)
+        self.assertEqual(snapshot["transitions"][0]["action"], "accept")
 
     def test_before_accept_and_after_accept_restart_converge_without_second_send(self) -> None:
         for label, accept_before_restart in (("before-accept", False), ("after-accept", True)):
@@ -136,6 +165,7 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
                 snapshot = restarted.snapshot(str(value["command_id"]))
                 self.assertEqual(snapshot["state"], "sent")
                 self.assertEqual(snapshot["provider_spy_calls"], 1)
+                self.assertEqual(snapshot["transition_count"], 3)
 
     def test_provider_boundary_and_result_settle_crashes_become_reconcile_only(self) -> None:
         scenarios = (
@@ -171,6 +201,8 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
                 self.assertEqual(reconciled["receipt"]["status"], reconciled_state)
                 snapshot = restarted.snapshot(str(value["command_id"]))
                 self.assertEqual(snapshot["provider_spy_calls"], expected_calls)
+                expected_transitions = 4 if reconciled_state == "sent" else 3
+                self.assertEqual(snapshot["transition_count"], expected_transitions)
 
     def test_provider_unknown_later_reconciles_terminal_without_resend(self) -> None:
         value = command("unknown-later-terminal")
@@ -184,7 +216,9 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
         restarted = service(self.path)
         terminal = restarted.reconcile(str(value["command_id"]))
         self.assertEqual(terminal["receipt"]["status"], "sent")
-        self.assertEqual(restarted.snapshot(str(value["command_id"]))["provider_spy_calls"], 1)
+        snapshot = restarted.snapshot(str(value["command_id"]))
+        self.assertEqual(snapshot["provider_spy_calls"], 1)
+        self.assertEqual(snapshot["transition_count"], 4)
 
     def test_terminal_survives_restart_and_duplicate_accept_returns_receipt(self) -> None:
         value = command("terminal-before-aqub")
@@ -196,7 +230,9 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
         duplicate = restarted.accept_raw(body, signature(body))
         self.assertEqual(duplicate["ack"]["status"], "duplicate")
         self.assertEqual(duplicate["receipt"]["status"], "failed")
-        self.assertEqual(restarted.snapshot(str(value["command_id"]))["provider_spy_calls"], 1)
+        snapshot = restarted.snapshot(str(value["command_id"]))
+        self.assertEqual(snapshot["provider_spy_calls"], 1)
+        self.assertEqual(snapshot["transition_count"], 3)
 
     def test_revoke_before_dispatch_fails_terminal_with_zero_provider_calls(self) -> None:
         route = {"active": True}
@@ -208,7 +244,9 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
         terminal = gate.dispatch(str(value["command_id"]))
         self.assertEqual(terminal["receipt"]["status"], "failed")
         self.assertEqual(terminal["receipt"]["failure_code"], "AQUB_V2_ROUTE_NOT_ACTIVE")
-        self.assertEqual(gate.snapshot(str(value["command_id"]))["provider_spy_calls"], 0)
+        snapshot = gate.snapshot(str(value["command_id"]))
+        self.assertEqual(snapshot["provider_spy_calls"], 0)
+        self.assertEqual(snapshot["transition_count"], 2)
 
     def test_delete_redaction_makes_replay_impossible(self) -> None:
         value = command("delete-no-replay")
@@ -220,6 +258,7 @@ class SyntheticGateCrashMatrixTest(unittest.TestCase):
         snapshot = gate.snapshot(str(value["command_id"]))
         self.assertEqual(snapshot["state"], "redacted")
         self.assertEqual(snapshot["provider_spy_calls"], 1)
+        self.assertEqual(snapshot["transition_count"], 4)
         replay = service(self.path).accept_raw(body, signature(body))
         self.assertEqual(replay["ack"]["status"], "rejected")
         self.assertEqual(replay["ack"]["reason_code"], "AQUB_V2_CONTENT_REDACTED")

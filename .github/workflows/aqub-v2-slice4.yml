@@ -12,12 +12,15 @@ on:
       - "app/application/aqub_contract_v2.py"
       - "app/application/aqub_delivery_v2.py"
       - "app/application/aqub_delivery_v2_store.py"
+      - "app/application/aqub_synthetic_rehearsal.py"
       - "app/core/config.py"
       - "app/main.py"
       - "app/models/aqub_delivery_v2.py"
       - "app/models/__init__.py"
       - "contracts/aqub/v2/fixtures/delivery-command.valid.json"
       - "contracts/aqub/v2/schemas/delivery-command.v2.schema.json"
+      - "contracts/aqub/v2/rehearsal/food-synthetic-command.v1.json"
+      - "contracts/aqub/v2/rehearsal/food-synthetic-rehearsal-manifest.v1.json"
       - "docs/runbooks/aqub-v2-slice5-rollout.md"
       - "docs/privacy/aqub-v2-data-manifest.json"
       - "docs/privacy/aqub-v2-policy-decisions.md"
@@ -26,6 +29,8 @@ on:
       - "tests/test_aqub_delivery_v2.py"
       - "tests/test_aqub_delivery_v2_internal.py"
       - "tests/test_aqub_data_lifecycle_v2.py"
+      - "tests/test_aqub_synthetic_rehearsal.py"
+      - "tests/support/aqub_synthetic_rehearsal_bridge.py"
 
 permissions:
   contents: read
@@ -36,6 +41,7 @@ concurrency:
 
 jobs:
   rehearsal:
+    name: aqub-transport / exact-head real Work I rehearsal
     runs-on: ubuntu-latest
     timeout-minutes: 12
     services:
@@ -53,6 +59,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      AQUB_REHEARSAL_HEAD_SHA: 830cd6161b27ebbc9b817d72b38090b9f6c9a2c6
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gate
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
@@ -86,6 +93,30 @@ jobs:
           tests/test_aqub_delivery_v2.py
           tests/test_aqub_delivery_v2_internal.py
           tests/test_aqub_data_lifecycle_v2.py
+          tests/test_aqub_synthetic_rehearsal.py
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Checkout literal AQUB rehearsal head
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: AlphaCenter/aqub
+          ref: ${{ env.AQUB_REHEARSAL_HEAD_SHA }}
+          path: work-i-aqub
+          persist-credentials: false
+      - name: Assert literal AQUB rehearsal head
+        run: test "$(git -C work-i-aqub rev-parse HEAD)" = "$AQUB_REHEARSAL_HEAD_SHA"
+      - name: Real AQUB coordinator to Gate ledger two-repository rehearsal
+        run: |
+          cmp \
+            work-i-aqub/contracts/rehearsal/food-synthetic-command.v1.json \
+            contracts/aqub/v2/rehearsal/food-synthetic-command.v1.json
+          cmp \
+            work-i-aqub/contracts/rehearsal/food-synthetic-rehearsal-manifest.v1.json \
+            contracts/aqub/v2/rehearsal/food-synthetic-rehearsal-manifest.v1.json
+          cd work-i-aqub
+          WORK_I_GATE_CHECKOUT="$GITHUB_WORKSPACE" \
+            node --test test/omark-food-two-repo-rehearsal.test.js
       - name: Migration and schema drift rehearsal
         run: |
           alembic upgrade head
