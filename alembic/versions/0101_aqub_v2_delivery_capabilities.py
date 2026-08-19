@@ -274,10 +274,10 @@ BEGIN
   END IF;
 
   SELECT r.* INTO current_route
-    FROM {q}.aqub_v2_route_authority r
+   FROM {q}.aqub_v2_route_authority r
    WHERE r.installation_ref=p_command_json->>'installation_ref'
      AND r.conversation_ref=p_command_json->>'conversation_ref'
-   FOR KEY SHARE;
+   FOR SHARE;
   IF NOT FOUND OR current_route.state <> 'active' OR
      current_route.cube_ref IS DISTINCT FROM p_command_json->>'cube_ref' OR
      current_route.route_generation::text IS DISTINCT FROM
@@ -413,10 +413,10 @@ BEGIN
   END IF;
 
   SELECT r.* INTO current_route
-    FROM {q}.aqub_v2_route_authority r
+   FROM {q}.aqub_v2_route_authority r
    WHERE r.installation_ref=delivery.installation_ref
      AND r.conversation_ref=delivery.conversation_ref
-   FOR KEY SHARE;
+   FOR SHARE;
   IF NOT FOUND OR current_route.state <> 'active' OR
      current_route.cube_ref IS DISTINCT FROM delivery.cube_ref OR
      current_route.route_generation IS DISTINCT FROM delivery.route_generation THEN

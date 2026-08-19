@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
@@ -710,5 +711,97 @@ async def test_capability_replay_recovers_terminal_and_sql_rejects_mismatch() ->
         assert recovered_reconciliation["ack"]["status"] == "duplicate"
         assert recovered_reconciliation["receipt"] == reconciled["receipt"]
         assert "conversation_ref" not in json.dumps(recovered, sort_keys=True)
+    finally:
+        await drop_schema(schema, admin, engine)
+
+
+@pytest.mark.anyio
+async def test_route_update_serializes_accept_and_begin_rechecks_fail_closed() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    schema, admin, engine = await schema_engine(database_url)
+    try:
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as route_session:
+            await seed_route(route_session)
+
+        raced_accept = command(key="food/reply/accept-route-race")
+        async with sessions() as route_writer, sessions() as accepting_session:
+            await route_writer.execute(
+                update(AQUBV2RouteAuthority)
+                .values(state="hold", authority_epoch=2)
+                .where(
+                    AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
+                    AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
+                )
+            )
+            accept_task = asyncio.create_task(
+                AQUBV2DeliverySQLStore(accepting_session, schema=schema).accept(
+                    parse_delivery_command_v2(raced_accept)
+                )
+            )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(accept_task), timeout=0.2)
+            await route_writer.commit()
+            rejected_accept = await accept_task
+
+        assert rejected_accept["ack"]["status"] == "rejected"
+        assert rejected_accept["ack"]["reason_code"] == "AQUB_V2_ROUTE_NOT_ACTIVE"
+
+        async with sessions() as check_session:
+            persisted = await check_session.scalar(
+                select(func.count())
+                .select_from(AQUBV2DeliveryLedger)
+                .where(
+                    AQUBV2DeliveryLedger.command_id
+                    == UUID(raced_accept["command_id"])
+                )
+            )
+        assert persisted == 0
+
+        async with sessions() as restore_session:
+            await restore_session.execute(
+                update(AQUBV2RouteAuthority)
+                .values(state="active", authority_epoch=3)
+                .where(
+                    AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
+                    AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
+                )
+            )
+            await restore_session.commit()
+
+        raced_begin = command(key="food/reply/begin-route-race")
+        command_id = UUID(raced_begin["command_id"])
+        async with sessions() as accept_session:
+            accepted = await AQUBV2DeliverySQLStore(
+                accept_session,
+                schema=schema,
+            ).accept(parse_delivery_command_v2(raced_begin))
+        assert accepted["ack"]["status"] == "committed"
+
+        async with sessions() as route_writer, sessions() as dispatch_session:
+            await route_writer.execute(
+                update(AQUBV2RouteAuthority)
+                .values(state="hold", authority_epoch=4)
+                .where(
+                    AQUBV2RouteAuthority.installation_ref == ROUTE.installation_ref,
+                    AQUBV2RouteAuthority.conversation_ref == "conversation:aopaque0",
+                )
+            )
+            begin_task = asyncio.create_task(
+                AQUBV2DeliverySQLStore(
+                    dispatch_session,
+                    schema=schema,
+                ).begin_dispatch(command_id)
+            )
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(begin_task), timeout=0.2)
+            await route_writer.commit()
+            rejected_begin = await begin_task
+
+        assert rejected_begin["kind"] == "rejected"
+        assert rejected_begin["command"] is None
+        assert rejected_begin["receipt"]["failure_code"] == "AQUB_V2_ROUTE_NOT_ACTIVE"
     finally:
         await drop_schema(schema, admin, engine)

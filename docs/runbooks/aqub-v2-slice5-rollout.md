@@ -64,16 +64,20 @@ With isolated synthetic schemas and no provider:
    bytes. Expect `committed`, `duplicate`, `rejected`.
 6. Hold the route after acceptance and call `begin_aqub_v2_dispatch`. Expect a
    correlated rejection before any command is exposed to a provider.
-7. On an active route, begin once, mark the outcome unknown, restart, and prove
+7. In two database sessions, leave a route hold/generation update uncommitted
+   while calling accept and begin. Both calls must remain blocked; after the
+   route commit they must observe the new authority and reject without inserting
+   or exposing a stale command.
+8. On an active route, begin once, mark the outcome unknown, restart, and prove
    a second begin returns `not_dispatchable`.
-8. Replay the stored command through the signed POST. Expect `duplicate` plus
+9. Replay the stored command through the signed POST. Expect `duplicate` plus
    the existing `unknown/reconcile_only` receipt, with no new dispatch.
-9. Reconcile unknown with one correlated `sent` or `failed` receipt, replay
+10. Reconcile unknown with one correlated `sent` or `failed` receipt, replay
    again, and expect `duplicate` plus that terminal receipt.
-10. Present a schema-valid receipt for a different command to both settle and
+11. Present a schema-valid receipt for a different command to both settle and
     reconcile capability paths. Expect the 0100 SQL update guard to reject it
     as uncorrelated.
-11. Search all HTTP bodies, database errors and test output for raw identifiers,
+12. Search all HTTP bodies, database errors and test output for raw identifiers,
    body text, signature material and `conversation_ref`.
 
 ## AQUB acknowledged recovery requirement

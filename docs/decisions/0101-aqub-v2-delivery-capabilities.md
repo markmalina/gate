@@ -40,8 +40,10 @@ Runtime SQL is limited to five `SECURITY DEFINER` operations:
 
 The functions use a fixed `pg_catalog,pg_temp` search path and fully qualified
 tables. The runtime role retains table `SELECT` but receives no direct DML.
-Route authority is checked under lock on new acceptance and rechecked under
-lock immediately before the irreversible send marker. A row already in
+Route authority is checked with `FOR SHARE` on new acceptance and rechecked
+with the same lock immediately before the irreversible send marker. That lock
+conflicts with non-key updates to route state, cube, generation and authority
+epoch; `FOR KEY SHARE` is intentionally insufficient. A row already in
 `sending`, `unknown`, `sent`, `failed` or `rejected` cannot be dispatched
 again. `unknown` remains reconciliation-only.
 
