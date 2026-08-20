@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.aqub_photo_archive import (
     AQUBPhotoArchiveCompletion,
     AQUBPhotoArchiveError,
@@ -23,7 +25,6 @@ from app.application.worker_health import (
 from app.core.config import Settings
 from app.infrastructure.aqub_photo_archive import SqlAQUBPhotoArchiveRepository
 from app.infrastructure.aqub_photo_downloader import TelegramAQUBPhotoDownloader
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 @dataclass(frozen=True, slots=True)
