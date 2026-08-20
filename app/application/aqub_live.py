@@ -47,6 +47,11 @@ class AQUBLiveForwardResult:
     duplicate: bool
     reason: str
     downstream: JsonObject | None = None
+    capture_confirmed: bool = False
+
+
+class AQUBRuntimeUnavailable(RuntimeError):
+    """The durable Gate capture succeeded but AQUB runtime was unavailable."""
 
 
 class AQUBRuntimeClient(Protocol):
@@ -73,20 +78,26 @@ class HttpAQUBRuntimeClient:
         self._timeout_seconds = timeout_seconds
 
     async def post_envelope(self, *, raw_body: bytes, signature: str) -> JsonObject:
-        response = await self._http_client.post(
-            f"{self._base_url}{AQUB_RUNTIME_INBOUND_PATH}",
-            content=raw_body,
-            headers={
-                "content-type": "application/json",
-                "x-aqub-signature": signature,
-            },
-            timeout=self._timeout_seconds,
-        )
+        try:
+            response = await self._http_client.post(
+                f"{self._base_url}{AQUB_RUNTIME_INBOUND_PATH}",
+                content=raw_body,
+                headers={
+                    "content-type": "application/json",
+                    "x-aqub-signature": signature,
+                },
+                timeout=self._timeout_seconds,
+            )
+        except httpx.HTTPError as exc:
+            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable") from exc
         if response.status_code < 200 or response.status_code >= 300:
-            raise RuntimeError(f"aqub_runtime_http_{response.status_code}")
-        value: Any = response.json()
+            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+        try:
+            value: Any = response.json()
+        except ValueError as exc:
+            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable") from exc
         if not isinstance(value, dict) or value.get("ok") is not True:
-            raise RuntimeError("aqub_runtime_response_invalid")
+            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
         return {str(key): item for key, item in value.items()}
 
 
@@ -98,7 +109,7 @@ class AQUBLiveIngressAdapter:
         *,
         binding: AQUBTransportBinding,
         store: AQUBTransportStore,
-        runtime: AQUBRuntimeClient,
+        runtime: AQUBRuntimeClient | None,
     ) -> None:
         self._binding = binding
         self._store = store
@@ -143,16 +154,37 @@ class AQUBLiveIngressAdapter:
             raw_body,
             hashlib.sha256,
         ).hexdigest()
-        downstream = await self._runtime.post_envelope(
-            raw_body=raw_body,
-            signature=signature,
+        capture_confirmed = (
+            role is AQUBTransportRole.ALPHA and _plain_capture_text(inbound.command)
         )
+        try:
+            if self._runtime is None:
+                raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+            downstream = await self._runtime.post_envelope(
+                raw_body=raw_body,
+                signature=signature,
+            )
+        except AQUBRuntimeUnavailable:
+            if not capture_confirmed:
+                raise
+            return AQUBLiveForwardResult(
+                accepted=True,
+                duplicate=acceptance.disposition is AQUBStoreDisposition.DUPLICATE,
+                reason="aqub_live_durable_only",
+                capture_confirmed=True,
+            )
         return AQUBLiveForwardResult(
             accepted=True,
             duplicate=acceptance.disposition is AQUBStoreDisposition.DUPLICATE,
             reason="aqub_live_committed",
             downstream=downstream,
+            capture_confirmed=capture_confirmed,
         )
+
+
+def _plain_capture_text(text: str) -> bool:
+    stripped = text.strip()
+    return bool(stripped) and not stripped.startswith("/")
 
 
 def _program_like_text(text: str) -> bool:

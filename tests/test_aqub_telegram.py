@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from app.api.aqub_telegram import (
+    _live_response,
     get_aqub_production_binding,
     get_aqub_transport_store,
     router,
 )
 from app.api.telegram_ingress import TELEGRAM_WEBHOOK_CHAIN
+from app.application.aqub_live import AQUBLiveForwardResult
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
@@ -95,8 +99,15 @@ def _update(**message_changes: object) -> dict[str, object]:
     return {"update_id": 500, "message": message}
 
 
-def _client(settings: Settings, store: DurableStore) -> TestClient:
+def _client(
+    settings: Settings,
+    store: DurableStore,
+    *,
+    http_client: httpx.AsyncClient | None = None,
+) -> TestClient:
     app = FastAPI()
+    if http_client is not None:
+        app.state.http_client = http_client
     app.include_router(router)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_aqub_transport_store] = lambda: store
@@ -178,7 +189,7 @@ def test_wrong_webhook_secret_is_forbidden() -> None:
     assert store.commands == []
 
 
-def test_ordinary_owned_message_without_runtime_url_fails_closed(
+def test_ordinary_owned_message_without_runtime_url_is_durable_and_confirmed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GATE_AQUB_RUNTIME_URL", raising=False)
@@ -186,8 +197,126 @@ def test_ordinary_owned_message_without_runtime_url_fails_closed(
     with _client(_settings(), store) as client:
         response = _post(client, _update(text="обычное сообщение"))
 
+    assert response.status_code == 200
+    assert response.json() == {
+        "method": "sendMessage",
+        "chat_id": int(TEST_CHAT_ID),
+        "text": "Записал.",
+    }
+    assert [command.command for command in store.commands] == ["обычное сообщение"]
+
+
+def test_duplicate_plain_text_reuses_one_durable_acceptance_and_same_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GATE_AQUB_RUNTIME_URL", raising=False)
+    store = DurableStore()
+    update = _update(text="Съел омлет")
+    with _client(_settings(), store) as client:
+        first = _post(client, update)
+        second = _post(client, update)
+
+    expected = {
+        "method": "sendMessage",
+        "chat_id": int(TEST_CHAT_ID),
+        "text": "Записал.",
+    }
+    assert first.json() == second.json() == expected
+    assert len(store.acceptances) == 1
+    assert [command.external_id for command in store.commands] == ["500", "500"]
+
+
+def test_runtime_exception_after_commit_still_confirms_plain_alpha_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GATE_AQUB_RUNTIME_URL", "https://aqub.example")
+    store = DurableStore()
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("synthetic unavailable", request=request)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(unavailable))
+    try:
+        with _client(_settings(), store, http_client=http_client) as client:
+            response = _post(client, _update(text="Выпил воду"))
+    finally:
+        asyncio.run(http_client.aclose())
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Записал."
+    assert [command.command for command in store.commands] == ["Выпил воду"]
+
+
+def test_command_without_runtime_url_remains_retryable_and_unconfirmed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GATE_AQUB_RUNTIME_URL", raising=False)
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(client, _update(text="/status"))
+
     assert response.status_code == 503
-    assert response.json()["detail"] == "AQUB runtime URL is unavailable"
+    assert response.json()["detail"] == "aqub_runtime_unavailable"
+    assert [command.command for command in store.commands] == ["/status"]
+
+
+def test_unbound_actor_plain_text_gets_no_storage_or_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GATE_AQUB_RUNTIME_URL", raising=False)
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
+            client,
+            _update(
+                text="Съел омлет",
+                **{"from": {"id": 987654321, "is_bot": False}},
+            ),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_unsupported_photo_update_gets_no_confirmation() -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
+            client,
+            _update(
+                text=None,
+                photo=[
+                    {
+                        "file_id": "synthetic-file",
+                        "file_unique_id": "synthetic-unique",
+                        "width": 320,
+                        "height": 240,
+                    }
+                ],
+                caption="Съел омлет",
+            ),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert store.commands == []
+
+
+def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
+    response = _live_response(
+        AQUBLiveForwardResult(
+            accepted=True,
+            duplicate=False,
+            reason="aqub_live_committed",
+            downstream={"result": {"reply_text": "AQUB ответил"}},
+            capture_confirmed=True,
+        ),
+        chat_id=TEST_CHAT_ID,
+    )
+
+    assert response["text"] == "AQUB ответил"
 
 
 def test_visible_receipt_reply_redacts_raw_identifiers_and_secrets() -> None:
