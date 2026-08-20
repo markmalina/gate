@@ -824,5 +824,5 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0098_beta_space_search")
+    assert heads[0].startswith("0099_telegram_caption_backfill")
 

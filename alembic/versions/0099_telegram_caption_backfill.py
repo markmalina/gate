@@ -10,7 +10,6 @@ Only missing text fields are repaired; existing text is never overwritten.
 
 from alembic import op
 
-
 revision = "0099_telegram_caption_backfill"
 down_revision = "0098_beta_space_search"
 branch_labels = None
