@@ -162,13 +162,12 @@ async def test_receipt_contains_no_raw_ids_text_or_signing_key() -> None:
     ("change", "expected_owned"),
     [
         ({"bot_username": "@WrongBot"}, False),
-        ({"chat_id": "-100-other"}, False),
         ({"actor_id": "333-other"}, False),
         ({"command": "/other"}, True),
         ({"occurred_at": READY_AT - timedelta(microseconds=1)}, True),
     ],
 )
-async def test_only_exact_route_can_be_owned(change, expected_owned) -> None:
+async def test_only_exact_bot_and_actor_can_be_owned(change, expected_owned) -> None:
     store = FakeStore()
     result = await AQUBDiagnosticPingAdapter(
         binding=_binding(), store=store
@@ -177,6 +176,18 @@ async def test_only_exact_route_can_be_owned(change, expected_owned) -> None:
     assert result.owned is expected_owned
     assert result.accepted is False
     assert store.commands == []
+
+
+@pytest.mark.anyio
+async def test_exact_owner_ping_in_another_group_is_owned_and_accepted() -> None:
+    store = FakeStore()
+    result = await AQUBDiagnosticPingAdapter(
+        binding=_binding(), store=store
+    ).handle(_inbound(chat_id="-100-other"))
+
+    assert result.owned is True
+    assert result.accepted is True
+    assert [command.chat_id for command in store.commands] == ["-100-other"]
 
 
 @pytest.mark.anyio

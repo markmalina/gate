@@ -382,13 +382,15 @@ class AQUBDiagnosticPingAdapter:
             not binding.enabled
             or inbound.bot_username != AQUB_BOT_USERNAME
             or inbound.bot_username != binding.bot_username
-            or inbound.chat_id != binding.group_chat_id
         ):
             return None
-        if inbound.actor_id == binding.ace_user_id:
-            return AQUBTransportRole.ACE
         if inbound.actor_id == binding.alpha_user_id:
             return AQUBTransportRole.ALPHA
+        if (
+            inbound.chat_id == binding.group_chat_id
+            and inbound.actor_id == binding.ace_user_id
+        ):
+            return AQUBTransportRole.ACE
         return None
 
 

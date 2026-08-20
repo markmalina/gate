@@ -211,7 +211,7 @@ def test_aqub_route_does_not_enter_existing_dispatch_chain() -> None:
     assert all("aqub" not in route for route in TELEGRAM_WEBHOOK_CHAIN)
 
 
-def test_unbound_group_touches_no_storage() -> None:
+def test_same_bound_actor_ping_is_accepted_in_another_group() -> None:
     store = DurableStore()
     with _client(_settings(), store) as client:
         response = _post(
@@ -220,8 +220,9 @@ def test_unbound_group_touches_no_storage() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["owned"] is False
-    assert store.commands == []
+    assert response.json()["method"] == "sendMessage"
+    assert response.json()["chat_id"] == -1007999
+    assert [command.chat_id for command in store.commands] == ["-1007999"]
 
 
 def test_wrong_webhook_secret_is_forbidden() -> None:
@@ -248,6 +249,30 @@ def test_ordinary_owned_message_without_runtime_url_is_durable_and_confirmed(
         "text": "Записал.",
     }
     assert [command.command for command in store.commands] == ["обычное сообщение"]
+
+
+def test_same_bound_actor_text_is_captured_in_another_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GATE_AQUB_RUNTIME_URL", raising=False)
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
+            client,
+            _update(
+                text="Съел омлет",
+                chat={"id": -1007999, "type": "supergroup"},
+            ),
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "method": "sendMessage",
+        "chat_id": -1007999,
+        "text": "Записал.",
+    }
+    assert [command.chat_id for command in store.commands] == ["-1007999"]
+    assert [command.command for command in store.commands] == ["Съел омлет"]
 
 
 def test_duplicate_plain_text_reuses_one_durable_acceptance_and_same_confirmation(
@@ -585,7 +610,7 @@ def test_photo_from_unbound_actor_gets_no_storage_or_confirmation() -> None:
     assert store.commands == []
 
 
-def test_photo_from_other_group_gets_no_storage_or_confirmation() -> None:
+def test_photo_from_same_bound_actor_in_other_group_is_durable_and_confirmed() -> None:
     store = DurableStore()
     with _client(_settings(), store) as client:
         response = _post(
@@ -594,9 +619,15 @@ def test_photo_from_other_group_gets_no_storage_or_confirmation() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["accepted"] is False
-    assert "method" not in response.json()
-    assert store.commands == []
+    assert response.json() == {
+        "method": "sendMessage",
+        "chat_id": -1007999,
+        "text": "Фото принято.",
+    }
+    assert [command.chat_id for command in store.commands] == ["-1007999"]
+    assert [command.content_kind for command in store.commands] == [
+        AQUBTransportContentKind.PHOTO
+    ]
 
 
 def test_photo_store_failure_yields_no_confirmation() -> None:
