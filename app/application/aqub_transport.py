@@ -35,6 +35,7 @@ class AQUBTransportRole(StrEnum):
 class AQUBTransportContentKind(StrEnum):
     TEXT = "text"
     PHOTO = "photo"
+    VOICE = "voice"
 
 
 class AQUBReceiptStatus(StrEnum):
@@ -113,6 +114,43 @@ class AQUBPhotoReference:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AQUBVoiceReference:
+    """Validated provider reference for one Telegram voice message."""
+
+    file_id: str = field(repr=False)
+    file_unique_id: str = field(repr=False)
+    duration: int
+    mime_type: str | None = None
+    file_size: int | None = None
+
+    def __post_init__(self) -> None:
+        for value in (self.file_id, self.file_unique_id):
+            if not value or value != value.strip() or len(value) > 512:
+                raise ValueError("aqub_voice_reference_invalid")
+        if (
+            type(self.duration) is not int
+            or self.duration < 0
+            or self.duration > 3_600
+            or (
+                self.mime_type is not None
+                and (
+                    not isinstance(self.mime_type, str)
+                    or self.mime_type not in {"audio/ogg", "audio/mpeg", "audio/mp4"}
+                )
+            )
+            or (
+                self.file_size is not None
+                and (
+                    type(self.file_size) is not int
+                    or self.file_size < 0
+                    or self.file_size > _TELEGRAM_SAFE_INTEGER_MAX
+                )
+            )
+        ):
+            raise ValueError("aqub_voice_reference_invalid")
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class AQUBTransportInbound:
     """Trusted ingress projection with provider identifiers hidden from repr."""
 
@@ -126,15 +164,24 @@ class AQUBTransportInbound:
     received_at: datetime
     content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
     photo: AQUBPhotoReference | None = field(default=None, repr=False)
+    voice: AQUBVoiceReference | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.content_kind is AQUBTransportContentKind.TEXT:
-            if not isinstance(self.command, str) or self.photo is not None:
+            if (
+                not isinstance(self.command, str)
+                or self.photo is not None
+                or self.voice is not None
+            ):
                 raise ValueError("aqub_text_content_invalid")
             return
         if self.content_kind is AQUBTransportContentKind.PHOTO:
-            if self.command is not None or self.photo is None:
+            if self.command is not None or self.photo is None or self.voice is not None:
                 raise ValueError("aqub_photo_content_invalid")
+            return
+        if self.content_kind is AQUBTransportContentKind.VOICE:
+            if self.command is not None or self.photo is not None or self.voice is None:
+                raise ValueError("aqub_voice_content_invalid")
             return
         raise ValueError("aqub_content_kind_invalid")
 
@@ -155,16 +202,25 @@ class AQUBTransportCommand:
     received_at: datetime
     content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
     photo: AQUBPhotoReference | None = field(default=None, repr=False)
+    voice: AQUBVoiceReference | None = field(default=None, repr=False)
     owned_path: str = AQUB_TELEGRAM_WEBHOOK_PATH
 
     def __post_init__(self) -> None:
         if self.content_kind is AQUBTransportContentKind.TEXT:
-            if not isinstance(self.command, str) or self.photo is not None:
+            if (
+                not isinstance(self.command, str)
+                or self.photo is not None
+                or self.voice is not None
+            ):
                 raise ValueError("aqub_text_content_invalid")
             return
         if self.content_kind is AQUBTransportContentKind.PHOTO:
-            if self.command is not None or self.photo is None:
+            if self.command is not None or self.photo is None or self.voice is not None:
                 raise ValueError("aqub_photo_content_invalid")
+            return
+        if self.content_kind is AQUBTransportContentKind.VOICE:
+            if self.command is not None or self.photo is not None or self.voice is None:
+                raise ValueError("aqub_voice_content_invalid")
             return
         raise ValueError("aqub_content_kind_invalid")
 
@@ -386,10 +442,7 @@ class AQUBDiagnosticPingAdapter:
             return None
         if inbound.actor_id == binding.alpha_user_id:
             return AQUBTransportRole.ALPHA
-        if (
-            inbound.chat_id == binding.group_chat_id
-            and inbound.actor_id == binding.ace_user_id
-        ):
+        if inbound.chat_id == binding.group_chat_id and inbound.actor_id == binding.ace_user_id:
             return AQUBTransportRole.ACE
         return None
 
