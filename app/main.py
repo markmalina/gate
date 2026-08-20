@@ -26,6 +26,8 @@ from app.api.routes import router
 from app.api.sprint12_routes import router as sprint12_router
 from app.api.telegram_ingress import include_telegram_ingress
 from app.application.worker_health import (
+    AQUB_PHOTO_ARCHIVE_PURGE_WORKER,
+    AQUB_PHOTO_ARCHIVE_WORKER,
     REPLY_SEQUENCE_WORKER,
     TELEGRAM_WORKER,
     WorkerHealthRegistry,
@@ -56,6 +58,10 @@ from app.services.telegram_become_webhook import (
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
 from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
+from app.worker.aqub_photo_archive import (
+    run_aqub_photo_archive_purge_worker_loop,
+    run_aqub_photo_archive_worker_loop,
+)
 from app.worker.beta_space import run_beta_space_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
@@ -111,6 +117,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     settings = get_settings()
     telegram_worker_enabled = getattr(settings, "gate_telegram_worker_enabled", False)
+    aqub_photo_archive_enabled = getattr(
+        settings,
+        "gate_aqub_photo_archive_enabled",
+        False,
+    )
+    aqub_photo_archive_purge_enabled = getattr(
+        settings,
+        "gate_aqub_photo_archive_purge_enabled",
+        False,
+    )
     reply_sequence_worker_enabled = getattr(
         settings,
         "gate_reply_sequence_worker_enabled",
@@ -130,6 +146,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     worker_health.register(
         REPLY_SEQUENCE_WORKER,
         enabled=reply_sequence_worker_enabled,
+    )
+    worker_health.register(
+        AQUB_PHOTO_ARCHIVE_WORKER,
+        enabled=aqub_photo_archive_enabled,
+    )
+    worker_health.register(
+        AQUB_PHOTO_ARCHIVE_PURGE_WORKER,
+        enabled=aqub_photo_archive_purge_enabled,
     )
     _app.state.worker_health_registry = worker_health
     aqub_provider_readiness = AQUBProviderReadinessState(enabled=True)
@@ -158,6 +182,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
                 beta_space_task: asyncio.Task[None] | None = None
+                aqub_photo_archive_task: asyncio.Task[None] | None = None
+                aqub_photo_archive_purge_task: asyncio.Task[None] | None = None
                 try:
                     # Neutral process-wide name for shared outbound HTTP. Keep the
                     # Beta alias until its ingress is migrated independently.
@@ -211,6 +237,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 health_reporter=worker_health,
                             )
                         )
+                    if aqub_photo_archive_enabled:
+                        aqub_photo_archive_task = asyncio.create_task(
+                            run_aqub_photo_archive_worker_loop(
+                                settings=settings,
+                                session_factory=database_runtime.session_factory,
+                                http_client=http_client,
+                                health_reporter=worker_health,
+                            )
+                        )
+                    if aqub_photo_archive_purge_enabled:
+                        aqub_photo_archive_purge_task = asyncio.create_task(
+                            run_aqub_photo_archive_purge_worker_loop(
+                                session_factory=database_runtime.session_factory,
+                                health_reporter=worker_health,
+                            )
+                        )
                     if reply_sequence_worker_enabled:
                         reply_sequence_task = asyncio.create_task(
                             run_reply_sequence_worker_loop(
@@ -230,6 +272,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     yield
                 finally:
                     try:
+                        if aqub_photo_archive_purge_task is not None:
+                            if not aqub_photo_archive_purge_task.done():
+                                aqub_photo_archive_purge_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await aqub_photo_archive_purge_task
+                        if aqub_photo_archive_task is not None:
+                            if not aqub_photo_archive_task.done():
+                                aqub_photo_archive_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await aqub_photo_archive_task
                         if beta_space_task is not None:
                             if not beta_space_task.done():
                                 beta_space_task.cancel()

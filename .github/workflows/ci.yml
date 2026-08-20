@@ -210,6 +210,10 @@ jobs:
           tests/test_aqub_provider_status.py
           tests/test_aqub_live.py
           tests/test_aqub_live_delivery_postgres.py
+          tests/test_aqub_photo_archive_downloader.py
+          tests/test_aqub_photo_archive_worker.py
+          tests/test_aqub_photo_archive_lifespan.py
+          tests/test_aqub_photo_archive_postgres.py
 
   windows-enrollment:
     runs-on: windows-latest

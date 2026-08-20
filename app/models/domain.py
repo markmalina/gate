@@ -723,6 +723,16 @@ class TelegramReceipt(Base):
             "status",
             "next_attempt_at",
         ),
+        Index(
+            "ix_telegram_receipts_aqub_photo_discovery",
+            "bot_key",
+            "received_at",
+            "id",
+            postgresql_where=text(
+                "status = 'processed' AND processed_at IS NOT NULL "
+                "AND jsonb_typeof(payload->'message'->'photo') = 'array'"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

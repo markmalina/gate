@@ -10,6 +10,8 @@ from typing import Literal, Protocol
 
 TELEGRAM_WORKER = "telegram"
 REPLY_SEQUENCE_WORKER = "reply_sequence"
+AQUB_PHOTO_ARCHIVE_WORKER = "aqub_photo_archive"
+AQUB_PHOTO_ARCHIVE_PURGE_WORKER = "aqub_photo_archive_purge"
 
 
 class WorkerRuntimeState(StrEnum):

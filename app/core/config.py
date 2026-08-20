@@ -4,9 +4,10 @@ Configuration is loaded from environment variables. Secrets are referenced by va
 name only and must never be committed.
 """
 
+from datetime import datetime
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.telegram_connectors import (
@@ -143,9 +144,30 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias="GATE_AQUB_RECEIPT_SIGNING_KEY",
     )
+    gate_aqub_photo_archive_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_AQUB_PHOTO_ARCHIVE_ENABLED",
+    )
+    gate_aqub_photo_archive_purge_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_AQUB_PHOTO_ARCHIVE_PURGE_ENABLED",
+    )
+    gate_aqub_photo_archive_not_before: datetime | None = Field(
+        default=None,
+        validation_alias="GATE_AQUB_PHOTO_ARCHIVE_NOT_BEFORE",
+    )
+
+    @field_validator("gate_aqub_photo_archive_not_before", mode="before")
+    @classmethod
+    def _blank_aqub_photo_archive_cutoff_is_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     gate_beta_installation_key: str = Field(
         default="", validation_alias="GATE_BETA_INSTALLATION_KEY"
     )
+
     gate_beta_shadow_worker_enabled: bool = Field(
         default=False,
         validation_alias="GATE_BETA_SHADOW_WORKER_ENABLED",
