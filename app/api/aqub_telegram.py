@@ -123,19 +123,19 @@ async def aqub_telegram_ingress(
         return _diagnostic_response(result, chat_id=inbound.chat_id)
 
     runtime_url = os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
-    if not runtime_url:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AQUB runtime URL is unavailable",
+    runtime = (
+        HttpAQUBRuntimeClient(
+            base_url=runtime_url,
+            http_client=_process_http_client(request),
         )
+        if runtime_url
+        else None
+    )
     try:
         live = await AQUBLiveIngressAdapter(
             binding=binding,
             store=store,
-            runtime=HttpAQUBRuntimeClient(
-                base_url=runtime_url,
-                http_client=_process_http_client(request),
-            ),
+            runtime=runtime,
         ).handle(inbound)
     except RuntimeError as exc:
         raise HTTPException(
@@ -296,6 +296,12 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         if domain.get("force_reply") is True:
             response["reply_markup"] = {"force_reply": True, "selective": True}
         return response
+    if result.capture_confirmed:
+        return {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": "Записал.",
+        }
     return {
         "ok": True,
         "owned": True,

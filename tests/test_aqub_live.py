@@ -7,10 +7,13 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from app.application.aqub_live import (
     AQUB_PROGRAM_PROMPT_TEXT,
     AQUBLiveIngressAdapter,
+    AQUBRuntimeUnavailable,
+    HttpAQUBRuntimeClient,
 )
 from app.application.aqub_transport import (
     AQUBDurableAcceptance,
@@ -178,6 +181,81 @@ async def test_exact_live_replay_reuses_gate_receipt_and_same_opaque_refs() -> N
     assert first.duplicate is False
     assert second.duplicate is True
     assert runtime.raw_bodies[0] == runtime.raw_bodies[1]
+
+
+@pytest.mark.anyio
+async def test_plain_alpha_text_is_confirmed_after_durable_capture_without_runtime() -> None:
+    store = Store()
+
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=None,
+    ).handle(inbound(text="Съел омлет"))
+
+    assert result.accepted is True
+    assert result.reason == "aqub_live_durable_only"
+    assert result.capture_confirmed is True
+    assert len(store.commands) == 1
+    assert store.commands[0].command == "Съел омлет"
+
+
+@pytest.mark.anyio
+async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> None:
+    store = Store()
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("synthetic unavailable", request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(unavailable)
+    ) as http_client:
+        result = await AQUBLiveIngressAdapter(
+            binding=binding(),
+            store=store,
+            runtime=HttpAQUBRuntimeClient(
+                base_url="https://aqub.example",
+                http_client=http_client,
+            ),
+        ).handle(inbound(text="Выпил воду"))
+
+    assert result.accepted is True
+    assert result.reason == "aqub_live_durable_only"
+    assert result.capture_confirmed is True
+    assert len(store.commands) == 1
+
+
+@pytest.mark.anyio
+async def test_command_keeps_fail_closed_runtime_semantics_after_durable_capture() -> None:
+    store = Store()
+
+    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_runtime_unavailable"):
+        await AQUBLiveIngressAdapter(
+            binding=binding(),
+            store=store,
+            runtime=None,
+        ).handle(inbound(text="/status"))
+
+    assert len(store.commands) == 1
+
+
+@pytest.mark.anyio
+async def test_candidate_program_gets_no_capture_confirmation_or_runtime_fallback() -> None:
+    store = Store()
+    value = inbound(
+        text="1. Первый шаг\n2. Второй шаг",
+        actor_id=TEST_CANDIDATE_ID,
+        include_program_prompt_reply=False,
+    )
+
+    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_runtime_unavailable"):
+        await AQUBLiveIngressAdapter(
+            binding=binding(),
+            store=store,
+            runtime=None,
+        ).handle(value)
+
+    assert len(store.commands) == 1
 
 
 @pytest.mark.anyio
