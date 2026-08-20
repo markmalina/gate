@@ -113,6 +113,29 @@
       "unresolved_owner_decision": "receipt retention and backup/log treatment"
     },
     {
+      "data_class": "consent_cancellation_fence",
+      "repository": "AlphaCenter/gate",
+      "location": "aqub_v2_delivery_ledger consent_cancellation_* and revoked_consent_* columns",
+      "sensitive_fields": [
+        "cancellation_id",
+        "cancellation_ref",
+        "revoked_consent_ref",
+        "revoked_authority_epoch",
+        "consent_revoked_at",
+        "delivery_receipt_ref"
+      ],
+      "purpose_basis": null,
+      "readers_processors": null,
+      "encrypted_location": null,
+      "retention_deadline": null,
+      "revoke_behavior": "an authenticated closed AQUB envelope bound to exact command ID and command hash atomically changes committed to rejected before provider dispatch; sending or pre-existing unknown remains reconcile-only and cannot be resent",
+      "lifecycle_behavior": "opaque cancellation evidence and its content-free receipt remain as candidate audit/anti-replay evidence when payload content is redacted",
+      "logs_backups_cache": null,
+      "verification": "revoke after ACK yields provider_calls=0, restart is non-dispatchable, exact replay is idempotent, altered epoch or timestamp conflicts, and send-boundary races remain unknown/reconcile-only",
+      "receipt": "gate.aqub-v2-consent-cancellation-receipt.v1",
+      "unresolved_owner_decision": "retention and admissibility of every opaque cancellation evidence field"
+    },
+    {
       "data_class": "anti_replay_tombstone",
       "repository": "AlphaCenter/gate",
       "location": "aqub_v2_delivery_ledger",

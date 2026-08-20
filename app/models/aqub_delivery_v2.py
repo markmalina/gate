@@ -30,6 +30,14 @@ class AQUBV2DeliveryLedger(Base):
     __tablename__ = "aqub_v2_delivery_ledger"
     __table_args__ = (
         UniqueConstraint("installation_ref", "idempotency_key", name="uq_aqub_v2_delivery_key"),
+        UniqueConstraint(
+            "consent_cancellation_id",
+            name="uq_aqub_v2_delivery_consent_cancellation_id",
+        ),
+        UniqueConstraint(
+            "consent_cancellation_ref",
+            name="uq_aqub_v2_delivery_consent_cancellation_ref",
+        ),
         CheckConstraint("route_generation > 0", name="ck_aqub_v2_delivery_generation"),
         CheckConstraint("char_length(command_sha256)=64", name="ck_aqub_v2_command_sha"),
         CheckConstraint(
@@ -75,6 +83,25 @@ class AQUBV2DeliveryLedger(Base):
             "AND lifecycle_receipt_ref IS NOT NULL)",
             name="ck_aqub_v2_delivery_lifecycle_content",
         ),
+        CheckConstraint(
+            "(consent_cancellation_id IS NULL "
+            "AND consent_cancellation_ref IS NULL "
+            "AND revoked_consent_ref IS NULL "
+            "AND revoked_authority_epoch IS NULL "
+            "AND consent_cancellation_receipt IS NULL "
+            "AND consent_revoked_at IS NULL) OR "
+            "(consent_cancellation_id IS NOT NULL "
+            "AND consent_cancellation_ref IS NOT NULL "
+            "AND revoked_consent_ref IS NOT NULL "
+            "AND revoked_authority_epoch IS NOT NULL "
+            "AND revoked_authority_epoch > 0 "
+            "AND consent_cancellation_receipt IS NOT NULL "
+            "AND consent_revoked_at IS NOT NULL "
+            "AND state IN ('rejected','unknown','sent','failed') "
+            "AND (settled_at IS NOT NULL OR content_redacted_at IS NOT NULL) "
+            "AND (receipt_json IS NOT NULL OR content_redacted_at IS NOT NULL))",
+            name="ck_aqub_v2_delivery_consent_cancellation",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -96,6 +123,12 @@ class AQUBV2DeliveryLedger(Base):
     lifecycle_consent_ref: Mapped[str | None] = mapped_column(Text)
     lifecycle_receipt_ref: Mapped[str | None] = mapped_column(Text)
     content_redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consent_cancellation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    consent_cancellation_ref: Mapped[str | None] = mapped_column(Text)
+    revoked_consent_ref: Mapped[str | None] = mapped_column(Text)
+    revoked_authority_epoch: Mapped[int | None] = mapped_column(BigInteger)
+    consent_cancellation_receipt: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    consent_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

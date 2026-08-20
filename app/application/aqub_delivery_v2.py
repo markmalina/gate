@@ -9,10 +9,15 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.aqub_consent_cancellation_v1 import (
+    AQUBV2ConsentCancellationError,
+    parse_aqub_v2_consent_cancellation,
+)
 from app.application.aqub_contract_v2 import (
     AQUBV2Route,
     assert_delivery_correlation_v2,
@@ -276,6 +281,45 @@ class AQUBV2DeliveryExecutor:
             }
         return {"kind": state, "receipt": receipt}
 
+    async def cancel_for_revoked_consent(
+        self,
+        cancellation_value: Mapping[str, Any],
+    ) -> JsonObject:
+        """Fence a committed ACK using a separately authenticated revoke envelope."""
+
+        self._require_enabled()
+        try:
+            cancellation = parse_aqub_v2_consent_cancellation(cancellation_value)
+        except AQUBV2ConsentCancellationError as exc:
+            raise AQUBV2DeliveryExecutorError(exc.code) from exc
+        try:
+            result = await self._session.execute(
+                text(
+                    """
+                    SELECT result_status,receipt_json,cancellation_receipt_json
+                      FROM cancel_aqub_v2_delivery_for_revoked_consent(
+                        CAST(:command_id AS uuid),:command_sha256,
+                        :revoked_consent_ref,:revoked_authority_epoch,
+                        CAST(:cancellation_id AS uuid),:cancellation_ref,
+                        :observed_at
+                      )
+                    """
+                ),
+                cancellation.sql_parameters(),
+            )
+            row = dict(result.mappings().one())
+            await self._session.commit()
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            raise AQUBV2DeliveryExecutorError(
+                "AQUB_V2_CONSENT_CANCELLATION_REFUSED"
+            ) from exc
+        return {
+            "kind": str(row["result_status"]),
+            "receipt": row["receipt_json"],
+            "cancellation_receipt": row["cancellation_receipt_json"],
+        }
+
     async def recover_stale_sending(
         self,
         command_id: UUID,
@@ -358,4 +402,3 @@ class AQUBV2DeliveryExecutor:
             or route.route_generation != command["route_generation"]
         ):
             raise AQUBV2DeliveryExecutorError("AQUB_V2_ROUTE_NOT_ACTIVE")
-

@@ -18,6 +18,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.aqub_consent_cancellation_v1 import (
+    AQUBV2ConsentCancellationError,
+    parse_aqub_v2_consent_cancellation,
+)
 from app.application.aqub_contract_v2 import (
     AQUBV2Document,
     assert_delivery_correlation_v2,
@@ -239,6 +243,36 @@ class AQUBV2DeliverySQLStore:
             "receipt": parse_delivery_receipt_v2(returned).to_wire()
             if returned is not None
             else None,
+        }
+
+    async def cancel_for_revoked_consent(
+        self,
+        cancellation_value: Mapping[str, Any],
+    ) -> JsonObject:
+        """Apply an authenticated revoke envelope before provider dispatch."""
+
+        try:
+            cancellation = parse_aqub_v2_consent_cancellation(cancellation_value)
+        except AQUBV2ConsentCancellationError as exc:
+            raise AQUBV2DeliveryStoreError(exc.code) from exc
+        row = await self._one(
+            f"""
+            SELECT result_status,receipt_json,cancellation_receipt_json
+              FROM {self._schema}.cancel_aqub_v2_delivery_for_revoked_consent(
+                CAST(:command_id AS uuid),:command_sha256,
+                :revoked_consent_ref,:revoked_authority_epoch,
+                CAST(:cancellation_id AS uuid),:cancellation_ref,:observed_at
+              )
+            """,
+            cancellation.sql_parameters(),
+        )
+        receipt = row["receipt_json"]
+        if receipt is not None:
+            receipt = parse_delivery_receipt_v2(receipt).to_wire()
+        return {
+            "kind": str(row["result_status"]),
+            "receipt": receipt,
+            "cancellation_receipt": row["cancellation_receipt_json"],
         }
 
     async def _one(self, statement: str, parameters: Mapping[str, Any]) -> Mapping[str, Any]:

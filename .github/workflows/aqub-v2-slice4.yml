@@ -9,6 +9,7 @@ on:
       - "alembic/versions/0101_aqub_v2_delivery_capabilities.py"
       - "alembic/versions/0102_aqub_v2_data_lifecycle.py"
       - "app/api/aqub_delivery_v2_internal.py"
+      - "app/application/aqub_consent_cancellation_v1.py"
       - "app/application/aqub_contract_v2.py"
       - "app/application/aqub_delivery_v2.py"
       - "app/application/aqub_delivery_v2_store.py"

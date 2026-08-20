@@ -9,10 +9,24 @@ from runpy import run_path
 from uuid import UUID, uuid4
 
 import pytest
+from app.application.aqub_consent_cancellation_v1 import (
+    AQUBV2ConsentCancellationError,
+    cancellation_evidence_ref,
+    parse_aqub_v2_consent_cancellation,
+    serialize_aqub_v2_consent_cancellation,
+)
+from app.application.aqub_contract_v2 import AQUBV2Route
+from app.application.aqub_delivery_v2 import (
+    AQUBV2DeliveryExecutor,
+    AQUBV2DeliveryExecutorError,
+    AQUBV2DeliveryMode,
+)
+from app.application.aqub_delivery_v2_store import AQUBV2DeliverySQLStore
 from app.core.config import get_settings
 from app.models.aqub_delivery_v2 import AQUBV2DeliveryLedger, AQUBV2RouteAuthority
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 def command(command_id: UUID) -> dict[str, object]:
@@ -71,6 +85,12 @@ async def lifecycle_engine(database_url: str):
                  DROP COLUMN lifecycle_consent_ref,
                  DROP COLUMN lifecycle_receipt_ref,
                  DROP COLUMN content_redacted_at,
+                 DROP COLUMN consent_cancellation_id,
+                 DROP COLUMN consent_cancellation_ref,
+                 DROP COLUMN revoked_consent_ref,
+                 DROP COLUMN revoked_authority_epoch,
+                 DROP COLUMN consent_cancellation_receipt,
+                 DROP COLUMN consent_revoked_at,
                  ALTER COLUMN conversation_ref SET NOT NULL,
                  ALTER COLUMN cube_ref SET NOT NULL,
                  ALTER COLUMN command_canonical SET NOT NULL,
@@ -118,6 +138,51 @@ async def assert_rejected(engine, statement: str, parameters: tuple[object, ...]
         with pytest.raises(DBAPIError):
             await connection.exec_driver_sql(statement, parameters)
         await transaction.rollback()
+
+
+def test_consent_cancellation_envelope_is_closed_canonical_and_deterministic() -> None:
+    cancellation_id = UUID("00000000-0000-4000-8000-000000000001")
+    envelope = {
+        "schema_version": "aqub.consent-cancellation.v1",
+        "cancellation_id": str(cancellation_id),
+        "cancellation_ref": "cancel:a00000000000040008000000000000001",
+        "command_id": "00000000-0000-4000-8000-000000000002",
+        "command_sha256": "a" * 64,
+        "revoked_consent_ref": "consent:arevokedevent0",
+        "revoked_authority_epoch": 2,
+        "observed_at": "2026-08-19T12:00:02.000Z",
+    }
+    parsed = parse_aqub_v2_consent_cancellation(envelope)
+    assert parsed.to_wire() == envelope
+    assert serialize_aqub_v2_consent_cancellation(envelope) == json.dumps(
+        envelope,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    assert cancellation_evidence_ref(parsed, kind="delivery") == (
+        "receipt:a9ab19a28cfef1416ec1e4aa233d8b157"
+        "5103cbe5cb5fa8c82a3611405dbac39c"
+    )
+    assert cancellation_evidence_ref(parsed, kind="transport") == (
+        "receipt:a5ce6489856990d4f4c1e753f8d37f95"
+        "f1b3c45543612abc423f4e4b2d0cb81bb"
+    )
+    assert cancellation_evidence_ref(parsed, kind="reconcile") == (
+        "reconcile:a7fe6d8a19b27d6867787b9437eb4bc4"
+        "e858779d26d7d04987ae31cf2687f2851"
+    )
+    invalid_values = (
+        dict(envelope, extra="forbidden"),
+        dict(envelope, revoked_authority_epoch=True),
+        dict(envelope, cancellation_ref="cancel:aforged000"),
+        dict(envelope, observed_at="2026-08-19T12:00:02Z"),
+        dict(envelope, observed_at="2026-08-19T12:00:02.000001Z"),
+    )
+    for invalid in invalid_values:
+        with pytest.raises(AQUBV2ConsentCancellationError):
+            parse_aqub_v2_consent_cancellation(invalid)
 
 
 @pytest.mark.anyio
@@ -341,5 +406,433 @@ async def test_redaction_is_default_off_idempotent_restart_safe_and_anti_replay(
                 assert stored == first
         finally:
             await restarted.dispose()
+    finally:
+        await drop_schema(schema, admin, engine)
+
+
+class ProviderSpy:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def __call__(self, delivery: dict[str, object]) -> str:
+        self.calls.append(delivery)
+        return "message:ashould-not-send"
+
+
+@pytest.mark.anyio
+async def test_ack_then_exact_revoke_cancels_before_provider_and_survives_restart(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    schema, admin, engine = await lifecycle_engine(database_url)
+    provider = ProviderSpy()
+    command_id = uuid4()
+    cancellation_id = uuid4()
+    raw_sentinel = "RAW_FOOD_SENTINEL_MUST_NOT_ENTER_GATE_LOGS"
+    document = command(command_id)
+    document["payload"]["text"] = raw_sentinel
+    route = AQUBV2Route(
+        installation_ref=str(document["installation_ref"]),
+        cube_ref=str(document["cube_ref"]),
+        route_generation=int(document["route_generation"]),
+    )
+    cancellation_ref = f"cancel:a{str(cancellation_id).replace('-', '')}"
+    observed_at = datetime(2026, 8, 19, 12, 0, 2, tzinfo=UTC)
+    envelope: dict[str, object] = {
+        "schema_version": "aqub.consent-cancellation.v1",
+        "cancellation_id": str(cancellation_id),
+        "cancellation_ref": cancellation_ref,
+        "command_id": str(command_id),
+        "command_sha256": "",
+        "revoked_consent_ref": "consent:arevokedevent0",
+        "revoked_authority_epoch": 2,
+        "observed_at": "2026-08-19T12:00:02.000Z",
+    }
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    def executor(session) -> AQUBV2DeliveryExecutor:
+        return AQUBV2DeliveryExecutor(
+            session=session,
+            provider=provider,
+            mode=AQUBV2DeliveryMode.SYNTHETIC_REHEARSAL,
+            clock=lambda: observed_at,
+        )
+
+    try:
+        async with engine.begin() as connection:
+            await connection.exec_driver_sql(
+                """INSERT INTO aqub_v2_route_authority(
+                     installation_ref,conversation_ref,cube_ref,
+                     route_generation,state,authority_epoch
+                   ) VALUES($1,$2,$3,1,'hold',1)""",
+                (
+                    document["installation_ref"],
+                    document["conversation_ref"],
+                    document["cube_ref"],
+                ),
+            )
+            await connection.exec_driver_sql(
+                """UPDATE aqub_v2_route_authority
+                      SET state='active',authority_epoch=2
+                    WHERE installation_ref=$1 AND conversation_ref=$2""",
+                (document["installation_ref"], document["conversation_ref"]),
+            )
+            await connection.exec_driver_sql(
+                "GRANT gate_aqub_v2_lifecycle TO CURRENT_USER"
+            )
+
+        async with sessions() as session:
+            accepted = await executor(session).accept(document, route)
+            command_sha256 = (
+                await session.execute(
+                    text(
+                        "SELECT command_sha256 FROM aqub_v2_delivery_ledger "
+                        "WHERE command_id=:command_id"
+                    ),
+                    {"command_id": command_id},
+                )
+            ).scalar_one()
+        assert accepted["ack"]["status"] == "committed"
+        assert accepted["receipt"] is None
+        envelope["command_sha256"] = command_sha256
+
+        async with sessions() as cancellation_session:
+            await cancellation_session.execute(
+                text("SET ROLE gate_aqub_v2_lifecycle")
+            )
+            cancelled = await executor(cancellation_session).cancel_for_revoked_consent(
+                envelope
+            )
+            await cancellation_session.execute(text("RESET ROLE"))
+            await cancellation_session.commit()
+
+        assert cancelled["kind"] == "cancelled"
+        assert cancelled["receipt"]["status"] == "failed"
+        assert cancelled["receipt"]["failure_code"] == "AQUB_V2_CONSENT_REVOKED"
+        assert cancelled["receipt"]["retry_disposition"] == "do_not_retry"
+        parsed_envelope = parse_aqub_v2_consent_cancellation(envelope)
+        assert cancelled["receipt"]["receipt_ref"] == cancellation_evidence_ref(
+            parsed_envelope,
+            kind="delivery",
+        )
+        assert cancelled["receipt"]["transport_receipt_ref"] == (
+            cancellation_evidence_ref(parsed_envelope, kind="transport")
+        )
+        assert cancelled["cancellation_receipt"] == {
+            "schema_version": "gate.aqub-v2-consent-cancellation-receipt.v1",
+            "cancellation_id": str(cancellation_id),
+            "cancellation_ref": cancellation_ref,
+            "command_id": str(command_id),
+            "command_sha256": command_sha256,
+            "revoked_consent_ref": envelope["revoked_consent_ref"],
+            "revoked_authority_epoch": 2,
+            "observed_at": envelope["observed_at"],
+            "outcome": "cancelled_before_provider",
+            "retry_disposition": "do_not_retry",
+            "delivery_receipt_ref": cancelled["receipt"]["receipt_ref"],
+        }
+
+        async with sessions() as restarted_session:
+            no_send = await executor(restarted_session).dispatch_committed(command_id)
+            duplicate_accept = await executor(restarted_session).accept(document, route)
+        assert no_send["kind"] == "not_dispatchable"
+        assert no_send["state"] == "rejected"
+        assert no_send["receipt"] == cancelled["receipt"]
+        assert duplicate_accept["ack"]["status"] == "duplicate"
+        assert duplicate_accept["receipt"] == cancelled["receipt"]
+        assert provider.calls == []
+
+        async with sessions() as replay_session:
+            await replay_session.execute(text("SET ROLE gate_aqub_v2_lifecycle"))
+            replay = await executor(replay_session).cancel_for_revoked_consent(envelope)
+            forged_values = (
+                dict(envelope, command_sha256="b" * 64),
+                dict(envelope, revoked_authority_epoch=3),
+                dict(envelope, observed_at="2026-08-19T12:00:03.000Z"),
+            )
+            for forged in forged_values:
+                with pytest.raises(
+                    AQUBV2DeliveryExecutorError,
+                    match="AQUB_V2_CONSENT_CANCELLATION_REFUSED",
+                ):
+                    await executor(replay_session).cancel_for_revoked_consent(forged)
+            await replay_session.execute(text("RESET ROLE"))
+            await replay_session.commit()
+        assert replay["kind"] == "duplicate"
+        assert replay["receipt"] == cancelled["receipt"]
+        assert replay["cancellation_receipt"] == cancelled["cancellation_receipt"]
+        assert provider.calls == []
+
+        serialized_evidence = json.dumps(cancelled, sort_keys=True)
+        assert raw_sentinel not in serialized_evidence
+        assert raw_sentinel not in caplog.text
+        assert all(raw_sentinel not in record.getMessage() for record in caplog.records)
+
+        async with engine.connect() as connection:
+            persisted = (
+                await connection.exec_driver_sql(
+                    """SELECT state,send_started_at,consent_cancellation_id,
+                              consent_cancellation_ref,revoked_consent_ref,
+                              revoked_authority_epoch,consent_cancellation_receipt,
+                              consent_revoked_at,receipt_json
+                         FROM aqub_v2_delivery_ledger WHERE command_id=$1""",
+                    (command_id,),
+                )
+            ).mappings().one()
+        assert persisted["state"] == "rejected"
+        assert persisted["send_started_at"] is None
+        assert persisted["consent_cancellation_id"] == cancellation_id
+        assert persisted["consent_cancellation_ref"] == cancellation_ref
+        assert persisted["revoked_consent_ref"] == envelope["revoked_consent_ref"]
+        assert persisted["revoked_authority_epoch"] == 2
+        assert persisted["consent_cancellation_receipt"] == cancelled[
+            "cancellation_receipt"
+        ]
+        assert persisted["consent_revoked_at"] is not None
+        assert persisted["receipt_json"] == cancelled["receipt"]
+        await assert_rejected(
+            engine,
+            f"SELECT * FROM {schema}.cancel_aqub_v2_delivery_for_revoked_consent("
+            "$1,$2,$3,$4,$5,$6,$7::timestamptz)",
+            (
+                command_id,
+                command_sha256,
+                envelope["revoked_consent_ref"],
+                2,
+                cancellation_id,
+                cancellation_ref,
+                datetime(2026, 8, 19, 12, 0, 2, 1, tzinfo=UTC),
+            ),
+        )
+    finally:
+        await drop_schema(schema, admin, engine)
+
+
+@pytest.mark.anyio
+async def test_revoke_after_send_boundary_becomes_reconcile_only_without_resend() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    schema, admin, engine = await lifecycle_engine(database_url)
+    provider = ProviderSpy()
+    command_id = uuid4()
+    cancellation_id = uuid4()
+    document = command(command_id)
+    route = AQUBV2Route(
+        installation_ref=str(document["installation_ref"]),
+        cube_ref=str(document["cube_ref"]),
+        route_generation=int(document["route_generation"]),
+    )
+    observed_at = datetime(2026, 8, 19, 12, 0, 2, tzinfo=UTC)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    def executor(session) -> AQUBV2DeliveryExecutor:
+        return AQUBV2DeliveryExecutor(
+            session=session,
+            provider=provider,
+            mode=AQUBV2DeliveryMode.SYNTHETIC_REHEARSAL,
+            clock=lambda: observed_at,
+        )
+
+    try:
+        async with engine.begin() as connection:
+            await connection.exec_driver_sql(
+                """INSERT INTO aqub_v2_route_authority(
+                     installation_ref,conversation_ref,cube_ref,
+                     route_generation,state,authority_epoch
+                   ) VALUES($1,$2,$3,1,'hold',1)""",
+                (
+                    document["installation_ref"],
+                    document["conversation_ref"],
+                    document["cube_ref"],
+                ),
+            )
+            await connection.exec_driver_sql(
+                """UPDATE aqub_v2_route_authority
+                      SET state='active',authority_epoch=2
+                    WHERE installation_ref=$1 AND conversation_ref=$2""",
+                (document["installation_ref"], document["conversation_ref"]),
+            )
+            await connection.exec_driver_sql(
+                "GRANT gate_aqub_v2_lifecycle TO CURRENT_USER"
+            )
+
+        async with sessions() as session:
+            await executor(session).accept(document, route)
+            command_sha256 = (
+                await session.execute(
+                    text(
+                        "SELECT command_sha256 FROM aqub_v2_delivery_ledger "
+                        "WHERE command_id=:command_id"
+                    ),
+                    {"command_id": command_id},
+                )
+            ).scalar_one()
+            crossed = await AQUBV2DeliverySQLStore(
+                session,
+                schema=schema,
+            ).begin_dispatch(command_id, observed_at=observed_at)
+        assert crossed["kind"] == "dispatch"
+
+        cancellation_ref = f"cancel:a{str(cancellation_id).replace('-', '')}"
+        envelope = {
+            "schema_version": "aqub.consent-cancellation.v1",
+            "cancellation_id": str(cancellation_id),
+            "cancellation_ref": cancellation_ref,
+            "command_id": str(command_id),
+            "command_sha256": command_sha256,
+            "revoked_consent_ref": "consent:arevokedevent1",
+            "revoked_authority_epoch": 4,
+            "observed_at": "2026-08-19T12:00:02.000Z",
+        }
+        async with sessions() as cancellation_session:
+            await cancellation_session.execute(
+                text("SET ROLE gate_aqub_v2_lifecycle")
+            )
+            reconciled_only = await executor(
+                cancellation_session
+            ).cancel_for_revoked_consent(envelope)
+            await cancellation_session.execute(text("RESET ROLE"))
+            await cancellation_session.commit()
+
+        assert reconciled_only["kind"] == "reconcile_only"
+        assert reconciled_only["receipt"]["status"] == "unknown"
+        assert reconciled_only["receipt"]["retry_disposition"] == "reconcile_only"
+        parsed_envelope = parse_aqub_v2_consent_cancellation(envelope)
+        assert reconciled_only["receipt"]["receipt_ref"] == cancellation_evidence_ref(
+            parsed_envelope,
+            kind="delivery",
+        )
+        assert reconciled_only["receipt"]["transport_receipt_ref"] == (
+            cancellation_evidence_ref(parsed_envelope, kind="transport")
+        )
+        assert reconciled_only["receipt"]["reconciliation_ref"] == (
+            cancellation_evidence_ref(parsed_envelope, kind="reconcile")
+        )
+        assert reconciled_only["cancellation_receipt"]["outcome"] == (
+            "send_boundary_crossed_reconcile_only"
+        )
+        assert reconciled_only["cancellation_receipt"]["revoked_authority_epoch"] == 4
+
+        async with sessions() as restarted_session:
+            no_blind_resend = await executor(restarted_session).dispatch_committed(
+                command_id
+            )
+        assert no_blind_resend["kind"] == "not_dispatchable"
+        assert no_blind_resend["state"] == "unknown"
+        assert no_blind_resend["receipt"] == reconciled_only["receipt"]
+        assert provider.calls == []
+    finally:
+        await drop_schema(schema, admin, engine)
+
+
+@pytest.mark.anyio
+async def test_preexisting_unknown_receipt_is_preserved_and_bound_to_revoke() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required")
+    schema, admin, engine = await lifecycle_engine(database_url)
+    provider = ProviderSpy()
+    command_id = uuid4()
+    cancellation_id = uuid4()
+    document = command(command_id)
+    route = AQUBV2Route(
+        installation_ref=str(document["installation_ref"]),
+        cube_ref=str(document["cube_ref"]),
+        route_generation=int(document["route_generation"]),
+    )
+    observed_at = datetime(2026, 8, 19, 12, 0, 2, tzinfo=UTC)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    def executor(session) -> AQUBV2DeliveryExecutor:
+        return AQUBV2DeliveryExecutor(
+            session=session,
+            provider=provider,
+            mode=AQUBV2DeliveryMode.SYNTHETIC_REHEARSAL,
+            clock=lambda: observed_at,
+        )
+
+    try:
+        async with engine.begin() as connection:
+            await connection.exec_driver_sql(
+                """INSERT INTO aqub_v2_route_authority(
+                     installation_ref,conversation_ref,cube_ref,
+                     route_generation,state,authority_epoch
+                   ) VALUES($1,$2,$3,1,'hold',1)""",
+                (
+                    document["installation_ref"],
+                    document["conversation_ref"],
+                    document["cube_ref"],
+                ),
+            )
+            await connection.exec_driver_sql(
+                """UPDATE aqub_v2_route_authority
+                      SET state='active',authority_epoch=2
+                    WHERE installation_ref=$1 AND conversation_ref=$2""",
+                (document["installation_ref"], document["conversation_ref"]),
+            )
+            await connection.exec_driver_sql(
+                "GRANT gate_aqub_v2_lifecycle TO CURRENT_USER"
+            )
+
+        async with sessions() as session:
+            await executor(session).accept(document, route)
+            command_sha256 = (
+                await session.execute(
+                    text(
+                        "SELECT command_sha256 FROM aqub_v2_delivery_ledger "
+                        "WHERE command_id=:command_id"
+                    ),
+                    {"command_id": command_id},
+                )
+            ).scalar_one()
+            store = AQUBV2DeliverySQLStore(session, schema=schema)
+            crossed = await store.begin_dispatch(command_id, observed_at=observed_at)
+            existing_unknown = await store.mark_unknown(
+                command_id,
+                observed_at=observed_at,
+            )
+        assert crossed["kind"] == "dispatch"
+        assert existing_unknown["kind"] == "unknown"
+
+        cancellation_ref = f"cancel:a{str(cancellation_id).replace('-', '')}"
+        envelope = {
+            "schema_version": "aqub.consent-cancellation.v1",
+            "cancellation_id": str(cancellation_id),
+            "cancellation_ref": cancellation_ref,
+            "command_id": str(command_id),
+            "command_sha256": command_sha256,
+            "revoked_consent_ref": "consent:arevokedevent2",
+            "revoked_authority_epoch": 5,
+            "observed_at": "2026-08-19T12:00:02.000Z",
+        }
+        async with sessions() as cancellation_session:
+            await cancellation_session.execute(
+                text("SET ROLE gate_aqub_v2_lifecycle")
+            )
+            cancellation = await executor(
+                cancellation_session
+            ).cancel_for_revoked_consent(envelope)
+            await cancellation_session.execute(text("RESET ROLE"))
+            await cancellation_session.commit()
+
+        assert cancellation["kind"] == "reconcile_only"
+        assert cancellation["receipt"] == existing_unknown["receipt"]
+        assert cancellation["receipt"]["retry_disposition"] == "reconcile_only"
+        assert cancellation["cancellation_receipt"]["delivery_receipt_ref"] == (
+            existing_unknown["receipt"]["receipt_ref"]
+        )
+        assert cancellation["cancellation_receipt"]["outcome"] == (
+            "send_boundary_crossed_reconcile_only"
+        )
+        assert provider.calls == []
+
+        async with sessions() as restarted_session:
+            no_resend = await executor(restarted_session).dispatch_committed(command_id)
+        assert no_resend["kind"] == "not_dispatchable"
+        assert no_resend["state"] == "unknown"
+        assert no_resend["receipt"] == existing_unknown["receipt"]
     finally:
         await drop_schema(schema, admin, engine)
