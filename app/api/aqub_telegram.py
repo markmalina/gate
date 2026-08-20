@@ -50,38 +50,10 @@ db_session_dependency = Depends(get_db_session)
 _TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
 _TELEGRAM_MESSAGE_ID_MAX = (1 << 52) - 1
 _PHOTO_CAPTION_MAX_CHARS = 1_024
-_PHOTO_CONTEXT_OR_MEDIA_CONFLICTS = {
-    "animation",
-    "audio",
-    "author_signature",
-    "business_connection_id",
-    "contact",
-    "dice",
-    "document",
-    "external_reply",
-    "forward_date",
-    "forward_from",
-    "forward_from_chat",
-    "forward_origin",
-    "forward_sender_name",
-    "game",
-    "is_automatic_forward",
-    "live_photo",
-    "location",
-    "media_group_id",
-    "paid_media",
-    "poll",
-    "reply_to_message",
-    "sender_chat",
-    "sticker",
-    "story",
-    "text",
-    "venue",
-    "via_bot",
-    "video",
-    "video_note",
-    "voice",
-}
+_PHOTO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "photo"}
+_PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption"}
+_PHOTO_SIZE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "width", "height"}
+_PHOTO_SIZE_OPTIONAL_FIELDS = {"file_size"}
 
 
 def get_aqub_transport_store(
@@ -317,7 +289,13 @@ def _project_inbound(
 
 
 def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
-    if _PHOTO_CONTEXT_OR_MEDIA_CONFLICTS.intersection(message):
+    message_fields = set(message)
+    if (
+        not _PHOTO_MESSAGE_REQUIRED_FIELDS.issubset(message_fields)
+        or not message_fields.issubset(
+            _PHOTO_MESSAGE_REQUIRED_FIELDS | _PHOTO_MESSAGE_OPTIONAL_FIELDS
+        )
+    ):
         return None
     caption = message.get("caption")
     if "caption" in message and (
@@ -331,6 +309,14 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
     for value in values:
         if not isinstance(value, dict):
             return None
+        photo_size_fields = set(value)
+        if (
+            not _PHOTO_SIZE_REQUIRED_FIELDS.issubset(photo_size_fields)
+            or not photo_size_fields.issubset(
+                _PHOTO_SIZE_REQUIRED_FIELDS | _PHOTO_SIZE_OPTIONAL_FIELDS
+            )
+        ):
+            return None
         file_id = value.get("file_id")
         file_unique_id = value.get("file_unique_id")
         width = value.get("width")
@@ -341,7 +327,7 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
             or not isinstance(file_unique_id, str)
             or type(width) is not int
             or type(height) is not int
-            or (file_size is not None and type(file_size) is not int)
+            or ("file_size" in value and type(file_size) is not int)
         ):
             return None
         try:

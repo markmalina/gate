@@ -416,6 +416,18 @@ def test_duplicate_photo_reuses_one_acceptance_and_same_confirmation() -> None:
                 {
                     "file_id": "f",
                     "file_unique_id": "u",
+                    "width": 320,
+                    "height": 240,
+                    "file_size": None,
+                }
+            ],
+            _MISSING,
+        ),
+        (
+            [
+                {
+                    "file_id": "f",
+                    "file_unique_id": "u",
                     "width": 0,
                     "height": 240,
                     "file_size": -1,
@@ -460,6 +472,50 @@ def test_malformed_photo_gets_no_storage_or_confirmation(
         {"external_reply": {"origin": {"type": "user"}}},
         {"sender_chat": {"id": -10099, "type": "supergroup"}},
         {"media_group_id": "synthetic-album"},
+        {"reply_to_story": {"chat": {"id": -10099}, "id": 7}},
+        {
+            "guest_bot_caller_user": {
+                "id": 987654321,
+                "is_bot": False,
+                "first_name": "Third party",
+            }
+        },
+        {
+            "guest_bot_caller_chat": {
+                "id": -10099,
+                "type": "supergroup",
+                "title": "Third party",
+            }
+        },
+        {
+            "sender_business_bot": {
+                "id": 987654321,
+                "is_bot": True,
+                "first_name": "Third party bot",
+            }
+        },
+        {
+            "receiver_user": {
+                "id": 987654321,
+                "is_bot": False,
+                "first_name": "Third party",
+            }
+        },
+        {
+            "caption_entities": [
+                {
+                    "type": "text_mention",
+                    "offset": 0,
+                    "length": 4,
+                    "user": {
+                        "id": 987654321,
+                        "is_bot": False,
+                        "first_name": "Third party",
+                    },
+                }
+            ]
+        },
+        {"synthetic_unknown_message_field": True},
     ],
 )
 def test_ambiguous_or_third_party_photo_context_is_rejected(
@@ -468,6 +524,26 @@ def test_ambiguous_or_third_party_photo_context_is_rejected(
     store = DurableStore()
     with _client(_settings(), store) as client:
         response = _post(client, _photo_update(**conflict))
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_unknown_photo_size_field_is_rejected_before_storage() -> None:
+    store = DurableStore()
+    photo = [
+        {
+            "file_id": "synthetic-file",
+            "file_unique_id": "synthetic-unique",
+            "width": 320,
+            "height": 240,
+            "synthetic_unknown_photo_field": {"user_id": 987654321},
+        }
+    ]
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update(photo=photo))
 
     assert response.status_code == 200
     assert response.json()["accepted"] is False
@@ -531,6 +607,59 @@ def test_photo_store_failure_yields_no_confirmation() -> None:
     assert response.status_code == 503
     assert "method" not in response.json()
     assert len(store.commands) == 1
+
+
+def test_pre_ready_photo_gets_no_storage_or_confirmation() -> None:
+    store = DurableStore()
+    before_ready = int((TEST_READY_AT - timedelta(seconds=1)).timestamp())
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update(date=before_ready))
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "aqub_event_before_ready"
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_future_photo_gets_no_storage_or_confirmation() -> None:
+    store = DurableStore()
+    future = int((datetime.now(UTC) + timedelta(days=1)).timestamp())
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update(date=future))
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "aqub_timestamp_order_invalid"
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_bot_authored_photo_gets_no_storage_or_confirmation() -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
+            client,
+            _photo_update(
+                **{"from": {"id": int(TEST_ALPHA_USER_ID), "is_bot": True}}
+            ),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_boolean_update_id_photo_gets_no_storage_or_confirmation() -> None:
+    store = DurableStore()
+    update = _photo_update()
+    update["update_id"] = True
+    with _client(_settings(), store) as client:
+        response = _post(client, update)
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
 
 
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
