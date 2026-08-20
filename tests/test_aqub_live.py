@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import httpx
 import pytest
@@ -17,10 +18,12 @@ from app.application.aqub_live import (
 )
 from app.application.aqub_transport import (
     AQUBDurableAcceptance,
+    AQUBPhotoReference,
     AQUBReceiptStatus,
     AQUBStoreDisposition,
     AQUBTransportBinding,
     AQUBTransportCommand,
+    AQUBTransportContentKind,
     AQUBTransportInbound,
 )
 
@@ -57,6 +60,19 @@ class Store:
             causation_id="raw-causation-id",
         )
         return self._created
+
+
+class UncommittedStore(Store):
+    async def accept(self, command: AQUBTransportCommand) -> AQUBDurableAcceptance:
+        self.commands.append(command)
+        return AQUBDurableAcceptance(
+            status=cast(AQUBReceiptStatus, "received"),
+            disposition=AQUBStoreDisposition.CREATED,
+            command_receipt_id="raw-receipt-id",
+            root_event_id="raw-root-id",
+            correlation_id="raw-correlation-id",
+            causation_id="raw-causation-id",
+        )
 
 
 class Runtime:
@@ -122,6 +138,53 @@ def inbound(
         payload=payload,
         occurred_at=occurred,
         received_at=occurred + timedelta(seconds=1),
+    )
+
+
+def photo_inbound(
+    *,
+    update_id: int = 9006,
+    actor_id: str = TEST_ALPHA_ID,
+    chat_id: str = TEST_CHAT_ID,
+    caption: str | None = "Съел омлет",
+) -> AQUBTransportInbound:
+    occurred = READY_AT + timedelta(seconds=1)
+    photo = AQUBPhotoReference(
+        file_id="synthetic-file",
+        file_unique_id="synthetic-unique",
+        width=1280,
+        height=960,
+        file_size=12_345,
+    )
+    message: dict[str, object] = {
+        "message_id": 78,
+        "date": int(occurred.timestamp()),
+        "chat": {"id": int(chat_id), "type": "supergroup"},
+        "from": {"id": int(actor_id), "is_bot": False},
+        "photo": [
+            {
+                "file_id": photo.file_id,
+                "file_unique_id": photo.file_unique_id,
+                "width": photo.width,
+                "height": photo.height,
+                "file_size": photo.file_size,
+            }
+        ],
+    }
+    if caption is not None:
+        message["caption"] = caption
+    payload = {"update_id": update_id, "message": message}
+    return AQUBTransportInbound(
+        bot_username="@AQubAgentBot",
+        external_id=str(update_id),
+        chat_id=chat_id,
+        actor_id=actor_id,
+        command=None,
+        payload=payload,
+        occurred_at=occurred,
+        received_at=occurred + timedelta(seconds=1),
+        content_kind=AQUBTransportContentKind.PHOTO,
+        photo=photo,
     )
 
 
@@ -195,7 +258,7 @@ async def test_plain_alpha_text_is_confirmed_after_durable_capture_without_runti
 
     assert result.accepted is True
     assert result.reason == "aqub_live_durable_only"
-    assert result.capture_confirmed is True
+    assert result.captured_content is AQUBTransportContentKind.TEXT
     assert len(store.commands) == 1
     assert store.commands[0].command == "Съел омлет"
 
@@ -221,7 +284,78 @@ async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> Non
 
     assert result.accepted is True
     assert result.reason == "aqub_live_durable_only"
-    assert result.capture_confirmed is True
+    assert result.captured_content is AQUBTransportContentKind.TEXT
+    assert len(store.commands) == 1
+
+
+@pytest.mark.anyio
+async def test_alpha_photo_commits_reference_without_runtime_or_envelope() -> None:
+    store = Store()
+    runtime = Runtime()
+
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    ).handle(photo_inbound())
+
+    assert result.accepted is True
+    assert result.duplicate is False
+    assert result.reason == "aqub_photo_reference_committed"
+    assert result.captured_content is AQUBTransportContentKind.PHOTO
+    assert len(store.commands) == 1
+    assert store.commands[0].command is None
+    assert store.commands[0].photo is not None
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_exact_photo_replay_reuses_receipt_without_runtime() -> None:
+    store = Store()
+    runtime = Runtime()
+    adapter = AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    )
+
+    first = await adapter.handle(photo_inbound())
+    duplicate = await adapter.handle(photo_inbound())
+
+    assert first.duplicate is False
+    assert duplicate.duplicate is True
+    assert len(store.commands) == 2
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_non_owner_photo_is_not_stored_or_forwarded() -> None:
+    store = Store()
+    runtime = Runtime()
+
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    ).handle(photo_inbound(actor_id=TEST_CANDIDATE_ID))
+
+    assert result.accepted is False
+    assert result.reason == "aqub_route_not_owned"
+    assert store.commands == []
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_photo_requires_committed_store_acceptance_before_confirmation() -> None:
+    store = UncommittedStore()
+
+    with pytest.raises(RuntimeError, match="aqub_store_not_committed"):
+        await AQUBLiveIngressAdapter(
+            binding=binding(),
+            store=store,
+            runtime=None,
+        ).handle(photo_inbound())
+
     assert len(store.commands) == 1
 
 

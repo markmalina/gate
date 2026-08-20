@@ -14,9 +14,12 @@ import httpx
 
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
+    AQUBDurableAcceptance,
+    AQUBReceiptStatus,
     AQUBStoreDisposition,
     AQUBTransportBinding,
     AQUBTransportCommand,
+    AQUBTransportContentKind,
     AQUBTransportInbound,
     AQUBTransportRole,
     AQUBTransportStore,
@@ -47,7 +50,7 @@ class AQUBLiveForwardResult:
     duplicate: bool
     reason: str
     downstream: JsonObject | None = None
-    capture_confirmed: bool = False
+    captured_content: AQUBTransportContentKind | None = None
 
 
 class AQUBRuntimeUnavailable(RuntimeError):
@@ -139,8 +142,20 @@ class AQUBLiveIngressAdapter:
                 command=inbound.command,
                 occurred_at=inbound.occurred_at,
                 received_at=inbound.received_at,
+                content_kind=inbound.content_kind,
+                photo=inbound.photo,
             )
         )
+        _validate_acceptance(acceptance)
+
+        duplicate = acceptance.disposition is AQUBStoreDisposition.DUPLICATE
+        if inbound.content_kind is AQUBTransportContentKind.PHOTO:
+            return AQUBLiveForwardResult(
+                accepted=True,
+                duplicate=duplicate,
+                reason="aqub_photo_reference_committed",
+                captured_content=AQUBTransportContentKind.PHOTO,
+            )
 
         raw_body = _build_signed_envelope_body(
             binding=self._binding,
@@ -154,8 +169,12 @@ class AQUBLiveIngressAdapter:
             raw_body,
             hashlib.sha256,
         ).hexdigest()
-        capture_confirmed = (
-            role is AQUBTransportRole.ALPHA and _plain_capture_text(inbound.command)
+        captured_content = (
+            AQUBTransportContentKind.TEXT
+            if role is AQUBTransportRole.ALPHA
+            and isinstance(inbound.command, str)
+            and _plain_capture_text(inbound.command)
+            else None
         )
         try:
             if self._runtime is None:
@@ -165,26 +184,41 @@ class AQUBLiveIngressAdapter:
                 signature=signature,
             )
         except AQUBRuntimeUnavailable:
-            if not capture_confirmed:
+            if captured_content is None:
                 raise
             return AQUBLiveForwardResult(
                 accepted=True,
-                duplicate=acceptance.disposition is AQUBStoreDisposition.DUPLICATE,
+                duplicate=duplicate,
                 reason="aqub_live_durable_only",
-                capture_confirmed=True,
+                captured_content=captured_content,
             )
         return AQUBLiveForwardResult(
             accepted=True,
-            duplicate=acceptance.disposition is AQUBStoreDisposition.DUPLICATE,
+            duplicate=duplicate,
             reason="aqub_live_committed",
             downstream=downstream,
-            capture_confirmed=capture_confirmed,
+            captured_content=captured_content,
         )
 
 
 def _plain_capture_text(text: str) -> bool:
     stripped = text.strip()
     return bool(stripped) and not stripped.startswith("/")
+
+
+def _validate_acceptance(acceptance: AQUBDurableAcceptance) -> None:
+    if acceptance.status is not AQUBReceiptStatus.COMMITTED:
+        raise RuntimeError("aqub_store_not_committed")
+    if not isinstance(acceptance.disposition, AQUBStoreDisposition):
+        raise RuntimeError("aqub_store_disposition_invalid")
+    for value in (
+        acceptance.command_receipt_id,
+        acceptance.root_event_id,
+        acceptance.correlation_id,
+        acceptance.causation_id,
+    ):
+        if not value or len(value) > 1_024:
+            raise RuntimeError("aqub_store_reference_invalid")
 
 
 def _program_like_text(text: str) -> bool:
@@ -195,6 +229,11 @@ def _program_like_text(text: str) -> bool:
 
 
 def _candidate_input_allowed(inbound: AQUBTransportInbound) -> bool:
+    if (
+        inbound.content_kind is not AQUBTransportContentKind.TEXT
+        or not isinstance(inbound.command, str)
+    ):
+        return False
     text = inbound.command.strip()
     if _CANDIDATE_COMMAND_RE.match(text) is not None:
         return True
@@ -216,6 +255,8 @@ def _bound_role(
         return None
     if inbound.actor_id == binding.alpha_user_id:
         return AQUBTransportRole.ALPHA
+    if inbound.content_kind is not AQUBTransportContentKind.TEXT:
+        return None
     if inbound.actor_id == binding.ace_user_id and binding.ace_user_id != "__unbound_ace__":
         return AQUBTransportRole.ACE
     if _candidate_input_allowed(inbound):
@@ -262,6 +303,11 @@ def _build_signed_envelope_body(
     command_receipt_id: str,
     payload_sha256: str,
 ) -> bytes:
+    if (
+        inbound.content_kind is not AQUBTransportContentKind.TEXT
+        or not isinstance(inbound.command, str)
+    ):
+        raise RuntimeError("aqub_text_content_invalid")
     message = inbound.payload.get("message")
     if not isinstance(message, Mapping) or type(message.get("message_id")) is not int:
         raise RuntimeError("aqub_message_id_invalid")

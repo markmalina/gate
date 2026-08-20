@@ -22,12 +22,19 @@ AQUB_TELEGRAM_WEBHOOK_PATH = "/telegram/aqub/preflight"
 AQUB_RECEIPT_SOURCE = "telegram_bot_api"
 
 JsonObject = dict[str, Any]
+_TELEGRAM_SAFE_INTEGER_MAX = (1 << 52) - 1
+_TELEGRAM_PHOTO_DIMENSION_MAX = 100_000
 
 
 class AQUBTransportRole(StrEnum):
     ACE = "ace"
     ALPHA = "alpha"
     CANDIDATE = "candidate"
+
+
+class AQUBTransportContentKind(StrEnum):
+    TEXT = "text"
+    PHOTO = "photo"
 
 
 class AQUBReceiptStatus(StrEnum):
@@ -73,17 +80,63 @@ class AQUBTransportBinding:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AQUBPhotoReference:
+    """Validated provider reference for one preferred Telegram photo size."""
+
+    file_id: str = field(repr=False)
+    file_unique_id: str = field(repr=False)
+    width: int
+    height: int
+    file_size: int | None = None
+
+    def __post_init__(self) -> None:
+        for value in (self.file_id, self.file_unique_id):
+            if not value or value != value.strip() or len(value) > 512:
+                raise ValueError("aqub_photo_reference_invalid")
+        if (
+            type(self.width) is not int
+            or self.width < 1
+            or self.width > _TELEGRAM_PHOTO_DIMENSION_MAX
+            or type(self.height) is not int
+            or self.height < 1
+            or self.height > _TELEGRAM_PHOTO_DIMENSION_MAX
+            or (
+                self.file_size is not None
+                and (
+                    type(self.file_size) is not int
+                    or self.file_size < 0
+                    or self.file_size > _TELEGRAM_SAFE_INTEGER_MAX
+                )
+            )
+        ):
+            raise ValueError("aqub_photo_reference_invalid")
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class AQUBTransportInbound:
-    """Trusted ingress projection. Provider identifiers never enter receipts."""
+    """Trusted ingress projection with provider identifiers hidden from repr."""
 
     bot_username: str
     external_id: str = field(repr=False)
     chat_id: str = field(repr=False)
     actor_id: str = field(repr=False)
-    command: str = field(repr=False)
+    command: str | None = field(repr=False)
     payload: Mapping[str, Any] = field(repr=False)
     occurred_at: datetime
     received_at: datetime
+    content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
+    photo: AQUBPhotoReference | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.content_kind is AQUBTransportContentKind.TEXT:
+            if not isinstance(self.command, str) or self.photo is not None:
+                raise ValueError("aqub_text_content_invalid")
+            return
+        if self.content_kind is AQUBTransportContentKind.PHOTO:
+            if self.command is not None or self.photo is None:
+                raise ValueError("aqub_photo_content_invalid")
+            return
+        raise ValueError("aqub_content_kind_invalid")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -97,10 +150,23 @@ class AQUBTransportCommand:
     chat_id: str = field(repr=False)
     actor_id: str = field(repr=False)
     role: AQUBTransportRole
-    command: str = field(repr=False)
+    command: str | None = field(repr=False)
     occurred_at: datetime
     received_at: datetime
+    content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
+    photo: AQUBPhotoReference | None = field(default=None, repr=False)
     owned_path: str = AQUB_TELEGRAM_WEBHOOK_PATH
+
+    def __post_init__(self) -> None:
+        if self.content_kind is AQUBTransportContentKind.TEXT:
+            if not isinstance(self.command, str) or self.photo is not None:
+                raise ValueError("aqub_text_content_invalid")
+            return
+        if self.content_kind is AQUBTransportContentKind.PHOTO:
+            if self.command is not None or self.photo is None:
+                raise ValueError("aqub_photo_content_invalid")
+            return
+        raise ValueError("aqub_content_kind_invalid")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -205,7 +271,10 @@ class AQUBDiagnosticPingAdapter:
             return _owned_rejection("aqub_event_before_ready")
         if inbound.received_at < inbound.occurred_at:
             return _owned_rejection("aqub_timestamp_order_invalid")
-        if inbound.command != AQUB_PING_COMMAND:
+        if (
+            inbound.content_kind is not AQUBTransportContentKind.TEXT
+            or inbound.command != AQUB_PING_COMMAND
+        ):
             return _owned_rejection("aqub_command_unsupported")
 
         payload_sha256 = hashlib.sha256(_canonical(inbound.payload)).hexdigest()
@@ -221,6 +290,8 @@ class AQUBDiagnosticPingAdapter:
                 command=inbound.command,
                 occurred_at=inbound.occurred_at,
                 received_at=inbound.received_at,
+                content_kind=inbound.content_kind,
+                photo=inbound.photo,
             )
         )
         _validate_acceptance(acceptance)

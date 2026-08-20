@@ -22,6 +22,7 @@ from app.application.aqub_transport import (
     AQUBStoreDisposition,
     AQUBTransportBinding,
     AQUBTransportCommand,
+    AQUBTransportContentKind,
 )
 from app.core.config import Settings, get_settings
 from fastapi import FastAPI
@@ -31,6 +32,7 @@ TEST_CHAT_ID = "-1001234567890"
 TEST_ALPHA_USER_ID = "123456789"
 TEST_READY_AT = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
 TEST_SIGNING_KEY = b"0123456789abcdef0123456789abcdef-test"
+_MISSING = object()
 
 
 class DurableStore:
@@ -61,6 +63,12 @@ class DurableStore:
         )
         self.acceptances[key] = created
         return created
+
+
+class FailingStore(DurableStore):
+    async def accept(self, command: AQUBTransportCommand) -> AQUBDurableAcceptance:
+        self.commands.append(command)
+        raise RuntimeError("synthetic_store_unavailable")
 
 
 def _settings(**changes: object) -> Settings:
@@ -97,6 +105,42 @@ def _update(**message_changes: object) -> dict[str, object]:
     }
     message.update(message_changes)
     return {"update_id": 500, "message": message}
+
+
+def _photo_update(
+    *,
+    caption: object = _MISSING,
+    photo: object = _MISSING,
+    **message_changes: object,
+) -> dict[str, object]:
+    update = _update()
+    message = update["message"]
+    assert isinstance(message, dict)
+    message.pop("text")
+    message["photo"] = (
+        [
+            {
+                "file_id": "synthetic-file-small",
+                "file_unique_id": "synthetic-unique-small",
+                "width": 320,
+                "height": 240,
+                "file_size": 1_234,
+            },
+            {
+                "file_id": "synthetic-file-large",
+                "file_unique_id": "synthetic-unique-large",
+                "width": 1280,
+                "height": 960,
+                "file_size": 12_345,
+            },
+        ]
+        if photo is _MISSING
+        else photo
+    )
+    if caption is not _MISSING:
+        message["caption"] = caption
+    message.update(message_changes)
+    return update
 
 
 def _client(
@@ -280,28 +324,213 @@ def test_unbound_actor_plain_text_gets_no_storage_or_confirmation(
     assert store.commands == []
 
 
-def test_unsupported_photo_update_gets_no_confirmation() -> None:
+def test_owned_photo_reference_is_durable_and_confirmed_without_runtime_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GATE_AQUB_RUNTIME_URL", "https://aqub.example")
+    store = DurableStore()
+    update = _photo_update(caption="Съел омлет")
+    with _client(_settings(), store) as client:
+        response = _post(client, update)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "method": "sendMessage",
+        "chat_id": int(TEST_CHAT_ID),
+        "text": "Фото принято.",
+    }
+    assert len(store.commands) == 1
+    command = store.commands[0]
+    assert command.content_kind is AQUBTransportContentKind.PHOTO
+    assert command.command is None
+    assert command.photo is not None
+    assert command.photo.file_id == "synthetic-file-large"
+    assert command.photo.file_unique_id == "synthetic-unique-large"
+    assert command.payload == update
+
+
+def test_owned_photo_without_caption_is_accepted() -> None:
     store = DurableStore()
     with _client(_settings(), store) as client:
-        response = _post(
-            client,
-            _update(
-                text=None,
-                photo=[
-                    {
-                        "file_id": "synthetic-file",
-                        "file_unique_id": "synthetic-unique",
-                        "width": 320,
-                        "height": 240,
-                    }
-                ],
-                caption="Съел омлет",
-            ),
-        )
+        response = _post(client, _photo_update())
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Фото принято."
+    assert len(store.commands) == 1
+
+
+def test_slash_like_photo_caption_remains_raw_metadata_only() -> None:
+    store = DurableStore()
+    update = _photo_update(caption="/status")
+    with _client(_settings(), store) as client:
+        response = _post(client, update)
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Фото принято."
+    assert store.commands[0].command is None
+    assert store.commands[0].payload == update
+
+
+def test_duplicate_photo_reuses_one_acceptance_and_same_confirmation() -> None:
+    store = DurableStore()
+    update = _photo_update(caption="Ужин")
+    with _client(_settings(), store) as client:
+        first = _post(client, update)
+        second = _post(client, update)
+
+    assert first.json() == second.json()
+    assert first.json()["text"] == "Фото принято."
+    assert len(store.acceptances) == 1
+    assert [command.external_id for command in store.commands] == ["500", "500"]
+
+
+@pytest.mark.parametrize(
+    ("photo", "caption"),
+    [
+        ([], _MISSING),
+        ([{"file_unique_id": "u", "width": 320, "height": 240}], _MISSING),
+        (
+            [
+                {
+                    "file_id": " ",
+                    "file_unique_id": "u",
+                    "width": 320,
+                    "height": 240,
+                }
+            ],
+            _MISSING,
+        ),
+        (
+            [
+                {
+                    "file_id": "f",
+                    "file_unique_id": "u",
+                    "width": True,
+                    "height": 240,
+                }
+            ],
+            _MISSING,
+        ),
+        (
+            [
+                {
+                    "file_id": "f",
+                    "file_unique_id": "u",
+                    "width": 0,
+                    "height": 240,
+                    "file_size": -1,
+                }
+            ],
+            _MISSING,
+        ),
+        (
+            [
+                {
+                    "file_id": "f",
+                    "file_unique_id": "u",
+                    "width": 320,
+                    "height": 240,
+                }
+            ],
+            42,
+        ),
+    ],
+)
+def test_malformed_photo_gets_no_storage_or_confirmation(
+    photo: object,
+    caption: object,
+) -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update(photo=photo, caption=caption))
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+@pytest.mark.parametrize(
+    "conflict",
+    [
+        {"text": "ambiguous"},
+        {"document": {"file_id": "doc", "file_unique_id": "doc-u"}},
+        {"forward_origin": {"type": "user"}},
+        {"reply_to_message": {"message_id": 1}},
+        {"external_reply": {"origin": {"type": "user"}}},
+        {"sender_chat": {"id": -10099, "type": "supergroup"}},
+        {"media_group_id": "synthetic-album"},
+    ],
+)
+def test_ambiguous_or_third_party_photo_context_is_rejected(
+    conflict: dict[str, object],
+) -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update(**conflict))
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"message_id": True},
+        {"date": True},
+        {"caption": "x" * 1_025},
+    ],
+)
+def test_photo_exact_integer_and_caption_bounds_are_enforced(
+    changes: dict[str, object],
+) -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update(**changes))
 
     assert response.status_code == 200
     assert response.json()["accepted"] is False
     assert store.commands == []
+
+
+def test_photo_from_unbound_actor_gets_no_storage_or_confirmation() -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
+            client,
+            _photo_update(**{"from": {"id": 987654321, "is_bot": False}}),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_photo_from_other_group_gets_no_storage_or_confirmation() -> None:
+    store = DurableStore()
+    with _client(_settings(), store) as client:
+        response = _post(
+            client,
+            _photo_update(chat={"id": -1007999, "type": "supergroup"}),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert "method" not in response.json()
+    assert store.commands == []
+
+
+def test_photo_store_failure_yields_no_confirmation() -> None:
+    store = FailingStore()
+    with _client(_settings(), store) as client:
+        response = _post(client, _photo_update())
+
+    assert response.status_code == 503
+    assert "method" not in response.json()
+    assert len(store.commands) == 1
 
 
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
@@ -311,7 +540,7 @@ def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
             duplicate=False,
             reason="aqub_live_committed",
             downstream={"result": {"reply_text": "AQUB ответил"}},
-            capture_confirmed=True,
+            captured_content=AQUBTransportContentKind.TEXT,
         ),
         chat_id=TEST_CHAT_ID,
     )
