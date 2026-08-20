@@ -28,6 +28,7 @@ from app.application.aqub_transport import (
     AQUBTransportInbound,
     AQUBTransportResult,
     AQUBTransportStore,
+    AQUBVoiceReference,
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_installation import (
@@ -54,6 +55,10 @@ _PHOTO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "photo"}
 _PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption"}
 _PHOTO_SIZE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "width", "height"}
 _PHOTO_SIZE_OPTIONAL_FIELDS = {"file_size"}
+_VOICE_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "voice"}
+_VOICE_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
+_VOICE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration"}
+_VOICE_OPTIONAL_FIELDS = {"mime_type", "file_size"}
 
 
 def get_aqub_transport_store(
@@ -131,9 +136,12 @@ async def aqub_telegram_ingress(
         ).handle(inbound)
         return _diagnostic_response(result, chat_id=inbound.chat_id)
 
+    media_forward_enabled = (
+        os.getenv("GATE_AQUB_MEDIA_FORWARD_ENABLED", "").strip().lower() == "true"
+    )
     runtime_url = (
         os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
-        if inbound.content_kind is AQUBTransportContentKind.TEXT
+        if inbound.content_kind is AQUBTransportContentKind.TEXT or media_forward_enabled
         else ""
     )
     runtime = (
@@ -259,17 +267,26 @@ def _project_inbound(
         return None
     text = message.get("text")
     photo: AQUBPhotoReference | None = None
+    voice: AQUBVoiceReference | None = None
     if "text" in message:
         if not isinstance(text, str) or "photo" in message:
             return None
         content_kind = AQUBTransportContentKind.TEXT
         command: str | None = text
-    else:
+    elif "photo" in message:
         photo = _project_photo(message)
         if photo is None:
             return None
         content_kind = AQUBTransportContentKind.PHOTO
         command = None
+    elif "voice" in message:
+        voice = _project_voice(message)
+        if voice is None:
+            return None
+        content_kind = AQUBTransportContentKind.VOICE
+        command = None
+    else:
+        return None
     try:
         occurred_at = datetime.fromtimestamp(occurred_epoch, tz=UTC)
     except (OverflowError, OSError, ValueError):
@@ -285,16 +302,14 @@ def _project_inbound(
         received_at=received_at,
         content_kind=content_kind,
         photo=photo,
+        voice=voice,
     )
 
 
 def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
     message_fields = set(message)
-    if (
-        not _PHOTO_MESSAGE_REQUIRED_FIELDS.issubset(message_fields)
-        or not message_fields.issubset(
-            _PHOTO_MESSAGE_REQUIRED_FIELDS | _PHOTO_MESSAGE_OPTIONAL_FIELDS
-        )
+    if not _PHOTO_MESSAGE_REQUIRED_FIELDS.issubset(message_fields) or not message_fields.issubset(
+        _PHOTO_MESSAGE_REQUIRED_FIELDS | _PHOTO_MESSAGE_OPTIONAL_FIELDS
     ):
         return None
     caption = message.get("caption")
@@ -310,11 +325,10 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         if not isinstance(value, dict):
             return None
         photo_size_fields = set(value)
-        if (
-            not _PHOTO_SIZE_REQUIRED_FIELDS.issubset(photo_size_fields)
-            or not photo_size_fields.issubset(
-                _PHOTO_SIZE_REQUIRED_FIELDS | _PHOTO_SIZE_OPTIONAL_FIELDS
-            )
+        if not _PHOTO_SIZE_REQUIRED_FIELDS.issubset(
+            photo_size_fields
+        ) or not photo_size_fields.issubset(
+            _PHOTO_SIZE_REQUIRED_FIELDS | _PHOTO_SIZE_OPTIONAL_FIELDS
         ):
             return None
         file_id = value.get("file_id")
@@ -346,6 +360,45 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         references,
         key=lambda item: (item.width * item.height, item.file_size or 0),
     )
+
+
+def _project_voice(message: JsonObject) -> AQUBVoiceReference | None:
+    message_fields = set(message)
+    if not _VOICE_MESSAGE_REQUIRED_FIELDS.issubset(message_fields) or not message_fields.issubset(
+        _VOICE_MESSAGE_REQUIRED_FIELDS | _VOICE_MESSAGE_OPTIONAL_FIELDS
+    ):
+        return None
+    value = message.get("voice")
+    if not isinstance(value, dict):
+        return None
+    fields = set(value)
+    if not _VOICE_REQUIRED_FIELDS.issubset(fields) or not fields.issubset(
+        _VOICE_REQUIRED_FIELDS | _VOICE_OPTIONAL_FIELDS
+    ):
+        return None
+    file_id = value.get("file_id")
+    file_unique_id = value.get("file_unique_id")
+    duration = value.get("duration")
+    mime_type = value.get("mime_type")
+    file_size = value.get("file_size")
+    if (
+        not isinstance(file_id, str)
+        or not isinstance(file_unique_id, str)
+        or type(duration) is not int
+        or ("mime_type" in value and not isinstance(mime_type, str))
+        or ("file_size" in value and type(file_size) is not int)
+    ):
+        return None
+    try:
+        return AQUBVoiceReference(
+            file_id=file_id,
+            file_unique_id=file_unique_id,
+            duration=duration,
+            mime_type=mime_type,
+            file_size=file_size,
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonObject:
@@ -402,6 +455,12 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": "Записал.",
+        }
+    if result.captured_content is AQUBTransportContentKind.VOICE:
+        return {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": "Голосовое принято.",
         }
     return {
         "ok": True,
