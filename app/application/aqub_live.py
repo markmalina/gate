@@ -144,19 +144,12 @@ class AQUBLiveIngressAdapter:
                 received_at=inbound.received_at,
                 content_kind=inbound.content_kind,
                 photo=inbound.photo,
+                voice=inbound.voice,
             )
         )
         _validate_acceptance(acceptance)
 
         duplicate = acceptance.disposition is AQUBStoreDisposition.DUPLICATE
-        if inbound.content_kind is AQUBTransportContentKind.PHOTO:
-            return AQUBLiveForwardResult(
-                accepted=True,
-                duplicate=duplicate,
-                reason="aqub_photo_reference_committed",
-                captured_content=AQUBTransportContentKind.PHOTO,
-            )
-
         raw_body = _build_signed_envelope_body(
             binding=self._binding,
             inbound=inbound,
@@ -169,13 +162,19 @@ class AQUBLiveIngressAdapter:
             raw_body,
             hashlib.sha256,
         ).hexdigest()
-        captured_content = (
-            AQUBTransportContentKind.TEXT
-            if role is AQUBTransportRole.ALPHA
-            and isinstance(inbound.command, str)
-            and _plain_capture_text(inbound.command)
-            else None
-        )
+        captured_content = None
+        if role is AQUBTransportRole.ALPHA:
+            if (
+                inbound.content_kind is AQUBTransportContentKind.TEXT
+                and isinstance(inbound.command, str)
+                and _plain_capture_text(inbound.command)
+            ):
+                captured_content = AQUBTransportContentKind.TEXT
+            elif inbound.content_kind in {
+                AQUBTransportContentKind.PHOTO,
+                AQUBTransportContentKind.VOICE,
+            }:
+                captured_content = inbound.content_kind
         try:
             if self._runtime is None:
                 raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
@@ -229,9 +228,8 @@ def _program_like_text(text: str) -> bool:
 
 
 def _candidate_input_allowed(inbound: AQUBTransportInbound) -> bool:
-    if (
-        inbound.content_kind is not AQUBTransportContentKind.TEXT
-        or not isinstance(inbound.command, str)
+    if inbound.content_kind is not AQUBTransportContentKind.TEXT or not isinstance(
+        inbound.command, str
     ):
         return False
     text = inbound.command.strip()
@@ -304,11 +302,6 @@ def _build_signed_envelope_body(
     command_receipt_id: str,
     payload_sha256: str,
 ) -> bytes:
-    if (
-        inbound.content_kind is not AQUBTransportContentKind.TEXT
-        or not isinstance(inbound.command, str)
-    ):
-        raise RuntimeError("aqub_text_content_invalid")
     message = inbound.payload.get("message")
     if not isinstance(message, Mapping) or type(message.get("message_id")) is not int:
         raise RuntimeError("aqub_message_id_invalid")
@@ -316,6 +309,35 @@ def _build_signed_envelope_body(
     reply_message_id: int | None = None
     if isinstance(reply, Mapping) and type(reply.get("message_id")) is int:
         reply_message_id = reply["message_id"]
+
+    text = inbound.command if isinstance(inbound.command, str) else ""
+    if inbound.content_kind is AQUBTransportContentKind.PHOTO:
+        caption = message.get("caption")
+        text = caption if isinstance(caption, str) else ""
+    media: JsonObject | None = None
+    if inbound.photo is not None:
+        media = {
+            "file_ref": _opaque_ref(
+                binding.receipt_signing_key,
+                "media",
+                inbound.photo.file_unique_id,
+            ),
+            "media_type": "image/jpeg",
+            "width": inbound.photo.width,
+            "height": inbound.photo.height,
+            "file_size": inbound.photo.file_size,
+        }
+    elif inbound.voice is not None:
+        media = {
+            "file_ref": _opaque_ref(
+                binding.receipt_signing_key,
+                "media",
+                inbound.voice.file_unique_id,
+            ),
+            "media_type": inbound.voice.mime_type or "audio/ogg",
+            "duration": inbound.voice.duration,
+            "file_size": inbound.voice.file_size,
+        }
 
     envelope: JsonObject = {
         "schema_version": AQUB_GATE_ENVELOPE_SCHEMA,
@@ -352,7 +374,9 @@ def _build_signed_envelope_body(
             else None
         ),
         "reply_context": _reply_context(inbound.payload),
-        "text": inbound.command,
+        "content_kind": inbound.content_kind.value,
+        "text": text,
+        "media": media,
         "transport_receipt_ref": _opaque_ref(
             binding.receipt_signing_key,
             "receipt",
