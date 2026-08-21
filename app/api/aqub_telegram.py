@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import os
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
@@ -11,7 +12,8 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session
+from app.api.deps import get_database_runtime, get_db_session
+from app.application.aqub_food_media import ProcessAQUBFoodMedia
 from app.application.aqub_live import (
     AQUB_GATE_DELIVERY_PATH,
     AQUBLiveForwardResult,
@@ -28,8 +30,14 @@ from app.application.aqub_transport import (
     AQUBTransportInbound,
     AQUBTransportResult,
     AQUBTransportStore,
+    AQUBVoiceReference,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.aqub_food_media import (
+    OpenAIAQUBFoodMediaAnalyzer,
+    SqlAQUBFoodMediaStore,
+    TelegramAQUBFoodMediaDownloader,
+)
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
     aqub_receipt_signing_key,
@@ -54,6 +62,10 @@ _PHOTO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "photo"}
 _PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption"}
 _PHOTO_SIZE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "width", "height"}
 _PHOTO_SIZE_OPTIONAL_FIELDS = {"file_size"}
+_VOICE_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "voice"}
+_VOICE_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
+_VOICE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration"}
+_VOICE_OPTIONAL_FIELDS = {"mime_type", "file_size"}
 
 
 def get_aqub_transport_store(
@@ -81,6 +93,48 @@ store_dependency = Depends(get_aqub_transport_store)
 binding_dependency = Depends(get_aqub_production_binding)
 
 
+async def get_aqub_food_media_processor(
+    request: Request,
+    settings: Settings = settings_dependency,
+) -> AsyncIterator[ProcessAQUBFoodMedia | None]:
+    """Construct provider adapters only for the explicitly approved media mode."""
+
+    if not settings.gate_aqub_food_media_processing_enabled:
+        yield None
+        return
+    if not settings.gate_aqub_media_forward_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB media forwarding is disabled",
+        )
+    runtime = get_database_runtime(request)
+    async with runtime.session_factory() as session:
+        try:
+            yield ProcessAQUBFoodMedia(
+                store=SqlAQUBFoodMediaStore(session),
+                downloader=TelegramAQUBFoodMediaDownloader(
+                    bot_token=settings.telegram_aqub_bot_token.get_secret_value(),
+                    client=_process_http_client(request),
+                ),
+                analyzer=OpenAIAQUBFoodMediaAnalyzer(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    model=settings.gate_aqub_food_media_model,
+                    transcription_model=(settings.gate_aqub_food_media_transcription_model),
+                    client=_process_http_client(request),
+                    data_gate_approved=(settings.gate_aqub_food_media_data_gate_approved),
+                ),
+            )
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc)[:160],
+            ) from None
+
+
+media_processor_dependency = Depends(get_aqub_food_media_processor)
+
+
 @router.post(AQUB_TELEGRAM_WEBHOOK_PATH)
 async def aqub_telegram_ingress(
     request: Request,
@@ -90,6 +144,7 @@ async def aqub_telegram_ingress(
     settings: Settings = settings_dependency,
     store: AQUBTransportStore = store_dependency,
     binding: AQUBTransportBinding = binding_dependency,
+    media_processor: ProcessAQUBFoodMedia | None = media_processor_dependency,
 ) -> JsonObject:
     """Own the AQUB Telegram route from the durable installation binding."""
 
@@ -134,6 +189,7 @@ async def aqub_telegram_ingress(
     runtime_url = (
         os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
         if inbound.content_kind is AQUBTransportContentKind.TEXT
+        or settings.gate_aqub_media_forward_enabled
         else ""
     )
     runtime = (
@@ -149,6 +205,7 @@ async def aqub_telegram_ingress(
             binding=binding,
             store=store,
             runtime=runtime,
+            media_processor=media_processor,
         ).handle(inbound)
     except RuntimeError as exc:
         raise HTTPException(
@@ -259,17 +316,26 @@ def _project_inbound(
         return None
     text = message.get("text")
     photo: AQUBPhotoReference | None = None
+    voice: AQUBVoiceReference | None = None
     if "text" in message:
         if not isinstance(text, str) or "photo" in message:
             return None
         content_kind = AQUBTransportContentKind.TEXT
         command: str | None = text
-    else:
+    elif "photo" in message:
         photo = _project_photo(message)
         if photo is None:
             return None
         content_kind = AQUBTransportContentKind.PHOTO
         command = None
+    elif "voice" in message:
+        voice = _project_voice(message)
+        if voice is None:
+            return None
+        content_kind = AQUBTransportContentKind.VOICE
+        command = None
+    else:
+        return None
     try:
         occurred_at = datetime.fromtimestamp(occurred_epoch, tz=UTC)
     except (OverflowError, OSError, ValueError):
@@ -285,16 +351,14 @@ def _project_inbound(
         received_at=received_at,
         content_kind=content_kind,
         photo=photo,
+        voice=voice,
     )
 
 
 def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
     message_fields = set(message)
-    if (
-        not _PHOTO_MESSAGE_REQUIRED_FIELDS.issubset(message_fields)
-        or not message_fields.issubset(
-            _PHOTO_MESSAGE_REQUIRED_FIELDS | _PHOTO_MESSAGE_OPTIONAL_FIELDS
-        )
+    if not _PHOTO_MESSAGE_REQUIRED_FIELDS.issubset(message_fields) or not message_fields.issubset(
+        _PHOTO_MESSAGE_REQUIRED_FIELDS | _PHOTO_MESSAGE_OPTIONAL_FIELDS
     ):
         return None
     caption = message.get("caption")
@@ -310,11 +374,10 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         if not isinstance(value, dict):
             return None
         photo_size_fields = set(value)
-        if (
-            not _PHOTO_SIZE_REQUIRED_FIELDS.issubset(photo_size_fields)
-            or not photo_size_fields.issubset(
-                _PHOTO_SIZE_REQUIRED_FIELDS | _PHOTO_SIZE_OPTIONAL_FIELDS
-            )
+        if not _PHOTO_SIZE_REQUIRED_FIELDS.issubset(
+            photo_size_fields
+        ) or not photo_size_fields.issubset(
+            _PHOTO_SIZE_REQUIRED_FIELDS | _PHOTO_SIZE_OPTIONAL_FIELDS
         ):
             return None
         file_id = value.get("file_id")
@@ -346,6 +409,45 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         references,
         key=lambda item: (item.width * item.height, item.file_size or 0),
     )
+
+
+def _project_voice(message: JsonObject) -> AQUBVoiceReference | None:
+    message_fields = set(message)
+    if not _VOICE_MESSAGE_REQUIRED_FIELDS.issubset(message_fields) or not message_fields.issubset(
+        _VOICE_MESSAGE_REQUIRED_FIELDS | _VOICE_MESSAGE_OPTIONAL_FIELDS
+    ):
+        return None
+    value = message.get("voice")
+    if not isinstance(value, dict):
+        return None
+    fields = set(value)
+    if not _VOICE_REQUIRED_FIELDS.issubset(fields) or not fields.issubset(
+        _VOICE_REQUIRED_FIELDS | _VOICE_OPTIONAL_FIELDS
+    ):
+        return None
+    file_id = value.get("file_id")
+    file_unique_id = value.get("file_unique_id")
+    duration = value.get("duration")
+    mime_type = value.get("mime_type")
+    file_size = value.get("file_size")
+    if (
+        not isinstance(file_id, str)
+        or not isinstance(file_unique_id, str)
+        or type(duration) is not int
+        or ("mime_type" in value and not isinstance(mime_type, str))
+        or ("file_size" in value and type(file_size) is not int)
+    ):
+        return None
+    try:
+        return AQUBVoiceReference(
+            file_id=file_id,
+            file_unique_id=file_unique_id,
+            duration=duration,
+            mime_type=mime_type,
+            file_size=file_size,
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonObject:
@@ -402,6 +504,12 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": "Записал.",
+        }
+    if result.captured_content is AQUBTransportContentKind.VOICE:
+        return {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": "Голосовое принято.",
         }
     return {
         "ok": True,

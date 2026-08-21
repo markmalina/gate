@@ -270,9 +270,7 @@ async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> Non
     def unavailable(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("synthetic unavailable", request=request)
 
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(unavailable)
-    ) as http_client:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unavailable)) as http_client:
         result = await AQUBLiveIngressAdapter(
             binding=binding(),
             store=store,
@@ -289,7 +287,7 @@ async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> Non
 
 
 @pytest.mark.anyio
-async def test_alpha_photo_commits_reference_without_runtime_or_envelope() -> None:
+async def test_alpha_photo_commits_reference_and_forwards_redacted_envelope() -> None:
     store = Store()
     runtime = Runtime()
 
@@ -301,16 +299,21 @@ async def test_alpha_photo_commits_reference_without_runtime_or_envelope() -> No
 
     assert result.accepted is True
     assert result.duplicate is False
-    assert result.reason == "aqub_photo_reference_committed"
+    assert result.reason == "aqub_live_committed"
     assert result.captured_content is AQUBTransportContentKind.PHOTO
     assert len(store.commands) == 1
     assert store.commands[0].command is None
     assert store.commands[0].photo is not None
-    assert runtime.raw_bodies == []
+    assert len(runtime.raw_bodies) == 1
+    envelope = json.loads(runtime.raw_bodies[0])
+    assert envelope["content_kind"] == "photo"
+    assert envelope["text"] == "Съел омлет"
+    assert envelope["media"]["file_ref"].startswith("media:")
+    assert "synthetic-file-large" not in runtime.raw_bodies[0].decode()
 
 
 @pytest.mark.anyio
-async def test_exact_photo_replay_reuses_receipt_without_runtime() -> None:
+async def test_exact_photo_replay_reuses_receipt_and_runtime_envelope() -> None:
     store = Store()
     runtime = Runtime()
     adapter = AQUBLiveIngressAdapter(
@@ -325,7 +328,7 @@ async def test_exact_photo_replay_reuses_receipt_without_runtime() -> None:
     assert first.duplicate is False
     assert duplicate.duplicate is True
     assert len(store.commands) == 2
-    assert runtime.raw_bodies == []
+    assert len(runtime.raw_bodies) == 2
 
 
 @pytest.mark.anyio
@@ -446,9 +449,9 @@ async def test_program_prompt_reply_from_candidate_is_forwarded() -> None:
         update_id=9003,
         include_program_prompt_reply=True,
     )
-    result = await AQUBLiveIngressAdapter(
-        binding=binding(), store=store, runtime=runtime
-    ).handle(value)
+    result = await AQUBLiveIngressAdapter(binding=binding(), store=store, runtime=runtime).handle(
+        value
+    )
     assert result.accepted is True
     envelope = json.loads(runtime.raw_bodies[0])
     assert envelope["role"] == "candidate"
@@ -469,9 +472,9 @@ async def test_natural_numbered_program_from_candidate_is_forwarded_without_repl
         update_id=9005,
         include_program_prompt_reply=False,
     )
-    result = await AQUBLiveIngressAdapter(
-        binding=binding(), store=store, runtime=runtime
-    ).handle(value)
+    result = await AQUBLiveIngressAdapter(binding=binding(), store=store, runtime=runtime).handle(
+        value
+    )
     assert result.accepted is True
     envelope = json.loads(runtime.raw_bodies[0])
     assert envelope["role"] == "candidate"

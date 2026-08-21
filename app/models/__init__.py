@@ -1,6 +1,6 @@
 """Database models."""
 
-from app.models.aqub import AQUBInstallationBinding
+from app.models.aqub import AQUBFoodMedia, AQUBInstallationBinding
 from app.models.domain import (
     ALPHA_MAYAKI_PROJECT_ID,
     ALPHA_PERSONAL_PROJECT_ID,
@@ -35,6 +35,7 @@ __all__ = [
     "ALPHA_MAYAKI_PROJECT_ID",
     "ALPHA_PERSONAL_PROJECT_ID",
     "AQUBInstallationBinding",
+    "AQUBFoodMedia",
     "DEFAULT_ACCOUNT_ID",
     "DEFAULT_PROJECT_ID",
     "OKO_PROJECT_ID",

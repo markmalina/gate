@@ -143,6 +143,29 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias="GATE_AQUB_RECEIPT_SIGNING_KEY",
     )
+    gate_aqub_media_forward_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_AQUB_MEDIA_FORWARD_ENABLED",
+    )
+    gate_aqub_food_media_processing_enabled: bool = Field(
+        default=False,
+        validation_alias="GATE_AQUB_FOOD_MEDIA_PROCESSING_ENABLED",
+    )
+    gate_aqub_food_media_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_AQUB_FOOD_MEDIA_DATA_GATE_APPROVED",
+    )
+    gate_aqub_food_media_model: str = Field(
+        default="gpt-5.6-luna",
+        min_length=1,
+        max_length=128,
+        validation_alias="GATE_AQUB_FOOD_MEDIA_MODEL",
+    )
+    gate_aqub_food_media_transcription_model: str = Field(
+        default="gpt-4o-mini-transcribe",
+        pattern=r"^gpt-4o-(?:mini-)?transcribe$",
+        validation_alias="GATE_AQUB_FOOD_MEDIA_TRANSCRIPTION_MODEL",
+    )
     gate_beta_installation_key: str = Field(
         default="", validation_alias="GATE_BETA_INSTALLATION_KEY"
     )
