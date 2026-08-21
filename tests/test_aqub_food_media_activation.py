@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tomllib
+from tomllib import loads
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +13,7 @@ ACTIVATION_FLAGS = (
 
 
 def test_railway_release_enables_only_reviewed_aqub_food_media_gates() -> None:
-    config = tomllib.loads((ROOT / "railway.toml").read_text(encoding="utf-8"))
+    config = loads((ROOT / "railway.toml").read_text(encoding="utf-8"))
     command = config["deploy"]["startCommand"]
 
     for name in ACTIVATION_FLAGS:
