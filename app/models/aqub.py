@@ -14,11 +14,13 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -76,6 +78,11 @@ class AQUBFoodMedia(Base):
         CheckConstraint(
             "char_length(source_sha256) = 64 OR source_sha256 IS NULL",
             name="ck_aqub_food_media_sha",
+        ),
+        Index(
+            "ix_aqub_food_media_raw_purge",
+            "raw_purge_after",
+            postgresql_where=text("raw_data IS NOT NULL"),
         ),
     )
 
