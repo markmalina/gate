@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.application.aqub_food_media import AQUBFoodMediaError
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
@@ -66,6 +67,15 @@ class AQUBRuntimeClient(Protocol):
     ) -> JsonObject: ...
 
 
+class AQUBFoodMediaProcessor(Protocol):
+    async def process(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+    ) -> JsonObject: ...
+
+
 class HttpAQUBRuntimeClient:
     """AQUB runtime transport backed by the process-owned HTTP connection pool."""
 
@@ -113,10 +123,12 @@ class AQUBLiveIngressAdapter:
         binding: AQUBTransportBinding,
         store: AQUBTransportStore,
         runtime: AQUBRuntimeClient | None,
+        media_processor: AQUBFoodMediaProcessor | None = None,
     ) -> None:
         self._binding = binding
         self._store = store
         self._runtime = runtime
+        self._media_processor = media_processor
 
     async def handle(self, inbound: AQUBTransportInbound) -> AQUBLiveForwardResult:
         role = _bound_role(self._binding, inbound)
@@ -150,12 +162,39 @@ class AQUBLiveIngressAdapter:
         _validate_acceptance(acceptance)
 
         duplicate = acceptance.disposition is AQUBStoreDisposition.DUPLICATE
+        media_result: JsonObject | None = None
+        if (
+            inbound.content_kind in {AQUBTransportContentKind.PHOTO, AQUBTransportContentKind.VOICE}
+            and self._media_processor is not None
+        ):
+            try:
+                media_result = await self._media_processor.process(
+                    receipt_id=acceptance.command_receipt_id,
+                    inbound=inbound,
+                )
+            except AQUBFoodMediaError as exc:
+                return AQUBLiveForwardResult(
+                    accepted=True,
+                    duplicate=duplicate,
+                    reason=str(exc),
+                    downstream={
+                        "result": {
+                            "kind": "food_media_failed",
+                            "reply_text": (
+                                "Файл сохранил, но сейчас не смог разобрать. "
+                                "Пришлите его ещё раз или опишите еду текстом."
+                            ),
+                        }
+                    },
+                    captured_content=inbound.content_kind,
+                )
         raw_body = _build_signed_envelope_body(
             binding=self._binding,
             inbound=inbound,
             role=role,
             command_receipt_id=acceptance.command_receipt_id,
             payload_sha256=payload_sha256,
+            media_result=media_result,
         )
         signature = hmac.new(
             self._binding.receipt_signing_key,
@@ -301,6 +340,7 @@ def _build_signed_envelope_body(
     role: AQUBTransportRole,
     command_receipt_id: str,
     payload_sha256: str,
+    media_result: Mapping[str, Any] | None = None,
 ) -> bytes:
     message = inbound.payload.get("message")
     if not isinstance(message, Mapping) or type(message.get("message_id")) is not int:
@@ -377,6 +417,7 @@ def _build_signed_envelope_body(
         "content_kind": inbound.content_kind.value,
         "text": text,
         "media": media,
+        "media_result": dict(media_result) if media_result is not None else None,
         "transport_receipt_ref": _opaque_ref(
             binding.receipt_signing_key,
             "receipt",

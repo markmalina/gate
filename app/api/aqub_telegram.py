@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import os
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
@@ -11,7 +12,8 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session
+from app.api.deps import get_database_runtime, get_db_session
+from app.application.aqub_food_media import ProcessAQUBFoodMedia
 from app.application.aqub_live import (
     AQUB_GATE_DELIVERY_PATH,
     AQUBLiveForwardResult,
@@ -31,6 +33,11 @@ from app.application.aqub_transport import (
     AQUBVoiceReference,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.aqub_food_media import (
+    OpenAIAQUBFoodMediaAnalyzer,
+    SqlAQUBFoodMediaStore,
+    TelegramAQUBFoodMediaDownloader,
+)
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
     aqub_receipt_signing_key,
@@ -86,6 +93,48 @@ store_dependency = Depends(get_aqub_transport_store)
 binding_dependency = Depends(get_aqub_production_binding)
 
 
+async def get_aqub_food_media_processor(
+    request: Request,
+    settings: Settings = settings_dependency,
+) -> AsyncIterator[ProcessAQUBFoodMedia | None]:
+    """Construct provider adapters only for the explicitly approved media mode."""
+
+    if not settings.gate_aqub_food_media_processing_enabled:
+        yield None
+        return
+    if not settings.gate_aqub_media_forward_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB media forwarding is disabled",
+        )
+    runtime = get_database_runtime(request)
+    async with runtime.session_factory() as session:
+        try:
+            yield ProcessAQUBFoodMedia(
+                store=SqlAQUBFoodMediaStore(session),
+                downloader=TelegramAQUBFoodMediaDownloader(
+                    bot_token=settings.telegram_aqub_bot_token.get_secret_value(),
+                    client=_process_http_client(request),
+                ),
+                analyzer=OpenAIAQUBFoodMediaAnalyzer(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    model=settings.gate_aqub_food_media_model,
+                    transcription_model=(settings.gate_aqub_food_media_transcription_model),
+                    client=_process_http_client(request),
+                    data_gate_approved=(settings.gate_aqub_food_media_data_gate_approved),
+                ),
+            )
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc)[:160],
+            ) from None
+
+
+media_processor_dependency = Depends(get_aqub_food_media_processor)
+
+
 @router.post(AQUB_TELEGRAM_WEBHOOK_PATH)
 async def aqub_telegram_ingress(
     request: Request,
@@ -95,6 +144,7 @@ async def aqub_telegram_ingress(
     settings: Settings = settings_dependency,
     store: AQUBTransportStore = store_dependency,
     binding: AQUBTransportBinding = binding_dependency,
+    media_processor: ProcessAQUBFoodMedia | None = media_processor_dependency,
 ) -> JsonObject:
     """Own the AQUB Telegram route from the durable installation binding."""
 
@@ -136,12 +186,10 @@ async def aqub_telegram_ingress(
         ).handle(inbound)
         return _diagnostic_response(result, chat_id=inbound.chat_id)
 
-    media_forward_enabled = (
-        os.getenv("GATE_AQUB_MEDIA_FORWARD_ENABLED", "").strip().lower() == "true"
-    )
     runtime_url = (
         os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
-        if inbound.content_kind is AQUBTransportContentKind.TEXT or media_forward_enabled
+        if inbound.content_kind is AQUBTransportContentKind.TEXT
+        or settings.gate_aqub_media_forward_enabled
         else ""
     )
     runtime = (
@@ -157,6 +205,7 @@ async def aqub_telegram_ingress(
             binding=binding,
             store=store,
             runtime=runtime,
+            media_processor=media_processor,
         ).handle(inbound)
     except RuntimeError as exc:
         raise HTTPException(
