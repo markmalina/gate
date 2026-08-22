@@ -68,11 +68,11 @@ class AQUBFoodMedia(Base):
             name="ck_aqub_food_media_kind",
         ),
         CheckConstraint(
-            "status IN ('processing','processed','failed')",
+            "status IN ('queued','processing','processed','failed')",
             name="ck_aqub_food_media_status",
         ),
         CheckConstraint(
-            "attempt_count BETWEEN 1 AND 3",
+            "attempt_count BETWEEN 0 AND 3",
             name="ck_aqub_food_media_attempts",
         ),
         CheckConstraint(
@@ -83,6 +83,13 @@ class AQUBFoodMedia(Base):
             "ix_aqub_food_media_raw_purge",
             "raw_purge_after",
             postgresql_where=text("raw_data IS NOT NULL"),
+        ),
+        Index(
+            "ix_aqub_food_media_worker",
+            "status",
+            "final_sent_at",
+            "processing_started_at",
+            postgresql_where=text("final_sent_at IS NULL"),
         ),
     )
 
@@ -110,6 +117,12 @@ class AQUBFoodMedia(Base):
     error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    progress_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    final_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

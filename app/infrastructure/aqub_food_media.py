@@ -136,6 +136,74 @@ class SqlAQUBFoodMediaStore:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def enqueue(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: Any,
+    ) -> None:
+        if inbound.content_kind not in {
+            AQUBTransportContentKind.PHOTO,
+            AQUBTransportContentKind.VOICE,
+        }:
+            raise AQUBFoodMediaError("aqub_food_media_not_applicable")
+        try:
+            await self._session.execute(
+                insert(AQUBFoodMedia)
+                .values(
+                    id=uuid4(),
+                    receipt_id=_uuid(receipt_id, "aqub_food_media_receipt_invalid"),
+                    content_kind=inbound.content_kind.value,
+                    status="queued",
+                    attempt_count=0,
+                    claim_token=uuid4(),
+                    processing_started_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["receipt_id"])
+            )
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
+
+    async def mark_progress_sent(
+        self,
+        *,
+        receipt_id: str,
+        now: Any,
+    ) -> bool:
+        result = await self._session.execute(
+            update(AQUBFoodMedia)
+            .where(
+                AQUBFoodMedia.receipt_id
+                == _uuid(receipt_id, "aqub_food_media_receipt_invalid"),
+                AQUBFoodMedia.progress_sent_at.is_(None),
+                AQUBFoodMedia.final_sent_at.is_(None),
+            )
+            .values(progress_sent_at=now)
+        )
+        await self._session.commit()
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
+    async def mark_final_sent(
+        self,
+        *,
+        receipt_id: str,
+        now: Any,
+    ) -> bool:
+        result = await self._session.execute(
+            update(AQUBFoodMedia)
+            .where(
+                AQUBFoodMedia.receipt_id
+                == _uuid(receipt_id, "aqub_food_media_receipt_invalid"),
+                AQUBFoodMedia.final_sent_at.is_(None),
+            )
+            .values(final_sent_at=now)
+        )
+        await self._session.commit()
+        return int(getattr(result, "rowcount", 0) or 0) == 1
+
     async def claim(
         self,
         *,

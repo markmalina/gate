@@ -10,7 +10,6 @@ from typing import cast
 
 import httpx
 import pytest
-from app.application.aqub_food_media import AQUBFoodMediaError
 from app.application.aqub_live import (
     AQUB_PROGRAM_PROMPT_TEXT,
     AQUBLiveIngressAdapter,
@@ -526,47 +525,40 @@ async def test_actor_outside_pinned_group_is_not_forwarded_or_stored() -> None:
     assert runtime.raw_bodies == []
 
 
-class FailingFoodMediaProcessor:
-    def __init__(self, code: str) -> None:
-        self.code = code
+class MediaQueue:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, AQUBTransportInbound]] = []
 
-    async def process(self, **_kwargs: object) -> dict[str, object]:
-        raise AQUBFoodMediaError(self.code)
+    async def enqueue(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: datetime,
+    ) -> None:
+        assert now == inbound.received_at
+        self.calls.append((receipt_id, inbound))
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("code", "expected"),
-    [
-        (
-            "aqub_food_media_analysis_failed",
-            "Код диагностики: aqub_food_media_analysis_failed.",
-        ),
-        (
-            "provider body with secret detail",
-            "Код диагностики: aqub_food_media_processing_failed.",
-        ),
-    ],
-)
-async def test_media_failure_reply_surfaces_only_safe_error_code(
-    code: str,
-    expected: str,
-) -> None:
+async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
     runtime = Runtime()
+    queue = MediaQueue()
+    incoming = photo_inbound()
     result = await AQUBLiveIngressAdapter(
         binding=binding(),
         store=Store(),
         runtime=runtime,
-        media_processor=FailingFoodMediaProcessor(code),
-    ).handle(photo_inbound())
+        media_queue=queue,
+    ).handle(incoming)
 
     assert result.accepted is True
-    assert result.reason == code
-    assert result.downstream is not None
-    domain = result.downstream["result"]
-    assert isinstance(domain, dict)
-    reply_text = domain["reply_text"]
-    assert isinstance(reply_text, str)
-    assert expected in reply_text
-    assert "provider body with secret detail" not in reply_text
+    assert result.reason == "aqub_food_media_queued"
+    assert result.downstream == {
+        "result": {
+            "kind": "food_media_queued",
+            "reply_text": "Спасибо, файл принят. Разбираюсь с ним.",
+        }
+    }
+    assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []

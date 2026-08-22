@@ -3199,6 +3199,6 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0100_aqub_food_media")
+    assert heads[0].startswith("0101_aqub_food_media_async")
 
 

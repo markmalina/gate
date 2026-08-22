@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -60,6 +60,16 @@ class AQUBFoodMediaAnalysis:
     result_json: Mapping[str, Any] = field(repr=False)
     provider_model: str
     provider_request_ref: str | None = field(default=None, repr=False)
+
+
+class AQUBFoodMediaQueue(Protocol):
+    async def enqueue(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: datetime,
+    ) -> None: ...
 
 
 class AQUBFoodMediaStore(Protocol):
@@ -134,16 +144,18 @@ class ProcessAQUBFoodMedia:
         *,
         receipt_id: str,
         inbound: AQUBTransportInbound,
+        now: datetime | None = None,
     ) -> JsonObject:
         if inbound.content_kind not in {
             AQUBTransportContentKind.PHOTO,
             AQUBTransportContentKind.VOICE,
         }:
             raise AQUBFoodMediaError("aqub_food_media_not_applicable")
+        observed_at = now or datetime.now(UTC)
         claim = await self._store.claim(
             receipt_id=receipt_id,
             content_kind=inbound.content_kind,
-            now=inbound.received_at,
+            now=observed_at,
         )
         if claim.disposition is AQUBFoodMediaClaimDisposition.REPLAY:
             if claim.result_json is None:
@@ -165,7 +177,7 @@ class ProcessAQUBFoodMedia:
                     claim_token=claim.claim_token,
                     media=media,
                     source_sha256=source_sha256,
-                    now=inbound.received_at,
+                    now=observed_at,
                 )
             else:
                 if claim.media_type is None or claim.filename is None:
@@ -196,7 +208,7 @@ class ProcessAQUBFoodMedia:
                 receipt_id=receipt_id,
                 claim_token=claim.claim_token,
                 analysis=durable,
-                now=inbound.received_at,
+                now=observed_at,
             )
             return normalized
         except Exception as exc:
@@ -205,7 +217,7 @@ class ProcessAQUBFoodMedia:
                 receipt_id=receipt_id,
                 claim_token=claim.claim_token,
                 error_code=error_code,
-                now=inbound.received_at,
+                now=observed_at,
             )
             if isinstance(exc, AQUBFoodMediaError):
                 raise
