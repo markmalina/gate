@@ -182,7 +182,9 @@ class AQUBLiveIngressAdapter:
                             "kind": "food_media_failed",
                             "reply_text": (
                                 "Файл сохранил, но сейчас не смог разобрать. "
-                                "Пришлите его ещё раз или опишите еду текстом."
+                                "Пришлите его ещё раз или опишите еду текстом. "
+                                "Код диагностики: "
+                                f"{_safe_food_media_error_code(exc)}."
                             ),
                         }
                     },
@@ -237,6 +239,17 @@ class AQUBLiveIngressAdapter:
             downstream=downstream,
             captured_content=captured_content,
         )
+
+
+def _safe_food_media_error_code(error: AQUBFoodMediaError) -> str:
+    value = str(error)
+    if (
+        value
+        and len(value) <= 128
+        and all(character.isalnum() or character in "_.-" for character in value)
+    ):
+        return value
+    return "aqub_food_media_processing_failed"
 
 
 def _plain_capture_text(text: str) -> bool:
