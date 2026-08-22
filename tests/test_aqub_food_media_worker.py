@@ -159,6 +159,17 @@ async def _prepare(
     return telegram, markers
 
 
+def test_progress_deadline_is_anchored_to_receipt_time() -> None:
+    assert worker._progress_timeout_seconds(
+        received_at=NOW,
+        observed_at=NOW,
+    ) == 21
+    assert worker._progress_timeout_seconds(
+        received_at=NOW,
+        observed_at=NOW + timedelta(seconds=30),
+    ) == 0
+
+
 @pytest.mark.anyio
 async def test_fast_media_job_sends_only_final_result(
     monkeypatch: pytest.MonkeyPatch,
