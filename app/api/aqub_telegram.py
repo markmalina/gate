@@ -298,7 +298,9 @@ def _project_inbound(
     photo: AQUBPhotoReference | None = None
     voice: AQUBVoiceReference | None = None
     if "text" in message:
-        if not isinstance(text, str) or "photo" in message:
+        if not isinstance(text, str) or any(
+            media_kind in message for media_kind in ("photo", "voice", "audio")
+        ):
             return None
         content_kind = AQUBTransportContentKind.TEXT
         command: str | None = text
