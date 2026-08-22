@@ -34,6 +34,30 @@ def _voice_update() -> dict[str, object]:
     }
 
 
+def _audio_update(
+    *,
+    mime_type: object = "audio/ogg",
+    file_name: object = "clipboard.ogg",
+) -> dict[str, object]:
+    return {
+        "update_id": 992,
+        "message": {
+            "message_id": 78,
+            "from": {"id": 1001, "is_bot": False},
+            "date": 1_786_000_000,
+            "chat": {"id": -10042, "type": "supergroup"},
+            "audio": {
+                "file_id": "provider-secret-audio-id",
+                "file_unique_id": "stable-audio-id",
+                "duration": 2,
+                "mime_type": mime_type,
+                "file_size": 7935,
+                "file_name": file_name,
+            },
+        },
+    }
+
+
 class _Store:
     async def accept(self, _command: object) -> AQUBDurableAcceptance:
         return AQUBDurableAcceptance(
@@ -73,6 +97,42 @@ def test_voice_projection_is_strict_and_keeps_provider_reference_inside_gate() -
     assert inbound.voice is not None
     assert inbound.voice.file_id == "provider-secret-file-id"
     assert inbound.command is None
+
+
+def test_strict_telegram_ogg_audio_uses_existing_durable_voice_path() -> None:
+    inbound = _project_inbound(
+        _audio_update(),
+        bot_username="@AQubAgentBot",
+        received_at=datetime.fromtimestamp(1_786_000_001, tz=UTC),
+    )
+    assert inbound is not None
+    assert inbound.content_kind is AQUBTransportContentKind.VOICE
+    assert inbound.voice is not None
+    assert inbound.voice.file_id == "provider-secret-audio-id"
+    assert inbound.voice.mime_type == "audio/ogg"
+    assert inbound.command is None
+
+
+@pytest.mark.parametrize(
+    ("mime_type", "file_name"),
+    [
+        ("audio/mpeg", "clipboard.ogg"),
+        ("audio/ogg", "clipboard.mp3"),
+        ("audio/ogg", {"synthetic_third_party": True}),
+    ],
+)
+def test_non_ogg_or_ambiguous_audio_is_rejected(
+    mime_type: object,
+    file_name: object,
+) -> None:
+    assert (
+        _project_inbound(
+            _audio_update(mime_type=mime_type, file_name=file_name),
+            bot_username="@AQubAgentBot",
+            received_at=datetime.fromtimestamp(1_786_000_001, tz=UTC),
+        )
+        is None
+    )
 
 
 @pytest.mark.anyio
