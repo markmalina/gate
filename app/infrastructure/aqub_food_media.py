@@ -40,10 +40,10 @@ _RECEIPT_ITEM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "name": {"type": "string", "minLength": 1, "maxLength": 300},
-        "quantity_text": {"type": ["string", "null"], "maxLength": 300},
-        "unit_price_text": {"type": ["string", "null"], "maxLength": 300},
-        "line_total_text": {"type": ["string", "null"], "maxLength": 300},
+        "name": {"type": "string"},
+        "quantity_text": {"type": ["string", "null"]},
+        "unit_price_text": {"type": ["string", "null"]},
+        "line_total_text": {"type": ["string", "null"]},
     },
     "required": ["name", "quantity_text", "unit_price_text", "line_total_text"],
 }
@@ -52,7 +52,7 @@ _MEAL_ITEM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "label": {"type": "string", "minLength": 1, "maxLength": 300},
+        "label": {"type": "string"},
         "kcal": {"type": "integer", "minimum": 0, "maximum": 100_000},
         "protein_g": {"type": "integer", "minimum": 0, "maximum": 100_000},
         "fat_g": {"type": "integer", "minimum": 0, "maximum": 100_000},
@@ -67,7 +67,7 @@ _ANALYSIS_SCHEMA: dict[str, Any] = {
     "properties": {
         "kind": {"type": "string", "enum": ["meal", "receipt", "unknown"]},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "transcript": {"type": ["string", "null"], "maxLength": 20_000},
+        "transcript": {"type": ["string", "null"]},
         "meal": {
             "anyOf": [
                 {"type": "null"},
@@ -75,7 +75,7 @@ _ANALYSIS_SCHEMA: dict[str, Any] = {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "label": {"type": "string", "minLength": 1, "maxLength": 300},
+                        "label": {"type": "string"},
                         "kcal": {"type": "integer", "minimum": 0, "maximum": 100_000},
                         "protein_g": {"type": "integer", "minimum": 0, "maximum": 100_000},
                         "fat_g": {"type": "integer", "minimum": 0, "maximum": 100_000},
@@ -105,10 +105,10 @@ _ANALYSIS_SCHEMA: dict[str, Any] = {
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "merchant": {"type": ["string", "null"], "maxLength": 300},
-                        "purchased_at": {"type": ["string", "null"], "maxLength": 300},
-                        "currency": {"type": ["string", "null"], "maxLength": 300},
-                        "total_text": {"type": ["string", "null"], "maxLength": 300},
+                        "merchant": {"type": ["string", "null"]},
+                        "purchased_at": {"type": ["string", "null"]},
+                        "currency": {"type": ["string", "null"]},
+                        "total_text": {"type": ["string", "null"]},
                         "items": {
                             "type": "array",
                             "maxItems": 100,
