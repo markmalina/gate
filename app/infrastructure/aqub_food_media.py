@@ -518,6 +518,7 @@ class OpenAIAQUBFoodMediaAnalyzer:
                 },
                 json={
                     "model": self._model,
+                    "reasoning": {"effort": "none"},
                     "store": False,
                     "tools": [],
                     "max_output_tokens": 4_096,
