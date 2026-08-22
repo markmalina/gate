@@ -61,7 +61,7 @@ def _binding() -> AQUBTransportBinding:
 
 
 class _Session:
-    async def __aenter__(self) -> "_Session":
+    async def __aenter__(self) -> _Session:
         return self
 
     async def __aexit__(self, *_args: object) -> None:
