@@ -22,10 +22,10 @@ from app.application.aqub_transport import (
     AQUBVoiceReference,
 )
 from app.infrastructure.aqub_food_media import (
-    _ANALYSIS_SCHEMA,
-    _validate_magic,
     OpenAIAQUBFoodMediaAnalyzer,
     TelegramAQUBFoodMediaDownloader,
+    _ANALYSIS_SCHEMA,
+    _validate_magic,
 )
 
 
