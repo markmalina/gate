@@ -175,9 +175,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         http_client=http_client,
                     )
                     if (
-                        settings.gate_aqub_media_forward_enabled
-                        and settings.gate_aqub_food_media_processing_enabled
-                        and settings.gate_aqub_food_media_data_gate_approved
+                        getattr(settings, "gate_aqub_media_forward_enabled", False)
+                        and getattr(
+                            settings,
+                            "gate_aqub_food_media_processing_enabled",
+                            False,
+                        )
+                        and getattr(
+                            settings,
+                            "gate_aqub_food_media_data_gate_approved",
+                            False,
+                        )
                     ):
                         aqub_telegram = TelegramClient(
                             credential=settings.telegram_aqub_bot_token.get_secret_value(),
