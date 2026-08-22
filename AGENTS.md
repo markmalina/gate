@@ -50,3 +50,17 @@ message effects outside the exact owner-only caps recorded in the current Work.
 CI, merge, deployment status and provider dashboards never prove runtime or
 product readiness by themselves. Every autonomous Production change must end
 with an exact deployed revision and redacted acceptance or rollback receipt.
+
+<!-- WORK-HIERARCHY:START -->
+## Work hierarchy
+
+Before any mutation, read `WORK-PARENT.json`. This Work's direct parent is
+`AlphaCenter/center`; the company root is `AlphaCenter/center`.
+
+The parent coordinates portfolio, requirements, handoffs and acceptance. It
+does not gain implicit permission to mutate this repository. This Work remains
+the authority for its local domain and implementation. Cross-repository
+mutation requires an explicit owner decision or accepted project-to-project
+handoff. If the local pointer conflicts with Center's registry, stop
+cross-repository mutation and reconcile the pointers first.
+<!-- WORK-HIERARCHY:END -->
