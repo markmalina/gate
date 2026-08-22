@@ -34,6 +34,7 @@ _RAW_RETENTION_DAYS = 7
 _STALE_CLAIM_SECONDS = 120
 _MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024
 _IMAGE_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_GENERIC_BINARY_MEDIA_TYPES = {"application/octet-stream", "binary/octet-stream"}
 _VOICE_MEDIA_TYPES = {"audio/ogg", "audio/mpeg", "audio/mp4", "audio/webm"}
 
 _RECEIPT_ITEM_SCHEMA: dict[str, Any] = {
@@ -674,8 +675,13 @@ def _validate_magic(
             detected = "image/png"
         elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
             detected = "image/webp"
-        if detected is None or (media_type and media_type not in _IMAGE_MEDIA_TYPES):
+        if detected is None:
             raise AQUBFoodMediaError("aqub_food_media_image_invalid")
+        if media_type:
+            if media_type in _IMAGE_MEDIA_TYPES and media_type != detected:
+                raise AQUBFoodMediaError("aqub_food_media_image_invalid")
+            if media_type not in _IMAGE_MEDIA_TYPES | _GENERIC_BINARY_MEDIA_TYPES:
+                raise AQUBFoodMediaError("aqub_food_media_image_invalid")
         return detected
     if content_kind is AQUBTransportContentKind.VOICE:
         if not data.startswith(b"OggS") and media_type not in _VOICE_MEDIA_TYPES:
