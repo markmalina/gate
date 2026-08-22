@@ -22,6 +22,7 @@ from app.application.aqub_transport import (
     AQUBVoiceReference,
 )
 from app.infrastructure.aqub_food_media import (
+    _ANALYSIS_SCHEMA,
     OpenAIAQUBFoodMediaAnalyzer,
     TelegramAQUBFoodMediaDownloader,
 )
@@ -300,6 +301,20 @@ async def test_telegram_downloader_uses_one_metadata_and_one_bounded_file_call()
     assert media.media_type == "image/jpeg"
     assert media.data == b"\xff\xd8\xffmeal"
     assert len(calls) == 2
+
+
+def test_openai_schema_omits_unsupported_string_length_keywords() -> None:
+    def assert_supported(value: Any) -> None:
+        if isinstance(value, dict):
+            assert "minLength" not in value
+            assert "maxLength" not in value
+            for child in value.values():
+                assert_supported(child)
+        elif isinstance(value, list):
+            for child in value:
+                assert_supported(child)
+
+    assert_supported(_ANALYSIS_SCHEMA)
 
 
 @pytest.mark.anyio
