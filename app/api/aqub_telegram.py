@@ -62,6 +62,10 @@ _VOICE_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "voice"}
 _VOICE_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
 _VOICE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration"}
 _VOICE_OPTIONAL_FIELDS = {"mime_type", "file_size"}
+_AUDIO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "audio"}
+_AUDIO_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
+_AUDIO_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration", "mime_type"}
+_AUDIO_OPTIONAL_FIELDS = {"file_size", "file_name"}
 
 
 def get_aqub_transport_store(
@@ -294,7 +298,9 @@ def _project_inbound(
     photo: AQUBPhotoReference | None = None
     voice: AQUBVoiceReference | None = None
     if "text" in message:
-        if not isinstance(text, str) or "photo" in message:
+        if not isinstance(text, str) or any(
+            media_kind in message for media_kind in ("photo", "voice", "audio")
+        ):
             return None
         content_kind = AQUBTransportContentKind.TEXT
         command: str | None = text
@@ -306,6 +312,12 @@ def _project_inbound(
         command = None
     elif "voice" in message:
         voice = _project_voice(message)
+        if voice is None:
+            return None
+        content_kind = AQUBTransportContentKind.VOICE
+        command = None
+    elif "audio" in message:
+        voice = _project_audio(message)
         if voice is None:
             return None
         content_kind = AQUBTransportContentKind.VOICE
@@ -385,6 +397,56 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         references,
         key=lambda item: (item.width * item.height, item.file_size or 0),
     )
+
+
+def _project_audio(message: JsonObject) -> AQUBVoiceReference | None:
+    """Normalize one strict Telegram OGG audio upload into the durable voice path."""
+
+    message_fields = set(message)
+    if not _AUDIO_MESSAGE_REQUIRED_FIELDS.issubset(message_fields) or not message_fields.issubset(
+        _AUDIO_MESSAGE_REQUIRED_FIELDS | _AUDIO_MESSAGE_OPTIONAL_FIELDS
+    ):
+        return None
+    value = message.get("audio")
+    if not isinstance(value, dict):
+        return None
+    fields = set(value)
+    if not _AUDIO_REQUIRED_FIELDS.issubset(fields) or not fields.issubset(
+        _AUDIO_REQUIRED_FIELDS | _AUDIO_OPTIONAL_FIELDS
+    ):
+        return None
+    file_id = value.get("file_id")
+    file_unique_id = value.get("file_unique_id")
+    duration = value.get("duration")
+    mime_type = value.get("mime_type")
+    file_size = value.get("file_size")
+    file_name = value.get("file_name")
+    if (
+        not isinstance(file_id, str)
+        or not isinstance(file_unique_id, str)
+        or type(duration) is not int
+        or mime_type != "audio/ogg"
+        or ("file_size" in value and type(file_size) is not int)
+        or (
+            "file_name" in value
+            and (
+                not isinstance(file_name, str)
+                or len(file_name) > 255
+                or not file_name.lower().endswith(".ogg")
+            )
+        )
+    ):
+        return None
+    try:
+        return AQUBVoiceReference(
+            file_id=file_id,
+            file_unique_id=file_unique_id,
+            duration=duration,
+            mime_type=mime_type,
+            file_size=file_size,
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _project_voice(message: JsonObject) -> AQUBVoiceReference | None:
