@@ -1,0 +1,17 @@
+{
+  "schema_version": "work-parent.v1",
+  "repository": "AlphaCenter/gate",
+  "parent": "AlphaCenter/center",
+  "root": "AlphaCenter/center",
+  "relation": "shared_transport_and_delivery_platform",
+  "lifecycle": "active",
+  "registry": "https://github.com/AlphaCenter/center/blob/main/registry/work-hierarchy.v1.json",
+  "registry_revision": "609af3aa630a0ee6c9a21af3ac864ea27cfcb2bc",
+  "rules": {
+    "read_before_mutation": true,
+    "local_domain_owner": true,
+    "parent_coordinates_portfolio_requirements_handoffs_and_acceptance": true,
+    "cross_repository_mutation_requires_explicit_owner_or_project_handoff": true,
+    "conflict_behavior": "stop_and_reconcile_with_center_registry"
+  }
+}
