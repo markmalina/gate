@@ -270,6 +270,29 @@ def _meal(value: Any) -> JsonObject:
         if type(amount) is not int or not 0 <= amount <= 100_000:
             raise AQUBFoodMediaError("aqub_food_media_meal_amount_invalid")
         result[key] = amount
+    items = value.get("items")
+    if items is not None:
+        if not isinstance(items, list) or not 1 <= len(items) <= 20:
+            raise AQUBFoodMediaError("aqub_food_media_meal_items_invalid")
+        normalized_items = [_meal_item(item) for item in items]
+        result["items"] = normalized_items
+        for key in ("kcal", "protein_g", "fat_g", "carbs_g"):
+            result[key] = sum(item[key] for item in normalized_items)
+    return result
+
+
+def _meal_item(value: Any) -> JsonObject:
+    if not isinstance(value, Mapping):
+        raise AQUBFoodMediaError("aqub_food_media_meal_item_invalid")
+    label = value.get("label")
+    if not isinstance(label, str) or not label.strip() or len(label) > 300:
+        raise AQUBFoodMediaError("aqub_food_media_meal_item_label_invalid")
+    result: JsonObject = {"label": label.strip()}
+    for key in ("kcal", "protein_g", "fat_g", "carbs_g"):
+        amount = value.get(key)
+        if type(amount) is not int or not 0 <= amount <= 100_000:
+            raise AQUBFoodMediaError("aqub_food_media_meal_item_amount_invalid")
+        result[key] = amount
     return result
 
 

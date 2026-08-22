@@ -228,6 +228,50 @@ def test_receipt_result_keeps_purchase_separate_from_meal() -> None:
     assert result["receipt"]["items"][0]["name"] == "Творог"
 
 
+def test_meal_result_keeps_itemized_food_and_recomputes_exact_totals() -> None:
+    result = validate_food_media_result(
+        {
+            "kind": "meal",
+            "confidence": "medium",
+            "transcript": "Съел овсяные хлопья с молоком",
+            "meal": {
+                "label": "овсяные хлопья с молоком",
+                "kcal": 999,
+                "protein_g": 999,
+                "fat_g": 999,
+                "carbs_g": 999,
+                "items": [
+                    {
+                        "label": "овсяные хлопья 100 г",
+                        "kcal": 370,
+                        "protein_g": 13,
+                        "fat_g": 7,
+                        "carbs_g": 62,
+                    },
+                    {
+                        "label": "молоко 400 мл",
+                        "kcal": 240,
+                        "protein_g": 12,
+                        "fat_g": 12,
+                        "carbs_g": 20,
+                    },
+                ],
+            },
+            "receipt": None,
+        },
+        source_kind="voice",
+        source_sha256="b" * 64,
+    )
+    assert [item["label"] for item in result["meal"]["items"]] == [
+        "овсяные хлопья 100 г",
+        "молоко 400 мл",
+    ]
+    assert result["meal"]["kcal"] == 610
+    assert result["meal"]["protein_g"] == 25
+    assert result["meal"]["fat_g"] == 19
+    assert result["meal"]["carbs_g"] == 82
+
+
 @pytest.mark.anyio
 async def test_telegram_downloader_uses_one_metadata_and_one_bounded_file_call() -> None:
     calls: list[str] = []
@@ -273,6 +317,9 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
         body = json.loads(request.content)
         assert body["store"] is False
         assert body["tools"] == []
+        assert "список отдельно съеденных продуктов" in body["instructions"]
+        meal_schema = body["text"]["format"]["schema"]["properties"]["meal"]
+        assert "items" in meal_schema["anyOf"][1]["required"]
         return httpx.Response(
             200,
             json={
@@ -288,6 +335,22 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
                             "protein_g": 45,
                             "fat_g": 18,
                             "carbs_g": 70,
+                            "items": [
+                                {
+                                    "label": "курица",
+                                    "kcal": 300,
+                                    "protein_g": 40,
+                                    "fat_g": 10,
+                                    "carbs_g": 0,
+                                },
+                                {
+                                    "label": "рис",
+                                    "kcal": 320,
+                                    "protein_g": 5,
+                                    "fat_g": 8,
+                                    "carbs_g": 70,
+                                },
+                            ],
                         },
                         "receipt": None,
                     },
