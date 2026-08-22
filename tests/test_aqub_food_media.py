@@ -135,6 +135,21 @@ def test_non_ogg_or_ambiguous_audio_is_rejected(
     )
 
 
+def test_text_with_audio_context_is_rejected() -> None:
+    update = _audio_update()
+    message = update["message"]
+    assert isinstance(message, dict)
+    message["text"] = "synthetic conflict"
+    assert (
+        _project_inbound(
+            update,
+            bot_username="@AQubAgentBot",
+            received_at=datetime.fromtimestamp(1_786_000_001, tz=UTC),
+        )
+        is None
+    )
+
+
 @pytest.mark.anyio
 async def test_voice_is_committed_then_forwarded_as_opaque_media_envelope() -> None:
     inbound = _project_inbound(
