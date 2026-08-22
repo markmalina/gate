@@ -315,6 +315,7 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
                 headers={"x-request-id": "transcription-1"},
             )
         body = json.loads(request.content)
+        assert body["reasoning"] == {"effort": "none"}
         assert body["store"] is False
         assert body["tools"] == []
         assert "список отдельно съеденных продуктов" in body["instructions"]
