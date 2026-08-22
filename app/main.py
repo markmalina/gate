@@ -55,6 +55,7 @@ from app.services.telegram_become_webhook import (
     reconcile_become_telegram_webhook_with_retries,
 )
 from app.services.telegram_webhook import reconcile_telegram_webhook_with_retries
+from app.worker.aqub_food_media import run_aqub_food_media_worker_loop
 from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
 from app.worker.beta_space import run_beta_space_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
@@ -158,6 +159,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
                 beta_space_task: asyncio.Task[None] | None = None
+                aqub_food_media_task: asyncio.Task[None] | None = None
                 try:
                     # Neutral process-wide name for shared outbound HTTP. Keep the
                     # Beta alias until its ingress is migrated independently.
@@ -172,6 +174,24 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         api_base_url=api_base_url,
                         http_client=http_client,
                     )
+                    if (
+                        settings.gate_aqub_media_forward_enabled
+                        and settings.gate_aqub_food_media_processing_enabled
+                        and settings.gate_aqub_food_media_data_gate_approved
+                    ):
+                        aqub_telegram = TelegramClient(
+                            credential=settings.telegram_aqub_bot_token.get_secret_value(),
+                            api_base_url=api_base_url,
+                            http_client=http_client,
+                        )
+                        aqub_food_media_task = asyncio.create_task(
+                            run_aqub_food_media_worker_loop(
+                                settings=settings,
+                                session_factory=database_runtime.session_factory,
+                                telegram=aqub_telegram,
+                                http_client=http_client,
+                            )
+                        )
                     if getattr(settings, "gate_beta_connector_enabled", False):
                         _app.state.beta_telegram_client = TelegramClient(
                             credential=settings.telegram_beta_bot_token.get_secret_value(),
@@ -230,6 +250,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     yield
                 finally:
                     try:
+                        if aqub_food_media_task is not None:
+                            if not aqub_food_media_task.done():
+                                aqub_food_media_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await aqub_food_media_task
                         if beta_space_task is not None:
                             if not beta_space_task.done():
                                 beta_space_task.cancel()
