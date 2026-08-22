@@ -27,6 +27,7 @@ from app.infrastructure.aqub_food_media import (
     TelegramAQUBFoodMediaDownloader,
     _validate_magic,
 )
+from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 
 
 def _inbound(kind: AQUBTransportContentKind) -> AQUBTransportInbound:
@@ -331,9 +332,16 @@ def test_openai_schema_omits_unsupported_string_length_keywords() -> None:
 async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> None:
     requests: list[str] = []
 
+    async def normalize_ogg(data: bytes) -> tuple[int, bytes, bytes]:
+        assert data == b"OggSvoice"
+        return 0, b"RIFF-normalized-WAVE", b""
+
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request.url.path)
         if request.url.path.endswith("/audio/transcriptions"):
+            assert b'filename="telegram-voice.wav"' in request.content
+            assert b"Content-Type: audio/wav" in request.content
+            assert b"RIFF-normalized-WAVE" in request.content
             return httpx.Response(
                 200,
                 json={"text": "Съел курицу с рисом"},
@@ -394,6 +402,7 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
             transcription_model="gpt-4o-mini-transcribe",
             client=client,
             data_gate_approved=True,
+            voice_normalizer=TelegramVoiceNormalizer(runner=normalize_ogg),
         ).analyze(
             content_kind=AQUBTransportContentKind.VOICE,
             media=AQUBDownloadedMedia(
@@ -407,6 +416,42 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
     assert result.result_json["transcript"] == "Съел курицу с рисом"
     assert result.provider_request_ref == "transcription-1;analysis-1"
     assert requests == ["/v1/audio/transcriptions", "/v1/responses"]
+
+
+@pytest.mark.anyio
+async def test_openai_voice_path_fails_closed_when_ogg_normalization_fails() -> None:
+    async def fail_normalization(_data: bytes) -> tuple[int, bytes, bytes]:
+        return 1, b"", b"safe diagnostic"
+
+    async def unexpected_provider_call(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("provider must not be called after normalization failure")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(unexpected_provider_call)
+    ) as client:
+        analyzer = OpenAIAQUBFoodMediaAnalyzer(
+            api_key="server-secret",
+            api_base_url="https://api.openai.com/v1",
+            model="gpt-5.6-luna",
+            transcription_model="gpt-4o-mini-transcribe",
+            client=client,
+            data_gate_approved=True,
+            voice_normalizer=TelegramVoiceNormalizer(runner=fail_normalization),
+        )
+        with pytest.raises(
+            AQUBFoodMediaError,
+            match="aqub_food_media_voice_normalization_failed",
+        ):
+            await analyzer.analyze(
+                content_kind=AQUBTransportContentKind.VOICE,
+                media=AQUBDownloadedMedia(
+                    data=b"OggSvoice",
+                    media_type="audio/ogg",
+                    filename="voice.ogg",
+                ),
+                caption="",
+                source_sha256="b" * 64,
+            )
 
 
 @pytest.mark.anyio

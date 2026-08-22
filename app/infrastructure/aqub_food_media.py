@@ -28,6 +28,8 @@ from app.application.aqub_transport import (
     AQUBTransportContentKind,
     AQUBTransportInbound,
 )
+from app.application.telegram_voice_transcription import DownloadedVoice, TelegramVoiceError
+from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.aqub import AQUBFoodMedia
 
 _RAW_RETENTION_DAYS = 7
@@ -465,6 +467,7 @@ class OpenAIAQUBFoodMediaAnalyzer:
         transcription_model: str,
         client: httpx.AsyncClient,
         data_gate_approved: bool,
+        voice_normalizer: TelegramVoiceNormalizer | None = None,
     ) -> None:
         if not data_gate_approved:
             raise AQUBFoodMediaError("aqub_food_media_data_gate_not_approved")
@@ -482,6 +485,7 @@ class OpenAIAQUBFoodMediaAnalyzer:
         self._model = model
         self._transcription_model = transcription_model
         self._client = client
+        self._voice_normalizer = voice_normalizer or TelegramVoiceNormalizer()
 
     async def analyze(
         self,
@@ -511,10 +515,28 @@ class OpenAIAQUBFoodMediaAnalyzer:
 
     async def _transcribe(self, media: AQUBDownloadedMedia) -> tuple[str, str | None]:
         try:
+            normalized = await self._voice_normalizer.normalize(
+                DownloadedVoice(
+                    data=media.data,
+                    filename=media.filename,
+                    media_type=media.media_type,
+                )
+            )
+        except TelegramVoiceError as exc:
+            raise AQUBFoodMediaError("aqub_food_media_voice_normalization_failed") from exc
+        if normalized.additional_parts:
+            raise AQUBFoodMediaError("aqub_food_media_voice_multipart_unsupported")
+        try:
             response = await self._client.post(
                 f"{self._api_base_url}/audio/transcriptions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                files={"file": (media.filename, media.data, media.media_type)},
+                files={
+                    "file": (
+                        normalized.filename,
+                        normalized.data,
+                        normalized.media_type,
+                    )
+                },
                 data={
                     "model": self._transcription_model,
                     "language": "ru",
