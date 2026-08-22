@@ -23,6 +23,7 @@ from app.application.aqub_transport import (
 )
 from app.infrastructure.aqub_food_media import (
     _ANALYSIS_SCHEMA,
+    _validate_magic,
     OpenAIAQUBFoodMediaAnalyzer,
     TelegramAQUBFoodMediaDownloader,
 )
@@ -290,7 +291,7 @@ async def test_telegram_downloader_uses_one_metadata_and_one_bounded_file_call()
         return httpx.Response(
             200,
             content=b"\xff\xd8\xffmeal",
-            headers={"content-type": "image/jpeg", "content-length": "7"},
+            headers={"content-type": "application/octet-stream", "content-length": "7"},
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -301,6 +302,15 @@ async def test_telegram_downloader_uses_one_metadata_and_one_bounded_file_call()
     assert media.media_type == "image/jpeg"
     assert media.data == b"\xff\xd8\xffmeal"
     assert len(calls) == 2
+
+
+def test_image_magic_rejects_non_binary_non_image_content_type() -> None:
+    with pytest.raises(AQUBFoodMediaError, match="aqub_food_media_image_invalid"):
+        _validate_magic(
+            b"\xff\xd8\xffmeal",
+            content_kind=AQUBTransportContentKind.PHOTO,
+            media_type="text/html",
+        )
 
 
 def test_openai_schema_omits_unsupported_string_length_keywords() -> None:
