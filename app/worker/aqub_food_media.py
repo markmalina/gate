@@ -116,7 +116,10 @@ async def run_aqub_food_media_once(
             )
             done, _pending = await asyncio.wait(
                 {task},
-                timeout=AQUB_FOOD_MEDIA_PROGRESS_SECONDS,
+                timeout=_progress_timeout_seconds(
+                    received_at=job.received_at,
+                    observed_at=observed_at,
+                ),
             )
             if not done and not job.progress_sent:
                 await telegram.send_plain_message(
@@ -281,6 +284,15 @@ async def _mark_final(
             receipt_id=str(receipt_id),
             now=datetime.now(UTC),
         )
+
+
+def _progress_timeout_seconds(
+    *,
+    received_at: datetime,
+    observed_at: datetime,
+) -> float:
+    deadline = received_at + timedelta(seconds=AQUB_FOOD_MEDIA_PROGRESS_SECONDS)
+    return max(0.0, (deadline - observed_at).total_seconds())
 
 
 def _reply_text(downstream: dict[str, Any]) -> str:
