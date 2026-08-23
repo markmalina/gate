@@ -52,6 +52,7 @@ class AQUBLiveForwardResult:
     reason: str
     downstream: JsonObject | None = None
     captured_content: AQUBTransportContentKind | None = None
+    delivery_ref: str | None = None
 
 
 class AQUBRuntimeUnavailable(RuntimeError):
@@ -153,12 +154,11 @@ class AQUBLiveIngressAdapter:
         _validate_acceptance(acceptance)
 
         duplicate = acceptance.disposition is AQUBStoreDisposition.DUPLICATE
-        if duplicate:
-            return AQUBLiveForwardResult(
-                accepted=True,
-                duplicate=True,
-                reason="aqub_live_duplicate",
-            )
+        delivery_ref = _opaque_ref(
+            self._binding.receipt_signing_key,
+            "receipt",
+            acceptance.command_receipt_id,
+        )
         media_result: JsonObject | None = None
         if (
             inbound.content_kind in {AQUBTransportContentKind.PHOTO, AQUBTransportContentKind.VOICE}
@@ -185,6 +185,7 @@ class AQUBLiveIngressAdapter:
                     }
                 ),
                 captured_content=None if album_item else inbound.content_kind,
+                delivery_ref=delivery_ref,
             )
         raw_body = _build_signed_envelope_body(
             binding=self._binding,
@@ -227,6 +228,7 @@ class AQUBLiveIngressAdapter:
                 duplicate=duplicate,
                 reason="aqub_live_durable_only",
                 captured_content=captured_content,
+                delivery_ref=delivery_ref,
             )
         return AQUBLiveForwardResult(
             accepted=True,
@@ -234,6 +236,7 @@ class AQUBLiveIngressAdapter:
             reason="aqub_live_committed",
             downstream=downstream,
             captured_content=captured_content,
+            delivery_ref=delivery_ref,
         )
 
 
