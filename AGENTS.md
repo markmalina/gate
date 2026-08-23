@@ -1,22 +1,26 @@
 # Gate Work instructions
 
-Gate Work follows the canonical AlphaVia Work bootstrap policy in
-[AlphaVia issue #67](https://github.com/markmalina/alphavia/issues/67).
-That issue owns the cross-repository policy; this repository records the
-Gate-specific entrypoint and owner authorizations.
+Canonical company policy and ownership live in
+[AlphaCenter/center](https://github.com/AlphaCenter/center). This repository
+owns Gate transport/runtime implementation; Center coordinates portfolio,
+requirements, handoffs and acceptance without gaining Gate mutation authority.
 
 On the first turn of every newly opened Gate Work:
 
-1. Read `docs/work-bootstrap.md`.
-2. Read the current GitHub issue, its latest implementation receipt, and its
-   `next-work` pointer.
-3. List scheduled tasks visible to the current chat before creating anything.
-4. Ensure exactly one enabled automation titled `Gate Work heartbeat` exists
-   for this Work. Never create a duplicate.
-5. Use the fastest recurrence actually supported by the current Automations
-   surface. The desired active cadence is ten minutes; the current callable API
-   caps recurrence at hourly. Report the schedule that was really created.
-6. Follow the lease and state protocol in `docs/work-bootstrap.md`.
+1. Read Center `AGENTS.md`, this repository's `WORK-PARENT.json`,
+   `docs/work-bootstrap.md`, the current GitHub issue, latest receipt and
+   next pointer.
+2. Re-query current main, open PR/issues, executions, leases, receipts and
+   scheduled automations before mutation.
+3. Continue an existing matching outcome; do not create a duplicate issue,
+   execution, lease, branch, PR or automation.
+4. Do not create or require a per-project heartbeat. Center owns the single
+   company reconciliation/reporting loop. A Gate schedule needs a separate
+   exact purpose, supported cadence and duplicate check.
+5. Use one bounded PR, deterministic checks and one necessary exact-head CI run.
+   No zero-change or pointer-only commit/comment is allowed.
+6. Follow the local lease/state protocol and the stricter current owner scope.
+   A current task restriction overrides an older broader standing authorization.
 
 ## Owner standing authorization: pre-user autonomy
 
