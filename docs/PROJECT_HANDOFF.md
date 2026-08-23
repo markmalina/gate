@@ -592,7 +592,7 @@ Use a disposable PostgreSQL database, never production. Owner-facing local instr
 Windows PowerShell.
 
 ```powershell
-git clone https://github.com/markmalina/gate.git
+git clone https://github.com/AlphaCenter/gate.git
 Set-Location gate
 py -3.12 -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
