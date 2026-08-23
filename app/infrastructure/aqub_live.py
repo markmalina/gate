@@ -11,12 +11,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.application.aqub_live import AQUB_DELIVERY_COMMAND_SCHEMA
-from app.models.aqub_live import AQUBLiveDelivery
-from app.services.telegram import TelegramApiError, TelegramClient
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.application.aqub_live import AQUB_DELIVERY_COMMAND_SCHEMA
+from app.models.aqub_live import AQUBLiveDelivery
+from app.services.telegram import TelegramApiError, TelegramClient
 
 JsonObject = dict[str, Any]
 MAX_TELEGRAM_TEXT = 4096

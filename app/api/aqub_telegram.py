@@ -12,6 +12,9 @@ from typing import Annotated, Any, cast
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_database_runtime, get_db_session
 from app.application.aqub_food_media import AQUBFoodMediaQueue
 from app.application.aqub_live import (
@@ -47,8 +50,6 @@ from app.infrastructure.aqub_live import (
     verify_aqub_signature,
 )
 from app.services.telegram import TelegramClient
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)

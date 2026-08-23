@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
+
 from app.application.aqub_food_media import AQUBFoodMediaQueue
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
