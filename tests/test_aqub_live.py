@@ -15,6 +15,7 @@ from app.application.aqub_live import (
     AQUBLiveIngressAdapter,
     AQUBRuntimeUnavailable,
     HttpAQUBRuntimeClient,
+    forward_aqub_album_result,
 )
 from app.application.aqub_transport import (
     AQUBDurableAcceptance,
@@ -147,17 +148,20 @@ def photo_inbound(
     actor_id: str = TEST_ALPHA_ID,
     chat_id: str = TEST_CHAT_ID,
     caption: str | None = "Съел омлет",
+    media_group_id: str | None = None,
+    message_id: int = 78,
+    unique_suffix: str = "",
 ) -> AQUBTransportInbound:
     occurred = READY_AT + timedelta(seconds=1)
     photo = AQUBPhotoReference(
         file_id="synthetic-file",
-        file_unique_id="synthetic-unique",
+        file_unique_id=f"synthetic-unique{unique_suffix}",
         width=1280,
         height=960,
         file_size=12_345,
     )
     message: dict[str, object] = {
-        "message_id": 78,
+        "message_id": message_id,
         "date": int(occurred.timestamp()),
         "chat": {"id": int(chat_id), "type": "supergroup"},
         "from": {"id": int(actor_id), "is_bot": False},
@@ -173,6 +177,8 @@ def photo_inbound(
     }
     if caption is not None:
         message["caption"] = caption
+    if media_group_id is not None:
+        message["media_group_id"] = media_group_id
     payload = {"update_id": update_id, "message": message}
     return AQUBTransportInbound(
         bot_username="@AQubAgentBot",
@@ -185,7 +191,73 @@ def photo_inbound(
         received_at=occurred + timedelta(seconds=1),
         content_kind=AQUBTransportContentKind.PHOTO,
         photo=photo,
+        media_group_id=media_group_id,
     )
+
+
+@pytest.mark.anyio
+async def test_album_forward_is_one_opaque_ordered_fact_with_all_captions() -> None:
+    runtime = Runtime()
+    members = [
+        photo_inbound(
+            update_id=9006,
+            caption="Курица",
+            media_group_id="raw-provider-group",
+            message_id=78,
+            unique_suffix="-1",
+        ),
+        photo_inbound(
+            update_id=9007,
+            caption="Рис и этикетка",
+            media_group_id="raw-provider-group",
+            message_id=79,
+            unique_suffix="-2",
+        ),
+        photo_inbound(
+            update_id=9008,
+            caption="Третий ракурс",
+            media_group_id="raw-provider-group",
+            message_id=80,
+            unique_suffix="-3",
+        ),
+    ]
+    downstream = await forward_aqub_album_result(
+        binding=binding(),
+        inbounds=members,
+        command_receipt_ids=["receipt-1", "receipt-2", "receipt-3"],
+        successful_orders=[0, 2],
+        media_result={
+            "schema_version": "aqub.food-media-analysis.v1",
+            "source_kind": "photo",
+            "source_sha256": "a" * 64,
+            "kind": "meal",
+            "confidence": "medium",
+            "transcript": None,
+            "meal": {
+                "label": "курица с рисом",
+                "kcal": 510,
+                "protein_g": 50,
+                "fat_g": 7,
+                "carbs_g": 57,
+            },
+            "receipt": None,
+        },
+        runtime=runtime,
+    )
+
+    assert downstream["ok"] is True
+    assert len(runtime.raw_bodies) == 1
+    envelope = json.loads(runtime.raw_bodies[0])
+    assert envelope["text"] == "Курица\nРис и этикетка\nТретий ракурс"
+    assert [item["order"] for item in envelope["media_items"]] == [0, 2]
+    assert len(envelope["media_failures"]) == 1
+    assert envelope["media_failures"][0]["order"] == 1
+    assert envelope["media_failures"][0]["reason_code"] == "download_failed"
+    assert envelope["media_failures"][0]["message_ref"].startswith("message:")
+    assert len(envelope["source_update_refs"]) == 3
+    serialized = runtime.raw_bodies[0].decode()
+    assert "raw-provider-group" not in serialized
+    assert TEST_CHAT_ID not in serialized
 
 
 @pytest.mark.anyio
@@ -229,7 +301,7 @@ async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -
 
 
 @pytest.mark.anyio
-async def test_exact_live_replay_reuses_gate_receipt_and_same_opaque_refs() -> None:
+async def test_exact_live_replay_stops_before_a_second_runtime_effect() -> None:
     store = Store()
     runtime = Runtime()
     adapter = AQUBLiveIngressAdapter(
@@ -243,7 +315,8 @@ async def test_exact_live_replay_reuses_gate_receipt_and_same_opaque_refs() -> N
 
     assert first.duplicate is False
     assert second.duplicate is True
-    assert runtime.raw_bodies[0] == runtime.raw_bodies[1]
+    assert second.reason == "aqub_live_duplicate"
+    assert len(runtime.raw_bodies) == 1
 
 
 @pytest.mark.anyio
@@ -313,7 +386,7 @@ async def test_alpha_photo_commits_reference_and_forwards_redacted_envelope() ->
 
 
 @pytest.mark.anyio
-async def test_exact_photo_replay_reuses_receipt_and_runtime_envelope() -> None:
+async def test_exact_photo_replay_reuses_receipt_without_second_runtime_effect() -> None:
     store = Store()
     runtime = Runtime()
     adapter = AQUBLiveIngressAdapter(
@@ -328,7 +401,8 @@ async def test_exact_photo_replay_reuses_receipt_and_runtime_envelope() -> None:
     assert first.duplicate is False
     assert duplicate.duplicate is True
     assert len(store.commands) == 2
-    assert len(runtime.raw_bodies) == 2
+    assert duplicate.reason == "aqub_live_duplicate"
+    assert len(runtime.raw_bodies) == 1
 
 
 @pytest.mark.anyio
@@ -560,5 +634,25 @@ async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
             "reply_text": "Спасибо, файл принят. Разбираюсь с ним.",
         }
     }
+    assert queue.calls == [("raw-receipt-id", incoming)]
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_album_item_is_queued_without_per_photo_reply() -> None:
+    runtime = Runtime()
+    queue = MediaQueue()
+    incoming = photo_inbound(media_group_id="synthetic-group")
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=Store(),
+        runtime=runtime,
+        media_queue=queue,
+    ).handle(incoming)
+
+    assert result.accepted is True
+    assert result.reason == "aqub_food_media_queued"
+    assert result.downstream is None
+    assert result.captured_content is None
     assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []

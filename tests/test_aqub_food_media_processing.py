@@ -13,6 +13,7 @@ from app.application.aqub_food_media import (
     AQUBFoodMediaClaimDisposition,
     AQUBFoodMediaError,
     ProcessAQUBFoodMedia,
+    combine_album_media_results,
     validate_food_media_result,
 )
 from app.application.aqub_transport import (
@@ -231,6 +232,53 @@ def test_receipt_result_keeps_purchase_separate_from_meal() -> None:
     assert result["receipt"]["items"][0]["name"] == "Творог"
 
 
+def test_album_combiner_deduplicates_angles_and_keeps_distinct_products() -> None:
+    values = [
+        validate_food_media_result(
+            {
+                "kind": "meal",
+                "confidence": "medium",
+                "transcript": None,
+                "meal": {
+                    "label": label,
+                    "kcal": kcal,
+                    "protein_g": protein,
+                    "fat_g": fat,
+                    "carbs_g": carbs,
+                    "items": [
+                        {
+                            "label": label,
+                            "kcal": kcal,
+                            "protein_g": protein,
+                            "fat_g": fat,
+                            "carbs_g": carbs,
+                        }
+                    ],
+                },
+                "receipt": None,
+            },
+            source_kind="photo",
+            source_sha256=source,
+        )
+        for label, kcal, protein, fat, carbs, source in [
+            ("курица", 250, 45, 6, 0, "a" * 64),
+            ("Курица", 250, 45, 6, 0, "b" * 64),
+            ("рис", 260, 5, 1, 57, "c" * 64),
+        ]
+    ]
+
+    combined = combine_album_media_results(values)
+
+    assert combined["kind"] == "meal"
+    assert combined["meal"]["label"] == "курица, рис"
+    assert [item["label"] for item in combined["meal"]["items"]] == [
+        "курица",
+        "рис",
+    ]
+    assert combined["meal"]["kcal"] == 510
+    assert len(combined["source_sha256"]) == 64
+
+
 def test_meal_result_keeps_itemized_food_and_recomputes_exact_totals() -> None:
     result = validate_food_media_result(
         {
@@ -426,9 +474,7 @@ async def test_openai_voice_path_fails_closed_when_ogg_normalization_fails() -> 
     async def unexpected_provider_call(_request: httpx.Request) -> httpx.Response:
         raise AssertionError("provider must not be called after normalization failure")
 
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(unexpected_provider_call)
-    ) as client:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unexpected_provider_call)) as client:
         analyzer = OpenAIAQUBFoodMediaAnalyzer(
             api_key="server-secret",
             api_base_url="https://api.openai.com/v1",

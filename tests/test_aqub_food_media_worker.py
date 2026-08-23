@@ -15,12 +15,18 @@ CHAT_ID = "-1001234567890"
 ACTOR_ID = "123456789"
 
 
-def _payload() -> dict[str, object]:
-    return {
-        "update_id": 501,
+def _payload(
+    *,
+    update_id: int = 501,
+    message_id: int = 601,
+    actor_id: str = ACTOR_ID,
+    media_group_id: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "update_id": update_id,
         "message": {
-            "message_id": 601,
-            "from": {"id": int(ACTOR_ID), "is_bot": False},
+            "message_id": message_id,
+            "from": {"id": int(actor_id), "is_bot": False},
             "date": int((NOW - timedelta(seconds=1)).timestamp()),
             "chat": {"id": int(CHAT_ID), "type": "supergroup"},
             "photo": [
@@ -34,17 +40,27 @@ def _payload() -> dict[str, object]:
             ],
         },
     }
+    if media_group_id is not None:
+        message = payload["message"]
+        assert isinstance(message, dict)
+        message["media_group_id"] = media_group_id
+    return payload
 
 
-def _job() -> worker._MediaJob:
+def _job(
+    *,
+    receipt_id: UUID = RECEIPT_ID,
+    payload: dict[str, object] | None = None,
+    received_at: datetime = NOW,
+) -> worker._MediaJob:
     return worker._MediaJob(
-        receipt_id=RECEIPT_ID,
+        receipt_id=receipt_id,
         status="queued",
         error_code=None,
         result_json=None,
         progress_sent=False,
-        payload=_payload(),
-        received_at=NOW,
+        payload=payload or _payload(),
+        received_at=received_at,
     )
 
 
@@ -160,14 +176,100 @@ async def _prepare(
 
 
 def test_progress_deadline_is_anchored_to_receipt_time() -> None:
-    assert worker._progress_timeout_seconds(
-        received_at=NOW,
-        observed_at=NOW,
-    ) == 21
-    assert worker._progress_timeout_seconds(
-        received_at=NOW,
-        observed_at=NOW + timedelta(seconds=30),
-    ) == 0
+    assert (
+        worker._progress_timeout_seconds(
+            received_at=NOW,
+            observed_at=NOW,
+        )
+        == 21
+    )
+    assert (
+        worker._progress_timeout_seconds(
+            received_at=NOW,
+            observed_at=NOW + timedelta(seconds=30),
+        )
+        == 0
+    )
+
+
+def test_album_selection_waits_for_settle_and_preserves_message_order() -> None:
+    jobs = [
+        _job(
+            receipt_id=UUID("22222222-2222-4222-8222-222222222223"),
+            payload=_payload(
+                update_id=502,
+                message_id=602,
+                media_group_id="group-1",
+            ),
+        ),
+        _job(
+            payload=_payload(
+                update_id=501,
+                message_id=601,
+                media_group_id="group-1",
+            ),
+        ),
+    ]
+    assert (
+        worker._select_ready_jobs(
+            jobs,
+            now=NOW + timedelta(seconds=1),
+            stale_before=NOW - timedelta(seconds=120),
+        )
+        == []
+    )
+    selected = worker._select_ready_jobs(
+        jobs,
+        now=NOW + timedelta(seconds=3),
+        stale_before=NOW - timedelta(seconds=120),
+    )
+    assert [job.payload["message"]["message_id"] for job in selected] == [601, 602]
+
+
+def test_album_selection_isolates_actor_and_media_group() -> None:
+    jobs = [
+        _job(payload=_payload(media_group_id="shared")),
+        _job(
+            receipt_id=UUID("22222222-2222-4222-8222-222222222223"),
+            payload=_payload(
+                update_id=502,
+                message_id=602,
+                actor_id="987654321",
+                media_group_id="shared",
+            ),
+        ),
+        _job(
+            receipt_id=UUID("22222222-2222-4222-8222-222222222224"),
+            payload=_payload(
+                update_id=503,
+                message_id=603,
+                media_group_id="other",
+            ),
+        ),
+    ]
+    selected = worker._select_ready_jobs(
+        jobs,
+        now=NOW + timedelta(seconds=3),
+        stale_before=NOW - timedelta(seconds=120),
+    )
+    assert len(selected) == 1
+    assert selected[0].payload["message"]["from"]["id"] == int(ACTOR_ID)
+    assert selected[0].payload["message"]["media_group_id"] == "shared"
+
+
+def test_reply_messages_preserve_semantic_order_and_question_last() -> None:
+    assert worker._reply_messages(
+        {
+            "result": {
+                "reply_messages": [
+                    "Что понял",
+                    "Предварительный расчёт",
+                    "Сколько было семечек?",
+                ],
+                "reply_text": "Сколько было семечек?",
+            }
+        }
+    ) == ["Что понял", "Предварительный расчёт", "Сколько было семечек?"]
 
 
 @pytest.mark.anyio

@@ -9,9 +9,6 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_database_runtime, get_db_session
 from app.application.aqub_food_media import AQUBFoodMediaQueue
 from app.application.aqub_live import (
@@ -46,6 +43,8 @@ from app.infrastructure.aqub_live import (
     verify_aqub_signature,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -55,7 +54,7 @@ _TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
 _TELEGRAM_MESSAGE_ID_MAX = (1 << 52) - 1
 _PHOTO_CAPTION_MAX_CHARS = 1_024
 _PHOTO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "photo"}
-_PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption"}
+_PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption", "media_group_id"}
 _PHOTO_SIZE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "width", "height"}
 _PHOTO_SIZE_OPTIONAL_FIELDS = {"file_size"}
 _VOICE_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "voice"}
@@ -192,6 +191,12 @@ async def aqub_telegram_ingress(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc)[:160],
         ) from None
+    await _send_live_prefix_messages(
+        request=request,
+        settings=settings,
+        live=live,
+        chat_id=inbound.chat_id,
+    )
     return _live_response(live, chat_id=inbound.chat_id)
 
 
@@ -340,6 +345,12 @@ def _project_inbound(
         content_kind=content_kind,
         photo=photo,
         voice=voice,
+        media_group_id=(
+            cast(str, message.get("media_group_id"))
+            if content_kind is AQUBTransportContentKind.PHOTO
+            and isinstance(message.get("media_group_id"), str)
+            else None
+        ),
     )
 
 
@@ -352,6 +363,14 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
     caption = message.get("caption")
     if "caption" in message and (
         not isinstance(caption, str) or len(caption) > _PHOTO_CAPTION_MAX_CHARS
+    ):
+        return None
+    media_group_id = message.get("media_group_id")
+    if "media_group_id" in message and (
+        not isinstance(media_group_id, str)
+        or not media_group_id
+        or media_group_id != media_group_id.strip()
+        or len(media_group_id) > 128
     ):
         return None
     values = message.get("photo")
@@ -522,11 +541,12 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         return _unowned_response(reason=result.reason)
     downstream = result.downstream or {}
     domain = downstream.get("result")
-    if isinstance(domain, dict) and isinstance(domain.get("reply_text"), str):
+    reply_text = _domain_last_reply(domain)
+    if isinstance(domain, dict) and reply_text is not None:
         response: JsonObject = {
             "method": "sendMessage",
             "chat_id": int(chat_id),
-            "text": domain["reply_text"],
+            "text": reply_text,
         }
         if domain.get("force_reply") is True:
             response["reply_markup"] = {"force_reply": True, "selective": True}
@@ -541,7 +561,9 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         return {
             "method": "sendMessage",
             "chat_id": int(chat_id),
-            "text": "Записал.",
+            "text": (
+                "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз."
+            ),
         }
     if result.captured_content is AQUBTransportContentKind.VOICE:
         return {
@@ -556,6 +578,54 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         "reason": result.reason,
         "duplicate": result.duplicate,
     }
+
+
+def _domain_last_reply(domain: object) -> str | None:
+    if not isinstance(domain, dict):
+        return None
+    messages = domain.get("reply_messages")
+    if isinstance(messages, list) and messages:
+        value = messages[-1]
+        if isinstance(value, str) and value.strip() and len(value.strip()) <= 4_096:
+            return value.strip()
+        return None
+    value = domain.get("reply_text")
+    return (
+        value.strip()
+        if isinstance(value, str) and value.strip() and len(value.strip()) <= 4_096
+        else None
+    )
+
+
+async def _send_live_prefix_messages(
+    *,
+    request: Request,
+    settings: Settings,
+    live: AQUBLiveForwardResult,
+    chat_id: str,
+) -> None:
+    if live.duplicate or not isinstance(live.downstream, dict):
+        return
+    domain = live.downstream.get("result")
+    if not isinstance(domain, dict):
+        return
+    values = domain.get("reply_messages")
+    if not isinstance(values, list) or len(values) <= 1:
+        return
+    if len(values) > 5 or any(
+        not isinstance(value, str) or not value.strip() or len(value.strip()) > 4_096
+        for value in values
+    ):
+        raise HTTPException(status_code=502, detail="AQUB reply messages are invalid")
+    token = settings.telegram_aqub_bot_token.get_secret_value()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB Telegram token is unavailable",
+        )
+    telegram = TelegramClient(token, http_client=_process_http_client(request))
+    for value in values[:-1]:
+        await telegram.send_plain_message(chat_id=chat_id, text=value.strip())
 
 
 def _unowned_response(*, reason: str = "aqub_route_not_owned") -> JsonObject:
