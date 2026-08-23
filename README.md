@@ -15,13 +15,13 @@
 > 3. Read the durable restart packet
 >    [`docs/GATE_HANDOFF_2026-07-25.md`](docs/GATE_HANDOFF_2026-07-25.md).
 > 4. Re-query current `main`, open issues and PRs, exact-head CI, Production
->    fingerprint, executions, leases, receipts and the single Gate heartbeat.
+>    fingerprint, executions, leases, receipts and the scheduled-automation inventory.
 > 5. Do not create a duplicate issue, execution, lease, branch, PR, deployment,
 >    bot, group or automation.
 > 6. Continue the latest accepted `next-work` pointer. At transfer time the
->    order is [Gate #261](https://github.com/markmalina/gate/issues/261), then
->    [Gate #300](https://github.com/markmalina/gate/issues/300) with the existing
->    [PR #301](https://github.com/markmalina/gate/pull/301).
+>    order is [Gate #261](https://github.com/AlphaCenter/gate/issues/261), then
+>    [Gate #300](https://github.com/AlphaCenter/gate/issues/300) with the existing
+>    [PR #301](https://github.com/AlphaCenter/gate/pull/301).
 > 7. Treat GitHub issues and their latest receipts as canonical when any dated
 >    prose below disagrees.
 >
@@ -60,13 +60,13 @@ registry, then the handoff and this README. Re-query GitHub and production befor
 
 GitHub issues and their latest receipts supersede dated roadmap prose:
 
-- [#277](https://github.com/markmalina/gate/issues/277) — `done`: accepted product truth and capability registry.
-- [#279](https://github.com/markmalina/gate/issues/279) — P2 capability audit: Business/Bot API first, owner export second, residual MTProto only after terms/compliance and exact data gates.
-- [#261](https://github.com/markmalina/gate/issues/261) — `waiting_user`: external Auth0/ChatGPT authorization remains incomplete; do not reconnect or invoke Telegram without the exact issue gate.
-- [#260](https://github.com/markmalina/gate/issues/260) — `blocked` behind #261: inspect only the redacted owner-media receipt after the control connection is accepted; never resend or upload raw media.
-- [#272](https://github.com/markmalina/gate/issues/272) — the single durable Center cutover pointer.
-- [#269](https://github.com/markmalina/gate/issues/269) records completed protected owner MTProto enrollment. The encrypted local session is not runtime wiring and authorizes neither read nor send.
-- [#273](https://github.com/markmalina/gate/issues/273) is closed setup evidence. The Instagram owner-account OAuth and transport runtime remain inactive.
+- [#277](https://github.com/AlphaCenter/gate/issues/277) — `done`: accepted product truth and capability registry.
+- [#279](https://github.com/AlphaCenter/gate/issues/279) — P2 capability audit: Business/Bot API first, owner export second, residual MTProto only after terms/compliance and exact data gates.
+- [#261](https://github.com/AlphaCenter/gate/issues/261) — `waiting_user`: external Auth0/ChatGPT authorization remains incomplete; do not reconnect or invoke Telegram without the exact issue gate.
+- [#260](https://github.com/AlphaCenter/gate/issues/260) — `blocked` behind #261: inspect only the redacted owner-media receipt after the control connection is accepted; never resend or upload raw media.
+- [#272](https://github.com/AlphaCenter/gate/issues/272) — the single durable Center cutover pointer.
+- [#269](https://github.com/AlphaCenter/gate/issues/269) records completed protected owner MTProto enrollment. The encrypted local session is not runtime wiring and authorizes neither read nor send.
+- [#273](https://github.com/AlphaCenter/gate/issues/273) is closed setup evidence. The Instagram owner-account OAuth and transport runtime remain inactive.
 
 Do not invent activation work, restart an accepted sprint or revive PR #207. Human gates block only
 their dependent branches; independent repository-only product work follows #279 and its accepted next-work pointer.
@@ -93,7 +93,7 @@ condition, not missing documentation.
 
 The receiving owner performs these steps in order and records evidence:
 
-1. **Repository identity.** Confirm access to private repository `markmalina/Gate`, default branch
+1. **Repository identity.** Confirm access to private repository `AlphaCenter/gate`, default branch
    `main`, the current head SHA and all open PRs. Read this README, then
    `docs/PROJECT_HANDOFF.md`, `docs/TEAM_WORKFLOW.md`,
    `docs/ALPHA_OPERATING_POLICY.md` and `docs/ALPHA_OPERATOR_RUNBOOK.md`.
