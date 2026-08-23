@@ -1,29 +1,28 @@
 # Gate Work bootstrap
 
-This document is the repository-local execution guide for
-[AlphaVia WORK-BOOTSTRAP-001](https://github.com/markmalina/alphavia/issues/67).
-The canonical policy remains in AlphaVia; Gate does not copy or acquire
-portfolio architecture ownership.
+This is the repository-local execution guide. Canonical company policy and
+ownership live in [AlphaCenter/center](https://github.com/AlphaCenter/center);
+Gate retains authority for its transport/runtime implementation.
 
 ## Bootstrap
 
 For every new Gate Work:
 
-1. Read this document, the current issue, the latest implementation receipt,
-   and the latest `next-work` pointer.
-2. List automations visible to the current chat.
-3. If an enabled `Gate Work heartbeat` already exists, verify it and do not
-   create another. Otherwise create one condition-watch automation at the
-   fastest cadence the surface accepts.
-4. Desired active cadence is ten minutes. The current callable Automations API
-   supports at most hourly recurrence, so use hourly unless a finer recurrence
-   is actually accepted. Record the exact observed cadence.
-5. Store in GitHub only a non-secret receipt: title, enabled status, exact
-   cadence, and creation or verification time. Never store an automation token,
-   conversation identifier, or credential.
+1. Read Center `AGENTS.md`, root `AGENTS.md`, `WORK-PARENT.json`, this
+   document, the current issue, latest implementation receipt and next pointer.
+2. Re-query current main, open PR/issues, execution/lease claims, receipts and
+   scheduled automations.
+3. Search for the exact outcome before creating an issue, execution, lease,
+   branch, PR, comment or automation. Reuse an exact match and fail closed on a
+   conflicting active claim.
+4. Do not create or require a Gate-specific recurring heartbeat. Center owns
+   the single company reconciliation/reporting loop. A new Gate schedule needs
+   a separate exact purpose, supported cadence, duplicate check and owner scope.
+5. Store only safe repository evidence. Never store automation/conversation
+   identifiers, tokens, credentials, secrets or private payloads.
 
-The heartbeat iteration must inspect the current issue, receipts, and pointer.
-It stays silent when nothing material changed.
+Create no zero-change receipt, pointer commit or comment when repository state
+has not materially changed.
 
 ## Execution states
 
@@ -67,7 +66,7 @@ rehearsal passes only when steps 2 and 5 fail closed.
 
 ## Authority gates
 
-By default, heartbeat, lease, issue state, CI and merge never authorize an
+By default, schedule, lease, issue state, CI and merge never authorize an
 external effect. Exact owner authorization is required before:
 
 - production deployment or production/config mutation;
