@@ -95,6 +95,23 @@ class Runtime:
         }
 
 
+class RecoveringRuntime(Runtime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    async def post_envelope(
+        self,
+        *,
+        raw_body: bytes,
+        signature: str,
+    ) -> dict[str, object]:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise AQUBRuntimeUnavailable("synthetic_runtime_unavailable")
+        return await super().post_envelope(raw_body=raw_body, signature=signature)
+
+
 def binding() -> AQUBTransportBinding:
     return AQUBTransportBinding(
         enabled=True,
@@ -301,7 +318,7 @@ async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -
 
 
 @pytest.mark.anyio
-async def test_exact_live_replay_stops_before_a_second_runtime_effect() -> None:
+async def test_exact_live_replay_resumes_runtime_with_the_same_delivery_reference() -> None:
     store = Store()
     runtime = Runtime()
     adapter = AQUBLiveIngressAdapter(
@@ -315,7 +332,30 @@ async def test_exact_live_replay_stops_before_a_second_runtime_effect() -> None:
 
     assert first.duplicate is False
     assert second.duplicate is True
-    assert second.reason == "aqub_live_duplicate"
+    assert second.reason == "aqub_live_committed"
+    assert second.delivery_ref == first.delivery_ref
+    assert len(runtime.raw_bodies) == 2
+
+
+@pytest.mark.anyio
+async def test_duplicate_retries_runtime_after_a_committed_durable_only_capture() -> None:
+    store = Store()
+    runtime = RecoveringRuntime()
+    adapter = AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    )
+
+    first = await adapter.handle(inbound(text="Съел омлет"))
+    second = await adapter.handle(inbound(text="Съел омлет"))
+
+    assert first.reason == "aqub_live_durable_only"
+    assert first.duplicate is False
+    assert second.reason == "aqub_live_committed"
+    assert second.duplicate is True
+    assert second.delivery_ref == first.delivery_ref
+    assert runtime.attempts == 2
     assert len(runtime.raw_bodies) == 1
 
 
@@ -386,7 +426,7 @@ async def test_alpha_photo_commits_reference_and_forwards_redacted_envelope() ->
 
 
 @pytest.mark.anyio
-async def test_exact_photo_replay_reuses_receipt_without_second_runtime_effect() -> None:
+async def test_exact_photo_replay_reuses_receipt_and_resumes_runtime_idempotently() -> None:
     store = Store()
     runtime = Runtime()
     adapter = AQUBLiveIngressAdapter(
@@ -401,8 +441,9 @@ async def test_exact_photo_replay_reuses_receipt_without_second_runtime_effect()
     assert first.duplicate is False
     assert duplicate.duplicate is True
     assert len(store.commands) == 2
-    assert duplicate.reason == "aqub_live_duplicate"
-    assert len(runtime.raw_bodies) == 1
+    assert duplicate.reason == "aqub_live_committed"
+    assert duplicate.delivery_ref == first.delivery_ref
+    assert len(runtime.raw_bodies) == 2
 
 
 @pytest.mark.anyio
@@ -614,6 +655,19 @@ class MediaQueue:
         self.calls.append((receipt_id, inbound))
 
 
+class RecoveringMediaQueue(MediaQueue):
+    async def enqueue(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: datetime,
+    ) -> None:
+        await super().enqueue(receipt_id=receipt_id, inbound=inbound, now=now)
+        if len(self.calls) == 1:
+            raise RuntimeError("synthetic_enqueue_failure")
+
+
 @pytest.mark.anyio
 async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
     runtime = Runtime()
@@ -635,6 +689,30 @@ async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
         }
     }
     assert queue.calls == [("raw-receipt-id", incoming)]
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_duplicate_resumes_media_enqueue_after_first_attempt_failed() -> None:
+    runtime = Runtime()
+    queue = RecoveringMediaQueue()
+    incoming = photo_inbound()
+    adapter = AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=Store(),
+        runtime=runtime,
+        media_queue=queue,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic_enqueue_failure"):
+        await adapter.handle(incoming)
+    recovered = await adapter.handle(incoming)
+
+    assert recovered.accepted is True
+    assert recovered.duplicate is True
+    assert recovered.reason == "aqub_food_media_queued"
+    assert len(queue.calls) == 2
+    assert queue.calls[0][0] == queue.calls[1][0] == "raw-receipt-id"
     assert runtime.raw_bodies == []
 
 

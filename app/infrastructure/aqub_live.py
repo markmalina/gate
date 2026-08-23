@@ -11,13 +11,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.aqub_live import AQUB_DELIVERY_COMMAND_SCHEMA
 from app.models.aqub_live import AQUBLiveDelivery
 from app.services.telegram import TelegramApiError, TelegramClient
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 JsonObject = dict[str, Any]
 MAX_TELEGRAM_TEXT = 4096
@@ -41,6 +40,7 @@ class ParsedAQUBDelivery:
     step_ref: str
     text: str
     request_sha256: str
+    force_reply: bool = False
 
 
 def verify_aqub_signature(*, raw_body: bytes, signature: str, signing_key: bytes) -> None:
@@ -67,10 +67,7 @@ def parse_aqub_delivery(
         value: Any = json.loads(raw_body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_json") from exc
-    if (
-        not isinstance(value, dict)
-        or value.get("schema_version") != AQUB_DELIVERY_COMMAND_SCHEMA
-    ):
+    if not isinstance(value, dict) or value.get("schema_version") != AQUB_DELIVERY_COMMAND_SCHEMA:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_schema")
 
     try:
@@ -82,6 +79,7 @@ def parse_aqub_delivery(
     assignment_ref = value.get("assignment_ref")
     step_ref = value.get("step_ref")
     text_value = value.get("text")
+    force_reply = value.get("force_reply", False)
     if not isinstance(idempotency_key, str) or not (1 <= len(idempotency_key) <= 255):
         raise AQUBLiveDeliveryError("aqub_delivery_bad_idempotency_key")
     if not isinstance(chat_ref, str) or not chat_ref:
@@ -97,6 +95,8 @@ def parse_aqub_delivery(
         raise AQUBLiveDeliveryError("aqub_delivery_bad_step_ref")
     if not isinstance(text_value, str) or not (1 <= len(text_value) <= MAX_TELEGRAM_TEXT):
         raise AQUBLiveDeliveryError("aqub_delivery_bad_text")
+    if type(force_reply) is not bool:
+        raise AQUBLiveDeliveryError("aqub_delivery_bad_force_reply")
     return ParsedAQUBDelivery(
         command_id=command_id,
         idempotency_key=idempotency_key,
@@ -105,6 +105,7 @@ def parse_aqub_delivery(
         step_ref=step_ref,
         text=text_value,
         request_sha256=hashlib.sha256(raw_body).hexdigest(),
+        force_reply=force_reply,
     )
 
 
@@ -137,9 +138,9 @@ class AQUBLiveDeliveryService:
             text_sha256=hashlib.sha256(command.text.encode()).hexdigest(),
             state="pending",
         )
-        statement = statement.on_conflict_do_nothing(
-            index_elements=["idempotency_key"]
-        ).returning(AQUBLiveDelivery.id)
+        statement = statement.on_conflict_do_nothing(index_elements=["idempotency_key"]).returning(
+            AQUBLiveDelivery.id
+        )
         inserted_id = await self._session.scalar(statement)
         created = inserted_id is not None
         await self._session.commit()
@@ -147,10 +148,7 @@ class AQUBLiveDeliveryService:
         row = await self._load(command.idempotency_key)
         if row is None:
             raise RuntimeError("aqub_delivery_reservation_missing")
-        if (
-            row.request_sha256 != command.request_sha256
-            or row.command_id != command.command_id
-        ):
+        if row.request_sha256 != command.request_sha256 or row.command_id != command.command_id:
             raise AQUBLiveDeliveryError(
                 "aqub_delivery_mutated_replay",
                 status_code=409,
@@ -226,10 +224,17 @@ class AQUBLiveDeliveryService:
         await self._session.commit()
 
         try:
-            response = await self._telegram.send_plain_message(
-                chat_id=self._raw_chat_id,
-                text=command.text,
-            )
+            if command.force_reply:
+                response = await self._telegram.send_message(
+                    chat_id=self._raw_chat_id,
+                    text=command.text,
+                    reply_markup={"force_reply": True, "selective": True},
+                )
+            else:
+                response = await self._telegram.send_plain_message(
+                    chat_id=self._raw_chat_id,
+                    text=command.text,
+                )
             message_id = _telegram_message_id(response)
         except TelegramApiError as exc:
             code = f"telegram_{exc.error_code or exc.http_status or 'error'}"
@@ -267,9 +272,7 @@ class AQUBLiveDeliveryService:
 
     async def _load(self, idempotency_key: str) -> AQUBLiveDelivery | None:
         value: Any = await self._session.scalar(
-            select(AQUBLiveDelivery).where(
-                AQUBLiveDelivery.idempotency_key == idempotency_key
-            )
+            select(AQUBLiveDelivery).where(AQUBLiveDelivery.idempotency_key == idempotency_key)
         )
         if value is None:
             return None
