@@ -165,6 +165,7 @@ class AQUBTransportInbound:
     content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
     photo: AQUBPhotoReference | None = field(default=None, repr=False)
     voice: AQUBVoiceReference | None = field(default=None, repr=False)
+    media_group_id: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.content_kind is AQUBTransportContentKind.TEXT:
@@ -172,15 +173,33 @@ class AQUBTransportInbound:
                 not isinstance(self.command, str)
                 or self.photo is not None
                 or self.voice is not None
+                or self.media_group_id is not None
             ):
                 raise ValueError("aqub_text_content_invalid")
             return
         if self.content_kind is AQUBTransportContentKind.PHOTO:
-            if self.command is not None or self.photo is None or self.voice is not None:
+            if (
+                self.command is not None
+                or self.photo is None
+                or self.voice is not None
+                or (
+                    self.media_group_id is not None
+                    and (
+                        not self.media_group_id
+                        or self.media_group_id != self.media_group_id.strip()
+                        or len(self.media_group_id) > 128
+                    )
+                )
+            ):
                 raise ValueError("aqub_photo_content_invalid")
             return
         if self.content_kind is AQUBTransportContentKind.VOICE:
-            if self.command is not None or self.photo is not None or self.voice is None:
+            if (
+                self.command is not None
+                or self.photo is not None
+                or self.voice is None
+                or self.media_group_id is not None
+            ):
                 raise ValueError("aqub_voice_content_invalid")
             return
         raise ValueError("aqub_content_kind_invalid")

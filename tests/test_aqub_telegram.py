@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import app.api.aqub_telegram as aqub_telegram_api
 import httpx
 import pytest
 from app.api.aqub_telegram import (
+    _deliver_live_messages,
     _live_response,
+    _project_inbound,
     get_aqub_production_binding,
     get_aqub_transport_store,
     router,
@@ -25,7 +28,8 @@ from app.application.aqub_transport import (
     AQUBTransportContentKind,
 )
 from app.core.config import Settings, get_settings
-from fastapi import FastAPI
+from app.infrastructure.aqub_live import ParsedAQUBDelivery
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 TEST_CHAT_ID = "-1001234567890"
@@ -75,9 +79,7 @@ def _settings(**changes: object) -> Settings:
     values: dict[str, object] = {
         "_env_file": None,
         "TELEGRAM_AQUB_WEBHOOK_SECRET": "webhook SECRET-WEBHOOK",
-        "GATE_AQUB_RECEIPT_SIGNING_KEY": (
-            "0123456789abcdef0123456789abcdef SECRET-SIGNING"
-        ),
+        "GATE_AQUB_RECEIPT_SIGNING_KEY": ("0123456789abcdef0123456789abcdef SECRET-SIGNING"),
     }
     values.update(changes)
     return Settings(**values)
@@ -172,9 +174,7 @@ def _post(
 
 
 def _receipt_fields(text: str) -> dict[str, str]:
-    receipt_line = next(
-        line for line in text.splitlines() if line.startswith("AQUB_RECEIPT ")
-    )
+    receipt_line = next(line for line in text.splitlines() if line.startswith("AQUB_RECEIPT "))
     return {
         key: value
         for item in receipt_line.removeprefix("AQUB_RECEIPT ").split()
@@ -246,7 +246,7 @@ def test_ordinary_owned_message_without_runtime_url_is_durable_and_confirmed(
     assert response.json() == {
         "method": "sendMessage",
         "chat_id": int(TEST_CHAT_ID),
-        "text": "Записал.",
+        "text": "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз.",
     }
     assert [command.command for command in store.commands] == ["обычное сообщение"]
 
@@ -269,13 +269,13 @@ def test_same_bound_actor_text_is_captured_in_another_group(
     assert response.json() == {
         "method": "sendMessage",
         "chat_id": -1007999,
-        "text": "Записал.",
+        "text": "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз.",
     }
     assert [command.chat_id for command in store.commands] == ["-1007999"]
     assert [command.command for command in store.commands] == ["Съел омлет"]
 
 
-def test_duplicate_plain_text_reuses_one_durable_acceptance_and_same_confirmation(
+def test_duplicate_plain_text_retries_processing_without_second_fallback_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GATE_AQUB_RUNTIME_URL", raising=False)
@@ -288,9 +288,16 @@ def test_duplicate_plain_text_reuses_one_durable_acceptance_and_same_confirmatio
     expected = {
         "method": "sendMessage",
         "chat_id": int(TEST_CHAT_ID),
-        "text": "Записал.",
+        "text": "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз.",
     }
-    assert first.json() == second.json() == expected
+    assert first.json() == expected
+    assert second.json() == {
+        "ok": True,
+        "owned": True,
+        "accepted": True,
+        "reason": "aqub_live_durable_only",
+        "duplicate": True,
+    }
     assert len(store.acceptances) == 1
     assert [command.external_id for command in store.commands] == ["500", "500"]
 
@@ -312,7 +319,9 @@ def test_runtime_exception_after_commit_still_confirms_plain_alpha_text(
         asyncio.run(http_client.aclose())
 
     assert response.status_code == 200
-    assert response.json()["text"] == "Записал."
+    assert response.json()["text"] == (
+        "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз."
+    )
     assert [command.command for command in store.commands] == ["Выпил воду"]
 
 
@@ -396,17 +405,30 @@ def test_slash_like_photo_caption_remains_raw_metadata_only() -> None:
     assert store.commands[0].payload == update
 
 
-def test_duplicate_photo_reuses_one_acceptance_and_same_confirmation() -> None:
+def test_duplicate_photo_retries_processing_without_second_fallback_reply() -> None:
     store = DurableStore()
     update = _photo_update(caption="Ужин")
     with _client(_settings(), store) as client:
         first = _post(client, update)
         second = _post(client, update)
 
-    assert first.json() == second.json()
     assert first.json()["text"] == "Фото принято."
+    assert second.json()["reason"] == "aqub_live_durable_only"
+    assert "method" not in second.json()
     assert len(store.acceptances) == 1
     assert [command.external_id for command in store.commands] == ["500", "500"]
+
+
+def test_album_photo_projects_strict_media_group_without_losing_caption() -> None:
+    projected = _project_inbound(
+        _photo_update(caption="Курица", media_group_id="synthetic-album"),
+        bot_username=AQUB_BOT_USERNAME,
+        received_at=TEST_READY_AT + timedelta(seconds=2),
+    )
+    assert projected is not None
+    assert projected.content_kind is AQUBTransportContentKind.PHOTO
+    assert projected.media_group_id == "synthetic-album"
+    assert projected.payload["message"]["caption"] == "Курица"
 
 
 @pytest.mark.parametrize(
@@ -496,7 +518,6 @@ def test_malformed_photo_gets_no_storage_or_confirmation(
         {"reply_to_message": {"message_id": 1}},
         {"external_reply": {"origin": {"type": "user"}}},
         {"sender_chat": {"id": -10099, "type": "supergroup"}},
-        {"media_group_id": "synthetic-album"},
         {"reply_to_story": {"chat": {"id": -10099}, "id": 7}},
         {
             "guest_bot_caller_user": {
@@ -625,9 +646,7 @@ def test_photo_from_same_bound_actor_in_other_group_is_durable_and_confirmed() -
         "text": "Фото принято.",
     }
     assert [command.chat_id for command in store.commands] == ["-1007999"]
-    assert [command.content_kind for command in store.commands] == [
-        AQUBTransportContentKind.PHOTO
-    ]
+    assert [command.content_kind for command in store.commands] == [AQUBTransportContentKind.PHOTO]
 
 
 def test_photo_store_failure_yields_no_confirmation() -> None:
@@ -669,9 +688,7 @@ def test_bot_authored_photo_gets_no_storage_or_confirmation() -> None:
     with _client(_settings(), store) as client:
         response = _post(
             client,
-            _photo_update(
-                **{"from": {"id": int(TEST_ALPHA_USER_ID), "is_bot": True}}
-            ),
+            _photo_update(**{"from": {"id": int(TEST_ALPHA_USER_ID), "is_bot": True}}),
         )
 
     assert response.status_code == 200
@@ -706,6 +723,90 @@ def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
     )
 
     assert response["text"] == "AQUB ответил"
+
+
+@pytest.mark.anyio
+async def test_semantic_messages_use_stable_durable_delivery_keys_and_terminal_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[ParsedAQUBDelivery] = []
+
+    class SessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(
+            self,
+            exc_type: object,
+            exc: object,
+            traceback: object,
+        ) -> None:
+            return None
+
+    class SessionFactory:
+        def __call__(self) -> SessionContext:
+            return SessionContext()
+
+    class Runtime:
+        session_factory = SessionFactory()
+
+    class DeliveryService:
+        def __init__(self, **kwargs: object) -> None:
+            assert kwargs["raw_chat_id"] == TEST_CHAT_ID
+
+        async def deliver(self, command: ParsedAQUBDelivery) -> dict[str, object]:
+            captured.append(command)
+            return {
+                "ack": {"status": "committed"},
+                "terminal": {"status": "sent"},
+            }
+
+    monkeypatch.setattr(aqub_telegram_api, "get_database_runtime", lambda request: Runtime())
+    monkeypatch.setattr(aqub_telegram_api, "AQUBLiveDeliveryService", DeliveryService)
+    app = FastAPI()
+    async with httpx.AsyncClient(trust_env=False) as http_client:
+        app.state.http_client = http_client
+        request = Request({"type": "http", "app": app, "headers": []})
+        live = AQUBLiveForwardResult(
+            accepted=True,
+            duplicate=False,
+            reason="aqub_live_committed",
+            downstream={
+                "result": {
+                    "reply_messages": ["Состав", "Расчёт", "Сколько граммов?"],
+                    "force_reply": True,
+                }
+            },
+            delivery_ref="receipt:opaque-synthetic",
+        )
+        settings = _settings(TELEGRAM_AQUB_BOT_TOKEN="synthetic-token")
+
+        assert await _deliver_live_messages(
+            request=request,
+            settings=settings,
+            live=live,
+            chat_id=TEST_CHAT_ID,
+        )
+        assert await _deliver_live_messages(
+            request=request,
+            settings=settings,
+            live=live,
+            chat_id=TEST_CHAT_ID,
+        )
+
+    assert [item.text for item in captured[:3]] == [
+        "Состав",
+        "Расчёт",
+        "Сколько граммов?",
+    ]
+    assert [item.idempotency_key for item in captured[:3]] == [
+        item.idempotency_key for item in captured[3:]
+    ]
+    assert [item.command_id for item in captured[:3]] == [item.command_id for item in captured[3:]]
+    assert [item.request_sha256 for item in captured[:3]] == [
+        item.request_sha256 for item in captured[3:]
+    ]
+    assert [item.force_reply for item in captured[:3]] == [False, False, True]
 
 
 def test_visible_receipt_reply_redacts_raw_identifiers_and_secrets() -> None:

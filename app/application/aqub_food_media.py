@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -224,6 +225,100 @@ class ProcessAQUBFoodMedia:
             raise AQUBFoodMediaError(error_code) from exc
 
 
+def combine_album_media_results(values: Sequence[Mapping[str, Any]]) -> JsonObject:
+    """Combine ordered photo analyses without counting repeated labels twice."""
+
+    if not 1 <= len(values) <= 10:
+        raise AQUBFoodMediaError("aqub_food_album_result_count_invalid")
+    source_hashes: list[str] = []
+    meal_items: list[JsonObject] = []
+    seen_labels: set[str] = set()
+    confidences: list[str] = []
+    receipts: list[Mapping[str, Any]] = []
+    quantity_sources: list[str] = []
+    for value in values:
+        source_sha256 = value.get("source_sha256")
+        if (
+            not isinstance(source_sha256, str)
+            or len(source_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in source_sha256)
+        ):
+            raise AQUBFoodMediaError("aqub_food_album_source_invalid")
+        source_hashes.append(source_sha256)
+        confidence = value.get("confidence")
+        if confidence not in {"low", "medium", "high"}:
+            raise AQUBFoodMediaError("aqub_food_album_confidence_invalid")
+        confidences.append(str(confidence))
+        if value.get("kind") == "receipt" and isinstance(value.get("receipt"), Mapping):
+            receipts.append(value["receipt"])
+            continue
+        if value.get("kind") != "meal" or not isinstance(value.get("meal"), Mapping):
+            continue
+        meal = value["meal"]
+        quantity_source = meal.get("quantity_source")
+        if isinstance(quantity_source, str):
+            quantity_sources.append(quantity_source)
+        raw_items = meal.get("items")
+        candidates = raw_items if isinstance(raw_items, list) and raw_items else [meal]
+        for candidate in candidates:
+            normalized = _meal_item(candidate)
+            identity = re.sub(r"[^\w]+", "", str(normalized["label"]).casefold())
+            if not identity or identity in seen_labels:
+                continue
+            seen_labels.add(identity)
+            meal_items.append(normalized)
+    aggregate_sha256 = hashlib.sha256(":".join(source_hashes).encode()).hexdigest()
+    confidence = min(
+        confidences,
+        key=lambda value: {"low": 0, "medium": 1, "high": 2}[value],
+    )
+    if meal_items:
+        result: JsonObject = {
+            "kind": "meal",
+            "confidence": confidence,
+            "transcript": None,
+            "meal": {
+                "label": ", ".join(str(item["label"]) for item in meal_items)[:300],
+                "kcal": sum(int(item["kcal"]) for item in meal_items),
+                "protein_g": sum(int(item["protein_g"]) for item in meal_items),
+                "fat_g": sum(int(item["fat_g"]) for item in meal_items),
+                "carbs_g": sum(int(item["carbs_g"]) for item in meal_items),
+                "quantity_source": (
+                    "user"
+                    if "user" in quantity_sources
+                    else "image_verified"
+                    if "image_verified" in quantity_sources
+                    else "estimated"
+                    if "estimated" in quantity_sources
+                    else "unknown"
+                ),
+                "items": meal_items,
+            },
+            "receipt": None,
+        }
+    elif receipts:
+        result = {
+            "kind": "receipt",
+            "confidence": confidence,
+            "transcript": None,
+            "meal": None,
+            "receipt": dict(receipts[0]),
+        }
+    else:
+        result = {
+            "kind": "unknown",
+            "confidence": confidence,
+            "transcript": None,
+            "meal": None,
+            "receipt": None,
+        }
+    return validate_food_media_result(
+        result,
+        source_kind="photo",
+        source_sha256=aggregate_sha256,
+    )
+
+
 def validate_food_media_result(
     value: Mapping[str, Any],
     *,
@@ -282,6 +377,11 @@ def _meal(value: Any) -> JsonObject:
         if type(amount) is not int or not 0 <= amount <= 100_000:
             raise AQUBFoodMediaError("aqub_food_media_meal_amount_invalid")
         result[key] = amount
+    quantity_source = value.get("quantity_source")
+    if quantity_source is not None:
+        if quantity_source not in {"user", "image_verified", "estimated", "unknown"}:
+            raise AQUBFoodMediaError("aqub_food_media_quantity_source_invalid")
+        result["quantity_source"] = quantity_source
     items = value.get("items")
     if items is not None:
         if not isinstance(items, list) or not 1 <= len(items) <= 20:

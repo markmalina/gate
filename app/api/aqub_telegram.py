@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
+import json
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
+from uuid import NAMESPACE_URL, uuid5
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -42,6 +45,7 @@ from app.infrastructure.aqub_installation import (
 from app.infrastructure.aqub_live import (
     AQUBLiveDeliveryError,
     AQUBLiveDeliveryService,
+    ParsedAQUBDelivery,
     parse_aqub_delivery,
     verify_aqub_signature,
 )
@@ -55,7 +59,7 @@ _TELEGRAM_UPDATE_ID_MAX = 9_223_372_036_854_775_807
 _TELEGRAM_MESSAGE_ID_MAX = (1 << 52) - 1
 _PHOTO_CAPTION_MAX_CHARS = 1_024
 _PHOTO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "photo"}
-_PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption"}
+_PHOTO_MESSAGE_OPTIONAL_FIELDS = {"caption", "media_group_id"}
 _PHOTO_SIZE_REQUIRED_FIELDS = {"file_id", "file_unique_id", "width", "height"}
 _PHOTO_SIZE_OPTIONAL_FIELDS = {"file_size"}
 _VOICE_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "voice"}
@@ -192,6 +196,20 @@ async def aqub_telegram_ingress(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc)[:160],
         ) from None
+    delivered = await _deliver_live_messages(
+        request=request,
+        settings=settings,
+        live=live,
+        chat_id=inbound.chat_id,
+    )
+    if delivered:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": live.reason,
+            "duplicate": live.duplicate,
+        }
     return _live_response(live, chat_id=inbound.chat_id)
 
 
@@ -340,6 +358,12 @@ def _project_inbound(
         content_kind=content_kind,
         photo=photo,
         voice=voice,
+        media_group_id=(
+            cast(str, message.get("media_group_id"))
+            if content_kind is AQUBTransportContentKind.PHOTO
+            and isinstance(message.get("media_group_id"), str)
+            else None
+        ),
     )
 
 
@@ -352,6 +376,14 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
     caption = message.get("caption")
     if "caption" in message and (
         not isinstance(caption, str) or len(caption) > _PHOTO_CAPTION_MAX_CHARS
+    ):
+        return None
+    media_group_id = message.get("media_group_id")
+    if "media_group_id" in message and (
+        not isinstance(media_group_id, str)
+        or not media_group_id
+        or media_group_id != media_group_id.strip()
+        or len(media_group_id) > 128
     ):
         return None
     values = message.get("photo")
@@ -520,13 +552,22 @@ def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonOb
 def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject:
     if not result.accepted:
         return _unowned_response(reason=result.reason)
+    if result.duplicate and result.downstream is None:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": result.reason,
+            "duplicate": True,
+        }
     downstream = result.downstream or {}
     domain = downstream.get("result")
-    if isinstance(domain, dict) and isinstance(domain.get("reply_text"), str):
+    reply_text = _domain_last_reply(domain)
+    if isinstance(domain, dict) and reply_text is not None:
         response: JsonObject = {
             "method": "sendMessage",
             "chat_id": int(chat_id),
-            "text": domain["reply_text"],
+            "text": reply_text,
         }
         if domain.get("force_reply") is True:
             response["reply_markup"] = {"force_reply": True, "selective": True}
@@ -541,7 +582,9 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         return {
             "method": "sendMessage",
             "chat_id": int(chat_id),
-            "text": "Записал.",
+            "text": (
+                "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз."
+            ),
         }
     if result.captured_content is AQUBTransportContentKind.VOICE:
         return {
@@ -556,6 +599,130 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         "reason": result.reason,
         "duplicate": result.duplicate,
     }
+
+
+def _domain_last_reply(domain: object) -> str | None:
+    if not isinstance(domain, dict):
+        return None
+    messages = domain.get("reply_messages")
+    if isinstance(messages, list) and messages:
+        value = messages[-1]
+        if isinstance(value, str) and value.strip() and len(value.strip()) <= 4_096:
+            return value.strip()
+        return None
+    value = domain.get("reply_text")
+    return (
+        value.strip()
+        if isinstance(value, str) and value.strip() and len(value.strip()) <= 4_096
+        else None
+    )
+
+
+async def _deliver_live_messages(
+    *,
+    request: Request,
+    settings: Settings,
+    live: AQUBLiveForwardResult,
+    chat_id: str,
+) -> bool:
+    if not isinstance(live.downstream, dict):
+        return False
+    domain = live.downstream.get("result")
+    if not isinstance(domain, dict):
+        return False
+    values = _domain_reply_messages(domain)
+    if values is None:
+        return False
+    if live.delivery_ref is None:
+        raise HTTPException(status_code=502, detail="AQUB delivery reference is missing")
+    if not 1 <= len(values) <= 5:
+        raise HTTPException(status_code=502, detail="AQUB reply messages are invalid")
+    token = settings.telegram_aqub_bot_token.get_secret_value()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB Telegram token is unavailable",
+        )
+    try:
+        signing_key = aqub_receipt_signing_key(settings)
+        runtime = get_database_runtime(request)
+    except (RuntimeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AQUB durable delivery is unavailable",
+        ) from None
+
+    telegram = TelegramClient(token, http_client=_process_http_client(request))
+    async with runtime.session_factory() as session:
+        service = AQUBLiveDeliveryService(
+            session=session,
+            telegram=telegram,
+            signing_key=signing_key,
+            raw_chat_id=chat_id,
+        )
+        for index, text_value in enumerate(values):
+            idempotency_key = f"aqub-live-reply:{live.delivery_ref}:{index}"
+            force_reply = domain.get("force_reply") is True and index == len(values) - 1
+            request_value = {
+                "idempotency_key": idempotency_key,
+                "chat_ref": _live_opaque_ref(signing_key, "chat", chat_id),
+                "assignment_ref": live.delivery_ref,
+                "step_ref": _live_opaque_ref(signing_key, "reply", str(index)),
+                "text": text_value,
+                "force_reply": force_reply,
+            }
+            command = ParsedAQUBDelivery(
+                command_id=uuid5(NAMESPACE_URL, idempotency_key),
+                idempotency_key=idempotency_key,
+                chat_ref=cast(str, request_value["chat_ref"]),
+                assignment_ref=live.delivery_ref,
+                step_ref=cast(str, request_value["step_ref"]),
+                text=text_value,
+                request_sha256=hashlib.sha256(
+                    json.dumps(
+                        request_value,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest(),
+                force_reply=force_reply,
+            )
+            try:
+                result = await service.deliver(command)
+            except AQUBLiveDeliveryError as exc:
+                raise HTTPException(status_code=exc.status_code, detail=exc.code) from None
+            terminal = result.get("terminal")
+            if not isinstance(terminal, dict) or terminal.get("status") != "sent":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="AQUB Telegram delivery is not terminal",
+                )
+    return True
+
+
+def _domain_reply_messages(domain: JsonObject) -> list[str] | None:
+    messages = domain.get("reply_messages")
+    if isinstance(messages, list):
+        if not 1 <= len(messages) <= 5 or any(
+            not isinstance(value, str) or not value.strip() or len(value.strip()) > 4_096
+            for value in messages
+        ):
+            raise HTTPException(status_code=502, detail="AQUB reply messages are invalid")
+        return [cast(str, value).strip() for value in messages]
+    reply_text = domain.get("reply_text")
+    if isinstance(reply_text, str) and reply_text.strip() and len(reply_text.strip()) <= 4_096:
+        return [reply_text.strip()]
+    return None
+
+
+def _live_opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:
+    digest = hmac.new(
+        signing_key,
+        f"{kind}:{raw}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{kind}:{digest}"
 
 
 def _unowned_response(*, reason: str = "aqub_route_not_owned") -> JsonObject:
