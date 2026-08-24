@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -168,8 +169,11 @@ def test_terminal_receipt_projects_private_ids_without_repr_exposure() -> None:
     )
     evidence = general_route_evidence_from_receipt(receipt)
     assert evidence is not None
-    assert "46" not in repr(evidence)
-    assert "47" not in repr(evidence)
+    assert re.fullmatch(
+        r"<app\.infrastructure\.aqub_general_route\.AQUBGeneralRouteEvidence "
+        r"object at 0x[0-9a-f]+>",
+        repr(evidence),
+    )
 
 
 def _settings() -> Settings:
