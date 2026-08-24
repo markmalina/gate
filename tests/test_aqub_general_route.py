@@ -8,9 +8,11 @@ from uuid import uuid4
 import pytest
 from app.application.aqub_live import AQUBLiveIngressAdapter
 from app.application.aqub_transport import (
+    AQUBPhotoReference,
     AQUBTransportBinding,
     AQUBTransportContentKind,
     AQUBTransportInbound,
+    AQUBVoiceReference,
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_general_route import (
@@ -61,6 +63,14 @@ class _Runtime:
         return {"ok": True, "result": {"kind": "general", "reply_text": "ok"}}
 
 
+class _MediaQueue:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def enqueue(self, *, receipt_id: str, inbound, now: datetime) -> None:
+        self.calls += 1
+
+
 def _binding(*, group: str, actor: str) -> AQUBTransportBinding:
     return AQUBTransportBinding(
         enabled=True,
@@ -73,13 +83,39 @@ def _binding(*, group: str, actor: str) -> AQUBTransportBinding:
     )
 
 
-def _inbound(*, group: str, actor: str) -> AQUBTransportInbound:
+def _inbound(
+    *,
+    group: str,
+    actor: str,
+    content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT,
+    album: bool = False,
+) -> AQUBTransportInbound:
+    photo = (
+        AQUBPhotoReference(
+            file_id="synthetic-photo",
+            file_unique_id="synthetic-photo-unique",
+            width=10,
+            height=10,
+        )
+        if content_kind is AQUBTransportContentKind.PHOTO
+        else None
+    )
+    voice = (
+        AQUBVoiceReference(
+            file_id="synthetic-voice",
+            file_unique_id="synthetic-voice-unique",
+            duration=1,
+            mime_type="audio/ogg",
+        )
+        if content_kind is AQUBTransportContentKind.VOICE
+        else None
+    )
     return AQUBTransportInbound(
         bot_username="@AQubAgentBot",
         external_id="41",
         chat_id=group,
         actor_id=actor,
-        command="Свободный вопрос",
+        command="Свободный вопрос" if content_kind is AQUBTransportContentKind.TEXT else None,
         payload={
             "update_id": 41,
             "message": {
@@ -92,7 +128,10 @@ def _inbound(*, group: str, actor: str) -> AQUBTransportInbound:
         },
         occurred_at=NOW,
         received_at=NOW,
-        content_kind=AQUBTransportContentKind.TEXT,
+        content_kind=content_kind,
+        photo=photo,
+        voice=voice,
+        media_group_id="synthetic-album" if album else None,
     )
 
 
@@ -260,18 +299,10 @@ async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None
                 actor_id=general_actor,
                 content_kind=AQUBTransportContentKind.TEXT,
             )
-            media = await select_aqub_inbound_binding(
-                session,
-                _settings(),
-                food_binding=food,
-                chat_id=general_group,
-                actor_id=general_actor,
-                content_kind=AQUBTransportContentKind.PHOTO,
-            )
             assert wrong_actor is not food
             assert wrong_actor.group_chat_id == general_group
             assert wrong_actor.alpha_user_id == general_actor
-            assert wrong_group is media is food
+            assert wrong_group is food
             denied_store, denied_runtime = _Store(), _Runtime()
             denied = await AQUBLiveIngressAdapter(
                 binding=wrong_actor,
@@ -280,6 +311,47 @@ async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None
             ).handle(_inbound(group=general_group, actor=food_actor))
             assert denied.accepted is False
             assert denied_store.calls == denied_runtime.calls == 0
+
+            media_cases = (
+                (AQUBTransportContentKind.PHOTO, False),
+                (AQUBTransportContentKind.VOICE, False),
+                (AQUBTransportContentKind.PHOTO, True),
+            )
+            for actor in (general_actor, food_actor, "1000000999"):
+                for content_kind, album in media_cases:
+                    suppressed = await select_aqub_inbound_binding(
+                        session,
+                        _settings(),
+                        food_binding=food,
+                        chat_id=general_group,
+                        actor_id=actor,
+                        content_kind=content_kind,
+                    )
+                    assert suppressed is not food
+                    assert suppressed.enabled is False
+                    assert suppressed.group_chat_id == general_group
+                    media_store, media_runtime, media_queue = (
+                        _Store(),
+                        _Runtime(),
+                        _MediaQueue(),
+                    )
+                    media_result = await AQUBLiveIngressAdapter(
+                        binding=suppressed,
+                        store=media_store,
+                        runtime=media_runtime,
+                        media_queue=media_queue,
+                    ).handle(
+                        _inbound(
+                            group=general_group,
+                            actor=actor,
+                            content_kind=content_kind,
+                            album=album,
+                        )
+                    )
+                    assert media_result.accepted is False
+                    assert media_store.calls == 0
+                    assert media_runtime.calls == 0
+                    assert media_queue.calls == 0
     finally:
         await _drop_schema(schema, admin_engine, engine)
 
