@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
@@ -25,6 +22,8 @@ from app.infrastructure.aqub_installation import (
 )
 from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AQUBGeneralRouteStatus(StrEnum):
@@ -220,15 +219,18 @@ async def select_aqub_inbound_binding(
     actor_id: str,
     content_kind: AQUBTransportContentKind,
 ) -> AQUBTransportBinding:
-    """Prefer an exact active General route, otherwise preserve the Food binding."""
+    """Route General text exactly and suppress its unsupported media fail-closed."""
 
-    if content_kind is not AQUBTransportContentKind.TEXT:
-        return food_binding
     general = await load_active_aqub_general_binding(
         session,
         settings,
         chat_id=chat_id,
     )
+    if general is not None and content_kind is not AQUBTransportContentKind.TEXT:
+        # The General Cube v1 is text-only. A disabled binding makes the live
+        # adapter reject before Gate's Food receipt, queue, or AQUB runtime can
+        # observe media from an active General group, regardless of actor.
+        return replace(general, enabled=False)
     if general is not None and general.alpha_user_id != actor_id:
         # Preserve the matched General binding so the existing live admission
         # denies this actor instead of falling through to Food owner semantics.
