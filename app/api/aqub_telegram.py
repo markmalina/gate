@@ -171,6 +171,7 @@ async def aqub_telegram_ingress(
         food_binding=binding,
         chat_id=inbound.chat_id,
         actor_id=inbound.actor_id,
+        content_kind=inbound.content_kind,
     )
 
     if inbound.command == AQUB_PING_COMMAND:
@@ -572,6 +573,14 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         }
     downstream = result.downstream or {}
     domain = downstream.get("result")
+    if isinstance(domain, dict) and domain.get("suppress_reply") is True:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": result.reason,
+            "duplicate": result.duplicate,
+        }
     reply_text = _domain_last_reply(domain)
     if isinstance(domain, dict) and reply_text is not None:
         response: JsonObject = {
@@ -749,4 +758,3 @@ def _secrets_match(*, provided: str, configured: str) -> bool:
         return hmac.compare_digest(provided.encode(), configured.encode())
     except UnicodeError:
         return False
-

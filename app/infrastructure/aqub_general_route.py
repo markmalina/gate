@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBTransportBinding,
+    AQUBTransportContentKind,
 )
 from app.core.config import Settings
 from app.infrastructure.aqub_installation import (
@@ -204,9 +205,12 @@ async def select_aqub_inbound_binding(
     food_binding: AQUBTransportBinding,
     chat_id: str,
     actor_id: str,
+    content_kind: AQUBTransportContentKind,
 ) -> AQUBTransportBinding:
     """Prefer an exact active General route, otherwise preserve the Food binding."""
 
+    if content_kind is not AQUBTransportContentKind.TEXT:
+        return food_binding
     general = await load_active_aqub_general_binding(
         session,
         settings,
@@ -214,4 +218,3 @@ async def select_aqub_inbound_binding(
         actor_id=actor_id,
     )
     return general if general is not None else food_binding
-
