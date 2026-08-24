@@ -6,14 +6,25 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from app.application.aqub_live import AQUBLiveIngressAdapter
 from app.application.aqub_transport import (
     AQUBTransportBinding,
     AQUBTransportContentKind,
     AQUBTransportInbound,
 )
-from app.infrastructure.aqub_general_route import general_route_evidence_from_receipt
+from app.core.config import Settings, get_settings
+from app.infrastructure.aqub_general_route import (
+    AQUBGeneralRouteStatus,
+    general_route_evidence_from_receipt,
+    register_aqub_general_route_hold,
+    select_aqub_inbound_binding,
+    transition_aqub_general_route,
+)
 from app.infrastructure.aqub_installation import AQUB_RECEIPT_BOT_KEY
+from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
@@ -87,19 +98,6 @@ def _inbound(*, group: str, actor: str) -> AQUBTransportInbound:
 
 
 @pytest.mark.anyio
-async def test_owner_is_rejected_outside_exact_bound_group() -> None:
-    store, runtime = _Store(), _Runtime()
-    result = await AQUBLiveIngressAdapter(
-        binding=_binding(group="group:food", actor="actor:owner"),
-        store=store,
-        runtime=runtime,
-    ).handle(_inbound(group="group:other", actor="actor:owner"))
-    assert result.accepted is False
-    assert result.reason == "aqub_route_not_owned"
-    assert store.calls == runtime.calls == 0
-
-
-@pytest.mark.anyio
 async def test_exact_group_and_actor_forward_once() -> None:
     store, runtime = _Store(), _Runtime()
     result = await AQUBLiveIngressAdapter(
@@ -113,22 +111,6 @@ async def test_exact_group_and_actor_forward_once() -> None:
         "result": {"kind": "general", "reply_text": "ok"},
     }
     assert store.calls == runtime.calls == 1
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("group", "actor"),
-    (("group:other", "actor:general"), ("group:general", "actor:other")),
-)
-async def test_general_route_denies_wrong_group_or_actor(group: str, actor: str) -> None:
-    store, runtime = _Store(), _Runtime()
-    result = await AQUBLiveIngressAdapter(
-        binding=_binding(group="group:general", actor="actor:general"),
-        store=store,
-        runtime=runtime,
-    ).handle(_inbound(group=group, actor=actor))
-    assert result.accepted is False
-    assert store.calls == runtime.calls == 0
 
 
 def test_terminal_receipt_projects_private_ids_without_repr_exposure() -> None:
@@ -150,3 +132,181 @@ def test_terminal_receipt_projects_private_ids_without_repr_exposure() -> None:
     assert evidence is not None
     assert "46" not in repr(evidence)
     assert "47" not in repr(evidence)
+
+
+def _settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        GATE_AQUB_RECEIPT_SIGNING_KEY="general-route-test-signing-key-32-bytes",
+    )
+
+
+async def _schema_engine(database_url: str):
+    schema = f"aqub_general_{uuid4().hex}"
+    admin_engine = create_async_engine(database_url)
+    async with admin_engine.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(
+        database_url,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(TelegramReceipt.__table__.create)
+        await connection.run_sync(AQUBInstallationBinding.__table__.create)
+        await connection.run_sync(AQUBGeneralRoute.__table__.create)
+    return schema, admin_engine, engine
+
+
+async def _drop_schema(schema: str, admin_engine, engine) -> None:
+    await engine.dispose()
+    async with admin_engine.begin() as connection:
+        await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+    await admin_engine.dispose()
+
+
+def _receipt(*, update_id: int, group: int, actor: int) -> TelegramReceipt:
+    return TelegramReceipt(
+        id=uuid4(),
+        bot_key=AQUB_RECEIPT_BOT_KEY,
+        update_id=update_id,
+        payload={
+            "message": {
+                "chat": {"id": group, "type": "supergroup"},
+                "from": {"id": actor, "is_bot": False},
+            }
+        },
+        status=TelegramReceiptStatus.PROCESSED.value,
+        received_at=NOW,
+        processed_at=NOW,
+    )
+
+
+@pytest.mark.anyio
+async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for General route test")
+
+    schema, admin_engine, engine = await _schema_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    food_group, food_actor = "-1000000000101", "1000000101"
+    general_group, general_actor = "-1000000000202", "1000000202"
+    food = _binding(group=food_group, actor=food_actor)
+    try:
+        async with sessions() as session:
+            food_receipt = _receipt(update_id=101, group=int(food_group), actor=int(food_actor))
+            general_receipt = _receipt(
+                update_id=102,
+                group=int(general_group),
+                actor=int(general_actor),
+            )
+            session.add_all([food_receipt, general_receipt])
+            await session.commit()
+            session.add(
+                AQUBInstallationBinding(
+                    bot_key=AQUB_RECEIPT_BOT_KEY,
+                    group_chat_id=food_group,
+                    alpha_user_id=food_actor,
+                    evidence_receipt_id=food_receipt.id,
+                    bound_at=NOW,
+                )
+            )
+            await session.commit()
+
+            route = await register_aqub_general_route_hold(
+                session,
+                evidence_receipt_id=general_receipt.id,
+            )
+            assert route.status == AQUBGeneralRouteStatus.HOLD.value
+            selected = await select_aqub_inbound_binding(
+                session,
+                _settings(),
+                food_binding=food,
+                chat_id=general_group,
+                actor_id=general_actor,
+                content_kind=AQUBTransportContentKind.TEXT,
+            )
+            assert selected is food
+
+            await transition_aqub_general_route(
+                session,
+                route_id=route.id,
+                expected_status=AQUBGeneralRouteStatus.HOLD,
+                next_status=AQUBGeneralRouteStatus.ACTIVE,
+                occurred_at=NOW,
+            )
+            selected = await select_aqub_inbound_binding(
+                session,
+                _settings(),
+                food_binding=food,
+                chat_id=general_group,
+                actor_id=general_actor,
+                content_kind=AQUBTransportContentKind.TEXT,
+            )
+            assert selected.group_chat_id == general_group
+            assert selected.alpha_user_id == general_actor
+            wrong_actor = await select_aqub_inbound_binding(
+                session,
+                _settings(),
+                food_binding=food,
+                chat_id=general_group,
+                actor_id=food_actor,
+                content_kind=AQUBTransportContentKind.TEXT,
+            )
+            wrong_group = await select_aqub_inbound_binding(
+                session,
+                _settings(),
+                food_binding=food,
+                chat_id=food_group,
+                actor_id=general_actor,
+                content_kind=AQUBTransportContentKind.TEXT,
+            )
+            media = await select_aqub_inbound_binding(
+                session,
+                _settings(),
+                food_binding=food,
+                chat_id=general_group,
+                actor_id=general_actor,
+                content_kind=AQUBTransportContentKind.PHOTO,
+            )
+            assert wrong_actor is wrong_group is media is food
+    finally:
+        await _drop_schema(schema, admin_engine, engine)
+
+
+@pytest.mark.anyio
+async def test_postgres_route_rejects_food_group_conflict() -> None:
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL is required for General route test")
+
+    schema, admin_engine, engine = await _schema_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    shared_group, food_actor, general_actor = "-1000000000303", "1000000303", "1000000404"
+    try:
+        async with sessions() as session:
+            food_receipt = _receipt(update_id=103, group=int(shared_group), actor=int(food_actor))
+            general_receipt = _receipt(
+                update_id=104,
+                group=int(shared_group),
+                actor=int(general_actor),
+            )
+            session.add_all([food_receipt, general_receipt])
+            await session.commit()
+            session.add(
+                AQUBInstallationBinding(
+                    bot_key=AQUB_RECEIPT_BOT_KEY,
+                    group_chat_id=shared_group,
+                    alpha_user_id=food_actor,
+                    evidence_receipt_id=food_receipt.id,
+                    bound_at=NOW,
+                )
+            )
+            await session.commit()
+            with pytest.raises(ValueError, match="food_group_conflict"):
+                await register_aqub_general_route_hold(
+                    session,
+                    evidence_receipt_id=general_receipt.id,
+                )
+    finally:
+        await _drop_schema(schema, admin_engine, engine)
