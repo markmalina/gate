@@ -9,6 +9,9 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBTransportBinding,
@@ -22,8 +25,6 @@ from app.infrastructure.aqub_installation import (
 )
 from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AQUBGeneralRouteStatus(StrEnum):
