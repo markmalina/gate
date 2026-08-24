@@ -37,6 +37,7 @@ from app.application.aqub_transport import (
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_food_media import SqlAQUBFoodMediaStore
+from app.infrastructure.aqub_general_route import select_aqub_inbound_binding
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
     aqub_receipt_signing_key,
@@ -126,6 +127,7 @@ async def aqub_telegram_ingress(
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
     ] = None,
     settings: Settings = settings_dependency,
+    session: AsyncSession = db_session_dependency,
     store: AQUBTransportStore = store_dependency,
     binding: AQUBTransportBinding = binding_dependency,
     media_queue: AQUBFoodMediaQueue | None = media_queue_dependency,
@@ -162,6 +164,14 @@ async def aqub_telegram_ingress(
     )
     if inbound is None:
         return _unowned_response()
+
+    binding = await select_aqub_inbound_binding(
+        session,
+        settings,
+        food_binding=binding,
+        chat_id=inbound.chat_id,
+        actor_id=inbound.actor_id,
+    )
 
     if inbound.command == AQUB_PING_COMMAND:
         result = await AQUBDiagnosticPingAdapter(
@@ -739,3 +749,4 @@ def _secrets_match(*, provided: str, configured: str) -> bool:
         return hmac.compare_digest(provided.encode(), configured.encode())
     except UnicodeError:
         return False
+

@@ -353,10 +353,10 @@ def _bound_role(
         or inbound.bot_username != binding.bot_username
     ):
         return None
-    if inbound.actor_id == binding.alpha_user_id:
-        return AQUBTransportRole.ALPHA
     if inbound.chat_id != binding.group_chat_id:
         return None
+    if inbound.actor_id == binding.alpha_user_id:
+        return AQUBTransportRole.ALPHA
     if inbound.content_kind is not AQUBTransportContentKind.TEXT:
         return None
     if inbound.actor_id == binding.ace_user_id and binding.ace_user_id != "__unbound_ace__":
@@ -609,3 +609,4 @@ def _build_signed_album_envelope_body(
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+
