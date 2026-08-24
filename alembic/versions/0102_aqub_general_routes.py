@@ -81,4 +81,3 @@ def downgrade() -> None:
         table_name="aqub_general_routes",
     )
     op.drop_table("aqub_general_routes")
-

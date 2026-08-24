@@ -12,9 +12,6 @@ from typing import Annotated, Any, cast
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_database_runtime, get_db_session
 from app.application.aqub_food_media import AQUBFoodMediaQueue
 from app.application.aqub_live import (
@@ -51,6 +48,8 @@ from app.infrastructure.aqub_live import (
     verify_aqub_signature,
 )
 from app.services.telegram import TelegramClient
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -127,7 +126,6 @@ async def aqub_telegram_ingress(
         str | None, Header(alias="X-Telegram-Bot-Api-Secret-Token")
     ] = None,
     settings: Settings = settings_dependency,
-    session: AsyncSession = db_session_dependency,
     store: AQUBTransportStore = store_dependency,
     binding: AQUBTransportBinding = binding_dependency,
     media_queue: AQUBFoodMediaQueue | None = media_queue_dependency,
@@ -165,14 +163,23 @@ async def aqub_telegram_ingress(
     if inbound is None:
         return _unowned_response()
 
-    binding = await select_aqub_inbound_binding(
-        session,
-        settings,
-        food_binding=binding,
-        chat_id=inbound.chat_id,
-        actor_id=inbound.actor_id,
-        content_kind=inbound.content_kind,
-    )
+    try:
+        database_runtime = get_database_runtime(request)
+    except RuntimeError:
+        # Focused route/unit clients override the durable Food binding and store
+        # without installing the application lifespan. Production always has
+        # the database runtime because its binding dependency already needs it.
+        database_runtime = None
+    if database_runtime is not None:
+        async with database_runtime.session_factory() as route_session:
+            binding = await select_aqub_inbound_binding(
+                route_session,
+                settings,
+                food_binding=binding,
+                chat_id=inbound.chat_id,
+                actor_id=inbound.actor_id,
+                content_kind=inbound.content_kind,
+            )
 
     if inbound.command == AQUB_PING_COMMAND:
         result = await AQUBDiagnosticPingAdapter(

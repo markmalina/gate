@@ -9,9 +9,6 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBTransportBinding,
@@ -23,8 +20,10 @@ from app.infrastructure.aqub_installation import (
     AQUB_UNBOUND_ACE_USER_ID,
     aqub_receipt_signing_key,
 )
-from app.models.aqub import AQUBGeneralRoute
+from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AQUBGeneralRouteStatus(StrEnum):
@@ -91,19 +90,25 @@ async def register_aqub_general_route_hold(
     """Register one immutable receipt-backed route on hold; never activate it."""
 
     receipt = await session.scalar(
-        select(TelegramReceipt)
-        .where(TelegramReceipt.id == evidence_receipt_id)
-        .with_for_update()
+        select(TelegramReceipt).where(TelegramReceipt.id == evidence_receipt_id).with_for_update()
     )
     if not isinstance(receipt, TelegramReceipt):
         raise ValueError("aqub_general_route_evidence_missing")
     evidence = general_route_evidence_from_receipt(receipt)
     if evidence is None:
         raise ValueError("aqub_general_route_evidence_invalid")
-    existing = await session.scalar(
-        select(AQUBGeneralRoute).where(
-            AQUBGeneralRoute.evidence_receipt_id == evidence.receipt_id
+    food_binding = await session.scalar(
+        select(AQUBInstallationBinding).where(
+            AQUBInstallationBinding.bot_key == AQUB_RECEIPT_BOT_KEY
         )
+    )
+    if (
+        isinstance(food_binding, AQUBInstallationBinding)
+        and food_binding.group_chat_id == evidence.group_chat_id
+    ):
+        raise ValueError("aqub_general_route_food_group_conflict")
+    existing = await session.scalar(
+        select(AQUBGeneralRoute).where(AQUBGeneralRoute.evidence_receipt_id == evidence.receipt_id)
     )
     if isinstance(existing, AQUBGeneralRoute):
         if (
@@ -146,14 +151,23 @@ async def transition_aqub_general_route(
     if (expected_status, next_status) not in legal:
         raise ValueError("aqub_general_route_transition_invalid")
     route = await session.scalar(
-        select(AQUBGeneralRoute)
-        .where(AQUBGeneralRoute.id == route_id)
-        .with_for_update()
+        select(AQUBGeneralRoute).where(AQUBGeneralRoute.id == route_id).with_for_update()
     )
     if not isinstance(route, AQUBGeneralRoute):
         raise ValueError("aqub_general_route_missing")
     if route.status != expected_status.value:
         raise RuntimeError("aqub_general_route_status_conflict")
+    if next_status is AQUBGeneralRouteStatus.ACTIVE:
+        food_binding = await session.scalar(
+            select(AQUBInstallationBinding).where(
+                AQUBInstallationBinding.bot_key == AQUB_RECEIPT_BOT_KEY
+            )
+        )
+        if (
+            isinstance(food_binding, AQUBInstallationBinding)
+            and food_binding.group_chat_id == route.group_chat_id
+        ):
+            raise ValueError("aqub_general_route_food_group_conflict")
     route.status = next_status.value
     if next_status is AQUBGeneralRouteStatus.ACTIVE:
         route.activated_at = occurred_at

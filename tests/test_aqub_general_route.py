@@ -150,4 +150,3 @@ def test_terminal_receipt_projects_private_ids_without_repr_exposure() -> None:
     assert evidence is not None
     assert "46" not in repr(evidence)
     assert "47" not in repr(evidence)
-

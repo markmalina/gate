@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from app.models.domain import Base
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -25,8 +26,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.domain import Base
 
 
 class AQUBInstallationBinding(Base):
@@ -92,16 +91,10 @@ class AQUBGeneralRoute(Base):
         unique=True,
         nullable=False,
     )
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default=text("'hold'")
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'hold'"))
     bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    activated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    retired_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -175,9 +168,7 @@ class AQUBFoodMedia(Base):
     progress_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    final_sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    final_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -187,4 +178,3 @@ class AQUBFoodMedia(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
-
