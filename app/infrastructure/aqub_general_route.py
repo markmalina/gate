@@ -188,15 +188,13 @@ async def load_active_aqub_general_binding(
     settings: Settings,
     *,
     chat_id: str,
-    actor_id: str,
 ) -> AQUBTransportBinding | None:
-    """Resolve only an exact active group+actor pair; hold/retired are invisible."""
+    """Resolve an active General group; the returned binding fences its exact actor."""
 
     route = await session.scalar(
         select(AQUBGeneralRoute).where(
             AQUBGeneralRoute.bot_key == AQUB_RECEIPT_BOT_KEY,
             AQUBGeneralRoute.group_chat_id == chat_id,
-            AQUBGeneralRoute.actor_user_id == actor_id,
             AQUBGeneralRoute.status == AQUBGeneralRouteStatus.ACTIVE.value,
         )
     )
@@ -230,6 +228,9 @@ async def select_aqub_inbound_binding(
         session,
         settings,
         chat_id=chat_id,
-        actor_id=actor_id,
     )
+    if general is not None and general.alpha_user_id != actor_id:
+        # Preserve the matched General binding so the existing live admission
+        # denies this actor instead of falling through to Food owner semantics.
+        return general
     return general if general is not None else food_binding

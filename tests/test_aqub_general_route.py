@@ -6,9 +6,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app.application.aqub_live import AQUBLiveIngressAdapter
 from app.application.aqub_transport import (
     AQUBTransportBinding,
@@ -26,6 +23,8 @@ from app.infrastructure.aqub_general_route import (
 from app.infrastructure.aqub_installation import AQUB_RECEIPT_BOT_KEY
 from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
 SIGNING_KEY = b"general-route-test-signing-key-32-bytes"
@@ -269,7 +268,18 @@ async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None
                 actor_id=general_actor,
                 content_kind=AQUBTransportContentKind.PHOTO,
             )
-            assert wrong_actor is wrong_group is media is food
+            assert wrong_actor is not food
+            assert wrong_actor.group_chat_id == general_group
+            assert wrong_actor.alpha_user_id == general_actor
+            assert wrong_group is media is food
+            denied_store, denied_runtime = _Store(), _Runtime()
+            denied = await AQUBLiveIngressAdapter(
+                binding=wrong_actor,
+                store=denied_store,
+                runtime=denied_runtime,
+            ).handle(_inbound(group=general_group, actor=food_actor))
+            assert denied.accepted is False
+            assert denied_store.calls == denied_runtime.calls == 0
     finally:
         await _drop_schema(schema, admin_engine, engine)
 
