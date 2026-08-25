@@ -199,6 +199,7 @@ async def _schema_engine(database_url: str):
     async with engine.begin() as connection:
         await connection.run_sync(TelegramReceipt.__table__.create)
         await connection.run_sync(AQUBInstallationBinding.__table__.create)
+        await connection.run_sync(AQUBFoodRoute.__table__.create)
         await connection.run_sync(AQUBGeneralRoute.__table__.create)
     return schema, admin_engine, engine
 
