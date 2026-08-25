@@ -2,9 +2,10 @@
 
 import tomllib
 from pathlib import Path
+from typing import Any
 
 
-def _configuration() -> dict[str, object]:
+def _configuration() -> dict[str, Any]:
     return tomllib.loads(Path("railway.toml").read_text(encoding="utf-8"))
 
 
