@@ -7,9 +7,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app.application.aqub_live import AQUBLiveIngressAdapter
 from app.application.aqub_transport import (
     AQUBTransportBinding,
@@ -32,6 +29,8 @@ from app.models.aqub import (
     AQUBInstallationBinding,
 )
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 NOW = datetime(2026, 8, 25, 13, 30, tzinfo=UTC)
 SIGNING_KEY = b"isolated-food-route-test-key-32-bytes"
