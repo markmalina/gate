@@ -109,12 +109,22 @@ async def _prepare(
 ) -> tuple[_Telegram, list[str]]:
     telegram = _Telegram()
     markers: list[str] = []
+    routed_chat_ids: list[str] = []
 
     async def discover(*_args: object, **_kwargs: object) -> worker._MediaJob:
         return _job()
 
     async def load_binding(*_args: object, **_kwargs: object) -> AQUBTransportBinding:
         return _binding()
+
+    async def select_binding(
+        *_args: object,
+        fallback_binding: AQUBTransportBinding,
+        chat_id: str,
+        **_kwargs: object,
+    ) -> AQUBTransportBinding:
+        routed_chat_ids.append(chat_id)
+        return fallback_binding
 
     async def process(*_args: object, **_kwargs: object) -> dict[str, object]:
         await asyncio.sleep(processing_delay)
@@ -157,6 +167,7 @@ async def _prepare(
 
     monkeypatch.setattr(worker, "_discover_job", discover)
     monkeypatch.setattr(worker, "load_aqub_production_binding", load_binding)
+    monkeypatch.setattr(worker, "select_aqub_food_inbound_binding", select_binding)
     monkeypatch.setattr(worker, "_process_job", process)
     monkeypatch.setattr(worker, "forward_aqub_media_result", forward)
     monkeypatch.setattr(worker, "_mark_final", mark_final)
@@ -172,6 +183,7 @@ async def _prepare(
         now=NOW,
     )
     assert settled == 1
+    assert routed_chat_ids == [CHAT_ID]
     return telegram, markers
 
 
