@@ -58,6 +58,55 @@ class AQUBInstallationBinding(Base):
     )
 
 
+class AQUBFoodRoute(Base):
+    """Default-inactive exact group+actor route for one isolated Food Cube."""
+
+    __tablename__ = "aqub_food_routes"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('hold','active','retired')",
+            name="ck_aqub_food_route_status",
+        ),
+        CheckConstraint(
+            "(status = 'hold' AND activated_at IS NULL AND retired_at IS NULL) OR "
+            "(status = 'active' AND activated_at IS NOT NULL AND retired_at IS NULL) OR "
+            "(status = 'retired' AND retired_at IS NOT NULL)",
+            name="ck_aqub_food_route_lifecycle",
+        ),
+        Index(
+            "uq_aqub_food_route_live_group",
+            "bot_key",
+            "group_chat_id",
+            unique=True,
+            postgresql_where=text("status <> 'retired'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    bot_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    group_chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_receipt_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("telegram_receipts.id", ondelete="RESTRICT"),
+        unique=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'hold'"))
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class AQUBGeneralRoute(Base):
     """Default-inactive exact group+actor route for one General Cube."""
 

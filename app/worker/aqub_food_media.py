@@ -34,6 +34,7 @@ from app.infrastructure.aqub_food_media import (
     SqlAQUBFoodMediaStore,
     TelegramAQUBFoodMediaDownloader,
 )
+from app.infrastructure.aqub_food_route import select_aqub_food_inbound_binding
 from app.infrastructure.aqub_installation import load_aqub_production_binding
 from app.models.aqub import AQUBFoodMedia
 from app.models.domain import TelegramReceipt
@@ -80,13 +81,13 @@ async def run_aqub_food_media_once(
         return 0
 
     async with session_factory() as session:
-        binding = await load_aqub_production_binding(session, settings)
+        fallback_binding = await load_aqub_production_binding(session, settings)
         await session.rollback()
 
     inbounds = [
         _project_inbound(
             job.payload,
-            bot_username=binding.bot_username,
+            bot_username=fallback_binding.bot_username,
             received_at=job.received_at,
         )
         for job in jobs
@@ -95,12 +96,20 @@ async def run_aqub_food_media_once(
         await _send_batch_failure(
             session_factory=session_factory,
             telegram=telegram,
-            fallback_chat_id=binding.group_chat_id,
+            fallback_chat_id=fallback_binding.group_chat_id,
             receipt_ids=[job.receipt_id for job in jobs],
             code="aqub_food_media_inbound_invalid",
         )
         return 1
     projected = [inbound for inbound in inbounds if inbound is not None]
+    async with session_factory() as session:
+        binding = await select_aqub_food_inbound_binding(
+            session,
+            settings,
+            fallback_binding=fallback_binding,
+            chat_id=projected[0].chat_id,
+        )
+        await session.rollback()
     if len(jobs) > 1:
         return await _run_album(
             settings=settings,
