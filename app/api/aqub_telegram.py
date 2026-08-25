@@ -37,6 +37,7 @@ from app.application.aqub_transport import (
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_food_media import SqlAQUBFoodMediaStore
+from app.infrastructure.aqub_general_route import select_aqub_inbound_binding
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
     aqub_receipt_signing_key,
@@ -162,6 +163,24 @@ async def aqub_telegram_ingress(
     )
     if inbound is None:
         return _unowned_response()
+
+    try:
+        database_runtime = get_database_runtime(request)
+    except RuntimeError:
+        # Focused route/unit clients override the durable Food binding and store
+        # without installing the application lifespan. Production always has
+        # the database runtime because its binding dependency already needs it.
+        database_runtime = None
+    if database_runtime is not None:
+        async with database_runtime.session_factory() as route_session:
+            binding = await select_aqub_inbound_binding(
+                route_session,
+                settings,
+                food_binding=binding,
+                chat_id=inbound.chat_id,
+                actor_id=inbound.actor_id,
+                content_kind=inbound.content_kind,
+            )
 
     if inbound.command == AQUB_PING_COMMAND:
         result = await AQUBDiagnosticPingAdapter(
@@ -562,6 +581,14 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
         }
     downstream = result.downstream or {}
     domain = downstream.get("result")
+    if isinstance(domain, dict) and domain.get("suppress_reply") is True:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": result.reason,
+            "duplicate": result.duplicate,
+        }
     reply_text = _domain_last_reply(domain)
     if isinstance(domain, dict) and reply_text is not None:
         response: JsonObject = {
