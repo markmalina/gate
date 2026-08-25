@@ -1,6 +1,15 @@
 # Gate
 
 > [!IMPORTANT]
+> **Current ecosystem boundary — 2026-08-25:** Gate is external communication
+> transport and delivery infrastructure. It does not own OMARK, AQUB product meaning,
+> Aku, Cube instructions, user goals or cross-Cube semantics. Provider identifiers are
+> transport references only. Current naming and positioning live in
+> [AlphaCenter/brand](https://github.com/AlphaCenter/brand/blob/main/docs/ecosystem/CURRENT.md).
+> See [the current role note](docs/positioning/ECOSYSTEM_ROLE_2026-08-25.md).
+
+
+> [!IMPORTANT]
 > **PROJECT TRANSFER — START A NEW GATE WORK HERE / ПЕРЕДАЧА НОВОМУ GATE WORK**
 >
 > This private repository is the complete source of truth for the recreated Gate

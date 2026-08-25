@@ -1,3 +1,9 @@
+> [!WARNING]
+> **POSITIONING BOUNDARY — 2026-08-25.**  
+> The filename is retained for technical provenance. Gate is transport and delivery
+> infrastructure, not the owner of product meaning. Current ecosystem naming and
+> positioning live in [AlphaCenter/brand](https://github.com/AlphaCenter/brand/blob/main/docs/ecosystem/CURRENT.md).
+
 # Gate product platform
 
 > Status: current product definition and target architecture  
