@@ -37,6 +37,7 @@ from app.application.aqub_transport import (
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.aqub_food_media import SqlAQUBFoodMediaStore
+from app.infrastructure.aqub_food_route import select_aqub_food_inbound_binding
 from app.infrastructure.aqub_general_route import select_aqub_inbound_binding
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
@@ -173,10 +174,16 @@ async def aqub_telegram_ingress(
         database_runtime = None
     if database_runtime is not None:
         async with database_runtime.session_factory() as route_session:
+            food_binding = await select_aqub_food_inbound_binding(
+                route_session,
+                settings,
+                fallback_binding=binding,
+                chat_id=inbound.chat_id,
+            )
             binding = await select_aqub_inbound_binding(
                 route_session,
                 settings,
-                food_binding=binding,
+                food_binding=food_binding,
                 chat_id=inbound.chat_id,
                 actor_id=inbound.actor_id,
                 content_kind=inbound.content_kind,

@@ -23,7 +23,7 @@ from app.infrastructure.aqub_installation import (
     AQUB_UNBOUND_ACE_USER_ID,
     aqub_receipt_signing_key,
 )
-from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
+from app.models.aqub import AQUBFoodRoute, AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 
@@ -39,6 +39,17 @@ class AQUBGeneralRouteEvidence:
     group_chat_id: str = field(repr=False)
     actor_user_id: str = field(repr=False)
     bound_at: datetime
+
+
+async def _food_route_conflicts(session: AsyncSession, *, group_chat_id: str) -> bool:
+    route = await session.scalar(
+        select(AQUBFoodRoute).where(
+            AQUBFoodRoute.bot_key == AQUB_RECEIPT_BOT_KEY,
+            AQUBFoodRoute.group_chat_id == group_chat_id,
+            AQUBFoodRoute.status != "retired",
+        )
+    )
+    return isinstance(route, AQUBFoodRoute)
 
 
 def _message_mapping(payload: Any) -> Mapping[str, Any] | None:
@@ -108,6 +119,8 @@ async def register_aqub_general_route_hold(
         and food_binding.group_chat_id == evidence.group_chat_id
     ):
         raise ValueError("aqub_general_route_food_group_conflict")
+    if await _food_route_conflicts(session, group_chat_id=evidence.group_chat_id):
+        raise ValueError("aqub_general_route_food_route_conflict")
     existing = await session.scalar(
         select(AQUBGeneralRoute).where(AQUBGeneralRoute.evidence_receipt_id == evidence.receipt_id)
     )
@@ -169,6 +182,8 @@ async def transition_aqub_general_route(
             and food_binding.group_chat_id == route.group_chat_id
         ):
             raise ValueError("aqub_general_route_food_group_conflict")
+        if await _food_route_conflicts(session, group_chat_id=route.group_chat_id):
+            raise ValueError("aqub_general_route_food_route_conflict")
     route.status = next_status.value
     if next_status is AQUBGeneralRouteStatus.ACTIVE:
         route.activated_at = occurred_at
