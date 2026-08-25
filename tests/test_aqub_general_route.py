@@ -24,7 +24,11 @@ from app.infrastructure.aqub_general_route import (
     transition_aqub_general_route,
 )
 from app.infrastructure.aqub_installation import AQUB_RECEIPT_BOT_KEY
-from app.models.aqub import (\n    AQUBFoodRoute,\n    AQUBGeneralRoute,\n    AQUBInstallationBinding,\n)
+from app.models.aqub import (
+    AQUBFoodRoute,
+    AQUBGeneralRoute,
+    AQUBInstallationBinding,
+)
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
