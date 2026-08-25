@@ -76,7 +76,7 @@ class HttpAQUBRuntimeClient:
         *,
         base_url: str,
         http_client: httpx.AsyncClient,
-        timeout_seconds: float = 8.0,
+        timeout_seconds: float = 30.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._http_client = http_client

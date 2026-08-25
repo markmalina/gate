@@ -734,3 +734,26 @@ async def test_album_item_is_queued_without_per_photo_reply() -> None:
     assert result.captured_content is None
     assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []
+
+@pytest.mark.anyio
+async def test_http_runtime_default_timeout_supports_provider_budget() -> None:
+    captured: dict[str, object] = {}
+
+    class RecordingClient:
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            captured["url"] = url
+            captured.update(kwargs)
+            return httpx.Response(200, json={"ok": True})
+
+    runtime = HttpAQUBRuntimeClient(
+        base_url="https://aqub.invalid",
+        http_client=cast(httpx.AsyncClient, RecordingClient()),
+    )
+    result = await runtime.post_envelope(
+        raw_body=b"{}",
+        signature="synthetic-signature",
+    )
+
+    assert result == {"ok": True}
+    assert captured["url"] == "https://aqub.invalid/gate/inbound"
+    assert captured["timeout"] == 30.0
