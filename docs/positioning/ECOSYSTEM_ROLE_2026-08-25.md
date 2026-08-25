@@ -4,6 +4,12 @@
 **Observed main:** `a3f55c4b76a8df24171255748ff7a96c8568af0f`  
 **Scope:** documentation-only ownership boundary.
 
+Canonical public chain:
+
+> **Марк Маяк → OMARK → AQUB — платформа → Аку — помощник + Кубы.**
+
+Gate is not a public entity in that chain.
+
 ## Definition
 
 Gate is the external communication transport and delivery layer. It connects allowed channel/provider events to the correct product context and returns delivery state.
