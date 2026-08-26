@@ -12,6 +12,10 @@ from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.aqub_food_media import (
     MAX_AQUB_FOOD_MEDIA_BYTES,
     AQUBDownloadedMedia,
@@ -29,9 +33,6 @@ from app.infrastructure.aqub_installation import AQUB_RECEIPT_BOT_KEY
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.aqub import AQUBFoodMedia
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
-from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 _RAW_RETENTION_DAYS = 7
 _STALE_CLAIM_SECONDS = 120
