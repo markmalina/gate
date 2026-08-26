@@ -336,6 +336,55 @@ class SqlAQUBFoodMediaStore:
         await self._session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
+    async def finalize_album(
+        self,
+        *,
+        media_receipt_ids: Sequence[str],
+        linked_text_receipt_ids: Sequence[str],
+        now: Any,
+    ) -> tuple[int, int]:
+        if not media_receipt_ids:
+            raise AQUBFoodMediaError("aqub_food_album_receipts_invalid")
+        media_result = await self._session.execute(
+            update(AQUBFoodMedia)
+            .where(
+                AQUBFoodMedia.receipt_id.in_(
+                    [
+                        _uuid(value, "aqub_food_media_receipt_invalid")
+                        for value in media_receipt_ids
+                    ]
+                ),
+                AQUBFoodMedia.final_sent_at.is_(None),
+            )
+            .values(final_sent_at=now)
+        )
+        linked_count = 0
+        if linked_text_receipt_ids:
+            linked_result = await self._session.execute(
+                update(TelegramReceipt)
+                .where(
+                    TelegramReceipt.id.in_(
+                        [
+                            _uuid(value, "aqub_food_media_receipt_invalid")
+                            for value in linked_text_receipt_ids
+                        ]
+                    ),
+                    TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
+                    TelegramReceipt.status == TelegramReceiptStatus.PROCESSING.value,
+                    TelegramReceipt.processing_started_at.is_not(None),
+                )
+                .values(
+                    status=TelegramReceiptStatus.PROCESSED.value,
+                    processed_at=now,
+                )
+            )
+            linked_count = int(getattr(linked_result, "rowcount", 0) or 0)
+        await self._session.commit()
+        return (
+            int(getattr(media_result, "rowcount", 0) or 0),
+            linked_count,
+        )
+
     async def mark_progress_sent(
         self,
         *,
