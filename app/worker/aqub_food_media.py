@@ -324,6 +324,22 @@ async def _run_album(
                     "AQUB Food album reconciliation used deterministic fallback: code=%s",
                     _safe_error_code(exc),
                 )
+        async with session_factory() as session:
+            linked_rows = await SqlAQUBFoodMediaStore(session).linked_texts_for_album(
+                inbounds=inbounds,
+                now=datetime.now(UTC),
+            )
+        linked_inbounds = [
+            _project_inbound(
+                payload,
+                bot_username=binding.bot_username,
+                received_at=received_at,
+            )
+            for _receipt_id, payload, received_at in linked_rows
+        ]
+        if any(item is None for item in linked_inbounds):
+            raise AQUBFoodMediaError("aqub_food_album_linked_text_invalid")
+        projected_linked = [item for item in linked_inbounds if item is not None]
         runtime_url = os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
         if not runtime_url:
             raise AQUBFoodMediaError("aqub_runtime_unavailable")
@@ -334,6 +350,8 @@ async def _run_album(
             successful_orders=sorted(results),
             media_result=aggregate,
             runtime=HttpAQUBRuntimeClient(base_url=runtime_url, http_client=http_client),
+            linked_text_inbounds=projected_linked,
+            linked_text_receipt_ids=[receipt_id for receipt_id, _payload, _at in linked_rows],
         )
         await _deliver_reply_messages(
             session_factory=session_factory,
@@ -343,10 +361,18 @@ async def _run_album(
             receipt_ids=[jobs[index].receipt_id for index in sorted(results)],
             cursor=max((job.reply_cursor for job in jobs), default=0),
         )
-        await _mark_final_many(
-            session_factory=session_factory,
-            receipt_ids=[job.receipt_id for job in jobs],
-        )
+        media_receipt_ids = [str(job.receipt_id) for job in jobs]
+        linked_receipt_ids = [
+            receipt_id for receipt_id, _payload, _received_at in linked_rows
+        ]
+        async with session_factory() as session:
+            finalized = await SqlAQUBFoodMediaStore(session).finalize_album(
+                media_receipt_ids=media_receipt_ids,
+                linked_text_receipt_ids=linked_receipt_ids,
+                now=datetime.now(UTC),
+            )
+        if finalized != (len(media_receipt_ids), len(linked_receipt_ids)):
+            raise AQUBFoodMediaError("aqub_food_album_finalize_conflict")
         return 1
     except Exception:
         logger.exception("AQUB Food album worker failed safely")
