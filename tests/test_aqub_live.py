@@ -11,6 +11,7 @@ from typing import cast
 import httpx
 import pytest
 from app.application.aqub_live import (
+    AQUB_ALBUM_TEXT_GRACE_SECONDS,
     AQUB_PROGRAM_PROMPT_TEXT,
     AQUBLiveIngressAdapter,
     AQUBRuntimeUnavailable,
@@ -689,6 +690,22 @@ class MediaQueue:
         return self.link_text
 
 
+class DelayedAlbumMediaQueue(MediaQueue):
+    async def link_text_to_pending_album(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: datetime,
+    ) -> bool:
+        await super().link_text_to_pending_album(
+            receipt_id=receipt_id,
+            inbound=inbound,
+            now=now,
+        )
+        return len(self.link_calls) == 2
+
+
 class RecoveringMediaQueue(MediaQueue):
     async def enqueue(
         self,
@@ -792,6 +809,74 @@ async def test_plain_text_is_buffered_when_one_album_is_pending() -> None:
     assert result.captured_content is None
     assert queue.link_calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_quantity_only_text_retries_link_after_album_registration_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays: list[float] = []
+
+    async def no_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr("app.application.aqub_live.asyncio.sleep", no_sleep)
+    runtime = Runtime()
+    queue = DelayedAlbumMediaQueue()
+    incoming = inbound(
+        text="Вес 120 г",
+        update_id=9011,
+        include_program_prompt_reply=False,
+    )
+
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=Store(),
+        runtime=runtime,
+        media_queue=queue,
+    ).handle(incoming)
+
+    assert result.reason == "aqub_food_album_text_queued"
+    assert queue.link_calls == [
+        ("raw-receipt-id", incoming),
+        ("raw-receipt-id", incoming),
+    ]
+    assert delays == [AQUB_ALBUM_TEXT_GRACE_SECONDS]
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_standalone_quantity_uses_direct_route_after_bounded_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays: list[float] = []
+
+    async def no_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr("app.application.aqub_live.asyncio.sleep", no_sleep)
+    runtime = Runtime()
+    queue = MediaQueue(link_text=False)
+    incoming = inbound(
+        text="120 г",
+        update_id=9012,
+        include_program_prompt_reply=False,
+    )
+
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=Store(),
+        runtime=runtime,
+        media_queue=queue,
+    ).handle(incoming)
+
+    assert result.reason == "aqub_live_committed"
+    assert queue.link_calls == [
+        ("raw-receipt-id", incoming),
+        ("raw-receipt-id", incoming),
+    ]
+    assert delays == [AQUB_ALBUM_TEXT_GRACE_SECONDS]
+    assert len(runtime.raw_bodies) == 1
 
 
 @pytest.mark.anyio
