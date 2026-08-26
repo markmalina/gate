@@ -29,8 +29,10 @@ from app.application.aqub_transport import (
     AQUBTransportInbound,
 )
 from app.application.telegram_voice_transcription import DownloadedVoice, TelegramVoiceError
+from app.infrastructure.aqub_installation import AQUB_RECEIPT_BOT_KEY
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.aqub import AQUBFoodMedia
+from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 _RAW_RETENTION_DAYS = 7
 _STALE_CLAIM_SECONDS = 120
@@ -174,6 +176,165 @@ class SqlAQUBFoodMediaStore:
         except Exception:
             await self._session.rollback()
             raise
+
+    async def link_text_to_pending_album(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: Any,
+    ) -> bool:
+        if (
+            inbound.content_kind is not AQUBTransportContentKind.TEXT
+            or not isinstance(inbound.command, str)
+            or not inbound.command.strip()
+            or inbound.command.lstrip().startswith("/")
+        ):
+            return False
+        receipt_uuid = _uuid(receipt_id, "aqub_food_media_receipt_invalid")
+        try:
+            receipt = await self._session.scalar(
+                select(TelegramReceipt)
+                .where(
+                    TelegramReceipt.id == receipt_uuid,
+                    TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
+                )
+                .with_for_update()
+            )
+            if not isinstance(receipt, TelegramReceipt):
+                raise AQUBFoodMediaError("aqub_food_media_receipt_missing")
+            if receipt.processing_started_at is not None:
+                await self._session.rollback()
+                return True
+            if (
+                receipt.status != TelegramReceiptStatus.PROCESSED.value
+                or receipt.processed_at is None
+            ):
+                await self._session.rollback()
+                return False
+            rows = (
+                await self._session.execute(
+                    select(
+                        AQUBFoodMedia.receipt_id,
+                        TelegramReceipt.payload,
+                        TelegramReceipt.received_at,
+                    )
+                    .join(
+                        TelegramReceipt,
+                        TelegramReceipt.id == AQUBFoodMedia.receipt_id,
+                    )
+                    .where(
+                        AQUBFoodMedia.content_kind == "photo",
+                        AQUBFoodMedia.final_sent_at.is_(None),
+                        TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
+                        TelegramReceipt.received_at >= now - timedelta(seconds=5),
+                        TelegramReceipt.received_at <= now,
+                    )
+                    .order_by(
+                        TelegramReceipt.received_at.desc(),
+                        AQUBFoodMedia.id.desc(),
+                    )
+                    .limit(32)
+                    .with_for_update()
+                )
+            ).all()
+            groups = {
+                key
+                for _media_receipt_id, payload, _received_at in rows
+                if (key := _album_route_key(payload)) is not None
+                and key[:2] == (inbound.chat_id, inbound.actor_id)
+            }
+            if len(groups) != 1:
+                await self._session.rollback()
+                return False
+            receipt.status = TelegramReceiptStatus.PROCESSING.value
+            receipt.processing_started_at = now
+            receipt.processed_at = None
+            await self._session.commit()
+            return True
+        except Exception:
+            await self._session.rollback()
+            raise
+
+    async def linked_texts_for_album(
+        self,
+        *,
+        inbounds: Sequence[AQUBTransportInbound],
+        now: Any,
+    ) -> list[tuple[str, dict[str, Any], Any]]:
+        if len(inbounds) < 2:
+            return []
+        first = inbounds[0]
+        if (
+            first.media_group_id is None
+            or any(
+                item.media_group_id != first.media_group_id
+                or item.chat_id != first.chat_id
+                or item.actor_id != first.actor_id
+                for item in inbounds
+            )
+        ):
+            raise AQUBFoodMediaError("aqub_food_album_link_scope_invalid")
+        rows = (
+            await self._session.execute(
+                select(
+                    TelegramReceipt.id,
+                    TelegramReceipt.payload,
+                    TelegramReceipt.received_at,
+                )
+                .where(
+                    TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
+                    TelegramReceipt.status == TelegramReceiptStatus.PROCESSING.value,
+                    TelegramReceipt.processing_started_at.is_not(None),
+                    TelegramReceipt.received_at
+                    >= min(item.received_at for item in inbounds),
+                    TelegramReceipt.received_at <= now,
+                )
+                .order_by(TelegramReceipt.received_at, TelegramReceipt.update_id)
+                .limit(32)
+            )
+        ).all()
+        linked: list[tuple[str, dict[str, Any], Any]] = []
+        for linked_id, payload, received_at in rows:
+            if not isinstance(payload, dict):
+                continue
+            message = payload.get("message")
+            if not isinstance(message, dict) or not isinstance(message.get("text"), str):
+                continue
+            route = _message_route(payload)
+            if route != (first.chat_id, first.actor_id):
+                continue
+            linked.append((str(linked_id), payload, received_at))
+            if len(linked) == 8:
+                break
+        await self._session.rollback()
+        return linked
+
+    async def complete_linked_texts(
+        self,
+        *,
+        receipt_ids: Sequence[str],
+        now: Any,
+    ) -> int:
+        if not receipt_ids:
+            return 0
+        result = await self._session.execute(
+            update(TelegramReceipt)
+            .where(
+                TelegramReceipt.id.in_(
+                    [_uuid(value, "aqub_food_media_receipt_invalid") for value in receipt_ids]
+                ),
+                TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
+                TelegramReceipt.status == TelegramReceiptStatus.PROCESSING.value,
+                TelegramReceipt.processing_started_at.is_not(None),
+            )
+            .values(
+                status=TelegramReceiptStatus.PROCESSED.value,
+                processed_at=now,
+            )
+        )
+        await self._session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def mark_progress_sent(
         self,
@@ -814,3 +975,33 @@ def _validate_magic(
 
 def _default_filename(content_kind: AQUBTransportContentKind) -> str:
     return "food-photo.jpg" if content_kind is AQUBTransportContentKind.PHOTO else "food-voice.ogg"
+
+
+
+def _message_route(payload: Any) -> tuple[str, str] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    message = payload.get("message")
+    if not isinstance(message, Mapping):
+        return None
+    chat = message.get("chat")
+    actor = message.get("from")
+    if (
+        not isinstance(chat, Mapping)
+        or type(chat.get("id")) is not int
+        or not isinstance(actor, Mapping)
+        or type(actor.get("id")) is not int
+    ):
+        return None
+    return (str(chat["id"]), str(actor["id"]))
+
+
+def _album_route_key(payload: Any) -> tuple[str, str, str] | None:
+    route = _message_route(payload)
+    if route is None or not isinstance(payload, Mapping):
+        return None
+    message = payload.get("message")
+    group = message.get("media_group_id") if isinstance(message, Mapping) else None
+    if not isinstance(group, str) or not group:
+        return None
+    return (*route, group)
