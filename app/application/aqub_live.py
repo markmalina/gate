@@ -9,6 +9,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Protocol
 
 import httpx
@@ -216,7 +217,8 @@ class AQUBLiveIngressAdapter:
                 linked = await self._media_queue.link_text_to_pending_album(
                     receipt_id=acceptance.command_receipt_id,
                     inbound=inbound,
-                    now=inbound.received_at,
+                    now=inbound.received_at
+                    + timedelta(seconds=AQUB_ALBUM_TEXT_GRACE_SECONDS),
                 )
             if linked:
                 return AQUBLiveForwardResult(
