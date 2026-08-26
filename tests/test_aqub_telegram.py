@@ -665,8 +665,13 @@ def test_pre_ready_photo_gets_no_storage_or_confirmation() -> None:
     with _client(_settings(), store) as client:
         response = _post(client, _photo_update(date=before_ready))
 
-    assert response.status_code == 503
-    assert response.json()["detail"] == "aqub_event_before_ready"
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "owned": False,
+        "accepted": False,
+        "reason": "aqub_event_before_ready",
+    }
     assert "method" not in response.json()
     assert store.commands == []
 
