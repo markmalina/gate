@@ -12,10 +12,6 @@ from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.aqub_food_media import (
     MAX_AQUB_FOOD_MEDIA_BYTES,
     AQUBDownloadedMedia,
@@ -33,6 +29,9 @@ from app.infrastructure.aqub_installation import AQUB_RECEIPT_BOT_KEY
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.aqub import AQUBFoodMedia
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 _RAW_RETENTION_DAYS = 7
 _STALE_CLAIM_SECONDS = 120
@@ -265,14 +264,11 @@ class SqlAQUBFoodMediaStore:
         if len(inbounds) < 2:
             return []
         first = inbounds[0]
-        if (
-            first.media_group_id is None
-            or any(
-                item.media_group_id != first.media_group_id
-                or item.chat_id != first.chat_id
-                or item.actor_id != first.actor_id
-                for item in inbounds
-            )
+        if first.media_group_id is None or any(
+            item.media_group_id != first.media_group_id
+            or item.chat_id != first.chat_id
+            or item.actor_id != first.actor_id
+            for item in inbounds
         ):
             raise AQUBFoodMediaError("aqub_food_album_link_scope_invalid")
         rows = (
@@ -286,8 +282,7 @@ class SqlAQUBFoodMediaStore:
                     TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                     TelegramReceipt.status == TelegramReceiptStatus.PROCESSING.value,
                     TelegramReceipt.processing_started_at.is_not(None),
-                    TelegramReceipt.received_at
-                    >= min(item.received_at for item in inbounds),
+                    TelegramReceipt.received_at >= min(item.received_at for item in inbounds),
                     TelegramReceipt.received_at <= now,
                 )
                 .order_by(TelegramReceipt.received_at, TelegramReceipt.update_id)
@@ -349,10 +344,7 @@ class SqlAQUBFoodMediaStore:
             update(AQUBFoodMedia)
             .where(
                 AQUBFoodMedia.receipt_id.in_(
-                    [
-                        _uuid(value, "aqub_food_media_receipt_invalid")
-                        for value in media_receipt_ids
-                    ]
+                    [_uuid(value, "aqub_food_media_receipt_invalid") for value in media_receipt_ids]
                 ),
                 AQUBFoodMedia.final_sent_at.is_(None),
             )
@@ -1024,7 +1016,6 @@ def _validate_magic(
 
 def _default_filename(content_kind: AQUBTransportContentKind) -> str:
     return "food-photo.jpg" if content_kind is AQUBTransportContentKind.PHOTO else "food-voice.ogg"
-
 
 
 def _message_route(payload: Any) -> tuple[str, str] | None:
