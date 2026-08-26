@@ -629,7 +629,6 @@ def _build_signed_album_envelope_body(
         "reply_context": None,
         "content_kind": AQUBTransportContentKind.PHOTO.value,
         "text": "\n".join(captions),
-        "linked_texts": linked_texts,
         "media": first_media,
         "media_items": media_items,
         "media_group_ref": _opaque_ref(
@@ -650,6 +649,8 @@ def _build_signed_album_envelope_body(
         ),
         "payload_sha256": aggregate_digest,
     }
+    if linked_texts:
+        envelope["linked_texts"] = linked_texts
     return json.dumps(
         envelope,
         allow_nan=False,
