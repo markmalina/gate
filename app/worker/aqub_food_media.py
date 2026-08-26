@@ -11,9 +11,6 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.api.aqub_telegram import _project_inbound
 from app.application.aqub_food_media import (
     AQUBFoodMediaAnalysis,
@@ -39,6 +36,8 @@ from app.infrastructure.aqub_installation import load_aqub_production_binding
 from app.models.aqub import AQUBFoodMedia
 from app.models.domain import TelegramReceipt
 from app.services.telegram import TelegramClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -362,9 +361,7 @@ async def _run_album(
             cursor=max((job.reply_cursor for job in jobs), default=0),
         )
         media_receipt_ids = [str(job.receipt_id) for job in jobs]
-        linked_receipt_ids = [
-            receipt_id for receipt_id, _payload, _received_at in linked_rows
-        ]
+        linked_receipt_ids = [receipt_id for receipt_id, _payload, _received_at in linked_rows]
         async with session_factory() as session:
             finalized = await SqlAQUBFoodMediaStore(session).finalize_album(
                 media_receipt_ids=media_receipt_ids,
