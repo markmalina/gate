@@ -59,6 +59,10 @@ class AQUBRuntimeUnavailable(RuntimeError):
     """The durable Gate capture succeeded but AQUB runtime was unavailable."""
 
 
+class AQUBEventBeforeReady(RuntimeError):
+    """A terminal pre-activation event that must not poison Telegram retries."""
+
+
 class AQUBRuntimeClient(Protocol):
     async def post_envelope(
         self,
@@ -130,7 +134,14 @@ class AQUBLiveIngressAdapter:
                 duplicate=False,
                 reason="aqub_route_not_owned",
             )
-        _validate_time(self._binding, inbound)
+        try:
+            _validate_time(self._binding, inbound)
+        except AQUBEventBeforeReady:
+            return AQUBLiveForwardResult(
+                accepted=False,
+                duplicate=False,
+                reason="aqub_event_before_ready",
+            )
 
         payload = dict(inbound.payload)
         payload_sha256 = canonical_telegram_payload_digest(payload)
@@ -407,7 +418,7 @@ def _validate_time(binding: AQUBTransportBinding, inbound: AQUBTransportInbound)
     if inbound.occurred_at.utcoffset() is None or inbound.received_at.utcoffset() is None:
         raise RuntimeError("aqub_timestamp_invalid")
     if binding.ready_at is None or inbound.occurred_at < binding.ready_at:
-        raise RuntimeError("aqub_event_before_ready")
+        raise AQUBEventBeforeReady("aqub_event_before_ready")
     if inbound.received_at < inbound.occurred_at:
         raise RuntimeError("aqub_timestamp_order_invalid")
 
