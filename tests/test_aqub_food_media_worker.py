@@ -432,6 +432,4 @@ async def test_album_worker_forwards_linked_text_and_finalizes_atomically(
     assert isinstance(linked, list)
     assert [item.command for item in linked] == ["Вес 120 г"]
     assert forwarded["linked_text_receipt_ids"] == [linked_receipt]
-    assert finalized == [
-        ([str(RECEIPT_ID), str(receipt_two)], [linked_receipt])
-    ]
+    assert finalized == [([str(RECEIPT_ID), str(receipt_two)], [linked_receipt])]
