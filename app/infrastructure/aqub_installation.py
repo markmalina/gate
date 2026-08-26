@@ -8,11 +8,6 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import SecretStr
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUB_PING_COMMAND,
@@ -26,6 +21,10 @@ from app.application.telegram_processing import canonical_telegram_payload_diges
 from app.core.config import Settings
 from app.models.aqub import AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
+from pydantic import SecretStr
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 AQUB_RECEIPT_BOT_KEY = "telegram_aqub_preflight"
 AQUB_UNBOUND_ACE_USER_ID = "__unbound_ace__"
@@ -85,14 +84,10 @@ class SqlAQUBTransportReceiptStore:
                         )
                     )
                 ).one()
-                if (
-                    canonical_telegram_payload_digest(existing[1])
-                    != command.payload_sha256
-                ):
+                if canonical_telegram_payload_digest(existing[1]) != command.payload_sha256:
                     raise RuntimeError("aqub_receipt_mutated_replay")
                 terminal_replay = (
-                    existing[2] == TelegramReceiptStatus.PROCESSED.value
-                    and existing[3] is not None
+                    existing[2] == TelegramReceiptStatus.PROCESSED.value and existing[3] is not None
                 )
                 linked_replay = (
                     existing[2] == TelegramReceiptStatus.PROCESSING.value
