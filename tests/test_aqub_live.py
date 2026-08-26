@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
@@ -296,6 +297,54 @@ async def test_album_forward_is_one_opaque_ordered_fact_with_all_captions() -> N
     )
     envelope_without_link = json.loads(runtime_without_link.raw_bodies[0])
     assert "linked_texts" not in envelope_without_link
+
+
+@pytest.mark.anyio
+async def test_pre_ready_event_is_terminal_noop_and_later_event_forwards() -> None:
+    store = Store()
+    runtime = Runtime()
+    adapter = AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=store,
+        runtime=runtime,
+    )
+    stale = inbound(update_id=8999)
+    stale = replace(
+        stale,
+        occurred_at=READY_AT - timedelta(seconds=1),
+        received_at=READY_AT + timedelta(seconds=1),
+    )
+
+    rejected = await adapter.handle(stale)
+
+    assert rejected.accepted is False
+    assert rejected.duplicate is False
+    assert rejected.reason == "aqub_event_before_ready"
+    assert store.commands == []
+    assert runtime.raw_bodies == []
+
+    accepted = await adapter.handle(inbound(update_id=9000))
+
+    assert accepted.accepted is True
+    assert accepted.reason == "aqub_live_committed"
+    assert len(store.commands) == 1
+    assert len(runtime.raw_bodies) == 1
+
+
+@pytest.mark.anyio
+async def test_invalid_timestamp_order_remains_fail_closed() -> None:
+    value = inbound(update_id=8998)
+    value = replace(
+        value,
+        received_at=value.occurred_at - timedelta(seconds=1),
+    )
+
+    with pytest.raises(RuntimeError, match="aqub_timestamp_order_invalid"):
+        await AQUBLiveIngressAdapter(
+            binding=binding(),
+            store=Store(),
+            runtime=Runtime(),
+        ).handle(value)
 
 
 @pytest.mark.anyio
