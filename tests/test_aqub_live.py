@@ -757,6 +757,7 @@ async def test_album_item_is_queued_without_per_photo_reply() -> None:
     assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []
 
+
 @pytest.mark.anyio
 async def test_plain_text_is_buffered_when_one_album_is_pending() -> None:
     runtime = Runtime()
