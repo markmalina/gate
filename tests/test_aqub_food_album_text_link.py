@@ -48,11 +48,11 @@ def _photo_payload(*, update_id: int, message_id: int) -> dict[str, object]:
     }
 
 
-def _text_payload() -> dict[str, object]:
+def _text_payload(*, update_id: int = 3, message_id: int = 103) -> dict[str, object]:
     return {
-        "update_id": 3,
+        "update_id": update_id,
         "message": {
-            "message_id": 103,
+            "message_id": message_id,
             "date": int(NOW.timestamp()),
             "chat": {"id": int(CHAT_ID), "type": "supergroup"},
             "from": {"id": int(ACTOR_ID), "is_bot": False},
@@ -125,10 +125,12 @@ async def test_text_receipt_is_linked_replayed_and_finalized_with_album() -> Non
             _photo_payload(update_id=2, message_id=102),
         ]
         text_payload = _text_payload()
+        earlier_text_payload = _text_payload(update_id=4, message_id=100)
         received = [NOW, NOW + timedelta(milliseconds=100)]
         text_received = NOW + timedelta(milliseconds=700)
         photo_receipt_ids = [uuid4(), uuid4()]
         text_receipt_id = uuid4()
+        earlier_text_receipt_id = uuid4()
 
         async with sessions() as session:
             session.add_all(
@@ -155,7 +157,16 @@ async def test_text_receipt_is_linked_replayed_and_finalized_with_album() -> Non
                         status=TelegramReceiptStatus.PROCESSED.value,
                         received_at=text_received,
                         processed_at=text_received,
-                    )
+                    ),
+                    TelegramReceipt(
+                        id=earlier_text_receipt_id,
+                        bot_key=AQUB_RECEIPT_BOT_KEY,
+                        update_id=4,
+                        payload=earlier_text_payload,
+                        status=TelegramReceiptStatus.PROCESSED.value,
+                        received_at=text_received,
+                        processed_at=text_received,
+                    ),
                 ]
             )
             session.add_all(
@@ -179,6 +190,16 @@ async def test_text_receipt_is_linked_replayed_and_finalized_with_album() -> Non
                 for index, payload in enumerate(photo_payloads)
             ]
             linked_text = _project_text(text_payload, text_received)
+            earlier_text = _project_text(earlier_text_payload, text_received)
+
+            assert (
+                await store.link_text_to_pending_album(
+                    receipt_id=str(earlier_text_receipt_id),
+                    inbound=earlier_text,
+                    now=text_received,
+                )
+                is False
+            )
 
             assert (
                 await store.link_text_to_pending_album(
