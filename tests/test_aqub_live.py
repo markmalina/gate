@@ -285,6 +285,18 @@ async def test_album_forward_is_one_opaque_ordered_fact_with_all_captions() -> N
     assert "raw-provider-group" not in serialized
     assert TEST_CHAT_ID not in serialized
 
+    runtime_without_link = Runtime()
+    await forward_aqub_album_result(
+        binding=binding(),
+        inbounds=members,
+        command_receipt_ids=["receipt-1", "receipt-2", "receipt-3"],
+        successful_orders=[0, 2],
+        media_result=envelope["media_result"],
+        runtime=runtime_without_link,
+    )
+    envelope_without_link = json.loads(runtime_without_link.raw_bodies[0])
+    assert "linked_texts" not in envelope_without_link
+
 
 @pytest.mark.anyio
 async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -> None:
