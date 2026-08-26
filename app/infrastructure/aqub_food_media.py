@@ -191,6 +191,9 @@ class SqlAQUBFoodMediaStore:
         ):
             return False
         receipt_uuid = _uuid(receipt_id, "aqub_food_media_receipt_invalid")
+        text_order = _message_order(inbound.payload)
+        if text_order is None:
+            return False
         try:
             receipt = await self._session.scalar(
                 select(TelegramReceipt)
@@ -242,6 +245,8 @@ class SqlAQUBFoodMediaStore:
                 for _media_receipt_id, payload, _received_at in rows
                 if (key := _album_route_key(payload)) is not None
                 and key[:2] == (inbound.chat_id, inbound.actor_id)
+                and (media_order := _message_order(payload)) is not None
+                and media_order < text_order
             }
             if len(groups) != 1:
                 await self._session.rollback()
@@ -271,6 +276,10 @@ class SqlAQUBFoodMediaStore:
             for item in inbounds
         ):
             raise AQUBFoodMediaError("aqub_food_album_link_scope_invalid")
+        album_orders = [_message_order(item.payload) for item in inbounds]
+        if any(order is None for order in album_orders):
+            raise AQUBFoodMediaError("aqub_food_album_link_scope_invalid")
+        album_order = max(order for order in album_orders if order is not None)
         rows = (
             await self._session.execute(
                 select(
@@ -298,6 +307,9 @@ class SqlAQUBFoodMediaStore:
                 continue
             route = _message_route(payload)
             if route != (first.chat_id, first.actor_id):
+                continue
+            linked_order = _message_order(payload)
+            if linked_order is None or linked_order <= album_order:
                 continue
             linked.append((str(linked_id), payload, received_at))
             if len(linked) == 8:
@@ -1034,6 +1046,17 @@ def _message_route(payload: Any) -> tuple[str, str] | None:
     ):
         return None
     return (str(chat["id"]), str(actor["id"]))
+
+
+def _message_order(payload: Any) -> tuple[int, int] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    update_id = payload.get("update_id")
+    message = payload.get("message")
+    message_id = message.get("message_id") if isinstance(message, Mapping) else None
+    if type(update_id) is not int or type(message_id) is not int:
+        return None
+    return (message_id, update_id)
 
 
 def _album_route_key(payload: Any) -> tuple[str, str, str] | None:
