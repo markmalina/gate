@@ -78,6 +78,7 @@ class SqlAQUBTransportReceiptStore:
                             TelegramReceipt.payload,
                             TelegramReceipt.status,
                             TelegramReceipt.processed_at,
+                            TelegramReceipt.processing_started_at,
                         ).where(
                             TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                             TelegramReceipt.update_id == update_id,
@@ -89,10 +90,15 @@ class SqlAQUBTransportReceiptStore:
                     != command.payload_sha256
                 ):
                     raise RuntimeError("aqub_receipt_mutated_replay")
-                if (
-                    existing[2] != TelegramReceiptStatus.PROCESSED.value
-                    or existing[3] is None
-                ):
+                terminal_replay = (
+                    existing[2] == TelegramReceiptStatus.PROCESSED.value
+                    and existing[3] is not None
+                )
+                linked_replay = (
+                    existing[2] == TelegramReceiptStatus.PROCESSING.value
+                    and existing[4] is not None
+                )
+                if not terminal_replay and not linked_replay:
                     raise RuntimeError("aqub_receipt_not_terminal")
                 inserted_id = existing[0]
                 disposition = AQUBStoreDisposition.DUPLICATE
