@@ -72,6 +72,14 @@ class AQUBFoodMediaQueue(Protocol):
         now: datetime,
     ) -> None: ...
 
+    async def link_text_to_pending_album(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: datetime,
+    ) -> bool: ...
+
 
 class AQUBFoodMediaStore(Protocol):
     async def claim(

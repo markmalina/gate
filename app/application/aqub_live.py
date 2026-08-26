@@ -187,6 +187,27 @@ class AQUBLiveIngressAdapter:
                 captured_content=None if album_item else inbound.content_kind,
                 delivery_ref=delivery_ref,
             )
+        if (
+            role is AQUBTransportRole.ALPHA
+            and inbound.content_kind is AQUBTransportContentKind.TEXT
+            and isinstance(inbound.command, str)
+            and _plain_capture_text(inbound.command)
+            and self._media_queue is not None
+        ):
+            linked = await self._media_queue.link_text_to_pending_album(
+                receipt_id=acceptance.command_receipt_id,
+                inbound=inbound,
+                now=inbound.received_at,
+            )
+            if linked:
+                return AQUBLiveForwardResult(
+                    accepted=True,
+                    duplicate=duplicate,
+                    reason="aqub_food_album_text_queued",
+                    downstream=None,
+                    captured_content=None,
+                    delivery_ref=delivery_ref,
+                )
         raw_body = _build_signed_envelope_body(
             binding=self._binding,
             inbound=inbound,
@@ -273,10 +294,17 @@ async def forward_aqub_album_result(
     successful_orders: Sequence[int],
     media_result: Mapping[str, Any],
     runtime: AQUBRuntimeClient,
+    linked_text_inbounds: Sequence[AQUBTransportInbound] = (),
+    linked_text_receipt_ids: Sequence[str] = (),
 ) -> JsonObject:
     """Forward one completed Telegram album as one signed AQUB fact."""
 
-    if len(inbounds) < 2 or len(inbounds) != len(command_receipt_ids):
+    if (
+        len(inbounds) < 2
+        or len(inbounds) != len(command_receipt_ids)
+        or len(linked_text_inbounds) != len(linked_text_receipt_ids)
+        or len(linked_text_inbounds) > 8
+    ):
         raise AQUBRuntimeUnavailable("aqub_album_shape_invalid")
     ordered = list(inbounds)
     first = ordered[0]
@@ -290,6 +318,13 @@ async def forward_aqub_album_result(
             for item in ordered
         )
         or _bound_role(binding, first) is not AQUBTransportRole.ALPHA
+        or any(
+            item.content_kind is not AQUBTransportContentKind.TEXT
+            or item.chat_id != first.chat_id
+            or item.actor_id != first.actor_id
+            or _bound_role(binding, item) is not AQUBTransportRole.ALPHA
+            for item in linked_text_inbounds
+        )
     ):
         raise AQUBRuntimeUnavailable("aqub_album_owner_binding_invalid")
     raw_body = _build_signed_album_envelope_body(
@@ -298,6 +333,8 @@ async def forward_aqub_album_result(
         command_receipt_ids=command_receipt_ids,
         successful_orders=successful_orders,
         media_result=media_result,
+        linked_text_inbounds=linked_text_inbounds,
+        linked_text_receipt_ids=linked_text_receipt_ids,
     )
     signature = hmac.new(binding.receipt_signing_key, raw_body, hashlib.sha256).hexdigest()
     return await runtime.post_envelope(raw_body=raw_body, signature=signature)
@@ -505,6 +542,8 @@ def _build_signed_album_envelope_body(
     command_receipt_ids: Sequence[str],
     successful_orders: Sequence[int],
     media_result: Mapping[str, Any],
+    linked_text_inbounds: Sequence[AQUBTransportInbound],
+    linked_text_receipt_ids: Sequence[str],
 ) -> bytes:
     first = inbounds[0]
     successful = set(successful_orders)
@@ -559,19 +598,27 @@ def _build_signed_album_envelope_body(
             item["caption"] = caption
         media_items.append(item)
 
+    linked_texts = [
+        item.command.strip()
+        for item in linked_text_inbounds
+        if isinstance(item.command, str) and item.command.strip()
+    ]
+    if len(linked_texts) != len(linked_text_inbounds):
+        raise AQUBRuntimeUnavailable("aqub_album_linked_text_invalid")
+    source_inbounds = [*inbounds, *linked_text_inbounds]
     source_digests = [
-        canonical_telegram_payload_digest(dict(inbound.payload)) for inbound in inbounds
+        canonical_telegram_payload_digest(dict(inbound.payload)) for inbound in source_inbounds
     ]
     aggregate_digest = hashlib.sha256(
         json.dumps(source_digests, separators=(",", ":")).encode()
     ).hexdigest()
-    receipt_key = ":".join(sorted(command_receipt_ids))
+    receipt_key = ":".join(sorted([*command_receipt_ids, *linked_text_receipt_ids]))
     first_media = dict(media_items[0])
     for key in ("order", "message_ref", "caption"):
         first_media.pop(key, None)
     envelope: JsonObject = {
         "schema_version": AQUB_GATE_ENVELOPE_SCHEMA,
-        "occurred_at": max(item.received_at for item in inbounds).isoformat(),
+        "occurred_at": max(item.received_at for item in source_inbounds).isoformat(),
         "source_occurred_at": min(item.occurred_at for item in inbounds).isoformat(),
         "chat_ref": _opaque_ref(binding.receipt_signing_key, "chat", first.chat_id),
         "actor_ref": _opaque_ref(binding.receipt_signing_key, "actor", first.actor_id),
@@ -591,7 +638,7 @@ def _build_signed_album_envelope_body(
         ),
         "source_update_refs": [
             _opaque_ref(binding.receipt_signing_key, "external", item.external_id)
-            for item in inbounds
+            for item in source_inbounds
         ],
         "media_failures": failures,
         "media_result": dict(media_result),
@@ -602,6 +649,8 @@ def _build_signed_album_envelope_body(
         ),
         "payload_sha256": aggregate_digest,
     }
+    if linked_texts:
+        envelope["linked_texts"] = linked_texts
     return json.dumps(
         envelope,
         allow_nan=False,

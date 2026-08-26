@@ -305,3 +305,131 @@ async def test_slow_media_job_sends_one_progress_then_final(
         "Записано: омлет — 350 ккал.",
     ]
     assert markers == ["progress", "final"]
+
+
+@pytest.mark.anyio
+async def test_album_worker_forwards_linked_text_and_finalizes_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt_two = UUID("22222222-2222-4222-8222-222222222223")
+    linked_receipt = "22222222-2222-4222-8222-222222222224"
+    album_payloads = [
+        _payload(update_id=501, message_id=601, media_group_id="group-linked"),
+        _payload(update_id=502, message_id=602, media_group_id="group-linked"),
+    ]
+    text_payload = {
+        "update_id": 503,
+        "message": {
+            "message_id": 603,
+            "from": {"id": int(ACTOR_ID), "is_bot": False},
+            "date": int(NOW.timestamp()),
+            "chat": {"id": int(CHAT_ID), "type": "supergroup"},
+            "text": "Вес 120 г",
+        },
+    }
+    analysis = {
+        "schema_version": "aqub.food-media-analysis.v1",
+        "source_kind": "photo",
+        "source_sha256": "a" * 64,
+        "kind": "meal",
+        "confidence": "medium",
+        "transcript": None,
+        "meal": {
+            "label": "яблоко",
+            "kcal": 95,
+            "protein_g": 0,
+            "fat_g": 0,
+            "carbs_g": 25,
+            "quantity_source": "estimated",
+            "items": [
+                {
+                    "label": "яблоко",
+                    "kcal": 95,
+                    "protein_g": 0,
+                    "fat_g": 0,
+                    "carbs_g": 25,
+                }
+            ],
+        },
+        "receipt": None,
+    }
+    jobs = [
+        worker._MediaJob(
+            receipt_id=RECEIPT_ID,
+            status="processed",
+            error_code=None,
+            result_json=analysis,
+            progress_sent=False,
+            payload=album_payloads[0],
+            received_at=NOW,
+        ),
+        worker._MediaJob(
+            receipt_id=receipt_two,
+            status="processed",
+            error_code=None,
+            result_json=analysis,
+            progress_sent=False,
+            payload=album_payloads[1],
+            received_at=NOW + timedelta(milliseconds=100),
+        ),
+    ]
+    inbounds = [
+        worker._project_inbound(
+            payload,
+            bot_username="@AQubAgentBot",
+            received_at=job.received_at,
+        )
+        for payload, job in zip(album_payloads, jobs, strict=True)
+    ]
+    assert all(item is not None for item in inbounds)
+    projected = [item for item in inbounds if item is not None]
+    forwarded: dict[str, object] = {}
+    finalized: list[tuple[list[str], list[str]]] = []
+
+    class Store:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        async def linked_texts_for_album(self, **_kwargs: object):
+            return [(linked_receipt, text_payload, NOW + timedelta(milliseconds=700))]
+
+        async def finalize_album(
+            self,
+            *,
+            media_receipt_ids: list[str],
+            linked_text_receipt_ids: list[str],
+            now: datetime,
+        ) -> tuple[int, int]:
+            assert now >= NOW
+            finalized.append((media_receipt_ids, linked_text_receipt_ids))
+            return (2, 1)
+
+    async def forward(**kwargs: object) -> dict[str, object]:
+        forwarded.update(kwargs)
+        return {"result": {"reply_messages": ["готово"], "reply_text": "готово"}}
+
+    async def deliver(**_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(worker, "SqlAQUBFoodMediaStore", Store)
+    monkeypatch.setattr(worker, "forward_aqub_album_result", forward)
+    monkeypatch.setattr(worker, "_deliver_reply_messages", deliver)
+    monkeypatch.setenv("GATE_AQUB_RUNTIME_URL", "https://aqub.example")
+
+    result = await worker._run_album(
+        settings=SimpleNamespace(),
+        session_factory=_Sessions(),
+        telegram=_Telegram(),
+        http_client=SimpleNamespace(),
+        binding=_binding(),
+        jobs=jobs,
+        inbounds=projected,
+        observed_at=NOW + timedelta(seconds=3),
+    )
+
+    assert result == 1
+    linked = forwarded["linked_text_inbounds"]
+    assert isinstance(linked, list)
+    assert [item.command for item in linked] == ["Вес 120 г"]
+    assert forwarded["linked_text_receipt_ids"] == [linked_receipt]
+    assert finalized == [([str(RECEIPT_ID), str(receipt_two)], [linked_receipt])]
