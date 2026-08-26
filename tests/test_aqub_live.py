@@ -243,6 +243,14 @@ async def test_album_forward_is_one_opaque_ordered_fact_with_all_captions() -> N
         inbounds=members,
         command_receipt_ids=["receipt-1", "receipt-2", "receipt-3"],
         successful_orders=[0, 2],
+        linked_text_inbounds=[
+            inbound(
+                text="Вес 120 г",
+                update_id=9009,
+                include_program_prompt_reply=False,
+            )
+        ],
+        linked_text_receipt_ids=["receipt-4"],
         media_result={
             "schema_version": "aqub.food-media-analysis.v1",
             "source_kind": "photo",
@@ -266,12 +274,13 @@ async def test_album_forward_is_one_opaque_ordered_fact_with_all_captions() -> N
     assert len(runtime.raw_bodies) == 1
     envelope = json.loads(runtime.raw_bodies[0])
     assert envelope["text"] == "Курица\nРис и этикетка\nТретий ракурс"
+    assert envelope["linked_texts"] == ["Вес 120 г"]
     assert [item["order"] for item in envelope["media_items"]] == [0, 2]
     assert len(envelope["media_failures"]) == 1
     assert envelope["media_failures"][0]["order"] == 1
     assert envelope["media_failures"][0]["reason_code"] == "download_failed"
     assert envelope["media_failures"][0]["message_ref"].startswith("message:")
-    assert len(envelope["source_update_refs"]) == 3
+    assert len(envelope["source_update_refs"]) == 4
     serialized = runtime.raw_bodies[0].decode()
     assert "raw-provider-group" not in serialized
     assert TEST_CHAT_ID not in serialized
@@ -641,8 +650,10 @@ async def test_actor_outside_pinned_group_is_not_forwarded_or_stored() -> None:
 
 
 class MediaQueue:
-    def __init__(self) -> None:
+    def __init__(self, *, link_text: bool = False) -> None:
         self.calls: list[tuple[str, AQUBTransportInbound]] = []
+        self.link_calls: list[tuple[str, AQUBTransportInbound]] = []
+        self.link_text = link_text
 
     async def enqueue(
         self,
@@ -653,6 +664,17 @@ class MediaQueue:
     ) -> None:
         assert now == inbound.received_at
         self.calls.append((receipt_id, inbound))
+
+    async def link_text_to_pending_album(
+        self,
+        *,
+        receipt_id: str,
+        inbound: AQUBTransportInbound,
+        now: datetime,
+    ) -> bool:
+        assert now == inbound.received_at
+        self.link_calls.append((receipt_id, inbound))
+        return self.link_text
 
 
 class RecoveringMediaQueue(MediaQueue):
@@ -734,6 +756,51 @@ async def test_album_item_is_queued_without_per_photo_reply() -> None:
     assert result.captured_content is None
     assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []
+
+@pytest.mark.anyio
+async def test_plain_text_is_buffered_when_one_album_is_pending() -> None:
+    runtime = Runtime()
+    queue = MediaQueue(link_text=True)
+    incoming = inbound(
+        text="Вес 120 г",
+        update_id=9010,
+        include_program_prompt_reply=False,
+    )
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=Store(),
+        runtime=runtime,
+        media_queue=queue,
+    ).handle(incoming)
+
+    assert result.accepted is True
+    assert result.reason == "aqub_food_album_text_queued"
+    assert result.downstream is None
+    assert result.captured_content is None
+    assert queue.link_calls == [("raw-receipt-id", incoming)]
+    assert runtime.raw_bodies == []
+
+
+@pytest.mark.anyio
+async def test_plain_text_preserves_direct_route_without_pending_album() -> None:
+    runtime = Runtime()
+    queue = MediaQueue(link_text=False)
+    incoming = inbound(
+        text="Съел яблоко 120 г",
+        update_id=9011,
+        include_program_prompt_reply=False,
+    )
+    result = await AQUBLiveIngressAdapter(
+        binding=binding(),
+        store=Store(),
+        runtime=runtime,
+        media_queue=queue,
+    ).handle(incoming)
+
+    assert result.reason == "aqub_live_committed"
+    assert queue.link_calls == [("raw-receipt-id", incoming)]
+    assert len(runtime.raw_bodies) == 1
+
 
 @pytest.mark.anyio
 async def test_http_runtime_default_timeout_supports_provider_budget() -> None:
