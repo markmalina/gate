@@ -11,6 +11,9 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.api.aqub_telegram import _project_inbound
 from app.application.aqub_food_media import (
     AQUBFoodMediaAnalysis,
@@ -36,8 +39,6 @@ from app.infrastructure.aqub_installation import load_aqub_production_binding
 from app.models.aqub import AQUBFoodMedia
 from app.models.domain import TelegramReceipt
 from app.services.telegram import TelegramClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
