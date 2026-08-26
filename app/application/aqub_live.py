@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
-
 from app.application.aqub_food_media import AQUBFoodMediaQueue
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
@@ -607,15 +606,12 @@ def _build_signed_album_envelope_body(
         raise AQUBRuntimeUnavailable("aqub_album_linked_text_invalid")
     source_inbounds = [*inbounds, *linked_text_inbounds]
     source_digests = [
-        canonical_telegram_payload_digest(dict(inbound.payload))
-        for inbound in source_inbounds
+        canonical_telegram_payload_digest(dict(inbound.payload)) for inbound in source_inbounds
     ]
     aggregate_digest = hashlib.sha256(
         json.dumps(source_digests, separators=(",", ":")).encode()
     ).hexdigest()
-    receipt_key = ":".join(
-        sorted([*command_receipt_ids, *linked_text_receipt_ids])
-    )
+    receipt_key = ":".join(sorted([*command_receipt_ids, *linked_text_receipt_ids]))
     first_media = dict(media_items[0])
     for key in ("order", "message_ref", "caption"):
         first_media.pop(key, None)
