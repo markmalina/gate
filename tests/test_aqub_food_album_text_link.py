@@ -220,9 +220,7 @@ async def test_text_receipt_is_linked_replayed_and_finalized_with_album() -> Non
             assert text_receipt.processing_started_at == text_received
             assert text_receipt.processed_at == text_received + timedelta(seconds=2)
             media = (
-                await session.scalars(
-                    select(AQUBFoodMedia).order_by(AQUBFoodMedia.receipt_id)
-                )
+                await session.scalars(select(AQUBFoodMedia).order_by(AQUBFoodMedia.receipt_id))
             ).all()
             assert all(item.final_sent_at is not None for item in media)
     finally:
