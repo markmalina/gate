@@ -169,6 +169,7 @@ async def test_text_receipt_is_linked_replayed_and_finalized_with_album() -> Non
                     ),
                 ]
             )
+            await session.commit()
             session.add_all(
                 [
                     AQUBFoodMedia(
