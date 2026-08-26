@@ -666,6 +666,7 @@ class MediaQueue:
     def __init__(self, *, link_text: bool = False) -> None:
         self.calls: list[tuple[str, AQUBTransportInbound]] = []
         self.link_calls: list[tuple[str, AQUBTransportInbound]] = []
+        self.link_times: list[datetime] = []
         self.link_text = link_text
 
     async def enqueue(
@@ -685,8 +686,9 @@ class MediaQueue:
         inbound: AQUBTransportInbound,
         now: datetime,
     ) -> bool:
-        assert now == inbound.received_at
+        assert now >= inbound.received_at
         self.link_calls.append((receipt_id, inbound))
+        self.link_times.append(now)
         return self.link_text
 
 
@@ -842,6 +844,10 @@ async def test_quantity_only_text_retries_link_after_album_registration_race(
         ("raw-receipt-id", incoming),
     ]
     assert delays == [AQUB_ALBUM_TEXT_GRACE_SECONDS]
+    assert queue.link_times == [
+        incoming.received_at,
+        incoming.received_at + timedelta(seconds=AQUB_ALBUM_TEXT_GRACE_SECONDS),
+    ]
     assert runtime.raw_bodies == []
 
 
@@ -876,6 +882,10 @@ async def test_standalone_quantity_uses_direct_route_after_bounded_retry(
         ("raw-receipt-id", incoming),
     ]
     assert delays == [AQUB_ALBUM_TEXT_GRACE_SECONDS]
+    assert queue.link_times == [
+        incoming.received_at,
+        incoming.received_at + timedelta(seconds=AQUB_ALBUM_TEXT_GRACE_SECONDS),
+    ]
     assert len(runtime.raw_bodies) == 1
 
 
