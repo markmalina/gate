@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -41,6 +42,14 @@ _CANDIDATE_COMMAND_RE = re.compile(
     re.IGNORECASE,
 )
 _PROGRAM_STEP_RE = re.compile(r"(?m)^\s*(\d+)\.\s+\S")
+_QUANTITY_ONLY_RE = re.compile(
+    r"^\s*(?:(?:вес|масса|количество)\s*[:=-]?\s*)?"
+    r"\d+(?:[.,]\d+)?\s*"
+    r"(?:г|гр|грамм(?:а|ов)?|кг|килограмм(?:а|ов)?|мл|миллилитр(?:а|ов)?|л|литр(?:а|ов)?)"
+    r"\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+AQUB_ALBUM_TEXT_GRACE_SECONDS = 2.0
 
 JsonObject = dict[str, Any]
 
@@ -199,6 +208,16 @@ class AQUBLiveIngressAdapter:
                 inbound=inbound,
                 now=inbound.received_at,
             )
+            if not linked and _quantity_only_capture_text(inbound.command):
+                # Telegram can deliver a follow-up quantity before a concurrent album
+                # webhook has committed its media rows. Give that bounded race one
+                # retry; a standalone quantity still follows the normal direct route.
+                await asyncio.sleep(AQUB_ALBUM_TEXT_GRACE_SECONDS)
+                linked = await self._media_queue.link_text_to_pending_album(
+                    receipt_id=acceptance.command_receipt_id,
+                    inbound=inbound,
+                    now=inbound.received_at,
+                )
             if linked:
                 return AQUBLiveForwardResult(
                     accepted=True,
@@ -343,6 +362,10 @@ async def forward_aqub_album_result(
 def _plain_capture_text(text: str) -> bool:
     stripped = text.strip()
     return bool(stripped) and not stripped.startswith("/")
+
+
+def _quantity_only_capture_text(text: str) -> bool:
+    return _QUANTITY_ONLY_RE.fullmatch(text) is not None
 
 
 def _validate_acceptance(acceptance: AQUBDurableAcceptance) -> None:
