@@ -778,11 +778,12 @@ async def test_semantic_messages_use_stable_durable_delivery_keys_and_terminal_r
             reason="aqub_live_committed",
             downstream={
                 "result": {
-                    "reply_messages": ["Состав", "Расчёт", "Сколько граммов?"],
+                    "reply_text": "Состав\n\nРасчёт\n\nПроверка\n\nСколько граммов?",
                     "force_reply": True,
                 }
             },
             delivery_ref="receipt:opaque-synthetic",
+            reply_to_message_id=501,
         )
         settings = _settings(TELEGRAM_AQUB_BOT_TOKEN="synthetic-token")
 
@@ -799,19 +800,21 @@ async def test_semantic_messages_use_stable_durable_delivery_keys_and_terminal_r
             chat_id=TEST_CHAT_ID,
         )
 
-    assert [item.text for item in captured[:3]] == [
+    assert [item.text for item in captured[:4]] == [
         "Состав",
         "Расчёт",
+        "Проверка",
         "Сколько граммов?",
     ]
-    assert [item.idempotency_key for item in captured[:3]] == [
-        item.idempotency_key for item in captured[3:]
+    assert [item.idempotency_key for item in captured[:4]] == [
+        item.idempotency_key for item in captured[4:]
     ]
-    assert [item.command_id for item in captured[:3]] == [item.command_id for item in captured[3:]]
-    assert [item.request_sha256 for item in captured[:3]] == [
-        item.request_sha256 for item in captured[3:]
+    assert [item.command_id for item in captured[:4]] == [item.command_id for item in captured[4:]]
+    assert [item.request_sha256 for item in captured[:4]] == [
+        item.request_sha256 for item in captured[4:]
     ]
-    assert [item.force_reply for item in captured[:3]] == [False, False, True]
+    assert [item.force_reply for item in captured[:4]] == [False, False, False, True]
+    assert [item.reply_to_message_id for item in captured] == [501] * 8
 
 
 def test_visible_receipt_reply_redacts_raw_identifiers_and_secrets() -> None:
