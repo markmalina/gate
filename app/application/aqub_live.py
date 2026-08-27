@@ -120,7 +120,7 @@ class HttpAQUBRuntimeClient:
         *,
         base_url: str,
         http_client: httpx.AsyncClient,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 45.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._http_client = http_client
@@ -222,22 +222,12 @@ class AQUBLiveIngressAdapter:
                 inbound=inbound,
                 now=inbound.received_at,
             )
-            album_item = inbound.media_group_id is not None
             return AQUBLiveForwardResult(
                 accepted=True,
                 duplicate=duplicate,
                 reason="aqub_food_media_queued",
-                downstream=(
-                    None
-                    if album_item
-                    else {
-                        "result": {
-                            "kind": "food_media_queued",
-                            "reply_text": "Спасибо, файл принят. Разбираюсь с ним.",
-                        }
-                    }
-                ),
-                captured_content=None if album_item else inbound.content_kind,
+                downstream=None,
+                captured_content=None,
                 delivery_ref=delivery_ref,
             )
         if (
