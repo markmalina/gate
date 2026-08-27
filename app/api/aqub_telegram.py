@@ -237,7 +237,11 @@ async def aqub_telegram_ingress(
             "reason": live.reason,
             "duplicate": live.duplicate,
         }
-    return _live_response(live, chat_id=inbound.chat_id)
+    return _live_response(
+        live,
+        chat_id=inbound.chat_id,
+        general_route=binding.reply_to_source,
+    )
 
 
 @router.post(AQUB_GATE_DELIVERY_PATH)
@@ -576,7 +580,12 @@ def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonOb
     }
 
 
-def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject:
+def _live_response(
+    result: AQUBLiveForwardResult,
+    *,
+    chat_id: str,
+    general_route: bool = False,
+) -> JsonObject:
     if not result.accepted:
         return _unowned_response(reason=result.reason)
     if result.duplicate and result.downstream is None:
@@ -618,7 +627,12 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": (
-                "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз."
+                "Сейчас не смог ответить. Попробуйте ещё раз."
+                if general_route
+                else (
+                    "Сообщение сохранил, но сейчас не смог разобрать питание. "
+                    "Попробуйте ещё раз."
+                )
             ),
         }
     if result.captured_content is AQUBTransportContentKind.VOICE:
