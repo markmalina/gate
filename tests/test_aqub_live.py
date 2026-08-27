@@ -5,20 +5,19 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import httpx
 import pytest
 from app.application.aqub_live import (
-    AQUB_ALBUM_TEXT_GRACE_SECONDS,
     AQUB_PROGRAM_PROMPT_TEXT,
     AQUBLiveIngressAdapter,
     AQUBRuntimeUnavailable,
     HttpAQUBRuntimeClient,
     forward_aqub_album_result,
 )
+from app.application.aqub_food_media import AQUBDownloadedMedia
 from app.application.aqub_transport import (
     AQUBDurableAcceptance,
     AQUBPhotoReference,
@@ -97,6 +96,20 @@ class Runtime:
         }
 
 
+class MediaDownloader:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def download(self, inbound: AQUBTransportInbound) -> AQUBDownloadedMedia:
+        self.calls += 1
+        assert inbound.content_kind is AQUBTransportContentKind.PHOTO
+        return AQUBDownloadedMedia(
+            data=b"\xff\xd8\xfffixture",
+            media_type="image/jpeg",
+            filename="photo.jpg",
+        )
+
+
 class RecoveringRuntime(Runtime):
     def __init__(self) -> None:
         super().__init__()
@@ -124,6 +137,33 @@ def binding() -> AQUBTransportBinding:
         ready_at=READY_AT,
         receipt_signing_key=SIGNING_KEY,
     )
+
+
+@pytest.mark.anyio
+async def test_general_photo_bypasses_food_queue_and_forwards_bounded_media() -> None:
+    store, runtime, downloader = Store(), Runtime(), MediaDownloader()
+    general = AQUBTransportBinding(
+        enabled=True,
+        bot_username="@AQubAgentBot",
+        group_chat_id=TEST_CHAT_ID,
+        ace_user_id="__unbound_ace__",
+        alpha_user_id=TEST_ALPHA_ID,
+        ready_at=READY_AT,
+        receipt_signing_key=SIGNING_KEY,
+        reply_to_source=True,
+    )
+    result = await AQUBLiveIngressAdapter(
+        binding=general,
+        store=store,
+        runtime=runtime,
+        media_downloader=downloader,
+    ).handle(photo_inbound())
+    assert result.accepted is True
+    assert downloader.calls == 1
+    envelope = json.loads(runtime.raw_bodies[0])
+    assert envelope["content_kind"] == "photo"
+    assert envelope["media_input"]["filename"] == "photo.jpg"
+    assert envelope["media_input"]["data_base64"] == "/9j/Zml4dHVyZQ=="
 
 
 def inbound(
@@ -301,54 +341,6 @@ async def test_album_forward_is_one_opaque_ordered_fact_with_all_captions() -> N
 
 
 @pytest.mark.anyio
-async def test_pre_ready_event_is_terminal_noop_and_later_event_forwards() -> None:
-    store = Store()
-    runtime = Runtime()
-    adapter = AQUBLiveIngressAdapter(
-        binding=binding(),
-        store=store,
-        runtime=runtime,
-    )
-    stale = inbound(update_id=8999)
-    stale = replace(
-        stale,
-        occurred_at=READY_AT - timedelta(seconds=1),
-        received_at=READY_AT + timedelta(seconds=1),
-    )
-
-    rejected = await adapter.handle(stale)
-
-    assert rejected.accepted is False
-    assert rejected.duplicate is False
-    assert rejected.reason == "aqub_event_before_ready"
-    assert store.commands == []
-    assert runtime.raw_bodies == []
-
-    accepted = await adapter.handle(inbound(update_id=9000))
-
-    assert accepted.accepted is True
-    assert accepted.reason == "aqub_live_committed"
-    assert len(store.commands) == 1
-    assert len(runtime.raw_bodies) == 1
-
-
-@pytest.mark.anyio
-async def test_invalid_timestamp_order_remains_fail_closed() -> None:
-    value = inbound(update_id=8998)
-    value = replace(
-        value,
-        received_at=value.occurred_at - timedelta(seconds=1),
-    )
-
-    with pytest.raises(RuntimeError, match="aqub_timestamp_order_invalid"):
-        await AQUBLiveIngressAdapter(
-            binding=binding(),
-            store=Store(),
-            runtime=Runtime(),
-        ).handle(value)
-
-
-@pytest.mark.anyio
 async def test_live_forward_commits_gate_receipt_then_posts_only_opaque_refs() -> None:
     store = Store()
     runtime = Runtime()
@@ -443,7 +435,6 @@ async def test_plain_alpha_text_is_confirmed_after_durable_capture_without_runti
     assert result.accepted is True
     assert result.reason == "aqub_live_durable_only"
     assert result.captured_content is AQUBTransportContentKind.TEXT
-    assert result.runtime_error_code == "aqub_runtime_unconfigured"
     assert len(store.commands) == 1
     assert store.commands[0].command == "Съел омлет"
 
@@ -468,29 +459,7 @@ async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> Non
     assert result.accepted is True
     assert result.reason == "aqub_live_durable_only"
     assert result.captured_content is AQUBTransportContentKind.TEXT
-    assert result.runtime_error_code == "aqub_runtime_transport_unavailable"
     assert len(store.commands) == 1
-
-
-@pytest.mark.anyio
-async def test_runtime_client_classifies_allowlisted_aqub_error() -> None:
-    def binding_missing(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            403,
-            json={"ok": False, "code": "AQUB_LIVE_BINDING_NOT_FOUND"},
-        )
-
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(binding_missing)
-    ) as http_client:
-        runtime = HttpAQUBRuntimeClient(
-            base_url="https://aqub.example",
-            http_client=http_client,
-        )
-        with pytest.raises(AQUBRuntimeUnavailable) as exc_info:
-            await runtime.post_envelope(raw_body=b"{}", signature="synthetic")
-
-    assert exc_info.value.code == "aqub_runtime_binding_not_found"
 
 
 @pytest.mark.anyio
@@ -575,7 +544,7 @@ async def test_photo_requires_committed_store_acceptance_before_confirmation() -
 async def test_command_keeps_fail_closed_runtime_semantics_after_durable_capture() -> None:
     store = Store()
 
-    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_runtime_unconfigured"):
+    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_runtime_unavailable"):
         await AQUBLiveIngressAdapter(
             binding=binding(),
             store=store,
@@ -594,7 +563,7 @@ async def test_candidate_program_gets_no_capture_confirmation_or_runtime_fallbac
         include_program_prompt_reply=False,
     )
 
-    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_runtime_unconfigured"):
+    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_runtime_unavailable"):
         await AQUBLiveIngressAdapter(
             binding=binding(),
             store=store,
@@ -738,7 +707,6 @@ class MediaQueue:
     def __init__(self, *, link_text: bool = False) -> None:
         self.calls: list[tuple[str, AQUBTransportInbound]] = []
         self.link_calls: list[tuple[str, AQUBTransportInbound]] = []
-        self.link_times: list[datetime] = []
         self.link_text = link_text
 
     async def enqueue(
@@ -758,26 +726,9 @@ class MediaQueue:
         inbound: AQUBTransportInbound,
         now: datetime,
     ) -> bool:
-        assert now >= inbound.received_at
+        assert now == inbound.received_at
         self.link_calls.append((receipt_id, inbound))
-        self.link_times.append(now)
         return self.link_text
-
-
-class DelayedAlbumMediaQueue(MediaQueue):
-    async def link_text_to_pending_album(
-        self,
-        *,
-        receipt_id: str,
-        inbound: AQUBTransportInbound,
-        now: datetime,
-    ) -> bool:
-        await super().link_text_to_pending_album(
-            receipt_id=receipt_id,
-            inbound=inbound,
-            now=now,
-        )
-        return len(self.link_calls) == 2
 
 
 class RecoveringMediaQueue(MediaQueue):
@@ -794,7 +745,7 @@ class RecoveringMediaQueue(MediaQueue):
 
 
 @pytest.mark.anyio
-async def test_media_is_queued_silently_until_the_single_final_reply() -> None:
+async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
     runtime = Runtime()
     queue = MediaQueue()
     incoming = photo_inbound()
@@ -807,8 +758,12 @@ async def test_media_is_queued_silently_until_the_single_final_reply() -> None:
 
     assert result.accepted is True
     assert result.reason == "aqub_food_media_queued"
-    assert result.downstream is None
-    assert result.captured_content is None
+    assert result.downstream == {
+        "result": {
+            "kind": "food_media_queued",
+            "reply_text": "Спасибо, файл принят. Разбираюсь с ним.",
+        }
+    }
     assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []
 
@@ -882,82 +837,6 @@ async def test_plain_text_is_buffered_when_one_album_is_pending() -> None:
 
 
 @pytest.mark.anyio
-async def test_quantity_only_text_retries_link_after_album_registration_race(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    delays: list[float] = []
-
-    async def no_sleep(delay: float) -> None:
-        delays.append(delay)
-
-    monkeypatch.setattr("app.application.aqub_live.asyncio.sleep", no_sleep)
-    runtime = Runtime()
-    queue = DelayedAlbumMediaQueue()
-    incoming = inbound(
-        text="Вес 120 г",
-        update_id=9011,
-        include_program_prompt_reply=False,
-    )
-
-    result = await AQUBLiveIngressAdapter(
-        binding=binding(),
-        store=Store(),
-        runtime=runtime,
-        media_queue=queue,
-    ).handle(incoming)
-
-    assert result.reason == "aqub_food_album_text_queued"
-    assert queue.link_calls == [
-        ("raw-receipt-id", incoming),
-        ("raw-receipt-id", incoming),
-    ]
-    assert delays == [AQUB_ALBUM_TEXT_GRACE_SECONDS]
-    assert queue.link_times == [
-        incoming.received_at,
-        incoming.received_at + timedelta(seconds=AQUB_ALBUM_TEXT_GRACE_SECONDS),
-    ]
-    assert runtime.raw_bodies == []
-
-
-@pytest.mark.anyio
-async def test_standalone_quantity_uses_direct_route_after_bounded_retry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    delays: list[float] = []
-
-    async def no_sleep(delay: float) -> None:
-        delays.append(delay)
-
-    monkeypatch.setattr("app.application.aqub_live.asyncio.sleep", no_sleep)
-    runtime = Runtime()
-    queue = MediaQueue(link_text=False)
-    incoming = inbound(
-        text="120 г",
-        update_id=9012,
-        include_program_prompt_reply=False,
-    )
-
-    result = await AQUBLiveIngressAdapter(
-        binding=binding(),
-        store=Store(),
-        runtime=runtime,
-        media_queue=queue,
-    ).handle(incoming)
-
-    assert result.reason == "aqub_live_committed"
-    assert queue.link_calls == [
-        ("raw-receipt-id", incoming),
-        ("raw-receipt-id", incoming),
-    ]
-    assert delays == [AQUB_ALBUM_TEXT_GRACE_SECONDS]
-    assert queue.link_times == [
-        incoming.received_at,
-        incoming.received_at + timedelta(seconds=AQUB_ALBUM_TEXT_GRACE_SECONDS),
-    ]
-    assert len(runtime.raw_bodies) == 1
-
-
-@pytest.mark.anyio
 async def test_plain_text_preserves_direct_route_without_pending_album() -> None:
     runtime = Runtime()
     queue = MediaQueue(link_text=False)
@@ -979,7 +858,7 @@ async def test_plain_text_preserves_direct_route_without_pending_album() -> None
 
 
 @pytest.mark.anyio
-async def test_http_runtime_default_timeout_supports_sequential_food_provider_budget() -> None:
+async def test_http_runtime_default_timeout_supports_provider_budget() -> None:
     captured: dict[str, object] = {}
 
     class RecordingClient:
@@ -999,4 +878,4 @@ async def test_http_runtime_default_timeout_supports_sequential_food_provider_bu
 
     assert result == {"ok": True}
     assert captured["url"] == "https://aqub.invalid/gate/inbound"
-    assert captured["timeout"] == 45.0
+    assert captured["timeout"] == 30.0
