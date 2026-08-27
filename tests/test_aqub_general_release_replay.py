@@ -97,6 +97,39 @@ def test_source_selector_fails_closed_on_ambiguous_gap() -> None:
 
 
 @pytest.mark.anyio
+async def test_release_target_uses_the_only_route_in_the_source_window() -> None:
+    first = _route("-1001")
+    second = _route("-1002")
+    session = FakeSession(
+        [
+            [first, second],
+            [],
+            [
+                _receipt(
+                    group_chat_id=-1002,
+                    message_id=21,
+                    occurred_at=1002,
+                    text="?",
+                ),
+                _receipt(
+                    group_chat_id=-1002,
+                    message_id=20,
+                    occurred_at=1000,
+                    text="synthetic question",
+                ),
+            ],
+        ]
+    )
+
+    route, source_message_id = await replay._release_target(
+        session,  # type: ignore[arg-type]
+    )
+
+    assert route.group_chat_id == "-1002"
+    assert source_message_id == 20
+
+
+@pytest.mark.anyio
 async def test_send_replay_delivers_two_messages_and_replies_only_first() -> None:
     commands: list[object] = []
 
