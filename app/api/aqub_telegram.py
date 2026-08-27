@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
@@ -41,6 +42,7 @@ from app.infrastructure.aqub_food_media import (
     SqlAQUBFoodMediaStore,
     TelegramAQUBGeneralMediaDownloader,
 )
+from app.infrastructure.aqub_food_route import select_aqub_food_inbound_binding
 from app.infrastructure.aqub_general_route import select_aqub_inbound_binding
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
@@ -79,6 +81,19 @@ _DOCUMENT_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "docu
 _DOCUMENT_MESSAGE_OPTIONAL_FIELDS = {"caption"}
 _DOCUMENT_REQUIRED_FIELDS = {"file_id", "file_unique_id", "file_name", "mime_type"}
 _DOCUMENT_OPTIONAL_FIELDS = {"file_size"}
+_CUBE0_RECOVERY_DIAGNOSTIC_KINDS = {
+    "general_cancelled",
+    "general_denied",
+    "general_error",
+    "general_ignored",
+    "general_in_progress",
+    "general_memory",
+    "general_reply",
+    "general_reset",
+    "general_unavailable",
+    "ignored",
+    "unbound_ignored",
+}
 
 
 def get_aqub_transport_store(
@@ -181,10 +196,16 @@ async def aqub_telegram_ingress(
         database_runtime = None
     if database_runtime is not None:
         async with database_runtime.session_factory() as route_session:
+            food_binding = await select_aqub_food_inbound_binding(
+                route_session,
+                settings,
+                fallback_binding=binding,
+                chat_id=inbound.chat_id,
+            )
             binding = await select_aqub_inbound_binding(
                 route_session,
                 settings,
-                food_binding=binding,
+                food_binding=food_binding,
                 chat_id=inbound.chat_id,
                 actor_id=inbound.actor_id,
                 content_kind=inbound.content_kind,
@@ -247,7 +268,14 @@ async def aqub_telegram_ingress(
             "reason": live.reason,
             "duplicate": live.duplicate,
         }
-    return _live_response(live, chat_id=inbound.chat_id)
+    return _live_response(
+        live,
+        chat_id=inbound.chat_id,
+        general_route=binding.reply_to_source,
+        runtime_diagnostic=(
+            request.headers.get("X-AQUB-Recovery-Diagnostic") == "cube0-v1"
+        ),
+    )
 
 
 @router.post(AQUB_GATE_DELIVERY_PATH)
@@ -637,17 +665,43 @@ def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonOb
     }
 
 
-def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject:
+def _live_response(
+    result: AQUBLiveForwardResult,
+    *,
+    chat_id: str,
+    general_route: bool = False,
+    runtime_diagnostic: bool = False,
+) -> JsonObject:
     if not result.accepted:
         return _unowned_response(reason=result.reason)
+    if runtime_diagnostic:
+        diagnostic_response: JsonObject = {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": result.reason,
+            "duplicate": result.duplicate,
+        }
+        if result.runtime_error_code is not None:
+            diagnostic_response["runtime_error_code"] = result.runtime_error_code
+            return diagnostic_response
+        downstream = result.downstream or {}
+        domain = downstream.get("result")
+        downstream_kind = domain.get("kind") if isinstance(domain, dict) else None
+        if downstream_kind in _CUBE0_RECOVERY_DIAGNOSTIC_KINDS:
+            diagnostic_response["runtime_downstream_kind"] = downstream_kind
+            return diagnostic_response
     if result.duplicate and result.downstream is None:
-        return {
+        durable_response: JsonObject = {
             "ok": True,
             "owned": True,
             "accepted": True,
             "reason": result.reason,
             "duplicate": True,
         }
+        if result.runtime_error_code is not None:
+            durable_response["runtime_error_code"] = result.runtime_error_code
+        return durable_response
     downstream = result.downstream or {}
     domain = downstream.get("result")
     if isinstance(domain, dict) and domain.get("suppress_reply") is True:
@@ -679,7 +733,12 @@ def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": (
-                "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз."
+                "Сейчас не смог ответить. Попробуйте ещё раз."
+                if general_route
+                else (
+                    "Сообщение сохранил, но сейчас не смог разобрать питание. "
+                    "Попробуйте ещё раз."
+                )
             ),
         }
     if result.captured_content is AQUBTransportContentKind.VOICE:
@@ -772,6 +831,7 @@ async def _deliver_live_messages(
                 "step_ref": _live_opaque_ref(signing_key, "reply", str(index)),
                 "text": text_value,
                 "force_reply": force_reply,
+                "reply_to_message_id": live.reply_to_message_id,
             }
             command = ParsedAQUBDelivery(
                 command_id=uuid5(NAMESPACE_URL, idempotency_key),
@@ -789,6 +849,7 @@ async def _deliver_live_messages(
                     ).encode()
                 ).hexdigest(),
                 force_reply=force_reply,
+                reply_to_message_id=live.reply_to_message_id,
             )
             try:
                 result = await service.deliver(command)
@@ -813,8 +874,20 @@ def _domain_reply_messages(domain: JsonObject) -> list[str] | None:
             raise HTTPException(status_code=502, detail="AQUB reply messages are invalid")
         return [cast(str, value).strip() for value in messages]
     reply_text = domain.get("reply_text")
-    if isinstance(reply_text, str) and reply_text.strip() and len(reply_text.strip()) <= 4_096:
-        return [reply_text.strip()]
+    if isinstance(reply_text, str) and reply_text.strip():
+        normalized = reply_text.strip()
+        semantic_messages = [
+            value.strip()
+            for value in re.split(r"\n\s*\n", normalized)
+            if value.strip()
+        ]
+        if (
+            2 <= len(semantic_messages) <= 5
+            and all(len(value) <= 4_096 for value in semantic_messages)
+        ):
+            return semantic_messages
+        if len(normalized) <= 4_096:
+            return [normalized]
     return None
 
 
