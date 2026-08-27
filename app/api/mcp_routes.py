@@ -1916,6 +1916,7 @@ async def _alpha_send_review_tool_result(
                     json=update,
                     headers={
                         "X-Telegram-Bot-Api-Secret-Token": secret,
+                        "X-AQUB-Recovery-Diagnostic": "cube0-v1",
                     },
                 )
             if response.status_code != 200:

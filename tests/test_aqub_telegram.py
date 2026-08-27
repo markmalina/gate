@@ -755,6 +755,31 @@ def test_duplicate_durable_only_response_carries_sanitized_runtime_code() -> Non
     }
 
 
+def test_internal_runtime_probe_precedes_telegram_fallback() -> None:
+    response = _live_response(
+        AQUBLiveForwardResult(
+            accepted=True,
+            duplicate=False,
+            reason="aqub_live_durable_only",
+            captured_content=AQUBTransportContentKind.TEXT,
+            runtime_error_code="aqub_runtime_unconfigured",
+        ),
+        chat_id=TEST_CHAT_ID,
+        general_route=True,
+        runtime_diagnostic=True,
+    )
+
+    assert response == {
+        "ok": True,
+        "owned": True,
+        "accepted": True,
+        "reason": "aqub_live_durable_only",
+        "duplicate": False,
+        "runtime_error_code": "aqub_runtime_unconfigured",
+    }
+    assert "method" not in response
+
+
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
     response = _live_response(
         AQUBLiveForwardResult(
