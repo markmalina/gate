@@ -314,7 +314,9 @@ class AQUBLiveIngressAdapter:
                 reason="aqub_live_durable_only",
                 captured_content=captured_content,
                 delivery_ref=delivery_ref,
-                runtime_error_code=exc.code,
+                runtime_error_code=(
+                    None if exc.code == "aqub_runtime_unavailable" else exc.code
+                ),
             )
         return AQUBLiveForwardResult(
             accepted=True,
