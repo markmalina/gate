@@ -23,7 +23,7 @@ from app.infrastructure.aqub_installation import (
     AQUB_UNBOUND_ACE_USER_ID,
     aqub_receipt_signing_key,
 )
-from app.models.aqub import AQUBFoodRoute, AQUBGeneralRoute, AQUBInstallationBinding
+from app.models.aqub import AQUBGeneralRoute, AQUBInstallationBinding
 from app.models.domain import TelegramReceipt, TelegramReceiptStatus
 
 
@@ -39,17 +39,6 @@ class AQUBGeneralRouteEvidence:
     group_chat_id: str = field(repr=False)
     actor_user_id: str = field(repr=False)
     bound_at: datetime
-
-
-async def _food_route_conflicts(session: AsyncSession, *, group_chat_id: str) -> bool:
-    route = await session.scalar(
-        select(AQUBFoodRoute).where(
-            AQUBFoodRoute.bot_key == AQUB_RECEIPT_BOT_KEY,
-            AQUBFoodRoute.group_chat_id == group_chat_id,
-            AQUBFoodRoute.status != "retired",
-        )
-    )
-    return isinstance(route, AQUBFoodRoute)
 
 
 def _message_mapping(payload: Any) -> Mapping[str, Any] | None:
@@ -119,8 +108,6 @@ async def register_aqub_general_route_hold(
         and food_binding.group_chat_id == evidence.group_chat_id
     ):
         raise ValueError("aqub_general_route_food_group_conflict")
-    if await _food_route_conflicts(session, group_chat_id=evidence.group_chat_id):
-        raise ValueError("aqub_general_route_food_route_conflict")
     existing = await session.scalar(
         select(AQUBGeneralRoute).where(AQUBGeneralRoute.evidence_receipt_id == evidence.receipt_id)
     )
@@ -182,8 +169,6 @@ async def transition_aqub_general_route(
             and food_binding.group_chat_id == route.group_chat_id
         ):
             raise ValueError("aqub_general_route_food_group_conflict")
-        if await _food_route_conflicts(session, group_chat_id=route.group_chat_id):
-            raise ValueError("aqub_general_route_food_route_conflict")
     route.status = next_status.value
     if next_status is AQUBGeneralRouteStatus.ACTIVE:
         route.activated_at = occurred_at
@@ -236,22 +221,17 @@ async def select_aqub_inbound_binding(
     actor_id: str,
     content_kind: AQUBTransportContentKind,
 ) -> AQUBTransportBinding:
-    """Route General text exactly and suppress its unsupported media fail-closed."""
+    """Route supported General inputs exactly without falling through to Food."""
 
     general = await load_active_aqub_general_binding(
         session,
         settings,
         chat_id=chat_id,
     )
-    if general is not None and content_kind is not AQUBTransportContentKind.TEXT:
-        # The General Cube v1 is text-only. A disabled binding makes the live
-        # adapter reject before Gate's Food receipt, queue, or AQUB runtime can
-        # observe media from an active General group, regardless of actor.
-        return replace(general, enabled=False)
+    if general is None and content_kind is AQUBTransportContentKind.DOCUMENT:
+        return replace(food_binding, enabled=False)
     if general is not None and general.alpha_user_id != actor_id:
-        # An active General Cube is scoped by its exact group. Project the
-        # current non-bot group participant as the alpha role for this request;
-        # the stored actor remains immutable activation evidence, not a
-        # conversation allowlist.
-        return replace(general, alpha_user_id=actor_id)
+        # Preserve the matched General binding so the existing live admission
+        # denies this actor instead of falling through to Food owner semantics.
+        return general
     return general if general is not None else food_binding
