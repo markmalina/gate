@@ -14,7 +14,7 @@ _SOURCE_WINDOW_EPOCH = int(
     datetime(2026, 8, 27, 7, 35, tzinfo=UTC).timestamp()
 )
 _CUBE0_RECOVERY_EVENT_EPOCH = int(
-    datetime(2026, 8, 27, 8, 11, 42, tzinfo=UTC).timestamp()
+    datetime(2026, 8, 27, 9, 11, 42, tzinfo=UTC).timestamp()
 )
 
 
