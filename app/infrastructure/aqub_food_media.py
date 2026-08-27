@@ -759,7 +759,7 @@ class OpenAIAQUBFoodMediaAnalyzer:
         del source_sha256
         if content_kind is AQUBTransportContentKind.VOICE:
             transcript, transcription_ref = await self._transcribe(media)
-            parsed = {
+            parsed: dict[str, Any] = {
                 "kind": "voice",
                 "confidence": "high",
                 "transcript": transcript,

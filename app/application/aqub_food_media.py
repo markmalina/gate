@@ -287,7 +287,7 @@ def combine_album_media_results(values: Sequence[Mapping[str, Any]]) -> JsonObje
         key=lambda value: {"low": 0, "medium": 1, "high": 2}[value],
     )
     if receipts and not observations:
-        result = {
+        result: JsonObject = {
             "kind": "receipt",
             "confidence": confidence,
             "transcript": None,
