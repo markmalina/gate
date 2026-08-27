@@ -54,6 +54,7 @@ AQUB_GENERAL_RELEASE_REPLAY_MESSAGES = (
 AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256 = (
     "4c9e0604bba4702ae7c2130dca19155b0e76b0afbbb40e5ed58f7b0c1345f705"
 )
+_SOURCE_WINDOW_START = datetime(2026, 8, 27, 7, 35, tzinfo=UTC)
 _SOURCE_CUTOFF = datetime(2026, 8, 27, 7, 36, tzinfo=UTC)
 _SOURCE_MAX_GAP_SECONDS = 15
 _IDEMPOTENCY_KEYS = (
@@ -142,20 +143,20 @@ def _select_source_message_id(
     return source_message_id
 
 
-async def _active_general_route(session: AsyncSession) -> AQUBGeneralRoute:
+async def _active_general_routes(
+    session: AsyncSession,
+) -> list[AQUBGeneralRoute]:
     routes = (
         await session.scalars(
-            select(AQUBGeneralRoute)
-            .where(
+            select(AQUBGeneralRoute).where(
                 AQUBGeneralRoute.bot_key == AQUB_RECEIPT_BOT_KEY,
                 AQUBGeneralRoute.status == AQUBGeneralRouteStatus.ACTIVE.value,
             )
-            .limit(2)
         )
     ).all()
-    if len(routes) != 1 or not isinstance(routes[0], AQUBGeneralRoute):
+    if not routes or any(not isinstance(route, AQUBGeneralRoute) for route in routes):
         raise AQUBGeneralReleaseReplayError("aqub_general_replay_route_ambiguous")
-    return routes[0]
+    return list(routes)
 
 
 async def _source_message_id(
@@ -175,6 +176,7 @@ async def _source_message_id(
             .where(
                 TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                 TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
+                TelegramReceipt.received_at >= _SOURCE_WINDOW_START,
                 TelegramReceipt.received_at <= _SOURCE_CUTOFF,
                 TelegramReceipt.payload.contains(
                     {"message": {"chat": {"id": raw_chat_id}}}
@@ -185,6 +187,29 @@ async def _source_message_id(
         )
     ).all()
     return _select_source_message_id(receipts, group_chat_id=group_chat_id)
+
+
+async def _release_target(
+    session: AsyncSession,
+) -> tuple[AQUBGeneralRoute, int]:
+    matches: list[tuple[AQUBGeneralRoute, int]] = []
+    for route in await _active_general_routes(session):
+        try:
+            source_message_id = await _source_message_id(
+                session,
+                group_chat_id=route.group_chat_id,
+            )
+        except AQUBGeneralReleaseReplayError as exc:
+            if exc.code in {
+                "aqub_general_replay_source_missing",
+                "aqub_general_replay_source_ambiguous",
+            }:
+                continue
+            raise
+        matches.append((route, source_message_id))
+    if len(matches) != 1:
+        raise AQUBGeneralReleaseReplayError("aqub_general_replay_route_ambiguous")
+    return matches[0]
 
 
 def _delivery_command(
@@ -251,11 +276,7 @@ async def send_aqub_general_release_replay(
     ):
         raise AQUBGeneralReleaseReplayError("aqub_general_replay_digest_mismatch")
 
-    route = await _active_general_route(session)
-    source_message_id = await _source_message_id(
-        session,
-        group_chat_id=route.group_chat_id,
-    )
+    route, source_message_id = await _release_target(session)
     signing_key = aqub_receipt_signing_key(settings)
     token = settings.telegram_aqub_bot_token.get_secret_value().strip()
     if not token:
