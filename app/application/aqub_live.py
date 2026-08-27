@@ -666,7 +666,10 @@ def _general_media_failure(
         downstream={
             "result": {
                 "kind": "general_error",
-                "reply_text": "Сейчас не смог прочитать вложение. Попробуйте отправить его ещё раз.",
+                "reply_text": (
+                    "Сейчас не смог прочитать вложение. "
+                    "Попробуйте отправить его ещё раз."
+                ),
             }
         },
         delivery_ref=delivery_ref,
