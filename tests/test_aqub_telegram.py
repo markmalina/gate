@@ -335,7 +335,7 @@ def test_command_without_runtime_url_remains_retryable_and_unconfirmed(
         response = _post(client, _update(text="/status"))
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "aqub_runtime_unavailable"
+    assert response.json()["detail"] == "aqub_runtime_unconfigured"
     assert [command.command for command in store.commands] == ["/status"]
 
 
