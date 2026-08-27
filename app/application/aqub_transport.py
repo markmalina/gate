@@ -583,3 +583,4 @@ def _canonical(value: Mapping[str, Any]) -> bytes:
 
 def _aware(value: datetime) -> bool:
     return value.utcoffset() is not None
+
