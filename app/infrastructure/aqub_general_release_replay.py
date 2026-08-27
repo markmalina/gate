@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -65,6 +65,18 @@ _COMMAND_IDS = (
     UUID("acf15b46-9af6-56b8-ab06-4c41d3e36136"),
     UUID("01ca32dc-570b-546f-aea9-d43196ed4f0a"),
 )
+
+AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF = (
+    "aqub-general-cube0-recovery-20260827"
+)
+AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF = (
+    "0e3fb3ef-9fdf-5ca8-ae75-cf0d3cb47d82"
+)
+AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256 = (
+    "c8a2cab958662e54bf8007921b95c31cf1ff44bc8a1d02391d83ca05c681d01a"
+)
+_CUBE0_RECOVERY_WINDOW_START = datetime(2026, 8, 27, 8, 11, tzinfo=UTC)
+_CUBE0_RECOVERY_CUTOFF = datetime(2026, 8, 27, 8, 12, tzinfo=UTC)
 
 
 class AQUBGeneralReleaseReplayError(ValueError):
@@ -157,6 +169,99 @@ async def _active_general_routes(
     if not routes or any(not isinstance(route, AQUBGeneralRoute) for route in routes):
         raise AQUBGeneralReleaseReplayError("aqub_general_replay_route_ambiguous")
     return list(routes)
+
+
+async def _cube0_recovery_update(
+    session: AsyncSession,
+) -> JsonObject:
+    matches: list[JsonObject] = []
+    window_start_epoch = int(_CUBE0_RECOVERY_WINDOW_START.timestamp())
+    cutoff_epoch = int(_CUBE0_RECOVERY_CUTOFF.timestamp())
+    for route in await _active_general_routes(session):
+        try:
+            raw_chat_id = int(route.group_chat_id)
+        except ValueError as exc:
+            raise AQUBGeneralReleaseReplayError(
+                "aqub_general_cube0_recovery_route_invalid"
+            ) from exc
+        receipts = (
+            await session.scalars(
+                select(TelegramReceipt)
+                .where(
+                    TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
+                    TelegramReceipt.status
+                    == TelegramReceiptStatus.PROCESSED.value,
+                    TelegramReceipt.payload.contains(
+                        {"message": {"chat": {"id": raw_chat_id}}}
+                    ),
+                )
+                .order_by(TelegramReceipt.update_id.desc())
+                .limit(128)
+            )
+        ).all()
+        for receipt in receipts:
+            candidate = _message_candidate(receipt, route.group_chat_id)
+            if (
+                candidate is not None
+                and window_start_epoch <= candidate[1] < cutoff_epoch
+                and isinstance(receipt.payload, dict)
+            ):
+                matches.append(dict(receipt.payload))
+    if len(matches) != 1:
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_cube0_recovery_event_ambiguous"
+        )
+    return matches[0]
+
+
+async def recover_aqub_general_cube0(
+    *,
+    session: AsyncSession,
+    installation_ref: str,
+    turn_ref: str,
+    expected_candidate_sha256: str,
+    confirmed: bool,
+    replay_update: Callable[[JsonObject], Awaitable[JsonObject]],
+) -> JsonObject:
+    if not confirmed:
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_cube0_recovery_confirmation_required"
+        )
+    if installation_ref != AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF:
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_cube0_recovery_selector_mismatch"
+        )
+    if turn_ref != AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF:
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_cube0_recovery_turn_mismatch"
+        )
+    if (
+        expected_candidate_sha256
+        != AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256
+    ):
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_cube0_recovery_digest_mismatch"
+        )
+
+    update = await _cube0_recovery_update(session)
+    result = await replay_update(update)
+    if (
+        result.get("ok") is not True
+        or result.get("accepted") is not True
+        or result.get("reason") != "aqub_live_committed"
+        or "method" in result
+    ):
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_cube0_recovery_downstream_unavailable"
+        )
+    return {
+        "installation_ref": AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF,
+        "turn_ref": AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF,
+        "state": "sent",
+        "replay": result.get("duplicate") is True,
+        "provider_message_id_exposed": False,
+        "participant_identities_exposed": False,
+    }
 
 
 async def _source_message_id(

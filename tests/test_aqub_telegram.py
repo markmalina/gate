@@ -715,6 +715,22 @@ def test_boolean_update_id_photo_gets_no_storage_or_confirmation() -> None:
     assert store.commands == []
 
 
+def test_general_runtime_failure_uses_neutral_fallback() -> None:
+    response = _live_response(
+        AQUBLiveForwardResult(
+            accepted=True,
+            duplicate=False,
+            reason="aqub_live_durable_only",
+            captured_content=AQUBTransportContentKind.TEXT,
+        ),
+        chat_id=TEST_CHAT_ID,
+        general_route=True,
+    )
+
+    assert response["text"] == "Сейчас не смог ответить. Попробуйте ещё раз."
+    assert "питан" not in response["text"].lower()
+
+
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
     response = _live_response(
         AQUBLiveForwardResult(

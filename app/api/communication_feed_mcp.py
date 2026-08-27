@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -156,6 +156,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
 
 @router.post("/mcp")
 async def communication_feed_mcp_endpoint(
+    request: Request,
     payload: JsonObject,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
@@ -166,6 +167,7 @@ async def communication_feed_mcp_endpoint(
 
     if payload.get("method") == "tools/list":
         result = await _delegate(
+            request=request,
             payload=payload,
             authorization=authorization,
             settings=settings,
@@ -176,6 +178,7 @@ async def communication_feed_mcp_endpoint(
 
     if not _is_feed_call(payload):
         return await _delegate(
+            request=request,
             payload=payload,
             authorization=authorization,
             settings=settings,
@@ -225,6 +228,7 @@ async def communication_feed_mcp_endpoint(
 
 async def _delegate(
     *,
+    request: Request,
     payload: JsonObject,
     authorization: str | None,
     settings: Settings,
@@ -232,6 +236,7 @@ async def _delegate(
     telegram: TelegramClient,
 ) -> JsonObject:
     return await mcp_routes.mcp_endpoint(
+        request=request,
         payload=payload,
         authorization=authorization,
         settings=settings,
