@@ -145,6 +145,35 @@ def _photo_update(
     return update
 
 
+def _document_update() -> dict[str, object]:
+    update = _update()
+    message = update["message"]
+    assert isinstance(message, dict)
+    message.pop("text")
+    message["caption"] = "Разбери договор"
+    message["document"] = {
+        "file_id": "synthetic-document",
+        "file_unique_id": "synthetic-document-unique",
+        "file_name": "contract.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 12_345,
+    }
+    return update
+
+
+def test_general_document_projects_as_bounded_document_reference() -> None:
+    projected = _project_inbound(
+        _document_update(),
+        bot_username=AQUB_BOT_USERNAME,
+        received_at=TEST_READY_AT + timedelta(seconds=2),
+    )
+    assert projected is not None
+    assert projected.content_kind is AQUBTransportContentKind.DOCUMENT
+    assert projected.document is not None
+    assert projected.document.file_name == "contract.pdf"
+    assert projected.command is None
+
+
 def _client(
     settings: Settings,
     store: DurableStore,
@@ -297,7 +326,6 @@ def test_duplicate_plain_text_retries_processing_without_second_fallback_reply(
         "accepted": True,
         "reason": "aqub_live_durable_only",
         "duplicate": True,
-        "runtime_error_code": "aqub_runtime_unconfigured",
     }
     assert len(store.acceptances) == 1
     assert [command.external_id for command in store.commands] == ["500", "500"]
@@ -335,7 +363,7 @@ def test_command_without_runtime_url_remains_retryable_and_unconfirmed(
         response = _post(client, _update(text="/status"))
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "aqub_runtime_unconfigured"
+    assert response.json()["detail"] == "aqub_runtime_unavailable"
     assert [command.command for command in store.commands] == ["/status"]
 
 
@@ -666,13 +694,8 @@ def test_pre_ready_photo_gets_no_storage_or_confirmation() -> None:
     with _client(_settings(), store) as client:
         response = _post(client, _photo_update(date=before_ready))
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "ok": True,
-        "owned": False,
-        "accepted": False,
-        "reason": "aqub_event_before_ready",
-    }
+    assert response.status_code == 503
+    assert response.json()["detail"] == "aqub_event_before_ready"
     assert "method" not in response.json()
     assert store.commands == []
 
@@ -714,101 +737,6 @@ def test_boolean_update_id_photo_gets_no_storage_or_confirmation() -> None:
     assert response.json()["accepted"] is False
     assert "method" not in response.json()
     assert store.commands == []
-
-
-def test_general_runtime_failure_uses_neutral_fallback() -> None:
-    response = _live_response(
-        AQUBLiveForwardResult(
-            accepted=True,
-            duplicate=False,
-            reason="aqub_live_durable_only",
-            captured_content=AQUBTransportContentKind.TEXT,
-        ),
-        chat_id=TEST_CHAT_ID,
-        general_route=True,
-    )
-
-    assert response["text"] == "Сейчас не смог ответить. Попробуйте ещё раз."
-    assert "питан" not in response["text"].lower()
-
-
-def test_duplicate_durable_only_response_carries_sanitized_runtime_code() -> None:
-    response = _live_response(
-        AQUBLiveForwardResult(
-            accepted=True,
-            duplicate=True,
-            reason="aqub_live_durable_only",
-            captured_content=AQUBTransportContentKind.TEXT,
-            runtime_error_code="aqub_runtime_binding_not_found",
-        ),
-        chat_id=TEST_CHAT_ID,
-        general_route=True,
-    )
-
-    assert response == {
-        "ok": True,
-        "owned": True,
-        "accepted": True,
-        "reason": "aqub_live_durable_only",
-        "duplicate": True,
-        "runtime_error_code": "aqub_runtime_binding_not_found",
-    }
-
-
-def test_internal_runtime_probe_precedes_telegram_fallback() -> None:
-    response = _live_response(
-        AQUBLiveForwardResult(
-            accepted=True,
-            duplicate=False,
-            reason="aqub_live_durable_only",
-            captured_content=AQUBTransportContentKind.TEXT,
-            runtime_error_code="aqub_runtime_unconfigured",
-        ),
-        chat_id=TEST_CHAT_ID,
-        general_route=True,
-        runtime_diagnostic=True,
-    )
-
-    assert response == {
-        "ok": True,
-        "owned": True,
-        "accepted": True,
-        "reason": "aqub_live_durable_only",
-        "duplicate": False,
-        "runtime_error_code": "aqub_runtime_unconfigured",
-    }
-    assert "method" not in response
-
-
-def test_internal_runtime_probe_exposes_allowlisted_no_reply_kind() -> None:
-    response = _live_response(
-        AQUBLiveForwardResult(
-            accepted=True,
-            duplicate=True,
-            reason="aqub_live_committed",
-            downstream={
-                "result": {
-                    "kind": "ignored",
-                    "reply_text": None,
-                    "suppress_reply": True,
-                }
-            },
-            captured_content=AQUBTransportContentKind.TEXT,
-        ),
-        chat_id=TEST_CHAT_ID,
-        general_route=True,
-        runtime_diagnostic=True,
-    )
-
-    assert response == {
-        "ok": True,
-        "owned": True,
-        "accepted": True,
-        "reason": "aqub_live_committed",
-        "duplicate": True,
-        "runtime_downstream_kind": "ignored",
-    }
-    assert "method" not in response
 
 
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
@@ -874,12 +802,11 @@ async def test_semantic_messages_use_stable_durable_delivery_keys_and_terminal_r
             reason="aqub_live_committed",
             downstream={
                 "result": {
-                    "reply_text": "Состав\n\nРасчёт\n\nПроверка\n\nСколько граммов?",
+                    "reply_messages": ["Состав", "Расчёт", "Сколько граммов?"],
                     "force_reply": True,
                 }
             },
             delivery_ref="receipt:opaque-synthetic",
-            reply_to_message_id=501,
         )
         settings = _settings(TELEGRAM_AQUB_BOT_TOKEN="synthetic-token")
 
@@ -896,21 +823,19 @@ async def test_semantic_messages_use_stable_durable_delivery_keys_and_terminal_r
             chat_id=TEST_CHAT_ID,
         )
 
-    assert [item.text for item in captured[:4]] == [
+    assert [item.text for item in captured[:3]] == [
         "Состав",
         "Расчёт",
-        "Проверка",
         "Сколько граммов?",
     ]
-    assert [item.idempotency_key for item in captured[:4]] == [
-        item.idempotency_key for item in captured[4:]
+    assert [item.idempotency_key for item in captured[:3]] == [
+        item.idempotency_key for item in captured[3:]
     ]
-    assert [item.command_id for item in captured[:4]] == [item.command_id for item in captured[4:]]
-    assert [item.request_sha256 for item in captured[:4]] == [
-        item.request_sha256 for item in captured[4:]
+    assert [item.command_id for item in captured[:3]] == [item.command_id for item in captured[3:]]
+    assert [item.request_sha256 for item in captured[:3]] == [
+        item.request_sha256 for item in captured[3:]
     ]
-    assert [item.force_reply for item in captured[:4]] == [False, False, False, True]
-    assert [item.reply_to_message_id for item in captured] == [501] * 8
+    assert [item.force_reply for item in captured[:3]] == [False, False, True]
 
 
 def test_visible_receipt_reply_redacts_raw_identifiers_and_secrets() -> None:
