@@ -73,7 +73,7 @@ AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF = (
     "0e3fb3ef-9fdf-5ca8-ae75-cf0d3cb47d82"
 )
 AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256 = (
-    "fcbc47b8f793237951eda327013614699cef4afcf0d2f1284f480dd038a80ccd"
+    "306f378597780d5426605ea3ce0b48ab4a93a513e3b66d366508edd7d0779979"
 )
 _CUBE0_RECOVERY_EVENT_AT = datetime(2026, 8, 27, 9, 11, 42, tzinfo=UTC)
 
@@ -102,12 +102,7 @@ def _opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:
     return f"{kind}:{digest}"
 
 
-def _message_candidate(
-    receipt: TelegramReceipt,
-    group_chat_id: str,
-    *,
-    actor_user_id: str | None = None,
-) -> tuple[int, int] | None:
+def _message_candidate(receipt: TelegramReceipt, group_chat_id: str) -> tuple[int, int] | None:
     payload = receipt.payload
     if not isinstance(payload, dict):
         return None
@@ -130,8 +125,6 @@ def _message_candidate(
         or not isinstance(text, str)
         or not text
     ):
-        return None
-    if actor_user_id is not None and str(sender.get("id")) != actor_user_id:
         return None
     return message_id, occurred_at
 
@@ -205,11 +198,7 @@ async def _cube0_recovery_update(
             )
         ).all()
         for receipt in receipts:
-            candidate = _message_candidate(
-                receipt,
-                route.group_chat_id,
-                actor_user_id=route.actor_user_id,
-            )
+            candidate = _message_candidate(receipt, route.group_chat_id)
             if (
                 candidate is not None
                 and candidate[1] == event_epoch
