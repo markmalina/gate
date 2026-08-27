@@ -64,10 +64,39 @@ class AQUBLiveForwardResult:
     captured_content: AQUBTransportContentKind | None = None
     delivery_ref: str | None = None
     reply_to_message_id: int | None = None
+    runtime_error_code: str | None = None
 
 
 class AQUBRuntimeUnavailable(RuntimeError):
     """The durable Gate capture succeeded but AQUB runtime was unavailable."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+_RUNTIME_RESPONSE_CODES = {
+    "AQUB_LIVE_BINDING_NOT_FOUND": "aqub_runtime_binding_not_found",
+    "AQUB_LIVE_ROLE_MISMATCH": "aqub_runtime_role_mismatch",
+    "AQUB_SIGNATURE_INVALID": "aqub_runtime_signature_invalid",
+    "AQUB_ENVELOPE_EXPIRED": "aqub_runtime_envelope_expired",
+    "AQUB_LIVE_INGRESS_FAILED": "aqub_runtime_ingress_failed",
+    "AQUB_LIVE_INGRESS_NOT_CONFIGURED": "aqub_runtime_ingress_not_configured",
+}
+
+
+def _runtime_response_error_code(response: httpx.Response) -> str:
+    try:
+        value = response.json()
+    except ValueError:
+        value = None
+    if isinstance(value, dict):
+        code = value.get("code")
+        if isinstance(code, str) and code in _RUNTIME_RESPONSE_CODES:
+            return _RUNTIME_RESPONSE_CODES[code]
+    if response.status_code in {400, 401, 403, 404, 413, 500, 503}:
+        return f"aqub_runtime_http_{response.status_code}"
+    return "aqub_runtime_http_error"
 
 
 class AQUBEventBeforeReady(RuntimeError):
@@ -109,15 +138,17 @@ class HttpAQUBRuntimeClient:
                 timeout=self._timeout_seconds,
             )
         except httpx.HTTPError as exc:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable") from exc
+            raise AQUBRuntimeUnavailable(
+                "aqub_runtime_transport_unavailable"
+            ) from exc
         if response.status_code < 200 or response.status_code >= 300:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+            raise AQUBRuntimeUnavailable(_runtime_response_error_code(response))
         try:
             value: Any = response.json()
         except ValueError as exc:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable") from exc
+            raise AQUBRuntimeUnavailable("aqub_runtime_invalid_json") from exc
         if not isinstance(value, dict) or value.get("ok") is not True:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+            raise AQUBRuntimeUnavailable("aqub_runtime_invalid_response")
         return {str(key): item for key, item in value.items()}
 
 
@@ -274,7 +305,7 @@ class AQUBLiveIngressAdapter:
                 raw_body=raw_body,
                 signature=signature,
             )
-        except AQUBRuntimeUnavailable:
+        except AQUBRuntimeUnavailable as exc:
             if captured_content is None:
                 raise
             return AQUBLiveForwardResult(
@@ -283,6 +314,9 @@ class AQUBLiveIngressAdapter:
                 reason="aqub_live_durable_only",
                 captured_content=captured_content,
                 delivery_ref=delivery_ref,
+                runtime_error_code=(
+                    None if exc.code == "aqub_runtime_unavailable" else exc.code
+                ),
             )
         return AQUBLiveForwardResult(
             accepted=True,

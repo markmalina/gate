@@ -215,6 +215,49 @@ async def test_cube0_recovery_replays_normal_ingress_once() -> None:
 
 
 @pytest.mark.anyio
+async def test_cube0_recovery_reports_sanitized_runtime_failure() -> None:
+    session = FakeSession(
+        [
+            [_route()],
+            [
+                _receipt(
+                    message_id=30,
+                    occurred_at=_CUBE0_RECOVERY_EVENT_EPOCH,
+                    text="synthetic recovery question",
+                )
+            ],
+        ]
+    )
+
+    async def replay_update(_update: dict[str, object]) -> dict[str, object]:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": "aqub_live_durable_only",
+            "duplicate": True,
+            "runtime_error_code": "aqub_runtime_binding_not_found",
+        }
+
+    with pytest.raises(
+        replay.AQUBGeneralReleaseReplayError,
+        match="aqub_general_cube0_recovery_binding_not_found",
+    ):
+        await replay.recover_aqub_general_cube0(
+            session=session,  # type: ignore[arg-type]
+            installation_ref=(
+                replay.AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF
+            ),
+            turn_ref=replay.AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF,
+            expected_candidate_sha256=(
+                replay.AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256
+            ),
+            confirmed=True,
+            replay_update=replay_update,
+        )
+
+
+@pytest.mark.anyio
 async def test_cube0_recovery_rejects_wrong_digest_before_database_access() -> None:
     session = FakeSession([])
 

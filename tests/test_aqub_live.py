@@ -467,7 +467,29 @@ async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> Non
     assert result.accepted is True
     assert result.reason == "aqub_live_durable_only"
     assert result.captured_content is AQUBTransportContentKind.TEXT
+    assert result.runtime_error_code == "aqub_runtime_transport_unavailable"
     assert len(store.commands) == 1
+
+
+@pytest.mark.anyio
+async def test_runtime_client_classifies_allowlisted_aqub_error() -> None:
+    def binding_missing(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={"ok": False, "code": "AQUB_LIVE_BINDING_NOT_FOUND"},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(binding_missing)
+    ) as http_client:
+        runtime = HttpAQUBRuntimeClient(
+            base_url="https://aqub.example",
+            http_client=http_client,
+        )
+        with pytest.raises(AQUBRuntimeUnavailable) as exc_info:
+            await runtime.post_envelope(raw_body=b"{}", signature="synthetic")
+
+    assert exc_info.value.code == "aqub_runtime_binding_not_found"
 
 
 @pytest.mark.anyio

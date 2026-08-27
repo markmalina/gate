@@ -589,13 +589,16 @@ def _live_response(
     if not result.accepted:
         return _unowned_response(reason=result.reason)
     if result.duplicate and result.downstream is None:
-        return {
+        durable_response: JsonObject = {
             "ok": True,
             "owned": True,
             "accepted": True,
             "reason": result.reason,
             "duplicate": True,
         }
+        if result.runtime_error_code is not None:
+            durable_response["runtime_error_code"] = result.runtime_error_code
+        return durable_response
     downstream = result.downstream or {}
     domain = downstream.get("result")
     if isinstance(domain, dict) and domain.get("suppress_reply") is True:

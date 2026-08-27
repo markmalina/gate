@@ -731,6 +731,29 @@ def test_general_runtime_failure_uses_neutral_fallback() -> None:
     assert "питан" not in response["text"].lower()
 
 
+def test_duplicate_durable_only_response_carries_sanitized_runtime_code() -> None:
+    response = _live_response(
+        AQUBLiveForwardResult(
+            accepted=True,
+            duplicate=True,
+            reason="aqub_live_durable_only",
+            captured_content=AQUBTransportContentKind.TEXT,
+            runtime_error_code="aqub_runtime_binding_not_found",
+        ),
+        chat_id=TEST_CHAT_ID,
+        general_route=True,
+    )
+
+    assert response == {
+        "ok": True,
+        "owned": True,
+        "accepted": True,
+        "reason": "aqub_live_durable_only",
+        "duplicate": True,
+        "runtime_error_code": "aqub_runtime_binding_not_found",
+    }
+
+
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
     response = _live_response(
         AQUBLiveForwardResult(

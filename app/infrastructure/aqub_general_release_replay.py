@@ -76,6 +76,43 @@ AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256 = (
     "306f378597780d5426605ea3ce0b48ab4a93a513e3b66d366508edd7d0779979"
 )
 _CUBE0_RECOVERY_EVENT_AT = datetime(2026, 8, 27, 9, 11, 42, tzinfo=UTC)
+_CUBE0_RUNTIME_ERROR_CODES = {
+    "aqub_runtime_binding_not_found": (
+        "aqub_general_cube0_recovery_binding_not_found"
+    ),
+    "aqub_runtime_role_mismatch": (
+        "aqub_general_cube0_recovery_role_mismatch"
+    ),
+    "aqub_runtime_signature_invalid": (
+        "aqub_general_cube0_recovery_signature_invalid"
+    ),
+    "aqub_runtime_envelope_expired": (
+        "aqub_general_cube0_recovery_envelope_expired"
+    ),
+    "aqub_runtime_ingress_failed": (
+        "aqub_general_cube0_recovery_ingress_failed"
+    ),
+    "aqub_runtime_ingress_not_configured": (
+        "aqub_general_cube0_recovery_ingress_not_configured"
+    ),
+    "aqub_runtime_transport_unavailable": (
+        "aqub_general_cube0_recovery_transport_unavailable"
+    ),
+    "aqub_runtime_invalid_json": (
+        "aqub_general_cube0_recovery_invalid_json"
+    ),
+    "aqub_runtime_invalid_response": (
+        "aqub_general_cube0_recovery_invalid_response"
+    ),
+    "aqub_runtime_http_400": "aqub_general_cube0_recovery_http_400",
+    "aqub_runtime_http_401": "aqub_general_cube0_recovery_http_401",
+    "aqub_runtime_http_403": "aqub_general_cube0_recovery_http_403",
+    "aqub_runtime_http_404": "aqub_general_cube0_recovery_http_404",
+    "aqub_runtime_http_413": "aqub_general_cube0_recovery_http_413",
+    "aqub_runtime_http_500": "aqub_general_cube0_recovery_http_500",
+    "aqub_runtime_http_503": "aqub_general_cube0_recovery_http_503",
+    "aqub_runtime_http_error": "aqub_general_cube0_recovery_http_error",
+}
 
 
 class AQUBGeneralReleaseReplayError(ValueError):
@@ -249,8 +286,15 @@ async def recover_aqub_general_cube0(
         or result.get("reason") != "aqub_live_committed"
         or "method" in result
     ):
+        runtime_error_code = result.get("runtime_error_code")
+        diagnostic_code = (
+            _CUBE0_RUNTIME_ERROR_CODES.get(runtime_error_code)
+            if isinstance(runtime_error_code, str)
+            else None
+        )
         raise AQUBGeneralReleaseReplayError(
-            "aqub_general_cube0_recovery_downstream_unavailable"
+            diagnostic_code
+            or "aqub_general_cube0_recovery_downstream_unavailable"
         )
     return {
         "installation_ref": AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF,
