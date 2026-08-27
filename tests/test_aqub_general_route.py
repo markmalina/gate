@@ -310,16 +310,18 @@ async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None
             )
             assert wrong_actor is not food
             assert wrong_actor.group_chat_id == general_group
-            assert wrong_actor.alpha_user_id == general_actor
+            assert wrong_actor.alpha_user_id == food_actor
+            assert wrong_actor.reply_to_source is True
             assert wrong_group is food
-            denied_store, denied_runtime = _Store(), _Runtime()
-            denied = await AQUBLiveIngressAdapter(
+            participant_store, participant_runtime = _Store(), _Runtime()
+            admitted = await AQUBLiveIngressAdapter(
                 binding=wrong_actor,
-                store=denied_store,
-                runtime=denied_runtime,
+                store=participant_store,
+                runtime=participant_runtime,
             ).handle(_inbound(group=general_group, actor=food_actor))
-            assert denied.accepted is False
-            assert denied_store.calls == denied_runtime.calls == 0
+            assert admitted.accepted is True
+            assert admitted.reply_to_message_id == 42
+            assert participant_store.calls == participant_runtime.calls == 1
 
             media_cases = (
                 (AQUBTransportContentKind.PHOTO, False),
