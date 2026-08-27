@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import hashlib
 import hmac
 import json
 import re
-import base64
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Protocol
 
 import httpx
@@ -42,6 +44,14 @@ _CANDIDATE_COMMAND_RE = re.compile(
     re.IGNORECASE,
 )
 _PROGRAM_STEP_RE = re.compile(r"(?m)^\s*(\d+)\.\s+\S")
+_QUANTITY_ONLY_RE = re.compile(
+    r"^\s*(?:(?:вес|масса|количество)\s*[:=-]?\s*)?"
+    r"\d+(?:[.,]\d+)?\s*"
+    r"(?:г|гр|грамм(?:а|ов)?|кг|килограмм(?:а|ов)?|мл|миллилитр(?:а|ов)?|л|литр(?:а|ов)?)"
+    r"\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+AQUB_ALBUM_TEXT_GRACE_SECONDS = 2.0
 
 JsonObject = dict[str, Any]
 GENERAL_MEDIA_MAX_BYTES = 8 * 1024 * 1024
@@ -55,10 +65,44 @@ class AQUBLiveForwardResult:
     downstream: JsonObject | None = None
     captured_content: AQUBTransportContentKind | None = None
     delivery_ref: str | None = None
+    reply_to_message_id: int | None = None
+    runtime_error_code: str | None = None
 
 
 class AQUBRuntimeUnavailable(RuntimeError):
     """The durable Gate capture succeeded but AQUB runtime was unavailable."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+_RUNTIME_RESPONSE_CODES = {
+    "AQUB_LIVE_BINDING_NOT_FOUND": "aqub_runtime_binding_not_found",
+    "AQUB_LIVE_ROLE_MISMATCH": "aqub_runtime_role_mismatch",
+    "AQUB_SIGNATURE_INVALID": "aqub_runtime_signature_invalid",
+    "AQUB_ENVELOPE_EXPIRED": "aqub_runtime_envelope_expired",
+    "AQUB_LIVE_INGRESS_FAILED": "aqub_runtime_ingress_failed",
+    "AQUB_LIVE_INGRESS_NOT_CONFIGURED": "aqub_runtime_ingress_not_configured",
+}
+
+
+def _runtime_response_error_code(response: httpx.Response) -> str:
+    try:
+        value = response.json()
+    except ValueError:
+        value = None
+    if isinstance(value, dict):
+        code = value.get("code")
+        if isinstance(code, str) and code in _RUNTIME_RESPONSE_CODES:
+            return _RUNTIME_RESPONSE_CODES[code]
+    if response.status_code in {400, 401, 403, 404, 413, 500, 503}:
+        return f"aqub_runtime_http_{response.status_code}"
+    return "aqub_runtime_http_error"
+
+
+class AQUBEventBeforeReady(RuntimeError):
+    """A terminal pre-activation event that must not poison Telegram retries."""
 
 
 class AQUBRuntimeClient(Protocol):
@@ -78,7 +122,7 @@ class HttpAQUBRuntimeClient:
         *,
         base_url: str,
         http_client: httpx.AsyncClient,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 45.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._http_client = http_client
@@ -96,15 +140,17 @@ class HttpAQUBRuntimeClient:
                 timeout=self._timeout_seconds,
             )
         except httpx.HTTPError as exc:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable") from exc
+            raise AQUBRuntimeUnavailable(
+                "aqub_runtime_transport_unavailable"
+            ) from exc
         if response.status_code < 200 or response.status_code >= 300:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+            raise AQUBRuntimeUnavailable(_runtime_response_error_code(response))
         try:
             value: Any = response.json()
         except ValueError as exc:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable") from exc
+            raise AQUBRuntimeUnavailable("aqub_runtime_invalid_json") from exc
         if not isinstance(value, dict) or value.get("ok") is not True:
-            raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+            raise AQUBRuntimeUnavailable("aqub_runtime_invalid_response")
         return {str(key): item for key, item in value.items()}
 
 
@@ -134,7 +180,14 @@ class AQUBLiveIngressAdapter:
                 duplicate=False,
                 reason="aqub_route_not_owned",
             )
-        _validate_time(self._binding, inbound)
+        try:
+            _validate_time(self._binding, inbound)
+        except AQUBEventBeforeReady:
+            return AQUBLiveForwardResult(
+                accepted=False,
+                duplicate=False,
+                reason="aqub_event_before_ready",
+            )
 
         payload = dict(inbound.payload)
         payload_sha256 = canonical_telegram_payload_digest(payload)
@@ -199,22 +252,12 @@ class AQUBLiveIngressAdapter:
                 inbound=inbound,
                 now=inbound.received_at,
             )
-            album_item = inbound.media_group_id is not None
             return AQUBLiveForwardResult(
                 accepted=True,
                 duplicate=duplicate,
                 reason="aqub_food_media_queued",
-                downstream=(
-                    None
-                    if album_item
-                    else {
-                        "result": {
-                            "kind": "food_media_queued",
-                            "reply_text": "Спасибо, файл принят. Разбираюсь с ним.",
-                        }
-                    }
-                ),
-                captured_content=None if album_item else inbound.content_kind,
+                downstream=None,
+                captured_content=None,
                 delivery_ref=delivery_ref,
             )
         if (
@@ -229,6 +272,17 @@ class AQUBLiveIngressAdapter:
                 inbound=inbound,
                 now=inbound.received_at,
             )
+            if not linked and _quantity_only_capture_text(inbound.command):
+                # Telegram can deliver a follow-up quantity before a concurrent album
+                # webhook has committed its media rows. Give that bounded race one
+                # retry; a standalone quantity still follows the normal direct route.
+                await asyncio.sleep(AQUB_ALBUM_TEXT_GRACE_SECONDS)
+                linked = await self._media_queue.link_text_to_pending_album(
+                    receipt_id=acceptance.command_receipt_id,
+                    inbound=inbound,
+                    now=inbound.received_at
+                    + timedelta(seconds=AQUB_ALBUM_TEXT_GRACE_SECONDS),
+                )
             if linked:
                 return AQUBLiveForwardResult(
                     accepted=True,
@@ -268,12 +322,12 @@ class AQUBLiveIngressAdapter:
                 captured_content = inbound.content_kind
         try:
             if self._runtime is None:
-                raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+                raise AQUBRuntimeUnavailable("aqub_runtime_unconfigured")
             downstream = await self._runtime.post_envelope(
                 raw_body=raw_body,
                 signature=signature,
             )
-        except AQUBRuntimeUnavailable:
+        except AQUBRuntimeUnavailable as exc:
             if general_media:
                 return _general_media_failure(duplicate, delivery_ref)
             if captured_content is None:
@@ -284,6 +338,7 @@ class AQUBLiveIngressAdapter:
                 reason="aqub_live_durable_only",
                 captured_content=captured_content,
                 delivery_ref=delivery_ref,
+                runtime_error_code=exc.code,
             )
         return AQUBLiveForwardResult(
             accepted=True,
@@ -292,6 +347,9 @@ class AQUBLiveIngressAdapter:
             downstream=downstream,
             captured_content=captured_content,
             delivery_ref=delivery_ref,
+            reply_to_message_id=(
+                _source_message_id(inbound) if self._binding.reply_to_source else None
+            ),
         )
 
 
@@ -374,9 +432,21 @@ async def forward_aqub_album_result(
     return await runtime.post_envelope(raw_body=raw_body, signature=signature)
 
 
+def _source_message_id(inbound: AQUBTransportInbound) -> int | None:
+    message = inbound.payload.get("message")
+    if not isinstance(message, Mapping):
+        return None
+    value = message.get("message_id")
+    return value if type(value) is int and 1 <= value <= (1 << 52) - 1 else None
+
+
 def _plain_capture_text(text: str) -> bool:
     stripped = text.strip()
     return bool(stripped) and not stripped.startswith("/")
+
+
+def _quantity_only_capture_text(text: str) -> bool:
+    return _QUANTITY_ONLY_RE.fullmatch(text) is not None
 
 
 def _validate_acceptance(acceptance: AQUBDurableAcceptance) -> None:
@@ -441,7 +511,7 @@ def _validate_time(binding: AQUBTransportBinding, inbound: AQUBTransportInbound)
     if inbound.occurred_at.utcoffset() is None or inbound.received_at.utcoffset() is None:
         raise RuntimeError("aqub_timestamp_invalid")
     if binding.ready_at is None or inbound.occurred_at < binding.ready_at:
-        raise RuntimeError("aqub_event_before_ready")
+        raise AQUBEventBeforeReady("aqub_event_before_ready")
     if inbound.received_at < inbound.occurred_at:
         raise RuntimeError("aqub_timestamp_order_invalid")
 
