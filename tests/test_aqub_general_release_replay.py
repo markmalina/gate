@@ -236,12 +236,12 @@ async def test_cube0_recovery_reports_sanitized_runtime_failure() -> None:
             "accepted": True,
             "reason": "aqub_live_durable_only",
             "duplicate": True,
-            "runtime_error_code": "aqub_runtime_binding_not_found",
+            "runtime_error_code": "aqub_runtime_unconfigured",
         }
 
     with pytest.raises(
         replay.AQUBGeneralReleaseReplayError,
-        match="aqub_general_cube0_recovery_binding_not_found",
+        match="aqub_general_cube0_recovery_runtime_unconfigured",
     ):
         await replay.recover_aqub_general_cube0(
             session=session,  # type: ignore[arg-type]

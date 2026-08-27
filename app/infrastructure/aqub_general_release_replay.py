@@ -95,6 +95,9 @@ _CUBE0_RUNTIME_ERROR_CODES = {
     "aqub_runtime_ingress_not_configured": (
         "aqub_general_cube0_recovery_ingress_not_configured"
     ),
+    "aqub_runtime_unconfigured": (
+        "aqub_general_cube0_recovery_runtime_unconfigured"
+    ),
     "aqub_runtime_transport_unavailable": (
         "aqub_general_cube0_recovery_transport_unavailable"
     ),

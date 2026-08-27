@@ -297,6 +297,7 @@ def test_duplicate_plain_text_retries_processing_without_second_fallback_reply(
         "accepted": True,
         "reason": "aqub_live_durable_only",
         "duplicate": True,
+        "runtime_error_code": "aqub_runtime_unconfigured",
     }
     assert len(store.acceptances) == 1
     assert [command.external_id for command in store.commands] == ["500", "500"]
@@ -334,7 +335,7 @@ def test_command_without_runtime_url_remains_retryable_and_unconfirmed(
         response = _post(client, _update(text="/status"))
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "aqub_runtime_unavailable"
+    assert response.json()["detail"] == "aqub_runtime_unconfigured"
     assert [command.command for command in store.commands] == ["/status"]
 
 
