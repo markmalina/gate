@@ -552,6 +552,7 @@ def _build_signed_envelope_body(
 
     envelope: JsonObject = {
         "schema_version": AQUB_GATE_ENVELOPE_SCHEMA,
+        "route_scope": binding.route_scope,
         "occurred_at": inbound.received_at.isoformat(),
         "source_occurred_at": inbound.occurred_at.isoformat(),
         "chat_ref": _opaque_ref(
@@ -688,6 +689,7 @@ def _build_signed_album_envelope_body(
         first_media.pop(key, None)
     envelope: JsonObject = {
         "schema_version": AQUB_GATE_ENVELOPE_SCHEMA,
+        "route_scope": binding.route_scope,
         "occurred_at": max(item.received_at for item in source_inbounds).isoformat(),
         "source_occurred_at": min(item.occurred_at for item in inbounds).isoformat(),
         "chat_ref": _opaque_ref(binding.receipt_signing_key, "chat", first.chat_id),

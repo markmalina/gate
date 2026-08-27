@@ -20,6 +20,7 @@ AQUB_BOT_USERNAME = "@AQubAgentBot"
 AQUB_PING_COMMAND = "/aqub_ping"
 AQUB_TELEGRAM_WEBHOOK_PATH = "/telegram/aqub/preflight"
 AQUB_RECEIPT_SOURCE = "telegram_bot_api"
+AQUB_FOOD_CONTEXT_ROUTE_SCOPE = "food_context_test"
 
 JsonObject = dict[str, Any]
 _TELEGRAM_SAFE_INTEGER_MAX = (1 << 52) - 1
@@ -63,8 +64,11 @@ class AQUBTransportBinding:
     ready_at: datetime | None = None
     receipt_signing_key: bytes = field(default=b"", repr=False)
     reply_to_source: bool = False
+    route_scope: str | None = None
 
     def __post_init__(self) -> None:
+        if self.route_scope not in {None, AQUB_FOOD_CONTEXT_ROUTE_SCOPE}:
+            raise ValueError("aqub_route_scope_invalid")
         if not self.enabled:
             return
         if self.bot_username != AQUB_BOT_USERNAME:

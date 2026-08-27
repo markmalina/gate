@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
+    AQUB_FOOD_CONTEXT_ROUTE_SCOPE,
     AQUBTransportBinding,
 )
 from app.core.config import Settings
@@ -243,6 +244,7 @@ async def load_active_aqub_food_binding(
         alpha_user_id=route.actor_user_id,
         ready_at=route.activated_at,
         receipt_signing_key=aqub_receipt_signing_key(settings),
+        route_scope=AQUB_FOOD_CONTEXT_ROUTE_SCOPE,
     )
 
 
