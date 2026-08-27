@@ -23,6 +23,7 @@ from app.application.aqub_food_media import (
     validate_food_media_result,
 )
 from app.application.aqub_live import (
+    AQUBRuntimeUnavailable,
     HttpAQUBRuntimeClient,
     forward_aqub_album_result,
     forward_aqub_media_result,
@@ -47,10 +48,6 @@ _AQUB_FOOD_MEDIA_POLL_SECONDS = 1
 _STALE_PROCESSING_SECONDS = 120
 _ALBUM_SETTLE_SECONDS = 2
 _TELEGRAM_ORDER_MAX = 9_223_372_036_854_775_807
-_ACK_TEXT = "Спасибо, файл принят. Разбираюсь с ним."
-_PROGRESS_TEXT = "Нужно больше времени, продолжаю разбираться."
-
-
 @dataclass(frozen=True, slots=True, repr=False)
 class _MediaJob:
     receipt_id: UUID
@@ -176,7 +173,7 @@ async def run_aqub_food_media_once(
             receipt_id=job.receipt_id,
         )
         return 1
-    except AQUBFoodMediaError as exc:
+    except (AQUBFoodMediaError, AQUBRuntimeUnavailable) as exc:
         code = _safe_error_code(exc)
     except Exception:
         logger.exception("AQUB Food media worker job failed safely")

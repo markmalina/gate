@@ -304,6 +304,11 @@ def test_waiting_session_can_suppress_a_media_reply() -> None:
     ) == []
 
 
+def test_runtime_failure_preserves_the_allowlisted_diagnostic_code() -> None:
+    error = worker.AQUBRuntimeUnavailable("aqub_runtime_transport_unavailable")
+    assert worker._safe_error_code(error) == "aqub_runtime_transport_unavailable"
+
+
 @pytest.mark.anyio
 async def test_album_worker_forwards_linked_text_and_finalizes_atomically(
     monkeypatch: pytest.MonkeyPatch,
