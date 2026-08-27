@@ -11,7 +11,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,6 +34,7 @@ from app.application.alpha_owner_control import (
     control_alpha_installation,
 )
 from app.application.alpha_shadow_reviews import alpha_shadow_reviews_payload
+from app.application.aqub_transport import AQUB_TELEGRAM_WEBHOOK_PATH
 from app.application.mcp_inbox import (
     build_unanswered_list,
     counterparty as _counterparty,
@@ -80,8 +81,10 @@ from app.infrastructure.alpha_owner_test_runtime import (
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
 from app.infrastructure.aqub_general_release_replay import (
+    AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF,
     AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
     AQUBGeneralReleaseReplayError,
+    recover_aqub_general_cube0,
     send_aqub_general_release_replay,
     verify_aqub_general_release_replay,
 )
@@ -216,6 +219,7 @@ MCP_TOOL_SCOPES = {
 
 @router.post("/mcp")
 async def mcp_endpoint(
+    request: Request,
     payload: JsonObject,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
@@ -450,6 +454,7 @@ async def mcp_endpoint(
                 principal=principal,
                 session=session,
                 settings=settings,
+                request=request,
             )
         if tool_name == "gate_alpha_verify_review_replay":
             return await _alpha_verify_review_replay_tool_result(
@@ -1864,6 +1869,7 @@ async def _alpha_send_review_tool_result(
     principal: Principal,
     session: AsyncSession,
     settings: Settings,
+    request: Request | None = None,
 ) -> JsonObject:
     raw_ref = arguments.get("installation_ref")
     raw_turn = arguments.get("turn_ref")
@@ -1882,6 +1888,77 @@ async def _alpha_send_review_tool_result(
                 "and confirmed=true are required"
             ),
         )
+    if raw_ref == AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF:
+        if request is None:
+            return _tool_error_result(
+                request_id=request_id,
+                code="aqub_general_cube0_recovery_request_missing",
+                message="AQUB General Cube 0 recovery failed closed",
+            )
+
+        async def replay_update(update: JsonObject) -> JsonObject:
+            secret = settings.telegram_aqub_webhook_secret.get_secret_value()
+            if not secret:
+                raise AQUBGeneralReleaseReplayError(
+                    "aqub_general_cube0_recovery_webhook_secret_missing"
+                )
+            transport = httpx.ASGITransport(
+                app=request.app,
+                raise_app_exceptions=False,
+            )
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://gate.internal",
+                timeout=40.0,
+            ) as internal_client:
+                response = await internal_client.post(
+                    AQUB_TELEGRAM_WEBHOOK_PATH,
+                    json=update,
+                    headers={
+                        "X-Telegram-Bot-Api-Secret-Token": secret,
+                    },
+                )
+            if response.status_code != 200:
+                raise AQUBGeneralReleaseReplayError(
+                    "aqub_general_cube0_recovery_ingress_failed"
+                )
+            try:
+                value = response.json()
+            except ValueError as exc:
+                raise AQUBGeneralReleaseReplayError(
+                    "aqub_general_cube0_recovery_ingress_failed"
+                ) from exc
+            if not isinstance(value, dict):
+                raise AQUBGeneralReleaseReplayError(
+                    "aqub_general_cube0_recovery_ingress_failed"
+                )
+            return {str(key): item for key, item in value.items()}
+
+        try:
+            payload = await recover_aqub_general_cube0(
+                session=session,
+                installation_ref=raw_ref,
+                turn_ref=raw_turn,
+                expected_candidate_sha256=raw_digest,
+                confirmed=True,
+                replay_update=replay_update,
+            )
+        except AQUBGeneralReleaseReplayError as exc:
+            await session.rollback()
+            return _tool_error_result(
+                request_id=request_id,
+                code=exc.code,
+                message="AQUB General Cube 0 recovery failed closed",
+            )
+        return _tool_result(
+            payload,
+            (
+                f"AQUB General Cube 0 recovery: {payload['state']}; "
+                f"replay={payload['replay']}"
+            ),
+            request_id,
+        )
+
     if raw_ref == AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF:
         try:
             async with httpx.AsyncClient() as http_client:
