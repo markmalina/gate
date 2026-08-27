@@ -37,8 +37,9 @@ class FakeTelegram:
         chat_id: str,
         text: str,
         business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
     ) -> dict[str, object]:
-        del business_connection_id
+        del business_connection_id, reply_to_message_id
         self.calls.append((chat_id, text))
         return {"ok": True, "result": {"message_id": self.message_id}}
 
@@ -54,8 +55,9 @@ class RetryOnceTelegram(FakeTelegram):
         chat_id: str,
         text: str,
         business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
     ) -> dict[str, object]:
-        del business_connection_id
+        del business_connection_id, reply_to_message_id
         self.calls.append((chat_id, text))
         if self.failures_remaining:
             self.failures_remaining -= 1
@@ -78,8 +80,9 @@ class UnknownOnceTelegram(FakeTelegram):
         chat_id: str,
         text: str,
         business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
     ) -> dict[str, object]:
-        del business_connection_id
+        del business_connection_id, reply_to_message_id
         self.calls.append((chat_id, text))
         if self.failures_remaining:
             self.failures_remaining -= 1
