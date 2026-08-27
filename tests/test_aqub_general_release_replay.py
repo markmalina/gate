@@ -10,6 +10,10 @@ from app.infrastructure import aqub_general_release_replay as replay
 from app.models.aqub import AQUBGeneralRoute
 from pydantic import SecretStr
 
+_SOURCE_WINDOW_EPOCH = int(
+    datetime(2026, 8, 27, 7, 35, tzinfo=UTC).timestamp()
+)
+
 
 class FakeScalarResult:
     def __init__(self, values: list[object]) -> None:
@@ -76,8 +80,8 @@ def test_release_replay_digest_is_exact() -> None:
 
 def test_source_selector_uses_the_earlier_message_without_exposing_text() -> None:
     receipts = [
-        _receipt(message_id=11, occurred_at=1002, text="?"),
-        _receipt(message_id=10, occurred_at=1000, text="synthetic question"),
+        _receipt(message_id=11, occurred_at=_SOURCE_WINDOW_EPOCH + 2, text="?"),
+        _receipt(message_id=10, occurred_at=_SOURCE_WINDOW_EPOCH, text="synthetic question"),
     ]
 
     assert replay._select_source_message_id(receipts, group_chat_id="-1001") == 10
@@ -86,7 +90,7 @@ def test_source_selector_uses_the_earlier_message_without_exposing_text() -> Non
 def test_source_selector_fails_closed_on_ambiguous_gap() -> None:
     receipts = [
         _receipt(message_id=11, occurred_at=1100, text="newer"),
-        _receipt(message_id=10, occurred_at=1000, text="older"),
+        _receipt(message_id=10, occurred_at=_SOURCE_WINDOW_EPOCH, text="older"),
     ]
 
     with pytest.raises(
@@ -108,13 +112,13 @@ async def test_release_target_uses_the_only_route_in_the_source_window() -> None
                 _receipt(
                     group_chat_id=-1002,
                     message_id=21,
-                    occurred_at=1002,
+                    occurred_at=_SOURCE_WINDOW_EPOCH + 2,
                     text="?",
                 ),
                 _receipt(
                     group_chat_id=-1002,
                     message_id=20,
-                    occurred_at=1000,
+                    occurred_at=_SOURCE_WINDOW_EPOCH,
                     text="synthetic question",
                 ),
             ],
@@ -148,8 +152,12 @@ async def test_send_replay_delivers_two_messages_and_replies_only_first() -> Non
         [
             [_route()],
             [
-                _receipt(message_id=11, occurred_at=1002, text="?"),
-                _receipt(message_id=10, occurred_at=1000, text="synthetic question"),
+                _receipt(message_id=11, occurred_at=_SOURCE_WINDOW_EPOCH + 2, text="?"),
+                _receipt(
+                    message_id=10,
+                    occurred_at=_SOURCE_WINDOW_EPOCH,
+                    text="synthetic question",
+                ),
             ],
         ]
     )

@@ -176,17 +176,28 @@ async def _source_message_id(
             .where(
                 TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                 TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
-                TelegramReceipt.received_at >= _SOURCE_WINDOW_START,
-                TelegramReceipt.received_at <= _SOURCE_CUTOFF,
                 TelegramReceipt.payload.contains(
                     {"message": {"chat": {"id": raw_chat_id}}}
                 ),
             )
             .order_by(TelegramReceipt.update_id.desc())
-            .limit(16)
+            .limit(512)
         )
     ).all()
-    return _select_source_message_id(receipts, group_chat_id=group_chat_id)
+    window_start_epoch = int(_SOURCE_WINDOW_START.timestamp())
+    cutoff_epoch = int(_SOURCE_CUTOFF.timestamp())
+    windowed_receipts = [
+        receipt
+        for receipt in receipts
+        if (
+            candidate := _message_candidate(receipt, group_chat_id)
+        ) is not None
+        and window_start_epoch <= candidate[1] < cutoff_epoch
+    ]
+    return _select_source_message_id(
+        windowed_receipts,
+        group_chat_id=group_chat_id,
+    )
 
 
 async def _release_target(
