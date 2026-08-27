@@ -86,8 +86,15 @@ _CUBE0_RESULT_ERROR_CODES = {
 _CUBE0_DOWNSTREAM_KIND_ERROR_CODES = {
     "general_cancelled": "aqub_general_cube0_recovery_turn_cancelled",
     "general_denied": "aqub_general_cube0_recovery_general_denied",
+    "general_error": "aqub_general_cube0_recovery_general_error",
     "general_ignored": "aqub_general_cube0_recovery_general_ignored",
     "general_in_progress": "aqub_general_cube0_recovery_turn_in_progress",
+    "general_memory": "aqub_general_cube0_recovery_general_memory",
+    "general_reply": "aqub_general_cube0_recovery_general_reply_invalid",
+    "general_reset": "aqub_general_cube0_recovery_general_reset",
+    "general_unavailable": "aqub_general_cube0_recovery_general_unavailable",
+    "ignored": "aqub_general_cube0_recovery_legacy_ignored",
+    "unbound_ignored": "aqub_general_cube0_recovery_unbound_ignored",
 }
 _CUBE0_RUNTIME_ERROR_CODES = {
     "aqub_runtime_binding_not_found": (
