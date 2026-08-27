@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.application.aqub_live import (
     _build_signed_album_envelope_body,
     _build_signed_envelope_body,
