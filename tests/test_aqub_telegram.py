@@ -297,6 +297,7 @@ def test_duplicate_plain_text_retries_processing_without_second_fallback_reply(
         "accepted": True,
         "reason": "aqub_live_durable_only",
         "duplicate": True,
+        "runtime_error_code": "aqub_runtime_unconfigured",
     }
     assert len(store.acceptances) == 1
     assert [command.external_id for command in store.commands] == ["500", "500"]
