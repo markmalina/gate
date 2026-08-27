@@ -794,7 +794,7 @@ class RecoveringMediaQueue(MediaQueue):
 
 
 @pytest.mark.anyio
-async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
+async def test_media_is_queued_silently_until_the_single_final_reply() -> None:
     runtime = Runtime()
     queue = MediaQueue()
     incoming = photo_inbound()
@@ -807,12 +807,8 @@ async def test_media_is_queued_and_acknowledged_without_runtime_wait() -> None:
 
     assert result.accepted is True
     assert result.reason == "aqub_food_media_queued"
-    assert result.downstream == {
-        "result": {
-            "kind": "food_media_queued",
-            "reply_text": "Спасибо, файл принят. Разбираюсь с ним.",
-        }
-    }
+    assert result.downstream is None
+    assert result.captured_content is None
     assert queue.calls == [("raw-receipt-id", incoming)]
     assert runtime.raw_bodies == []
 
@@ -983,7 +979,7 @@ async def test_plain_text_preserves_direct_route_without_pending_album() -> None
 
 
 @pytest.mark.anyio
-async def test_http_runtime_default_timeout_supports_provider_budget() -> None:
+async def test_http_runtime_default_timeout_supports_sequential_food_provider_budget() -> None:
     captured: dict[str, object] = {}
 
     class RecordingClient:
@@ -1003,4 +999,4 @@ async def test_http_runtime_default_timeout_supports_provider_budget() -> None:
 
     assert result == {"ok": True}
     assert captured["url"] == "https://aqub.invalid/gate/inbound"
-    assert captured["timeout"] == 30.0
+    assert captured["timeout"] == 45.0
