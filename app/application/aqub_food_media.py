@@ -345,7 +345,12 @@ def validate_food_media_result(
         raise AQUBFoodMediaError("aqub_food_media_observations_invalid")
     normalized_observations = [_observation(item) for item in observations]
     if kind == "voice":
-        if transcript is None or ocr_text is not None or normalized_observations or receipt is not None:
+        if (
+            transcript is None
+            or ocr_text is not None
+            or normalized_observations
+            or receipt is not None
+        ):
             raise AQUBFoodMediaError("aqub_food_media_voice_payload_invalid")
         normalized_receipt = None
     elif kind == "receipt":
