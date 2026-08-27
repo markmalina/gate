@@ -11,6 +11,7 @@ from typing import cast
 
 import httpx
 import pytest
+from app.application.aqub_food_media import AQUBDownloadedMedia
 from app.application.aqub_live import (
     AQUB_ALBUM_TEXT_GRACE_SECONDS,
     AQUB_PROGRAM_PROMPT_TEXT,
@@ -19,7 +20,6 @@ from app.application.aqub_live import (
     HttpAQUBRuntimeClient,
     forward_aqub_album_result,
 )
-from app.application.aqub_food_media import AQUBDownloadedMedia
 from app.application.aqub_transport import (
     AQUBDurableAcceptance,
     AQUBPhotoReference,
