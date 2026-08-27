@@ -1,11 +1,24 @@
 # Gate Work instructions
 
+
 Canonical company policy and ownership live in
 [AlphaCenter/center](https://github.com/AlphaCenter/center). This repository
 owns Gate transport/runtime implementation; Center coordinates portfolio,
 requirements, handoffs and acceptance without gaining Gate mutation authority.
 
+
+### Production deploy route
+
+For a direct owner request to deploy Gate's current Production code, use the registered short Ops lane:
+
+`/ops-deploy production target=gate`
+
+For the paired AQUB and Gate publication, use `target=all`. The requester is centralized in `AlphaCenter/aqub/.github/workflows/ops-deploy.yml` and its control issue `#72`; Gate does not need a duplicate workflow. The route accepts only Mark's allowlisted GitHub identity and exact current `main`, invokes the pinned Ops fast-deploy action, and returns a receipt.
+
+This is the default current-main publication route. Do not replace it with a Railway login, provider plugin, the frozen Routine Release workflow, or a new Gate deployment workflow. Other infrastructure operations still follow their pinned contract and safety boundaries.
+
 On the first turn of every newly opened Gate Work:
+
 
 1. Read Center `AGENTS.md`, this repository's `WORK-PARENT.json`,
    `docs/work-bootstrap.md`, the current GitHub issue, latest receipt and
@@ -22,15 +35,19 @@ On the first turn of every newly opened Gate Work:
 6. Follow the local lease/state protocol and the stricter current owner scope.
    A current task restriction overrides an older broader standing authorization.
 
+
 ## Owner standing authorization: pre-user autonomy
+
 
 Effective 25 July 2026, the owner authorizes Gate workers to complete bounded
 technical work autonomously while Gate is provably in pre-user mode. Repeated
 confirmation is not required for repository changes, one exact-head CI, merge,
 Production deployment, runtime verification, or rollback.
 
+
 Pre-user mode exists only when the current canonical Work and fresh redacted
 evidence both prove:
+
 
 - `pre_user_mode: true` and `external_users: 0`;
 - no third-party payload or real-person data is in the execution scope;
@@ -38,11 +55,13 @@ evidence both prove:
   provider calls and outbound messages;
 - a last-known-good Production revision and rollback condition are recorded.
 
+
 Within that boundary, a worker may autonomously create or resume one execution,
 one lease, one branch and one PR; run local checks and one necessary exact-head
 CI; mark the PR ready; merge the verified exact head; deploy it to Production;
 verify the deployed fingerprint, redacted health and accepted runtime outcome;
 and roll back to the recorded revision when the acceptance condition fails.
+
 
 This standing authorization fails closed immediately when any external user,
 third-party participant, third-party payload, or unbounded external effect is
@@ -51,15 +70,19 @@ OAuth or identity actions; payments or legal actions; publication; destructive
 history or data operations; new external-user processing; and provider or
 message effects outside the exact owner-only caps recorded in the current Work.
 
+
 CI, merge, deployment status and provider dashboards never prove runtime or
 product readiness by themselves. Every autonomous Production change must end
 with an exact deployed revision and redacted acceptance or rollback receipt.
 
+
 <!-- WORK-HIERARCHY:START -->
 ## Work hierarchy
 
+
 Before any mutation, read `WORK-PARENT.json`. This Work's direct parent is
 `AlphaCenter/center`; the company root is `AlphaCenter/center`.
+
 
 The parent coordinates portfolio, requirements, handoffs and acceptance. It
 does not gain implicit permission to mutate this repository. This Work remains
