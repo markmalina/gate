@@ -73,9 +73,9 @@ AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF = (
     "0e3fb3ef-9fdf-5ca8-ae75-cf0d3cb47d82"
 )
 AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256 = (
-    "bfb41b7e64b6a2fcd8ae3e104b9442680744ce67ca364e15a78f91ea3f9bb41e"
+    "fcbc47b8f793237951eda327013614699cef4afcf0d2f1284f480dd038a80ccd"
 )
-_CUBE0_RECOVERY_EVENT_AT = datetime(2026, 8, 27, 8, 11, 42, tzinfo=UTC)
+_CUBE0_RECOVERY_EVENT_AT = datetime(2026, 8, 27, 9, 11, 42, tzinfo=UTC)
 
 
 class AQUBGeneralReleaseReplayError(ValueError):
