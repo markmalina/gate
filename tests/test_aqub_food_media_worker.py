@@ -129,25 +129,19 @@ async def _prepare(
     async def process(*_args: object, **_kwargs: object) -> dict[str, object]:
         await asyncio.sleep(processing_delay)
         return {
-            "kind": "meal",
+            "kind": "photo",
             "confidence": "high",
             "transcript": None,
-            "meal": {
-                "label": "омлет",
-                "kcal": 350,
-                "protein_g": 24,
-                "fat_g": 25,
-                "carbs_g": 6,
-                "items": [
-                    {
-                        "label": "омлет",
-                        "kcal": 350,
-                        "protein_g": 24,
-                        "fat_g": 25,
-                        "carbs_g": 6,
-                    }
-                ],
-            },
+            "ocr_text": None,
+            "observations": [
+                {
+                    "label": "омлет",
+                    "observation_type": "food",
+                    "quantity_text": None,
+                    "visible_text": None,
+                    "confidence": "high",
+                }
+            ],
             "receipt": None,
         }
 
@@ -328,29 +322,22 @@ async def test_album_worker_forwards_linked_text_and_finalizes_atomically(
         },
     }
     analysis = {
-        "schema_version": "aqub.food-media-analysis.v1",
+        "schema_version": "aqub.food-media-evidence.v1",
         "source_kind": "photo",
         "source_sha256": "a" * 64,
-        "kind": "meal",
+        "kind": "photo",
         "confidence": "medium",
         "transcript": None,
-        "meal": {
-            "label": "яблоко",
-            "kcal": 95,
-            "protein_g": 0,
-            "fat_g": 0,
-            "carbs_g": 25,
-            "quantity_source": "estimated",
-            "items": [
-                {
-                    "label": "яблоко",
-                    "kcal": 95,
-                    "protein_g": 0,
-                    "fat_g": 0,
-                    "carbs_g": 25,
-                }
-            ],
-        },
+        "ocr_text": None,
+        "observations": [
+            {
+                "label": "яблоко",
+                "observation_type": "food",
+                "quantity_text": None,
+                "visible_text": None,
+                "confidence": "medium",
+            }
+        ],
         "receipt": None,
     }
     jobs = [

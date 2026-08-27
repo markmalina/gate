@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,6 +17,8 @@ from app.application.aqub_transport import (
 JsonObject = dict[str, Any]
 MAX_AQUB_FOOD_MEDIA_BYTES = 20_000_000
 MAX_AQUB_FOOD_TRANSCRIPT_CHARS = 20_000
+MAX_AQUB_FOOD_OCR_CHARS = 8_000
+MAX_AQUB_FOOD_OBSERVATIONS = 20
 
 
 class AQUBFoodMediaError(RuntimeError):
@@ -234,17 +235,17 @@ class ProcessAQUBFoodMedia:
 
 
 def combine_album_media_results(values: Sequence[Mapping[str, Any]]) -> JsonObject:
-    """Combine ordered photo analyses without counting repeated labels twice."""
+    """Combine ordered photo evidence without deciding consumption or nutrition."""
 
     if not 1 <= len(values) <= 10:
         raise AQUBFoodMediaError("aqub_food_album_result_count_invalid")
     source_hashes: list[str] = []
-    meal_items: list[JsonObject] = []
-    seen_labels: set[str] = set()
+    observations: list[JsonObject] = []
+    seen: set[tuple[str, str, str, str]] = set()
     confidences: list[str] = []
     receipts: list[Mapping[str, Any]] = []
-    quantity_sources: list[str] = []
-    for value in values:
+    ocr_parts: list[str] = []
+    for source_index, value in enumerate(values):
         source_sha256 = value.get("source_sha256")
         if (
             not isinstance(source_sha256, str)
@@ -257,68 +258,51 @@ def combine_album_media_results(values: Sequence[Mapping[str, Any]]) -> JsonObje
         if confidence not in {"low", "medium", "high"}:
             raise AQUBFoodMediaError("aqub_food_album_confidence_invalid")
         confidences.append(str(confidence))
+        ocr_text = value.get("ocr_text")
+        if isinstance(ocr_text, str) and ocr_text.strip():
+            ocr_parts.append(ocr_text.strip())
         if value.get("kind") == "receipt" and isinstance(value.get("receipt"), Mapping):
             receipts.append(value["receipt"])
-            continue
-        if value.get("kind") != "meal" or not isinstance(value.get("meal"), Mapping):
-            continue
-        meal = value["meal"]
-        quantity_source = meal.get("quantity_source")
-        if isinstance(quantity_source, str):
-            quantity_sources.append(quantity_source)
-        raw_items = meal.get("items")
-        candidates = raw_items if isinstance(raw_items, list) and raw_items else [meal]
-        for candidate in candidates:
-            normalized = _meal_item(candidate)
-            identity = re.sub(r"[^\w]+", "", str(normalized["label"]).casefold())
-            if not identity or identity in seen_labels:
+        raw_observations = value.get("observations")
+        if not isinstance(raw_observations, list):
+            raise AQUBFoodMediaError("aqub_food_album_observations_invalid")
+        for candidate in raw_observations:
+            normalized = _observation(candidate)
+            identity = (
+                str(normalized["label"]).casefold(),
+                str(normalized["observation_type"]),
+                str(normalized["quantity_text"] or "").casefold(),
+                str(normalized["visible_text"] or "").casefold(),
+            )
+            if identity in seen:
                 continue
-            seen_labels.add(identity)
-            meal_items.append(normalized)
+            seen.add(identity)
+            normalized["source_indices"] = [source_index]
+            observations.append(normalized)
+            if len(observations) == MAX_AQUB_FOOD_OBSERVATIONS:
+                break
     aggregate_sha256 = hashlib.sha256(":".join(source_hashes).encode()).hexdigest()
     confidence = min(
         confidences,
         key=lambda value: {"low": 0, "medium": 1, "high": 2}[value],
     )
-    if meal_items:
-        result: JsonObject = {
-            "kind": "meal",
-            "confidence": confidence,
-            "transcript": None,
-            "meal": {
-                "label": ", ".join(str(item["label"]) for item in meal_items)[:300],
-                "kcal": sum(int(item["kcal"]) for item in meal_items),
-                "protein_g": sum(int(item["protein_g"]) for item in meal_items),
-                "fat_g": sum(int(item["fat_g"]) for item in meal_items),
-                "carbs_g": sum(int(item["carbs_g"]) for item in meal_items),
-                "quantity_source": (
-                    "user"
-                    if "user" in quantity_sources
-                    else "image_verified"
-                    if "image_verified" in quantity_sources
-                    else "estimated"
-                    if "estimated" in quantity_sources
-                    else "unknown"
-                ),
-                "items": meal_items,
-            },
-            "receipt": None,
-        }
-    elif receipts:
+    if receipts and not observations:
         result = {
             "kind": "receipt",
             "confidence": confidence,
             "transcript": None,
-            "meal": None,
+            "ocr_text": "\n".join(ocr_parts)[:MAX_AQUB_FOOD_OCR_CHARS] or None,
+            "observations": [],
             "receipt": dict(receipts[0]),
         }
     else:
         result = {
-            "kind": "unknown",
+            "kind": "photo" if observations else "unknown",
             "confidence": confidence,
             "transcript": None,
-            "meal": None,
-            "receipt": None,
+            "ocr_text": "\n".join(ocr_parts)[:MAX_AQUB_FOOD_OCR_CHARS] or None,
+            "observations": observations,
+            "receipt": dict(receipts[0]) if receipts else None,
         }
     return validate_food_media_result(
         result,
@@ -338,9 +322,10 @@ def validate_food_media_result(
     kind = value.get("kind")
     confidence = value.get("confidence")
     transcript = value.get("transcript")
-    meal = value.get("meal")
+    ocr_text = value.get("ocr_text")
+    observations = value.get("observations")
     receipt = value.get("receipt")
-    if kind not in {"meal", "receipt", "unknown"}:
+    if kind not in {"voice", "photo", "receipt", "unknown"}:
         raise AQUBFoodMediaError("aqub_food_media_result_kind_invalid")
     if confidence not in {"high", "medium", "low"}:
         raise AQUBFoodMediaError("aqub_food_media_confidence_invalid")
@@ -350,69 +335,69 @@ def validate_food_media_result(
         or len(transcript) > MAX_AQUB_FOOD_TRANSCRIPT_CHARS
     ):
         raise AQUBFoodMediaError("aqub_food_media_transcript_invalid")
-    if kind == "meal":
-        normalized_meal = _meal(meal)
+    if ocr_text is not None and (
+        not isinstance(ocr_text, str)
+        or not ocr_text.strip()
+        or len(ocr_text) > MAX_AQUB_FOOD_OCR_CHARS
+    ):
+        raise AQUBFoodMediaError("aqub_food_media_ocr_invalid")
+    if not isinstance(observations, list) or len(observations) > MAX_AQUB_FOOD_OBSERVATIONS:
+        raise AQUBFoodMediaError("aqub_food_media_observations_invalid")
+    normalized_observations = [_observation(item) for item in observations]
+    if kind == "voice":
+        if transcript is None or ocr_text is not None or normalized_observations or receipt is not None:
+            raise AQUBFoodMediaError("aqub_food_media_voice_payload_invalid")
         normalized_receipt = None
     elif kind == "receipt":
-        normalized_meal = None
         normalized_receipt = _receipt(receipt)
     else:
-        if meal is not None or receipt is not None:
+        if kind == "unknown" and (normalized_observations or receipt is not None):
             raise AQUBFoodMediaError("aqub_food_media_unknown_payload_invalid")
-        normalized_meal = None
-        normalized_receipt = None
+        normalized_receipt = _receipt(receipt) if receipt is not None else None
     return {
-        "schema_version": "aqub.food-media-analysis.v1",
+        "schema_version": "aqub.food-media-evidence.v1",
         "source_kind": source_kind,
         "source_sha256": source_sha256,
         "kind": kind,
         "confidence": confidence,
         "transcript": transcript.strip() if isinstance(transcript, str) else None,
-        "meal": normalized_meal,
+        "ocr_text": ocr_text.strip() if isinstance(ocr_text, str) else None,
+        "observations": normalized_observations,
         "receipt": normalized_receipt,
     }
 
 
-def _meal(value: Any) -> JsonObject:
+def _observation(value: Any) -> JsonObject:
     if not isinstance(value, Mapping):
-        raise AQUBFoodMediaError("aqub_food_media_meal_invalid")
+        raise AQUBFoodMediaError("aqub_food_media_observation_invalid")
     label = value.get("label")
     if not isinstance(label, str) or not label.strip() or len(label) > 300:
-        raise AQUBFoodMediaError("aqub_food_media_meal_label_invalid")
-    result: JsonObject = {"label": label.strip()}
-    for key in ("kcal", "protein_g", "fat_g", "carbs_g"):
-        amount = value.get(key)
-        if type(amount) is not int or not 0 <= amount <= 100_000:
-            raise AQUBFoodMediaError("aqub_food_media_meal_amount_invalid")
-        result[key] = amount
-    quantity_source = value.get("quantity_source")
-    if quantity_source is not None:
-        if quantity_source not in {"user", "image_verified", "estimated", "unknown"}:
-            raise AQUBFoodMediaError("aqub_food_media_quantity_source_invalid")
-        result["quantity_source"] = quantity_source
-    items = value.get("items")
-    if items is not None:
-        if not isinstance(items, list) or not 1 <= len(items) <= 20:
-            raise AQUBFoodMediaError("aqub_food_media_meal_items_invalid")
-        normalized_items = [_meal_item(item) for item in items]
-        result["items"] = normalized_items
-        for key in ("kcal", "protein_g", "fat_g", "carbs_g"):
-            result[key] = sum(item[key] for item in normalized_items)
-    return result
-
-
-def _meal_item(value: Any) -> JsonObject:
-    if not isinstance(value, Mapping):
-        raise AQUBFoodMediaError("aqub_food_media_meal_item_invalid")
-    label = value.get("label")
-    if not isinstance(label, str) or not label.strip() or len(label) > 300:
-        raise AQUBFoodMediaError("aqub_food_media_meal_item_label_invalid")
-    result: JsonObject = {"label": label.strip()}
-    for key in ("kcal", "protein_g", "fat_g", "carbs_g"):
-        amount = value.get(key)
-        if type(amount) is not int or not 0 <= amount <= 100_000:
-            raise AQUBFoodMediaError("aqub_food_media_meal_item_amount_invalid")
-        result[key] = amount
+        raise AQUBFoodMediaError("aqub_food_media_observation_label_invalid")
+    observation_type = value.get("observation_type")
+    if observation_type not in {"food", "container", "label", "weight", "other"}:
+        raise AQUBFoodMediaError("aqub_food_media_observation_type_invalid")
+    confidence = value.get("confidence")
+    if confidence not in {"high", "medium", "low"}:
+        raise AQUBFoodMediaError("aqub_food_media_observation_confidence_invalid")
+    result: JsonObject = {
+        "label": label.strip(),
+        "observation_type": observation_type,
+        "confidence": confidence,
+    }
+    for key in ("quantity_text", "visible_text"):
+        item = value.get(key)
+        if item is not None and (not isinstance(item, str) or len(item) > 500):
+            raise AQUBFoodMediaError("aqub_food_media_observation_text_invalid")
+        result[key] = item.strip() if isinstance(item, str) and item.strip() else None
+    source_indices = value.get("source_indices")
+    if source_indices is not None:
+        if (
+            not isinstance(source_indices, list)
+            or not 1 <= len(source_indices) <= 10
+            or any(type(item) is not int or not 0 <= item <= 9 for item in source_indices)
+        ):
+            raise AQUBFoodMediaError("aqub_food_media_observation_sources_invalid")
+        result["source_indices"] = sorted(set(source_indices))
     return result
 
 
