@@ -5,11 +5,10 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from pydantic import SecretStr
-
 from app.api import mcp_routes
 from app.infrastructure import aqub_general_release_replay as replay
 from app.models.aqub import AQUBGeneralRoute
+from pydantic import SecretStr
 
 
 class FakeScalarResult:
