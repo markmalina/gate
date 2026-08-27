@@ -241,6 +241,9 @@ async def aqub_telegram_ingress(
         live,
         chat_id=inbound.chat_id,
         general_route=binding.reply_to_source,
+        runtime_diagnostic=(
+            request.headers.get("X-AQUB-Recovery-Diagnostic") == "cube0-v1"
+        ),
     )
 
 
@@ -585,9 +588,19 @@ def _live_response(
     *,
     chat_id: str,
     general_route: bool = False,
+    runtime_diagnostic: bool = False,
 ) -> JsonObject:
     if not result.accepted:
         return _unowned_response(reason=result.reason)
+    if runtime_diagnostic and result.runtime_error_code is not None:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": result.reason,
+            "duplicate": result.duplicate,
+            "runtime_error_code": result.runtime_error_code,
+        }
     if result.duplicate and result.downstream is None:
         durable_response: JsonObject = {
             "ok": True,
