@@ -258,6 +258,49 @@ async def test_cube0_recovery_reports_sanitized_runtime_failure() -> None:
 
 
 @pytest.mark.anyio
+async def test_cube0_recovery_reports_downstream_no_reply_kind() -> None:
+    session = FakeSession(
+        [
+            [_route()],
+            [
+                _receipt(
+                    message_id=30,
+                    occurred_at=_CUBE0_RECOVERY_EVENT_EPOCH,
+                    text="synthetic recovery question",
+                )
+            ],
+        ]
+    )
+
+    async def replay_update(_update: dict[str, object]) -> dict[str, object]:
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": "aqub_live_committed",
+            "duplicate": True,
+            "runtime_downstream_kind": "general_cancelled",
+        }
+
+    with pytest.raises(
+        replay.AQUBGeneralReleaseReplayError,
+        match="aqub_general_cube0_recovery_turn_cancelled",
+    ):
+        await replay.recover_aqub_general_cube0(
+            session=session,  # type: ignore[arg-type]
+            installation_ref=(
+                replay.AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF
+            ),
+            turn_ref=replay.AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF,
+            expected_candidate_sha256=(
+                replay.AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256
+            ),
+            confirmed=True,
+            replay_update=replay_update,
+        )
+
+
+@pytest.mark.anyio
 async def test_cube0_recovery_reports_fallback_method_shape() -> None:
     session = FakeSession(
         [

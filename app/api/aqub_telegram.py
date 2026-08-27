@@ -73,6 +73,12 @@ _AUDIO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "audio"}
 _AUDIO_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
 _AUDIO_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration", "mime_type"}
 _AUDIO_OPTIONAL_FIELDS = {"file_size", "file_name"}
+_CUBE0_RECOVERY_DIAGNOSTIC_KINDS = {
+    "general_cancelled",
+    "general_denied",
+    "general_ignored",
+    "general_in_progress",
+}
 
 
 def get_aqub_transport_store(
@@ -592,15 +598,23 @@ def _live_response(
 ) -> JsonObject:
     if not result.accepted:
         return _unowned_response(reason=result.reason)
-    if runtime_diagnostic and result.runtime_error_code is not None:
-        return {
+    if runtime_diagnostic:
+        diagnostic_response: JsonObject = {
             "ok": True,
             "owned": True,
             "accepted": True,
             "reason": result.reason,
             "duplicate": result.duplicate,
-            "runtime_error_code": result.runtime_error_code,
         }
+        if result.runtime_error_code is not None:
+            diagnostic_response["runtime_error_code"] = result.runtime_error_code
+            return diagnostic_response
+        downstream = result.downstream or {}
+        domain = downstream.get("result")
+        downstream_kind = domain.get("kind") if isinstance(domain, dict) else None
+        if downstream_kind in _CUBE0_RECOVERY_DIAGNOSTIC_KINDS:
+            diagnostic_response["runtime_downstream_kind"] = downstream_kind
+            return diagnostic_response
     if result.duplicate and result.downstream is None:
         durable_response: JsonObject = {
             "ok": True,

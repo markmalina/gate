@@ -780,6 +780,37 @@ def test_internal_runtime_probe_precedes_telegram_fallback() -> None:
     assert "method" not in response
 
 
+def test_internal_runtime_probe_exposes_allowlisted_no_reply_kind() -> None:
+    response = _live_response(
+        AQUBLiveForwardResult(
+            accepted=True,
+            duplicate=True,
+            reason="aqub_live_committed",
+            downstream={
+                "result": {
+                    "kind": "general_cancelled",
+                    "reply_text": None,
+                    "suppress_reply": True,
+                }
+            },
+            captured_content=AQUBTransportContentKind.TEXT,
+        ),
+        chat_id=TEST_CHAT_ID,
+        general_route=True,
+        runtime_diagnostic=True,
+    )
+
+    assert response == {
+        "ok": True,
+        "owned": True,
+        "accepted": True,
+        "reason": "aqub_live_committed",
+        "duplicate": True,
+        "runtime_downstream_kind": "general_cancelled",
+    }
+    assert "method" not in response
+
+
 def test_downstream_reply_precedes_plain_capture_confirmation() -> None:
     response = _live_response(
         AQUBLiveForwardResult(
