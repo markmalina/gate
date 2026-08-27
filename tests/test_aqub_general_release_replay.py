@@ -13,6 +13,9 @@ from pydantic import SecretStr
 _SOURCE_WINDOW_EPOCH = int(
     datetime(2026, 8, 27, 7, 35, tzinfo=UTC).timestamp()
 )
+_CUBE0_RECOVERY_WINDOW_EPOCH = int(
+    datetime(2026, 8, 27, 8, 11, tzinfo=UTC).timestamp()
+)
 
 
 class FakeScalarResult:
@@ -131,6 +134,102 @@ async def test_release_target_uses_the_only_route_in_the_source_window() -> None
 
     assert route.group_chat_id == "-1002"
     assert source_message_id == 20
+
+
+@pytest.mark.anyio
+async def test_cube0_recovery_selects_one_active_general_event() -> None:
+    first = _route("-1001")
+    second = _route("-1002")
+    session = FakeSession(
+        [
+            [first, second],
+            [
+                _receipt(
+                    group_chat_id=-1001,
+                    message_id=30,
+                    occurred_at=_CUBE0_RECOVERY_WINDOW_EPOCH,
+                    text="synthetic recovery question",
+                )
+            ],
+            [],
+        ]
+    )
+
+    update = await replay._cube0_recovery_update(
+        session,  # type: ignore[arg-type]
+    )
+
+    assert update["message"]["message_id"] == 30
+    assert session.scalar_calls == 3
+
+
+@pytest.mark.anyio
+async def test_cube0_recovery_replays_normal_ingress_once() -> None:
+    captured: list[object] = []
+    session = FakeSession(
+        [
+            [_route()],
+            [
+                _receipt(
+                    message_id=30,
+                    occurred_at=_CUBE0_RECOVERY_WINDOW_EPOCH,
+                    text="synthetic recovery question",
+                )
+            ],
+        ]
+    )
+
+    async def replay_update(update: dict[str, object]) -> dict[str, object]:
+        captured.append(update)
+        return {
+            "ok": True,
+            "owned": True,
+            "accepted": True,
+            "reason": "aqub_live_committed",
+            "duplicate": True,
+        }
+
+    result = await replay.recover_aqub_general_cube0(
+        session=session,  # type: ignore[arg-type]
+        installation_ref=(
+            replay.AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF
+        ),
+        turn_ref=replay.AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF,
+        expected_candidate_sha256=(
+            replay.AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256
+        ),
+        confirmed=True,
+        replay_update=replay_update,
+    )
+
+    assert result["state"] == "sent"
+    assert result["replay"] is True
+    assert len(captured) == 1
+
+
+@pytest.mark.anyio
+async def test_cube0_recovery_rejects_wrong_digest_before_database_access() -> None:
+    session = FakeSession([])
+
+    async def replay_update(_update: dict[str, object]) -> dict[str, object]:
+        raise AssertionError("must not replay")
+
+    with pytest.raises(
+        replay.AQUBGeneralReleaseReplayError,
+        match="aqub_general_cube0_recovery_digest_mismatch",
+    ):
+        await replay.recover_aqub_general_cube0(
+            session=session,  # type: ignore[arg-type]
+            installation_ref=(
+                replay.AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF
+            ),
+            turn_ref=replay.AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF,
+            expected_candidate_sha256="0" * 64,
+            confirmed=True,
+            replay_update=replay_update,
+        )
+
+    assert session.scalar_calls == 0
 
 
 @pytest.mark.anyio
