@@ -170,11 +170,9 @@ async def _source_message_id(
                 TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                 TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
                 TelegramReceipt.received_at <= _SOURCE_CUTOFF,
-                TelegramReceipt.payload["message"]["chat"]["id"].astext
-                == group_chat_id,
             )
             .order_by(TelegramReceipt.update_id.desc())
-            .limit(16)
+            .limit(512)
         )
     ).all()
     return _select_source_message_id(receipts, group_chat_id=group_chat_id)
