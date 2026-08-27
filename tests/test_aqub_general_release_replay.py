@@ -13,8 +13,8 @@ from pydantic import SecretStr
 _SOURCE_WINDOW_EPOCH = int(
     datetime(2026, 8, 27, 7, 35, tzinfo=UTC).timestamp()
 )
-_CUBE0_RECOVERY_WINDOW_EPOCH = int(
-    datetime(2026, 8, 27, 8, 11, tzinfo=UTC).timestamp()
+_CUBE0_RECOVERY_EVENT_EPOCH = int(
+    datetime(2026, 8, 27, 8, 11, 42, tzinfo=UTC).timestamp()
 )
 
 
@@ -40,13 +40,17 @@ class FakeSession:
         self.rollback_calls += 1
 
 
-def _route(group_chat_id: str = "-1001") -> AQUBGeneralRoute:
+def _route(
+    group_chat_id: str = "-1001",
+    *,
+    actor_user_id: str = "200",
+) -> AQUBGeneralRoute:
     now = datetime(2026, 8, 27, 7, 0, tzinfo=UTC)
     return AQUBGeneralRoute(
         id=uuid4(),
         bot_key="telegram_aqub_preflight",
         group_chat_id=group_chat_id,
-        actor_user_id="100",
+        actor_user_id=actor_user_id,
         evidence_receipt_id=uuid4(),
         status="active",
         bound_at=now,
@@ -60,6 +64,7 @@ def _receipt(
     message_id: int,
     occurred_at: int,
     text: str,
+    actor_user_id: int = 200,
 ) -> object:
     return SimpleNamespace(
         payload={
@@ -67,7 +72,7 @@ def _receipt(
                 "message_id": message_id,
                 "date": occurred_at,
                 "chat": {"id": group_chat_id, "type": "group"},
-                "from": {"id": 200, "is_bot": False},
+                "from": {"id": actor_user_id, "is_bot": False},
                 "text": text,
             }
         }
@@ -139,7 +144,7 @@ async def test_release_target_uses_the_only_route_in_the_source_window() -> None
 @pytest.mark.anyio
 async def test_cube0_recovery_selects_one_active_general_event() -> None:
     first = _route("-1001")
-    second = _route("-1002")
+    second = _route("-1002", actor_user_id="300")
     session = FakeSession(
         [
             [first, second],
@@ -147,11 +152,19 @@ async def test_cube0_recovery_selects_one_active_general_event() -> None:
                 _receipt(
                     group_chat_id=-1001,
                     message_id=30,
-                    occurred_at=_CUBE0_RECOVERY_WINDOW_EPOCH,
+                    occurred_at=_CUBE0_RECOVERY_EVENT_EPOCH,
                     text="synthetic recovery question",
                 )
             ],
-            [],
+            [
+                _receipt(
+                    group_chat_id=-1002,
+                    message_id=31,
+                    occurred_at=_CUBE0_RECOVERY_EVENT_EPOCH,
+                    text="synthetic unrelated question",
+                    actor_user_id=200,
+                )
+            ],
         ]
     )
 
@@ -172,7 +185,7 @@ async def test_cube0_recovery_replays_normal_ingress_once() -> None:
             [
                 _receipt(
                     message_id=30,
-                    occurred_at=_CUBE0_RECOVERY_WINDOW_EPOCH,
+                    occurred_at=_CUBE0_RECOVERY_EVENT_EPOCH,
                     text="synthetic recovery question",
                 )
             ],

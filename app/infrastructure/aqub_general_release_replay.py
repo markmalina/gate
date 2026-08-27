@@ -73,10 +73,9 @@ AQUB_GENERAL_CUBE0_RECOVERY_TURN_REF = (
     "0e3fb3ef-9fdf-5ca8-ae75-cf0d3cb47d82"
 )
 AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256 = (
-    "c8a2cab958662e54bf8007921b95c31cf1ff44bc8a1d02391d83ca05c681d01a"
+    "bfb41b7e64b6a2fcd8ae3e104b9442680744ce67ca364e15a78f91ea3f9bb41e"
 )
-_CUBE0_RECOVERY_WINDOW_START = datetime(2026, 8, 27, 8, 11, tzinfo=UTC)
-_CUBE0_RECOVERY_CUTOFF = datetime(2026, 8, 27, 8, 12, tzinfo=UTC)
+_CUBE0_RECOVERY_EVENT_AT = datetime(2026, 8, 27, 8, 11, 42, tzinfo=UTC)
 
 
 class AQUBGeneralReleaseReplayError(ValueError):
@@ -103,7 +102,12 @@ def _opaque_ref(signing_key: bytes, kind: str, raw: str) -> str:
     return f"{kind}:{digest}"
 
 
-def _message_candidate(receipt: TelegramReceipt, group_chat_id: str) -> tuple[int, int] | None:
+def _message_candidate(
+    receipt: TelegramReceipt,
+    group_chat_id: str,
+    *,
+    actor_user_id: str | None = None,
+) -> tuple[int, int] | None:
     payload = receipt.payload
     if not isinstance(payload, dict):
         return None
@@ -126,6 +130,8 @@ def _message_candidate(receipt: TelegramReceipt, group_chat_id: str) -> tuple[in
         or not isinstance(text, str)
         or not text
     ):
+        return None
+    if actor_user_id is not None and str(sender.get("id")) != actor_user_id:
         return None
     return message_id, occurred_at
 
@@ -175,8 +181,7 @@ async def _cube0_recovery_update(
     session: AsyncSession,
 ) -> JsonObject:
     matches: list[JsonObject] = []
-    window_start_epoch = int(_CUBE0_RECOVERY_WINDOW_START.timestamp())
-    cutoff_epoch = int(_CUBE0_RECOVERY_CUTOFF.timestamp())
+    event_epoch = int(_CUBE0_RECOVERY_EVENT_AT.timestamp())
     for route in await _active_general_routes(session):
         try:
             raw_chat_id = int(route.group_chat_id)
@@ -200,10 +205,14 @@ async def _cube0_recovery_update(
             )
         ).all()
         for receipt in receipts:
-            candidate = _message_candidate(receipt, route.group_chat_id)
+            candidate = _message_candidate(
+                receipt,
+                route.group_chat_id,
+                actor_user_id=route.actor_user_id,
+            )
             if (
                 candidate is not None
-                and window_start_epoch <= candidate[1] < cutoff_epoch
+                and candidate[1] == event_epoch
                 and isinstance(receipt.payload, dict)
             ):
                 matches.append(dict(receipt.payload))
