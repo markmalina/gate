@@ -289,16 +289,19 @@ async def test_fast_media_job_sends_only_final_result(
 
 
 @pytest.mark.anyio
-async def test_slow_media_job_sends_one_progress_then_final(
+async def test_slow_media_job_still_sends_only_the_final_meal_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     telegram, markers = await _prepare(monkeypatch, processing_delay=0.03)
 
-    assert telegram.messages == [
-        "Нужно больше времени, продолжаю разбираться.",
-        "Записано: омлет — 350 ккал.",
-    ]
-    assert markers == ["progress", "final"]
+    assert telegram.messages == ["Записано: омлет — 350 ккал."]
+    assert markers == ["final"]
+
+
+def test_waiting_session_can_suppress_a_media_reply() -> None:
+    assert worker._reply_messages(
+        {"result": {"kind": "food_waiting_for_context", "suppress_reply": True}}
+    ) == []
 
 
 @pytest.mark.anyio
