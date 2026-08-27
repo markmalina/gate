@@ -163,6 +163,12 @@ async def _source_message_id(
     *,
     group_chat_id: str,
 ) -> int:
+    try:
+        raw_chat_id = int(group_chat_id)
+    except ValueError as exc:
+        raise AQUBGeneralReleaseReplayError(
+            "aqub_general_replay_route_invalid"
+        ) from exc
     receipts = (
         await session.scalars(
             select(TelegramReceipt)
@@ -170,9 +176,12 @@ async def _source_message_id(
                 TelegramReceipt.bot_key == AQUB_RECEIPT_BOT_KEY,
                 TelegramReceipt.status == TelegramReceiptStatus.PROCESSED.value,
                 TelegramReceipt.received_at <= _SOURCE_CUTOFF,
+                TelegramReceipt.payload.contains(
+                    {"message": {"chat": {"id": raw_chat_id}}}
+                ),
             )
             .order_by(TelegramReceipt.update_id.desc())
-            .limit(512)
+            .limit(16)
         )
     ).all()
     return _select_source_message_id(receipts, group_chat_id=group_chat_id)
