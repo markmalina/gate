@@ -79,6 +79,12 @@ from app.infrastructure.alpha_owner_test_runtime import (
     verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
+from app.infrastructure.aqub_general_release_replay import (
+    AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
+    AQUBGeneralReleaseReplayError,
+    send_aqub_general_release_replay,
+    verify_aqub_general_release_replay,
+)
 from app.infrastructure.become_controlled_intake import (
     become_controlled_intake_status,
 )
@@ -1876,6 +1882,34 @@ async def _alpha_send_review_tool_result(
                 "and confirmed=true are required"
             ),
         )
+    if raw_ref == AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF:
+        try:
+            async with httpx.AsyncClient() as http_client:
+                payload = await send_aqub_general_release_replay(
+                    session=session,
+                    settings=settings,
+                    http_client=http_client,
+                    installation_ref=raw_ref,
+                    turn_ref=raw_turn,
+                    expected_candidate_sha256=raw_digest,
+                    confirmed=True,
+                )
+        except AQUBGeneralReleaseReplayError as exc:
+            await session.rollback()
+            return _tool_error_result(
+                request_id=request_id,
+                code=exc.code,
+                message="AQUB General release replay failed closed",
+            )
+        return _tool_result(
+            payload,
+            (
+                f"AQUB General release replay: {payload['state']}; "
+                f"replay={payload['replay']}"
+            ),
+            request_id,
+        )
+
     try:
         async with httpx.AsyncClient() as http_client:
             payload = await send_owner_test_review(
@@ -1929,6 +1963,30 @@ async def _alpha_verify_review_replay_tool_result(
                 "are required"
             ),
         )
+    if raw_ref == AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF:
+        try:
+            payload = await verify_aqub_general_release_replay(
+                session=session,
+                installation_ref=raw_ref,
+                turn_ref=raw_turn,
+                expected_candidate_sha256=raw_digest,
+            )
+        except AQUBGeneralReleaseReplayError as exc:
+            await session.rollback()
+            return _tool_error_result(
+                request_id=request_id,
+                code=exc.code,
+                message="AQUB General replay verification failed closed",
+            )
+        return _tool_result(
+            payload,
+            (
+                f"AQUB General replay proof: {payload['state']}; "
+                f"replay={payload['replay']}"
+            ),
+            request_id,
+        )
+
     try:
         payload = await verify_owner_test_review_replay(
             session=session,
@@ -2283,7 +2341,9 @@ def _gate_alpha_send_review_tool(settings: Settings) -> JsonObject:
         "title": "Send one exact Alpha review",
         "description": (
             "Send one exact model proposal only after rechecking that the approved "
-            "test group still contains only the owner and bot."
+            "test group still contains only the owner and bot. The same confirmed "
+            "surface also admits the single bounded, idempotent AQUB General Cube "
+            "release replay selector."
         ),
         "inputSchema": {
             "type": "object",
