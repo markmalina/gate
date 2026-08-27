@@ -136,16 +136,20 @@ class _Analyzer:
         self.calls += 1
         return AQUBFoodMediaAnalysis(
             result_json={
-                "kind": "meal",
+                "kind": "photo",
                 "confidence": "medium",
                 "transcript": None,
-                "meal": {
-                    "label": "курица с рисом",
-                    "kcal": 620,
-                    "protein_g": 45,
-                    "fat_g": 18,
-                    "carbs_g": 70,
-                },
+                "ocr_text": None,
+                "observations": [
+                    {
+                        "label": "курица с рисом",
+                        "observation_type": "food",
+                        "quantity_text": None,
+                        "visible_text": None,
+                        "confidence": "medium",
+                        "source_indices": None,
+                    }
+                ],
                 "receipt": None,
             },
             provider_model="fixture",
@@ -202,13 +206,14 @@ async def test_processing_persists_and_surfaces_only_safe_failure_code() -> None
     assert store.failed == ["aqub_food_media_processing_failed"]
 
 
-def test_receipt_result_keeps_purchase_separate_from_meal() -> None:
+def test_receipt_result_keeps_purchase_separate_from_consumption() -> None:
     result = validate_food_media_result(
         {
             "kind": "receipt",
             "confidence": "high",
-            "transcript": "Магазин\nТворог 4.50",
-            "meal": None,
+            "transcript": None,
+            "ocr_text": "Магазин\nТворог 4.50",
+            "observations": [],
             "receipt": {
                 "merchant": "Магазин",
                 "purchased_at": "2026-08-21",
@@ -228,7 +233,7 @@ def test_receipt_result_keeps_purchase_separate_from_meal() -> None:
         source_sha256="a" * 64,
     )
     assert result["kind"] == "receipt"
-    assert result["meal"] is None
+    assert "meal" not in result
     assert result["receipt"]["items"][0]["name"] == "Творог"
 
 
@@ -236,91 +241,68 @@ def test_album_combiner_deduplicates_angles_and_keeps_distinct_products() -> Non
     values = [
         validate_food_media_result(
             {
-                "kind": "meal",
+                "kind": "photo",
                 "confidence": "medium",
                 "transcript": None,
-                "meal": {
-                    "label": label,
-                    "kcal": kcal,
-                    "protein_g": protein,
-                    "fat_g": fat,
-                    "carbs_g": carbs,
-                    "items": [
-                        {
-                            "label": label,
-                            "kcal": kcal,
-                            "protein_g": protein,
-                            "fat_g": fat,
-                            "carbs_g": carbs,
-                        }
-                    ],
-                },
+                "ocr_text": None,
+                "observations": [
+                    {
+                        "label": label,
+                        "observation_type": "food",
+                        "quantity_text": quantity,
+                        "visible_text": None,
+                        "confidence": "medium",
+                        "source_indices": None,
+                    }
+                ],
                 "receipt": None,
             },
             source_kind="photo",
             source_sha256=source,
         )
-        for label, kcal, protein, fat, carbs, source in [
-            ("курица", 250, 45, 6, 0, "a" * 64),
-            ("Курица", 250, 45, 6, 0, "b" * 64),
-            ("рис", 260, 5, 1, 57, "c" * 64),
+        for label, quantity, source in [
+            ("курица", None, "a" * 64),
+            ("Курица", None, "b" * 64),
+            ("рис", "200 г", "c" * 64),
         ]
     ]
 
     combined = combine_album_media_results(values)
 
-    assert combined["kind"] == "meal"
-    assert combined["meal"]["label"] == "курица, рис"
-    assert [item["label"] for item in combined["meal"]["items"]] == [
+    assert combined["kind"] == "photo"
+    assert [item["label"] for item in combined["observations"]] == [
         "курица",
         "рис",
     ]
-    assert combined["meal"]["kcal"] == 510
+    assert combined["observations"][0]["source_indices"] == [0]
+    assert all("kcal" not in item for item in combined["observations"])
     assert len(combined["source_sha256"]) == 64
 
 
-def test_meal_result_keeps_itemized_food_and_recomputes_exact_totals() -> None:
+def test_photo_evidence_preserves_visible_quantity_without_nutrition() -> None:
     result = validate_food_media_result(
         {
-            "kind": "meal",
+            "kind": "photo",
             "confidence": "medium",
-            "transcript": "Съел овсяные хлопья с молоком",
-            "meal": {
-                "label": "овсяные хлопья с молоком",
-                "kcal": 999,
-                "protein_g": 999,
-                "fat_g": 999,
-                "carbs_g": 999,
-                "items": [
-                    {
-                        "label": "овсяные хлопья 100 г",
-                        "kcal": 370,
-                        "protein_g": 13,
-                        "fat_g": 7,
-                        "carbs_g": 62,
-                    },
-                    {
-                        "label": "молоко 400 мл",
-                        "kcal": 240,
-                        "protein_g": 12,
-                        "fat_g": 12,
-                        "carbs_g": 20,
-                    },
-                ],
-            },
+            "transcript": None,
+            "ocr_text": "400 г",
+            "observations": [
+                {
+                    "label": "зернёный творог",
+                    "observation_type": "food",
+                    "quantity_text": "400 г",
+                    "visible_text": "400 г",
+                    "confidence": "high",
+                    "source_indices": None,
+                }
+            ],
             "receipt": None,
         },
-        source_kind="voice",
+        source_kind="photo",
         source_sha256="b" * 64,
     )
-    assert [item["label"] for item in result["meal"]["items"]] == [
-        "овсяные хлопья 100 г",
-        "молоко 400 мл",
-    ]
-    assert result["meal"]["kcal"] == 610
-    assert result["meal"]["protein_g"] == 25
-    assert result["meal"]["fat_g"] == 19
-    assert result["meal"]["carbs_g"] == 82
+    assert result["observations"][0]["quantity_text"] == "400 г"
+    assert "kcal" not in json.dumps(result)
 
 
 @pytest.mark.anyio
@@ -377,7 +359,88 @@ def test_openai_schema_omits_unsupported_string_length_keywords() -> None:
 
 
 @pytest.mark.anyio
-async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> None:
+async def test_openai_photo_request_is_evidence_only_and_has_no_tools() -> None:
+    requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        requests.append(body)
+        serialized = json.dumps(body, ensure_ascii=False)
+        assert body["store"] is False
+        assert body["tools"] == []
+        assert body["tool_choice"] == "none"
+        assert body["parallel_tool_calls"] is False
+        assert "kcal" not in serialized
+        assert "protein_g" not in serialized
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output_text": json.dumps(
+                    {
+                        "kind": "photo",
+                        "confidence": "high",
+                        "transcript": None,
+                        "ocr_text": "400 г",
+                        "observations": [
+                            {
+                                "label": "зернёный творог",
+                                "observation_type": "food",
+                                "quantity_text": "400 г",
+                                "visible_text": "400 г",
+                                "confidence": "high",
+                                "source_indices": None,
+                            }
+                        ],
+                        "receipt": None,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await OpenAIAQUBFoodMediaAnalyzer(
+            api_key="server-secret",
+            api_base_url="https://api.openai.com/v1",
+            model="gpt-5.6-luna",
+            transcription_model="gpt-4o-mini-transcribe",
+            client=client,
+            data_gate_approved=True,
+        ).analyze(
+            content_kind=AQUBTransportContentKind.PHOTO,
+            media=AQUBDownloadedMedia(
+                data=b"\xff\xd8\xffmeal",
+                media_type="image/jpeg",
+                filename="meal.jpg",
+            ),
+            caption="мой обед",
+            source_sha256="b" * 64,
+        )
+
+    assert len(requests) == 1
+    assert result.result_json["observations"][0]["quantity_text"] == "400 г"
+
+
+def test_legacy_meal_nutrition_shape_is_rejected() -> None:
+    with pytest.raises(AQUBFoodMediaError, match="result_kind_invalid"):
+        validate_food_media_result(
+            {
+                "kind": "meal",
+                "confidence": "high",
+                "transcript": None,
+                "ocr_text": None,
+                "observations": [],
+                "meal": {"label": "омлет", "kcal": 350},
+                "receipt": None,
+            },
+            source_kind="photo",
+            source_sha256="c" * 64,
+        )
+
+
+@pytest.mark.anyio
+async def test_openai_voice_path_transcribes_once_and_defers_food_decisions() -> None:
     requests: list[str] = []
 
     async def normalize_ogg(data: bytes) -> tuple[int, bytes, bytes]:
@@ -395,52 +458,7 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
                 json={"text": "Съел курицу с рисом"},
                 headers={"x-request-id": "transcription-1"},
             )
-        body = json.loads(request.content)
-        assert body["reasoning"] == {"effort": "none"}
-        assert body["store"] is False
-        assert body["tools"] == []
-        assert "список отдельно съеденных продуктов" in body["instructions"]
-        meal_schema = body["text"]["format"]["schema"]["properties"]["meal"]
-        assert "items" in meal_schema["anyOf"][1]["required"]
-        return httpx.Response(
-            200,
-            json={
-                "status": "completed",
-                "output_text": json.dumps(
-                    {
-                        "kind": "meal",
-                        "confidence": "medium",
-                        "transcript": None,
-                        "meal": {
-                            "label": "курица с рисом",
-                            "kcal": 620,
-                            "protein_g": 45,
-                            "fat_g": 18,
-                            "carbs_g": 70,
-                            "items": [
-                                {
-                                    "label": "курица",
-                                    "kcal": 300,
-                                    "protein_g": 40,
-                                    "fat_g": 10,
-                                    "carbs_g": 0,
-                                },
-                                {
-                                    "label": "рис",
-                                    "kcal": 320,
-                                    "protein_g": 5,
-                                    "fat_g": 8,
-                                    "carbs_g": 70,
-                                },
-                            ],
-                        },
-                        "receipt": None,
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-            headers={"x-request-id": "analysis-1"},
-        )
+        raise AssertionError("voice evidence must not trigger a second model call")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await OpenAIAQUBFoodMediaAnalyzer(
@@ -462,8 +480,11 @@ async def test_openai_voice_path_transcribes_then_returns_structured_meal() -> N
             source_sha256="b" * 64,
         )
     assert result.result_json["transcript"] == "Съел курицу с рисом"
-    assert result.provider_request_ref == "transcription-1;analysis-1"
-    assert requests == ["/v1/audio/transcriptions", "/v1/responses"]
+    assert result.result_json["kind"] == "voice"
+    assert result.result_json["observations"] == []
+    assert result.provider_model == "gpt-4o-mini-transcribe"
+    assert result.provider_request_ref == "transcription-1"
+    assert requests == ["/v1/audio/transcriptions"]
 
 
 @pytest.mark.anyio

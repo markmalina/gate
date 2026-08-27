@@ -141,34 +141,14 @@ async def run_aqub_food_media_once(
                 raise AQUBFoodMediaError("aqub_food_media_result_missing")
             media_result = job.result_json
         else:
-            task = asyncio.create_task(
-                _process_job(
-                    settings=settings,
-                    session_factory=session_factory,
-                    http_client=http_client,
-                    job=job,
-                    inbound=inbound,
-                    now=observed_at,
-                )
+            media_result = await _process_job(
+                settings=settings,
+                session_factory=session_factory,
+                http_client=http_client,
+                job=job,
+                inbound=inbound,
+                now=observed_at,
             )
-            done, _pending = await asyncio.wait(
-                {task},
-                timeout=_progress_timeout_seconds(
-                    received_at=job.received_at,
-                    observed_at=observed_at,
-                ),
-            )
-            if not done and not job.progress_sent:
-                await telegram.send_plain_message(
-                    chat_id=inbound.chat_id,
-                    text=_PROGRESS_TEXT,
-                )
-                async with session_factory() as session:
-                    await SqlAQUBFoodMediaStore(session).mark_progress_sent(
-                        receipt_id=str(job.receipt_id),
-                        now=datetime.now(UTC),
-                    )
-            media_result = await task
 
         runtime_url = os.getenv("GATE_AQUB_RUNTIME_URL", "").strip()
         if not runtime_url:
@@ -248,28 +228,7 @@ async def _run_album(
             )
     if tasks:
         gather = asyncio.gather(*tasks, return_exceptions=True)
-        try:
-            completed = await asyncio.wait_for(
-                asyncio.shield(gather),
-                timeout=_progress_timeout_seconds(
-                    received_at=min(job.received_at for job in jobs),
-                    observed_at=observed_at,
-                ),
-            )
-        except TimeoutError:
-            if not any(job.progress_sent for job in jobs):
-                await telegram.send_plain_message(
-                    chat_id=inbounds[0].chat_id,
-                    text=_PROGRESS_TEXT,
-                )
-                async with session_factory() as session:
-                    store = SqlAQUBFoodMediaStore(session)
-                    for job in jobs:
-                        await store.mark_progress_sent(
-                            receipt_id=str(job.receipt_id),
-                            now=datetime.now(UTC),
-                        )
-            completed = await gather
+        completed = await gather
         for order, value in zip(task_orders, completed, strict=True):
             if isinstance(value, dict):
                 results[order] = value
@@ -632,6 +591,10 @@ def _reply_messages(downstream: dict[str, Any]) -> list[str]:
     domain = downstream.get("result")
     if not isinstance(domain, dict):
         raise AQUBFoodMediaError("aqub_food_media_downstream_invalid")
+    if domain.get("suppress_reply") is True:
+        if domain.get("reply_text") is not None or domain.get("reply_messages") is not None:
+            raise AQUBFoodMediaError("aqub_food_media_downstream_invalid")
+        return []
     messages = domain.get("reply_messages")
     if isinstance(messages, list):
         if not 1 <= len(messages) <= 5 or any(
