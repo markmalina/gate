@@ -8,16 +8,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.api import mcp_routes
-from app.infrastructure.aqub_general_release_replay import (
-    AQUBGeneralReleaseReplayError,
-    AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256,
-    AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-    AQUB_GENERAL_RELEASE_REPLAY_MESSAGES,
-    AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
-    _candidate_digest,
-    _select_source_message_id,
-    send_aqub_general_release_replay,
-)
+from app.infrastructure import aqub_general_release_replay as replay
 from app.models.aqub import AQUBGeneralRoute
 
 
@@ -79,8 +70,8 @@ def _receipt(
 
 def test_release_replay_digest_is_exact() -> None:
     assert (
-        _candidate_digest(AQUB_GENERAL_RELEASE_REPLAY_MESSAGES)
-        == AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256
+        replay._candidate_digest(replay.AQUB_GENERAL_RELEASE_REPLAY_MESSAGES)
+        == replay.AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256
     )
 
 
@@ -90,7 +81,7 @@ def test_source_selector_uses_the_earlier_message_without_exposing_text() -> Non
         _receipt(message_id=10, occurred_at=1000, text="synthetic question"),
     ]
 
-    assert _select_source_message_id(receipts, group_chat_id="-1001") == 10
+    assert replay._select_source_message_id(receipts, group_chat_id="-1001") == 10
 
 
 def test_source_selector_fails_closed_on_ambiguous_gap() -> None:
@@ -100,10 +91,10 @@ def test_source_selector_fails_closed_on_ambiguous_gap() -> None:
     ]
 
     with pytest.raises(
-        AQUBGeneralReleaseReplayError,
+        replay.AQUBGeneralReleaseReplayError,
         match="aqub_general_replay_source_ambiguous",
     ):
-        _select_source_message_id(receipts, group_chat_id="-1001")
+        replay._select_source_message_id(receipts, group_chat_id="-1001")
 
 
 @pytest.mark.anyio
@@ -135,13 +126,13 @@ async def test_send_replay_delivers_two_messages_and_replies_only_first() -> Non
         gate_aqub_receipt_signing_key=SecretStr("s" * 32),
     )
 
-    result = await send_aqub_general_release_replay(
+    result = await replay.send_aqub_general_release_replay(
         session=session,  # type: ignore[arg-type]
         settings=settings,  # type: ignore[arg-type]
         http_client=SimpleNamespace(),  # type: ignore[arg-type]
-        installation_ref=AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-        turn_ref=AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
-        expected_candidate_sha256=AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256,
+        installation_ref=replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
+        turn_ref=replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
+        expected_candidate_sha256=replay.AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256,
         confirmed=True,
         delivery_service_factory=FakeDeliveryService,  # type: ignore[arg-type]
     )
@@ -149,9 +140,9 @@ async def test_send_replay_delivers_two_messages_and_replies_only_first() -> Non
     assert result["state"] == "sent"
     assert result["replay"] is False
     assert len(commands) == 2
-    assert commands[0].text == AQUB_GENERAL_RELEASE_REPLAY_MESSAGES[0]
+    assert commands[0].text == replay.AQUB_GENERAL_RELEASE_REPLAY_MESSAGES[0]
     assert commands[0].reply_to_message_id == 10
-    assert commands[1].text == AQUB_GENERAL_RELEASE_REPLAY_MESSAGES[1]
+    assert commands[1].text == replay.AQUB_GENERAL_RELEASE_REPLAY_MESSAGES[1]
     assert commands[1].reply_to_message_id is None
 
 
@@ -164,15 +155,15 @@ async def test_send_replay_rejects_wrong_digest_before_database_access() -> None
     )
 
     with pytest.raises(
-        AQUBGeneralReleaseReplayError,
+        replay.AQUBGeneralReleaseReplayError,
         match="aqub_general_replay_digest_mismatch",
     ):
-        await send_aqub_general_release_replay(
+        await replay.send_aqub_general_release_replay(
             session=session,  # type: ignore[arg-type]
             settings=settings,  # type: ignore[arg-type]
             http_client=SimpleNamespace(),  # type: ignore[arg-type]
-            installation_ref=AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-            turn_ref=AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
+            installation_ref=replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
+            turn_ref=replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
             expected_candidate_sha256="0" * 64,
             confirmed=True,
         )
@@ -185,8 +176,8 @@ async def test_mcp_send_review_routes_the_exact_aqub_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = {
-        "installation_ref": AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-        "turn_ref": AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
+        "installation_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
+        "turn_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
         "state": "sent",
         "replay": False,
         "provider_message_id_exposed": False,
@@ -199,7 +190,7 @@ async def test_mcp_send_review_routes_the_exact_aqub_selector(
 
     monkeypatch.setattr(
         mcp_routes,
-        "send_aqub_general_release_replay",
+        "replay.send_aqub_general_release_replay",
         fake_send,
     )
     session = FakeSession([])
@@ -207,10 +198,10 @@ async def test_mcp_send_review_routes_the_exact_aqub_selector(
     result = await mcp_routes._alpha_send_review_tool_result(
         request_id="replay",
         arguments={
-            "installation_ref": AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-            "turn_ref": AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
+            "installation_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
+            "turn_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
             "expected_candidate_sha256": (
-                AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256
+                replay.AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256
             ),
             "confirmed": True,
         },
