@@ -788,7 +788,7 @@ def test_internal_runtime_probe_exposes_allowlisted_no_reply_kind() -> None:
             reason="aqub_live_committed",
             downstream={
                 "result": {
-                    "kind": "general_cancelled",
+                    "kind": "ignored",
                     "reply_text": None,
                     "suppress_reply": True,
                 }
@@ -806,7 +806,7 @@ def test_internal_runtime_probe_exposes_allowlisted_no_reply_kind() -> None:
         "accepted": True,
         "reason": "aqub_live_committed",
         "duplicate": True,
-        "runtime_downstream_kind": "general_cancelled",
+        "runtime_downstream_kind": "ignored",
     }
     assert "method" not in response
 
