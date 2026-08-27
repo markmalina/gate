@@ -76,6 +76,13 @@ AQUB_GENERAL_CUBE0_RECOVERY_SELECTOR_SHA256 = (
     "306f378597780d5426605ea3ce0b48ab4a93a513e3b66d366508edd7d0779979"
 )
 _CUBE0_RECOVERY_EVENT_AT = datetime(2026, 8, 27, 9, 11, 42, tzinfo=UTC)
+_CUBE0_RESULT_ERROR_CODES = {
+    "aqub_route_not_owned": "aqub_general_cube0_recovery_route_not_owned",
+    "aqub_event_before_ready": "aqub_general_cube0_recovery_event_before_ready",
+    "aqub_live_durable_only": (
+        "aqub_general_cube0_recovery_runtime_diagnostic_missing"
+    ),
+}
 _CUBE0_RUNTIME_ERROR_CODES = {
     "aqub_runtime_binding_not_found": (
         "aqub_general_cube0_recovery_binding_not_found"
@@ -295,6 +302,11 @@ async def recover_aqub_general_cube0(
             if isinstance(runtime_error_code, str)
             else None
         )
+        reason = result.get("reason")
+        if diagnostic_code is None and isinstance(reason, str):
+            diagnostic_code = _CUBE0_RESULT_ERROR_CODES.get(reason)
+        if diagnostic_code is None and "method" in result:
+            diagnostic_code = "aqub_general_cube0_recovery_fallback_method"
         raise AQUBGeneralReleaseReplayError(
             diagnostic_code
             or "aqub_general_cube0_recovery_downstream_unavailable"
