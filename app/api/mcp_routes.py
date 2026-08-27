@@ -219,8 +219,8 @@ MCP_TOOL_SCOPES = {
 
 @router.post("/mcp")
 async def mcp_endpoint(
-    request: Request,
     payload: JsonObject,
+    request: Request = None,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
