@@ -189,7 +189,7 @@ async def test_mcp_send_review_routes_the_exact_aqub_selector(
 
     monkeypatch.setattr(
         mcp_routes,
-        "replay.send_aqub_general_release_replay",
+        "send_aqub_general_release_replay",
         fake_send,
     )
     session = FakeSession([])
