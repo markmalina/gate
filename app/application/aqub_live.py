@@ -300,7 +300,7 @@ class AQUBLiveIngressAdapter:
                 captured_content = inbound.content_kind
         try:
             if self._runtime is None:
-                raise AQUBRuntimeUnavailable("aqub_runtime_unavailable")
+                raise AQUBRuntimeUnavailable("aqub_runtime_unconfigured")
             downstream = await self._runtime.post_envelope(
                 raw_body=raw_body,
                 signature=signature,
@@ -314,9 +314,7 @@ class AQUBLiveIngressAdapter:
                 reason="aqub_live_durable_only",
                 captured_content=captured_content,
                 delivery_ref=delivery_ref,
-                runtime_error_code=(
-                    None if exc.code == "aqub_runtime_unavailable" else exc.code
-                ),
+                runtime_error_code=exc.code,
             )
         return AQUBLiveForwardResult(
             accepted=True,
