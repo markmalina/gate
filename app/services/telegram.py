@@ -67,6 +67,7 @@ class TelegramClient:
         business_connection_id: str | None = None,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
+        reply_to_message_id: int | None = None,
     ) -> dict[str, Any]:
         """Send a Telegram text message and return the Telegram API response."""
 
@@ -79,6 +80,10 @@ class TelegramClient:
         }
         if business_connection_id is not None:
             payload["business_connection_id"] = business_connection_id
+        if reply_to_message_id is not None:
+            if type(reply_to_message_id) is not int or reply_to_message_id < 1:
+                raise ValueError("Telegram reply message id is invalid")
+            payload["reply_parameters"] = {"message_id": reply_to_message_id}
         if parse_mode is not None:
             payload["parse_mode"] = parse_mode
         elif _looks_like_html_message(text):
@@ -99,6 +104,7 @@ class TelegramClient:
         chat_id: str,
         text: str,
         business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
     ) -> dict[str, Any]:
         """Send literal text without parse mode or Telegram reply markup."""
 
@@ -111,6 +117,10 @@ class TelegramClient:
         }
         if business_connection_id is not None:
             payload["business_connection_id"] = business_connection_id
+        if reply_to_message_id is not None:
+            if type(reply_to_message_id) is not int or reply_to_message_id < 1:
+                raise ValueError("Telegram reply message id is invalid")
+            payload["reply_parameters"] = {"message_id": reply_to_message_id}
 
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)

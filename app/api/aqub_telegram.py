@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
@@ -704,6 +705,7 @@ async def _deliver_live_messages(
                 "step_ref": _live_opaque_ref(signing_key, "reply", str(index)),
                 "text": text_value,
                 "force_reply": force_reply,
+                "reply_to_message_id": live.reply_to_message_id,
             }
             command = ParsedAQUBDelivery(
                 command_id=uuid5(NAMESPACE_URL, idempotency_key),
@@ -721,6 +723,7 @@ async def _deliver_live_messages(
                     ).encode()
                 ).hexdigest(),
                 force_reply=force_reply,
+                reply_to_message_id=live.reply_to_message_id,
             )
             try:
                 result = await service.deliver(command)
@@ -745,8 +748,20 @@ def _domain_reply_messages(domain: JsonObject) -> list[str] | None:
             raise HTTPException(status_code=502, detail="AQUB reply messages are invalid")
         return [cast(str, value).strip() for value in messages]
     reply_text = domain.get("reply_text")
-    if isinstance(reply_text, str) and reply_text.strip() and len(reply_text.strip()) <= 4_096:
-        return [reply_text.strip()]
+    if isinstance(reply_text, str) and reply_text.strip():
+        normalized = reply_text.strip()
+        semantic_messages = [
+            value.strip()
+            for value in re.split(r"\n\s*\n", normalized)
+            if value.strip()
+        ]
+        if (
+            2 <= len(semantic_messages) <= 5
+            and all(len(value) <= 4_096 for value in semantic_messages)
+        ):
+            return semantic_messages
+        if len(normalized) <= 4_096:
+            return [normalized]
     return None
 
 

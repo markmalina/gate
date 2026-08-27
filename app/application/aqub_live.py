@@ -63,6 +63,7 @@ class AQUBLiveForwardResult:
     downstream: JsonObject | None = None
     captured_content: AQUBTransportContentKind | None = None
     delivery_ref: str | None = None
+    reply_to_message_id: int | None = None
 
 
 class AQUBRuntimeUnavailable(RuntimeError):
@@ -290,6 +291,9 @@ class AQUBLiveIngressAdapter:
             downstream=downstream,
             captured_content=captured_content,
             delivery_ref=delivery_ref,
+            reply_to_message_id=(
+                _source_message_id(inbound) if self._binding.reply_to_source else None
+            ),
         )
 
 
@@ -370,6 +374,14 @@ async def forward_aqub_album_result(
     )
     signature = hmac.new(binding.receipt_signing_key, raw_body, hashlib.sha256).hexdigest()
     return await runtime.post_envelope(raw_body=raw_body, signature=signature)
+
+
+def _source_message_id(inbound: AQUBTransportInbound) -> int | None:
+    message = inbound.payload.get("message")
+    if not isinstance(message, Mapping):
+        return None
+    value = message.get("message_id")
+    return value if type(value) is int and 1 <= value <= (1 << 52) - 1 else None
 
 
 def _plain_capture_text(text: str) -> bool:

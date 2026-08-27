@@ -223,6 +223,7 @@ async def load_active_aqub_general_binding(
         alpha_user_id=route.actor_user_id,
         ready_at=route.activated_at,
         receipt_signing_key=aqub_receipt_signing_key(settings),
+        reply_to_source=True,
     )
 
 
@@ -248,7 +249,9 @@ async def select_aqub_inbound_binding(
         # observe media from an active General group, regardless of actor.
         return replace(general, enabled=False)
     if general is not None and general.alpha_user_id != actor_id:
-        # Preserve the matched General binding so the existing live admission
-        # denies this actor instead of falling through to Food owner semantics.
-        return general
+        # An active General Cube is scoped by its exact group. Project the
+        # current non-bot group participant as the alpha role for this request;
+        # the stored actor remains immutable activation evidence, not a
+        # conversation allowlist.
+        return replace(general, alpha_user_id=actor_id)
     return general if general is not None else food_binding

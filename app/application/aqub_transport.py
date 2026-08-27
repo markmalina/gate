@@ -62,6 +62,7 @@ class AQUBTransportBinding:
     alpha_user_id: str = field(default="", repr=False)
     ready_at: datetime | None = None
     receipt_signing_key: bytes = field(default=b"", repr=False)
+    reply_to_source: bool = False
 
     def __post_init__(self) -> None:
         if not self.enabled:

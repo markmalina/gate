@@ -83,6 +83,35 @@ async def test_send_plain_message_preserves_exact_literal_payload(text: str) -> 
 
 
 @pytest.mark.anyio
+async def test_send_plain_message_quotes_exact_source_message() -> None:
+    payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            request=request,
+            json={"ok": True, "result": {"message_id": 124}},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = TelegramClient("secret-token", http_client=http_client)
+        await client.send_plain_message(
+            chat_id="123",
+            text="quoted answer",
+            reply_to_message_id=501,
+        )
+
+    assert payloads == [
+        {
+            "chat_id": "123",
+            "text": "quoted answer",
+            "reply_parameters": {"message_id": 501},
+        }
+    ]
+
+
+@pytest.mark.anyio
 async def test_telegram_client_reuses_injected_transport_without_owning_it() -> None:
     requests: list[httpx.Request] = []
 

@@ -42,6 +42,7 @@ class ParsedAQUBDelivery:
     text: str
     request_sha256: str
     force_reply: bool = False
+    reply_to_message_id: int | None = None
 
 
 def verify_aqub_signature(*, raw_body: bytes, signature: str, signing_key: bytes) -> None:
@@ -81,6 +82,7 @@ def parse_aqub_delivery(
     step_ref = value.get("step_ref")
     text_value = value.get("text")
     force_reply = value.get("force_reply", False)
+    reply_to_message_id = value.get("reply_to_message_id")
     if not isinstance(idempotency_key, str) or not (1 <= len(idempotency_key) <= 255):
         raise AQUBLiveDeliveryError("aqub_delivery_bad_idempotency_key")
     if not isinstance(chat_ref, str) or not chat_ref:
@@ -98,6 +100,12 @@ def parse_aqub_delivery(
         raise AQUBLiveDeliveryError("aqub_delivery_bad_text")
     if type(force_reply) is not bool:
         raise AQUBLiveDeliveryError("aqub_delivery_bad_force_reply")
+    if reply_to_message_id is not None and (
+        type(reply_to_message_id) is not int
+        or reply_to_message_id < 1
+        or reply_to_message_id > (1 << 52) - 1
+    ):
+        raise AQUBLiveDeliveryError("aqub_delivery_bad_reply_to_message_id")
     return ParsedAQUBDelivery(
         command_id=command_id,
         idempotency_key=idempotency_key,
@@ -107,6 +115,7 @@ def parse_aqub_delivery(
         text=text_value,
         request_sha256=hashlib.sha256(raw_body).hexdigest(),
         force_reply=force_reply,
+        reply_to_message_id=reply_to_message_id,
     )
 
 
@@ -230,11 +239,13 @@ class AQUBLiveDeliveryService:
                     chat_id=self._raw_chat_id,
                     text=command.text,
                     reply_markup={"force_reply": True, "selective": True},
+                    reply_to_message_id=command.reply_to_message_id,
                 )
             else:
                 response = await self._telegram.send_plain_message(
                     chat_id=self._raw_chat_id,
                     text=command.text,
+                    reply_to_message_id=command.reply_to_message_id,
                 )
             message_id = _telegram_message_id(response)
         except TelegramApiError as exc:
