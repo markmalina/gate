@@ -279,12 +279,12 @@ async def test_cube0_recovery_reports_downstream_no_reply_kind() -> None:
             "accepted": True,
             "reason": "aqub_live_committed",
             "duplicate": True,
-            "runtime_downstream_kind": "general_cancelled",
+            "runtime_downstream_kind": "ignored",
         }
 
     with pytest.raises(
         replay.AQUBGeneralReleaseReplayError,
-        match="aqub_general_cube0_recovery_turn_cancelled",
+        match="aqub_general_cube0_recovery_legacy_ignored",
     ):
         await replay.recover_aqub_general_cube0(
             session=session,  # type: ignore[arg-type]

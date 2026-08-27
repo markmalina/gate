@@ -76,8 +76,15 @@ _AUDIO_OPTIONAL_FIELDS = {"file_size", "file_name"}
 _CUBE0_RECOVERY_DIAGNOSTIC_KINDS = {
     "general_cancelled",
     "general_denied",
+    "general_error",
     "general_ignored",
     "general_in_progress",
+    "general_memory",
+    "general_reply",
+    "general_reset",
+    "general_unavailable",
+    "ignored",
+    "unbound_ignored",
 }
 
 
