@@ -83,6 +83,12 @@ _CUBE0_RESULT_ERROR_CODES = {
         "aqub_general_cube0_recovery_runtime_diagnostic_missing"
     ),
 }
+_CUBE0_DOWNSTREAM_KIND_ERROR_CODES = {
+    "general_cancelled": "aqub_general_cube0_recovery_turn_cancelled",
+    "general_denied": "aqub_general_cube0_recovery_general_denied",
+    "general_ignored": "aqub_general_cube0_recovery_general_ignored",
+    "general_in_progress": "aqub_general_cube0_recovery_turn_in_progress",
+}
 _CUBE0_RUNTIME_ERROR_CODES = {
     "aqub_runtime_binding_not_found": (
         "aqub_general_cube0_recovery_binding_not_found"
@@ -295,6 +301,7 @@ async def recover_aqub_general_cube0(
         or result.get("accepted") is not True
         or result.get("reason") != "aqub_live_committed"
         or "method" in result
+        or "runtime_downstream_kind" in result
     ):
         runtime_error_code = result.get("runtime_error_code")
         diagnostic_code = (
@@ -305,6 +312,11 @@ async def recover_aqub_general_cube0(
         reason = result.get("reason")
         if diagnostic_code is None and isinstance(reason, str):
             diagnostic_code = _CUBE0_RESULT_ERROR_CODES.get(reason)
+        downstream_kind = result.get("runtime_downstream_kind")
+        if diagnostic_code is None and isinstance(downstream_kind, str):
+            diagnostic_code = _CUBE0_DOWNSTREAM_KIND_ERROR_CODES.get(
+                downstream_kind
+            )
         if diagnostic_code is None and "method" in result:
             diagnostic_code = "aqub_general_cube0_recovery_fallback_method"
         raise AQUBGeneralReleaseReplayError(
