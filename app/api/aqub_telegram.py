@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import json
 import os
-import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
@@ -28,6 +27,7 @@ from app.application.aqub_transport import (
     AQUB_PING_COMMAND,
     AQUB_TELEGRAM_WEBHOOK_PATH,
     AQUBDiagnosticPingAdapter,
+    AQUBDocumentReference,
     AQUBPhotoReference,
     AQUBTransportBinding,
     AQUBTransportContentKind,
@@ -37,8 +37,10 @@ from app.application.aqub_transport import (
     AQUBVoiceReference,
 )
 from app.core.config import Settings, get_settings
-from app.infrastructure.aqub_food_media import SqlAQUBFoodMediaStore
-from app.infrastructure.aqub_food_route import select_aqub_food_inbound_binding
+from app.infrastructure.aqub_food_media import (
+    SqlAQUBFoodMediaStore,
+    TelegramAQUBGeneralMediaDownloader,
+)
 from app.infrastructure.aqub_general_route import select_aqub_inbound_binding
 from app.infrastructure.aqub_installation import (
     SqlAQUBTransportReceiptStore,
@@ -73,19 +75,10 @@ _AUDIO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "audio"}
 _AUDIO_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
 _AUDIO_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration", "mime_type"}
 _AUDIO_OPTIONAL_FIELDS = {"file_size", "file_name"}
-_CUBE0_RECOVERY_DIAGNOSTIC_KINDS = {
-    "general_cancelled",
-    "general_denied",
-    "general_error",
-    "general_ignored",
-    "general_in_progress",
-    "general_memory",
-    "general_reply",
-    "general_reset",
-    "general_unavailable",
-    "ignored",
-    "unbound_ignored",
-}
+_DOCUMENT_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "document"}
+_DOCUMENT_MESSAGE_OPTIONAL_FIELDS = {"caption"}
+_DOCUMENT_REQUIRED_FIELDS = {"file_id", "file_unique_id", "file_name", "mime_type"}
+_DOCUMENT_OPTIONAL_FIELDS = {"file_size"}
 
 
 def get_aqub_transport_store(
@@ -188,16 +181,10 @@ async def aqub_telegram_ingress(
         database_runtime = None
     if database_runtime is not None:
         async with database_runtime.session_factory() as route_session:
-            food_binding = await select_aqub_food_inbound_binding(
-                route_session,
-                settings,
-                fallback_binding=binding,
-                chat_id=inbound.chat_id,
-            )
             binding = await select_aqub_inbound_binding(
                 route_session,
                 settings,
-                food_binding=food_binding,
+                food_binding=binding,
                 chat_id=inbound.chat_id,
                 actor_id=inbound.actor_id,
                 content_kind=inbound.content_kind,
@@ -224,12 +211,22 @@ async def aqub_telegram_ingress(
         if runtime_url
         else None
     )
+    media_downloader = (
+        TelegramAQUBGeneralMediaDownloader(
+            bot_token=settings.telegram_aqub_bot_token.get_secret_value(),
+            client=_process_http_client(request),
+        )
+        if binding.reply_to_source
+        and inbound.content_kind is not AQUBTransportContentKind.TEXT
+        else None
+    )
     try:
         live = await AQUBLiveIngressAdapter(
             binding=binding,
             store=store,
             runtime=runtime,
             media_queue=media_queue,
+            media_downloader=media_downloader,
         ).handle(inbound)
     except RuntimeError as exc:
         raise HTTPException(
@@ -250,14 +247,7 @@ async def aqub_telegram_ingress(
             "reason": live.reason,
             "duplicate": live.duplicate,
         }
-    return _live_response(
-        live,
-        chat_id=inbound.chat_id,
-        general_route=binding.reply_to_source,
-        runtime_diagnostic=(
-            request.headers.get("X-AQUB-Recovery-Diagnostic") == "cube0-v1"
-        ),
-    )
+    return _live_response(live, chat_id=inbound.chat_id)
 
 
 @router.post(AQUB_GATE_DELIVERY_PATH)
@@ -362,9 +352,11 @@ def _project_inbound(
     text = message.get("text")
     photo: AQUBPhotoReference | None = None
     voice: AQUBVoiceReference | None = None
+    document: AQUBDocumentReference | None = None
     if "text" in message:
         if not isinstance(text, str) or any(
-            media_kind in message for media_kind in ("photo", "voice", "audio")
+            media_kind in message
+            for media_kind in ("photo", "voice", "audio", "document")
         ):
             return None
         content_kind = AQUBTransportContentKind.TEXT
@@ -387,6 +379,12 @@ def _project_inbound(
             return None
         content_kind = AQUBTransportContentKind.VOICE
         command = None
+    elif "document" in message:
+        document = _project_document(message)
+        if document is None:
+            return None
+        content_kind = AQUBTransportContentKind.DOCUMENT
+        command = None
     else:
         return None
     try:
@@ -405,6 +403,7 @@ def _project_inbound(
         content_kind=content_kind,
         photo=photo,
         voice=voice,
+        document=document,
         media_group_id=(
             cast(str, message.get("media_group_id"))
             if content_kind is AQUBTransportContentKind.PHOTO
@@ -476,6 +475,48 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         references,
         key=lambda item: (item.width * item.height, item.file_size or 0),
     )
+
+
+def _project_document(message: JsonObject) -> AQUBDocumentReference | None:
+    message_fields = set(message)
+    if not _DOCUMENT_MESSAGE_REQUIRED_FIELDS.issubset(
+        message_fields
+    ) or not message_fields.issubset(
+        _DOCUMENT_MESSAGE_REQUIRED_FIELDS | _DOCUMENT_MESSAGE_OPTIONAL_FIELDS
+    ):
+        return None
+    caption = message.get("caption")
+    if "caption" in message and (
+        not isinstance(caption, str) or len(caption) > _PHOTO_CAPTION_MAX_CHARS
+    ):
+        return None
+    value = message.get("document")
+    if not isinstance(value, dict):
+        return None
+    fields = set(value)
+    if not _DOCUMENT_REQUIRED_FIELDS.issubset(fields) or not fields.issubset(
+        _DOCUMENT_REQUIRED_FIELDS | _DOCUMENT_OPTIONAL_FIELDS
+    ):
+        return None
+    file_size = value.get("file_size")
+    if (
+        not isinstance(value.get("file_id"), str)
+        or not isinstance(value.get("file_unique_id"), str)
+        or not isinstance(value.get("file_name"), str)
+        or not isinstance(value.get("mime_type"), str)
+        or ("file_size" in value and type(file_size) is not int)
+    ):
+        return None
+    try:
+        return AQUBDocumentReference(
+            file_id=value["file_id"],
+            file_unique_id=value["file_unique_id"],
+            file_name=value["file_name"],
+            mime_type=value["mime_type"],
+            file_size=file_size,
+        )
+    except ValueError:
+        return None
 
 
 def _project_audio(message: JsonObject) -> AQUBVoiceReference | None:
@@ -596,43 +637,17 @@ def _diagnostic_response(result: AQUBTransportResult, *, chat_id: str) -> JsonOb
     }
 
 
-def _live_response(
-    result: AQUBLiveForwardResult,
-    *,
-    chat_id: str,
-    general_route: bool = False,
-    runtime_diagnostic: bool = False,
-) -> JsonObject:
+def _live_response(result: AQUBLiveForwardResult, *, chat_id: str) -> JsonObject:
     if not result.accepted:
         return _unowned_response(reason=result.reason)
-    if runtime_diagnostic:
-        diagnostic_response: JsonObject = {
-            "ok": True,
-            "owned": True,
-            "accepted": True,
-            "reason": result.reason,
-            "duplicate": result.duplicate,
-        }
-        if result.runtime_error_code is not None:
-            diagnostic_response["runtime_error_code"] = result.runtime_error_code
-            return diagnostic_response
-        downstream = result.downstream or {}
-        domain = downstream.get("result")
-        downstream_kind = domain.get("kind") if isinstance(domain, dict) else None
-        if downstream_kind in _CUBE0_RECOVERY_DIAGNOSTIC_KINDS:
-            diagnostic_response["runtime_downstream_kind"] = downstream_kind
-            return diagnostic_response
     if result.duplicate and result.downstream is None:
-        durable_response: JsonObject = {
+        return {
             "ok": True,
             "owned": True,
             "accepted": True,
             "reason": result.reason,
             "duplicate": True,
         }
-        if result.runtime_error_code is not None:
-            durable_response["runtime_error_code"] = result.runtime_error_code
-        return durable_response
     downstream = result.downstream or {}
     domain = downstream.get("result")
     if isinstance(domain, dict) and domain.get("suppress_reply") is True:
@@ -664,12 +679,7 @@ def _live_response(
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": (
-                "Сейчас не смог ответить. Попробуйте ещё раз."
-                if general_route
-                else (
-                    "Сообщение сохранил, но сейчас не смог разобрать питание. "
-                    "Попробуйте ещё раз."
-                )
+                "Сообщение сохранил, но сейчас не смог разобрать питание. Попробуйте ещё раз."
             ),
         }
     if result.captured_content is AQUBTransportContentKind.VOICE:
@@ -677,6 +687,12 @@ def _live_response(
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": "Голосовое принято.",
+        }
+    if result.captured_content is AQUBTransportContentKind.DOCUMENT:
+        return {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": "Файл принят.",
         }
     return {
         "ok": True,
@@ -756,7 +772,6 @@ async def _deliver_live_messages(
                 "step_ref": _live_opaque_ref(signing_key, "reply", str(index)),
                 "text": text_value,
                 "force_reply": force_reply,
-                "reply_to_message_id": live.reply_to_message_id,
             }
             command = ParsedAQUBDelivery(
                 command_id=uuid5(NAMESPACE_URL, idempotency_key),
@@ -774,7 +789,6 @@ async def _deliver_live_messages(
                     ).encode()
                 ).hexdigest(),
                 force_reply=force_reply,
-                reply_to_message_id=live.reply_to_message_id,
             )
             try:
                 result = await service.deliver(command)
@@ -799,20 +813,8 @@ def _domain_reply_messages(domain: JsonObject) -> list[str] | None:
             raise HTTPException(status_code=502, detail="AQUB reply messages are invalid")
         return [cast(str, value).strip() for value in messages]
     reply_text = domain.get("reply_text")
-    if isinstance(reply_text, str) and reply_text.strip():
-        normalized = reply_text.strip()
-        semantic_messages = [
-            value.strip()
-            for value in re.split(r"\n\s*\n", normalized)
-            if value.strip()
-        ]
-        if (
-            2 <= len(semantic_messages) <= 5
-            and all(len(value) <= 4_096 for value in semantic_messages)
-        ):
-            return semantic_messages
-        if len(normalized) <= 4_096:
-            return [normalized]
+    if isinstance(reply_text, str) and reply_text.strip() and len(reply_text.strip()) <= 4_096:
+        return [reply_text.strip()]
     return None
 
 
