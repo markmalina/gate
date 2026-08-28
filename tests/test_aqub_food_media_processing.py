@@ -381,7 +381,7 @@ async def test_telegram_downloader_uses_one_metadata_and_one_bounded_file_call()
         (
             "canary.docx",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            b"PK\\x03\\x04fixture",
+            b"PK\x03\x04fixture",
         ),
     ],
 )
