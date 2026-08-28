@@ -17,6 +17,7 @@ from app.application.aqub_food_media import (
     validate_food_media_result,
 )
 from app.application.aqub_transport import (
+    AQUBDocumentReference,
     AQUBPhotoReference,
     AQUBTransportContentKind,
     AQUBTransportInbound,
@@ -87,6 +88,43 @@ def _inbound(kind: AQUBTransportContentKind) -> AQUBTransportInbound:
         voice=voice,
     )
 
+
+
+def _document_inbound(
+    *, filename: str, mime_type: str, file_size: int
+) -> AQUBTransportInbound:
+    document = AQUBDocumentReference(
+        file_id="document-provider-id",
+        file_unique_id="document-stable-id",
+        file_name=filename,
+        mime_type=mime_type,
+        file_size=file_size,
+    )
+    message: dict[str, Any] = {
+        "message_id": 8,
+        "from": {"id": 1, "is_bot": False},
+        "date": 1_787_300_000,
+        "chat": {"id": -10, "type": "supergroup"},
+        "document": {
+            "file_id": document.file_id,
+            "file_unique_id": document.file_unique_id,
+            "file_name": document.file_name,
+            "mime_type": document.mime_type,
+            "file_size": document.file_size,
+        },
+    }
+    return AQUBTransportInbound(
+        bot_username="@AQubAgentBot",
+        external_id="101",
+        chat_id="-10",
+        actor_id="1",
+        command=None,
+        payload={"update_id": 101, "message": message},
+        occurred_at=datetime(2026, 8, 21, 12, tzinfo=UTC),
+        received_at=datetime(2026, 8, 21, 12, 0, 1, tzinfo=UTC),
+        content_kind=AQUBTransportContentKind.DOCUMENT,
+        document=document,
+    )
 
 class _Store:
     def __init__(self) -> None:
@@ -334,6 +372,61 @@ async def test_telegram_downloader_uses_one_metadata_and_one_bounded_file_call()
     assert media.data == b"\xff\xd8\xffmeal"
     assert len(calls) == 2
 
+
+
+@pytest.mark.parametrize(
+    ("filename", "declared_type", "data"),
+    [
+        ("canary.txt", "text/plain", b"hello"),
+        (
+            "canary.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"PK\x03\x04fixture",
+        ),
+    ],
+)
+@pytest.mark.anyio
+async def test_telegram_document_downloader_uses_declared_type_when_transport_is_generic(
+    filename: str,
+    declared_type: str,
+    data: bytes,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/getFile"):
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "file_path": f"documents/{filename}",
+                        "file_size": len(data),
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            content=data,
+            headers={
+                "content-type": "application/octet-stream",
+                "content-length": str(len(data)),
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        media = await TelegramAQUBFoodMediaDownloader(
+            bot_token="test-token",
+            client=client,
+        ).download(
+            _document_inbound(
+                filename=filename,
+                mime_type=declared_type,
+                file_size=len(data),
+            )
+        )
+
+    assert media.media_type == declared_type
+    assert media.filename == filename
+    assert media.data == data
 
 def test_image_magic_rejects_non_binary_non_image_content_type() -> None:
     with pytest.raises(AQUBFoodMediaError, match="aqub_food_media_image_invalid"):

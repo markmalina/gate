@@ -729,10 +729,16 @@ class TelegramAQUBFoodMediaDownloader:
             raise AQUBFoodMediaError("aqub_food_media_download_failed") from exc
         if len(data) != size_value:
             raise AQUBFoodMediaError("aqub_food_media_size_mismatch")
+        validation_media_type = (
+            inbound.document.mime_type
+            if inbound.document is not None
+            and (not media_type or media_type in _GENERIC_BINARY_MEDIA_TYPES)
+            else media_type
+        )
         resolved_type = _validate_magic(
             bytes(data),
             content_kind=inbound.content_kind,
-            media_type=media_type,
+            media_type=validation_media_type,
         )
         return AQUBDownloadedMedia(
             data=bytes(data),
