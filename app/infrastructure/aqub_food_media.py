@@ -41,6 +41,25 @@ _IMAGE_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _GENERIC_BINARY_MEDIA_TYPES = {"application/octet-stream", "binary/octet-stream"}
 _VOICE_MEDIA_TYPES = {"audio/ogg", "audio/mpeg", "audio/mp4", "audio/webm"}
 
+_DOCUMENT_MEDIA_TYPES = {
+    "application/pdf",
+    "application/json",
+    "application/msword",
+    "application/rtf",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/csv",
+    "text/markdown",
+    "text/plain",
+}
+_DOCUMENT_EXTENSIONS = {
+    ".csv", ".doc", ".docx", ".json", ".md", ".pdf", ".ppt", ".pptx",
+    ".rtf", ".txt", ".xls", ".xlsx",
+}
+
 _RECEIPT_ITEM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -649,9 +668,15 @@ class TelegramAQUBFoodMediaDownloader:
         self._client = client
 
     async def download(self, inbound: AQUBTransportInbound) -> AQUBDownloadedMedia:
-        reference = inbound.photo or inbound.voice
+        reference = inbound.photo or inbound.voice or inbound.document
         if reference is None:
             raise AQUBFoodMediaError("aqub_food_media_reference_missing")
+        if (
+            inbound.document is not None
+            and PurePosixPath(inbound.document.file_name).suffix.lower()
+            not in _DOCUMENT_EXTENSIONS
+        ):
+            raise AQUBFoodMediaError("aqub_general_document_extension_invalid")
         declared_size = reference.file_size
         if declared_size is not None and declared_size > MAX_AQUB_FOOD_MEDIA_BYTES:
             raise AQUBFoodMediaError("aqub_food_media_size_invalid")
@@ -712,7 +737,44 @@ class TelegramAQUBFoodMediaDownloader:
         return AQUBDownloadedMedia(
             data=bytes(data),
             media_type=resolved_type,
-            filename=path.name[:255] or _default_filename(inbound.content_kind),
+            filename=(
+                inbound.document.file_name
+                if inbound.document is not None
+                else path.name[:255] or _default_filename(inbound.content_kind)
+            ),
+        )
+
+
+class TelegramAQUBGeneralMediaDownloader:
+    """Reuse the bounded Telegram downloader and normalize General voice."""
+
+    def __init__(self, *, bot_token: str, client: httpx.AsyncClient) -> None:
+        self._downloader = TelegramAQUBFoodMediaDownloader(
+            bot_token=bot_token,
+            client=client,
+        )
+        self._voice_normalizer = TelegramVoiceNormalizer()
+
+    async def download(self, inbound: AQUBTransportInbound) -> AQUBDownloadedMedia:
+        media = await self._downloader.download(inbound)
+        if inbound.content_kind is not AQUBTransportContentKind.VOICE:
+            return media
+        try:
+            normalized = await self._voice_normalizer.normalize(
+                DownloadedVoice(
+                    data=media.data,
+                    filename=media.filename,
+                    media_type=media.media_type,
+                )
+            )
+        except TelegramVoiceError as exc:
+            raise AQUBFoodMediaError("aqub_general_voice_normalization_failed") from exc
+        if normalized.additional_parts:
+            raise AQUBFoodMediaError("aqub_general_voice_multipart_unsupported")
+        return AQUBDownloadedMedia(
+            data=normalized.data,
+            media_type=normalized.media_type,
+            filename=normalized.filename,
         )
 
 
@@ -1001,11 +1063,38 @@ def _validate_magic(
         if not data.startswith(b"OggS") and media_type not in _VOICE_MEDIA_TYPES:
             raise AQUBFoodMediaError("aqub_food_media_voice_invalid")
         return media_type if media_type in _VOICE_MEDIA_TYPES else "audio/ogg"
+    if content_kind is AQUBTransportContentKind.DOCUMENT:
+        if media_type not in _DOCUMENT_MEDIA_TYPES | _GENERIC_BINARY_MEDIA_TYPES:
+            raise AQUBFoodMediaError("aqub_general_document_type_invalid")
+        if data.startswith(b"%PDF-"):
+            return "application/pdf"
+        if data.startswith(b"PK\x03\x04"):
+            if media_type not in _DOCUMENT_MEDIA_TYPES:
+                raise AQUBFoodMediaError("aqub_general_document_type_invalid")
+            return media_type
+        if media_type.startswith("text/") or media_type == "application/json":
+            try:
+                data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise AQUBFoodMediaError("aqub_general_document_encoding_invalid") from exc
+            return media_type
+        if media_type in {
+            "application/msword",
+            "application/rtf",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+        }:
+            return media_type
+        raise AQUBFoodMediaError("aqub_general_document_type_invalid")
     raise AQUBFoodMediaError("aqub_food_media_not_applicable")
 
 
 def _default_filename(content_kind: AQUBTransportContentKind) -> str:
-    return "food-photo.jpg" if content_kind is AQUBTransportContentKind.PHOTO else "food-voice.ogg"
+    if content_kind is AQUBTransportContentKind.PHOTO:
+        return "food-photo.jpg"
+    if content_kind is AQUBTransportContentKind.VOICE:
+        return "food-voice.ogg"
+    return "document.bin"
 
 
 def _message_route(payload: Any) -> tuple[str, str] | None:
@@ -1046,3 +1135,4 @@ def _album_route_key(payload: Any) -> tuple[str, str, str] | None:
     if not isinstance(group, str) or not group:
         return None
     return (*route, group)
+

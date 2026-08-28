@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -14,7 +15,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.application.aqub_food_media import AQUBFoodMediaQueue
+from app.application.aqub_food_media import AQUBFoodMediaDownloader, AQUBFoodMediaQueue
 from app.application.aqub_transport import (
     AQUB_BOT_USERNAME,
     AQUBDurableAcceptance,
@@ -53,6 +54,7 @@ _QUANTITY_ONLY_RE = re.compile(
 AQUB_ALBUM_TEXT_GRACE_SECONDS = 2.0
 
 JsonObject = dict[str, Any]
+GENERAL_MEDIA_MAX_BYTES = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,11 +164,13 @@ class AQUBLiveIngressAdapter:
         store: AQUBTransportStore,
         runtime: AQUBRuntimeClient | None,
         media_queue: AQUBFoodMediaQueue | None = None,
+        media_downloader: AQUBFoodMediaDownloader | None = None,
     ) -> None:
         self._binding = binding
         self._store = store
         self._runtime = runtime
         self._media_queue = media_queue
+        self._media_downloader = media_downloader
 
     async def handle(self, inbound: AQUBTransportInbound) -> AQUBLiveForwardResult:
         role = _bound_role(self._binding, inbound)
@@ -202,6 +206,7 @@ class AQUBLiveIngressAdapter:
                 content_kind=inbound.content_kind,
                 photo=inbound.photo,
                 voice=inbound.voice,
+                document=inbound.document,
             )
         )
         _validate_acceptance(acceptance)
@@ -213,9 +218,34 @@ class AQUBLiveIngressAdapter:
             acceptance.command_receipt_id,
         )
         media_result: JsonObject | None = None
+        media_input: JsonObject | None = None
+        general_media = (
+            self._binding.reply_to_source
+            and inbound.content_kind
+            in {
+                AQUBTransportContentKind.PHOTO,
+                AQUBTransportContentKind.VOICE,
+                AQUBTransportContentKind.DOCUMENT,
+            }
+        )
+        if general_media:
+            if self._media_downloader is None:
+                return _general_media_failure(duplicate, delivery_ref)
+            try:
+                downloaded = await self._media_downloader.download(inbound)
+            except Exception:
+                return _general_media_failure(duplicate, delivery_ref)
+            if len(downloaded.data) > GENERAL_MEDIA_MAX_BYTES:
+                return _general_media_failure(duplicate, delivery_ref)
+            media_input = {
+                "data_base64": base64.b64encode(downloaded.data).decode("ascii"),
+                "filename": downloaded.filename,
+                "media_type": downloaded.media_type,
+            }
         if (
             inbound.content_kind in {AQUBTransportContentKind.PHOTO, AQUBTransportContentKind.VOICE}
             and self._media_queue is not None
+            and not general_media
         ):
             await self._media_queue.enqueue(
                 receipt_id=acceptance.command_receipt_id,
@@ -269,6 +299,7 @@ class AQUBLiveIngressAdapter:
             command_receipt_id=acceptance.command_receipt_id,
             payload_sha256=payload_sha256,
             media_result=media_result,
+            media_input=media_input,
         )
         signature = hmac.new(
             self._binding.receipt_signing_key,
@@ -286,6 +317,7 @@ class AQUBLiveIngressAdapter:
             elif inbound.content_kind in {
                 AQUBTransportContentKind.PHOTO,
                 AQUBTransportContentKind.VOICE,
+                AQUBTransportContentKind.DOCUMENT,
             }:
                 captured_content = inbound.content_kind
         try:
@@ -296,6 +328,8 @@ class AQUBLiveIngressAdapter:
                 signature=signature,
             )
         except AQUBRuntimeUnavailable as exc:
+            if general_media:
+                return _general_media_failure(duplicate, delivery_ref)
             if captured_content is None:
                 raise
             return AQUBLiveForwardResult(
@@ -512,6 +546,7 @@ def _build_signed_envelope_body(
     command_receipt_id: str,
     payload_sha256: str,
     media_result: Mapping[str, Any] | None = None,
+    media_input: Mapping[str, Any] | None = None,
 ) -> bytes:
     message = inbound.payload.get("message")
     if not isinstance(message, Mapping) or type(message.get("message_id")) is not int:
@@ -522,7 +557,10 @@ def _build_signed_envelope_body(
         reply_message_id = reply["message_id"]
 
     text = inbound.command if isinstance(inbound.command, str) else ""
-    if inbound.content_kind is AQUBTransportContentKind.PHOTO:
+    if inbound.content_kind in {
+        AQUBTransportContentKind.PHOTO,
+        AQUBTransportContentKind.DOCUMENT,
+    }:
         caption = message.get("caption")
         text = caption if isinstance(caption, str) else ""
     media: JsonObject | None = None
@@ -548,6 +586,17 @@ def _build_signed_envelope_body(
             "media_type": inbound.voice.mime_type or "audio/ogg",
             "duration": inbound.voice.duration,
             "file_size": inbound.voice.file_size,
+        }
+    elif inbound.document is not None:
+        media = {
+            "file_ref": _opaque_ref(
+                binding.receipt_signing_key,
+                "media",
+                inbound.document.file_unique_id,
+            ),
+            "media_type": inbound.document.mime_type,
+            "file_name": inbound.document.file_name,
+            "file_size": inbound.document.file_size,
         }
 
     envelope: JsonObject = {
@@ -590,6 +639,7 @@ def _build_signed_envelope_body(
         "text": text,
         "media": media,
         "media_result": dict(media_result) if media_result is not None else None,
+        "media_input": dict(media_input) if media_input is not None else None,
         "transport_receipt_ref": _opaque_ref(
             binding.receipt_signing_key,
             "receipt",
@@ -604,6 +654,27 @@ def _build_signed_envelope_body(
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+
+
+def _general_media_failure(
+    duplicate: bool,
+    delivery_ref: str,
+) -> AQUBLiveForwardResult:
+    return AQUBLiveForwardResult(
+        accepted=True,
+        duplicate=duplicate,
+        reason="aqub_general_media_unavailable",
+        downstream={
+            "result": {
+                "kind": "general_error",
+                "reply_text": (
+                    "Сейчас не смог прочитать вложение. "
+                    "Попробуйте отправить его ещё раз."
+                ),
+            }
+        },
+        delivery_ref=delivery_ref,
+    )
 
 
 def _build_signed_album_envelope_body(

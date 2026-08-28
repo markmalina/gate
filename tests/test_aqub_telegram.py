@@ -145,6 +145,35 @@ def _photo_update(
     return update
 
 
+def _document_update() -> dict[str, object]:
+    update = _update()
+    message = update["message"]
+    assert isinstance(message, dict)
+    message.pop("text")
+    message["caption"] = "Разбери договор"
+    message["document"] = {
+        "file_id": "synthetic-document",
+        "file_unique_id": "synthetic-document-unique",
+        "file_name": "contract.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 12_345,
+    }
+    return update
+
+
+def test_general_document_projects_as_bounded_document_reference() -> None:
+    projected = _project_inbound(
+        _document_update(),
+        bot_username=AQUB_BOT_USERNAME,
+        received_at=TEST_READY_AT + timedelta(seconds=2),
+    )
+    assert projected is not None
+    assert projected.content_kind is AQUBTransportContentKind.DOCUMENT
+    assert projected.document is not None
+    assert projected.document.file_name == "contract.pdf"
+    assert projected.command is None
+
+
 def _client(
     settings: Settings,
     store: DurableStore,

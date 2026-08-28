@@ -37,6 +37,7 @@ class AQUBTransportContentKind(StrEnum):
     TEXT = "text"
     PHOTO = "photo"
     VOICE = "voice"
+    DOCUMENT = "document"
 
 
 class AQUBReceiptStatus(StrEnum):
@@ -156,6 +157,40 @@ class AQUBVoiceReference:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class AQUBDocumentReference:
+    """Validated provider reference for one bounded Telegram document."""
+
+    file_id: str = field(repr=False)
+    file_unique_id: str = field(repr=False)
+    file_name: str
+    mime_type: str
+    file_size: int | None = None
+
+    def __post_init__(self) -> None:
+        for value in (self.file_id, self.file_unique_id):
+            if not value or value != value.strip() or len(value) > 512:
+                raise ValueError("aqub_document_reference_invalid")
+        if (
+            not self.file_name
+            or self.file_name != self.file_name.strip()
+            or len(self.file_name) > 255
+            or "/" in self.file_name
+            or "\\" in self.file_name
+            or not self.mime_type
+            or len(self.mime_type) > 128
+            or (
+                self.file_size is not None
+                and (
+                    type(self.file_size) is not int
+                    or self.file_size < 0
+                    or self.file_size > _TELEGRAM_SAFE_INTEGER_MAX
+                )
+            )
+        ):
+            raise ValueError("aqub_document_reference_invalid")
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class AQUBTransportInbound:
     """Trusted ingress projection with provider identifiers hidden from repr."""
 
@@ -170,6 +205,7 @@ class AQUBTransportInbound:
     content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
     photo: AQUBPhotoReference | None = field(default=None, repr=False)
     voice: AQUBVoiceReference | None = field(default=None, repr=False)
+    document: AQUBDocumentReference | None = field(default=None, repr=False)
     media_group_id: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -178,6 +214,7 @@ class AQUBTransportInbound:
                 not isinstance(self.command, str)
                 or self.photo is not None
                 or self.voice is not None
+                or self.document is not None
                 or self.media_group_id is not None
             ):
                 raise ValueError("aqub_text_content_invalid")
@@ -187,6 +224,7 @@ class AQUBTransportInbound:
                 self.command is not None
                 or self.photo is None
                 or self.voice is not None
+                or self.document is not None
                 or (
                     self.media_group_id is not None
                     and (
@@ -203,9 +241,20 @@ class AQUBTransportInbound:
                 self.command is not None
                 or self.photo is not None
                 or self.voice is None
+                or self.document is not None
                 or self.media_group_id is not None
             ):
                 raise ValueError("aqub_voice_content_invalid")
+            return
+        if self.content_kind is AQUBTransportContentKind.DOCUMENT:
+            if (
+                self.command is not None
+                or self.photo is not None
+                or self.voice is not None
+                or self.document is None
+                or self.media_group_id is not None
+            ):
+                raise ValueError("aqub_document_content_invalid")
             return
         raise ValueError("aqub_content_kind_invalid")
 
@@ -227,6 +276,7 @@ class AQUBTransportCommand:
     content_kind: AQUBTransportContentKind = AQUBTransportContentKind.TEXT
     photo: AQUBPhotoReference | None = field(default=None, repr=False)
     voice: AQUBVoiceReference | None = field(default=None, repr=False)
+    document: AQUBDocumentReference | None = field(default=None, repr=False)
     owned_path: str = AQUB_TELEGRAM_WEBHOOK_PATH
 
     def __post_init__(self) -> None:
@@ -235,16 +285,36 @@ class AQUBTransportCommand:
                 not isinstance(self.command, str)
                 or self.photo is not None
                 or self.voice is not None
+                or self.document is not None
             ):
                 raise ValueError("aqub_text_content_invalid")
             return
         if self.content_kind is AQUBTransportContentKind.PHOTO:
-            if self.command is not None or self.photo is None or self.voice is not None:
+            if (
+                self.command is not None
+                or self.photo is None
+                or self.voice is not None
+                or self.document is not None
+            ):
                 raise ValueError("aqub_photo_content_invalid")
             return
         if self.content_kind is AQUBTransportContentKind.VOICE:
-            if self.command is not None or self.photo is not None or self.voice is None:
+            if (
+                self.command is not None
+                or self.photo is not None
+                or self.voice is None
+                or self.document is not None
+            ):
                 raise ValueError("aqub_voice_content_invalid")
+            return
+        if self.content_kind is AQUBTransportContentKind.DOCUMENT:
+            if (
+                self.command is not None
+                or self.photo is not None
+                or self.voice is not None
+                or self.document is None
+            ):
+                raise ValueError("aqub_document_content_invalid")
             return
         raise ValueError("aqub_content_kind_invalid")
 
@@ -517,3 +587,4 @@ def _canonical(value: Mapping[str, Any]) -> bytes:
 
 def _aware(value: datetime) -> bool:
     return value.utcoffset() is not None
+

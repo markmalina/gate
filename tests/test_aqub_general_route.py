@@ -324,13 +324,13 @@ async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None
             assert participant_store.calls == participant_runtime.calls == 1
 
             media_cases = (
-                (AQUBTransportContentKind.PHOTO, False),
-                (AQUBTransportContentKind.VOICE, False),
-                (AQUBTransportContentKind.PHOTO, True),
+                AQUBTransportContentKind.PHOTO,
+                AQUBTransportContentKind.VOICE,
+                AQUBTransportContentKind.DOCUMENT,
             )
             for actor in (general_actor, food_actor, "1000000999"):
-                for content_kind, album in media_cases:
-                    suppressed = await select_aqub_inbound_binding(
+                for content_kind in media_cases:
+                    routed = await select_aqub_inbound_binding(
                         session,
                         _settings(),
                         food_binding=food,
@@ -338,31 +338,11 @@ async def test_postgres_route_is_hold_by_default_and_exact_when_active() -> None
                         actor_id=actor,
                         content_kind=content_kind,
                     )
-                    assert suppressed is not food
-                    assert suppressed.enabled is False
-                    assert suppressed.group_chat_id == general_group
-                    media_store, media_runtime, media_queue = (
-                        _Store(),
-                        _Runtime(),
-                        _MediaQueue(),
-                    )
-                    media_result = await AQUBLiveIngressAdapter(
-                        binding=suppressed,
-                        store=media_store,
-                        runtime=media_runtime,
-                        media_queue=media_queue,
-                    ).handle(
-                        _inbound(
-                            group=general_group,
-                            actor=actor,
-                            content_kind=content_kind,
-                            album=album,
-                        )
-                    )
-                    assert media_result.accepted is False
-                    assert media_store.calls == 0
-                    assert media_runtime.calls == 0
-                    assert media_queue.calls == 0
+                    assert routed is not food
+                    assert routed.enabled is True
+                    assert routed.group_chat_id == general_group
+                    assert routed.alpha_user_id == actor
+                    assert routed.reply_to_source is True
     finally:
         await _drop_schema(schema, admin_engine, engine)
 

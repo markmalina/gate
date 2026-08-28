@@ -236,18 +236,17 @@ async def select_aqub_inbound_binding(
     actor_id: str,
     content_kind: AQUBTransportContentKind,
 ) -> AQUBTransportBinding:
-    """Route General text exactly and suppress its unsupported media fail-closed."""
+    """Route active General groups for text and supported inbound media."""
 
     general = await load_active_aqub_general_binding(
         session,
         settings,
         chat_id=chat_id,
     )
-    if general is not None and content_kind is not AQUBTransportContentKind.TEXT:
-        # The General Cube v1 is text-only. A disabled binding makes the live
-        # adapter reject before Gate's Food receipt, queue, or AQUB runtime can
-        # observe media from an active General group, regardless of actor.
-        return replace(general, enabled=False)
+    if general is None and content_kind is AQUBTransportContentKind.DOCUMENT:
+        # Food does not accept arbitrary documents; fail closed outside an
+        # explicitly active General Cube.
+        return replace(food_binding, enabled=False)
     if general is not None and general.alpha_user_id != actor_id:
         # An active General Cube is scoped by its exact group. Project the
         # current non-bot group participant as the alpha role for this request;
@@ -255,3 +254,4 @@ async def select_aqub_inbound_binding(
         # conversation allowlist.
         return replace(general, alpha_user_id=actor_id)
     return general if general is not None else food_binding
+

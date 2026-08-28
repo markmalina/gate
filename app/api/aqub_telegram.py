@@ -28,6 +28,7 @@ from app.application.aqub_transport import (
     AQUB_PING_COMMAND,
     AQUB_TELEGRAM_WEBHOOK_PATH,
     AQUBDiagnosticPingAdapter,
+    AQUBDocumentReference,
     AQUBPhotoReference,
     AQUBTransportBinding,
     AQUBTransportContentKind,
@@ -37,7 +38,10 @@ from app.application.aqub_transport import (
     AQUBVoiceReference,
 )
 from app.core.config import Settings, get_settings
-from app.infrastructure.aqub_food_media import SqlAQUBFoodMediaStore
+from app.infrastructure.aqub_food_media import (
+    SqlAQUBFoodMediaStore,
+    TelegramAQUBGeneralMediaDownloader,
+)
 from app.infrastructure.aqub_food_route import select_aqub_food_inbound_binding
 from app.infrastructure.aqub_general_route import select_aqub_inbound_binding
 from app.infrastructure.aqub_installation import (
@@ -73,6 +77,10 @@ _AUDIO_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "audio"}
 _AUDIO_MESSAGE_OPTIONAL_FIELDS: set[str] = set()
 _AUDIO_REQUIRED_FIELDS = {"file_id", "file_unique_id", "duration", "mime_type"}
 _AUDIO_OPTIONAL_FIELDS = {"file_size", "file_name"}
+_DOCUMENT_MESSAGE_REQUIRED_FIELDS = {"message_id", "from", "date", "chat", "document"}
+_DOCUMENT_MESSAGE_OPTIONAL_FIELDS = {"caption"}
+_DOCUMENT_REQUIRED_FIELDS = {"file_id", "file_unique_id", "file_name", "mime_type"}
+_DOCUMENT_OPTIONAL_FIELDS = {"file_size"}
 _CUBE0_RECOVERY_DIAGNOSTIC_KINDS = {
     "general_cancelled",
     "general_denied",
@@ -224,12 +232,22 @@ async def aqub_telegram_ingress(
         if runtime_url
         else None
     )
+    media_downloader = (
+        TelegramAQUBGeneralMediaDownloader(
+            bot_token=settings.telegram_aqub_bot_token.get_secret_value(),
+            client=_process_http_client(request),
+        )
+        if binding.reply_to_source
+        and inbound.content_kind is not AQUBTransportContentKind.TEXT
+        else None
+    )
     try:
         live = await AQUBLiveIngressAdapter(
             binding=binding,
             store=store,
             runtime=runtime,
             media_queue=media_queue,
+            media_downloader=media_downloader,
         ).handle(inbound)
     except RuntimeError as exc:
         raise HTTPException(
@@ -362,9 +380,11 @@ def _project_inbound(
     text = message.get("text")
     photo: AQUBPhotoReference | None = None
     voice: AQUBVoiceReference | None = None
+    document: AQUBDocumentReference | None = None
     if "text" in message:
         if not isinstance(text, str) or any(
-            media_kind in message for media_kind in ("photo", "voice", "audio")
+            media_kind in message
+            for media_kind in ("photo", "voice", "audio", "document")
         ):
             return None
         content_kind = AQUBTransportContentKind.TEXT
@@ -387,6 +407,12 @@ def _project_inbound(
             return None
         content_kind = AQUBTransportContentKind.VOICE
         command = None
+    elif "document" in message:
+        document = _project_document(message)
+        if document is None:
+            return None
+        content_kind = AQUBTransportContentKind.DOCUMENT
+        command = None
     else:
         return None
     try:
@@ -405,6 +431,7 @@ def _project_inbound(
         content_kind=content_kind,
         photo=photo,
         voice=voice,
+        document=document,
         media_group_id=(
             cast(str, message.get("media_group_id"))
             if content_kind is AQUBTransportContentKind.PHOTO
@@ -476,6 +503,48 @@ def _project_photo(message: JsonObject) -> AQUBPhotoReference | None:
         references,
         key=lambda item: (item.width * item.height, item.file_size or 0),
     )
+
+
+def _project_document(message: JsonObject) -> AQUBDocumentReference | None:
+    message_fields = set(message)
+    if not _DOCUMENT_MESSAGE_REQUIRED_FIELDS.issubset(
+        message_fields
+    ) or not message_fields.issubset(
+        _DOCUMENT_MESSAGE_REQUIRED_FIELDS | _DOCUMENT_MESSAGE_OPTIONAL_FIELDS
+    ):
+        return None
+    caption = message.get("caption")
+    if "caption" in message and (
+        not isinstance(caption, str) or len(caption) > _PHOTO_CAPTION_MAX_CHARS
+    ):
+        return None
+    value = message.get("document")
+    if not isinstance(value, dict):
+        return None
+    fields = set(value)
+    if not _DOCUMENT_REQUIRED_FIELDS.issubset(fields) or not fields.issubset(
+        _DOCUMENT_REQUIRED_FIELDS | _DOCUMENT_OPTIONAL_FIELDS
+    ):
+        return None
+    file_size = value.get("file_size")
+    if (
+        not isinstance(value.get("file_id"), str)
+        or not isinstance(value.get("file_unique_id"), str)
+        or not isinstance(value.get("file_name"), str)
+        or not isinstance(value.get("mime_type"), str)
+        or ("file_size" in value and type(file_size) is not int)
+    ):
+        return None
+    try:
+        return AQUBDocumentReference(
+            file_id=value["file_id"],
+            file_unique_id=value["file_unique_id"],
+            file_name=value["file_name"],
+            mime_type=value["mime_type"],
+            file_size=file_size,
+        )
+    except ValueError:
+        return None
 
 
 def _project_audio(message: JsonObject) -> AQUBVoiceReference | None:
@@ -677,6 +746,12 @@ def _live_response(
             "method": "sendMessage",
             "chat_id": int(chat_id),
             "text": "Голосовое принято.",
+        }
+    if result.captured_content is AQUBTransportContentKind.DOCUMENT:
+        return {
+            "method": "sendMessage",
+            "chat_id": int(chat_id),
+            "text": "Файл принят.",
         }
     return {
         "ok": True,

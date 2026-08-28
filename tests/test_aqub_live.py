@@ -11,6 +11,7 @@ from typing import cast
 
 import httpx
 import pytest
+from app.application.aqub_food_media import AQUBDownloadedMedia
 from app.application.aqub_live import (
     AQUB_ALBUM_TEXT_GRACE_SECONDS,
     AQUB_PROGRAM_PROMPT_TEXT,
@@ -97,6 +98,20 @@ class Runtime:
         }
 
 
+class MediaDownloader:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def download(self, inbound: AQUBTransportInbound) -> AQUBDownloadedMedia:
+        self.calls += 1
+        assert inbound.content_kind is AQUBTransportContentKind.PHOTO
+        return AQUBDownloadedMedia(
+            data=b"\xff\xd8\xfffixture",
+            media_type="image/jpeg",
+            filename="photo.jpg",
+        )
+
+
 class RecoveringRuntime(Runtime):
     def __init__(self) -> None:
         super().__init__()
@@ -124,6 +139,33 @@ def binding() -> AQUBTransportBinding:
         ready_at=READY_AT,
         receipt_signing_key=SIGNING_KEY,
     )
+
+
+@pytest.mark.anyio
+async def test_general_photo_bypasses_food_queue_and_forwards_bounded_media() -> None:
+    store, runtime, downloader = Store(), Runtime(), MediaDownloader()
+    general = AQUBTransportBinding(
+        enabled=True,
+        bot_username="@AQubAgentBot",
+        group_chat_id=TEST_CHAT_ID,
+        ace_user_id="__unbound_ace__",
+        alpha_user_id=TEST_ALPHA_ID,
+        ready_at=READY_AT,
+        receipt_signing_key=SIGNING_KEY,
+        reply_to_source=True,
+    )
+    result = await AQUBLiveIngressAdapter(
+        binding=general,
+        store=store,
+        runtime=runtime,
+        media_downloader=downloader,
+    ).handle(photo_inbound())
+    assert result.accepted is True
+    assert downloader.calls == 1
+    envelope = json.loads(runtime.raw_bodies[0])
+    assert envelope["content_kind"] == "photo"
+    assert envelope["media_input"]["filename"] == "photo.jpg"
+    assert envelope["media_input"]["data_base64"] == "/9j/Zml4dHVyZQ=="
 
 
 def inbound(
