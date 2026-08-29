@@ -6,7 +6,7 @@
   "relation": "shared_transport_and_delivery_platform",
   "lifecycle": "active",
   "registry": "https://github.com/AlphaCenter/center/blob/main/registry/work-hierarchy.v1.json",
-  "registry_revision": "609af3aa630a0ee6c9a21af3ac864ea27cfcb2bc",
+  "registry_revision": "39b17f87aad89f1cc921c06d3e4a9ac1dbaff3bc",
   "rules": {
     "read_before_mutation": true,
     "local_domain_owner": true,
