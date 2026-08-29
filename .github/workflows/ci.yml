@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16@sha256:17e67d7b9890c99b055ba1e0d5c5be4ec27c9d3a72bda32db24a5e5d8a85af0c
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -41,6 +41,12 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert literal source SHA
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
@@ -119,10 +125,10 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          pg_dump --host localhost --username postgres --dbname gate --format custom --file /tmp/gate-backup.dump
-          dropdb --host localhost --username postgres --if-exists gate_restore
-          createdb --host localhost --username postgres gate_restore
-          pg_restore --host localhost --username postgres --dbname gate_restore --no-owner --no-privileges /tmp/gate-backup.dump
+          docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname gate --format custom > /tmp/gate-backup.dump
+          docker run --rm --network host -e PGPASSWORD postgres:17 dropdb --host localhost --username postgres --if-exists gate_restore
+          docker run --rm --network host -e PGPASSWORD postgres:17 createdb --host localhost --username postgres gate_restore
+          docker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore --host localhost --username postgres --dbname gate_restore --no-owner --no-privileges < /tmp/gate-backup.dump
           python scripts/postgres_restore_evidence.py --database-url postgresql://postgres:postgres@localhost:5432/gate_restore --output postgres-restore-evidence.json
       - name: Upload PostgreSQL restore evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -148,7 +154,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16@sha256:17e67d7b9890c99b055ba1e0d5c5be4ec27c9d3a72bda32db24a5e5d8a85af0c
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
