@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from app.infrastructure.foodcube_g3_staging_db import (
     EXPECTED_DATABASE,
     EXPECTED_SCHEMA,
