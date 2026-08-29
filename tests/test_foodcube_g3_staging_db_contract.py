@@ -224,7 +224,7 @@ async def test_disposable_postgres_enforces_runtime_ddl_and_food_db_denial() -> 
         finally:
             await runtime.close()
 
-        with pytest.raises(asyncpg.InvalidAuthorizationSpecificationError):
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await asyncpg.connect(
                 host="localhost",
                 port=5432,
