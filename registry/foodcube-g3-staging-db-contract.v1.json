@@ -1,0 +1,126 @@
+{
+  "schema_version": "foodcube-g3-gate-staging-db-contract.v1",
+  "state": "repository_contract_only_default_off",
+  "postgres": {
+    "major": 17,
+    "image_policy": "postgres:17",
+    "pitr_policy": "major-tag"
+  },
+  "identity": {
+    "environment": "staging",
+    "database": "gate_g3_staging",
+    "schema": "gate_g3",
+    "migration_role": "gate_g3_migrator",
+    "runtime_role": "gate_g3_runtime"
+  },
+  "secret_placeholders": [
+    "GATE_FOODCUBE_G3_MIGRATION_DATABASE_URL",
+    "GATE_FOODCUBE_G3_RUNTIME_DATABASE_URL"
+  ],
+  "privileges": {
+    "migration_role": [
+      "connect:gate_g3_staging",
+      "create:gate_g3",
+      "ddl:gate_g3",
+      "dml:gate_g3"
+    ],
+    "runtime_role": [
+      "connect:gate_g3_staging",
+      "usage:gate_g3",
+      "select:gate_g3",
+      "insert:gate_g3",
+      "update:gate_g3",
+      "delete:gate_g3"
+    ],
+    "runtime_denied": [
+      "create",
+      "alter",
+      "drop",
+      "food_database",
+      "food_schema",
+      "cross_service_sql",
+      "superuser",
+      "database_owner",
+      "schema_owner"
+    ]
+  },
+  "network_matrix": [
+    {
+      "source": "gate-g3-migration-job",
+      "destination": "gate-g3-postgres:5432",
+      "allowed": true
+    },
+    {
+      "source": "gate-g3-runtime",
+      "destination": "gate-g3-postgres:5432",
+      "allowed": true
+    },
+    {
+      "source": "gate-g3-runtime",
+      "destination": "food-postgres:5432",
+      "allowed": false
+    },
+    {
+      "source": "food-runtime",
+      "destination": "gate-g3-postgres:5432",
+      "allowed": false
+    },
+    {
+      "source": "production",
+      "destination": "gate-g3-postgres:5432",
+      "allowed": false
+    }
+  ],
+  "fail_closed": [
+    "missing_environment",
+    "unknown_environment",
+    "production_environment",
+    "generic_DATABASE_URL_fallback",
+    "shared_superuser",
+    "shared_role",
+    "shared_password",
+    "food_database"
+  ],
+  "restore_smoke_receipt": {
+    "required": [
+      "schema_version",
+      "candidate_sha",
+      "postgres_major",
+      "backup_sha256",
+      "restore_started_at_utc",
+      "restore_completed_at_utc",
+      "restored_database_identity",
+      "migration_head",
+      "row_count_fingerprint",
+      "smoke_suite",
+      "smoke_passed",
+      "runtime_ddl_denied",
+      "food_database_denied",
+      "production_fallback_denied",
+      "secret_values_present",
+      "provider_effects"
+    ],
+    "invariants": {
+      "secret_values_present": false,
+      "provider_effects": 0,
+      "runtime_ddl_denied": true,
+      "food_database_denied": true,
+      "production_fallback_denied": true
+    }
+  },
+  "protected_grants": [
+    "G3-AUTH-1",
+    "G3-AUTH-2",
+    "G3-AUTH-3",
+    "G3-AUTH-4"
+  ],
+  "effects": {
+    "provider_mutations": 0,
+    "database_mutations": 0,
+    "secret_mutations": 0,
+    "deployments": 0,
+    "production_effects": 0,
+    "real_data": 0,
+    "telegram_effects": 0
+  }
+}
