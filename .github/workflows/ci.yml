@@ -125,7 +125,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname gate --format custom --file - > /tmp/gate-backup.dump
+          docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname gate --format custom > /tmp/gate-backup.dump
           docker run --rm --network host -e PGPASSWORD postgres:17 dropdb --host localhost --username postgres --if-exists gate_restore
           docker run --rm --network host -e PGPASSWORD postgres:17 createdb --host localhost --username postgres gate_restore
           docker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore --host localhost --username postgres --dbname gate_restore --no-owner --no-privileges < /tmp/gate-backup.dump
