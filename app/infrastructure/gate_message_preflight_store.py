@@ -11,15 +11,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.application.gate_message_contract_v1 import (
     GATE_MESSAGE_V1_MAX_RETRIES,
     GateMessageAdapterMode,
     GateMessageContractError,
     GateMessageDocument,
 )
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 _SCHEMA = re.compile(r"^gate31_rehearsal_[0-9a-f]{16,32}$")
 
@@ -76,8 +75,10 @@ class GateMessagePreflightStore:
                     command_ref text PRIMARY KEY,
                     ingress_event_ref text NOT NULL UNIQUE REFERENCES {q}.ingress(event_ref),
                     document jsonb NOT NULL,
-                    attempt integer NOT NULL DEFAULT 0 CHECK (attempt BETWEEN 0 AND {GATE_MESSAGE_V1_MAX_RETRIES}),
-                    state text NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','settled','unknown'))
+                    attempt integer NOT NULL DEFAULT 0
+                        CHECK (attempt BETWEEN 0 AND {GATE_MESSAGE_V1_MAX_RETRIES}),
+                    state text NOT NULL DEFAULT 'pending'
+                        CHECK (state IN ('pending','settled','unknown'))
                 );
                 CREATE TABLE {q}.consumer_commits (
                     command_ref text PRIMARY KEY REFERENCES {q}.outbox(command_ref),
@@ -170,7 +171,8 @@ class GateMessagePreflightStore:
             text(
                 f"INSERT INTO {q}.ingress "
                 "(event_ref,idempotency_key,conversation_ref,destination_ref,generation,document) "
-                "VALUES (:event,:key,:conversation,:destination,:generation,CAST(:document AS jsonb))"
+                "VALUES (:event,:key,:conversation,:destination,:generation,"
+                "CAST(:document AS jsonb))"
             ),
             {
                 "event": incoming["event_ref"],
@@ -223,7 +225,8 @@ class GateMessagePreflightStore:
                 {"command": wire["command_ref"]},
             )
         ).scalar_one_or_none()
-        if wire["status"] in {"committed", "duplicate"} and commit_ref != wire["consumer_commit_ref"]:
+        durable_status = wire["status"] in {"committed", "duplicate"}
+        if durable_status and commit_ref != wire["consumer_commit_ref"]:
             await self._session.rollback()
             raise GateMessageContractError("GATE_MESSAGE_CONSUMER_COMMIT_NOT_DURABLE")
         await self._session.execute(
@@ -245,7 +248,8 @@ class GateMessagePreflightStore:
         await self._session.commit()
 
     async def count_outbox(self) -> int:
-        value = await self._session.scalar(text(f"SELECT count(*) FROM {self._quoted_schema}.outbox"))
+        statement = text(f"SELECT count(*) FROM {self._quoted_schema}.outbox")
+        value = await self._session.scalar(statement)
         return int(value or 0)
 
     async def _assert_current_route(self, wire: dict[str, Any]) -> None:

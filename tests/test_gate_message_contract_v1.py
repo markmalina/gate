@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from jsonschema import Draft202012Validator
-
 from app.application.gate_message_contract_v1 import (
     GATE_MESSAGE_V1_MAX_BYTES,
     DeliveryDisposition,
@@ -22,6 +20,7 @@ from app.application.gate_message_contract_v1 import (
     preserve_legacy_result_on_shadow_failure,
     serialize_gate_message_json_v1,
 )
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).parents[1]
 CONTRACT = ROOT / "contracts" / "gate" / "v1"
