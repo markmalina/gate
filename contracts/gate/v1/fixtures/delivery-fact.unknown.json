@@ -1,0 +1,15 @@
+{
+  "schema_version": "gate.delivery.fact.v1",
+  "fact_ref": "fact:synthetic0002",
+  "command_ref": "command:synthetic0001",
+  "idempotency_key": "delivery/synthetic/0002",
+  "observed_at": "2026-08-30T20:00:03.000Z",
+  "installation_ref": "installation:synthetic0001",
+  "conversation_ref": "conversation:synthetic0001",
+  "destination_ref": "destination:synthetic0001",
+  "route_generation": 1,
+  "attempt": 3,
+  "status": "unknown",
+  "consumer_commit_ref": null,
+  "reconciliation_ref": "reconciliation:synthetic0001"
+}
