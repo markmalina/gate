@@ -11,14 +11,15 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.application.gate_message_contract_v1 import (
     GATE_MESSAGE_V1_MAX_RETRIES,
     GateMessageAdapterMode,
     GateMessageContractError,
     GateMessageDocument,
 )
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 _SCHEMA = re.compile(r"^gate31_rehearsal_[0-9a-f]{16,32}$")
 
