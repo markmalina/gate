@@ -1,0 +1,12 @@
+{
+  "schema_version": "gate.message.received.v1",
+  "event_ref": "event:synthetic0001",
+  "idempotency_key": "ingress/synthetic/0001",
+  "occurred_at": "2026-08-30T20:00:00.000Z",
+  "installation_ref": "installation:synthetic0001",
+  "conversation_ref": "conversation:synthetic0001",
+  "actor_ref": "actor:synthetic0001",
+  "destination_ref": "destination:synthetic0001",
+  "route_generation": 1,
+  "content": {"kind": "text", "text": "synthetic message"}
+}
