@@ -55,15 +55,13 @@ class GateMessagePreflightStore:
     async def initialize_disposable_schema(self) -> None:
         q = self._quoted_schema
         await self._session.execute(text(f"CREATE SCHEMA {q}"))
-        await self._session.execute(
-            text(
-                f"""
-                CREATE TABLE {q}.routes (
+        statements = (
+            f"""CREATE TABLE {q}.routes (
                     conversation_ref text PRIMARY KEY,
                     destination_ref text NOT NULL,
                     generation integer NOT NULL CHECK (generation > 0)
-                );
-                CREATE TABLE {q}.ingress (
+                )""",
+            f"""CREATE TABLE {q}.ingress (
                     event_ref text PRIMARY KEY,
                     idempotency_key text NOT NULL UNIQUE,
                     conversation_ref text NOT NULL,
@@ -71,8 +69,8 @@ class GateMessagePreflightStore:
                     generation integer NOT NULL,
                     document jsonb NOT NULL,
                     committed_at timestamptz NOT NULL DEFAULT clock_timestamp()
-                );
-                CREATE TABLE {q}.outbox (
+                )""",
+            f"""CREATE TABLE {q}.outbox (
                     command_ref text PRIMARY KEY,
                     ingress_event_ref text NOT NULL UNIQUE REFERENCES {q}.ingress(event_ref),
                     document jsonb NOT NULL,
@@ -80,19 +78,19 @@ class GateMessagePreflightStore:
                         CHECK (attempt BETWEEN 0 AND {GATE_MESSAGE_V1_MAX_RETRIES}),
                     state text NOT NULL DEFAULT 'pending'
                         CHECK (state IN ('pending','settled','unknown'))
-                );
-                CREATE TABLE {q}.consumer_commits (
+                )""",
+            f"""CREATE TABLE {q}.consumer_commits (
                     command_ref text PRIMARY KEY REFERENCES {q}.outbox(command_ref),
                     commit_ref text NOT NULL UNIQUE
-                );
-                CREATE TABLE {q}.delivery_facts (
+                )""",
+            f"""CREATE TABLE {q}.delivery_facts (
                     fact_ref text PRIMARY KEY,
                     command_ref text NOT NULL UNIQUE REFERENCES {q}.outbox(command_ref),
                     document jsonb NOT NULL
-                )
-                """
-            )
+                )""",
         )
+        for statement in statements:
+            await self._session.execute(text(statement))
         await self._session.commit()
 
     async def activate_route(
