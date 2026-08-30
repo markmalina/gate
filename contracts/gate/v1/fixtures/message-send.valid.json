@@ -1,0 +1,11 @@
+{
+  "schema_version": "gate.message.send.v1",
+  "command_ref": "command:synthetic0001",
+  "idempotency_key": "outbox/synthetic/0001",
+  "requested_at": "2026-08-30T20:00:01.000Z",
+  "installation_ref": "installation:synthetic0001",
+  "conversation_ref": "conversation:synthetic0001",
+  "destination_ref": "destination:synthetic0001",
+  "route_generation": 1,
+  "payload": {"kind": "media_ref", "object_ref": "object:synthetic0001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 4096, "content_type": "image/png"}
+}
