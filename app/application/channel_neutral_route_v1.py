@@ -10,15 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Never, TypeVar
+from typing import Any, Never
 
 JsonObject = Mapping[str, Any]
-T = TypeVar("T")
-
 ACTIVE_SYNTHETIC_SPACES = frozenset({"test", "pilot-a", "pilot-b"})
 _REF = re.compile(r"^[a-z][a-z0-9_-]{1,31}:[a-z0-9][a-z0-9._~-]{7,127}$")
 _SOURCE_EVENT = re.compile(r"^[a-z0-9][a-z0-9._:~/-]{7,255}$")
@@ -44,19 +42,34 @@ class RouteStage(StrEnum):
     DELIVERED = "delivered"
 
 
+class LocalCommitOutcome(StrEnum):
+    COMMITTED = "committed"
+    DOWNSTREAM_FAILURE = "downstream_failure"
+
+
 @dataclass(frozen=True, slots=True)
 class RouteBinding:
     route_ref: str
     space_ref: str
-    allowed_actor_refs: frozenset[str]
+    allowed_actor_refs: Collection[str]
 
     def __post_init__(self) -> None:
         _ref(self.route_ref, "ROUTE_REF_INVALID", "route")
         _space(self.space_ref)
-        if not self.allowed_actor_refs:
+        actors = self.allowed_actor_refs
+        if isinstance(actors, (str, bytes)) or not isinstance(actors, Collection):
+            _fail("ROUTE_ACTOR_ALLOWLIST_INVALID")
+        try:
+            snapshot = frozenset(actors)
+        except TypeError as exc:
+            raise RouteError("ROUTE_ACTOR_ALLOWLIST_INVALID") from exc
+        if not snapshot:
             _fail("ROUTE_ACTOR_ALLOWLIST_EMPTY")
-        for actor_ref in self.allowed_actor_refs:
+        if len(snapshot) != len(actors):
+            _fail("ROUTE_ACTOR_ALLOWLIST_DUPLICATE")
+        for actor_ref in snapshot:
             _ref(actor_ref, "ACTOR_REF_INVALID", "actor")
+        object.__setattr__(self, "allowed_actor_refs", snapshot)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,17 +162,17 @@ class LocalRouteJournal:
         self._envelopes[key] = canonical
         return IngressReceipt(IngressDisposition.ACCEPTED, entry)
 
-    def commit_with(self, ingress_ref: str, downstream: Callable[[], T]) -> tuple[JournalEntry, T]:
+    def commit(self, ingress_ref: str, outcome: LocalCommitOutcome) -> JournalEntry:
         key, entry = self._find(ingress_ref)
         if entry.stage is not RouteStage.ACCEPTED:
             _fail("INGRESS_NOT_ACCEPTED")
-        try:
-            result = downstream()
-        except Exception as exc:
-            raise RouteError("DOWNSTREAM_FAILURE") from exc
+        if type(outcome) is not LocalCommitOutcome:
+            _fail("COMMIT_OUTCOME_INVALID")
+        if outcome is LocalCommitOutcome.DOWNSTREAM_FAILURE:
+            _fail("DOWNSTREAM_FAILURE")
         committed = replace(entry, stage=RouteStage.COMMITTED)
         self._entries[key] = committed
-        return committed, result
+        return committed
 
     def prepare_response(self, ingress_ref: str, response: JsonObject) -> JournalEntry:
         key, entry = self._find(ingress_ref)
