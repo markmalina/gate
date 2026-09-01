@@ -252,7 +252,9 @@ def _space(value: str) -> None:
 
 
 def _ref(value: str, code: str, prefix: str) -> None:
-    if type(value) is not str or _REF.fullmatch(value) is None or not value.startswith(prefix + ":"):
+    if type(value) is not str:
+        _fail(code)
+    if _REF.fullmatch(value) is None or not value.startswith(prefix + ":"):
         _fail(code)
 
 

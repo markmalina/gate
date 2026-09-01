@@ -5,7 +5,6 @@ from __future__ import annotations
 import socket
 
 import pytest
-
 from app.application.channel_neutral_route_v1 import (
     IngressDisposition,
     LocalRouteJournal,
@@ -111,7 +110,9 @@ def test_cross_space_envelope_fails_closed() -> None:
         LocalRouteJournal(_registry()).accept(_envelope(space_ref="pilot-a"))
 
 
-def test_attempted_network_access_is_unnecessary_and_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_network_access_is_unnecessary_and_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def forbidden_socket(*_args: object, **_kwargs: object) -> socket.socket:
         raise AssertionError("network/provider access attempted")
 
