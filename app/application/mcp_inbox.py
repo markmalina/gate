@@ -325,7 +325,10 @@ async def get_reply_context(
         )
         .outerjoin(
             TelegramReceipt,
-            TelegramReceipt.id == CanonicalMessage.receipt_id,
+            and_(
+                TelegramReceipt.id == CanonicalMessage.receipt_id,
+                TelegramReceipt.bot_key == "telegram_business",
+            ),
         )
         .where(
             Message.account_id == conversation.account_id,
@@ -905,5 +908,4 @@ def _serialize_datetime(value: Any) -> str | None:
     if value is None:
         return None
     return value.isoformat() if isinstance(value, datetime) else str(value)
-
 
