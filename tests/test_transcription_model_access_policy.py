@@ -35,9 +35,9 @@ def test_transcription_policy_matches_runtime_constants() -> None:
     worker = (ROOT / "app" / "worker" / "dropbox_calls.py").read_text(
         encoding="utf-8"
     )
-    adapter = (ROOT / "app" / "infrastructure" / "openai_transcription.py").read_text(
-        encoding="utf-8"
-    )
+    adapter = (
+        ROOT / "app" / "infrastructure" / "openai_transcription.py"
+    ).read_text(encoding="utf-8")
 
     assert "MAX_SOURCE_AUDIO_BYTES = 100 * 1024 * 1024" in application
     assert "MAX_TRANSCRIPTION_PARTS = 20" in application
