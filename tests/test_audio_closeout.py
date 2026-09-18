@@ -12,7 +12,10 @@ from app.application.telegram_voice_transcription import (
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
 )
 from app.models.domain import DropboxCallInboxState
-from app.worker.dropbox_calls import _is_supported_file
+from app.worker.dropbox_calls import (
+    DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
+    _is_supported_file,
+)
 
 
 def test_audio_archive_bound_can_exceed_provider_request_bound() -> None:
@@ -29,7 +32,7 @@ def test_dropbox_accepts_previously_skipped_irina_call_size() -> None:
         "size": 25_505_021,
     }
     assert _is_supported_file(entry) is True
-    entry["size"] = TELEGRAM_DOWNLOAD_LIMIT_BYTES + 1
+    entry["size"] = DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1
     assert _is_supported_file(entry) is False
 
 
