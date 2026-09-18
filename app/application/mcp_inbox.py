@@ -13,11 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
-from app.application.telegram_attachments import serialize_telegram_attachments
+from app.application.telegram_attachments import (
+    serialize_telegram_attachments,
+    validated_telegram_receipt_payload,
+)
 from app.core.mcp_security import AccessScope
+from app.models.canonical import CanonicalMessage
 from app.models.domain import (
     Account,
     Conversation,
+    GateEvent,
     Message,
     MessageDirection,
     PersonIdentity,
@@ -292,6 +297,8 @@ async def get_reply_context(
         select(
             Message,
             TelegramUpdate,
+            GateEvent,
+            TelegramReceipt,
             PersonIdentity.metadata_["telegram_contact_name"]
             .as_string()
             .label("resolved_contact_name"),
@@ -310,6 +317,15 @@ async def get_reply_context(
                 TelegramUpdate.bot_id == Message.bot_id,
                 TelegramUpdate.update_id == Message.telegram_update_id,
             ),
+        )
+        .outerjoin(GateEvent, GateEvent.id == Message.gate_event_id)
+        .outerjoin(
+            CanonicalMessage,
+            CanonicalMessage.id == Message.canonical_message_id,
+        )
+        .outerjoin(
+            TelegramReceipt,
+            TelegramReceipt.id == CanonicalMessage.receipt_id,
         )
         .where(
             Message.account_id == conversation.account_id,
@@ -338,9 +354,31 @@ async def get_reply_context(
 
     timeline: list[tuple[tuple[datetime, int, UUID], JsonObject]] = []
     message_items_by_telegram_id: dict[int, int] = {}
-    for message, telegram_update, history_contact_name in history_rows:
+    for (
+        message,
+        telegram_update,
+        gate_event,
+        telegram_receipt,
+        history_contact_name,
+    ) in history_rows:
+        receipt_payload = (
+            validated_telegram_receipt_payload(
+                telegram_receipt.payload,
+                receipt_update_id=telegram_receipt.update_id,
+                message_update_id=message.telegram_update_id,
+                event_type=message.event_type,
+                telegram_message_id=message.telegram_message_id,
+                chat_id=message.chat_id,
+                business_connection_id=message.business_connection_id,
+            )
+            if telegram_receipt is not None
+            else None
+        )
         attachments = serialize_telegram_attachments(
             telegram_update.payload if telegram_update is not None else None,
+            gate_event.payload if gate_event is not None else None,
+            message.payload,
+            receipt_payload,
             task_id=task.id,
             message_id=message.id,
         )
