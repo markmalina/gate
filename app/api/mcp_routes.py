@@ -150,9 +150,11 @@ from app.models.domain import (
     Project,
     ReplyDraft,
     ReplyTask,
+    TelegramReceipt,
     TelegramUpdate,
     TelegramVoiceArchive,
 )
+from app.models.canonical import CanonicalMessage
 from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
@@ -167,6 +169,7 @@ from app.application.telegram_attachments import (
     TelegramAttachmentError,
     TelegramAttachmentReference,
     extract_telegram_attachments,
+    validated_telegram_receipt_payload,
 )
 from app.application.telegram_voice_update import extract_telegram_voice
 
@@ -1316,7 +1319,7 @@ async def _attachment_reply_context_tool_result(
 
     conversation = context["conversation"]
     result = await session.execute(
-        select(Message, TelegramUpdate, GateEvent)
+        select(Message, TelegramUpdate, GateEvent, TelegramReceipt)
         .outerjoin(
             TelegramUpdate,
             (
@@ -1325,6 +1328,14 @@ async def _attachment_reply_context_tool_result(
             ),
         )
         .outerjoin(GateEvent, GateEvent.id == Message.gate_event_id)
+        .outerjoin(
+            CanonicalMessage,
+            CanonicalMessage.id == Message.canonical_message_id,
+        )
+        .outerjoin(
+            TelegramReceipt,
+            TelegramReceipt.id == CanonicalMessage.receipt_id,
+        )
         .where(
             Message.id == message_id,
             Message.account_id.in_(principal.access_scope.account_ids),
@@ -1343,11 +1354,25 @@ async def _attachment_reply_context_tool_result(
             code="attachment_message_not_found",
             message="Selected Telegram message was not found in the allowed scope",
         )
-    message, telegram_update, gate_event = row
+    message, telegram_update, gate_event, telegram_receipt = row
+    receipt_payload = (
+        validated_telegram_receipt_payload(
+            telegram_receipt.payload,
+            receipt_update_id=telegram_receipt.update_id,
+            message_update_id=message.telegram_update_id,
+            event_type=message.event_type,
+            telegram_message_id=message.telegram_message_id,
+            chat_id=message.chat_id,
+            business_connection_id=message.business_connection_id,
+        )
+        if telegram_receipt is not None
+        else None
+    )
     attachments = extract_telegram_attachments(
         telegram_update.payload if telegram_update is not None else None,
         gate_event.payload if gate_event is not None else None,
         message.payload,
+        receipt_payload,
     )
     if attachment_index >= len(attachments):
         return _tool_error_result(
