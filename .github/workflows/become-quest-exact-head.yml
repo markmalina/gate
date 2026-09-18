@@ -184,7 +184,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16@sha256:17e67d7b9890c99b055ba1e0d5c5be4ec27c9d3a72bda32db24a5e5d8a85af0c
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -243,10 +243,10 @@ jobs:
           alembic upgrade head
           alembic check
           BECOME_SLICE3_PRESERVE_RESTORE_GRAPH=1 pytest -q tests/test_become_learner_invitation_postgres.py::test_slice3_migration_is_single_head_and_leaves_populated_restore_graph
-          pg_dump --host localhost --username postgres --dbname gate --format custom --file /tmp/gate-synthetic-merge.dump
-          dropdb --host localhost --username postgres --if-exists gate_synthetic_restore
-          createdb --host localhost --username postgres gate_synthetic_restore
-          pg_restore --host localhost --username postgres --dbname gate_synthetic_restore --no-owner --no-privileges /tmp/gate-synthetic-merge.dump
+          docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname gate --format custom > /tmp/gate-synthetic-merge.dump
+          docker run --rm --network host -e PGPASSWORD postgres:17 dropdb --host localhost --username postgres --if-exists gate_synthetic_restore
+          docker run --rm --network host -e PGPASSWORD postgres:17 createdb --host localhost --username postgres gate_synthetic_restore
+          docker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore --host localhost --username postgres --dbname gate_synthetic_restore --no-owner --no-privileges < /tmp/gate-synthetic-merge.dump
           python scripts/postgres_restore_evidence.py --database-url postgresql://postgres:postgres@localhost:5432/gate_synthetic_restore --output become-pilot-synthetic-restore-evidence.json
           slice3_graph_count="$(psql --host localhost --username postgres --dbname gate_synthetic_restore --tuples-only --no-align --command "SELECT count(*) FROM become_slice3_invitations AS invitation JOIN become_slice3_learner_candidates AS candidate ON candidate.id=invitation.candidate_id JOIN become_pilot_program_drafts AS program ON program.id=invitation.program_id JOIN become_slice3_acceptances AS acceptance ON acceptance.invitation_id=invitation.id JOIN become_slice3_relations_outbox AS outbox ON outbox.acceptance_id=acceptance.id;")"
           test "$slice3_graph_count" -ge 1

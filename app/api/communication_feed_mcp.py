@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import mcp_routes
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import (
+    ATTACHMENT_DETAILS_SCHEMA,
     COMMON_DEFINITIONS,
     REPLY_CONTEXT_MESSAGE_SCHEMA,
     REPLY_CONTEXT_SUCCESS_SCHEMA,
@@ -138,6 +139,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
     "$defs": {
         **copy.deepcopy(COMMON_DEFINITIONS),
         "voice_details": copy.deepcopy(VOICE_DETAILS_SCHEMA),
+        "attachment_details": copy.deepcopy(ATTACHMENT_DETAILS_SCHEMA),
         "reply_context_message": copy.deepcopy(REPLY_CONTEXT_MESSAGE_SCHEMA),
         "communication_feed_item": FEED_ITEM_SCHEMA,
     },

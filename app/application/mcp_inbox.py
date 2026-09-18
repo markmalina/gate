@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.telegram_attachments import serialize_telegram_attachments
 from app.core.mcp_security import AccessScope
 from app.models.domain import (
     Account,
@@ -338,11 +339,17 @@ async def get_reply_context(
     timeline: list[tuple[tuple[datetime, int, UUID], JsonObject]] = []
     message_items_by_telegram_id: dict[int, int] = {}
     for message, telegram_update, history_contact_name in history_rows:
+        attachments = serialize_telegram_attachments(
+            telegram_update.payload if telegram_update is not None else None,
+            task_id=task.id,
+            message_id=message.id,
+        )
         serialized = {
             **_serialize_message(message),
-            "message_type": "text",
+            "message_type": "attachment" if attachments else "text",
             "text": message.text,
             "voice": None,
+            "attachments": attachments,
             "counterparty": counterparty(
                 message=message,
                 telegram_update=telegram_update,
@@ -628,6 +635,7 @@ def _serialize_voice_message(
         "received_at": _serialize_datetime(archive.received_at),
         "sent_at": None,
         "counterparty": counterparty_payload,
+        "attachments": [],
         "voice": {
             "archive_ref": f"task:{task_id}:voice-archive:{archive.id}",
             "transcription_status": status,

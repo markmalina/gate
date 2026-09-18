@@ -103,10 +103,50 @@ VOICE_DETAILS_SCHEMA = _object(
         "duration_seconds": {"type": "integer", "minimum": 0},
     }
 )
+ATTACHMENT_DETAILS_SCHEMA = _object(
+    {
+        "index": {"type": "integer", "minimum": 0},
+        "kind": {
+            "type": "string",
+            "enum": [
+                "document",
+                "photo",
+                "audio",
+                "video",
+                "animation",
+                "video_note",
+            ],
+        },
+        "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+        "mime_type": {"type": "string", "minLength": 1, "maxLength": 128},
+        "size_bytes": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+        },
+        "download_available": {"type": "boolean"},
+        "download_state": {
+            "type": "string",
+            "enum": [
+                "available_on_request",
+                "telegram_cloud_limit_exceeded",
+            ],
+        },
+        "selector": {
+            "type": "string",
+            "pattern": (
+                "^[0-9a-fA-F-]{36}:attachment:"
+                "[0-9a-fA-F-]{36}:[0-9]+$"
+            ),
+        },
+    }
+)
 REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
     {
         **MESSAGE_SCHEMA["properties"],
-        "message_type": {"type": "string", "enum": ["text", "voice"]},
+        "message_type": {
+            "type": "string",
+            "enum": ["text", "voice", "attachment"],
+        },
         "text": _nullable("string"),
         "voice": {
             "anyOf": [
@@ -114,8 +154,19 @@ REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
                 {"type": "null"},
             ]
         },
+        "attachments": {
+            "type": "array",
+            "items": _ref("attachment_details"),
+        },
         "counterparty": _ref("counterparty"),
-    }
+    },
+    required=[
+        *MESSAGE_SCHEMA["properties"],
+        "message_type",
+        "text",
+        "voice",
+        "counterparty",
+    ],
 )
 COMMON_DEFINITIONS: JsonObject = {
     "account": ACCOUNT_SCHEMA,
@@ -1617,6 +1668,7 @@ GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     {
         **COMMON_DEFINITIONS,
         "voice_details": VOICE_DETAILS_SCHEMA,
+        "attachment_details": ATTACHMENT_DETAILS_SCHEMA,
         "reply_context_message": REPLY_CONTEXT_MESSAGE_SCHEMA,
     },
 )

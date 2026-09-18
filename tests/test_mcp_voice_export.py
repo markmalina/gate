@@ -98,12 +98,20 @@ def test_invalid_latest_voice_transcript_selector_fails_closed(
 
 
 def test_plain_reply_context_selector_preserves_existing_behavior() -> None:
-    assert _parse_reply_context_selector(str(TASK_ID)) == (TASK_ID, None)
+    assert _parse_reply_context_selector(str(TASK_ID)) == (
+        TASK_ID,
+        None,
+        None,
+    )
 
 
 def test_exact_voice_selector_binds_task_and_message() -> None:
     selector = f"{TASK_ID}:voice:{MESSAGE_ID}"
-    assert _parse_reply_context_selector(selector) == (TASK_ID, MESSAGE_ID)
+    assert _parse_reply_context_selector(selector) == (
+        TASK_ID,
+        MESSAGE_ID,
+        None,
+    )
 
 
 @pytest.mark.parametrize(

@@ -9,6 +9,8 @@ import mimetypes
 import httpx
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePosixPath
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -159,6 +161,12 @@ from app.application.telegram_voice_transcription import (
     TelegramVoiceReference,
     TelegramVoiceTranscriptionService,
     TranscribeTelegramVoiceCommand,
+)
+from app.application.telegram_attachments import (
+    TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES,
+    TelegramAttachmentError,
+    TelegramAttachmentReference,
+    extract_telegram_attachments,
 )
 from app.application.telegram_voice_update import extract_telegram_voice
 
@@ -765,12 +773,17 @@ async def _get_reply_context_tool_result(
             session=session,
         )
     try:
-        task_id, voice_message_id = _parse_reply_context_selector(raw_task_id)
+        task_id, voice_message_id, attachment_selection = (
+            _parse_reply_context_selector(raw_task_id)
+        )
     except ValueError:
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
-            message="task_id must be a UUID or an exact task:voice:message selector",
+            message=(
+                "task_id must be a UUID or an exact task:voice:message "
+                "or task:attachment:message:index selector"
+            ),
         )
 
     raw_cursor = arguments.get("cursor")
@@ -805,6 +818,17 @@ async def _get_reply_context_tool_result(
             request_id=request_id,
             context=context,
             message_id=voice_message_id,
+            principal=principal,
+            session=session,
+            settings=settings,
+        )
+    if attachment_selection is not None:
+        attachment_message_id, attachment_index = attachment_selection
+        return await _attachment_reply_context_tool_result(
+            request_id=request_id,
+            context=context,
+            message_id=attachment_message_id,
+            attachment_index=attachment_index,
             principal=principal,
             session=session,
             settings=settings,
@@ -1236,13 +1260,266 @@ async def _voice_transcript_tool_result(
     )
 
 
-def _parse_reply_context_selector(raw_task_id: str) -> tuple[UUID, UUID | None]:
-    parts = raw_task_id.split(":voice:")
-    if len(parts) == 1:
-        return UUID(raw_task_id), None
-    if len(parts) != 2 or not all(parts):
+def _parse_reply_context_selector(
+    raw_task_id: str,
+) -> tuple[UUID, UUID | None, tuple[UUID, int] | None]:
+    attachment_parts = raw_task_id.split(":attachment:")
+    if len(attachment_parts) == 2 and all(attachment_parts):
+        task_raw, selection_raw = attachment_parts
+        message_parts = selection_raw.rsplit(":", maxsplit=1)
+        if (
+            len(message_parts) != 2
+            or not all(message_parts)
+            or not message_parts[1].isdigit()
+        ):
+            raise ValueError("invalid attachment selector")
+        attachment_index = int(message_parts[1])
+        if attachment_index < 0 or attachment_index > 32:
+            raise ValueError("invalid attachment selector")
+        return (
+            UUID(task_raw),
+            None,
+            (UUID(message_parts[0]), attachment_index),
+        )
+    if len(attachment_parts) != 1:
+        raise ValueError("invalid attachment selector")
+
+    voice_parts = raw_task_id.split(":voice:")
+    if len(voice_parts) == 1:
+        return UUID(raw_task_id), None, None
+    if len(voice_parts) != 2 or not all(voice_parts):
         raise ValueError("invalid voice selector")
-    return UUID(parts[0]), UUID(parts[1])
+    return UUID(voice_parts[0]), UUID(voice_parts[1]), None
+
+
+async def _attachment_reply_context_tool_result(
+    *,
+    request_id: Any,
+    context: JsonObject,
+    message_id: UUID,
+    attachment_index: int,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    visible_message_ids = {
+        item.get("id")
+        for item in context.get("messages", [])
+        if isinstance(item, dict)
+    }
+    if str(message_id) not in visible_message_ids:
+        return _tool_error_result(
+            request_id=request_id,
+            code="attachment_message_not_in_context",
+            message="Selected message is not in the scoped reply context",
+        )
+
+    conversation = context["conversation"]
+    result = await session.execute(
+        select(Message, TelegramUpdate, GateEvent)
+        .outerjoin(
+            TelegramUpdate,
+            (
+                (TelegramUpdate.bot_id == Message.bot_id)
+                & (TelegramUpdate.update_id == Message.telegram_update_id)
+            ),
+        )
+        .outerjoin(GateEvent, GateEvent.id == Message.gate_event_id)
+        .where(
+            Message.id == message_id,
+            Message.account_id.in_(principal.access_scope.account_ids),
+            Message.project_id.in_(principal.access_scope.project_ids),
+            Message.chat_id == conversation["chat_id"],
+            Message.business_connection_id.is_not_distinct_from(
+                conversation["business_connection_id"]
+            ),
+            Message.source == "telegram",
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="attachment_message_not_found",
+            message="Selected Telegram message was not found in the allowed scope",
+        )
+    message, telegram_update, gate_event = row
+    attachments = extract_telegram_attachments(
+        telegram_update.payload if telegram_update is not None else None,
+        gate_event.payload if gate_event is not None else None,
+        message.payload,
+    )
+    if attachment_index >= len(attachments):
+        return _tool_error_result(
+            request_id=request_id,
+            code="attachment_not_found",
+            message="Selected message has no attachment at that index",
+        )
+    attachment = attachments[attachment_index]
+    if not attachment.download_available:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_attachment_cloud_limit_exceeded",
+            message=(
+                "Telegram's hosted Bot API cannot download this attachment "
+                "because its declared size exceeds 20 MB"
+            ),
+        )
+    if not settings.telegram_bot_token:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_attachment_download_unavailable",
+            message="Telegram attachment download is not configured",
+        )
+
+    try:
+        data, media_type = await _download_telegram_attachment(
+            attachment=attachment,
+            bot_token=settings.telegram_bot_token,
+        )
+    except TelegramAttachmentError as exc:
+        return _tool_error_result(
+            request_id=request_id,
+            code=exc.code,
+            message="Telegram attachment download failed closed",
+        )
+    return _attachment_content_tool_result(
+        request_id=request_id,
+        context=context,
+        message_id=message_id,
+        attachment_index=attachment_index,
+        attachment=attachment,
+        data=data,
+        media_type=media_type,
+    )
+
+
+async def _download_telegram_attachment(
+    *,
+    attachment: TelegramAttachmentReference,
+    bot_token: str,
+) -> tuple[bytes, str]:
+    api = "https://api.telegram.org"
+    timeout = httpx.Timeout(60.0, connect=15.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as http_client:
+            metadata_response = await http_client.post(
+                f"{api}/bot{bot_token}/getFile",
+                json={"file_id": attachment.file_id},
+            )
+            metadata = metadata_response.json()
+            if (
+                metadata_response.is_error
+                or not isinstance(metadata, dict)
+                or metadata.get("ok") is not True
+                or not isinstance(metadata.get("result"), dict)
+            ):
+                raise TelegramAttachmentError(
+                    "telegram_attachment_get_file_rejected"
+                )
+            file_metadata = metadata["result"]
+            file_size = file_metadata.get("file_size")
+            if (
+                type(file_size) is int
+                and file_size > TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES
+            ):
+                raise TelegramAttachmentError(
+                    "telegram_attachment_cloud_limit_exceeded"
+                )
+            file_path = file_metadata.get("file_path")
+            if not isinstance(file_path, str) or not file_path.strip():
+                raise TelegramAttachmentError(
+                    "telegram_attachment_file_path_missing"
+                )
+            path = PurePosixPath(file_path.strip().lstrip("/"))
+            if any(part in {".", ".."} for part in path.parts):
+                raise TelegramAttachmentError(
+                    "telegram_attachment_file_path_invalid"
+                )
+            safe_path = quote(path.as_posix(), safe="/")
+            data = bytearray()
+            media_type = attachment.mime_type
+            async with http_client.stream(
+                "GET",
+                f"{api}/file/bot{bot_token}/{safe_path}",
+            ) as response:
+                response.raise_for_status()
+                header_type = response.headers.get("content-type")
+                if isinstance(header_type, str) and header_type.strip():
+                    media_type = header_type.split(";", maxsplit=1)[0].strip()
+                async for chunk in response.aiter_bytes():
+                    data.extend(chunk)
+                    if (
+                        len(data)
+                        > TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES
+                    ):
+                        raise TelegramAttachmentError(
+                            "telegram_attachment_cloud_limit_exceeded"
+                        )
+    except TelegramAttachmentError:
+        raise
+    except (httpx.HTTPError, ValueError):
+        raise TelegramAttachmentError(
+            "telegram_attachment_download_failed"
+        ) from None
+    if not data:
+        raise TelegramAttachmentError("telegram_attachment_empty")
+    return bytes(data), media_type or "application/octet-stream"
+
+
+def _attachment_content_tool_result(
+    *,
+    request_id: Any,
+    context: JsonObject,
+    message_id: UUID,
+    attachment_index: int,
+    attachment: TelegramAttachmentReference,
+    data: bytes,
+    media_type: str,
+) -> JsonObject:
+    encoded = base64.b64encode(data).decode("ascii")
+    if media_type.startswith("image/"):
+        content_block: JsonObject = {
+            "type": "image",
+            "data": encoded,
+            "mimeType": media_type,
+        }
+    elif media_type.startswith("audio/"):
+        content_block = {
+            "type": "audio",
+            "data": encoded,
+            "mimeType": media_type,
+        }
+    else:
+        filename = quote(attachment.filename, safe="")
+        content_block = {
+            "type": "resource",
+            "resource": {
+                "uri": (
+                    f"gate://telegram-attachment/{message_id}/"
+                    f"{attachment_index}/{filename}"
+                ),
+                "mimeType": media_type,
+                "blob": encoded,
+            },
+        }
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Owner-selected Telegram attachment: "
+                        f"{attachment.filename} ({media_type}, {len(data)} bytes)."
+                    ),
+                },
+                content_block,
+            ],
+            "structuredContent": context,
+            "isError": False,
+        },
+    )
 
 
 async def _voice_reply_context_tool_result(
@@ -2615,9 +2892,11 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "name": "gate_get_reply_context",
         "title": "Get Gate reply context",
         "description": (
-            "Return one scoped RU/BY conversation as a chronological text+voice "
-            "timeline. A UUID reply task is the primary path. Existing exact voice "
-            "and latest call/voice selectors remain available for compatibility."
+            "Return one scoped RU/BY conversation as a chronological text, voice "
+            "and attachment timeline. Attachment metadata is listed without a "
+            "provider call; an exact task:attachment:message:index selector retrieves "
+            "one file on explicit request. Existing exact voice and latest call/voice "
+            "selectors remain available for compatibility."
         ),
         "inputSchema": {
             "type": "object",
@@ -2629,6 +2908,13 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
                             "type": "string",
                             "pattern": (
                                 "^[0-9a-fA-F-]{36}:voice:[0-9a-fA-F-]{36}$"
+                            ),
+                        },
+                        {
+                            "type": "string",
+                            "pattern": (
+                                "^[0-9a-fA-F-]{36}:attachment:"
+                                "[0-9a-fA-F-]{36}:[0-9]+$"
                             ),
                         },
                         {
@@ -3439,6 +3725,19 @@ def _format_reply_context_text(context: JsonObject) -> str:
                 f"[{direction}] {message['text_preview'] or '<empty>'}",
             ]
         )
+        for attachment in message.get("attachments", []):
+            availability = (
+                "available on request"
+                if attachment["download_available"]
+                else attachment["download_state"]
+            )
+            lines.append(
+                "attachment "
+                f"{attachment['index']}: {attachment['filename']} "
+                f"({attachment['mime_type']}, "
+                f"{attachment['size_bytes'] or 'size unknown'}, "
+                f"{availability}); selector={attachment['selector']}"
+            )
     return "\n".join(lines)
 
 
