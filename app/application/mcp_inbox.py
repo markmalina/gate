@@ -386,7 +386,7 @@ async def get_reply_context(
         attachments = serialize_telegram_attachments(
             telegram_update.payload if telegram_update is not None else None,
             gate_event.payload if gate_event is not None else None,
-            message.payload,
+            getattr(message, "payload", None),
             receipt_payload,
             task_id=task.id,
             message_id=message.id,
