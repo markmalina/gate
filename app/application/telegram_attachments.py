@@ -113,8 +113,7 @@ def extract_telegram_attachments(
 
 
 def serialize_telegram_attachments(
-    payload: JsonObject | None,
-    *,
+    *payloads: JsonObject | None,
     task_id: UUID,
     message_id: UUID,
 ) -> list[JsonObject]:
@@ -125,9 +124,49 @@ def serialize_telegram_attachments(
             index=index,
         )
         for index, attachment in enumerate(
-            extract_telegram_attachments(payload)
+            extract_telegram_attachments(*payloads)
         )
     ]
+
+
+def validated_telegram_receipt_payload(
+    payload: JsonObject | None,
+    *,
+    receipt_update_id: int,
+    message_update_id: int | None,
+    event_type: str,
+    telegram_message_id: int | None,
+    chat_id: str,
+    business_connection_id: str | None,
+) -> JsonObject | None:
+    """Return one receipt payload only when it is the exact message source."""
+
+    if (
+        not isinstance(payload, dict)
+        or type(receipt_update_id) is not int
+        or type(message_update_id) is not int
+        or receipt_update_id != message_update_id
+        or payload.get("update_id") != message_update_id
+        or event_type not in _MESSAGE_KEYS
+        or type(telegram_message_id) is not int
+    ):
+        return None
+    message = payload.get(event_type)
+    if not isinstance(message, dict):
+        return None
+    if message.get("message_id") != telegram_message_id:
+        return None
+    chat = message.get("chat")
+    raw_chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if type(raw_chat_id) not in {int, str} or str(raw_chat_id) != chat_id:
+        return None
+    raw_connection_id = message.get("business_connection_id")
+    if business_connection_id is None:
+        if raw_connection_id is not None:
+            return None
+    elif raw_connection_id != business_connection_id:
+        return None
+    return payload
 
 
 def _telegram_messages(payload: JsonObject | None) -> tuple[JsonObject, ...]:
