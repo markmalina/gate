@@ -13,6 +13,7 @@ from app.application.telegram_attachments import (
     TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES,
     extract_telegram_attachments,
     serialize_telegram_attachments,
+    validated_telegram_receipt_payload,
 )
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -40,6 +41,24 @@ def _document(
             },
         },
     }
+
+
+def _captioned_document(
+    *,
+    unique: str = "captioned-logo",
+    size: int = 228_300,
+) -> dict[str, object]:
+    payload = _document(
+        unique=unique,
+        filename="DREAME-CAPTIONED.ai",
+        mime_type="application/postscript",
+        size=size,
+    )
+    message = payload["business_message"]
+    assert isinstance(message, dict)
+    message["business_connection_id"] = "ru-connection"
+    message["caption"] = "Logo source"
+    return payload
 
 
 def test_document_metadata_is_lazy_and_provider_ids_stay_private() -> None:
@@ -177,6 +196,103 @@ def test_polinalike_four_messages_produce_four_opaque_selectors() -> None:
         True,
         True,
     ]
+
+
+def test_captioned_document_is_discovered_from_exact_durable_receipt() -> None:
+    payload = _captioned_document()
+
+    receipt_payload = validated_telegram_receipt_payload(
+        payload,
+        receipt_update_id=10,
+        message_update_id=10,
+        event_type="business_message",
+        telegram_message_id=20,
+        chat_id="30",
+        business_connection_id="ru-connection",
+    )
+    public = serialize_telegram_attachments(
+        {"canonical_source": True},
+        receipt_payload,
+        task_id=TASK_ID,
+        message_id=MESSAGE_ID,
+    )
+
+    assert receipt_payload is payload
+    assert public == [
+        {
+            "index": 0,
+            "kind": "document",
+            "filename": "DREAME-CAPTIONED.ai",
+            "mime_type": "application/postscript",
+            "size_bytes": 228_300,
+            "download_available": True,
+            "download_state": "available_on_request",
+            "selector": f"{TASK_ID}:attachment:{MESSAGE_ID}:0",
+        }
+    ]
+    assert "provider-captioned-logo" not in repr(public)
+    assert "Logo source" not in repr(public)
+
+
+def test_captioned_receipt_fails_closed_on_stale_or_mismatched_identity() -> None:
+    payload = _captioned_document()
+    exact = {
+        "receipt_update_id": 10,
+        "message_update_id": 10,
+        "event_type": "business_message",
+        "telegram_message_id": 20,
+        "chat_id": "30",
+        "business_connection_id": "ru-connection",
+    }
+
+    mismatches = [
+        {"receipt_update_id": 11},
+        {"message_update_id": 11},
+        {"event_type": "message"},
+        {"telegram_message_id": 21},
+        {"chat_id": "31"},
+        {"business_connection_id": "by-connection"},
+    ]
+    for mismatch in mismatches:
+        arguments = {**exact, **mismatch}
+        assert validated_telegram_receipt_payload(payload, **arguments) is None
+
+    invalid_payload = {**payload, "update_id": True}
+    assert validated_telegram_receipt_payload(invalid_payload, **exact) is None
+
+
+def test_captioned_receipt_deduplicates_against_other_payload_sources() -> None:
+    payload = _captioned_document()
+
+    attachments = extract_telegram_attachments(payload, payload, payload)
+
+    assert len(attachments) == 1
+    assert attachments[0].filename == "DREAME-CAPTIONED.ai"
+
+
+def test_large_captioned_receipt_stays_visible_but_not_downloadable() -> None:
+    payload = _captioned_document(
+        unique="captioned-fonts",
+        size=TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES + 1,
+    )
+    receipt_payload = validated_telegram_receipt_payload(
+        payload,
+        receipt_update_id=10,
+        message_update_id=10,
+        event_type="business_message",
+        telegram_message_id=20,
+        chat_id="30",
+        business_connection_id="ru-connection",
+    )
+
+    public = serialize_telegram_attachments(
+        receipt_payload,
+        task_id=TASK_ID,
+        message_id=MESSAGE_ID,
+    )
+
+    assert public[0]["download_available"] is False
+    assert public[0]["download_state"] == "telegram_cloud_limit_exceeded"
 
 
 def test_attachment_selector_is_exact_and_voice_compatible() -> None:
