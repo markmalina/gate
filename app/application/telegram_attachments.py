@@ -146,6 +146,7 @@ def validated_telegram_receipt_payload(
         or type(receipt_update_id) is not int
         or type(message_update_id) is not int
         or receipt_update_id != message_update_id
+        or type(payload.get("update_id")) is not int
         or payload.get("update_id") != message_update_id
         or event_type not in _MESSAGE_KEYS
         or type(telegram_message_id) is not int
@@ -154,7 +155,10 @@ def validated_telegram_receipt_payload(
     message = payload.get(event_type)
     if not isinstance(message, dict):
         return None
-    if message.get("message_id") != telegram_message_id:
+    if (
+        type(message.get("message_id")) is not int
+        or message.get("message_id") != telegram_message_id
+    ):
         return None
     chat = message.get("chat")
     raw_chat_id = chat.get("id") if isinstance(chat, dict) else None
