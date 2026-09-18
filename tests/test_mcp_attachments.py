@@ -257,6 +257,9 @@ def test_captioned_receipt_fails_closed_on_stale_or_mismatched_identity() -> Non
         arguments = {**exact, **mismatch}
         assert validated_telegram_receipt_payload(payload, **arguments) is None
 
+    invalid_payload = {**payload, "update_id": True}
+    assert validated_telegram_receipt_payload(invalid_payload, **exact) is None
+
 
 def test_captioned_receipt_deduplicates_against_other_payload_sources() -> None:
     payload = _captioned_document()
