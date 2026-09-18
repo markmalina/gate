@@ -18,6 +18,7 @@ from app.core.config import Settings
 from app.worker.dropbox_calls import (
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+    DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
     DropboxCallWorkerError,
     _audio_media_type,
     _is_supported_file,
@@ -107,7 +108,13 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
         is False
     )
     assert _is_supported_file({**entry, "name": "photo.jpg"}) is False
-    assert _is_supported_file({**entry, "size": 25 * 1024 * 1024 + 1}) is False
+    assert _is_supported_file({**entry, "size": 37_585_783}) is True
+    assert (
+        _is_supported_file(
+            {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
+        )
+        is False
+    )
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False
 
 

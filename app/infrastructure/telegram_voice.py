@@ -13,6 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from app.application.telegram_voice_transcription import (
+    MAX_TRANSCRIPTION_PARTS,
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     DownloadedVoice,
@@ -150,7 +151,7 @@ class TelegramVoiceNormalizer:
             return_code, chunks, _stderr = await self._chunked_runner(voice.data)
             if return_code != 0 or not chunks:
                 raise TelegramVoiceError("telegram_voice_chunking_failed")
-            if len(chunks) > 10:
+            if len(chunks) > MAX_TRANSCRIPTION_PARTS:
                 raise TelegramVoiceError("telegram_voice_too_many_parts")
             if any(
                 not chunk or len(chunk) > OPENAI_TRANSCRIPTION_LIMIT_BYTES

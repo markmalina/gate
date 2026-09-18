@@ -12,6 +12,7 @@ from app.application.billing import (
     admit_budget,
 )
 from app.application.telegram_voice_transcription import (
+    MAX_SOURCE_AUDIO_BYTES,
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     DownloadedVoice,
     NormalizedVoice,
@@ -160,7 +161,10 @@ def command(
     )
 
 
-def service() -> tuple[
+def service(
+    *,
+    download_limit_bytes: int = TELEGRAM_DOWNLOAD_LIMIT_BYTES,
+) -> tuple[
     TelegramVoiceTranscriptionService,
     FakeDownloader,
     FakeNormalizer,
@@ -177,6 +181,7 @@ def service() -> tuple[
             normalizer=normalizer,
             budget=budget,
             speech_to_text=speech,
+            download_limit_bytes=download_limit_bytes,
         ),
         downloader,
         normalizer,
@@ -211,6 +216,25 @@ async def test_oversize_voice_is_rejected_before_download() -> None:
     assert downloader.calls == []
     assert budget.calls == []
     assert speech.calls == []
+
+
+@pytest.mark.anyio
+async def test_explicit_stored_audio_limit_does_not_weaken_telegram_default() -> None:
+    default_worker, default_downloader, _normalizer, _budget, _speech = service()
+    stored_worker, stored_downloader, _normalizer, _budget, _speech = service(
+        download_limit_bytes=MAX_SOURCE_AUDIO_BYTES,
+    )
+    oversized = command(
+        declared_size_bytes=TELEGRAM_DOWNLOAD_LIMIT_BYTES + 1,
+    )
+
+    default_result = await default_worker.transcribe(oversized)
+    stored_result = await stored_worker.transcribe(oversized)
+
+    assert default_result.reason_code == "telegram_voice_download_limit_exceeded"
+    assert default_downloader.calls == []
+    assert stored_result.outcome is TelegramVoiceOutcome.TRANSCRIBED
+    assert len(stored_downloader.calls) == 1
 
 
 @pytest.mark.anyio

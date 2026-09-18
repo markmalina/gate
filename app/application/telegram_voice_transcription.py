@@ -21,6 +21,9 @@ from app.application.billing import (
 OPENAI_TRANSCRIPTION_LIMIT_BYTES = 25_000_000
 # Gate may archive a slightly larger bounded source and compress it before upload.
 TELEGRAM_DOWNLOAD_LIMIT_BYTES = 25 * 1024 * 1024
+# Dropbox call recordings use a separate source ceiling; Telegram keeps its limit.
+MAX_SOURCE_AUDIO_BYTES = 100 * 1024 * 1024
+MAX_TRANSCRIPTION_PARTS = 20
 
 
 class TelegramVoiceError(ValueError):
@@ -86,7 +89,7 @@ class NormalizedVoice:
             raise TelegramVoiceError("telegram_voice_normalized_empty")
         if len(self.data) > OPENAI_TRANSCRIPTION_LIMIT_BYTES:
             raise TelegramVoiceError("telegram_voice_normalized_too_large")
-        if len(self.additional_parts) > 9:
+        if len(self.additional_parts) >= MAX_TRANSCRIPTION_PARTS:
             raise TelegramVoiceError("telegram_voice_too_many_parts")
         if any(part.additional_parts for part in self.additional_parts):
             raise TelegramVoiceError("telegram_voice_nested_parts")
@@ -236,11 +239,19 @@ class TelegramVoiceTranscriptionService:
         normalizer: TelegramVoiceNormalizerPort,
         budget: TranscriptionBudgetPort,
         speech_to_text: SpeechToTextPort,
+        download_limit_bytes: int = TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     ) -> None:
+        if not (
+            TELEGRAM_DOWNLOAD_LIMIT_BYTES
+            <= download_limit_bytes
+            <= MAX_SOURCE_AUDIO_BYTES
+        ):
+            raise ValueError("telegram_voice_download_limit_invalid")
         self._downloader = downloader
         self._normalizer = normalizer
         self._budget = budget
         self._speech_to_text = speech_to_text
+        self._download_limit_bytes = download_limit_bytes
 
     async def transcribe(
         self,
@@ -253,13 +264,13 @@ class TelegramVoiceTranscriptionService:
             )
         if (
             command.voice.declared_size_bytes is not None
-            and command.voice.declared_size_bytes > TELEGRAM_DOWNLOAD_LIMIT_BYTES
+            and command.voice.declared_size_bytes > self._download_limit_bytes
         ):
             return _rejected("telegram_voice_download_limit_exceeded")
 
         try:
             downloaded = await self._downloader.download(command.voice)
-            if len(downloaded.data) > TELEGRAM_DOWNLOAD_LIMIT_BYTES:
+            if len(downloaded.data) > self._download_limit_bytes:
                 return _rejected("telegram_voice_download_limit_exceeded")
             normalized = await self._normalizer.normalize(downloaded)
         except TelegramVoiceError as exc:
