@@ -357,13 +357,19 @@ async def get_reply_context(
 
     timeline: list[tuple[tuple[datetime, int, UUID], JsonObject]] = []
     message_items_by_telegram_id: dict[int, int] = {}
-    for (
-        message,
-        telegram_update,
-        gate_event,
-        telegram_receipt,
-        history_contact_name,
-    ) in history_rows:
+    for history_row in history_rows:
+        if len(history_row) == 3:
+            message, telegram_update, history_contact_name = history_row
+            gate_event = None
+            telegram_receipt = None
+        else:
+            (
+                message,
+                telegram_update,
+                gate_event,
+                telegram_receipt,
+                history_contact_name,
+            ) = history_row
         receipt_payload = (
             validated_telegram_receipt_payload(
                 telegram_receipt.payload,
@@ -908,4 +914,3 @@ def _serialize_datetime(value: Any) -> str | None:
     if value is None:
         return None
     return value.isoformat() if isinstance(value, datetime) else str(value)
-
