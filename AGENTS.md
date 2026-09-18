@@ -7,6 +7,16 @@ owns Gate transport/runtime implementation; Center coordinates portfolio,
 requirements, handoffs and acceptance without gaining Gate mutation authority.
 
 
+### Model access boundary
+
+For every server-side model or transcription change, read the pinned
+`use-model-access` skill, `model-access.lock`, and the exact project policy
+named by that lock before mutation. A missing or mismatched pin, provider,
+endpoint, model, retention rule, cost ceiling, timeout, retry count or output
+limit fails closed. Credentials remain server-side, provider calls remain
+default-off, and real provider smoke requires the exact owner gate recorded by
+the current Work.
+
 ### Production deploy route
 
 For a direct owner request to deploy Gate's current Production code, use the registered short Ops lane:

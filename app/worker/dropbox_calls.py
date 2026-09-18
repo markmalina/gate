@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
-    TELEGRAM_DOWNLOAD_LIMIT_BYTES,
+    MAX_SOURCE_AUDIO_BYTES,
     DownloadedVoice,
     TelegramVoiceOutcome,
     TelegramVoiceReference,
@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 _DROPBOX_API = "https://api.dropboxapi.com/2"
 _DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2"
+DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES = MAX_SOURCE_AUDIO_BYTES
 # Reuse the existing hard-limited Gate voice budget until billing scopes are generalized.
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
@@ -342,7 +343,7 @@ def _is_supported_file(entry: object) -> bool:
         and _is_in_call_inbox(path)
         and PurePosixPath(name).suffix.lower() in _SUPPORTED_SUFFIXES
         and isinstance(size, int)
-        and 0 < size <= TELEGRAM_DOWNLOAD_LIMIT_BYTES
+        and 0 < size <= DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES
     )
 
 
@@ -370,7 +371,7 @@ async def _ingest_entry(
     if not _is_in_call_inbox(path):
         raise DropboxCallWorkerError("dropbox_call_path_outside_inbox")
     size = entry.get("size")
-    if not isinstance(size, int) or size <= 0 or size > TELEGRAM_DOWNLOAD_LIMIT_BYTES:
+    if not isinstance(size, int) or size <= 0 or size > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES:
         raise DropboxCallWorkerError("dropbox_call_size_invalid")
 
     async with session_factory() as session:
@@ -536,6 +537,7 @@ async def _transcribe_recording(
             ),
             http=http,
         ),
+        download_limit_bytes=DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
     )
     result = await service.transcribe(
         TranscribeTelegramVoiceCommand(
@@ -883,14 +885,14 @@ async def _download_revision(
             media_type = response.headers.get("content-type", "").split(";", 1)[0]
             async for chunk in response.aiter_bytes():
                 data.extend(chunk)
-                if len(data) > TELEGRAM_DOWNLOAD_LIMIT_BYTES:
+                if len(data) > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES:
                     raise DropboxCallWorkerError("dropbox_call_download_limit_exceeded")
     except httpx.HTTPError:
         raise DropboxCallWorkerError("dropbox_call_download_transport_failed") from None
     if (
         not data
         or len(data) != expected_size
-        or len(data) > TELEGRAM_DOWNLOAD_LIMIT_BYTES
+        or len(data) > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES
     ):
         raise DropboxCallWorkerError("dropbox_call_download_size_mismatch")
     if not media_type.startswith("audio/"):

@@ -1,0 +1,37 @@
+{
+  "schema_version": "model-access-lock.v1",
+  "status": "accepted",
+  "accepted_at": "2026-09-18T20:28:21Z",
+  "accepted_by": "owner",
+  "skill": {
+    "name": "use-model-access",
+    "id": "6a8c4f8397088191bdda343824817fe2",
+    "commit": "06a20ff9403db151e3c0559b91f8e7baef108356",
+    "skill_md_sha256": "6cc0efbcb916df3974c196513884ed895f3e7ae828ec1a4225fa3517fead2709"
+  },
+  "project_policy": {
+    "path": "docs/policies/GATE_TRANSCRIPTION_MODEL_ACCESS_POLICY.md",
+    "version": "gate-transcription-model-access-v1"
+  },
+  "feature_default": false,
+  "provider": "openai",
+  "endpoint": "https://api.openai.com/v1/audio/transcriptions",
+  "models": [
+    "gpt-4o-mini-transcribe",
+    "gpt-4o-transcribe"
+  ],
+  "timeout_seconds_per_part": 60,
+  "automatic_retry_count": 0,
+  "max_source_bytes": 104857600,
+  "max_part_bytes": 25000000,
+  "max_parts": 20,
+  "max_transcript_characters": 100000,
+  "monthly_hard_limit_microusd": 1000000,
+  "retention": {
+    "training": false,
+    "abuse_monitoring": "none",
+    "application_state": "none",
+    "zero_data_retention_eligible": true,
+    "zero_data_retention_claimed": false
+  }
+}

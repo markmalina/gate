@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.application.telegram_voice_transcription import (
+    MAX_TRANSCRIPTION_PARTS,
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
     DownloadedVoice,
@@ -36,6 +37,44 @@ def test_provider_oversized_native_audio_is_split_into_ordered_parts() -> None:
     assert len(result.additional_parts) == 1
     assert result.additional_parts[0].data == b"part-two"
     assert result.additional_parts[0].filename == "telegram-voice-part-002.mp3"
+
+
+def test_long_call_can_use_more_than_ten_ordered_parts() -> None:
+    chunks = tuple(f"part-{index}".encode() for index in range(13))
+
+    async def chunked(
+        _data: bytes,
+    ) -> tuple[int, tuple[bytes, ...], bytes]:
+        return 0, chunks, b""
+
+    normalizer = TelegramVoiceNormalizer(chunked_runner=chunked)
+    source = DownloadedVoice(
+        data=b"x" * (OPENAI_TRANSCRIPTION_LIMIT_BYTES + 1),
+        filename="call.m4a",
+        media_type="audio/mp4",
+    )
+
+    result = asyncio.run(normalizer.normalize(source))
+
+    assert result.data == chunks[0]
+    assert tuple(part.data for part in result.additional_parts) == chunks[1:]
+
+
+def test_more_than_twenty_parts_fail_closed() -> None:
+    async def too_many(
+        _data: bytes,
+    ) -> tuple[int, tuple[bytes, ...], bytes]:
+        return 0, tuple(b"x" for _ in range(MAX_TRANSCRIPTION_PARTS + 1)), b""
+
+    normalizer = TelegramVoiceNormalizer(chunked_runner=too_many)
+    source = DownloadedVoice(
+        data=b"x" * (OPENAI_TRANSCRIPTION_LIMIT_BYTES + 1),
+        filename="call.m4a",
+        media_type="audio/mp4",
+    )
+
+    with pytest.raises(TelegramVoiceError, match="telegram_voice_too_many_parts"):
+        asyncio.run(normalizer.normalize(source))
 
 
 def test_native_audio_at_provider_limit_is_not_reencoded() -> None:
