@@ -1334,7 +1334,10 @@ async def _attachment_reply_context_tool_result(
         )
         .outerjoin(
             TelegramReceipt,
-            TelegramReceipt.id == CanonicalMessage.receipt_id,
+            (
+                (TelegramReceipt.id == CanonicalMessage.receipt_id)
+                & (TelegramReceipt.bot_key == "telegram_business")
+            ),
         )
         .where(
             Message.id == message_id,
