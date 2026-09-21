@@ -366,3 +366,58 @@ async def test_combined_output_limit_is_unknown_and_stops_remaining_parts() -> N
             await client.transcribe(source, language="ru")
     assert caught.value.outcome_unknown is True
     assert calls == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("parts,expected,no_speech", [
+    (["начало", "", "конец"], "начало\nконец", False),
+    (["", " "], "", True),
+])
+async def test_valid_empty_parts_preserve_other_text_and_all_usage(parts, expected, no_speech):
+    calls = 0
+
+    async def handler(_request):
+        nonlocal calls
+        value = parts[calls]
+        calls += 1
+        return httpx.Response(200, json={
+            "text": value,
+            "usage": {"type": "tokens", "input_tokens": 10,
+                      "output_tokens": 0, "total_tokens": 10},
+        })
+
+    part = NormalizedVoice(b"audio", "part.mp3", "audio/mpeg")
+    voice = NormalizedVoice(b"audio", "part.mp3", "audio/mpeg", (part,) * (len(parts) - 1))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="synthetic", enabled=True), http=http,
+        ).transcribe(voice, language="ru")
+    assert result.text == expected
+    assert result.no_speech is no_speech
+    assert result.billed_quantity == len(parts) * 10
+    assert result.actual_microusd == len(parts) * 13
+    assert calls == len(parts)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("usage,valid", [
+    (None, False),
+    ({"type": "tokens", "input_tokens": 0, "output_tokens": 0, "total_tokens": 0}, True),
+])
+async def test_empty_response_requires_known_usage(usage, valid):
+    async def handler(_request):
+        return httpx.Response(200, json={"text": "", "usage": usage})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="synthetic", enabled=True), http=http,
+        )
+        voice = NormalizedVoice(b"audio", "part.mp3", "audio/mpeg")
+        if valid:
+            result = await client.transcribe(voice, language="ru")
+            assert result.no_speech and result.actual_microusd == 0
+        else:
+            with pytest.raises(TranscriptionProviderError) as caught:
+                await client.transcribe(voice, language="ru")
+            assert caught.value.code == "openai_transcription_usage_unknown"
+            assert caught.value.outcome_unknown

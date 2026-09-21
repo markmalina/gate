@@ -553,9 +553,11 @@ def _feed_item(
         "counterparty": counterparty,
         "summary": summary,
         "summary_status": summary_status,
-        "outcome": None,
+        "outcome": ("Речь не распознана" if transcription_reason_code == "telegram_voice_no_speech"
+                    else None),
         "semantic_input_private": semantic_input,
-        "semantic_status": semantic_status,
+        "semantic_status": ("source_ready" if transcription_reason_code == "telegram_voice_no_speech"
+                            else semantic_status),
         "original_available": original_available,
         "transcript_status": transcript_status,
         "transcription_reason_code": transcription_reason_code,
@@ -600,3 +602,4 @@ def _format_feed_text(feed: JsonObject) -> str:
         "не показывай исходную формулировку по умолчанию. Сохрани время, "
         "источник, носитель, направление и участников."
     )
+

@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.domain import TelegramVoiceArchive
 
-GENERATION = 3
+GENERATION = 4
 ACCOUNT_ID = UUID("0d8e025f-323d-5e86-a44c-a620f690ae4f")
 PROJECT_ID = UUID("e12d3d85-6c5f-5f8a-a2fa-ac35f7ac80c0")
 EXACT_ARCHIVES = (
-    UUID("48d7d278-25e6-457d-b97e-096cfd90ad01"),
+    UUID("fe5dad7b-37a1-400e-af5d-e202aa672f0e"),
     UUID("a4901376-2dee-49b3-bc7e-011716842c2f"),
     UUID("e5d1d565-7ba3-48e2-9c44-40cd8e34207b"),
     UUID("5be96bc4-6fbf-40ff-a758-315dfa1cd25d"),
@@ -66,7 +66,7 @@ async def claim_owner_voice_recovery(
 def owner_voice_reservation_key(archive_id: UUID) -> str:
     if archive_id not in EXACT_ARCHIVES:
         raise ValueError("owner_voice_recovery_scope_invalid")
-    return f"telegram-voice-recovery-v3:{archive_id}"
+    return f"telegram-voice-recovery-v4-20260921:{archive_id}"
 
 
 async def reconcile_exact_call_copies(
@@ -95,16 +95,22 @@ async def reconcile_exact_call_copies(
                     '66d81bfc-7884-4c1f-80ae-5d14adce2122'::uuid)
                   AND target.transcription_status IN ('rejected', 'unknown')
                   AND target.transcript_text IS NULL
-                  AND source.transcription_status = 'transcribed'
-                  AND source.transcript_text IS NOT NULL
+                  AND ((source.transcription_status = 'transcribed'
+                        AND source.transcript_text IS NOT NULL)
+                       OR (source.transcription_status = 'rejected'
+                           AND source.transcription_reason_code = 'telegram_voice_no_speech'))
+                  AND target.transcription_reason_code IS DISTINCT FROM 'telegram_voice_no_speech'
                   AND source.summary_status = 'summarized'
                 ORDER BY target.id, source.transcribed_at DESC, source.id
             )
             UPDATE phone_call_recordings AS target
-            SET transcription_status = 'transcribed', transcript_text = source.transcript_text,
+            SET transcription_status = source.transcription_status,
+                transcript_text = source.transcript_text,
                 transcript_language = source.transcript_language,
                 transcription_model = source.transcription_model,
-                transcription_reason_code = 'audio_identical_source_reused',
+                transcription_reason_code = CASE
+                    WHEN source.transcription_reason_code = 'telegram_voice_no_speech'
+                    THEN 'telegram_voice_no_speech' ELSE 'audio_identical_source_reused' END,
                 transcribed_at = source.transcribed_at,
                 summary_status = source.summary_status, summary_text = source.summary_text,
                 summary_model = source.summary_model,
@@ -126,6 +132,7 @@ async def owner_voice_archive_inventory(
         "total": 0, "completed": 0, "incomplete": 0,
         "incomplete_recordings": [], "truncated": False,
         "private_content_exposed": False,
+        "no_speech_count": 0, "requires_attention_count": 0,
     }
     if workspace_key != "mark-personal" or not account_ids or not project_ids:
         return result
@@ -133,12 +140,15 @@ async def owner_voice_archive_inventory(
     scope = (archive.account_id.in_(account_ids), archive.project_id.in_(project_ids))
     complete = and_(archive.transcription_status == "transcribed",
                     archive.transcript_text.is_not(None))
+    no_speech = and_(archive.transcription_status == "rejected",
+                    archive.transcription_reason_code == "telegram_voice_no_speech")
     counts = (await session.execute(select(
-        func.count(), func.count().filter(complete),
+        func.count(), func.count().filter(complete), func.count().filter(no_speech),
     ).select_from(archive).where(*scope))).one()
     missing = int(counts[0]) - int(counts[1])
     result.update(total=int(counts[0]), completed=int(counts[1]),
                   incomplete=missing, truncated=missing > 100)
+    result.update(no_speech_count=int(counts[2]), requires_attention_count=missing - int(counts[2]))
     rows = (await session.execute(select(
         archive.id, archive.received_at, archive.transcription_status,
         archive.transcription_reason_code, archive.duration_seconds,

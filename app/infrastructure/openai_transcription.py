@@ -78,7 +78,7 @@ class OpenAITranscriptionClient:
         parts = (voice, *voice.additional_parts)
         transcripts: list[ProviderTranscript] = []
         for index, part in enumerate(parts):
-            prompt = transcripts[-1].text[-1_000:] if transcripts else None
+            prompt = (transcripts[-1].text[-1_000:] or None) if transcripts else None
             try:
                 transcripts.append(
                     await self._transcribe_part(
@@ -87,7 +87,7 @@ class OpenAITranscriptionClient:
                         prompt=prompt,
                     )
                 )
-                if sum(len(item.text) for item in transcripts) + len(transcripts) - 1 > 100_000:
+                if len("\n".join(item.text for item in transcripts if item.text)) > 100_000:
                     raise TranscriptionProviderError(
                         "openai_transcription_response_unknown", outcome_unknown=True
                     )
@@ -103,12 +103,13 @@ class OpenAITranscriptionClient:
             if item.provider_operation_ref is not None
         ]
         return ProviderTranscript(
-            text="\n".join(item.text for item in transcripts),
+            text="\n".join(item.text for item in transcripts if item.text),
             provider_operation_ref=(
                 ";".join(operation_refs)[:255] if operation_refs else None
             ),
             billed_quantity=sum(item.billed_quantity for item in transcripts),
             actual_microusd=sum(item.actual_microusd for item in transcripts),
+            no_speech=all(item.no_speech for item in transcripts),
         )
 
     async def _transcribe_part(
@@ -156,7 +157,7 @@ class OpenAITranscriptionClient:
                 outcome_unknown=True,
             )
         text = payload.get("text")
-        if not isinstance(text, str) or not text.strip() or len(text.strip()) > 100_000:
+        if not isinstance(text, str) or len(text.strip()) > 100_000:
             raise TranscriptionProviderError(
                 "openai_transcription_response_unknown",
                 outcome_unknown=True,
@@ -174,7 +175,7 @@ class OpenAITranscriptionClient:
             input_tokens is None
             or output_tokens is None
             or total_tokens is None
-            or total_tokens <= 0
+            or (total_tokens == 0 and bool(text.strip()))
             or total_tokens != input_tokens + output_tokens
         ):
             raise TranscriptionProviderError(
@@ -191,6 +192,7 @@ class OpenAITranscriptionClient:
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
             ),
+            no_speech=not text.strip(),
         )
 
 def _usage_count(value: Any) -> int | None:

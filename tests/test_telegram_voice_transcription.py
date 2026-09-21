@@ -137,6 +137,22 @@ class FakeSpeechToText:
         )
 
 
+@pytest.mark.anyio
+async def test_known_no_speech_settles_usage_without_routing_or_fabricating_text(monkeypatch):
+    async def no_speech(self, voice, *, language):
+        return ProviderTranscript("", billed_quantity=10, actual_microusd=13, no_speech=True)
+
+    monkeypatch.setattr(FakeSpeechToText, "transcribe", no_speech)
+    worker, _downloader, _normalizer, budget, _speech = service()
+    result = await worker.transcribe(command())
+    assert result.reason_code == "telegram_voice_no_speech"
+    assert result.alpha_input_text is None
+    assert not result.route_to_alpha_allowed and not result.telegram_delivery_allowed
+    assert len(budget.settlements) == 1
+    assert budget.settlements[0][1:3] == (13, 10)
+    assert budget.unknowns == [] and budget.releases == []
+
+
 def command(
     *,
     enabled: bool = True,

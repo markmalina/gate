@@ -108,10 +108,13 @@ class ProviderTranscript:
     billed_quantity: int = 0
     billed_unit: UsageUnit = UsageUnit.TOKENS
     actual_microusd: int = 0
+    no_speech: bool = False
 
     def __post_init__(self) -> None:
-        if not self.text.strip():
+        if not self.text.strip() and not self.no_speech:
             raise TelegramVoiceError("telegram_voice_transcript_empty")
+        if self.no_speech and self.text:
+            raise TelegramVoiceError("telegram_voice_no_speech_inconsistent")
         if self.text != self.text.strip():
             raise TelegramVoiceError("telegram_voice_transcript_not_normalized")
         if len(self.text) > 100_000:
@@ -338,6 +341,8 @@ class TelegramVoiceTranscriptionService:
             provider_operation_ref=transcript.provider_operation_ref,
             occurred_at=command.occurred_at,
         )
+        if transcript.no_speech:
+            return _rejected("telegram_voice_no_speech", budget=budget)
         return TelegramVoiceTranscriptionResult(
             outcome=TelegramVoiceOutcome.TRANSCRIBED,
             reason_code="telegram_voice_transcribed",

@@ -22,6 +22,8 @@ _SAFE_ERRORS = frozenset(
         "dropbox_call_processing",
         "dropbox_call_processing_v14",
         "telegram_voice_transcribed",
+        "telegram_voice_no_speech",
+        "dropbox_call_processing_v15",
         "audio_identical_source_reused",
         "telegram_voice_audio_invalid",
         "telegram_voice_audio_coverage_mismatch",
@@ -58,7 +60,8 @@ _SAFE_ERRORS = frozenset(
     }
 )
 _SAFE_STATUSES = frozenset(
-    {"received", "disabled", "rejected", "transcribed", "unknown", "processing", "recovery_v14"}
+    {"received", "disabled", "rejected", "transcribed", "unknown", "processing",
+     "recovery_v14", "recovery_v15"}
 )
 
 
@@ -101,6 +104,8 @@ async def dropbox_call_operational_status(
         "incomplete_recordings": [],
         "archive_counts": {"total": 0, "completed": 0, "incomplete": 0},
         "incomplete_truncated": False,
+        "no_speech_count": 0,
+        "requires_attention_count": 0,
         "record_limit": 20,
         "private_content_exposed": False,
         "provider_calls": 0,
@@ -144,9 +149,12 @@ async def dropbox_call_operational_status(
         "AND CAST(project_id AS VARCHAR) IN :project_ids "
     )
     complete = "transcription_status = 'transcribed' AND transcript_text IS NOT NULL"
+    no_speech = ("transcription_status = 'rejected' "
+                 "AND transcription_reason_code = 'telegram_voice_no_speech'")
     counts = (await session.execute(
         text("SELECT count(*) AS total, "
-             f"COALESCE(SUM(CASE WHEN {complete} THEN 1 ELSE 0 END), 0) AS completed "
+             f"COALESCE(SUM(CASE WHEN {complete} THEN 1 ELSE 0 END), 0) AS completed, "
+             f"COALESCE(SUM(CASE WHEN {no_speech} THEN 1 ELSE 0 END), 0) AS no_speech "
              + scope).bindparams(bindparam("project_ids", expanding=True)), parameters,
     )).mappings().one()
     missing = int(counts["total"]) - int(counts["completed"])
@@ -155,6 +163,8 @@ async def dropbox_call_operational_status(
         "incomplete": missing,
     }
     result["incomplete_truncated"] = missing > 100
+    result["no_speech_count"] = int(counts["no_speech"])
+    result["requires_attention_count"] = missing - int(counts["no_speech"])
     for key, tail in (
         ("recent_recordings", "ORDER BY received_at DESC, id DESC LIMIT 20"),
         ("incomplete_recordings", f"AND NOT ({complete}) "

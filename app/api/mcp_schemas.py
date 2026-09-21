@@ -1637,6 +1637,8 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
 )
 _dropbox_status_properties = GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"]["properties"]
 _dropbox_status_properties.update({
+    "no_speech_count": {"type": "integer", "minimum": 0},
+    "requires_attention_count": {"type": "integer", "minimum": 0},
     "incomplete_recordings": {
         **_dropbox_status_properties["recent_recordings"], "maxItems": 100,
     },
@@ -1658,6 +1660,10 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"] = _object({
         "duration_seconds": {"type": "integer"}, "size_bytes": {"type": "integer"},
         "summary_status": _nullable("string"),
     })},
+})
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"]["properties"].update({
+    "no_speech_count": {"type": "integer", "minimum": 0},
+    "requires_attention_count": {"type": "integer", "minimum": 0},
 })
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = (
     BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
