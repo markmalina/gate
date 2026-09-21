@@ -738,7 +738,7 @@ async def _recover_authorized_telegram_voices(
         )
         if owner_archive is None:
             return
-        archive, generation = owner_archive, 4
+        archive, generation = owner_archive, 5
     else:
         assert claimed is not None
         archive, generation = claimed

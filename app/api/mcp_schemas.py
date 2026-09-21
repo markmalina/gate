@@ -1662,6 +1662,7 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"] = _object({
     })},
 })
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"]["properties"].update({
+    "historical_short_voice_overflow_count": {"type": "integer", "minimum": 0},
     "no_speech_count": {"type": "integer", "minimum": 0},
     "requires_attention_count": {"type": "integer", "minimum": 0},
 })

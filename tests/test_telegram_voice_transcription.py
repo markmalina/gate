@@ -153,6 +153,40 @@ async def test_known_no_speech_settles_usage_without_routing_or_fabricating_text
     assert budget.unknowns == [] and budget.releases == []
 
 
+@pytest.mark.anyio
+async def test_short_request_reserves_headroom_but_settles_only_actual_usage():
+    worker, _downloader, _normalizer, budget, speech = service()
+    result = await worker.transcribe(command(requested_microusd=100))
+    assert result.outcome is TelegramVoiceOutcome.TRANSCRIBED
+    assert budget.calls[0][0].requested_microusd == 5_000
+    assert budget.settlements[0][1] == 1_100
+    assert len(speech.calls) == 1
+
+
+@pytest.mark.anyio
+async def test_short_request_headroom_never_bypasses_hard_budget():
+    worker, _downloader, _normalizer, budget, speech = service()
+    budget.limit_microusd = 4_999
+    result = await worker.transcribe(command(requested_microusd=100))
+    assert result.reason_code == "billing_hard_limit_exceeded"
+    assert speech.calls == []
+
+
+@pytest.mark.anyio
+async def test_settlement_overflow_is_saved_as_explicit_unknown_without_routing(monkeypatch):
+    from app.application.billing import BillingDomainError
+
+    async def overflow(*args, **kwargs):
+        raise BillingDomainError("billing_settlement_exceeds_reservation")
+
+    worker, _downloader, _normalizer, budget, _speech = service()
+    monkeypatch.setattr(budget, "settle", overflow)
+    result = await worker.transcribe(command())
+    assert result.outcome is TelegramVoiceOutcome.UNKNOWN
+    assert result.reason_code == "billing_settlement_exceeds_reservation"
+    assert not result.route_to_alpha_allowed and result.alpha_input_text is None
+
+
 def command(
     *,
     enabled: bool = True,
