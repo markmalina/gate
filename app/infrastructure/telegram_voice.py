@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from app.application.telegram_voice_transcription import (
     MAX_TRANSCRIPTION_PARTS,
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
     TELEGRAM_DOWNLOAD_LIMIT_BYTES,
+    TRANSCRIPTION_PART_SECONDS,
     DownloadedVoice,
     NormalizedVoice,
     TelegramVoiceError,
@@ -126,7 +128,7 @@ _FFMPEG_AUDIO_SUFFIXES = {
 
 
 class TelegramVoiceNormalizer:
-    """Pass bounded native audio through and compress provider-oversized sources."""
+    """Split long or oversized audio; pass short bounded native files through."""
 
     def __init__(
         self,
@@ -139,15 +141,24 @@ class TelegramVoiceNormalizer:
     async def normalize(self, voice: DownloadedVoice) -> NormalizedVoice:
         suffix = PurePosixPath(voice.filename).suffix.lower()
         if (
+            suffix not in _OPENAI_NATIVE_SUFFIXES | _FFMPEG_AUDIO_SUFFIXES
+            and not voice.media_type.startswith("audio/")
+        ):
+            raise TelegramVoiceError("telegram_voice_format_unsupported")
+        needs_chunks = (
+            len(voice.data) > OPENAI_TRANSCRIPTION_LIMIT_BYTES
+            or (voice.duration_seconds or 0) > TRANSCRIPTION_PART_SECONDS
+        )
+        if (
             suffix in _OPENAI_NATIVE_SUFFIXES
-            and len(voice.data) <= OPENAI_TRANSCRIPTION_LIMIT_BYTES
+            and not needs_chunks
         ):
             return NormalizedVoice(
                 data=voice.data,
                 filename=voice.filename,
                 media_type=voice.media_type,
             )
-        if suffix in _OPENAI_NATIVE_SUFFIXES:
+        if needs_chunks:
             return_code, chunks, _stderr = await self._chunked_runner(voice.data)
             if return_code != 0 or not chunks:
                 raise TelegramVoiceError("telegram_voice_chunking_failed")
@@ -188,76 +199,101 @@ class TelegramVoiceNormalizer:
         )
 
 
-async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
+async def _finish_audio_process(process: asyncio.subprocess.Process) -> tuple[bytes, bytes]:
+    try:
+        return await asyncio.wait_for(process.communicate(), timeout=120)
+    except (TimeoutError, asyncio.CancelledError):
+        if process.returncode is None:
+            process.kill()
+        await process.communicate()
+        raise
+
+
+async def _probe_audio_duration(path: Path) -> float:
+    """Reject empty/undecodable output even when ffmpeg exits successfully."""
+
     try:
         process = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            "pipe:0",
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-f",
-            "wav",
-            "pipe:1",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
-    except OSError:
-        raise TelegramVoiceError("telegram_voice_normalizer_unavailable") from None
-    stdout, stderr = await process.communicate(data)
-    return process.returncode or 0, stdout, stderr[:4096]
+        stdout, _ = await _finish_audio_process(process)
+        duration = float(stdout.decode("ascii").strip())
+    except (OSError, ValueError, TimeoutError):
+        raise TelegramVoiceError("telegram_voice_audio_invalid") from None
+    if process.returncode or not math.isfinite(duration) or duration <= 0:
+        raise TelegramVoiceError("telegram_voice_audio_invalid")
+    return duration
+
+
+async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
+    # M4A needs seekable input; WAV needs a finalized, seekable output header.
+    with tempfile.TemporaryDirectory(prefix="gate-audio-") as directory:
+        source = Path(directory) / "source.audio"
+        output = Path(directory) / "normalized.wav"
+        source.write_bytes(data)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror",
+                "-i", str(source), "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
+                "-map_metadata", "-1", "-f", "wav", str(output),
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await _finish_audio_process(process)
+        except OSError:
+            raise TelegramVoiceError("telegram_voice_normalizer_unavailable") from None
+        except TimeoutError:
+            raise TelegramVoiceError("telegram_voice_normalization_timeout") from None
+        if process.returncode or not output.exists():
+            return process.returncode or 1, b"", stderr[:4096]
+        await _probe_audio_duration(output)
+        if output.stat().st_size > OPENAI_TRANSCRIPTION_LIMIT_BYTES:
+            raise TelegramVoiceError("telegram_voice_normalized_too_large")
+        return 0, output.read_bytes(), stderr[:4096]
 
 
 async def _run_ffmpeg_chunked(
     data: bytes,
 ) -> tuple[int, tuple[bytes, ...], bytes]:
-    """Encode bounded three-minute mono MP3 parts for the provider."""
+    """Encode and validate complete, ordered three-minute mono MP3 parts."""
 
     with tempfile.TemporaryDirectory(prefix="gate-audio-") as directory:
-        output_pattern = str(Path(directory) / "part-%03d.mp3")
+        root = Path(directory)
+        source = root / "source.audio"
+        source.write_bytes(data)
+        source_duration = await _probe_audio_duration(source)
+        if source_duration > MAX_TRANSCRIPTION_PARTS * TRANSCRIPTION_PART_SECONDS:
+            raise TelegramVoiceError("telegram_voice_too_many_parts")
+        output_pattern = str(root / "part-%03d.mp3")
         try:
             process = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                "pipe:0",
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-ac",
-                "1",
-                "-ar",
-                "16000",
-                "-b:a",
-                "32k",
-                "-f",
-                "segment",
-                "-segment_time",
-                "180",
-                "-reset_timestamps",
-                "1",
-                "-segment_format",
-                "mp3",
-                output_pattern,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror",
+                "-i", str(source), "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
+                "-map_metadata", "-1", "-b:a", "32k", "-f", "segment",
+                "-segment_time", "180", "-reset_timestamps", "1",
+                "-segment_format", "mp3", output_pattern,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
             )
+            _, stderr = await _finish_audio_process(process)
         except OSError:
             raise TelegramVoiceError("telegram_voice_normalizer_unavailable") from None
-        _stdout, stderr = await process.communicate(data)
-        chunks = tuple(
-            path.read_bytes()
-            for path in sorted(Path(directory).glob("part-*.mp3"))
-            if path.stat().st_size > 0
-        )
-        return process.returncode or 0, chunks, stderr[:4096]
+        except TimeoutError:
+            raise TelegramVoiceError("telegram_voice_normalization_timeout") from None
+        if process.returncode:
+            return process.returncode, (), stderr[:4096]
+        paths = sorted(root.glob("part-*.mp3"))
+        if not paths or len(paths) > MAX_TRANSCRIPTION_PARTS:
+            raise TelegramVoiceError("telegram_voice_too_many_parts")
+        durations = []
+        for path in paths:
+            if not 0 < path.stat().st_size <= OPENAI_TRANSCRIPTION_LIMIT_BYTES:
+                raise TelegramVoiceError("telegram_voice_normalized_too_large")
+            duration = await _probe_audio_duration(path)
+            if duration > TRANSCRIPTION_PART_SECONDS + 0.2:
+                raise TelegramVoiceError("telegram_voice_part_duration_invalid")
+            durations.append(duration)
+        # MP3 frame padding adds up to ~0.15 seconds per standalone part.
+        if abs(sum(durations) - source_duration) > max(0.5, len(paths) * 0.2):
+            raise TelegramVoiceError("telegram_voice_audio_coverage_mismatch")
+        return 0, tuple(path.read_bytes() for path in paths), stderr[:4096]

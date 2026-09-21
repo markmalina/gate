@@ -22,8 +22,10 @@ background mode, file object, search, shell, MCP or automatic retry is allowed.
 - Telegram download limit remains 25 MiB.
 - Dropbox call source limit is 100 MiB.
 - Every provider upload is at most 25,000,000 bytes.
-- Oversized native audio is normalized to mono 16 kHz MP3 at 32 kbit/s and
-  split into ordered three-minute parts.
+- Audio longer than three minutes or larger than the provider upload bound is
+  decoded from a seekable temporary file into mono 16 kHz MP3 at 32 kbit/s,
+  split into ordered three-minute parts, and checked for decodable frames and
+  complete duration coverage before any provider request.
 - One recording may contain at most 20 parts.
 - Each part has one attempt with a 60-second timeout.
 - A failure after any completed part is an unknown outcome and is not retried
@@ -70,3 +72,4 @@ Rollback disables Dropbox call intake and restores the last-known-good
 Production revision recorded by the current execution. Stored source rows remain
 durable for an explicitly authorized later recovery; no automatic provider
 retry is introduced.
+

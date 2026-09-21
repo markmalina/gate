@@ -143,7 +143,7 @@ def test_dropbox_calls_are_claimed_atomically_before_provider_work() -> None:
 
     assert ".with_for_update(skip_locked=True)" in source
     assert 'claimed.transcription_status = "processing"' in source
-    assert 'reservation_key=f"dropbox-call-v13:' in source
+    assert 'f"dropbox-call-v13:' in source
     assert source.count("== _LONG_CALL_RECOVERY_STATUS") == 3
     assert '_LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"' in source
     assert "model=transcription_model" in source

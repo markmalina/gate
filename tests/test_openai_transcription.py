@@ -341,3 +341,28 @@ async def test_later_part_failure_is_unknown_after_partial_provider_work() -> No
             await client.transcribe(voice, language="ru")
 
     assert caught.value.outcome_unknown is True
+
+
+@pytest.mark.anyio
+async def test_combined_output_limit_is_unknown_and_stops_remaining_parts() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={
+            "text": "x" * 60_000,
+            "usage": {"type": "tokens", "input_tokens": 10,
+                      "output_tokens": 10, "total_tokens": 20},
+        })
+
+    part = NormalizedVoice(b"audio", "part.mp3", "audio/mpeg")
+    source = NormalizedVoice(b"audio", "part.mp3", "audio/mpeg", (part, part))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="synthetic-key", enabled=True), http=http,
+        )
+        with pytest.raises(TranscriptionProviderError) as caught:
+            await client.transcribe(source, language="ru")
+    assert caught.value.outcome_unknown is True
+    assert calls == 2

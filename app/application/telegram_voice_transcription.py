@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
@@ -24,6 +24,7 @@ TELEGRAM_DOWNLOAD_LIMIT_BYTES = 25 * 1024 * 1024
 # Dropbox call recordings use a separate source ceiling; Telegram keeps its limit.
 MAX_SOURCE_AUDIO_BYTES = 100 * 1024 * 1024
 MAX_TRANSCRIPTION_PARTS = 20
+TRANSCRIPTION_PART_SECONDS = 180
 
 
 class TelegramVoiceError(ValueError):
@@ -69,12 +70,15 @@ class DownloadedVoice:
     data: bytes = field(repr=False)
     filename: str
     media_type: str
+    duration_seconds: int | None = None
 
     def __post_init__(self) -> None:
         if not self.data:
             raise TelegramVoiceError("telegram_voice_empty")
         _token(self.filename, "telegram_voice_filename_invalid", 255)
         _token(self.media_type, "telegram_voice_media_type_invalid", 128)
+        if self.duration_seconds is not None and self.duration_seconds <= 0:
+            raise TelegramVoiceError("telegram_voice_duration_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,7 +276,9 @@ class TelegramVoiceTranscriptionService:
             downloaded = await self._downloader.download(command.voice)
             if len(downloaded.data) > self._download_limit_bytes:
                 return _rejected("telegram_voice_download_limit_exceeded")
-            normalized = await self._normalizer.normalize(downloaded)
+            normalized = await self._normalizer.normalize(
+                replace(downloaded, duration_seconds=command.voice.duration_seconds)
+            )
         except TelegramVoiceError as exc:
             return _rejected(exc.code)
 

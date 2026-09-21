@@ -1635,6 +1635,17 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
         "mutation_allowed": {"const": False},
     }
 )
+_dropbox_status_properties = GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"]["properties"]
+_dropbox_status_properties.update({
+    "incomplete_recordings": {
+        **_dropbox_status_properties["recent_recordings"], "maxItems": 100,
+    },
+    "incomplete_truncated": {"type": "boolean"},
+    "archive_counts": _object({
+        name: {"type": "integer", "minimum": 0}
+        for name in ("total", "completed", "incomplete")
+    }),
+})
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = (
     BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
