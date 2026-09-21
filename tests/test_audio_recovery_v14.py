@@ -26,6 +26,8 @@ def anyio_backend():
 @pytest.mark.parametrize("status,reason", [
     ("recovery_v14", "openai_transcription_rejected_http_400"),
     ("processing", "dropbox_call_processing_v14"),
+    ("recovery_v15", "openai_transcription_response_unknown"),
+    ("processing", "dropbox_call_processing_v15"),
 ])
 def test_recovery_and_restart_keep_same_new_reservation(monkeypatch, status, reason):
     recording = SimpleNamespace(
@@ -76,7 +78,8 @@ def test_recovery_and_restart_keep_same_new_reservation(monkeypatch, status, rea
         settings=Settings(OPENAI_API_KEY="synthetic-key"), session_factory=Session,
         http=object(), recording=recording,
     ))
-    assert commands[0].reservation_key == f"dropbox-call-v14:{recording.id}"
+    version = 15 if "v15" in status or "v15" in reason else 14
+    assert commands[0].reservation_key == f"dropbox-call-v{version}:{recording.id}"
     assert commands[0].period_key == now.strftime("%Y-%m")
     assert commands[0].occurred_at >= now
     assert recording.transcription_status == "transcribed"

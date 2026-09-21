@@ -60,6 +60,8 @@ _LONG_CALL_RECOVERY_STATUS = "recovery_v13"
 _LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"
 _CHUNK_REPAIR_RECOVERY_STATUS = "recovery_v14"
 _CHUNK_REPAIR_PROCESSING = "dropbox_call_processing_v14"
+_EMPTY_RESULT_RECOVERY_STATUS = "recovery_v15"
+_EMPTY_RESULT_PROCESSING = "dropbox_call_processing_v15"
 _CALL_BACKFILL_VERSION = 2
 _SUPPORTED_SUFFIXES = {
     ".3gp",
@@ -469,6 +471,8 @@ async def _resume_received_recordings(
                             == _LONG_CALL_RECOVERY_STATUS,
                             PhoneCallRecording.transcription_status
                             == _CHUNK_REPAIR_RECOVERY_STATUS,
+                            PhoneCallRecording.transcription_status
+                            == _EMPTY_RESULT_RECOVERY_STATUS,
                             and_(
                                 PhoneCallRecording.transcription_status == "processing",
                                 PhoneCallRecording.transcribed_at < stale_before,
@@ -513,6 +517,8 @@ async def _transcribe_recording(
                     == _LONG_CALL_RECOVERY_STATUS,
                     PhoneCallRecording.transcription_status
                     == _CHUNK_REPAIR_RECOVERY_STATUS,
+                    PhoneCallRecording.transcription_status
+                    == _EMPTY_RESULT_RECOVERY_STATUS,
                     and_(
                         PhoneCallRecording.transcription_status == "processing",
                         PhoneCallRecording.transcribed_at < stale_before,
@@ -532,8 +538,14 @@ async def _transcribe_recording(
             claimed.transcription_status == _CHUNK_REPAIR_RECOVERY_STATUS
             or claimed.transcription_reason_code == _CHUNK_REPAIR_PROCESSING
         )
+        empty_result_recovery = (
+            claimed.transcription_status == _EMPTY_RESULT_RECOVERY_STATUS
+            or claimed.transcription_reason_code == _EMPTY_RESULT_PROCESSING
+        )
         claimed.transcription_status = "processing"
-        if chunk_recovery:
+        if empty_result_recovery:
+            claimed.transcription_reason_code = _EMPTY_RESULT_PROCESSING
+        elif chunk_recovery:
             claimed.transcription_reason_code = _CHUNK_REPAIR_PROCESSING
         else:
             claimed.transcription_reason_code = "dropbox_call_processing"
@@ -545,7 +557,7 @@ async def _transcribe_recording(
     duration_seconds = recording.duration_seconds
     if duration_seconds is None:
         raise DropboxCallWorkerError("dropbox_call_duration_unknown")
-    occurred_at = claimed_at if chunk_recovery else recording.received_at
+    occurred_at = claimed_at if chunk_recovery or empty_result_recovery else recording.received_at
     service = TelegramVoiceTranscriptionService(
         downloader=_StoredCallDownloader(recording),
         normalizer=TelegramVoiceNormalizer(),
@@ -572,8 +584,10 @@ async def _transcribe_recording(
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
             reservation_key=(
-                f"dropbox-call-v14:{recording.id}"
-                if chunk_recovery else f"dropbox-call-v13:{recording.id}"
+                f"dropbox-call-v15:{recording.id}" if empty_result_recovery else (
+                    f"dropbox-call-v14:{recording.id}"
+                    if chunk_recovery else f"dropbox-call-v13:{recording.id}"
+                )
             ),
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
@@ -603,10 +617,20 @@ async def _transcribe_recording(
             stored.summary_model = AUDIO_SUMMARY_MODEL
             stored.summary_reason_code = "audio_summary_generated"
             stored.summarized_at = datetime.now(UTC)
+        elif result.reason_code == "telegram_voice_no_speech":
+            _store_no_speech_summary(stored)
         await session.commit()
 
 
 _TELEGRAM_VOICE_RECOVERY_GENERATION = 2
+
+
+def _store_no_speech_summary(archive: PhoneCallRecording | TelegramVoiceArchive) -> None:
+    archive.summary_status = "summarized"
+    archive.summary_text = "Распознавание завершено: речь не распознана."
+    archive.summary_model = AUDIO_SUMMARY_MODEL
+    archive.summary_reason_code = "audio_no_speech"
+    archive.summarized_at = datetime.now(UTC)
 
 
 async def _claim_authorized_telegram_voice(
@@ -714,7 +738,7 @@ async def _recover_authorized_telegram_voices(
         )
         if owner_archive is None:
             return
-        archive, generation = owner_archive, 3
+        archive, generation = owner_archive, 4
     else:
         assert claimed is not None
         archive, generation = claimed
@@ -781,6 +805,8 @@ async def _recover_authorized_telegram_voices(
             stored.summary_model = AUDIO_SUMMARY_MODEL
             stored.summary_reason_code = "audio_summary_generated"
             stored.summarized_at = now
+        elif result.reason_code == "telegram_voice_no_speech":
+            _store_no_speech_summary(stored)
         if result.outcome is TelegramVoiceOutcome.TRANSCRIBED and not archive_only:
             await _requeue_recovered_telegram_voice(
                 session=session,
