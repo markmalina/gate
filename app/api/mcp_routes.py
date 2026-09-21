@@ -110,6 +110,7 @@ from app.infrastructure.beta_wedding_binding import (
     beta_wedding_space_operational_status,
 )
 from app.infrastructure.billing_budget import SqlBillingBudgetService
+from app.infrastructure.dropbox_call_status import dropbox_call_operational_status
 from app.infrastructure.historical_debt_diagnostics import historical_debt_diagnostics
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
@@ -142,6 +143,7 @@ from app.infrastructure.alpha_canary import (
     alpha_canary_installation_count,
 )
 from app.models.domain import (
+    UNCLASSIFIED_PROJECT_ID,
     Account,
     GateEvent,
     Message,
@@ -327,6 +329,23 @@ async def mcp_endpoint(
                 principal=principal,
                 protocol_version=MCP_PROTOCOL_VERSION,
                 tool_names=MCP_TOOL_NAMES,
+            )
+            snapshot["dropbox_calls"] = await dropbox_call_operational_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                configured_workspace=settings.gate_workspace_id,
+                account_id=settings.dropbox_call_account_id,
+                project_ids=frozenset(str(value) for value in principal.access_scope.project_ids),
+                intake_project_allowed=UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids,
+                enabled=settings.gate_dropbox_call_intake_enabled,
+                configuration={
+                    "app_key": bool(settings.dropbox_call_app_key),
+                    "app_secret": bool(settings.dropbox_call_app_secret.get_secret_value()),
+                    "refresh_token": bool(settings.dropbox_call_refresh_token.get_secret_value()),
+                    "account_id": bool(settings.dropbox_call_account_id),
+                    "openai_key": bool(settings.openai_api_key.get_secret_value()),
+                    "inbox_path_valid": settings.dropbox_call_inbox_path == "/Alpha/Calls",
+                },
             )
             snapshot["alpha_canary"] = await _build_alpha_canary_status(
                 session=session,
