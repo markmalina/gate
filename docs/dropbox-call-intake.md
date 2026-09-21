@@ -77,7 +77,22 @@ account ID, cursor, refresh token, app secret, and source path are not returned.
 
 ## Limits and failure handling
 
-- Original file size is limited to 25 MiB.
+### Read-only intake diagnostics
+
+`gate_get_status` includes `dropbox_calls` for the configured owner workspace
+with the intake project's grant. It reports configuration-presence booleans,
+the persisted inbox cursor's presence, retry state and allowlisted error code,
+and at most 20 recent archive records in the caller's project/source-account
+scope. It never polls Dropbox, calls a model, retries a recording, or reads audio
+and transcript payloads. `state_updated_at` is state activity, not proof of a
+successful poll or worker heartbeat.
+
+`source_revision_sha256` is SHA-256 of the UTF-8 string
+`<Dropbox file id>\n<Dropbox revision>`, permitting exact source correlation
+without returning filenames, paths, cursors or provider identifiers. Configuration
+and global inbox evidence are hidden when the owner/intake-project fence fails.
+
+- Original file size is limited to 100 MiB; each provider part is limited to 25,000,000 bytes.
 - Supported extensions are `.3gp`, `.aac`, `.amr`, `.flac`, `.m4a`, `.mp3`, `.mp4`,
   `.mpeg`, `.mpga`, `.oga`, `.ogg`, `.opus`, `.wav`, and `.webm`.
 - File identity is `(Dropbox account, file ID, revision)`.

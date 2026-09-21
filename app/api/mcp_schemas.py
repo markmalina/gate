@@ -1579,6 +1579,62 @@ BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA = _object(
 
 
 # Optional for older fixtures, always present in the live gate_get_status response.
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
+    {
+        "scope_allowed": {"type": "boolean"},
+        "enabled": {"type": "boolean"},
+        "configuration": {
+            "type": "object",
+            "properties": {
+                name: {"type": "boolean"}
+                for name in (
+                    "app_key", "app_secret", "refresh_token", "account_id",
+                    "openai_key", "inbox_path_valid",
+                )
+            },
+            "additionalProperties": False,
+        },
+        "inbox": {
+            "anyOf": [
+                {"type": "null"},
+                _object(
+                    {
+                        "cursor_present": {"type": "boolean"},
+                        "backfill_version": {"type": "integer"},
+                        "pending": {"type": "boolean"},
+                        "attempt_count": {"type": "integer"},
+                        "next_attempt_at": _nullable("string"),
+                        "last_error_code": _nullable("string"),
+                        "webhook_received_at": _nullable("string"),
+                        "state_updated_at": _nullable("string"),
+                    }
+                ),
+            ]
+        },
+        "recent_recordings": {
+            "type": "array",
+            "maxItems": 20,
+            "items": _object(
+                {
+                    "recording_id": {"type": "string"},
+                    "source_revision_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "size_bytes": {"type": "integer"},
+                    "received_at": _nullable("string"),
+                    "created_at": _nullable("string"),
+                    "transcription_status": {"type": "string"},
+                    "transcription_reason_code": _nullable("string"),
+                    "transcribed_at": _nullable("string"),
+                    "transcript_present": {"type": "boolean"},
+                    "summary_status": _nullable("string"),
+                }
+            ),
+        },
+        "record_limit": {"const": 20},
+        "private_content_exposed": {"const": False},
+        "provider_calls": {"const": 0},
+        "mutation_allowed": {"const": False},
+    }
+)
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = (
     BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
