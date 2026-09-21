@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.routes import get_telegram_client
@@ -434,6 +435,12 @@ async def mcp_endpoint(
                     account_ids=principal.access_scope.account_ids,
                 )
             ).payload()
+            snapshot["telegram_voice_archives"] = await owner_voice_archive_inventory(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                account_ids=principal.access_scope.account_ids,
+                project_ids=principal.access_scope.project_ids,
+            )
             snapshot["historical_debt"] = await historical_debt_diagnostics(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
@@ -3843,3 +3850,4 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+

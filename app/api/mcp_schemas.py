@@ -1647,6 +1647,18 @@ _dropbox_status_properties.update({
     }),
 })
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"] = _object({
+    **{name: {"type": "integer", "minimum": 0}
+       for name in ("total", "completed", "incomplete")},
+    "truncated": {"type": "boolean"},
+    "private_content_exposed": {"const": False},
+    "incomplete_recordings": {"type": "array", "maxItems": 100, "items": _object({
+        "archive_id": {"type": "string"}, "received_at": {"type": "string"},
+        "status": _nullable("string"), "reason_code": _nullable("string"),
+        "duration_seconds": {"type": "integer"}, "size_bytes": {"type": "integer"},
+        "summary_status": _nullable("string"),
+    })},
+})
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = (
     BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
 )

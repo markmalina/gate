@@ -289,6 +289,16 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     async def voice_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(payload=_voice_status_payload)
 
+    async def voice_archive_inventory(_session: object, **kwargs: Any) -> dict[str, object]:
+        assert kwargs["workspace_key"] == "mark-personal"
+        assert kwargs["account_ids"] == frozenset({UUID("22222222-2222-2222-2222-222222222222")})
+        assert kwargs["project_ids"] == frozenset({UUID("33333333-3333-3333-3333-333333333333")})
+        return {
+            "total": 0, "completed": 0, "incomplete": 0,
+            "incomplete_recordings": [], "truncated": False,
+            "private_content_exposed": False,
+        }
+
     async def parity_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(
             payload=lambda: {
@@ -561,6 +571,10 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     monkeypatch.setattr(
         "app.api.mcp_routes.historical_debt_diagnostics",
         historical_debt_status,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_routes.owner_voice_archive_inventory",
+        voice_archive_inventory,
     )
     monkeypatch.setattr(
         "app.api.mcp_routes.become_controlled_intake_status",

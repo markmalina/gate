@@ -22,6 +22,7 @@ _SAFE_ERRORS = frozenset(
         "dropbox_call_processing",
         "dropbox_call_processing_v14",
         "telegram_voice_transcribed",
+        "audio_identical_source_reused",
         "telegram_voice_audio_invalid",
         "telegram_voice_audio_coverage_mismatch",
         "telegram_voice_part_duration_invalid",

@@ -95,6 +95,19 @@ async def _parity_status(_session: object, **_kwargs: Any) -> SimpleNamespace:
     return SimpleNamespace(payload=_parity_status_payload)
 
 
+async def _voice_archive_inventory(
+    _session: object,
+    **kwargs: Any,
+) -> dict[str, object]:
+    assert kwargs["workspace_key"] == "mark-personal"
+    assert kwargs["account_ids"] and kwargs["project_ids"]
+    return {
+        "total": 3, "completed": 3, "incomplete": 0,
+        "incomplete_recordings": [], "truncated": False,
+        "private_content_exposed": False,
+    }
+
+
 async def _historical_debt_status(
     _session: object,
     **_kwargs: Any,
@@ -1072,6 +1085,10 @@ async def test_mcp_status_is_scoped(
         _historical_debt_status,
     )
     monkeypatch.setattr(
+        "app.api.mcp_routes.owner_voice_archive_inventory",
+        _voice_archive_inventory,
+    )
+    monkeypatch.setattr(
         "app.api.mcp_routes.become_controlled_intake_status",
         _become_intake_status,
     )
@@ -1098,6 +1115,8 @@ async def test_mcp_status_is_scoped(
     result = response.json()["result"]
     structured = result["structuredContent"]
     _assert_valid_output("gate_get_status", structured)
+    assert structured["telegram_voice_archives"]["completed"] == 3
+    assert structured["telegram_voice_archives"]["incomplete"] == 0
     assert structured["access"]["workspace_id"] == "mark-personal"
     assert structured["counts"]["accounts"] == 2
     assert structured["counts"]["unanswered"] == 1
