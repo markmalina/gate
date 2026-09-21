@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from app.application.billing import (
+    BillingDomainError,
     BillingProduct,
     BudgetAdmission,
     BudgetReservation,
@@ -25,6 +26,7 @@ TELEGRAM_DOWNLOAD_LIMIT_BYTES = 25 * 1024 * 1024
 MAX_SOURCE_AUDIO_BYTES = 100 * 1024 * 1024
 MAX_TRANSCRIPTION_PARTS = 20
 TRANSCRIPTION_PART_SECONDS = 180
+MIN_TRANSCRIPTION_PART_RESERVATION_MICROUSD = 5_000
 
 
 class TelegramVoiceError(ValueError):
@@ -295,7 +297,11 @@ class TelegramVoiceTranscriptionService:
                     scope_ref=command.connector_ref,
                 ),
                 operation=UsageOperation.TRANSCRIPTION,
-                requested_microusd=command.requested_microusd,
+                requested_microusd=max(
+                    command.requested_microusd,
+                    MIN_TRANSCRIPTION_PART_RESERVATION_MICROUSD
+                    * (1 + len(normalized.additional_parts)),
+                ),
                 occurred_at=command.occurred_at,
             ),
             period_key=command.period_key,
@@ -333,14 +339,21 @@ class TelegramVoiceTranscriptionService:
                 budget=budget,
             )
 
-        await self._budget.settle(
-            reservation,
-            actual_microusd=transcript.actual_microusd,
-            quantity=transcript.billed_quantity,
-            unit=transcript.billed_unit,
-            provider_operation_ref=transcript.provider_operation_ref,
-            occurred_at=command.occurred_at,
-        )
+        try:
+            await self._budget.settle(
+                reservation,
+                actual_microusd=transcript.actual_microusd,
+                quantity=transcript.billed_quantity,
+                unit=transcript.billed_unit,
+                provider_operation_ref=transcript.provider_operation_ref,
+                occurred_at=command.occurred_at,
+            )
+        except BillingDomainError as exc:
+            if exc.code != "billing_settlement_exceeds_reservation":
+                raise
+            return TelegramVoiceTranscriptionResult(
+                outcome=TelegramVoiceOutcome.UNKNOWN, reason_code=exc.code, budget=budget,
+            )
         if transcript.no_speech:
             return _rejected("telegram_voice_no_speech", budget=budget)
         return TelegramVoiceTranscriptionResult(

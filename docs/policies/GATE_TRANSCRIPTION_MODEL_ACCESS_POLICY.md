@@ -39,6 +39,10 @@ background mode, file object, search, shell, MCP or automatic retry is allowed.
 ## Cost and retention
 
 Every recording reserves budget before the first provider request. The existing
+reservation includes a 5,000 micro-USD minimum per provider part for fixed
+request overhead; this is a temporary reservation, not a minimum charge.
+Only provider-reported actual usage is settled, and the monthly ceiling is
+checked before provider I/O even when that minimum applies. The existing
 `telegram_connector / telegram_business` entitlement is the hard USD 1.00
 monthly ceiling (`1,000,000` micro-USD). A reservation is settled from
 provider-reported token usage, released only after a definite rejection, and
@@ -72,4 +76,3 @@ Rollback disables Dropbox call intake and restores the last-known-good
 Production revision recorded by the current execution. Stored source rows remain
 durable for an explicitly authorized later recovery; no automatic provider
 retry is introduced.
-

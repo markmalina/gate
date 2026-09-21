@@ -10,21 +10,20 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.models.billing import BillingBudgetReservationModel
+from app.models.canonical import Workspace
 from app.models.domain import TelegramVoiceArchive
 
-GENERATION = 4
+GENERATION = 5
 ACCOUNT_ID = UUID("0d8e025f-323d-5e86-a44c-a620f690ae4f")
 PROJECT_ID = UUID("e12d3d85-6c5f-5f8a-a2fa-ac35f7ac80c0")
-EXACT_ARCHIVES = (
-    UUID("fe5dad7b-37a1-400e-af5d-e202aa672f0e"),
-    UUID("a4901376-2dee-49b3-bc7e-011716842c2f"),
-    UUID("e5d1d565-7ba3-48e2-9c44-40cd8e34207b"),
-    UUID("5be96bc4-6fbf-40ff-a758-315dfa1cd25d"),
-)
+EXACT_ARCHIVES = (UUID("a4901376-2dee-49b3-bc7e-011716842c2f"),)
+
 REASONS = (
     "openai_transcription_transport_unknown",
     "openai_transcription_response_unknown",
     "billing_reservation_replayed",
+    "billing_settlement_exceeds_reservation",
 )
 
 
@@ -66,7 +65,7 @@ async def claim_owner_voice_recovery(
 def owner_voice_reservation_key(archive_id: UUID) -> str:
     if archive_id not in EXACT_ARCHIVES:
         raise ValueError("owner_voice_recovery_scope_invalid")
-    return f"telegram-voice-recovery-v4-20260921:{archive_id}"
+    return f"telegram-voice-recovery-v5-20260921:{archive_id}"
 
 
 async def reconcile_exact_call_copies(
@@ -133,9 +132,25 @@ async def owner_voice_archive_inventory(
         "incomplete_recordings": [], "truncated": False,
         "private_content_exposed": False,
         "no_speech_count": 0, "requires_attention_count": 0,
+        "historical_short_voice_overflow_count": 0,
     }
     if workspace_key != "mark-personal" or not account_ids or not project_ids:
         return result
+    if ACCOUNT_ID in account_ids and PROJECT_ID in project_ids:
+        result["historical_short_voice_overflow_count"] = int((await session.scalar(
+            select(func.count()).select_from(BillingBudgetReservationModel)
+            .join(Workspace, Workspace.id == BillingBudgetReservationModel.workspace_id)
+            .where(
+                Workspace.key == workspace_key,
+                BillingBudgetReservationModel.reservation_key == (
+                    "telegram-voice-recovery-v4-20260921:"
+                    "a4901376-2dee-49b3-bc7e-011716842c2f"
+                ),
+                BillingBudgetReservationModel.state == "unknown",
+                BillingBudgetReservationModel.error_code
+                == "billing_settlement_exceeds_reservation",
+            )
+        )) or 0)
     archive = TelegramVoiceArchive
     scope = (archive.account_id.in_(account_ids), archive.project_id.in_(project_ids))
     complete = and_(archive.transcription_status == "transcribed",

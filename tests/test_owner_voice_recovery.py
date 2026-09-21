@@ -26,7 +26,7 @@ def anyio_backend():
 
 def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
     archive = SimpleNamespace(
-        id=EXACT_ARCHIVES[0], transcription_recovery_generation=4,
+        id=EXACT_ARCHIVES[0], transcription_recovery_generation=5,
         data=b"synthetic audio", size_bytes=15, duration_seconds=25,
         sha256=hashlib.sha256(b"synthetic audio").hexdigest(),
     )
@@ -45,7 +45,7 @@ def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
             assert "FOR UPDATE" in compiled
             assert "account_id" in compiled and "project_id" in compiled
             assert "transcript_text IS NULL" in compiled
-            return archive if archive.transcription_recovery_generation == 4 else None
+            return archive if archive.transcription_recovery_generation == 5 else None
 
         async def commit(self):
             commits.append(archive.transcription_recovery_generation)
@@ -82,7 +82,7 @@ def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
     asyncio.run(dropbox_calls._recover_authorized_telegram_voices(**kwargs))
     asyncio.run(dropbox_calls._recover_authorized_telegram_voices(**kwargs))
     assert len(commands) == 1
-    assert commands[0].reservation_key == f"telegram-voice-recovery-v4-20260921:{archive.id}"
+    assert commands[0].reservation_key == f"telegram-voice-recovery-v5-20260921:{archive.id}"
     assert commands[0].period_key == datetime.now(UTC).strftime("%Y-%m")
     assert archive.transcription_status == "transcribed"
     assert archive.summary_status == "summarized"
@@ -90,7 +90,8 @@ def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("migration_file,generation", [("0106_owner_voice_recovery", 3),
-                                                       ("0107_no_speech_recovery", 4)])
+                                                       ("0107_no_speech_recovery", 4),
+                                                       ("0108_short_voice_headroom", 5)])
 async def test_postgres_exact_grants_preserve_finished_and_foreign_archives(
     migration_file, generation,
 ):
@@ -105,6 +106,9 @@ async def test_postgres_exact_grants_preserve_finished_and_foreign_archives(
     sources = getattr(migration, "_VOICE_SOURCES", ())
     ids = getattr(migration, "_IDS", tuple(row[0] for row in sources))
     sizes = dict(sources)
+    expected_grants = min(2, len(ids))
+    ids = tuple(ids) + tuple(f"00000000-0000-0000-0000-{i:012d}"
+                             for i in range(4 - len(ids)))
     engine = create_async_engine(url)
     try:
         async with engine.connect() as connection:
@@ -137,7 +141,7 @@ async def test_postgres_exact_grants_preserve_finished_and_foreign_archives(
                         "CAST(:account AS uuid), 'e12d3d85-6c5f-5f8a-a2fa-ac35f7ac80c0', "
                         "'unknown', 'openai_transcription_response_unknown', :transcript, "
                         "NULL, :size, CAST(repeat('a', :size) AS bytea), "
-                        "10, repeat('a',64), NULL, NULL)"
+                        "1, repeat('a',64), NULL, NULL)"
                     ), {"id": archive_id, "size": sizes.get(archive_id, 4),
                         "account": ("0d8e025f-323d-5e86-a44c-a620f690ae4f" if index != 3
                                     else "00000000-0000-0000-0000-000000000001"),
@@ -151,7 +155,7 @@ async def test_postgres_exact_grants_preserve_finished_and_foreign_archives(
                 assert await connection.scalar(text(
                     "SELECT count(*) FROM telegram_voice_archives "
                     f"WHERE transcription_recovery_generation={generation}"
-                )) == 2
+                )) == expected_grants
                 await connection.execute(text(
                     "UPDATE telegram_voice_archives SET transcription_recovery_generation=NULL, "
                     "transcription_recovery_authorized_at=now(), "

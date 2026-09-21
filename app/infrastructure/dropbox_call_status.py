@@ -30,6 +30,7 @@ _SAFE_ERRORS = frozenset(
         "telegram_voice_part_duration_invalid",
         "telegram_voice_normalization_timeout",
         "billing_hard_limit_exceeded",
+        "billing_settlement_exceeds_reservation",
         "dropbox_call_recording_missing",
         "dropbox_call_revision_invalid",
         "dropbox_call_size_invalid",
