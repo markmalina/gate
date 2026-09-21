@@ -525,9 +525,10 @@ async def _transcribe_recording(
             or claimed.transcription_reason_code == _CHUNK_REPAIR_PROCESSING
         )
         claimed.transcription_status = "processing"
-        claimed.transcription_reason_code = (
-            _CHUNK_REPAIR_PROCESSING if chunk_recovery else "dropbox_call_processing"
-        )
+        if chunk_recovery:
+            claimed.transcription_reason_code = _CHUNK_REPAIR_PROCESSING
+        else:
+            claimed.transcription_reason_code = "dropbox_call_processing"
         claimed.transcribed_at = claimed_at
         await session.commit()
         await session.refresh(claimed)
