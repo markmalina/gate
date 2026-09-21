@@ -20,6 +20,13 @@ _SAFE_ERRORS = frozenset(
         "dropbox_call_path_invalid",
         "dropbox_call_path_outside_inbox",
         "dropbox_call_processing",
+        "dropbox_call_processing_v14",
+        "telegram_voice_transcribed",
+        "telegram_voice_audio_invalid",
+        "telegram_voice_audio_coverage_mismatch",
+        "telegram_voice_part_duration_invalid",
+        "telegram_voice_normalization_timeout",
+        "billing_hard_limit_exceeded",
         "dropbox_call_recording_missing",
         "dropbox_call_revision_invalid",
         "dropbox_call_size_invalid",
@@ -50,7 +57,7 @@ _SAFE_ERRORS = frozenset(
     }
 )
 _SAFE_STATUSES = frozenset(
-    {"received", "disabled", "rejected", "transcribed", "unknown", "processing"}
+    {"received", "disabled", "rejected", "transcribed", "unknown", "processing", "recovery_v14"}
 )
 
 
@@ -90,6 +97,9 @@ async def dropbox_call_operational_status(
         "configuration": {},
         "inbox": None,
         "recent_recordings": [],
+        "incomplete_recordings": [],
+        "archive_counts": {"total": 0, "completed": 0, "incomplete": 0},
+        "incomplete_truncated": False,
         "record_limit": 20,
         "private_content_exposed": False,
         "provider_calls": 0,
@@ -123,44 +133,62 @@ async def dropbox_call_operational_status(
             "state_updated_at": _timestamp(state["updated_at"]),
         }
 
-    recordings_result = await session.execute(
-        text(
-            "SELECT id, source_file_id, source_revision, size_bytes, received_at, "
-            "created_at, transcription_status, transcription_reason_code, transcribed_at, "
-            "transcript_text IS NOT NULL AS transcript_present, summary_status "
-            "FROM phone_call_recordings WHERE workspace_key = :workspace_key "
-            "AND source_account_id = :account_id "
-            "AND CAST(project_id AS VARCHAR) IN :project_ids "
-            "ORDER BY received_at DESC, id DESC LIMIT 20"
-        ).bindparams(bindparam("project_ids", expanding=True)),
-        {
-            "workspace_key": workspace_key,
-            "account_id": account_id,
-            "project_ids": sorted(project_ids),
-        },
+    parameters = {
+        "workspace_key": workspace_key, "account_id": account_id,
+        "project_ids": sorted(project_ids),
+    }
+    scope = (
+        "FROM phone_call_recordings WHERE workspace_key = :workspace_key "
+        "AND source_account_id = :account_id "
+        "AND CAST(project_id AS VARCHAR) IN :project_ids "
     )
-    for row in recordings_result.mappings():
-        source_key = f"{row['source_file_id']}\n{row['source_revision']}".encode()
-        result["recent_recordings"].append(
-            {
-                "recording_id": str(row["id"]),
-                "source_revision_sha256": hashlib.sha256(source_key).hexdigest(),
-                "size_bytes": row["size_bytes"],
-                "received_at": _timestamp(row["received_at"]),
-                "created_at": _timestamp(row["created_at"]),
-                "transcription_status": (
-                    row["transcription_status"]
-                    if row["transcription_status"] in _SAFE_STATUSES
-                    else "other"
-                ),
-                "transcription_reason_code": _safe_error(row["transcription_reason_code"]),
-                "transcribed_at": _timestamp(row["transcribed_at"]),
-                "transcript_present": bool(row["transcript_present"]),
-                "summary_status": (
-                    row["summary_status"]
-                    if row["summary_status"] in {None, "pending", "summarized", "failed"}
-                    else "other"
-                ),
-            }
+    complete = "transcription_status = 'transcribed' AND transcript_text IS NOT NULL"
+    counts = (await session.execute(
+        text("SELECT count(*) AS total, "
+             f"COALESCE(SUM(CASE WHEN {complete} THEN 1 ELSE 0 END), 0) AS completed "
+             + scope).bindparams(bindparam("project_ids", expanding=True)), parameters,
+    )).mappings().one()
+    missing = int(counts["total"]) - int(counts["completed"])
+    result["archive_counts"] = {
+        "total": int(counts["total"]), "completed": int(counts["completed"]),
+        "incomplete": missing,
+    }
+    result["incomplete_truncated"] = missing > 100
+    for key, tail in (
+        ("recent_recordings", "ORDER BY received_at DESC, id DESC LIMIT 20"),
+        ("incomplete_recordings", f"AND NOT ({complete}) "
+         "ORDER BY received_at ASC, id ASC LIMIT 100"),
+    ):
+        recordings_result = await session.execute(
+            text(
+                "SELECT id, source_file_id, source_revision, size_bytes, received_at, "
+                "created_at, transcription_status, transcription_reason_code, transcribed_at, "
+                "transcript_text IS NOT NULL AS transcript_present, summary_status "
+                + scope + tail
+            ).bindparams(bindparam("project_ids", expanding=True)), parameters,
         )
+        for row in recordings_result.mappings():
+            source_key = f"{row['source_file_id']}\n{row['source_revision']}".encode()
+            result[key].append(
+                {
+                    "recording_id": str(row["id"]),
+                    "source_revision_sha256": hashlib.sha256(source_key).hexdigest(),
+                    "size_bytes": row["size_bytes"],
+                    "received_at": _timestamp(row["received_at"]),
+                    "created_at": _timestamp(row["created_at"]),
+                    "transcription_status": (
+                        row["transcription_status"]
+                        if row["transcription_status"] in _SAFE_STATUSES
+                        else "other"
+                    ),
+                    "transcription_reason_code": _safe_error(row["transcription_reason_code"]),
+                    "transcribed_at": _timestamp(row["transcribed_at"]),
+                    "transcript_present": bool(row["transcript_present"]),
+                    "summary_status": (
+                        row["summary_status"]
+                        if row["summary_status"] in {None, "pending", "summarized", "failed"}
+                        else "other"
+                    ),
+                }
+            )
     return result

@@ -85,8 +85,10 @@ def test_status_fences_owner_project_and_source_account_without_payload() -> Non
     serialized = json.dumps(snapshot)
     for private in ("private-cursor", "private-source", "private-transcript", "private-error-body"):
         assert private not in serialized
-    assert "transcript_text IS NOT NULL" in session.reads[1]
-    assert len(session.reads) == 2
+    assert "transcript_text IS NOT NULL" in session.reads[2]
+    assert len(session.reads) == 4
+    assert snapshot["archive_counts"] == {"total": 1, "completed": 0, "incomplete": 1}
+    assert snapshot["incomplete_recordings"][0]["recording_id"] == "visible"
     validate(snapshot, GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"])
     session.connection.close()
 

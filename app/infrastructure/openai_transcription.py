@@ -87,6 +87,10 @@ class OpenAITranscriptionClient:
                         prompt=prompt,
                     )
                 )
+                if sum(len(item.text) for item in transcripts) + len(transcripts) - 1 > 100_000:
+                    raise TranscriptionProviderError(
+                        "openai_transcription_response_unknown", outcome_unknown=True
+                    )
             except TranscriptionProviderError as exc:
                 raise TranscriptionProviderError(
                     exc.code,
@@ -152,7 +156,7 @@ class OpenAITranscriptionClient:
                 outcome_unknown=True,
             )
         text = payload.get("text")
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(text, str) or not text.strip() or len(text.strip()) > 100_000:
             raise TranscriptionProviderError(
                 "openai_transcription_response_unknown",
                 outcome_unknown=True,

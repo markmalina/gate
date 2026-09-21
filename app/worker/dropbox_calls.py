@@ -53,6 +53,9 @@ _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
 _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
 _LONG_CALL_RECOVERY_STATUS = "recovery_v13"
 _LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"
+_CHUNK_REPAIR_RECOVERY_STATUS = "recovery_v14"
+_CHUNK_REPAIR_PROCESSING = "dropbox_call_processing_v14"
+_CALL_BACKFILL_VERSION = 2
 _SUPPORTED_SUFFIXES = {
     ".3gp",
     ".aac",
@@ -171,7 +174,7 @@ async def process_dropbox_call_changes(
         http=http,
     )
     await _summarize_ready_audio(session_factory=session_factory)
-    cursor = None if state.backfill_version < 1 else state.cursor
+    cursor = None if state.backfill_version < _CALL_BACKFILL_VERSION else state.cursor
     while True:
         payload = await _list_changes(
             settings=settings,
@@ -456,6 +459,8 @@ async def _resume_received_recordings(
                             PhoneCallRecording.transcription_status == "received",
                             PhoneCallRecording.transcription_status
                             == _LONG_CALL_RECOVERY_STATUS,
+                            PhoneCallRecording.transcription_status
+                            == _CHUNK_REPAIR_RECOVERY_STATUS,
                             and_(
                                 PhoneCallRecording.transcription_status == "processing",
                                 PhoneCallRecording.transcribed_at < stale_before,
@@ -498,6 +503,8 @@ async def _transcribe_recording(
                     PhoneCallRecording.transcription_status == "received",
                     PhoneCallRecording.transcription_status
                     == _LONG_CALL_RECOVERY_STATUS,
+                    PhoneCallRecording.transcription_status
+                    == _CHUNK_REPAIR_RECOVERY_STATUS,
                     and_(
                         PhoneCallRecording.transcription_status == "processing",
                         PhoneCallRecording.transcribed_at < stale_before,
@@ -513,8 +520,15 @@ async def _transcribe_recording(
             if claimed.transcription_status == _LONG_CALL_RECOVERY_STATUS
             else settings.gate_telegram_voice_transcription_model
         )
+        chunk_recovery = (
+            claimed.transcription_status == _CHUNK_REPAIR_RECOVERY_STATUS
+            or claimed.transcription_reason_code == _CHUNK_REPAIR_PROCESSING
+        )
         claimed.transcription_status = "processing"
-        claimed.transcription_reason_code = "dropbox_call_processing"
+        if chunk_recovery:
+            claimed.transcription_reason_code = _CHUNK_REPAIR_PROCESSING
+        else:
+            claimed.transcription_reason_code = "dropbox_call_processing"
         claimed.transcribed_at = claimed_at
         await session.commit()
         await session.refresh(claimed)
@@ -523,7 +537,7 @@ async def _transcribe_recording(
     duration_seconds = recording.duration_seconds
     if duration_seconds is None:
         raise DropboxCallWorkerError("dropbox_call_duration_unknown")
-    occurred_at = recording.received_at
+    occurred_at = claimed_at if chunk_recovery else recording.received_at
     service = TelegramVoiceTranscriptionService(
         downloader=_StoredCallDownloader(recording),
         normalizer=TelegramVoiceNormalizer(),
@@ -549,7 +563,10 @@ async def _transcribe_recording(
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=f"dropbox-call-v13:{recording.id}",
+            reservation_key=(
+                f"dropbox-call-v14:{recording.id}"
+                if chunk_recovery else f"dropbox-call-v13:{recording.id}"
+            ),
             period_key=occurred_at.strftime("%Y-%m"),
             requested_microusd=max(
                 100,
@@ -954,7 +971,7 @@ async def _commit_cursor(
         if state is None:
             raise DropboxCallWorkerError("dropbox_call_state_missing")
         state.cursor = cursor
-        state.backfill_version = 1
+        state.backfill_version = _CALL_BACKFILL_VERSION
         state.pending = pending
         state.attempt_count = 0
         state.next_attempt_at = None
