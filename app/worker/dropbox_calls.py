@@ -31,6 +31,11 @@ from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
+from app.infrastructure.owner_voice_recovery import (
+    claim_owner_voice_recovery,
+    owner_voice_reservation_key,
+    reconcile_exact_call_copies,
+)
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.domain import (
     UNCLASSIFIED_PROJECT_ID,
@@ -174,6 +179,9 @@ async def process_dropbox_call_changes(
         http=http,
     )
     await _summarize_ready_audio(session_factory=session_factory)
+    await reconcile_exact_call_copies(
+        session_factory, workspace_key=settings.gate_workspace_id,
+    )
     cursor = None if state.backfill_version < _CALL_BACKFILL_VERSION else state.cursor
     while True:
         payload = await _list_changes(
@@ -699,9 +707,17 @@ async def _recover_authorized_telegram_voices(
     claimed = await _claim_authorized_telegram_voice(
         session_factory=session_factory,
     )
-    if claimed is None:
-        return
-    archive, generation = claimed
+    archive_only = claimed is None
+    if archive_only:
+        owner_archive = await claim_owner_voice_recovery(
+            session_factory, workspace_key=settings.gate_workspace_id,
+        )
+        if owner_archive is None:
+            return
+        archive, generation = owner_archive, 3
+    else:
+        assert claimed is not None
+        archive, generation = claimed
     now = datetime.now(UTC)
     service = TelegramVoiceTranscriptionService(
         downloader=_StoredCallDownloader(archive),
@@ -727,9 +743,9 @@ async def _recover_authorized_telegram_voices(
             ),
             workspace_key=settings.gate_workspace_id,
             connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=_telegram_voice_recovery_reservation_key(
-                archive.id,
-                generation,
+            reservation_key=(
+                owner_voice_reservation_key(archive.id) if archive_only
+                else _telegram_voice_recovery_reservation_key(archive.id, generation)
             ),
             period_key=now.strftime("%Y-%m"),
             requested_microusd=max(
@@ -765,7 +781,7 @@ async def _recover_authorized_telegram_voices(
             stored.summary_model = AUDIO_SUMMARY_MODEL
             stored.summary_reason_code = "audio_summary_generated"
             stored.summarized_at = now
-        if result.outcome is TelegramVoiceOutcome.TRANSCRIBED:
+        if result.outcome is TelegramVoiceOutcome.TRANSCRIBED and not archive_only:
             await _requeue_recovered_telegram_voice(
                 session=session,
                 archive=stored,
