@@ -12,6 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 _SAFE_ERRORS = frozenset(
     {
         "dropbox_call_worker_failed",
+        "dropbox_call_download_limit_exceeded",
+        "dropbox_call_download_size_mismatch",
+        "dropbox_call_duration_unknown",
+        "dropbox_call_file_id_invalid",
+        "dropbox_call_filename_invalid",
+        "dropbox_call_path_invalid",
+        "dropbox_call_path_outside_inbox",
+        "dropbox_call_processing",
+        "dropbox_call_recording_missing",
+        "dropbox_call_revision_invalid",
+        "dropbox_call_size_invalid",
+        "dropbox_call_state_missing",
         "dropbox_call_inbox_path_invalid",
         "dropbox_call_app_key_missing",
         "dropbox_call_app_secret_missing",
