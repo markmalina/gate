@@ -22,6 +22,9 @@ dependencies = [
 contact-sync = [
   "Telethon==1.44.0",
 ]
+personal-telegram = [
+  "Telethon==1.44.0",
+]
 dev = [
   "anyio>=4.4.0",
   "jsonschema>=4.23.0",
