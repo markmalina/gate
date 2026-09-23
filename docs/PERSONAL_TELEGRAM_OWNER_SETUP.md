@@ -227,3 +227,27 @@ enabled until those are provisioned, the exact owner-approved recipient and
 text are bound to the Gate draft, and a separate one-send acceptance is
 recorded. The cloud has no Telegram user session; local credentials must
 remain on the original Windows profile.
+
+## Private supergroup foundation (default-off)
+
+`CreatePrivateGroupLocalService` is a separate, owner-local operation. It
+requires one-use approval for the exact title, actor and session. The durable
+SQLite journal commits an `unknown` attempt before Telegram and consumes the
+approval. Restart, concurrent call, timeout or FloodWait cannot automatically
+create a second group. The journal stores only a title/token digest; a
+confirmed group ID and access hash are encrypted with the owner-local
+DPAPI-protected enrollment key. The returned `group_ref` is opaque.
+
+The Telethon adapter uses one `channels.CreateChannelRequest` with
+`megagroup=True`, `broadcast=False`, an empty description and no invite
+operation. It accepts `created` only when the response identifies the exact
+title, a private megagroup, the owner as creator and at most the owner as a
+participant. A missing or contradictory confirmation stays `unknown` for
+manual reconciliation. It never sets a public username or exports an invite
+link.
+
+`create_group_enabled` defaults to false. No protected owner-host command
+route, live group receipt, management tool or openable private-group link is
+available yet. The owner must separately provide the exact private title and
+authorize one creation after host binding and local session validity are
+verified. This code does not create a group on deployment.
