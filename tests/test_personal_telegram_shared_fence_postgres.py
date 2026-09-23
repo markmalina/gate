@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+
 from app.application.personal_telegram_fence import PersonalSendFenceCommand
 from app.application.reply_sends import ReplySendError
 from app.infrastructure.personal_telegram_fence import (

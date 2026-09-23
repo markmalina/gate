@@ -8,6 +8,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
+
 from app.application.account_labels import account_label
 from app.application.reply_sends import (
     ReplySendError,
@@ -32,10 +37,6 @@ from app.models.domain import (
     TelegramBusinessConnection,
 )
 from app.services.telegram import TelegramApiError, TelegramClient
-from sqlalchemy import and_, case, or_, select, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import undefer
 
 _SENDABLE_DRAFT_STATUSES = frozenset(
     {

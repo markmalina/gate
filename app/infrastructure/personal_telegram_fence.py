@@ -10,6 +10,9 @@ import hashlib
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.application.personal_telegram_fence import (
     PersonalSendFenceCommand,
     PersonalSendFenceResult,
@@ -27,8 +30,6 @@ from app.models.domain import (
     SendAttempt,
     SendAttemptStatus,
 )
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 _ACTIVE_BUSINESS = (
     SendAttemptStatus.RESERVED.value,

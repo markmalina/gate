@@ -14,6 +14,8 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+from cryptography.fernet import Fernet
+
 from app.application.personal_telegram_fence import (
     PersonalSendFenceCommand,
     PersonalSendFenceResult,
@@ -34,7 +36,6 @@ from app.personal_telegram.local_runtime import (
     PinnedUserPeer,
     TelethonPersonalTelegramTransport,
 )
-from cryptography.fernet import Fernet
 
 NOW = datetime(2026, 9, 23, 11, 30, tzinfo=UTC)
 TOKEN = "synthetic-owner-token-not-a-real-secret-0001"
