@@ -3,14 +3,13 @@
 import json
 import os
 
-from cryptography.fernet import Fernet
-
 from app.personal_telegram.enrollment import (
     EncryptedSessionFileStore,
     generate_encryption_key_file,
     read_encryption_key_file,
 )
 from app.personal_telegram.preflight import check_local_enrollment
+from cryptography.fernet import Fernet
 
 
 def test_local_integrity_does_not_claim_authorization(tmp_path):

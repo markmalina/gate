@@ -11,12 +11,11 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cryptography.fernet import Fernet, InvalidToken
-
 from app.personal_telegram.enrollment import (
     PersonalTelegramEnrollmentError,
     read_encryption_key_file,
 )
+from cryptography.fernet import Fernet, InvalidToken
 
 
 @dataclass(frozen=True, slots=True)
