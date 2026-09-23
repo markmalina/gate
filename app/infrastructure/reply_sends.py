@@ -8,11 +8,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import case, select, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import undefer
-
 from app.application.account_labels import account_label
 from app.application.reply_sends import (
     ReplySendError,
@@ -27,6 +22,7 @@ from app.models.domain import (
     ConversationStatus,
     Message,
     MessageDirection,
+    PersonalTelegramSendFence,
     ReplyDraft,
     ReplyDraftStatus,
     ReplyTask,
@@ -36,6 +32,10 @@ from app.models.domain import (
     TelegramBusinessConnection,
 )
 from app.services.telegram import TelegramApiError, TelegramClient
+from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 _SENDABLE_DRAFT_STATUSES = frozenset(
     {
@@ -468,10 +468,7 @@ class SqlTelegramReplySender:
                 code="task_closed",
                 message="Reply task no longer needs a reply",
             )
-        if (
-            current.task_status == ReplyTaskStatus.REPLIED.value
-            and covered_task_ids
-        ):
+        if current.task_status == ReplyTaskStatus.REPLIED.value and covered_task_ids:
             raise ReplySendError(
                 code="task_superseded",
                 message=(
@@ -992,6 +989,27 @@ class SqlTelegramReplySender:
                     "Another active or ambiguous send attempt blocks this "
                     "conversation until its delivery outcome is known"
                 ),
+            )
+        # Both channels reserve under the same conversation row lock. A
+        # personal attempt permanently owns its exact draft; an unresolved
+        # personal attempt also fences newer drafts in that conversation.
+        personal = await self._session.scalar(
+            select(PersonalTelegramSendFence.id)
+            .where(
+                or_(
+                    PersonalTelegramSendFence.reply_draft_id == draft_id,
+                    and_(
+                        PersonalTelegramSendFence.conversation_id == conversation_id,
+                        PersonalTelegramSendFence.status == "unknown",
+                    ),
+                )
+            )
+            .limit(1)
+        )
+        if personal is not None:
+            raise ReplySendError(
+                code="task_send_blocked",
+                message="A personal Telegram reservation blocks this Business draft",
             )
 
     async def _load_covered_task_ids(

@@ -1,7 +1,7 @@
 """Gate SQLAlchemy domain models."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -315,9 +315,7 @@ class PersonProjectRelation(Base):
     )
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict
@@ -349,9 +347,7 @@ class TelegramBusinessConnection(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("accounts.id"), nullable=False, index=True
     )
-    business_connection_id: Mapped[str] = mapped_column(
-        String(255), nullable=False, index=True
-    )
+    business_connection_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     user_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     rights: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -706,6 +702,39 @@ class SendAttempt(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class PersonalTelegramSendFence(Base):
+    """One shared Business/personal draft fence; no session or message plaintext."""
+
+    __tablename__ = "personal_telegram_send_fences"
+    __table_args__ = (
+        UniqueConstraint("reply_draft_id", name="uq_personal_send_fences_draft"),
+        UniqueConstraint("idempotency_key", name="uq_personal_send_fences_key"),
+        Index("ix_personal_send_fences_conversation_status", "conversation_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reply_draft_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reply_drafts.id"), nullable=False)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    session_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    peer_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    text_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    approval_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unknown", server_default=text("'unknown'")
+    )
+    provider_receipt_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reserved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TelegramReceipt(Base):
@@ -1075,9 +1104,7 @@ class TelegramQueueIncidentRecord(Base):
             "uq_telegram_queue_incidents_single_active",
             text("(1)"),
             unique=True,
-            postgresql_where=text(
-                "status IN ('open', 'notified', 'acknowledged')"
-            ),
+            postgresql_where=text("status IN ('open', 'notified', 'acknowledged')"),
         ),
     )
 

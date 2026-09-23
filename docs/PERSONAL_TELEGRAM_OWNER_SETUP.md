@@ -197,11 +197,33 @@ automatic request retry/reconnect/flood sleep are disabled. A one-use approval
 binds actor, session, peer and exact text, and can be revoked before use.
 
 This is a local library foundation, not an activated Gate capability or a
-command to send. `send_enabled` remains false in server status. There is no
-server/MCP route, live session binding, owner account/peer pin, shared
-Business/MTProto delivery fence or cross-host journal replication. The local
-SQLite journal alone cannot prevent a concurrent Business reply for the same
-logical message. Do not enable its policy in a live process until a shared
-fence reserves the same approved intent across both transports and a separate
-owner-authorized one-send acceptance is recorded. No group creation is
-implemented by this stage.
+command to send. `send_enabled` remains false in server status. No group
+creation is implemented by this stage.
+
+## Shared Business and personal draft reservation (default-off)
+
+`SqlPersonalTelegramSendFence` stores a personal attempt against an existing
+Gate reply draft in PostgreSQL before any local provider call. It records
+opaque actor/session/peer refs, exact text and approval digests, and an
+ambiguous outcome, never the Telegram session, token or message text. The
+local service requires both this shared reservation and its local SQLite
+journal. If the shared reservation fails, it cannot call Telegram. A replay
+cannot trigger another attempt. Failure to finalize leaves the shared
+attempt `unknown`, which blocks another draft in the same conversation until
+operator reconciliation.
+
+Business and personal reservations both lock the same conversation row.
+Business refuses the draft owned by a personal attempt and refuses other
+drafts in the conversation while that outcome is unknown. Personal refuses a
+draft with any Business attempt and refuses the conversation while an active
+or ambiguous Business attempt exists. A completed draft stays reserved for
+its original channel. A new draft may be sent after a confirmed outcome only
+through its existing explicit confirmation flow.
+
+The PostgreSQL adapter is disabled by default and there is still no protected
+server-to-owner-host binding, authenticated fence transport, live session
+binding or owner account/recipient pin. Do not set the local send policy to
+enabled until those are provisioned, the exact owner-approved recipient and
+text are bound to the Gate draft, and a separate one-send acceptance is
+recorded. The cloud has no Telegram user session; local credentials must
+remain on the original Windows profile.
