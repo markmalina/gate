@@ -151,3 +151,24 @@ Rollback sequence:
 
 Stage A rollback is repository-only deletion of its module, tests, ADR and this
 checklist; it has no provider or data cleanup.
+
+## Offline local integrity preflight (default-off)
+
+Use this under the same Windows user profile as enrollment, with the existing
+DPAPI key and receipt. Do not copy either artifact to Git, chat or a server.
+The command checks receipt binding and decryptability locally without calling
+Telegram and prints only redacted booleans and an allowlisted error code:
+
+```powershell
+gate-personal-telegram-preflight `
+  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key.dpapi" `
+  --receipt-file "$env:USERPROFILE\.gate\personal-telegram\<session_ref>.receipt.json"
+```
+
+The local `configured: true` means only that the encrypted file can be
+decrypted on this host. `authenticated: null` means Telegram authorization has
+not been checked; `runtime_connected: false`, `send_enabled: false` and
+`create_group_enabled: false` remain unchanged. The live Gate status reports
+`configured: null` and `error_code: local_session_not_bound` until a
+separate protected runtime binding is implemented. The preflight does not
+transfer a session, create a group, read a dialog or send a message.

@@ -9,6 +9,7 @@ from sqlalchemy import String, and_, cast, func, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.account_labels import account_label
+from app.application.personal_telegram_status import personal_telegram_server_status
 from app.core.config import Settings
 from app.core.mcp_security import Principal
 from app.models.domain import (
@@ -132,6 +133,7 @@ async def build_gate_status(
         },
         "counts": counts,
         "connection_health": connection_health,
+        "personal_telegram": personal_telegram_server_status(),
         "contact_directory": contact_directory,
         "mcp": {
             "protocol_version": protocol_version,

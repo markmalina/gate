@@ -1595,6 +1595,19 @@ BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA = _object(
 )
 
 
+# Optional for older fixtures, always present in the live status response.
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["personal_telegram"] = _object(
+    {
+        "configured": _nullable("boolean"),
+        "authenticated": _nullable("boolean"),
+        "runtime_connected": {"type": "boolean"},
+        "send_enabled": {"type": "boolean"},
+        "create_group_enabled": {"type": "boolean"},
+        "last_successful_check": _nullable("string"),
+        "error_code": _nullable("string"),
+    }
+)
+
 # Optional for older fixtures, always present in the live gate_get_status response.
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
     {
