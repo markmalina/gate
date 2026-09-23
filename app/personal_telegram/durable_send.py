@@ -15,6 +15,11 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
+from app.application.personal_telegram_fence import (
+    PersonalSendFenceCommand,
+    PersonalSendFencePort,
+    PersonalSendFenceResult,
+)
 from app.application.personal_telegram_transport import (
     ExactSendCommand,
     ExactSendResult,
@@ -269,7 +274,7 @@ class SqlitePersonalTelegramSendJournal:
 
 
 class SendExactPersonalTelegramLocalService:
-    """Default-off local composition; no Business fallback or server route."""
+    """A shared Gate fence and local journal must both reserve before send."""
 
     def __init__(
         self,
@@ -277,17 +282,59 @@ class SendExactPersonalTelegramLocalService:
         policy: PersonalTelegramPolicy,
         journal: SqlitePersonalTelegramSendJournal,
         transport: PersonalTelegramTransport,
+        shared_fence: PersonalSendFencePort,
     ) -> None:
         self._policy = policy
         self._journal = journal
         self._transport = transport
+        self._shared_fence = shared_fence
 
-    async def execute(self, command: ExactSendCommand) -> ExactSendResult:
+    async def execute(
+        self, command: ExactSendCommand, *, fence_command: PersonalSendFenceCommand
+    ) -> ExactSendResult:
         if not self._policy.send_enabled:
             raise PersonalTelegramTransportError("personal_telegram_send_disabled")
-        reservation = self._journal.reserve(command)
+        if (
+            fence_command.actor_ref != command.actor_ref
+            or fence_command.session_ref != command.session_ref
+            or fence_command.peer_ref != command.peer_ref
+            or fence_command.idempotency_key != command.idempotency_key
+            or fence_command.exact_text_digest != _exact_text_digest(command.exact_text)
+            or fence_command.approval_digest != _secret_digest(command.approval_token)
+        ):
+            raise PersonalTelegramTransportError("personal_telegram_shared_scope_mismatch")
+        shared = await self._shared_fence.reserve(fence_command)
+        if shared.replay:
+            return _shared_replay(command, shared)
+        try:
+            reservation = self._journal.reserve(command)
+        except Exception:
+            # The provider was never called; release this newly claimed draft.
+            # If finalization is unavailable, UNKNOWN remains as a safe fence.
+            try:
+                await self._shared_fence.finalize(
+                    fence_command,
+                    outcome="rejected",
+                    receipt_ref=None,
+                    external_effect_performed=False,
+                )
+            except Exception:
+                pass
+            raise
         if reservation.replay:
-            return replace(reservation.result, idempotent_replay=True)
+            local_replay = replace(reservation.result, idempotent_replay=True)
+            try:
+                await self._shared_fence.finalize(
+                    fence_command,
+                    outcome=local_replay.outcome.value,
+                    receipt_ref=local_replay.provider_receipt_ref,
+                    external_effect_performed=local_replay.external_effect_performed,
+                )
+            except Exception:
+                return replace(
+                    local_replay, outcome=ProviderOutcome.UNKNOWN, provider_receipt_ref=None
+                )
+            return local_replay
         try:
             receipt = await self._transport.send_exact(
                 session_ref=command.session_ref,
@@ -297,4 +344,41 @@ class SendExactPersonalTelegramLocalService:
             )
         except Exception:
             receipt = ProviderSendReceipt(ProviderOutcome.UNKNOWN, None, None)
-        return self._journal.finalize(command, receipt)
+        local = self._journal.finalize(command, receipt)
+        try:
+            shared_outcome = await self._shared_fence.finalize(
+                fence_command,
+                outcome=local.outcome.value,
+                receipt_ref=local.provider_receipt_ref,
+                external_effect_performed=local.external_effect_performed,
+            )
+            if (
+                shared_outcome.outcome == local.outcome.value
+                and shared_outcome.receipt_ref == local.provider_receipt_ref
+            ):
+                return local
+        except Exception:
+            pass
+        # The local journal retains any confirmed effect. Gate's shared fence
+        # stays ambiguous until the operator reconciles it; never retry.
+        return ExactSendResult(
+            ProviderOutcome.UNKNOWN,
+            None,
+            local.deterministic_random_id,
+            False,
+            local.external_effect_performed,
+        )
+
+
+def _shared_replay(command: ExactSendCommand, shared: PersonalSendFenceResult) -> ExactSendResult:
+    digest = _exact_text_digest(command.exact_text)
+    random_id = _deterministic_random_id(
+        idempotency_key=command.idempotency_key,
+        peer_ref=command.peer_ref,
+        exact_text_digest=digest,
+    )
+    if shared.outcome == "sent" and shared.receipt_ref is not None:
+        return ExactSendResult(ProviderOutcome.SENT, shared.receipt_ref, random_id, True, True)
+    if shared.outcome == "rejected":
+        return ExactSendResult(ProviderOutcome.REJECTED, None, random_id, True, False)
+    return ExactSendResult(ProviderOutcome.UNKNOWN, None, random_id, True, None)

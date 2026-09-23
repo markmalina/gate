@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import sqlite3
 import sys
@@ -10,8 +11,13 @@ import types
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
+from app.application.personal_telegram_fence import (
+    PersonalSendFenceCommand,
+    PersonalSendFenceResult,
+)
 from app.application.personal_telegram_transport import (
     ExactSendCommand,
     PersonalTelegramPolicy,
@@ -47,6 +53,46 @@ def command(**changes: object) -> ExactSendCommand:
     )
     fields.update(changes)
     return ExactSendCommand(**fields)  # type: ignore[arg-type]
+
+
+def fence_command() -> PersonalSendFenceCommand:
+    return PersonalSendFenceCommand(
+        draft_id=UUID("00000000-0000-0000-0000-000000000001"),
+        account_id=UUID("00000000-0000-0000-0000-000000000002"),
+        actor_ref="actor_owner",
+        session_ref="session_synthetic001",
+        peer_ref="peer_synthetic001",
+        exact_text_digest=hashlib.sha256(TEXT.encode()).hexdigest(),
+        approval_digest=hashlib.sha256(TOKEN.encode()).hexdigest(),
+        idempotency_key="send_synthetic001",
+        now=NOW,
+    )
+
+
+class SyntheticFence:
+    def __init__(self, *, refuse: bool = False) -> None:
+        self.refuse = refuse
+        self.outcome: str | None = None
+        self.receipt_ref: str | None = None
+
+    async def reserve(self, _command: PersonalSendFenceCommand) -> PersonalSendFenceResult:
+        if self.refuse:
+            raise RuntimeError("synthetic_fence_unavailable")
+        replay = self.outcome is not None
+        self.outcome = self.outcome or "unknown"
+        return PersonalSendFenceResult(UUID(int=3), self.outcome, self.receipt_ref, replay)
+
+    async def finalize(
+        self,
+        _command: PersonalSendFenceCommand,
+        *,
+        outcome: str,
+        receipt_ref: str | None,
+        external_effect_performed: bool | None,
+    ) -> PersonalSendFenceResult:
+        assert external_effect_performed is not None or outcome == "unknown"
+        self.outcome, self.receipt_ref = outcome, receipt_ref
+        return PersonalSendFenceResult(UUID(int=3), outcome, receipt_ref, False)
 
 
 def journal(tmp_path: Path) -> SqlitePersonalTelegramSendJournal:
@@ -98,10 +144,11 @@ def test_only_one_concurrent_provider_attempt(tmp_path: Path) -> None:
             policy=PersonalTelegramPolicy(send_enabled=True),
             journal=store,
             transport=transport,
+            shared_fence=SyntheticFence(),
         )
-        first = asyncio.create_task(service.execute(command()))
+        first = asyncio.create_task(service.execute(command(), fence_command=fence_command()))
         await transport.entered.wait()
-        concurrent = await service.execute(command())
+        concurrent = await service.execute(command(), fence_command=fence_command())
         assert concurrent.outcome is ProviderOutcome.UNKNOWN
         assert concurrent.idempotent_replay
         transport.release.set()
@@ -114,7 +161,8 @@ def test_only_one_concurrent_provider_attempt(tmp_path: Path) -> None:
             policy=PersonalTelegramPolicy(send_enabled=True),
             journal=reopened,
             transport=transport,
-        ).execute(command())
+            shared_fence=service._shared_fence,
+        ).execute(command(), fence_command=fence_command())
         assert replay.outcome is ProviderOutcome.SENT
         assert replay.idempotent_replay and transport.calls == 1
 
@@ -167,17 +215,40 @@ def test_default_off_and_ambiguous_failure_remain_terminal(tmp_path: Path) -> No
     store = journal(tmp_path)
     transport = FailingTransport()
     service = SendExactPersonalTelegramLocalService(
-        policy=PersonalTelegramPolicy(), journal=store, transport=transport
+        policy=PersonalTelegramPolicy(),
+        journal=store,
+        transport=transport,
+        shared_fence=SyntheticFence(),
     )
     with pytest.raises(PersonalTelegramTransportError, match="send_disabled"):
-        asyncio.run(service.execute(command()))
+        asyncio.run(service.execute(command(), fence_command=fence_command()))
+    shared = SyntheticFence()
     enabled = SendExactPersonalTelegramLocalService(
-        policy=PersonalTelegramPolicy(send_enabled=True), journal=store, transport=transport
+        policy=PersonalTelegramPolicy(send_enabled=True),
+        journal=store,
+        transport=transport,
+        shared_fence=shared,
     )
-    first = asyncio.run(enabled.execute(command()))
-    replay = asyncio.run(enabled.execute(command()))
+    first = asyncio.run(enabled.execute(command(), fence_command=fence_command()))
+    replay = asyncio.run(enabled.execute(command(), fence_command=fence_command()))
     assert first.outcome is replay.outcome is ProviderOutcome.UNKNOWN
     assert replay.idempotent_replay and transport.calls == 1
+
+
+def test_shared_fence_refusal_prevents_provider_and_local_reservation(tmp_path: Path) -> None:
+    transport = BlockingTransport()
+    store = journal(tmp_path)
+    service = SendExactPersonalTelegramLocalService(
+        policy=PersonalTelegramPolicy(send_enabled=True),
+        journal=store,
+        transport=transport,
+        shared_fence=SyntheticFence(refuse=True),
+    )
+    with pytest.raises(RuntimeError, match="synthetic_fence_unavailable"):
+        asyncio.run(service.execute(command(), fence_command=fence_command()))
+    assert transport.calls == 0
+    with sqlite3.connect(tmp_path / "private" / "send.sqlite3") as db:
+        assert db.execute("SELECT count(*) FROM attempts").fetchone() == (0,)
 
 
 def enrollment(tmp_path: Path) -> LocalEncryptedSessionSource:
