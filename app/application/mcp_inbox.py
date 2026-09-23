@@ -399,7 +399,7 @@ async def get_reply_context(
             receipt_payload,
             update_id=getattr(message, "telegram_update_id", None),
             event_type=getattr(message, "event_type", ""),
-            telegram_message_id=message.telegram_message_id,
+            telegram_message_id=getattr(message, "telegram_message_id", None),
             chat_id=message.chat_id,
             business_connection_id=getattr(message, "business_connection_id", None),
         )
