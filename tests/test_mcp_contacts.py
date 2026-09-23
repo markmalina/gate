@@ -96,7 +96,7 @@ def test_contact_only_matches_exact_message_and_not_generic_attachment() -> None
     }}) is None
     assert extract(update(contact={"phone_number": "+000"})) is None
     assert extract(
-        update(contact={"first_name": "Тест", "phone_number": "x\\nsecret"})
+        update(contact={"first_name": "Тест", "phone_number": "x\nsecret"})
     ) is None
 
 
