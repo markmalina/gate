@@ -243,9 +243,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -c constraints/ci.txt ".[dev]"
           python -m pip check
-      - name: Native CurrentUser DPAPI round trip
-        run: >-
-          pytest
-          tests/test_personal_telegram_enrollment.py
-          -k windows_native_dpapi_key_round_trip
+      - name: Native CurrentUser DPAPI round trip and offline preflight
+        run: |
+          pytest tests/test_personal_telegram_enrollment.py -k windows_native_dpapi_key_round_trip
+          pytest tests/test_personal_telegram_preflight.py
 

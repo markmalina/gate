@@ -1,17 +1,22 @@
 """Offline-only checks: no Telegram network call or secret in output."""
 
 import json
+import os
 
 from cryptography.fernet import Fernet
 
-from app.personal_telegram.enrollment import EncryptedSessionFileStore
+from app.personal_telegram.enrollment import (
+    EncryptedSessionFileStore,
+    generate_encryption_key_file,
+    read_encryption_key_file,
+)
 from app.personal_telegram.preflight import check_local_enrollment
 
 
 def test_local_integrity_does_not_claim_authorization(tmp_path):
-    key = Fernet.generate_key()
     key_file = tmp_path / "key"
-    key_file.write_bytes(key)
+    generate_encryption_key_file(key_file)
+    key = read_encryption_key_file(key_file)
     artifacts = EncryptedSessionFileStore(
         output_directory=tmp_path / "sessions",
         encryption_key=key,
@@ -37,9 +42,8 @@ def test_local_integrity_does_not_claim_authorization(tmp_path):
 
 
 def test_missing_and_corrupted_artifacts_fail_closed(tmp_path):
-    key = Fernet.generate_key()
     key_file = tmp_path / "key"
-    key_file.write_bytes(key)
+    generate_encryption_key_file(key_file)
     receipt_file = tmp_path / "session_synthetic1234.receipt.json"
     assert (
         check_local_enrollment(key_file=key_file, receipt_file=receipt_file).error_code
@@ -49,7 +53,11 @@ def test_missing_and_corrupted_artifacts_fail_closed(tmp_path):
         json.dumps(
             {
                 "session_ref": "session_synthetic1234",
-                "secret_store_class": "posix_owner_only_fernet_file",
+                "secret_store_class": (
+                    "windows_current_user_dpapi_wrapped_fernet"
+                    if os.name == "nt"
+                    else "posix_owner_only_fernet_file"
+                ),
                 "read_dialogs_enabled": False,
                 "contact_sync_enabled": False,
                 "send_enabled": False,
@@ -74,7 +82,11 @@ def test_rejects_receipt_claiming_send_enabled(tmp_path):
         json.dumps(
             {
                 "session_ref": "session_synthetic1234",
-                "secret_store_class": "posix_owner_only_fernet_file",
+                "secret_store_class": (
+                    "windows_current_user_dpapi_wrapped_fernet"
+                    if os.name == "nt"
+                    else "posix_owner_only_fernet_file"
+                ),
                 "read_dialogs_enabled": False,
                 "contact_sync_enabled": False,
                 "send_enabled": True,
