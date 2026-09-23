@@ -32,6 +32,7 @@ class PersonalTelegramPolicy:
     read_dialogs_enabled: bool = False
     contact_sync_enabled: bool = False
     send_enabled: bool = False
+    create_group_enabled: bool = False
 
 
 @dataclass(frozen=True, slots=True)
