@@ -172,3 +172,36 @@ not been checked; `runtime_connected: false`, `send_enabled: false` and
 `configured: null` and `error_code: local_session_not_bound` until a
 separate protected runtime binding is implemented. The preflight does not
 transfer a session, create a group, read a dialog or send a message.
+
+## Local send foundation (Gate #696)
+
+`app/personal_telegram/local_runtime.py` can now load the existing ciphertext
+under its original Windows CurrentUser DPAPI profile and make **one** raw
+Telethon `messages.SendMessageRequest`. It requires an owner-provisioned exact
+`session_ref`, API application credentials held only in process memory, the
+expected owner user ID and an account-specific pinned `InputPeerUser` mapping
+for an opaque `peer_ref`. It does not discover contacts, open dialogs, read
+message history, import a session to the cloud or select a recipient itself.
+The constructor does not connect to Telegram. Install the pinned optional
+dependency locally with `py -m pip install -e ".[personal-telegram]"` when a
+separately authorized local runtime is provisioned.
+
+`SqlitePersonalTelegramSendJournal` in `app/personal_telegram/durable_send.py`
+stores only token/text digests, opaque refs, expiration, a deterministic
+Telegram random ID and redacted outcome. Its path must be absolute and under
+an owner-only directory. It commits `unknown` **before** an external attempt;
+parallel requests and a restart replay the stored result without sending
+again. A confirmed Telegram random-ID mapping records `sent`; a missing
+confirmation, timeout, invalid reply or crash remains `unknown`. Telethon's
+automatic request retry/reconnect/flood sleep are disabled. A one-use approval
+binds actor, session, peer and exact text, and can be revoked before use.
+
+This is a local library foundation, not an activated Gate capability or a
+command to send. `send_enabled` remains false in server status. There is no
+server/MCP route, live session binding, owner account/peer pin, shared
+Business/MTProto delivery fence or cross-host journal replication. The local
+SQLite journal alone cannot prevent a concurrent Business reply for the same
+logical message. Do not enable its policy in a live process until a shared
+fence reserves the same approved intent across both transports and a separate
+owner-authorized one-send acceptance is recorded. No group creation is
+implemented by this stage.
