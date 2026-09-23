@@ -17,6 +17,11 @@ from app.models.domain import SendAttempt, SendAttemptStatus
 from test_reply_sends_postgres import _postgres_sessions, _seed_reply, _SeededReply, _settings
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
 def _command(seed: _SeededReply, *, draft_id: UUID, exact_text: str) -> PersonalSendFenceCommand:
     return PersonalSendFenceCommand(
         draft_id=draft_id,
@@ -45,12 +50,13 @@ async def test_personal_reservation_blocks_business_and_replays_without_new_atte
         async with sessions() as session:
             sender = SqlTelegramReplySender(session=session, telegram=None, settings=_settings())
             for draft_id in seed.draft_ids:
-                with pytest.raises(ReplySendError, match="task_send_blocked"):
+                with pytest.raises(ReplySendError) as blocked:
                     await sender._raise_if_task_send_blocked(
                         conversation_id=seed.conversation_id,
                         task_id=seed.task_id,
                         draft_id=draft_id,
                     )
+                assert blocked.value.code == "task_send_blocked"
 
         with pytest.raises(PersonalSendFenceError, match="personal_attempt_exists"):
             await fence.reserve(
@@ -64,12 +70,13 @@ async def test_personal_reservation_blocks_business_and_replays_without_new_atte
         # A completed draft cannot be sent a second time via Business.
         async with sessions() as session:
             sender = SqlTelegramReplySender(session=session, telegram=None, settings=_settings())
-            with pytest.raises(ReplySendError, match="task_send_blocked"):
+            with pytest.raises(ReplySendError) as blocked:
                 await sender._raise_if_task_send_blocked(
                     conversation_id=seed.conversation_id,
                     task_id=seed.task_id,
                     draft_id=seed.draft_ids[0],
                 )
+            assert blocked.value.code == "task_send_blocked"
 
 
 @pytest.mark.anyio
