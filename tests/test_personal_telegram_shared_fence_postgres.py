@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.application.personal_telegram_fence import PersonalSendFenceCommand
 from app.application.reply_sends import ReplySendError
 from app.infrastructure.personal_telegram_fence import (
@@ -15,7 +14,15 @@ from app.infrastructure.personal_telegram_fence import (
 )
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import SendAttempt, SendAttemptStatus
-from test_reply_sends_postgres import _postgres_sessions, _seed_reply, _SeededReply, _settings
+
+from test_reply_sends_postgres import (
+    _LiteralRecordingTelegram,
+    _postgres_sessions,
+    _seed_reply,
+    _SeededReply,
+    _send_once,
+    _settings,
+)
 
 
 @pytest.fixture
@@ -47,6 +54,12 @@ async def test_personal_reservation_blocks_business_and_replays_without_new_atte
         assert reserved.outcome == "unknown" and not reserved.replay
         concurrent = await fence.reserve(first)
         assert concurrent.replay and concurrent.fence_id == reserved.fence_id
+
+        telegram = _LiteralRecordingTelegram()
+        with pytest.raises(ReplySendError) as blocked_send:
+            await _send_once(sessions, seed=seed, draft_id=seed.draft_ids[0], telegram=telegram)
+        assert blocked_send.value.code == "task_send_blocked"
+        assert telegram.plain_calls == []
 
         async with sessions() as session:
             sender = SqlTelegramReplySender(session=session, telegram=None, settings=_settings())
