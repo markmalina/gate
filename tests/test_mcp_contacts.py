@@ -101,6 +101,22 @@ def test_contact_only_matches_exact_message_and_not_generic_attachment() -> None
     ) is None
 
 
+def test_repeated_delivery_projects_one_contact_without_duplicate_data() -> None:
+    raw = update()
+    card = extract_scoped_telegram_contact(
+        raw,
+        raw,
+        update_id=10,
+        event_type="business_message",
+        telegram_message_id=20,
+        chat_id="30",
+        business_connection_id="business-ru",
+    )
+    assert card == extract(raw)
+    assert isinstance(card, dict)
+    assert len(card) == 5
+
+
 def test_outbound_and_ordinary_message_contact_use_same_exact_contract() -> None:
     card = extract(update(event_type="message"), event_type="message")
     assert card is not None
