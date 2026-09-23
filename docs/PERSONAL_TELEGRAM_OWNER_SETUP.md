@@ -251,3 +251,28 @@ route, live group receipt, management tool or openable private-group link is
 available yet. The owner must separately provide the exact private title and
 authorize one creation after host binding and local session validity are
 verified. This code does not create a group on deployment.
+
+## Optional local authorization probe
+
+After a separately scoped owner decision to check one exact installation,
+run the following **on the original Windows user profile**. Supply the
+existing Telegram API application ID/hash and expected owner user ID through
+`GATE_PERSONAL_TELEGRAM_API_ID`, `GATE_PERSONAL_TELEGRAM_API_HASH` and
+`GATE_PERSONAL_TELEGRAM_OWNER_USER_ID` on that host; keep their values out of shell
+history, chat, GitHub issues and command arguments. Do not copy the session,
+DPAPI key or ciphertext to another machine.
+
+```powershell
+gate-personal-telegram-check-auth --live-readonly `
+  --key-file "$env:USERPROFILE\.gate\personal-telegram.fernet.key.dpapi" `
+  --receipt-file "$env:USERPROFILE\.gate\personal-telegram\<session_ref>.receipt.json"
+```
+
+The command is intentionally explicit and makes a temporary Telegram
+connection with retries disabled. It checks authorization and the pinned
+owner identity, then disconnects. It does not inspect dialogs, contacts or
+messages, send text or create a group. Its JSON prints only booleans, a time
+and an allowlisted error code. `probe_connected=true` reports the temporary
+check; `runtime_connected=false` correctly says no persistent runtime has
+been bound. Production Gate status remains unbound until an authenticated
+owner-host bridge and redacted receipt are installed separately.
