@@ -17,11 +17,13 @@ from app.api.deps import get_db_session
 from app.api.mcp_schemas import (
     ATTACHMENT_DETAILS_SCHEMA,
     COMMON_DEFINITIONS,
+    CONTACT_DETAILS_SCHEMA,
     REPLY_CONTEXT_MESSAGE_SCHEMA,
     REPLY_CONTEXT_SUCCESS_SCHEMA,
     VOICE_DETAILS_SCHEMA,
 )
 from app.api.routes import get_telegram_client
+from app.application.telegram_contacts import extract_scoped_telegram_contact
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError
 from app.models.domain import (
@@ -30,6 +32,7 @@ from app.models.domain import (
     Person,
     PhoneCallRecording,
     TelegramVoiceArchive,
+    TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
 
@@ -140,6 +143,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
         **copy.deepcopy(COMMON_DEFINITIONS),
         "voice_details": copy.deepcopy(VOICE_DETAILS_SCHEMA),
         "attachment_details": copy.deepcopy(ATTACHMENT_DETAILS_SCHEMA),
+        "contact_details": copy.deepcopy(CONTACT_DETAILS_SCHEMA),
         "reply_context_message": copy.deepcopy(REPLY_CONTEXT_MESSAGE_SCHEMA),
         "communication_feed_item": FEED_ITEM_SCHEMA,
     },
@@ -342,9 +346,16 @@ async def _build_feed_payload(
         Message.created_at,
     )
     message_result = await session.execute(
-        select(Message, Account, Person)
+        select(Message, Account, Person, TelegramUpdate)
         .join(Account, Account.id == Message.account_id)
         .outerjoin(Person, Person.id == Message.person_id)
+        .outerjoin(
+            TelegramUpdate,
+            and_(
+                TelegramUpdate.bot_id == Message.bot_id,
+                TelegramUpdate.update_id == Message.telegram_update_id,
+            ),
+        )
         .where(
             Message.account_id.in_(principal.access_scope.account_ids),
             Message.project_id.in_(principal.access_scope.project_ids),
@@ -394,10 +405,14 @@ async def _build_feed_payload(
         for archive, _account, _message, _person in voice_rows
     }
     items: list[JsonObject] = []
-    for message, account, person in message_result.all():
+    for message, account, person, telegram_update in message_result.all():
         if _telegram_identity(message) in voice_keys:
             continue
-        items.append(_message_feed_item(message, account, person, owner_timezone))
+        items.append(
+            _message_feed_item(
+                message, account, person, owner_timezone, telegram_update
+            )
+        )
     for archive, account, _message, person in voice_rows:
         items.append(_voice_feed_item(archive, account, person, owner_timezone))
     for row in call_result.all():
@@ -433,6 +448,7 @@ def _message_feed_item(
     account: Any,
     person: Any,
     owner_timezone: ZoneInfo,
+    telegram_update: Any = None,
 ) -> JsonObject:
     direction = str(message.direction)
     contact = _contact_label(person)
@@ -442,7 +458,17 @@ def _message_feed_item(
         else message.received_at or message.sent_at or message.created_at
     )
     actor, counterparty = _participants(direction, contact)
-    semantic_input = _clean_text(message.text)
+    contact_card = extract_scoped_telegram_contact(
+        telegram_update.payload if telegram_update is not None else None,
+        getattr(message, "payload", None),
+        update_id=getattr(message, "telegram_update_id", None),
+        event_type=getattr(message, "event_type", ""),
+        telegram_message_id=message.telegram_message_id,
+        chat_id=message.chat_id,
+        business_connection_id=message.business_connection_id,
+    )
+    # Never put a contact's name, phone or vCard in the global feed.
+    semantic_input = "Получен контакт" if contact_card else _clean_text(message.text)
     return _feed_item(
         source_ref=f"telegram-message:{message.id}",
         occurred_at=occurred_at,

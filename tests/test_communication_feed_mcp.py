@@ -2,6 +2,7 @@
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
@@ -10,6 +11,7 @@ from app.api.communication_feed_mcp import (
     FEED_REPLY_CONTEXT_OUTPUT_SCHEMA,
     _build_feed_payload,
     _decorate_tools_list,
+    _message_feed_item,
     _parse_feed_day,
     _telegram_source,
 )
@@ -154,8 +156,8 @@ async def test_feed_orders_sources_and_prefers_voice_over_duplicate_message() ->
     session = FakeSession(
         [
             [
-                (standalone, account_ru, person),
-                (duplicate_voice_message, account_ru, person),
+                (standalone, account_ru, person, None),
+                (duplicate_voice_message, account_ru, person, None),
             ],
             [(voice, account_ru, duplicate_voice_message, person)],
             [(call,)],
@@ -194,3 +196,47 @@ async def test_feed_orders_sources_and_prefers_voice_over_duplicate_message() ->
         FEED_REPLY_CONTEXT_OUTPUT_SCHEMA,
         format_checker=FormatChecker(),
     ).validate(payload)
+
+
+def test_contact_feed_contains_only_generic_semantics() -> None:
+    card = {
+        "update_id": 10,
+        "business_message": {
+            "message_id": 20,
+            "chat": {"id": 30},
+            "business_connection_id": "business-ru",
+            "contact": {
+                "first_name": "Тест",
+                "phone_number": "+000 123 456",
+                "vcard": "BEGIN:VCARD\\nNOTE:secret\\nEND:VCARD",
+            },
+        },
+    }
+    message = SimpleNamespace(
+        id=UUID("99999999-9999-9999-9999-999999999999"),
+        direction="inbound",
+        account_id=ACCOUNT_ID,
+        business_connection_id="business-ru",
+        chat_id="30",
+        telegram_update_id=10,
+        telegram_message_id=20,
+        event_type="business_message",
+        payload={},
+        text=None,
+        received_at=datetime(2026, 9, 23, 5, 21, tzinfo=UTC),
+        sent_at=None,
+        created_at=datetime(2026, 9, 23, 5, 21, tzinfo=UTC),
+    )
+    account = SimpleNamespace(alias="telegram_mark_ru", country_code="RU")
+    item = _message_feed_item(
+        message,
+        account,
+        None,
+        ZoneInfo("Europe/Berlin"),
+        SimpleNamespace(payload=card),
+    )
+    assert item["semantic_input_private"] == "Получен контакт"
+    assert item["semantic_status"] == "source_ready"
+    assert "+000" not in repr(item)
+    assert "Тест" not in repr(item)
+    assert "secret" not in repr(item)

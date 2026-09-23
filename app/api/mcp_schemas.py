@@ -140,12 +140,23 @@ ATTACHMENT_DETAILS_SCHEMA = _object(
         },
     }
 )
+CONTACT_DETAILS_SCHEMA = _object(
+    {
+        "first_name": {"type": "string", "minLength": 1, "maxLength": 255},
+        "last_name": _nullable("string"),
+        "phone_number": {"type": "string", "minLength": 1, "maxLength": 64},
+        "user_id": _nullable("string"),
+        "vcard_present": {"type": "boolean"},
+        "source_ref": {"type": "string", "minLength": 1, "maxLength": 128},
+        "source_message_id": {"type": "integer", "minimum": 1},
+    }
+)
 REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
     {
         **MESSAGE_SCHEMA["properties"],
         "message_type": {
             "type": "string",
-            "enum": ["text", "voice", "attachment"],
+            "enum": ["text", "voice", "attachment", "contact"],
         },
         "text": _nullable("string"),
         "voice": {
@@ -157,6 +168,12 @@ REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
         "attachments": {
             "type": "array",
             "items": _ref("attachment_details"),
+        },
+        "contact": {
+            "anyOf": [
+                _ref("contact_details"),
+                {"type": "null"},
+            ]
         },
         "counterparty": _ref("counterparty"),
     },
@@ -1755,6 +1772,7 @@ GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
         **COMMON_DEFINITIONS,
         "voice_details": VOICE_DETAILS_SCHEMA,
         "attachment_details": ATTACHMENT_DETAILS_SCHEMA,
+        "contact_details": CONTACT_DETAILS_SCHEMA,
         "reply_context_message": REPLY_CONTEXT_MESSAGE_SCHEMA,
     },
 )
