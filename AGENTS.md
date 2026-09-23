@@ -46,45 +46,53 @@ On the first turn of every newly opened Gate Work:
    A current task restriction overrides an older broader standing authorization.
 
 
-## Owner standing authorization: pre-user autonomy
+## Owner standing authorization: Mark-only autonomy
 
+Effective 25 July 2026; clarified by Mark on 23 September 2026. Gate workers
+may complete bounded technical work autonomously while Mark is the only active
+product user. Mark is the owner, not an external user. His Telegram contacts
+and other counterparties are not Gate product users merely because their
+messages are present in Gate. Their personal data and message payload remain
+protected by the separate execution-scope rules below.
 
-Effective 25 July 2026, the owner authorizes Gate workers to complete bounded
-technical work autonomously while Gate is provably in pre-user mode. Repeated
-confirmation is not required for repository changes, one exact-head CI, merge,
-Production deployment, runtime verification, or rollback.
+For this rule, `external_users: 0` means zero active **non-Mark Gate product
+users**, not zero Telegram contacts, conversations, accounts or messages. An
+owner-only mode claim must record `owner_only_mode: true` and
+`non_mark_product_users: 0` in the current canonical Work, supported by a
+current owner attestation and fresh redacted evidence for the exact target
+workspace/installations. A scoped `gate_get_status` result can prove only its
+own workspace; do not present it as a global user count. Any contrary evidence
+or unknown non-Mark installation fails closed until reconciled.
 
+Autonomous repository merge, Production deploy, verification and rollback
+require all of the following for each bounded execution:
 
-Pre-user mode exists only when the current canonical Work and fresh redacted
-evidence both prove:
-
-
-- `pre_user_mode: true` and `external_users: 0`;
-- no third-party payload or real-person data is in the execution scope;
+- the current owner-only mode claim above;
+- no third-party payload or real-person data **in that execution scope**.
+  Existing historical conversations in the database alone do not make an
+  unrelated owner-only code/status change process their content;
 - every owner-only live check names one exact installation and hard caps
   provider calls and outbound messages;
 - a last-known-good Production revision and rollback condition are recorded.
 
+Within that boundary, a worker may claim one lease/branch/PR, run local checks
+and one necessary exact-head CI, merge the verified exact head, deploy via the
+registered Ops route, verify the deployed fingerprint and redacted health, and
+roll back on the recorded stop condition without repeating a permission request.
 
-Within that boundary, a worker may autonomously create or resume one execution,
-one lease, one branch and one PR; run local checks and one necessary exact-head
-CI; mark the PR ready; merge the verified exact head; deploy it to Production;
-verify the deployed fingerprint, redacted health and accepted runtime outcome;
-and roll back to the recorded revision when the acceptance condition fails.
-
-
-This standing authorization fails closed immediately when any external user,
-third-party participant, third-party payload, or unbounded external effect is
-detected. Exact owner authorization is still required for credentials, secrets,
-OAuth or identity actions; payments or legal actions; publication; destructive
-history or data operations; new external-user processing; and provider or
-message effects outside the exact owner-only caps recorded in the current Work.
-
+The standing authorization fails closed if a non-Mark product user appears,
+the execution processes third-party payload, a third-party participant joins
+the selected live check, or an external effect exceeds its cap. Mark-only
+product use does not authorize reading contacts/history, sending messages,
+creating groups, or sharing data with AI. Exact owner authorization remains
+required for credentials, secrets, OAuth or identity actions; payments and
+legal actions; content publication; destructive history/data operations; new
+external-user processing; and provider/message effects outside exact owner-only
+caps in the current Work.
 
 CI, merge, deployment status and provider dashboards never prove runtime or
 product readiness by themselves. Every autonomous Production change must end
 with an exact deployed revision and redacted acceptance or rollback receipt.
-
 
 <!-- WORK-HIERARCHY:START -->
 ## Work hierarchy
