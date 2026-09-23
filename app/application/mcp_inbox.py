@@ -17,6 +17,7 @@ from app.application.telegram_attachments import (
     serialize_telegram_attachments,
     validated_telegram_receipt_payload,
 )
+from app.application.telegram_contacts import extract_scoped_telegram_contact
 from app.core.mcp_security import AccessScope
 from app.models.canonical import CanonicalMessage
 from app.models.domain import (
@@ -391,12 +392,35 @@ async def get_reply_context(
             task_id=task.id,
             message_id=message.id,
         )
+        contact = extract_scoped_telegram_contact(
+            telegram_update.payload if telegram_update is not None else None,
+            gate_event.payload if gate_event is not None else None,
+            getattr(message, "payload", None),
+            receipt_payload,
+            update_id=getattr(message, "telegram_update_id", None),
+            event_type=getattr(message, "event_type", ""),
+            telegram_message_id=message.telegram_message_id,
+            chat_id=message.chat_id,
+            business_connection_id=getattr(message, "business_connection_id", None),
+        )
         serialized = {
             **_serialize_message(message),
-            "message_type": "attachment" if attachments else "text",
+            "message_type": (
+                "contact" if contact else "attachment" if attachments else "text"
+            ),
+            "text_preview": "Получен контакт" if contact else _truncate_text(message.text or "", 240),
             "text": message.text,
             "voice": None,
             "attachments": attachments,
+            "contact": (
+                {
+                    **contact,
+                    "source_ref": f"telegram-message:{message.id}",
+                    "source_message_id": message.telegram_message_id,
+                }
+                if contact
+                else None
+            ),
             "counterparty": counterparty(
                 message=message,
                 telegram_update=telegram_update,
