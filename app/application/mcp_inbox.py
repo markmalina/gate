@@ -408,7 +408,9 @@ async def get_reply_context(
             "message_type": (
                 "contact" if contact else "attachment" if attachments else "text"
             ),
-            "text_preview": "Получен контакт" if contact else _truncate_text(message.text or "", 240),
+            "text_preview": (
+                "Получен контакт" if contact else _truncate_text(message.text or "", 240)
+            ),
             "text": message.text,
             "voice": None,
             "attachments": attachments,
