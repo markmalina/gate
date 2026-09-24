@@ -24,6 +24,7 @@ from app.worker.dropbox_calls import (
     DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
     DropboxCallWorkerError,
     _audio_media_type,
+    _is_oversize_audio_file,
     _is_supported_file,
     _probe_duration_seconds,
     _recover_duration_unknown_recordings,
@@ -114,11 +115,11 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
     )
     assert _is_supported_file({**entry, "name": "photo.jpg"}) is False
     assert _is_supported_file({**entry, "size": 37_585_783}) is True
-    # Oversized audio reaches intake's explicit error instead of disappearing
-    # from the Dropbox delta scan.
-    assert _is_supported_file(
-        {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
-    ) is True
+    oversize = {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
+    assert _is_supported_file(oversize) is False
+    # The separate intake guard reports it instead of advancing the cursor.
+    assert _is_oversize_audio_file(oversize) is True
+    assert _is_oversize_audio_file({**oversize, "name": "photo.jpg"}) is False
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False
 
 

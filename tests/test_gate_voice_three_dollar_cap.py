@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 MIGRATION = (
     Path(__file__).resolve().parents[1]
-    / "alembic/versions/0109_gate_voice_three_dollar_cap.py"
+    / "alembic/versions/0110_gate_voice_three_dollar_cap.py"
 )
 
 

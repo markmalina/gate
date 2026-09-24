@@ -208,6 +208,11 @@ async def process_dropbox_call_changes(
         ):
             raise DropboxCallWorkerError("dropbox_call_delta_invalid")
         for entry in entries:
+            if _is_oversize_audio_file(entry):
+                # The old bounded-file filter remains strict; this separate
+                # rejection prevents an oversized supported source from being
+                # silently skipped when the delta cursor advances.
+                raise DropboxCallWorkerError("dropbox_call_download_limit_exceeded")
             if _is_supported_file(entry):
                 await _ingest_entry(
                     settings=settings,
@@ -350,6 +355,19 @@ async def _list_changes(
     return payload
 
 
+def _is_oversize_audio_file(entry: object) -> bool:
+    return (
+        isinstance(entry, dict)
+        and entry.get(".tag") == "file"
+        and isinstance(entry.get("name"), str)
+        and isinstance(entry.get("path_display"), str)
+        and _is_in_call_inbox(entry["path_display"])
+        and PurePosixPath(entry["name"]).suffix.lower() in _SUPPORTED_SUFFIXES
+        and isinstance(entry.get("size"), int)
+        and entry["size"] > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES
+    )
+
+
 def _is_supported_file(entry: object) -> bool:
     if not isinstance(entry, dict) or entry.get(".tag") != "file":
         return False
@@ -362,7 +380,7 @@ def _is_supported_file(entry: object) -> bool:
         and _is_in_call_inbox(path)
         and PurePosixPath(name).suffix.lower() in _SUPPORTED_SUFFIXES
         and isinstance(size, int)
-        and size > 0
+        and 0 < size <= DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES
     )
 
 

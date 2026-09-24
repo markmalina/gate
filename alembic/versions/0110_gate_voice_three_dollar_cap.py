@@ -1,7 +1,7 @@
 """Raise only Mark's existing Gate voice entitlement to USD 3 monthly.
 
-Revision ID: 0109_gate_voice_three_dollar_cap
-Revises: 0108_short_voice_headroom
+Revision ID: 0110_gate_voice_three_dollar_cap
+Revises: 0109_personal_delivery_fence
 """
 
 from collections.abc import Sequence
@@ -9,8 +9,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0109_gate_voice_three_dollar_cap"
-down_revision: str | None = "0108_short_voice_headroom"
+revision: str = "0110_gate_voice_three_dollar_cap"
+down_revision: str | None = "0109_personal_delivery_fence"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
