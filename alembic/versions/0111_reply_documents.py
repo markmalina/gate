@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("caption", sa.String(1024), nullable=False),
         sa.Column("data", sa.LargeBinary(), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.UniqueConstraint("reply_draft_id", name="uq_reply_documents_draft"),
     )
     op.create_index("ix_reply_documents_reply_draft_id", "reply_documents", ["reply_draft_id"])
