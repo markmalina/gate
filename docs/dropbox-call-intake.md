@@ -17,6 +17,16 @@ changes Telegram read state.
    reserves from the existing Gate transcription budget, transcribes in Russian,
    and stores the transcript beside the original.
 
+Duration probing uses a temporary seekable file (some M4A files cannot expose
+their metadata over a nonseekable pipe). A 15-second probe timeout or invalid
+container produces a specific rejection without a provider call. Calls over
+60 minutes are rejected before ASR. Previously rejected duration-unknown rows
+are re-probed from their stored exact revision, checked against their stored
+SHA-256 and prior billing reservations, and then resumed only if no previous
+provider work can have occurred. A file above the 100 MiB Dropbox limit blocks
+cursor advancement and exposes `dropbox_call_download_limit_exceeded` in
+owner-only intake status until the owner replaces/removes that revision.
+
 Webhook payloads are signals only. They do not contain or transport recording bytes.
 
 ## Dropbox application

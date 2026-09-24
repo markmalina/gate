@@ -1,6 +1,6 @@
 # Gate transcription model-access policy
 
-Version: `gate-transcription-model-access-v1`  
+Version: `gate-transcription-model-access-v2`  
 Feature: bounded server-side voice and Dropbox phone-call transcription  
 Status: owner-approved implementation and exact-call Production processing policy
 
@@ -43,13 +43,14 @@ reservation includes a 5,000 micro-USD minimum per provider part for fixed
 request overhead; this is a temporary reservation, not a minimum charge.
 Only provider-reported actual usage is settled, and the monthly ceiling is
 checked before provider I/O even when that minimum applies. The existing
-`telegram_connector / telegram_business` entitlement is the hard USD 1.00
-monthly ceiling (`1,000,000` micro-USD). A reservation is settled from
+`telegram_connector / telegram_business` entitlement is the hard USD 3.00
+monthly ceiling (`3,000,000` micro-USD), authorized by Mark for Gate #704 on
+2026-09-24. A reservation is settled from
 provider-reported token usage, released only after a definite rejection, and
 marked unknown after uncertain provider work. Duplicate reservation keys fail
 closed.
 
-Official OpenAI documentation rechecked on 2026-09-18 states that:
+Official OpenAI documentation rechecked on 2026-09-24 states that:
 
 - the transcription endpoint accepts files up to 25 MB and recommends
   compression or chunks no larger than 25 MB for longer recordings;

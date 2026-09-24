@@ -12,7 +12,7 @@ def test_transcription_model_access_lock_is_accepted_and_bounded() -> None:
     assert lock["skill"]["id"] == "6a8c4f8397088191bdda343824817fe2"
     assert lock["project_policy"] == {
         "path": "docs/policies/GATE_TRANSCRIPTION_MODEL_ACCESS_POLICY.md",
-        "version": "gate-transcription-model-access-v1",
+        "version": "gate-transcription-model-access-v2",
     }
     assert lock["feature_default"] is False
     assert lock["endpoint"] == "https://api.openai.com/v1/audio/transcriptions"
@@ -24,7 +24,7 @@ def test_transcription_model_access_lock_is_accepted_and_bounded() -> None:
     assert lock["max_source_bytes"] == 100 * 1024 * 1024
     assert lock["max_part_bytes"] == 25_000_000
     assert lock["max_parts"] == 20
-    assert lock["monthly_hard_limit_microusd"] == 1_000_000
+    assert lock["monthly_hard_limit_microusd"] == 3_000_000
     assert lock["retention"]["zero_data_retention_claimed"] is False
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -22,6 +23,8 @@ from app.worker.dropbox_calls import (
     DropboxCallWorkerError,
     _audio_media_type,
     _is_supported_file,
+    _probe_duration_seconds,
+    _recover_duration_unknown_recordings,
     _resume_received_recordings,
     _validate_settings,
 )
@@ -109,12 +112,11 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
     )
     assert _is_supported_file({**entry, "name": "photo.jpg"}) is False
     assert _is_supported_file({**entry, "size": 37_585_783}) is True
-    assert (
-        _is_supported_file(
-            {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
-        )
-        is False
-    )
+    # Oversized audio reaches intake's explicit error instead of disappearing
+    # from the Dropbox delta scan.
+    assert _is_supported_file(
+        {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
+    ) is True
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False
 
 
@@ -233,3 +235,77 @@ def test_received_call_is_resumed_after_worker_restart(
         http=http,
         recording=recording,
     )
+
+
+def test_seekable_probe_reads_m4a_with_moov_at_end(tmp_path) -> None:
+    """A normal M4A may have its index at the end of the file."""
+    import subprocess
+
+    audio = tmp_path / "tail-index.m4a"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+        "-i", "anullsrc=r=16000:cl=mono", "-t", "2", "-c:a", "aac",
+        str(audio),
+    ], check=True, timeout=15)
+    assert asyncio.run(_probe_duration_seconds(audio.read_bytes())) == 2
+    assert asyncio.run(_probe_duration_seconds(b"invalid m4a")) is None
+
+
+def test_duration_probe_is_bounded_before_process_start() -> None:
+    assert asyncio.run(_probe_duration_seconds(
+        b"x" * (DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1)
+    )) is None
+
+
+@pytest.mark.parametrize(
+    ("duration", "prior_reservation", "expected_status", "expected_reason"),
+    [
+        (1777, False, "received", "dropbox_call_duration_recovered"),
+        (3600, False, "received", "dropbox_call_duration_recovered"),
+        (3601, False, "rejected", "dropbox_call_duration_exceeded"),
+        (None, False, "rejected", "dropbox_call_duration_probe_failed"),
+        (1777, True, "rejected", "dropbox_call_recovery_prior_reservation"),
+    ],
+)
+def test_duration_recovery_never_replays_prior_provider_work(
+    monkeypatch, duration, prior_reservation, expected_status, expected_reason,
+) -> None:
+    data = b"synthetic audio"
+    row = SimpleNamespace(
+        id=uuid.uuid4(), workspace_key="mark-personal", source_account_id="account-id",
+        source_file_id="id:exact", source_revision="revision-exact",
+        transcription_status="rejected", transcription_reason_code="dropbox_call_duration_unknown",
+        duration_seconds=None, transcript_text=None, size_bytes=len(data),
+        sha256=hashlib.sha256(data).hexdigest(), data=data, transcribed_at=datetime.now(UTC),
+    )
+    class FakeSession:
+        def __init__(self):
+            self.scalar_count = 0
+            self.commits = 0
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_args):
+            pass
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: [row])
+        async def scalar(self, _statement):
+            self.scalar_count += 1
+            return row if self.scalar_count == 1 else (uuid.uuid4() if prior_reservation else None)
+        async def commit(self):
+            self.commits += 1
+    sessions = []
+    def factory():
+        session = FakeSession()
+        sessions.append(session)
+        return session
+    monkeypatch.setattr(
+        "app.worker.dropbox_calls._probe_duration_seconds", AsyncMock(return_value=duration),
+    )
+    asyncio.run(_recover_duration_unknown_recordings(
+        settings=Settings(GATE_WORKSPACE_ID="mark-personal", DROPBOX_CALL_ACCOUNT_ID="account-id"),
+        session_factory=factory,
+    ))
+    assert row.transcription_status == expected_status
+    assert row.transcription_reason_code == expected_reason
+    assert sessions[-1].commits == 1
+    assert row.duration_seconds == (duration if duration and not prior_reservation else None)
