@@ -4,7 +4,10 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
-MIGRATION = Path(__file__).resolve().parents[1] / "alembic/versions/0109_gate_voice_three_dollar_cap.py"
+MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic/versions/0109_gate_voice_three_dollar_cap.py"
+)
 
 
 def test_migration_targets_only_owner_gate_voice_scope_and_is_reversible():

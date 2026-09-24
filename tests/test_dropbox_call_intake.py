@@ -11,11 +11,13 @@ from app.api.mcp_routes import (
     _parse_latest_call_selector,
 )
 from app.application.telegram_voice_transcription import (
+    DownloadedVoice,
     TelegramVoiceError,
     TelegramVoiceReference,
     TranscribeTelegramVoiceCommand,
 )
 from app.core.config import Settings
+from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.worker.dropbox_calls import (
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
@@ -255,6 +257,35 @@ def test_duration_probe_is_bounded_before_process_start() -> None:
     assert asyncio.run(_probe_duration_seconds(
         b"x" * (DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1)
     )) is None
+
+
+@pytest.mark.parametrize(
+    ("minutes", "expected_parts"),
+    [(20, 7), (30, 10), (38, 13), (60, 20)],
+)
+def test_long_m4a_keeps_complete_ordered_parts(minutes, expected_parts) -> None:
+    seen = []
+
+    async def chunked_runner(data):
+        seen.append(data)
+        return 0, tuple(f"part-{n:03d}".encode() for n in range(1, expected_parts + 1)), b""
+
+    source = b"synthetic M4A frame"
+    normalized = asyncio.run(TelegramVoiceNormalizer(
+        chunked_runner=chunked_runner,
+    ).normalize(DownloadedVoice(
+        data=source, filename="call.m4a", media_type="application/octet-stream",
+        duration_seconds=minutes * 60,
+    )))
+    parts = (normalized, *normalized.additional_parts)
+    assert seen == [source]
+    assert len(parts) == expected_parts
+    assert [part.filename for part in parts] == [
+        f"telegram-voice-part-{n:03d}.mp3" for n in range(1, expected_parts + 1)
+    ]
+    assert [part.data for part in parts] == [
+        f"part-{n:03d}".encode() for n in range(1, expected_parts + 1)
+    ]
 
 
 @pytest.mark.parametrize(
