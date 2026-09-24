@@ -53,10 +53,22 @@ TOOL_CONTRACTS = (
         "_gate_save_reply_draft_tool",
     ),
     ToolContract(
+        "gate_prepare_reply_document",
+        "gate:drafts:write",
+        "write_tools",
+        "_gate_prepare_reply_document_tool",
+    ),
+    ToolContract(
         "gate_send_approved_reply",
         "gate:messages:send",
         "send_tools",
         "_gate_send_approved_reply_tool",
+    ),
+    ToolContract(
+        "gate_send_approved_document",
+        "gate:messages:send",
+        "send_tools",
+        "_gate_send_approved_document_tool",
     ),
     ToolContract(
         "gate_queue_approved_reply_sequence",
@@ -137,7 +149,7 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_every_mcp_projection_matches_the_sixteen_tool_contract() -> None:
+async def test_every_mcp_projection_matches_the_eighteen_tool_contract() -> None:
     settings = Settings(
         _env_file=None,
         GATE_MCP_ENABLED=True,
@@ -159,7 +171,7 @@ async def test_every_mcp_projection_matches_the_sixteen_tool_contract() -> None:
         contract.name: contract.scope for contract in TOOL_CONTRACTS
     }
 
-    assert len(TOOL_CONTRACTS) == 16
+    assert len(TOOL_CONTRACTS) == 18
     assert [tool["name"] for tool in advertised_tools] == expected_names
     assert mcp_routes.MCP_TOOL_NAMES == expected_names
     assert mcp_routes.MCP_TOOL_SCOPES == expected_scopes

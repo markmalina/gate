@@ -209,6 +209,8 @@ async def test_send_business_document_uses_multipart_and_exact_business_binding(
                 "result": {
                     "message_id": 42,
                     "document": {
+                        "file_id": "opaque-file-id",
+                        "file_unique_id": "opaque-file-unique-id",
                         "file_name": "review.pdf",
                         "mime_type": "application/pdf",
                         "file_size": 12,

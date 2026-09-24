@@ -52,6 +52,10 @@ from app.application.reply_drafts import (
     SaveReplyDraftCommand,
     SaveReplyDraftService,
 )
+from app.application.reply_documents import (
+    PrepareReplyDocumentCommand,
+    PrepareReplyDocumentService,
+)
 from app.application.reply_sends import (
     ReplySendError,
     SendApprovedReplyCommand,
@@ -135,6 +139,7 @@ from app.infrastructure.telegram_business_text_parity import (
     telegram_business_text_parity_status,
 )
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
+from app.infrastructure.reply_documents import SqlReplyDocumentWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.infrastructure.alpha_canary import (
@@ -196,7 +201,9 @@ MCP_TOOL_NAMES = [
     "gate_list_unanswered",
     "gate_get_reply_context",
     "gate_save_reply_draft",
+    "gate_prepare_reply_document",
     "gate_send_approved_reply",
+    "gate_send_approved_document",
     "gate_queue_approved_reply_sequence",
     "gate_alpha_list_installations",
     "gate_alpha_get_webhook_status",
@@ -216,7 +223,9 @@ MCP_TOOL_SCOPES = {
     "gate_list_unanswered": "gate:inbox:read",
     "gate_get_reply_context": "gate:inbox:read",
     "gate_save_reply_draft": "gate:drafts:write",
+    "gate_prepare_reply_document": "gate:drafts:write",
     "gate_send_approved_reply": "gate:messages:send",
+    "gate_send_approved_document": "gate:messages:send",
     "gate_queue_approved_reply_sequence": "gate:messages:send",
     "gate_alpha_list_installations": "gate:status:read",
     "gate_alpha_get_webhook_status": "gate:status:read",
@@ -279,7 +288,9 @@ async def mcp_endpoint(
                     _gate_list_unanswered_tool(settings),
                     _gate_get_reply_context_tool(settings),
                     _gate_save_reply_draft_tool(settings),
+                    _gate_prepare_reply_document_tool(settings),
                     _gate_send_approved_reply_tool(settings),
+                    _gate_send_approved_document_tool(settings),
                     _gate_queue_approved_reply_sequence_tool(settings),
                     _gate_alpha_list_installations_tool(settings),
                     _gate_alpha_get_webhook_status_tool(settings),
@@ -552,8 +563,25 @@ async def mcp_endpoint(
                 principal=principal,
                 session=session,
             )
+        if tool_name == "gate_prepare_reply_document":
+            return await _prepare_reply_document_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                settings=settings,
+            )
         if tool_name == "gate_send_approved_reply":
             return await _send_approved_reply_tool_result(
+                request_id=request_id,
+                arguments=arguments,
+                principal=principal,
+                session=session,
+                telegram=telegram,
+                settings=settings,
+            )
+        if tool_name == "gate_send_approved_document":
+            return await _send_approved_document_tool_result(
                 request_id=request_id,
                 arguments=arguments,
                 principal=principal,
@@ -3102,6 +3130,82 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
     )
 
 
+def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_prepare_reply_document",
+        "title": "Prepare one Gate Business document",
+        "description": (
+            "Stage one selected local PDF or ZIP for a scoped reply task. "
+            "The base64 bytes are accepted only in this upload argument, never "
+            "in a text draft or tool response. No message is sent. Show Mark "
+            "account, recipient, file name, MIME, size, SHA-256 and exact caption."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "format": "uuid"},
+                "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+                "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+                "content_base64": {"type": "string", "minLength": 1, "maxLength": 11184812},
+                "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "caption": {"type": "string", "maxLength": 1024, "default": ""},
+                "follow_up": {"type": "boolean", "default": False},
+            },
+            "required": [
+                "task_id", "filename", "media_type", "content_base64", "expected_sha256"
+            ],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_prepare_reply_document"],
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        },
+    }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:drafts:write")
+
+
+def _gate_send_approved_document_tool(settings: Settings) -> JsonObject:
+    tool = {
+        "name": "gate_send_approved_document",
+        "title": "Send one explicitly approved Gate Business document",
+        "description": (
+            "Send the exact staged file through its originating RU/BY Business "
+            "account. Call only after Mark has confirmed the displayed account, "
+            "recipient, filename, size, SHA-256 and exact caption."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "format": "uuid"},
+                "confirmed": {"type": "boolean", "const": True},
+                "expected_account": {"type": "string", "enum": ["RU", "BY"]},
+                "expected_recipient_chat_id": {"type": "string", "minLength": 1},
+                "expected_document_filename": {"type": "string", "minLength": 1},
+                "expected_document_size_bytes": {"type": "integer", "minimum": 1},
+                "expected_document_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "expected_document_caption": {"type": "string", "maxLength": 1024},
+            },
+            "required": [
+                "draft_id", "confirmed", "expected_account", "expected_recipient_chat_id",
+                "expected_document_filename", "expected_document_size_bytes",
+                "expected_document_sha256", "expected_document_caption",
+            ],
+            "additionalProperties": False,
+        },
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_send_approved_document"],
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    }
+    return _with_security_scheme(tool=tool, settings=settings, scope="gate:messages:send")
+
+
 def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
     tool = {
         "name": "gate_queue_approved_reply_sequence",
@@ -3331,6 +3435,170 @@ async def _send_approved_reply_tool_result(
             "Do not retry this draft automatically."
         )
     return _tool_result(content, text, request_id)
+
+
+async def _prepare_reply_document_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    if not settings.gate_document_send_enabled:
+        return _tool_error_result(
+            request_id=request_id,
+            code="document_send_disabled",
+            message="Business document preparation is disabled",
+        )
+    fields = (
+        "task_id", "filename", "media_type", "content_base64", "expected_sha256"
+    )
+    if any(not isinstance(arguments.get(key), str) for key in fields):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="Task and exact document metadata are required",
+        )
+    caption = arguments.get("caption", "")
+    follow_up = arguments.get("follow_up", False)
+    if not isinstance(caption, str) or type(follow_up) is not bool:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="Caption and follow_up must have the correct types",
+        )
+    try:
+        task_id = UUID(arguments["task_id"])
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments", message="task_id must be UUID"
+        )
+    try:
+        prepared = await PrepareReplyDocumentService(
+            SqlReplyDocumentWriter(session)
+        ).execute(
+            PrepareReplyDocumentCommand(
+                principal=principal,
+                task_id=task_id,
+                filename=arguments["filename"],
+                media_type=arguments["media_type"],
+                content_base64=arguments["content_base64"],
+                expected_sha256=arguments["expected_sha256"],
+                caption=caption,
+                follow_up=follow_up,
+            )
+        )
+    except ReplyDraftError as exc:
+        return _tool_error_result(
+            request_id=request_id, code=exc.code, message=exc.message
+        )
+    await session.commit()
+    content = {
+        "draft_id": str(prepared.draft_id),
+        "task_id": str(prepared.task_id),
+        "account": prepared.account_label,
+        "recipient_chat_id": prepared.recipient_chat_id,
+        "filename": prepared.filename,
+        "media_type": prepared.media_type,
+        "size_bytes": prepared.size_bytes,
+        "sha256": prepared.sha256,
+        "caption": prepared.caption,
+        "sent": False,
+        "approval_required": True,
+    }
+    return _tool_result(
+        content,
+        (
+            f"Document prepared; not sent. Account {prepared.account_label}; "
+            f"recipient {prepared.recipient_chat_id}; file {prepared.filename}; "
+            f"MIME {prepared.media_type}; size {prepared.size_bytes}; "
+            f"SHA-256 {prepared.sha256}; caption {prepared.caption!r}. "
+            "Show these exact values to Mark for confirmation."
+        ),
+        request_id,
+    )
+
+
+async def _send_approved_document_tool_result(
+    *,
+    request_id: Any,
+    arguments: JsonObject,
+    principal: Principal,
+    session: AsyncSession,
+    telegram: TelegramClient,
+    settings: Settings,
+) -> JsonObject:
+    names = (
+        "draft_id", "expected_account", "expected_recipient_chat_id",
+        "expected_document_filename", "expected_document_sha256",
+        "expected_document_caption",
+    )
+    if (
+        any(not isinstance(arguments.get(key), str) for key in names)
+        or type(arguments.get("expected_document_size_bytes")) is not int
+        or type(arguments.get("confirmed")) is not bool
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="Exact document confirmation is required",
+        )
+    try:
+        draft_id = UUID(arguments["draft_id"])
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments", message="draft_id must be UUID"
+        )
+    try:
+        sent = await SendApprovedReplyService(
+            SqlTelegramReplySender(session=session, telegram=telegram, settings=settings)
+        ).execute(
+            SendApprovedReplyCommand(
+                principal=principal,
+                draft_id=draft_id,
+                confirmed=arguments["confirmed"],
+                expected_account=arguments["expected_account"],
+                expected_recipient_chat_id=arguments["expected_recipient_chat_id"],
+                expected_document_filename=arguments["expected_document_filename"],
+                expected_document_size_bytes=arguments["expected_document_size_bytes"],
+                expected_document_sha256=arguments["expected_document_sha256"],
+                expected_document_caption=arguments["expected_document_caption"],
+            )
+        )
+    except ReplySendError as exc:
+        return _tool_error_result(
+            request_id=request_id, code=exc.code, message=exc.message
+        )
+    content = {
+        "attempt_id": str(sent.attempt_id),
+        "draft_id": str(sent.draft_id),
+        "task_id": str(sent.task_id),
+        "account": sent.account_label,
+        "recipient_chat_id": sent.recipient_chat_id,
+        "filename": sent.document_filename,
+        "media_type": sent.document_media_type,
+        "size_bytes": sent.document_size_bytes,
+        "sha256": sent.document_sha256,
+        "status": sent.status,
+        "sent": sent.sent,
+        "idempotent_replay": sent.idempotent_replay,
+        "provider_message_id": sent.provider_message_id,
+        "error_code": sent.error_code,
+        "error_detail": sent.error_detail,
+    }
+    return _tool_result(
+        content,
+        (
+            f"Document status {sent.status}; attempt {str(sent.attempt_id)[:8]}. "
+            + (
+                "Match the provider message id against scoped reply context."
+                if sent.sent
+                else "Do not automatically retry this prepared document."
+            )
+        ),
+        request_id,
+    )
 
 
 async def _queue_approved_reply_sequence_tool_result(
@@ -3850,4 +4118,3 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
-

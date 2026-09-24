@@ -71,6 +71,7 @@ MESSAGE_SCHEMA = _object(
         "chat_id": {"type": "string", "minLength": 1},
         "sender_id": {"type": "string", "minLength": 1},
         "recipient_id": _nullable("string"),
+        "provider_message_id": _nullable("string"),
         "text_preview": {"type": "string", "maxLength": 240},
         "created_at": _nullable("string"),
         "received_at": _nullable("string"),
@@ -1259,8 +1260,10 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_get_status",
                                 "gate_list_unanswered",
                                 "gate_get_reply_context",
-                                "gate_save_reply_draft",
-                                "gate_send_approved_reply",
+                                 "gate_save_reply_draft",
+                                 "gate_prepare_reply_document",
+                                 "gate_send_approved_reply",
+                                 "gate_send_approved_document",
                                 "gate_queue_approved_reply_sequence",
                                 "gate_alpha_list_installations",
                                 "gate_alpha_get_webhook_status",
@@ -1274,8 +1277,8 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_beta_get_provider_probe",
                             ],
                         },
-                        "minItems": 16,
-                        "maxItems": 16,
+                        "minItems": 18,
+                        "maxItems": 18,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -1846,6 +1849,47 @@ GATE_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     {"account_label": ACCOUNT_LABEL_SCHEMA},
 )
 
+GATE_DOCUMENT_PREPARE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "draft_id": {"type": "string", "format": "uuid"},
+            "task_id": {"type": "string", "format": "uuid"},
+            "account": {"type": "string", "enum": ["RU", "BY"]},
+            "recipient_chat_id": {"type": "string", "minLength": 1},
+            "filename": {"type": "string", "minLength": 1},
+            "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+            "size_bytes": {"type": "integer", "minimum": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "caption": {"type": "string"},
+            "sent": {"type": "boolean", "const": False},
+            "approval_required": {"type": "boolean", "const": True},
+        }
+    ),
+    {},
+)
+GATE_DOCUMENT_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
+    _object(
+        {
+            "attempt_id": {"type": "string", "format": "uuid"},
+            "draft_id": {"type": "string", "format": "uuid"},
+            "task_id": {"type": "string", "format": "uuid"},
+            "account": {"type": "string", "enum": ["RU", "BY"]},
+            "recipient_chat_id": {"type": "string", "minLength": 1},
+            "filename": {"type": "string", "minLength": 1},
+            "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+            "size_bytes": {"type": "integer", "minimum": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "status": {"type": "string", "minLength": 1},
+            "sent": {"type": "boolean"},
+            "idempotent_replay": {"type": "boolean"},
+            "provider_message_id": _nullable("string"),
+            "error_code": _nullable("string"),
+            "error_detail": _nullable("string"),
+        }
+    ),
+    {},
+)
+
 
 SEQUENCE_SUCCESS_SCHEMA = _object(
     {
@@ -2348,7 +2392,9 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
     "gate_get_reply_context": GATE_REPLY_CONTEXT_OUTPUT_SCHEMA,
     "gate_save_reply_draft": GATE_DRAFT_OUTPUT_SCHEMA,
+    "gate_prepare_reply_document": GATE_DOCUMENT_PREPARE_OUTPUT_SCHEMA,
     "gate_send_approved_reply": GATE_SEND_OUTPUT_SCHEMA,
+    "gate_send_approved_document": GATE_DOCUMENT_SEND_OUTPUT_SCHEMA,
     "gate_queue_approved_reply_sequence": GATE_SEQUENCE_OUTPUT_SCHEMA,
     "gate_alpha_list_installations": ALPHA_INSTALLATIONS_OUTPUT_SCHEMA,
     "gate_alpha_get_webhook_status": ALPHA_WEBHOOK_STATUS_OUTPUT_SCHEMA,

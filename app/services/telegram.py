@@ -182,7 +182,12 @@ class TelegramClient:
         payload: dict[str, str],
         file: tuple[str, tuple[str, bytes, str]],
     ) -> dict[str, Any]:
-        response = await self._http_client.post(url, data=payload, files={file[0]: file[1]})
+        response = await self._http_client.post(
+            url,
+            data=payload,
+            files={file[0]: file[1]},
+            timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
+        )
         return self._parse_telegram_response(response)
 
     async def edit_message_text(

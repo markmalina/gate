@@ -59,6 +59,7 @@ from app.worker.aqub_food_media import run_aqub_food_media_worker_loop
 from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
 from app.worker.beta_space import run_beta_space_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
+from app.worker.reply_documents import run_reply_document_cleanup_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.telegram_processing import run_telegram_worker_loop
 
@@ -156,6 +157,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
                 reply_sequence_task: asyncio.Task[None] | None = None
+                reply_document_cleanup_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
                 beta_space_task: asyncio.Task[None] | None = None
@@ -248,6 +250,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 health_reporter=worker_health,
                             )
                         )
+                    if settings.gate_document_send_enabled:
+                        reply_document_cleanup_task = asyncio.create_task(
+                            run_reply_document_cleanup_loop(database_runtime.session_factory)
+                        )
                     if dropbox_call_worker_enabled:
                         dropbox_call_task = asyncio.create_task(
                             run_dropbox_call_worker_loop(
@@ -283,6 +289,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 reply_sequence_task.cancel()
                             with suppress(asyncio.CancelledError):
                                 await reply_sequence_task
+                        if reply_document_cleanup_task is not None:
+                            if not reply_document_cleanup_task.done():
+                                reply_document_cleanup_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await reply_document_cleanup_task
                         if worker_task is not None:
                             if not worker_task.done():
                                 worker_task.cancel()

@@ -29,6 +29,10 @@ class SendApprovedReplyCommand:
     confirmed: bool
     expected_account: str
     expected_recipient_chat_id: str
+    expected_document_sha256: str | None = None
+    expected_document_filename: str | None = None
+    expected_document_size_bytes: int | None = None
+    expected_document_caption: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,10 @@ class ReplySendResult:
     provider_message_id: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
+    document_filename: str | None = None
+    document_media_type: str | None = None
+    document_size_bytes: int | None = None
+    document_sha256: str | None = None
 
 
 class ReplySendExecutor(Protocol):
@@ -92,6 +100,31 @@ class SendApprovedReplyService:
                 code="invalid_confirmation",
                 message="Expected recipient chat id is required",
             )
+        if command.expected_document_sha256 is not None:
+            if (
+                len(command.expected_document_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in command.expected_document_sha256)
+                or not command.expected_document_filename
+                or type(command.expected_document_size_bytes) is not int
+                or command.expected_document_size_bytes <= 0
+                or command.expected_document_caption is None
+            ):
+                raise ReplySendError(
+                    code="invalid_confirmation",
+                    message="Exact document metadata confirmation is required",
+                )
+        elif any(
+            value is not None
+            for value in (
+                command.expected_document_filename,
+                command.expected_document_size_bytes,
+                command.expected_document_caption,
+            )
+        ):
+            raise ReplySendError(
+                code="invalid_confirmation",
+                message="Incomplete document confirmation",
+            )
         return await self._executor.send(
             SendApprovedReplyCommand(
                 principal=principal,
@@ -99,5 +132,9 @@ class SendApprovedReplyService:
                 confirmed=True,
                 expected_account=expected_account,
                 expected_recipient_chat_id=recipient,
+                expected_document_sha256=command.expected_document_sha256,
+                expected_document_filename=command.expected_document_filename,
+                expected_document_size_bytes=command.expected_document_size_bytes,
+                expected_document_caption=command.expected_document_caption,
             )
         )

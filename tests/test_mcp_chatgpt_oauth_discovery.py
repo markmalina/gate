@@ -160,6 +160,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
     ]
     assert payload["mcp"]["write_tools"] == [
         "gate_save_reply_draft",
+        "gate_prepare_reply_document",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_get_test_group_presence",
@@ -167,6 +168,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
     ]
     assert payload["mcp"]["send_tools"] == [
         "gate_send_approved_reply",
+        "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
         "gate_alpha_send_review",
     ]
@@ -187,7 +189,9 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_save_reply_draft",
+        "gate_prepare_reply_document",
         "gate_send_approved_reply",
+        "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
@@ -214,30 +218,36 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         {"type": "oauth2", "scopes": ["gate:drafts:write"]}
     ]
     assert tools[4]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:messages:send"]}
+        {"type": "oauth2", "scopes": ["gate:drafts:write"]}
     ]
     assert tools[5]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[6]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:status:read"]}
+        {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[7]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:status:read"]}
+        {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[8]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+        {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]
     assert tools[9]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+        {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]
     assert tools[10]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:agents:manage"]}
     ]
+    assert tools[11]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+    ]
+    assert tools[13]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+    ]
     assert tools[3]["annotations"]["destructiveHint"] is False
     assert "never approves or sends" in tools[3]["description"]
-    assert tools[4]["annotations"]["idempotentHint"] is True
-    assert tools[4]["annotations"]["openWorldHint"] is True
+    assert tools[5]["annotations"]["idempotentHint"] is True
+    assert tools[5]["annotations"]["openWorldHint"] is True
 
 
 @pytest.mark.anyio
