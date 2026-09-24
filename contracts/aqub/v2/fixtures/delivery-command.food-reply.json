@@ -1,0 +1,16 @@
+{
+  "schema_version": "aqub.delivery-command.v2",
+  "command_id": "44444444-4444-4444-8444-444444444444",
+  "idempotency_key": "food-reply/event_opaque_0001",
+  "installation_ref": "installation:opaque_installation_01",
+  "cube_ref": "cube:opaque_cube_01",
+  "route_generation": 3,
+  "conversation_ref": "conversation:opaque_conversation_01",
+  "requested_at": "2026-08-10T12:00:01.000Z",
+  "payload": {
+    "kind": "text",
+    "media_type": "text/plain",
+    "text": "AQUB: факт питания записан.",
+    "reply_to_message_ref": "message:opaque_message_01"
+  }
+}
