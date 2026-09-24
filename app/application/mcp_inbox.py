@@ -702,6 +702,7 @@ def _serialize_voice_message(
             if archive.direction == MessageDirection.INBOUND.value
             else str(counterparty_payload["platform_user_id"])
         ),
+        "provider_message_id": str(archive.telegram_message_id),
         "text": text,
         "text_preview": _truncate_text(text or "", 240),
         "created_at": _serialize_datetime(archive.created_at),
