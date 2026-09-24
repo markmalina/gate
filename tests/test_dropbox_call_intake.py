@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
 import shutil
+import subprocess
 import uuid
+from pathlib import Path
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -291,6 +293,91 @@ def test_long_m4a_keeps_complete_ordered_parts(minutes, expected_parts) -> None:
     assert [part.data for part in parts] == [
         f"part-{n:03d}".encode() for n in range(1, expected_parts + 1)
     ]
+
+
+@pytest.fixture(scope="module")
+def synthetic_hour_m4a(tmp_path_factory) -> Path:
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("real audio regression requires ffmpeg and ffprobe")
+    audio = tmp_path_factory.mktemp("long-call") / "synthetic-hour.m4a"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+        "-t", "3600", "-c:a", "aac", "-b:a", "32k", str(audio),
+    ], check=True, timeout=120)
+    return audio
+
+
+@pytest.mark.parametrize(
+    ("minutes", "expected_parts"),
+    [(20, 7), (30, 10), (38, 13), (60, 20)],
+)
+def test_real_m4a_boundaries_have_complete_bounded_parts(
+    synthetic_hour_m4a: Path, tmp_path: Path, minutes: int, expected_parts: int,
+) -> None:
+    audio = synthetic_hour_m4a
+    if minutes != 60:
+        audio = tmp_path / f"synthetic-{minutes}m.m4a"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-i", str(synthetic_hour_m4a), "-t", str(minutes * 60),
+            "-c:a", "copy", str(audio),
+        ], check=True, timeout=60)
+    data = audio.read_bytes()
+    # Dropbox does not provide a duration; Gate probes the saved source.
+    duration = asyncio.run(_probe_duration_seconds(data))
+    assert duration == minutes * 60
+    normalized = asyncio.run(TelegramVoiceNormalizer().normalize(
+        DownloadedVoice(data, "call.m4a", "application/octet-stream", duration),
+    ))
+    parts = (normalized, *normalized.additional_parts)
+    assert len(parts) == expected_parts
+    assert [part.filename for part in parts] == [
+        f"telegram-voice-part-{number:03d}.mp3"
+        for number in range(1, expected_parts + 1)
+    ]
+    assert all(0 < len(part.data) <= 25_000_000 for part in parts)
+
+
+def test_chunking_decodes_valid_m4a_with_missing_container_duration(
+    synthetic_hour_m4a: Path, tmp_path: Path, monkeypatch,
+) -> None:
+    audio = tmp_path / "missing-duration.m4a"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-i", str(synthetic_hour_m4a), "-t", "181",
+        "-c:a", "copy", str(audio),
+    ], check=True, timeout=60)
+    original = asyncio.create_subprocess_exec
+    missing_duration_probes = []
+
+    class ProbeWithoutDuration:
+        returncode = 0
+
+        async def communicate(self):
+            return b"N/A", b""
+
+    async def without_container_duration(*args, **kwargs):
+        if args[0] == "ffprobe" and str(args[-1]).endswith("source.audio"):
+            missing_duration_probes.append(True)
+            return ProbeWithoutDuration()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", without_container_duration)
+    duration = asyncio.run(_probe_duration_seconds(audio.read_bytes()))
+    assert duration == 181
+    normalized = asyncio.run(TelegramVoiceNormalizer().normalize(
+        DownloadedVoice(audio.read_bytes(), "call.m4a", "audio/mp4", duration),
+    ))
+    assert missing_duration_probes
+    assert len((normalized, *normalized.additional_parts)) == 2
+
+
+def test_invalid_m4a_never_reaches_provider_when_chunking() -> None:
+    with pytest.raises(TelegramVoiceError, match="telegram_voice_audio_invalid"):
+        asyncio.run(TelegramVoiceNormalizer().normalize(
+            DownloadedVoice(b"corrupted m4a", "call.m4a", "audio/mp4", 181),
+        ))
 
 
 @pytest.mark.parametrize(
