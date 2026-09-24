@@ -305,6 +305,52 @@ async def test_adapter_transcribes_ordered_parts_with_previous_context() -> None
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("part_count", [7, 10, 13, 20])
+async def test_long_call_assembles_every_part_once_in_source_order(
+    part_count: int,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        index = len(requests) + 1
+        requests.append(request)
+        assert f'filename="part-{index:03d}.mp3"'.encode() in request.content
+        return httpx.Response(
+            200,
+            json={
+                "text": f"segment-{index:03d}",
+                "usage": {
+                    "type": "tokens", "input_tokens": 9,
+                    "output_tokens": 1, "total_tokens": 10,
+                },
+            },
+        )
+
+    parts = tuple(
+        NormalizedVoice(f"audio-{index}".encode(), f"part-{index:03d}.mp3", "audio/mpeg")
+        for index in range(1, part_count + 1)
+    )
+    source = NormalizedVoice(
+        parts[0].data, parts[0].filename, parts[0].media_type, parts[1:],
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="synthetic", enabled=True),
+            http=http,
+        ).transcribe(source, language="ru")
+
+    assert len(requests) == part_count
+    assert result.text == "\n".join(
+        f"segment-{index:03d}" for index in range(1, part_count + 1)
+    )
+    assert result.billed_quantity == part_count * 10
+    assert result.actual_microusd == part_count * 17
+    assert b'name="prompt"' not in requests[0].content
+    for index, request in enumerate(requests[1:], start=1):
+        assert f"segment-{index:03d}".encode() in request.content
+
+
+@pytest.mark.anyio
 async def test_later_part_failure_is_unknown_after_partial_provider_work() -> None:
     calls = 0
 
