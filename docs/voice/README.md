@@ -57,6 +57,12 @@ Before closeout, the project tested valid locally decodable MP3 and PCM WAV repr
 
 The provider ledger also retains five historical `unknown` accounting outcomes. They are preserved for reconciliation and are not an active Telegram queue backlog. Never replay an unknown provider outcome blindly.
 
+## Owner disposition for current historical signals — 2026-09-24
+
+Mark accepted the already observed September 2026 residual as **not actionable** and asked that it not be raised again as routine work or a reminder. At the bounded observation on production commit `80237ac279fa`, the shared transcription budget had nine `unknown` reservations; the Telegram Business voice outbox had two `openai_transcription_response_unknown` dead letters. Both Telegram voice and Dropbox call archives reported zero items requiring attention. The nine are accounting operations, not nine identified missing recordings; the two dead letters are Telegram voice events, not phone calls. Their exact source-to-reservation correlation was not established by this aggregate view.
+
+This changes the **work disposition**, not the durable accounting or transport truth. Keep the original `unknown` and `dead_letter` states, reserved budget, no-blind-retry rule and audit evidence intact. Do not create routine follow-up work or remind the owner merely because this same historical baseline persists. A new failed supported source, newly proved missing transcript, or new/different unknown or dead-letter evidence is a separate incident and must be assessed on its own merits. This owner decision is recorded in [issue #354](https://github.com/AlphaCenter/gate/issues/354#issuecomment-5821597195); it is not a provider billing reconciliation or a proof of the two Telegram messages' final transcripts.
+
 ## Owner access and interpretation
 
 Gate exposes owner-only status and transcript evidence through Gate M selectors. The status surface proves archive/transcript/summary state and safe error classes without exposing private content in GitHub.
