@@ -619,7 +619,6 @@ async def _mark_superseded_revisions(
             )
             if successor_id is None:
                 continue
-            row.transcription_status = "superseded"
             row.transcription_reason_code = "dropbox_call_revision_superseded"
             await session.commit()
 

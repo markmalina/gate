@@ -161,7 +161,7 @@ async def dropbox_call_operational_status(
     complete = "transcription_status = 'transcribed' AND transcript_text IS NOT NULL"
     no_speech = ("transcription_status = 'rejected' "
                  "AND transcription_reason_code = 'telegram_voice_no_speech'")
-    superseded = ("transcription_status = 'superseded' "
+    superseded = ("transcription_status = 'rejected' "
                   "AND transcription_reason_code = 'dropbox_call_revision_superseded'")
     counts = (await session.execute(
         text("SELECT count(*) AS total, "
