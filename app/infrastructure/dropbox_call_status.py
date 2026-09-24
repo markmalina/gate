@@ -18,6 +18,7 @@ _SAFE_ERRORS = frozenset(
         "dropbox_call_duration_probe_failed",
         "dropbox_call_media_unreadable",
         "dropbox_call_archive_integrity_failed",
+        "dropbox_call_revision_superseded",
         "dropbox_call_duration_exceeded",
         "dropbox_call_duration_recovered",
         "dropbox_call_recovery_prior_reservation",
@@ -109,7 +110,9 @@ async def dropbox_call_operational_status(
         "inbox": None,
         "recent_recordings": [],
         "incomplete_recordings": [],
-        "archive_counts": {"total": 0, "completed": 0, "incomplete": 0},
+        "archive_counts": {
+            "total": 0, "completed": 0, "superseded": 0, "incomplete": 0,
+        },
         "incomplete_truncated": False,
         "no_speech_count": 0,
         "requires_attention_count": 0,
@@ -158,23 +161,27 @@ async def dropbox_call_operational_status(
     complete = "transcription_status = 'transcribed' AND transcript_text IS NOT NULL"
     no_speech = ("transcription_status = 'rejected' "
                  "AND transcription_reason_code = 'telegram_voice_no_speech'")
+    superseded = ("transcription_status = 'superseded' "
+                  "AND transcription_reason_code = 'dropbox_call_revision_superseded'")
     counts = (await session.execute(
         text("SELECT count(*) AS total, "
              f"COALESCE(SUM(CASE WHEN {complete} THEN 1 ELSE 0 END), 0) AS completed, "
-             f"COALESCE(SUM(CASE WHEN {no_speech} THEN 1 ELSE 0 END), 0) AS no_speech "
+             f"COALESCE(SUM(CASE WHEN {no_speech} THEN 1 ELSE 0 END), 0) AS no_speech, "
+             f"COALESCE(SUM(CASE WHEN {superseded} THEN 1 ELSE 0 END), 0) AS superseded "
              + scope).bindparams(bindparam("project_ids", expanding=True)), parameters,
     )).mappings().one()
-    missing = int(counts["total"]) - int(counts["completed"])
+    missing = (int(counts["total"]) - int(counts["completed"])
+               - int(counts["superseded"]))
     result["archive_counts"] = {
         "total": int(counts["total"]), "completed": int(counts["completed"]),
-        "incomplete": missing,
+        "superseded": int(counts["superseded"]), "incomplete": missing,
     }
     result["incomplete_truncated"] = missing > 100
     result["no_speech_count"] = int(counts["no_speech"])
     result["requires_attention_count"] = missing - int(counts["no_speech"])
     for key, tail in (
         ("recent_recordings", "ORDER BY received_at DESC, id DESC LIMIT 20"),
-        ("incomplete_recordings", f"AND NOT ({complete}) "
+        ("incomplete_recordings", f"AND NOT ({complete}) AND NOT ({superseded}) "
          "ORDER BY received_at ASC, id ASC LIMIT 100"),
     ):
         recordings_result = await session.execute(

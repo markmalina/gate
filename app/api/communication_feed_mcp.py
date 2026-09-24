@@ -579,11 +579,21 @@ def _feed_item(
         "counterparty": counterparty,
         "summary": summary,
         "summary_status": summary_status,
-        "outcome": ("Речь не распознана" if transcription_reason_code == "telegram_voice_no_speech"
-                    else None),
+        "outcome": (
+            "Речь не распознана"
+            if transcription_reason_code == "telegram_voice_no_speech"
+            else "Промежуточная версия; окончательная версия файла расшифрована"
+            if transcription_reason_code == "dropbox_call_revision_superseded"
+            else None
+        ),
         "semantic_input_private": semantic_input,
-        "semantic_status": ("source_ready" if transcription_reason_code == "telegram_voice_no_speech"
-                            else semantic_status),
+        "semantic_status": (
+            "source_ready"
+            if transcription_reason_code in (
+                "telegram_voice_no_speech", "dropbox_call_revision_superseded",
+            )
+            else semantic_status
+        ),
         "original_available": original_available,
         "transcript_status": transcript_status,
         "transcription_reason_code": transcription_reason_code,

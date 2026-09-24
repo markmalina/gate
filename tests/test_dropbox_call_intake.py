@@ -27,6 +27,7 @@ from app.worker.dropbox_calls import (
     _audio_media_type,
     _is_oversize_audio_file,
     _is_supported_file,
+    _mark_superseded_revisions,
     _probe_duration_seconds,
     _recover_duration_unknown_recordings,
     _resume_received_recordings,
@@ -398,3 +399,69 @@ def test_probe_rejects_failed_decode_even_with_progress(monkeypatch) -> None:
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
     assert asyncio.run(_probe_duration_seconds(b"corrupted audio")) is None
+
+
+@pytest.mark.parametrize("later_transcript_exists", [False, True])
+def test_unreadable_partial_revision_is_closed_only_after_final_transcript(
+    later_transcript_exists,
+) -> None:
+    row = SimpleNamespace(
+        id=uuid.uuid4(), workspace_key="mark-personal",
+        project_id=uuid.uuid4(), source_account_id="account-id",
+        source_file_id="id:stable", source_revision="partial-revision",
+        source_path="/Alpha/Calls/call.m4a", filename="call.m4a",
+        size_bytes=3_086_377, received_at=datetime.now(UTC),
+        transcription_status="rejected",
+        transcription_reason_code="dropbox_call_media_unreadable",
+        transcript_text=None,
+    )
+
+    class FakeSession:
+        def __init__(self):
+            self.lookups = 0
+            self.commits = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: [row.id])
+
+        async def scalar(self, statement):
+            self.lookups += 1
+            if self.lookups == 1:
+                return row
+            query = str(statement)
+            for predicate in (
+                "source_file_id", "source_revision", "project_id",
+                "source_path", "filename", "size_bytes", "received_at",
+                "transcript_text",
+            ):
+                assert predicate in query
+            return uuid.uuid4() if later_transcript_exists else None
+
+        async def commit(self):
+            self.commits += 1
+
+    sessions = []
+
+    def factory():
+        session = FakeSession()
+        sessions.append(session)
+        return session
+
+    asyncio.run(_mark_superseded_revisions(
+        settings=Settings(GATE_WORKSPACE_ID="mark-personal", DROPBOX_CALL_ACCOUNT_ID="account-id"),
+        session_factory=factory,
+    ))
+    assert row.transcription_status == (
+        "superseded" if later_transcript_exists else "rejected"
+    )
+    assert row.transcription_reason_code == (
+        "dropbox_call_revision_superseded" if later_transcript_exists
+        else "dropbox_call_media_unreadable"
+    )
+    assert sessions[-1].commits == int(later_transcript_exists)

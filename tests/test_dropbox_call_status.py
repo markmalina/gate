@@ -87,7 +87,9 @@ def test_status_fences_owner_project_and_source_account_without_payload() -> Non
         assert private not in serialized
     assert "transcript_text IS NOT NULL" in session.reads[2]
     assert len(session.reads) == 4
-    assert snapshot["archive_counts"] == {"total": 1, "completed": 0, "incomplete": 1}
+    assert snapshot["archive_counts"] == {
+        "total": 1, "completed": 0, "superseded": 0, "incomplete": 1,
+    }
     assert snapshot["incomplete_recordings"][0]["recording_id"] == "visible"
     validate(snapshot, GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"])
     session.connection.close()
@@ -121,6 +123,31 @@ def test_status_is_bounded_and_missing_account_never_scans_all_accounts() -> Non
     assert snapshot["recent_recordings"][-1]["recording_id"] == "record-05"
     assert snapshot["provider_calls"] == 0
     assert snapshot["mutation_allowed"] is False
+    session.connection.close()
+
+
+def test_superseded_partial_revision_does_not_require_attention() -> None:
+    session = ReadSession()
+    session.recording(
+        "partial", transcription_status="superseded",
+        transcription_reason_code="dropbox_call_revision_superseded",
+        transcript_text=None,
+    )
+    session.recording(
+        "final", transcription_status="transcribed",
+        transcription_reason_code="telegram_voice_transcribed",
+        transcript_text="private transcript", source_revision="final",
+    )
+    snapshot = inspect(session)
+    assert snapshot["archive_counts"] == {
+        "total": 2, "completed": 1, "superseded": 1, "incomplete": 0,
+    }
+    assert snapshot["requires_attention_count"] == 0
+    assert snapshot["incomplete_recordings"] == []
+    partial = next(row for row in snapshot["recent_recordings"]
+                   if row["recording_id"] == "partial")
+    assert partial["transcription_reason_code"] == "dropbox_call_revision_superseded"
+    validate(snapshot, GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"])
     session.connection.close()
 
 
