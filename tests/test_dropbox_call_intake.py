@@ -365,7 +365,8 @@ def test_chunking_decodes_valid_m4a_with_missing_container_duration(
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", without_container_duration)
     duration = asyncio.run(_probe_duration_seconds(audio.read_bytes()))
-    assert duration == 181
+    # Stream-copying AAC may add a final frame; intake rounds upward.
+    assert 181 <= duration <= 182
     normalized = asyncio.run(TelegramVoiceNormalizer().normalize(
         DownloadedVoice(audio.read_bytes(), "call.m4a", "audio/mp4", duration),
     ))
