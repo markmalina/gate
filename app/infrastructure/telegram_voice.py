@@ -210,7 +210,7 @@ async def _finish_audio_process(process: asyncio.subprocess.Process) -> tuple[by
 
 
 async def _probe_audio_duration(path: Path) -> float:
-    """Reject empty/undecodable output even when ffmpeg exits successfully."""
+    """Use decoded duration when a decodable container has no duration metadata."""
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -220,11 +220,33 @@ async def _probe_audio_duration(path: Path) -> float:
         )
         stdout, _ = await _finish_audio_process(process)
         duration = float(stdout.decode("ascii").strip())
-    except (OSError, ValueError, TimeoutError):
+    except (OSError, UnicodeError, ValueError, TimeoutError):
+        pass
+    else:
+        if process.returncode == 0 and math.isfinite(duration) and duration > 0:
+            return duration
+
+    # Dropbox's intake can recover a missing duration by decoding the same
+    # bytes. Chunking must accept that source too, before any provider call.
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-xerror", "-i", str(path), "-map", "0:a:0", "-vn",
+            "-f", "null", "-progress", "pipe:1", "-",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await _finish_audio_process(process)
+        timestamps = [
+            line.removeprefix(b"out_time_us=")
+            for line in stdout.splitlines()
+            if line.startswith(b"out_time_us=")
+        ]
+        duration_us = int(timestamps[-1])
+    except (OSError, TimeoutError, IndexError, ValueError):
         raise TelegramVoiceError("telegram_voice_audio_invalid") from None
-    if process.returncode or not math.isfinite(duration) or duration <= 0:
+    if process.returncode or not 0 < duration_us <= 24 * 60 * 60 * 1_000_000:
         raise TelegramVoiceError("telegram_voice_audio_invalid")
-    return duration
+    return duration_us / 1_000_000
 
 
 async def _run_ffmpeg(data: bytes) -> tuple[int, bytes, bytes]:
@@ -271,7 +293,10 @@ async def _run_ffmpeg_chunked(
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror",
                 "-i", str(source), "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
                 "-map_metadata", "-1", "-b:a", "32k", "-f", "segment",
-                "-segment_time", "180", "-reset_timestamps", "1",
+                # The MP3 encoder adds a frame at exact 180-second boundaries. A
+                # 10-ms segment margin keeps that frame in the preceding part;
+                # each output is still checked against the 180.2-second cap.
+                "-segment_time", "180.01", "-reset_timestamps", "1",
                 "-segment_format", "mp3", output_pattern,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
             )

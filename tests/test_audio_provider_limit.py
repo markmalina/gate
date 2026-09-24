@@ -128,7 +128,7 @@ def test_chunking_uses_bounded_duration_and_mp3() -> None:
     ).read_text(encoding="utf-8")
 
     assert '"32k"' in source
-    assert '"180"' in source
+    assert '"-segment_time", "180.01"' in source
     assert '"segment"' in source
     assert '"mp3"' in source
 
