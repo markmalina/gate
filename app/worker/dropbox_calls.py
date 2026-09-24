@@ -8,8 +8,9 @@ import json
 import logging
 import math
 import mimetypes
+import tempfile
 from datetime import UTC, datetime, timedelta
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import httpx
@@ -37,6 +38,7 @@ from app.infrastructure.owner_voice_recovery import (
     reconcile_exact_call_copies,
 )
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
+from app.models.billing import BillingBudgetReservationModel
 from app.models.domain import (
     UNCLASSIFIED_PROJECT_ID,
     DropboxCallInboxState,
@@ -63,6 +65,7 @@ _CHUNK_REPAIR_PROCESSING = "dropbox_call_processing_v14"
 _EMPTY_RESULT_RECOVERY_STATUS = "recovery_v15"
 _EMPTY_RESULT_PROCESSING = "dropbox_call_processing_v15"
 _CALL_BACKFILL_VERSION = 2
+_MAX_CALL_DURATION_SECONDS = 60 * 60
 _SUPPORTED_SUFFIXES = {
     ".3gp",
     ".aac",
@@ -175,6 +178,9 @@ async def process_dropbox_call_changes(
         session_factory=session_factory,
         http=http,
     )
+    await _recover_duration_unknown_recordings(
+        settings=settings, session_factory=session_factory,
+    )
     await _resume_received_recordings(
         settings=settings,
         session_factory=session_factory,
@@ -202,6 +208,11 @@ async def process_dropbox_call_changes(
         ):
             raise DropboxCallWorkerError("dropbox_call_delta_invalid")
         for entry in entries:
+            if _is_oversize_audio_file(entry):
+                # The old bounded-file filter remains strict; this separate
+                # rejection prevents an oversized supported source from being
+                # silently skipped when the delta cursor advances.
+                raise DropboxCallWorkerError("dropbox_call_download_limit_exceeded")
             if _is_supported_file(entry):
                 await _ingest_entry(
                     settings=settings,
@@ -344,6 +355,19 @@ async def _list_changes(
     return payload
 
 
+def _is_oversize_audio_file(entry: object) -> bool:
+    return (
+        isinstance(entry, dict)
+        and entry.get(".tag") == "file"
+        and isinstance(entry.get("name"), str)
+        and isinstance(entry.get("path_display"), str)
+        and _is_in_call_inbox(entry["path_display"])
+        and PurePosixPath(entry["name"]).suffix.lower() in _SUPPORTED_SUFFIXES
+        and isinstance(entry.get("size"), int)
+        and entry["size"] > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES
+    )
+
+
 def _is_supported_file(entry: object) -> bool:
     if not isinstance(entry, dict) or entry.get(".tag") != "file":
         return False
@@ -384,8 +408,12 @@ async def _ingest_entry(
     if not _is_in_call_inbox(path):
         raise DropboxCallWorkerError("dropbox_call_path_outside_inbox")
     size = entry.get("size")
-    if not isinstance(size, int) or size <= 0 or size > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES:
+    if not isinstance(size, int) or size <= 0:
         raise DropboxCallWorkerError("dropbox_call_size_invalid")
+    if size > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES:
+        # Keep the delta cursor before this entry; the owner sees the precise
+        # reason in intake status instead of silently losing this revision.
+        raise DropboxCallWorkerError("dropbox_call_download_limit_exceeded")
 
     async with session_factory() as session:
         duplicate = await session.scalar(
@@ -433,6 +461,15 @@ async def _ingest_entry(
             session.add(recording)
             await session.commit()
         return
+    if duration_seconds > _MAX_CALL_DURATION_SECONDS:
+        recording.transcription_status = TelegramVoiceOutcome.REJECTED.value
+        recording.transcription_reason_code = "dropbox_call_duration_exceeded"
+        recording.transcript_language = "ru"
+        recording.transcribed_at = now
+        async with session_factory() as session:
+            session.add(recording)
+            await session.commit()
+        return
 
     async with session_factory() as session:
         session.add(recording)
@@ -445,6 +482,73 @@ async def _ingest_entry(
         http=http,
         recording=recording,
     )
+
+
+async def _recover_duration_unknown_recordings(
+    *,
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Re-probe archived bytes with no prior provider reservation, once each."""
+
+    async with session_factory() as session:
+        candidates = list((await session.scalars(
+            select(PhoneCallRecording)
+            .where(
+                PhoneCallRecording.workspace_key == settings.gate_workspace_id,
+                PhoneCallRecording.source_account_id == settings.dropbox_call_account_id,
+                PhoneCallRecording.transcription_status == "rejected",
+                PhoneCallRecording.transcription_reason_code == "dropbox_call_duration_unknown",
+                PhoneCallRecording.duration_seconds.is_(None),
+                PhoneCallRecording.transcript_text.is_(None),
+            )
+            .order_by(PhoneCallRecording.received_at.asc()).limit(10)
+        )).all())
+    for candidate in candidates:
+        data = candidate.data
+        valid = (
+            0 < candidate.size_bytes <= DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES
+            and len(data) == candidate.size_bytes
+            and hashlib.sha256(data).hexdigest() == candidate.sha256
+        )
+        duration = await _probe_duration_seconds(data) if valid else None
+        async with session_factory() as session:
+            row = await session.scalar(
+                select(PhoneCallRecording)
+                .where(PhoneCallRecording.id == candidate.id)
+                .with_for_update(skip_locked=True)
+            )
+            if (
+                row is None or row.workspace_key != settings.gate_workspace_id
+                or row.source_account_id != settings.dropbox_call_account_id
+                or row.source_file_id != candidate.source_file_id
+                or row.source_revision != candidate.source_revision
+                or row.sha256 != candidate.sha256
+                or row.transcription_status != "rejected"
+                or row.transcription_reason_code != "dropbox_call_duration_unknown"
+                or row.duration_seconds is not None or row.transcript_text is not None
+            ):
+                continue
+            prior = await session.scalar(
+                select(BillingBudgetReservationModel.id)
+                .where(BillingBudgetReservationModel.reservation_key.like(
+                    f"dropbox-call-%:{row.id}"
+                ))
+                .limit(1)
+            )
+            if prior is not None:
+                row.transcription_reason_code = "dropbox_call_recovery_prior_reservation"
+            elif not valid or duration is None:
+                row.transcription_reason_code = "dropbox_call_duration_probe_failed"
+            elif duration > _MAX_CALL_DURATION_SECONDS:
+                row.duration_seconds = duration
+                row.transcription_reason_code = "dropbox_call_duration_exceeded"
+            else:
+                row.duration_seconds = duration
+                row.transcription_status = "received"
+                row.transcription_reason_code = "dropbox_call_duration_recovered"
+                row.transcribed_at = None
+            await session.commit()
 
 
 async def _resume_received_recordings(
@@ -542,6 +646,7 @@ async def _transcribe_recording(
             claimed.transcription_status == _EMPTY_RESULT_RECOVERY_STATUS
             or claimed.transcription_reason_code == _EMPTY_RESULT_PROCESSING
         )
+        duration_recovery = claimed.transcription_reason_code == "dropbox_call_duration_recovered"
         claimed.transcription_status = "processing"
         if empty_result_recovery:
             claimed.transcription_reason_code = _EMPTY_RESULT_PROCESSING
@@ -557,7 +662,10 @@ async def _transcribe_recording(
     duration_seconds = recording.duration_seconds
     if duration_seconds is None:
         raise DropboxCallWorkerError("dropbox_call_duration_unknown")
-    occurred_at = claimed_at if chunk_recovery or empty_result_recovery else recording.received_at
+    occurred_at = (
+        claimed_at if chunk_recovery or empty_result_recovery or duration_recovery
+        else recording.received_at
+    )
     service = TelegramVoiceTranscriptionService(
         downloader=_StoredCallDownloader(recording),
         normalizer=TelegramVoiceNormalizer(),
@@ -969,32 +1077,38 @@ def _audio_media_type(filename: str) -> str:
 
 
 async def _probe_duration_seconds(data: bytes) -> int | None:
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            "pipe:0",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-    except OSError:
+    if not data or len(data) > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES:
         return None
-    stdout, _ = await process.communicate(data)
-    if process.returncode != 0:
-        return None
-    try:
-        duration = float(stdout.decode("ascii").strip())
-    except (UnicodeDecodeError, ValueError):
-        return None
-    if not math.isfinite(duration) or duration <= 0 or duration > 24 * 60 * 60:
-        return None
-    return max(1, math.ceil(duration))
+    # MP4/M4A may keep its moov atom at the end. A pipe is not seekable, so
+    # probing identical bytes through pipe:0 can return no duration.
+    with tempfile.TemporaryDirectory(prefix="gate-call-probe-") as directory:
+        source = Path(directory) / "source.m4a"
+        await asyncio.to_thread(source.write_bytes, data)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", str(source),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+        except OSError:
+            return None
+        try:
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=15)
+        except (TimeoutError, asyncio.CancelledError) as exc:
+            process.kill()
+            await process.wait()
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            return None
+        if process.returncode != 0:
+            return None
+        try:
+            duration = float(stdout.decode("ascii").strip())
+        except (UnicodeDecodeError, ValueError):
+            return None
+        if not math.isfinite(duration) or duration <= 0 or duration > 24 * 60 * 60:
+            return None
+        return max(1, math.ceil(duration))
 
 
 async def _commit_cursor(

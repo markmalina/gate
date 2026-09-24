@@ -1,7 +1,7 @@
 {
   "schema_version": "model-access-lock.v1",
   "status": "accepted",
-  "accepted_at": "2026-09-18T20:28:21Z",
+  "accepted_at": "2026-09-24T14:18:00Z",
   "accepted_by": "owner",
   "skill": {
     "name": "use-model-access",
@@ -11,7 +11,7 @@
   },
   "project_policy": {
     "path": "docs/policies/GATE_TRANSCRIPTION_MODEL_ACCESS_POLICY.md",
-    "version": "gate-transcription-model-access-v1"
+    "version": "gate-transcription-model-access-v2"
   },
   "feature_default": false,
   "provider": "openai",
@@ -26,7 +26,7 @@
   "max_part_bytes": 25000000,
   "max_parts": 20,
   "max_transcript_characters": 100000,
-  "monthly_hard_limit_microusd": 1000000,
+  "monthly_hard_limit_microusd": 3000000,
   "retention": {
     "training": false,
     "abuse_monitoring": "none",
