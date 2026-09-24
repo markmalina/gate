@@ -18,12 +18,16 @@ changes Telegram read state.
    and stores the transcript beside the original.
 
 Duration probing uses a temporary seekable file (some M4A files cannot expose
-their metadata over a nonseekable pipe). A 15-second probe timeout or invalid
-container produces a specific rejection without a provider call. Calls over
-60 minutes are rejected before ASR. Previously rejected duration-unknown rows
-are re-probed from their stored exact revision, checked against their stored
+their metadata over a nonseekable pipe). When metadata is absent or the
+15-second probe times out, Gate decodes audio to a null sink for at most
+120 seconds and uses the final decoded timestamp. Calls over 60 minutes are
+rejected before ASR. Previously rejected duration-unknown/probe-failed rows
+are retried from their stored exact revision, checked against their stored
 SHA-256 and prior billing reservations, and then resumed only if no previous
-provider work can have occurred. A file above the 100 MiB Dropbox limit blocks
+provider work can have occurred. Stored bytes that fail the size/SHA-256 check
+produce `dropbox_call_archive_integrity_failed`; bytes that cannot be decoded
+produce `dropbox_call_media_unreadable`. Both are terminal without a provider
+call. A file above the 100 MiB Dropbox limit blocks
 cursor advancement and exposes `dropbox_call_download_limit_exceeded` in
 owner-only intake status until the owner replaces/removes that revision.
 

@@ -498,7 +498,10 @@ async def _recover_duration_unknown_recordings(
                 PhoneCallRecording.workspace_key == settings.gate_workspace_id,
                 PhoneCallRecording.source_account_id == settings.dropbox_call_account_id,
                 PhoneCallRecording.transcription_status == "rejected",
-                PhoneCallRecording.transcription_reason_code == "dropbox_call_duration_unknown",
+                PhoneCallRecording.transcription_reason_code.in_((
+                    "dropbox_call_duration_unknown",
+                    "dropbox_call_duration_probe_failed",
+                )),
                 PhoneCallRecording.duration_seconds.is_(None),
                 PhoneCallRecording.transcript_text.is_(None),
             )
@@ -525,7 +528,10 @@ async def _recover_duration_unknown_recordings(
                 or row.source_revision != candidate.source_revision
                 or row.sha256 != candidate.sha256
                 or row.transcription_status != "rejected"
-                or row.transcription_reason_code != "dropbox_call_duration_unknown"
+                or row.transcription_reason_code not in (
+                    "dropbox_call_duration_unknown",
+                    "dropbox_call_duration_probe_failed",
+                )
                 or row.duration_seconds is not None or row.transcript_text is not None
             ):
                 continue
@@ -538,8 +544,10 @@ async def _recover_duration_unknown_recordings(
             )
             if prior is not None:
                 row.transcription_reason_code = "dropbox_call_recovery_prior_reservation"
-            elif not valid or duration is None:
-                row.transcription_reason_code = "dropbox_call_duration_probe_failed"
+            elif not valid:
+                row.transcription_reason_code = "dropbox_call_archive_integrity_failed"
+            elif duration is None:
+                row.transcription_reason_code = "dropbox_call_media_unreadable"
             elif duration > _MAX_CALL_DURATION_SECONDS:
                 row.duration_seconds = duration
                 row.transcription_reason_code = "dropbox_call_duration_exceeded"
@@ -1091,9 +1099,38 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             )
         except OSError:
+            process = None
+        if process is not None:
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=15)
+            except (TimeoutError, asyncio.CancelledError) as exc:
+                process.kill()
+                await process.wait()
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+            else:
+                if process.returncode == 0:
+                    try:
+                        duration = float(stdout.decode("ascii").strip())
+                    except (UnicodeDecodeError, ValueError):
+                        pass
+                    else:
+                        if math.isfinite(duration) and 0 < duration <= 24 * 60 * 60:
+                            return max(1, math.ceil(duration))
+
+        # Some files contain decodable audio but no container duration. Decode
+        # only to a null sink; progress reports the decoded audio end timestamp.
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+                "-xerror", "-i", str(source), "-map", "0:a:0", "-vn",
+                "-f", "null", "-progress", "pipe:1", "-",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+        except OSError:
             return None
         try:
-            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=15)
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=120)
         except (TimeoutError, asyncio.CancelledError) as exc:
             process.kill()
             await process.wait()
@@ -1102,13 +1139,18 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
             return None
         if process.returncode != 0:
             return None
+        timestamps = [
+            line.removeprefix(b"out_time_us=")
+            for line in stdout.splitlines()
+            if line.startswith(b"out_time_us=")
+        ]
         try:
-            duration = float(stdout.decode("ascii").strip())
-        except (UnicodeDecodeError, ValueError):
+            duration_us = int(timestamps[-1])
+        except (IndexError, ValueError):
             return None
-        if not math.isfinite(duration) or duration <= 0 or duration > 24 * 60 * 60:
+        if not 0 < duration_us <= 24 * 60 * 60 * 1_000_000:
             return None
-        return max(1, math.ceil(duration))
+        return max(1, math.ceil(duration_us / 1_000_000))
 
 
 async def _commit_cursor(

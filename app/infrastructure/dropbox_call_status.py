@@ -16,6 +16,8 @@ _SAFE_ERRORS = frozenset(
         "dropbox_call_download_size_mismatch",
         "dropbox_call_duration_unknown",
         "dropbox_call_duration_probe_failed",
+        "dropbox_call_media_unreadable",
+        "dropbox_call_archive_integrity_failed",
         "dropbox_call_duration_exceeded",
         "dropbox_call_duration_recovered",
         "dropbox_call_recovery_prior_reservation",

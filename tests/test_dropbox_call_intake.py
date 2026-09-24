@@ -293,25 +293,37 @@ def test_long_m4a_keeps_complete_ordered_parts(minutes, expected_parts) -> None:
 
 
 @pytest.mark.parametrize(
-    ("duration", "prior_reservation", "expected_status", "expected_reason"),
+    (
+        "duration", "prior_reservation", "source_reason", "valid_archive",
+        "expected_status", "expected_reason",
+    ),
     [
-        (1777, False, "received", "dropbox_call_duration_recovered"),
-        (3600, False, "received", "dropbox_call_duration_recovered"),
-        (3601, False, "rejected", "dropbox_call_duration_exceeded"),
-        (None, False, "rejected", "dropbox_call_duration_probe_failed"),
-        (1777, True, "rejected", "dropbox_call_recovery_prior_reservation"),
+        (1777, False, "dropbox_call_duration_unknown", True,
+         "received", "dropbox_call_duration_recovered"),
+        (3600, False, "dropbox_call_duration_probe_failed", True,
+         "received", "dropbox_call_duration_recovered"),
+        (3601, False, "dropbox_call_duration_probe_failed", True,
+         "rejected", "dropbox_call_duration_exceeded"),
+        (None, False, "dropbox_call_duration_probe_failed", True,
+         "rejected", "dropbox_call_media_unreadable"),
+        (1777, False, "dropbox_call_duration_probe_failed", False,
+         "rejected", "dropbox_call_archive_integrity_failed"),
+        (1777, True, "dropbox_call_duration_unknown", True,
+         "rejected", "dropbox_call_recovery_prior_reservation"),
     ],
 )
 def test_duration_recovery_never_replays_prior_provider_work(
-    monkeypatch, duration, prior_reservation, expected_status, expected_reason,
+    monkeypatch, duration, prior_reservation, source_reason, valid_archive,
+    expected_status, expected_reason,
 ) -> None:
     data = b"synthetic audio"
     row = SimpleNamespace(
         id=uuid.uuid4(), workspace_key="mark-personal", source_account_id="account-id",
         source_file_id="id:exact", source_revision="revision-exact",
-        transcription_status="rejected", transcription_reason_code="dropbox_call_duration_unknown",
+        transcription_status="rejected", transcription_reason_code=source_reason,
         duration_seconds=None, transcript_text=None, size_bytes=len(data),
-        sha256=hashlib.sha256(data).hexdigest(), data=data, transcribed_at=datetime.now(UTC),
+        sha256=hashlib.sha256(data if valid_archive else b"other bytes").hexdigest(),
+        data=data, transcribed_at=datetime.now(UTC),
     )
     class FakeSession:
         def __init__(self):
@@ -333,9 +345,8 @@ def test_duration_recovery_never_replays_prior_provider_work(
         session = FakeSession()
         sessions.append(session)
         return session
-    monkeypatch.setattr(
-        "app.worker.dropbox_calls._probe_duration_seconds", AsyncMock(return_value=duration),
-    )
+    probe = AsyncMock(return_value=duration)
+    monkeypatch.setattr("app.worker.dropbox_calls._probe_duration_seconds", probe)
     asyncio.run(_recover_duration_unknown_recordings(
         settings=Settings(GATE_WORKSPACE_ID="mark-personal", DROPBOX_CALL_ACCOUNT_ID="account-id"),
         session_factory=factory,
@@ -343,4 +354,47 @@ def test_duration_recovery_never_replays_prior_provider_work(
     assert row.transcription_status == expected_status
     assert row.transcription_reason_code == expected_reason
     assert sessions[-1].commits == 1
-    assert row.duration_seconds == (duration if duration and not prior_reservation else None)
+    assert row.duration_seconds == (
+        duration if duration and not prior_reservation and valid_archive else None
+    )
+    assert probe.await_count == (1 if valid_archive else 0)
+
+
+def test_probe_uses_decoded_audio_when_container_duration_is_missing(monkeypatch) -> None:
+    class FakeProcess:
+        def __init__(self, returncode, output):
+            self.returncode = returncode
+            self.output = output
+
+        async def communicate(self):
+            return self.output, b""
+
+    calls = []
+
+    async def create_process(*args, **_kwargs):
+        calls.append(args[0])
+        if args[0] == "ffprobe":
+            return FakeProcess(1, b"")
+        return FakeProcess(0, b"out_time_us=1776377583\nprogress=end\n")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    assert asyncio.run(_probe_duration_seconds(b"some audio bytes")) == 1777
+    assert calls == ["ffprobe", "ffmpeg"]
+
+
+def test_probe_rejects_failed_decode_even_with_progress(monkeypatch) -> None:
+    class FakeProcess:
+        def __init__(self, returncode, output):
+            self.returncode = returncode
+            self.output = output
+
+        async def communicate(self):
+            return self.output, b""
+
+    async def create_process(*args, **_kwargs):
+        if args[0] == "ffprobe":
+            return FakeProcess(1, b"")
+        return FakeProcess(1, b"out_time_us=1776377583\nprogress=end\n")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    assert asyncio.run(_probe_duration_seconds(b"corrupted audio")) is None
