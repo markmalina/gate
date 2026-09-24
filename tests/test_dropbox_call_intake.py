@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import shutil
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -244,6 +245,8 @@ def test_seekable_probe_reads_m4a_with_moov_at_end(tmp_path) -> None:
     """A normal M4A may have its index at the end of the file."""
     import subprocess
 
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("real audio regression requires ffmpeg and ffprobe")
     audio = tmp_path / "tail-index.m4a"
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
