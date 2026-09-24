@@ -204,12 +204,12 @@ def test_intermediate_call_revision_has_explicit_completed_outcome() -> None:
         id=UUID("55555555-5555-5555-5555-555555555555"),
         received_at=datetime(2026, 9, 24, 13, 35, tzinfo=UTC),
         transcript_text=None, summary_text=None, summary_status=None,
-        transcription_status="superseded",
+        transcription_status="rejected",
         transcription_reason_code="dropbox_call_revision_superseded",
         summary_reason_code=None,
     )
     item = _call_feed_item(partial, ZoneInfo("Europe/Berlin"))
-    assert item["transcript_status"] == "superseded"
+    assert item["transcript_status"] == "rejected"
     assert item["semantic_status"] == "source_ready"
     assert item["outcome"] == (
         "Промежуточная версия; окончательная версия файла расшифрована"

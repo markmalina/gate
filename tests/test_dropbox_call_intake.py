@@ -457,9 +457,7 @@ def test_unreadable_partial_revision_is_closed_only_after_final_transcript(
         settings=Settings(GATE_WORKSPACE_ID="mark-personal", DROPBOX_CALL_ACCOUNT_ID="account-id"),
         session_factory=factory,
     ))
-    assert row.transcription_status == (
-        "superseded" if later_transcript_exists else "rejected"
-    )
+    assert row.transcription_status == "rejected"
     assert row.transcription_reason_code == (
         "dropbox_call_revision_superseded" if later_transcript_exists
         else "dropbox_call_media_unreadable"

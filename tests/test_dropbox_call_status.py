@@ -129,7 +129,7 @@ def test_status_is_bounded_and_missing_account_never_scans_all_accounts() -> Non
 def test_superseded_partial_revision_does_not_require_attention() -> None:
     session = ReadSession()
     session.recording(
-        "partial", transcription_status="superseded",
+        "partial", transcription_status="rejected",
         transcription_reason_code="dropbox_call_revision_superseded",
         transcript_text=None,
     )
