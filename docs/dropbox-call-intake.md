@@ -31,6 +31,14 @@ call. A file above the 100 MiB Dropbox limit blocks
 cursor advancement and exposes `dropbox_call_download_limit_exceeded` in
 owner-only intake status until the owner replaces/removes that revision.
 
+While Dropbox is still uploading a recording, its earlier revisions may have
+an incomplete audio index and be unreadable. After a larger later revision of
+the same file ID, filename and path has a saved transcript, the worker marks
+those earlier unreadable revisions `dropbox_call_revision_superseded` without
+another provider call. Owner-only diagnostics count these as superseded rather
+than as untranscribed calls. The feed keeps the original rows with an explicit
+superseded outcome; the final revision has the transcript and summary.
+
 Webhook payloads are signals only. They do not contain or transport recording bytes.
 
 ## Dropbox application

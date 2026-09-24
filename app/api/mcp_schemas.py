@@ -1675,7 +1675,7 @@ _dropbox_status_properties.update({
     "incomplete_truncated": {"type": "boolean"},
     "archive_counts": _object({
         name: {"type": "integer", "minimum": 0}
-        for name in ("total", "completed", "incomplete")
+        for name in ("total", "completed", "superseded", "incomplete")
     }),
 })
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
