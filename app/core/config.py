@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     gate_document_send_enabled: bool = Field(
         default=False, validation_alias="GATE_DOCUMENT_SEND_ENABLED"
     )
+    gate_document_cleanup_enabled: bool = Field(
+        default=True, validation_alias="GATE_DOCUMENT_CLEANUP_ENABLED"
+    )
     gate_account_ru_send_enabled: bool = Field(
         default=True, validation_alias="GATE_ACCOUNT_RU_SEND_ENABLED"
     )

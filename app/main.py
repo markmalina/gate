@@ -250,7 +250,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 health_reporter=worker_health,
                             )
                         )
-                    if getattr(settings, "gate_document_send_enabled", False):
+                    if getattr(settings, "gate_document_cleanup_enabled", False):
                         reply_document_cleanup_task = asyncio.create_task(
                             run_reply_document_cleanup_loop(database_runtime.session_factory)
                         )

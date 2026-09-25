@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def run_reply_document_cleanup_loop(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Run only while the explicitly enabled document runtime is active."""
+    """Prune staged bytes even after new document sends are disabled."""
 
     while True:
         try:

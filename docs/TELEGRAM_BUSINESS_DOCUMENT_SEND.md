@@ -21,7 +21,8 @@ The separate inbound `getFile` >20 MB issue does not govern this upload.
    `content_base64` upload argument. The 8 MiB limit is checked before
    decoding. Neither text draft nor tool response contains the bytes. The
    24-hour staging record has a unique draft id and scoped principal, and an
-   enabled worker erases expired staged bytes hourly. No GitHub file or
+   independent worker erases expired staged bytes hourly, including after
+   sends are disabled. No GitHub file or
    external URL is involved. **The Work connector's practical payload limit
    for this argument is not yet measured**; a binary/chunked client adapter
    may be needed for larger files.
