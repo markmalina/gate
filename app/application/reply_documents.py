@@ -103,7 +103,7 @@ class PrepareReplyDocumentService:
             raise ReplyDraftError(code="invalid_document", message="Document size is invalid")
         is_pdf = command.media_type == "application/pdf" and b"%PDF-" in data[:1024]
         is_zip = command.media_type == "application/zip" and data.startswith(
-            (b"PK\\x03\\x04", b"PK\\x05\\x06", b"PK\\x07\\x08")
+            (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
         )
         if not (is_pdf or is_zip):
             raise ReplyDraftError(code="invalid_document", message="Document content type mismatch")

@@ -537,7 +537,7 @@ async def test_draft_writer_waits_on_conversation_before_locking_context() -> No
 async def _attach_document(
     sessions: async_sessionmaker[AsyncSession], seed: _SeededReply
 ) -> bytes:
-    data = b"PK\\x03\\x04selected document bytes"
+    data = b"PK\x03\x04selected document bytes"
     async with sessions() as session:
         draft = await session.get(ReplyDraft, seed.draft_ids[0])
         assert draft is not None

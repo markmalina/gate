@@ -1,5 +1,7 @@
 import base64
 import hashlib
+import io
+import zipfile
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -16,6 +18,16 @@ from app.infrastructure.reply_sends import _validate_document_provider_result
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")
 DRAFT_ID = UUID("44444444-4444-4444-4444-444444444444")
+
+
+def _real_zip() -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("gate-test.txt", "Gate #700")
+    return output.getvalue()
+
+
+REAL_ZIP = _real_zip()
 
 
 @pytest.fixture
@@ -48,7 +60,7 @@ def _command(
     *,
     filename: str = "bundle.zip",
     media_type: str = "application/zip",
-    data: bytes = b"PK\\x03\\x04selected local file",
+    data: bytes = REAL_ZIP,
     expected_sha256: str | None = None,
     scope: str = "gate:drafts:write",
 ) -> PrepareReplyDocumentCommand:
@@ -75,7 +87,7 @@ def _command(
 async def test_selected_document_is_staged_without_sending_or_returning_bytes() -> None:
     writer = CapturingWriter()
     prepared = await PrepareReplyDocumentService(writer).execute(_command())
-    assert writer.received == [b"PK\\x03\\x04selected local file"]
+    assert writer.received == [REAL_ZIP]
     assert prepared.size_bytes == len(writer.received[0])
     assert prepared.sha256 == hashlib.sha256(writer.received[0]).hexdigest()
     assert not hasattr(prepared, "data")
@@ -87,6 +99,7 @@ async def test_selected_document_is_staged_without_sending_or_returning_bytes() 
     [
         (_command(filename="../bundle.zip"), "invalid_document"),
         (_command(filename="wrong.pdf"), "invalid_document"),
+        (_command(data=b"PK\\x03\\x04fake escaped signature"), "invalid_document"),
         (_command(expected_sha256="0" * 64), "document_changed"),
         (_command(scope="gate:inbox:read"), "insufficient_scope"),
     ],
