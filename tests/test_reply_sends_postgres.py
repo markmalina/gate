@@ -1,6 +1,7 @@
 """PostgreSQL concurrency guards for explicitly approved reply delivery."""
 
 import asyncio
+import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, replace
@@ -34,6 +35,7 @@ from app.models.domain import (
     Message,
     MessageDirection,
     Project,
+    ReplyDocument,
     ReplyDraft,
     ReplyDraftStatus,
     ReplyTask,
@@ -530,6 +532,165 @@ async def test_draft_writer_waits_on_conversation_before_locking_context() -> No
         assert audits[0].metadata_["task_id"] == str(seed.task_id)
         assert audits[0].metadata_["sent"] is False
         assert outbound_count == 0
+
+
+async def _attach_document(
+    sessions: async_sessionmaker[AsyncSession], seed: _SeededReply
+) -> bytes:
+    data = b"PK\\x03\\x04selected document bytes"
+    async with sessions() as session:
+        draft = await session.get(ReplyDraft, seed.draft_ids[0])
+        assert draft is not None
+        draft.source = "chatgpt-mcp-document"
+        draft.draft_text = "bundle.zip"
+        draft.prompt_context = {"kind": "document"}
+        session.add(
+            ReplyDocument(
+                reply_draft_id=draft.id,
+                principal_subject="reply-send-postgres-test",
+                filename="bundle.zip",
+                media_type="application/zip",
+                size_bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                caption="Ready",
+                data=data,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+    return data
+
+
+def _document_command(
+    seed: _SeededReply, data: bytes, *, digest: str | None = None
+) -> SendApprovedReplyCommand:
+    return replace(
+        _command(seed, seed.draft_ids[0]),
+        expected_document_filename="bundle.zip",
+        expected_document_size_bytes=len(data),
+        expected_document_sha256=digest or hashlib.sha256(data).hexdigest(),
+        expected_document_caption="Ready",
+    )
+
+
+class _DocumentTelegram:
+    def __init__(self, *, timeout: bool = False) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.timeout = timeout
+
+    async def get_business_connection(
+        self, *, business_connection_id: str
+    ) -> dict[str, object]:
+        return _live_connection(business_connection_id)
+
+    async def send_business_document(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if self.timeout:
+            request = httpx.Request("POST", "https://api.telegram.org/sendDocument")
+            raise httpx.ReadTimeout("unknown", request=request)
+        return {
+            "ok": True,
+            "result": {
+                "message_id": 702,
+                "chat": {"id": int(kwargs["chat_id"])},
+                "business_connection_id": kwargs["business_connection_id"],
+                "caption": kwargs["caption"],
+                "document": {
+                    "file_id": "opaque-file-id",
+                    "file_unique_id": "opaque-file-unique-id",
+                    "file_name": kwargs["filename"],
+                    "mime_type": kwargs["media_type"],
+                    "file_size": len(kwargs["data"]),
+                },
+            },
+        }
+
+    async def send_plain_message(self, **_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("Document must never use the text transport")
+
+
+@pytest.mark.anyio
+async def test_document_send_is_bound_and_exact_replay_never_uploads_twice() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        data = await _attach_document(sessions, seed)
+        telegram = _DocumentTelegram()
+        command = _document_command(seed, data)
+
+        async with sessions() as session:
+            first = await SqlTelegramReplySender(
+                session=session,
+                telegram=telegram,
+                settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+            ).send(command)
+        async with sessions() as session:
+            replay = await SqlTelegramReplySender(
+                session=session,
+                telegram=telegram,
+                settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+            ).send(command)
+
+        assert first.sent is True
+        assert first.provider_message_id == "702"
+        assert replay.idempotent_replay is True
+        assert replay.attempt_id == first.attempt_id
+        assert len(telegram.calls) == 1
+        assert telegram.calls[0]["data"] == data
+        async with sessions() as session:
+            stored = await session.scalar(
+                select(ReplyDocument).where(ReplyDocument.reply_draft_id == command.draft_id)
+            )
+            outbound = await session.scalar(
+                select(Message).where(Message.source == "gate-approved-document")
+            )
+        assert stored is not None and stored.data is None
+        assert outbound is not None
+        assert outbound.payload["result"]["document"]["file_name"] == "bundle.zip"
+
+
+@pytest.mark.anyio
+async def test_document_mismatch_and_text_route_fail_before_telegram() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        data = await _attach_document(sessions, seed)
+        telegram = _DocumentTelegram()
+        for command in (
+            _command(seed, seed.draft_ids[0]),
+            _document_command(seed, data, digest="0" * 64),
+            replace(_document_command(seed, data), expected_account="BY"),
+        ):
+            async with sessions() as session:
+                with pytest.raises(ReplySendError):
+                    await SqlTelegramReplySender(
+                        session=session,
+                        telegram=telegram,
+                        settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+                    ).send(command)
+        assert telegram.calls == []
+
+
+@pytest.mark.anyio
+async def test_document_timeout_is_unknown_and_does_not_retry() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        data = await _attach_document(sessions, seed)
+        telegram = _DocumentTelegram(timeout=True)
+        command = _document_command(seed, data)
+        async with sessions() as session:
+            first = await SqlTelegramReplySender(
+                session=session,
+                telegram=telegram,
+                settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+            ).send(command)
+        async with sessions() as session:
+            replay = await SqlTelegramReplySender(
+                session=session,
+                telegram=telegram,
+                settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+            ).send(command)
+        assert first.status == SendAttemptStatus.UNKNOWN.value
+        assert replay.idempotent_replay is True
+        assert len(telegram.calls) == 1
 
 
 @pytest.mark.anyio

@@ -702,6 +702,7 @@ def _serialize_voice_message(
             if archive.direction == MessageDirection.INBOUND.value
             else str(counterparty_payload["platform_user_id"])
         ),
+        "provider_message_id": str(archive.telegram_message_id),
         "text": text,
         "text_preview": _truncate_text(text or "", 240),
         "created_at": _serialize_datetime(archive.created_at),
@@ -801,6 +802,11 @@ def _serialize_message(message: Message) -> JsonObject:
         "chat_id": message.chat_id,
         "sender_id": message.sender_id,
         "recipient_id": message.recipient_id,
+        "provider_message_id": (
+            str(message.telegram_message_id)
+            if getattr(message, "telegram_message_id", None) is not None
+            else None
+        ),
         "text_preview": _truncate_text(message.text or "", 240),
         "created_at": _serialize_datetime(message.created_at),
         "received_at": _serialize_datetime(message.received_at),

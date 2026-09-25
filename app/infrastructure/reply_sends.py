@@ -28,6 +28,7 @@ from app.models.domain import (
     Message,
     MessageDirection,
     PersonalTelegramSendFence,
+    ReplyDocument,
     ReplyDraft,
     ReplyDraftStatus,
     ReplyTask,
@@ -83,6 +84,13 @@ class _SendContextSnapshot:
     person_id: UUID | None
     account_telegram_user_id: int | None
     counterparty_display_name: str | None
+    document_filename: str | None = None
+    document_media_type: str | None = None
+    document_size_bytes: int | None = None
+    document_sha256: str | None = None
+    document_caption: str | None = None
+    document_data: bytes | None = None
+    document_expires_at: datetime | None = None
 
     @property
     def origin_connection_id(self) -> str | None:
@@ -175,11 +183,34 @@ class SqlTelegramReplySender:
 
         self._require_provider_outside_transaction()
         try:
-            telegram_result = await self._telegram.send_plain_message(
-                chat_id=reservation.context.target_chat_id,
-                text=reservation.context.draft_text,
-                business_connection_id=reservation.business_connection_id,
-            )
+            context = reservation.context
+            if context.document_sha256 is not None:
+                if (
+                    context.document_data is None
+                    or context.document_filename is None
+                    or context.document_media_type is None
+                    or context.document_caption is None
+                ):
+                    raise RuntimeError("Reserved document data disappeared")
+                telegram_result = await self._telegram.send_business_document(
+                    chat_id=context.target_chat_id,
+                    business_connection_id=reservation.business_connection_id,
+                    filename=context.document_filename,
+                    media_type=context.document_media_type,
+                    data=context.document_data,
+                    caption=context.document_caption,
+                )
+                _validate_document_provider_result(
+                    telegram_result,
+                    context,
+                    reservation.business_connection_id,
+                )
+            else:
+                telegram_result = await self._telegram.send_plain_message(
+                    chat_id=context.target_chat_id,
+                    text=context.draft_text,
+                    business_connection_id=reservation.business_connection_id,
+                )
             if telegram_result.get("ok") is not True:
                 raise RuntimeError("Telegram API did not confirm delivery")
             if _provider_message_id(telegram_result) is None:
@@ -214,6 +245,7 @@ class SqlTelegramReplySender:
                 command=command,
                 account_label_value=context.account_label,
                 target_chat_id=context.target_chat_id,
+                context=context,
             )
             existing = await self._load_attempt_model(draft_id=context.draft_id)
             if existing is not None:
@@ -356,6 +388,7 @@ class SqlTelegramReplySender:
                         command=command,
                         account_label_value=current.account_label,
                         target_chat_id=current.target_chat_id,
+                        context=current,
                     )
                     self._validate_attempt_binding(existing, current)
                     replay = self._attempt_result(
@@ -380,6 +413,7 @@ class SqlTelegramReplySender:
                         command=command,
                         account_label_value=current.account_label,
                         target_chat_id=current.target_chat_id,
+                        context=current,
                     )
                     if _send_fingerprint(current) != _send_fingerprint(intent.context):
                         raise ReplySendError(
@@ -534,6 +568,12 @@ class SqlTelegramReplySender:
             )
             context = await self._load_context_snapshot(command, for_update=False)
             concurrent = await self._load_attempt_model(draft_id=context.draft_id)
+            self._validate_confirmation(
+                command=command,
+                account_label_value=context.account_label,
+                target_chat_id=context.target_chat_id,
+                context=context,
+            )
             if concurrent is None:
                 raise ReplySendError(
                     code="send_reservation_failed",
@@ -574,6 +614,12 @@ class SqlTelegramReplySender:
             attempt.error_code = error_code
             attempt.error_detail = error_detail
             attempt.finished_at = datetime.now(UTC)
+            if reservation.context.document_sha256 is not None:
+                await self._session.execute(
+                    update(ReplyDocument)
+                    .where(ReplyDocument.reply_draft_id == reservation.context.draft_id)
+                    .values(data=None)
+                )
             self._session.add(
                 AuditLog(
                     actor=f"mcp:{command.principal.subject}"[:255],
@@ -653,6 +699,12 @@ class SqlTelegramReplySender:
             attempt.error_code = None
             attempt.error_detail = None
             attempt.finished_at = finished_at
+            if reservation.context.document_sha256 is not None:
+                await self._session.execute(
+                    update(ReplyDocument)
+                    .where(ReplyDocument.reply_draft_id == reservation.context.draft_id)
+                    .values(data=None)
+                )
 
             draft_changed_after_reservation = (
                 draft.draft_text != reservation.context.draft_text
@@ -713,8 +765,16 @@ class SqlTelegramReplySender:
                     project_id=reservation.context.project_id,
                     person_id=reservation.context.person_id,
                     direction=MessageDirection.OUTBOUND.value,
-                    source="gate-approved-draft",
-                    event_type="telegram_business_reply",
+                    source=(
+                        "gate-approved-document"
+                        if reservation.context.document_sha256 is not None
+                        else "gate-approved-draft"
+                    ),
+                    event_type=(
+                        "telegram_business_document"
+                        if reservation.context.document_sha256 is not None
+                        else "telegram_business_reply"
+                    ),
                     chat_id=reservation.context.target_chat_id,
                     sender_id=(
                         str(reservation.context.account_telegram_user_id)
@@ -722,13 +782,23 @@ class SqlTelegramReplySender:
                         else "gate"
                     ),
                     recipient_id=reservation.context.target_chat_id,
-                    text=reservation.context.draft_text,
+                    telegram_message_id=(
+                        int(provider_message_id)
+                        if provider_message_id is not None and provider_message_id.isdigit()
+                        else None
+                    ),
+                    text=(
+                        reservation.context.document_caption
+                        if reservation.context.document_sha256 is not None
+                        else reservation.context.draft_text
+                    ),
                     business_connection_id=reservation.business_connection_id,
                     payload={
                         **telegram_result,
                         "_gate_counterparty": {
                             "display_name": (reservation.context.counterparty_display_name)
                         },
+                        "_gate_document_sha256": reservation.context.document_sha256,
                     },
                     sent_at=finished_at,
                 )
@@ -786,6 +856,35 @@ class SqlTelegramReplySender:
         if not isinstance(display_name, str) or not display_name.strip():
             display_name = conversation.title
 
+        raw_context = draft.prompt_context if isinstance(draft.prompt_context, dict) else {}
+        is_document = (
+            raw_context.get("kind") == "document"
+            or draft.source == "chatgpt-mcp-document"
+        )
+        document = None
+        if is_document or command.expected_document_sha256 is not None:
+            document_statement = select(ReplyDocument).where(
+                ReplyDocument.reply_draft_id == draft.id
+            )
+            if for_update:
+                document_statement = document_statement.with_for_update()
+            document = await self._session.scalar(document_statement)
+        if is_document != (document is not None):
+            raise ReplySendError(
+                code="document_binding_mismatch",
+                message="Document preparation is incomplete",
+            )
+        if is_document != (command.expected_document_sha256 is not None):
+            raise ReplySendError(
+                code="document_confirmation_required",
+                message="Use the matching exact document confirmation",
+            )
+        if document is not None and document.principal_subject != command.principal.subject[:255]:
+            raise ReplySendError(
+                code="document_scope_mismatch",
+                message="Document belongs to another authenticated principal",
+            )
+
         return _SendContextSnapshot(
             draft_id=draft.id,
             draft_text=draft.draft_text,
@@ -809,6 +908,13 @@ class SqlTelegramReplySender:
             person_id=trigger.person_id,
             account_telegram_user_id=account.telegram_user_id,
             counterparty_display_name=display_name,
+            document_filename=document.filename if document else None,
+            document_media_type=document.media_type if document else None,
+            document_size_bytes=document.size_bytes if document else None,
+            document_sha256=document.sha256 if document else None,
+            document_caption=document.caption if document else None,
+            document_data=document.data if document else None,
+            document_expires_at=document.expires_at if document else None,
         )
 
     async def _load_context_models(
@@ -1073,6 +1179,7 @@ class SqlTelegramReplySender:
         command: SendApprovedReplyCommand,
         account_label_value: str,
         target_chat_id: str,
+        context: _SendContextSnapshot,
     ) -> None:
         if command.expected_account != account_label_value:
             raise ReplySendError(
@@ -1087,8 +1194,36 @@ class SqlTelegramReplySender:
                 code="recipient_confirmation_mismatch",
                 message="Confirmed recipient does not match the reply task",
             )
+        if (
+            command.expected_document_sha256 != context.document_sha256
+            or command.expected_document_filename != context.document_filename
+            or command.expected_document_size_bytes != context.document_size_bytes
+            or command.expected_document_caption != context.document_caption
+        ):
+            raise ReplySendError(
+                code="document_confirmation_mismatch",
+                message="Confirmed file or caption differs from prepared document",
+            )
 
     def _validate_context_delivery(self, context: _SendContextSnapshot) -> None:
+        if context.document_sha256 is not None:
+            if not self._settings.gate_document_send_enabled:
+                raise ReplySendError(
+                    code="document_send_disabled",
+                    message="Business document sending is disabled",
+                )
+            if (
+                context.document_data is None
+                or context.document_expires_at is None
+                or context.document_expires_at <= datetime.now(UTC)
+                or context.document_size_bytes != len(context.document_data)
+                or hashlib.sha256(context.document_data).hexdigest() != context.document_sha256
+                or context.draft_text != context.document_filename
+            ):
+                raise ReplySendError(
+                    code="document_unavailable",
+                    message="Document expired or changed; prepare it again",
+                )
         if context.draft_status not in _SENDABLE_DRAFT_STATUSES:
             raise ReplySendError(
                 code="draft_closed",
@@ -1158,6 +1293,10 @@ class SqlTelegramReplySender:
             provider_message_id=attempt.provider_message_id,
             error_code=attempt.error_code,
             error_detail=attempt.error_detail,
+            document_filename=context.document_filename,
+            document_media_type=context.document_media_type,
+            document_size_bytes=context.document_size_bytes,
+            document_sha256=context.document_sha256,
         )
 
 
@@ -1197,6 +1336,12 @@ def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
         context.account_label,
         context.account_is_active,
         context.account_send_enabled,
+        context.document_filename,
+        context.document_media_type,
+        context.document_size_bytes,
+        context.document_sha256,
+        context.document_caption,
+        context.document_expires_at,
     )
 
 
@@ -1269,3 +1414,38 @@ def _provider_message_id(result: dict[str, Any]) -> str | None:
         return None
     message_id = payload.get("message_id")
     return str(message_id) if message_id is not None else None
+
+
+def _validate_document_provider_result(
+    result: dict[str, Any],
+    context: _SendContextSnapshot,
+    business_connection_id: str,
+) -> None:
+    """Reject an inconsistent acknowledgement as an ambiguous outcome."""
+
+    message = result.get("result")
+    if not isinstance(message, dict):
+        raise RuntimeError("Telegram did not return a document message")
+    chat = message.get("chat")
+    document = message.get("document")
+    if (
+        not isinstance(chat, dict)
+        or str(chat.get("id")) != context.target_chat_id
+        or not isinstance(document, dict)
+        or not isinstance(document.get("file_id"), str)
+        or not document.get("file_id")
+        or not isinstance(document.get("file_unique_id"), str)
+        or not document.get("file_unique_id")
+        or document.get("file_name") != context.document_filename
+        or document.get("mime_type") != context.document_media_type
+        or document.get("file_size") != context.document_size_bytes
+        or (
+            message.get("business_connection_id") is not None
+            and message.get("business_connection_id") != business_connection_id
+        )
+        or (
+            message.get("caption") is not None
+            and message.get("caption") != context.document_caption
+        )
+    ):
+        raise RuntimeError("Telegram document acknowledgement mismatched preparation")

@@ -115,6 +115,11 @@ class SqlReplySequenceWriter:
                 code="draft_closed",
                 message="Every sequence draft must be unsent and editable",
             )
+        if any((draft.prompt_context or {}).get("kind") == "document" for draft, *_ in ordered):
+            raise ReplySequenceError(
+                code="document_confirmation_required",
+                message="A document cannot be sent through the text sequence",
+            )
         if any(SEQUENCE_CONTEXT_KEY in (draft.prompt_context or {}) for draft, *_ in ordered):
             raise ReplySequenceError(
                 code="sequence_already_queued",

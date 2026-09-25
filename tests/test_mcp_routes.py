@@ -848,7 +848,9 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_save_reply_draft",
+        "gate_prepare_reply_document",
         "gate_send_approved_reply",
+        "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
@@ -867,7 +869,9 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     for tool_name in (
         "gate_get_reply_context",
         "gate_save_reply_draft",
+        "gate_prepare_reply_document",
         "gate_send_approved_reply",
+        "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
         "gate_alpha_get_webhook_status",
         "gate_alpha_control_installation",
@@ -889,7 +893,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "idempotentHint": False,
         "openWorldHint": False,
     }
-    assert tools[4]["annotations"] == {
+    assert tools[4]["annotations"] == tools[3]["annotations"]
+    assert tools[6]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
@@ -898,42 +903,48 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     assert tools[5]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    assert tools[7]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
     }
-    assert tools[6]["annotations"]["readOnlyHint"] is True
-    assert tools[7]["annotations"] == {
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    }
-    assert tools[8]["annotations"] == {
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    assert tools[8]["annotations"]["readOnlyHint"] is True
     assert tools[9]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    assert tools[10]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[11]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     }
-    assert tools[10]["annotations"]["readOnlyHint"] is True
-    assert tools[13]["annotations"] == {
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
-    assert tools[14]["annotations"] == {
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    assert tools[12]["annotations"]["readOnlyHint"] is True
     assert tools[15]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[16]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[17]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,

@@ -107,6 +107,7 @@ async def mcp_metadata(
             ],
             "write": [
                 "gate_save_reply_draft",
+                "gate_prepare_reply_document",
                 "gate_alpha_control_installation",
                 "gate_alpha_run_model_preflight",
                 "gate_alpha_get_test_group_presence",
@@ -114,6 +115,7 @@ async def mcp_metadata(
             ],
             "send": [
                 "gate_send_approved_reply",
+                "gate_send_approved_document",
                 "gate_queue_approved_reply_sequence",
                 "gate_alpha_send_review",
             ],
@@ -145,6 +147,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "write_tools_enabled": True,
         "write_tools": [
             "gate_save_reply_draft",
+            "gate_prepare_reply_document",
             "gate_alpha_control_installation",
             "gate_alpha_run_model_preflight",
             "gate_alpha_get_test_group_presence",
@@ -153,6 +156,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "send_tools_enabled": settings.gate_send_enabled,
         "send_tools": [
             "gate_send_approved_reply",
+            "gate_send_approved_document",
             "gate_queue_approved_reply_sequence",
             "gate_alpha_send_review",
         ],

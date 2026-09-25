@@ -824,6 +824,6 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0110_gate_voice_three_dollar_cap")
+    assert heads[0].startswith("0111_reply_documents")
 
 

@@ -658,6 +658,30 @@ class ReplyDraft(Base):
     trigger_message: Mapped[Message] = relationship()
 
 
+class ReplyDocument(Base):
+    """One scoped, immutable Business document bound to a reply draft."""
+
+    __tablename__ = "reply_documents"
+    __table_args__ = (
+        UniqueConstraint("reply_draft_id", name="uq_reply_documents_draft"),
+        Index("ix_reply_documents_expires_at", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reply_draft_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reply_drafts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    principal_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    caption: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SendAttempt(Base):
     """Idempotent reservation and outcome for one explicitly approved draft send."""
 

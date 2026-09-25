@@ -542,7 +542,7 @@ async def test_slice3_migration_is_single_head_and_leaves_populated_restore_grap
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0110_gate_voice_three_dollar_cap")
+    assert heads[0].startswith("0111_reply_documents")
     async with sessions() as session:
         assert await session.scalar(text("SELECT count(*) FROM become_slice3_invitations")) == 1
         assert await session.scalar(text("SELECT count(*) FROM become_slice3_acceptances")) == 1

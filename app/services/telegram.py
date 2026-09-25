@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 from collections.abc import Mapping
+from pathlib import PurePosixPath
 from typing import Any, cast
 
 import httpx
@@ -124,6 +125,70 @@ class TelegramClient:
 
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)
+
+    async def send_business_document(
+        self,
+        *,
+        chat_id: str,
+        business_connection_id: str,
+        filename: str,
+        media_type: str,
+        data: bytes,
+        caption: str = "",
+    ) -> dict[str, Any]:
+        """Upload one literal PDF or ZIP as a Business document.
+
+        The caller owns recipient authorization, durable reservation and replay.
+        This transport never retries an ambiguous provider outcome.
+        """
+
+        if not self._credential or not chat_id or not business_connection_id:
+            raise ValueError("Telegram Business destination is required")
+        if (
+            not filename
+            or filename in {".", ".."}
+            or PurePosixPath(filename).name != filename
+            or "\\" in filename
+            or any(ord(character) < 32 for character in filename)
+            or len(filename.encode("utf-8")) > 255
+        ):
+            raise ValueError("Invalid document filename")
+        allowed = {
+            ".pdf": "application/pdf",
+            ".zip": "application/zip",
+        }
+        if allowed.get(PurePosixPath(filename).suffix.lower()) != media_type:
+            raise ValueError("Document extension and MIME type do not match")
+        if not isinstance(data, bytes) or not 0 < len(data) <= 8 * 1024 * 1024:
+            raise ValueError("Document must contain at most 8 MiB")
+        if not isinstance(caption, str) or len(caption) > 1024:
+            raise ValueError("Document caption is too long")
+
+        url = f"{self._api_base_url}/bot{self._credential}/sendDocument"
+        return await self._post_telegram_multipart(
+            url=url,
+            payload={
+                "chat_id": chat_id,
+                "business_connection_id": business_connection_id,
+                "caption": caption,
+            },
+            file=("document", (filename, data, media_type)),
+        )
+
+    async def _post_telegram_multipart(
+        self,
+        *,
+        url: str,
+        payload: dict[str, str],
+        file: tuple[str, tuple[str, bytes, str]],
+    ) -> dict[str, Any]:
+        response = await self._http_client.post(
+            url,
+            data=payload,
+            files={file[0]: file[1]},
+            timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
+        )
+        return self._parse_telegram_response(response)
 
     async def edit_message_text(
         self,
@@ -267,6 +332,10 @@ class TelegramClient:
         self, *, url: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         response = await self._http_client.post(url, json=payload)
+        return self._parse_telegram_response(response)
+
+    @staticmethod
+    def _parse_telegram_response(response: httpx.Response) -> dict[str, Any]:
         try:
             result = response.json()
         except ValueError:

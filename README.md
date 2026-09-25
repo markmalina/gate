@@ -250,7 +250,9 @@ Active tools:
 | `gate_list_unanswered` | `gate:inbox:read` | One current unanswered item per conversation plus a separate answered/outbound list |
 | `gate_get_reply_context` | `gate:inbox:read` | Bounded chronological context for one scoped reply task |
 | `gate_save_reply_draft` | `gate:drafts:write` | Saves proposed text; never approves or sends |
+| `gate_prepare_reply_document` | `gate:drafts:write` | Stages one scoped PDF/ZIP with SHA-256 and metadata; never sends |
 | `gate_send_approved_reply` | `gate:messages:send` | Sends the exact saved draft only after explicit confirmation of account, recipient and final text |
+| `gate_send_approved_document` | `gate:messages:send` | Sends the prepared file only after exact account, recipient, file and caption confirmation; disabled by default |
 | `gate_queue_approved_reply_sequence` | `gate:messages:send` | Queues one explicitly confirmed ordered set of saved drafts |
 | `gate_alpha_list_installations` | `gate:status:read` | Lists Alpha groups by label and opaque reference; never exposes Telegram IDs |
 | `gate_alpha_control_installation` | `gate:agents:manage` | Confirmed approve, pause or resume with a reviewed-state fence |
