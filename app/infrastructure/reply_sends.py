@@ -179,6 +179,10 @@ class SqlTelegramReplySender:
         self._dialog_lease: DialogLease | None = None
         self._admitted_monotonic: float | None = None
 
+    @staticmethod
+    def _dispatch_clock() -> float:
+        return time.monotonic()
+
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
         preflight = await self._preflight(command)
         if isinstance(preflight, ReplySendResult):
@@ -244,7 +248,7 @@ class SqlTelegramReplySender:
             await self._dialog_lease.check()
             if (
                 self._admitted_monotonic is None
-                or time.monotonic() - self._admitted_monotonic > 0.1
+                or self._dispatch_clock() - self._admitted_monotonic > 0.1
             ):
                 return await self._finalize_failure(
                     command=command,
@@ -646,7 +650,8 @@ class SqlTelegramReplySender:
                 )
             except ReplySequenceError as exc:
                 raise ReplySendError(code=exc.code, message=exc.message) from exc
-            self._admitted_monotonic = time.monotonic()
+            # Start before this reservation transaction commits, never after it.
+            self._admitted_monotonic = self._dispatch_clock()
         self._session.add(
             AuditLog(
                 actor=f"mcp:{command.principal.subject}"[:255],

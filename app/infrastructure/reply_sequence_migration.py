@@ -93,8 +93,12 @@ async def import_legacy(
                 result["quarantined"] += await quarantine_legacy(runtime, legacy_id)
                 continue
             async with runtime.sessions() as session:
-                if await session.get(ReplySequence, sequence_id) is not None:
-                    result["existing"] += 1
+                existing = await session.get(ReplySequence, sequence_id)
+                if existing is not None:
+                    if existing.workspace_ref != runtime.workspace:
+                        result["quarantined"] += await quarantine_legacy(runtime, legacy_id)
+                    else:
+                        result["existing"] += 1
                     continue
                 # Fetch full membership by identity, independent of discovery page boundaries.
                 drafts = (

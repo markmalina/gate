@@ -474,7 +474,9 @@ async def test_late_confirmed_outcome_keeps_terminal_stop(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_keyset_discovery_survives_ten_thousand_history_and_thousand_blocked_candidates():
+async def test_keyset_discovery_survives_ten_thousand_history_and_thousand_blocked_candidates(
+    monkeypatch,
+):
     from uuid import uuid4
 
     from sqlalchemy import insert, text
@@ -539,6 +541,11 @@ async def test_keyset_discovery_survives_ten_thousand_history_and_thousand_block
         assert seen[-1] == q.sequence_id
         claim = await runtime.claim(q.sequence_id)
         telegram = FakeTelegram()
+        # This test measures indexed discovery, not the CI host's fsync latency.
+        # Real start-window refusal is covered separately at the HTTP boundary.
+        from app.infrastructure.reply_sends import SqlTelegramReplySender
+
+        monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
         await dispatch_claim(runtime, telegram, claim)
         assert len(telegram.calls) == 1
 
@@ -735,3 +742,57 @@ async def test_canonical_membership_cannot_be_bypassed_by_lost_json_projection()
                 ).send(_command(seed, seed.draft_ids[0]))
             assert exc.value.code == "sequence_stopped"
         assert not telegram.calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "sender,expected", [(123, "active"), (12345, "stopped"), (None, "stopped")]
+)
+async def test_only_authoritative_gate_bot_echo_is_ignored(sender, expected):
+    async with runtime_fixture() as (runtime, sessions):
+        seed = await _seed_reply(sessions, draft_count=2)
+        q = await queue(runtime, sessions, seed)
+        command = inbound(seed)
+        command.payload["business_message"]["from"] = {"id": sender, "is_bot": True}
+        await accept(sessions, command)
+        async with sessions() as session:
+            sequence = await session.get(ReplySequence, q.sequence_id)
+            assert sequence.state == expected
+            if expected == "stopped":
+                assert sequence.stop_reason == "guard_unavailable"
+                assert (await session.scalar(select(ReplyDialogGuard.health_state))) == "blocked"
+
+
+@pytest.mark.anyio
+async def test_lost_guard_then_stop_commit_fences_paused_old_http_start(monkeypatch):
+    from app.infrastructure.reply_sequence_guard import DialogLease
+    from app.services.telegram_delivery_gate import require_reserved_start_window
+    from sqlalchemy import text
+
+    async with runtime_fixture() as (runtime, sessions):
+        seed = await _seed_reply(sessions, draft_count=2)
+        q = await queue(runtime, sessions, seed)
+        claim = await runtime.claim(q.sequence_id)
+
+        async def lose_barrier_then_resume(lease, effect):
+            await lease.connection.scalar(
+                text("SELECT pg_advisory_unlock(:key)"), {"key": lease.key}
+            )
+            await lease.connection.commit()
+            await accept(sessions, inbound(seed))
+            # The old process resumes only after the new guard owner committed stop.
+            return await effect
+
+        monkeypatch.setattr(DialogLease, "transport", lose_barrier_then_resume)
+
+        class PausedTelegram(FakeTelegram):
+            async def send_plain_message(self, **payload):
+                require_reserved_start_window(runtime.settings.telegram_bot_token)
+                return await super().send_plain_message(**payload)
+
+        telegram = PausedTelegram()
+        await dispatch_claim(runtime, telegram, claim)
+        assert not telegram.calls
+        async with sessions() as session:
+            assert (await session.get(ReplySequence, q.sequence_id)).state == "stopped"
+            assert (await session.scalar(select(SendAttempt.status))) == "cancelled"

@@ -121,7 +121,10 @@ reason, revision, notification state, due/cooldown and no-auto-resume evidence.
 - Stop during existing HTTP: ingress waits for the same advisory barrier. On its 2 s acquire timeout
   it cannot ACK durable receipt; provider retry is required. An already accepted HTTP request cannot
   be unsent. Once stop commits, the old sequence cannot start another request.
-- Lost guard connection: cancel transport and preserve ambiguity. HTTP has a 20 s deadline and
+- Lost guard connection: cancel transport and preserve ambiguity. Before a terminal stop with an
+  admitted attempt, hold the barrier and wait 110 ms: this exceeds the old 100 ms HTTP start window,
+  which begins before admission commit. A paused former guard owner cannot resume a fresh HTTP call
+  after stop commit; its adapter rejects the expired monotonic window. HTTP has a 20 s deadline and
   the dispatcher a 30 s envelope. Shutdown drains 20 s, cancels/observes 5 s; unresolved tasks retain
   ownership, disable admission, quarantine permits and terminate the process. Never restart a local pool
   whose HTTP tasks survived cancellation.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -410,9 +411,15 @@ class ReplySequenceRuntime:
         direction = "unresolved"
         if len(owners) == 1 and connection.is_enabled:
             owner = next(iter(owners))
-            if envelope.sender_id == owner or envelope.sender_is_bot:
+            if envelope.sender_id == owner or (
+                envelope.sender_is_bot and str(envelope.sender_id) == self.bot_prefix
+            ):
                 direction = "outbound"
-            elif envelope.sender_id is not None and str(envelope.sender_id) == envelope.chat_id:
+            elif (
+                not envelope.sender_is_bot
+                and envelope.sender_id is not None
+                and str(envelope.sender_id) == envelope.chat_id
+            ):
                 direction = "inbound"
         return IngressBinding(envelope, account.id, direction)
 
@@ -558,6 +565,13 @@ class ReplySequenceRuntime:
     ) -> None:
         if sequence.state != "active":
             return
+        if sequence.admitted_attempt_id is not None:
+            # A previous session barrier can have died while its process is paused.
+            # Admission's monotonic start window begins BEFORE its SQL commit.
+            # Observing that durable admission, then waiting longer than the window,
+            # fences a resumed old process at the literal HTTP adapter boundary.
+            # This delay never reclassifies an already-started request as unsent.
+            await asyncio.sleep(0.11)
         sequence.state = "stopped"
         sequence.stop_reason = reason
         sequence.stopped_at = now

@@ -53,7 +53,10 @@ production-проверку точного получателя. Полная о
 
 Файлы новых integration tests: `test_reply_sequence_dispatch_postgres.py` и
 `test_reply_sequence_acceptance_postgres.py`. Provider — синтетический adapter;
-сетевые пересечения проверяются Event barriers, а интервал 60 секунд — управляемым
+нагрузочный индексный тест фиксирует monotonic clock отправителя, чтобы не смешивать
+поиск кандидатов с задержкой fsync общего CI host. Проверка реального 100 ms окна
+в HTTP adapter остаётся отдельной. Сетевые пересечения проверяются Event barriers,
+а интервал 60 секунд — управляемым
 DB-clock seam без минутных sleep. PostgreSQL locks, уникальность, transactions и
 rollback реальные. HTTP boundary отдельно проверяется через httpx MockTransport.
 Ни один skipped-тест не засчитывается как passed.
