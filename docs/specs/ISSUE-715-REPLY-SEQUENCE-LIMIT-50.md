@@ -138,7 +138,7 @@ Application вызывает её на прежнем месте, после sco
 | tests/test_reply_sequences.py | Границы, подтверждение, scope, порядок, 50-позиционное расписание |
 | tests/test_mcp_routes.py | Реальный handler, ошибки, ответ 50, отсутствие вызова writer для 51 |
 | tests/test_mcp_surface_consistency.py | Совпадение input/output/application и описание |
-| tests/test_reply_sequences_postgres.py — новый | Атомарность, binding, полный цикл 50, рестарт, остановка и повтор |
+| tests/test_reply_sends_postgres.py — расширение существующего PostgreSQL-набора | Атомарность, binding, полный цикл 50, рестарт, остановка и повтор |
 | README.md; docs/PROJECT_HANDOFF.md | Согласованное описание и указатель |
 
 Worker/sender/config/models/migrations/workflows не входят в предполагаемый diff. Если тест выявит обязательный для #715 дефект в них, сначала обновить ТЗ с причиной и минимальной границей; не расширять скрытно задачу до #716.
@@ -183,9 +183,9 @@ Worker/sender/config/models/migrations/workflows не входят в предп
 Базовый набор команд после реализации:
 
 ```bash
-ruff check app/application/reply_sequences.py app/infrastructure/reply_sequences.py app/api/mcp_routes.py app/api/mcp_schemas.py tests/test_reply_sequences.py tests/test_reply_sequences_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py
+ruff check app/application/reply_sequences.py app/infrastructure/reply_sequences.py app/api/mcp_routes.py app/api/mcp_schemas.py tests/test_reply_sequences.py tests/test_reply_sends_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py
 mypy app
-pytest -q tests/test_reply_sequences.py tests/test_reply_sequences_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py tests/test_reply_sends_postgres.py tests/test_reply_send_application.py
+pytest -q tests/test_reply_sequences.py tests/test_reply_sends_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py tests/test_reply_sends_postgres.py tests/test_reply_send_application.py
 ```
 
 DATABASE_URL должен указывать только на одноразовый тестовый PostgreSQL. Новые PG fixtures используют отдельную случайную schema и гарантированный cleanup; reuse существующего шаблона из test_reply_sends_postgres.py без общей переработки fixtures.
@@ -233,7 +233,11 @@ DATABASE_URL должен указывать только на одноразо�
 - Нельзя удалять/requeue неизвестные попытки ради отката. Управление уже принятыми очередями и production revision требует отдельного точного эксплуатационного действия.
 - На стадии ТЗ откат кода не нужен: runtime-код не изменяется.
 
-## 10. Передача и окончание стадии
+## 10. Уточнение исполнения после команды 27.09.2026
+
+Марк разрешил реализацию, выпуск в Production и проверку. PostgreSQL-сценарии добавляются в существующий `tests/test_reply_sends_postgres.py`, где уже есть изолированная schema и синтетический seed; отдельный файл не создаётся. Задача #718 об остановке при любом входящем сообщении остаётся отдельным outcome и не принимается автоматически через #715.
+
+## 11. Передача и окончание стадии
 
 Следующий исполнитель начинает с #715, этого файла, текущих AGENTS/WORK-PARENT/bootstrap и актуального head. Чат для восстановления плана не требуется.
 

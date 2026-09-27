@@ -15,6 +15,7 @@ from app.application.reply_sequences import (
     QueuedReplySequence,
     QueuedReplySequenceItem,
     ReplySequenceError,
+    validate_sequence_draft_ids,
 )
 from app.models.domain import (
     Account,
@@ -49,6 +50,7 @@ class SqlReplySequenceWriter:
     async def queue(
         self, command: QueueApprovedReplySequenceCommand
     ) -> QueuedReplySequence:
+        validate_sequence_draft_ids(command.draft_ids)
         scope = command.principal.access_scope
         result = await self._session.execute(
             select(ReplyDraft, ReplyTask, Conversation, Message, Account)

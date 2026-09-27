@@ -1,5 +1,11 @@
 # Gate project handoff
 
+> Gate #715 increases the explicitly confirmed reply-sequence contract to 2–50
+> saved text drafts (see [specification](specs/ISSUE-715-REPLY-SEQUENCE-LIMIT-50.md)).
+> Queue acceptance returns `queued=true, sent=false`; worker activation and
+> actual delivery require separate evidence. The historical Production snapshot
+> below is not evidence of a delivered 50-item series.
+
 > Canonical continuation guide for a new product owner, developer or implementation agent.  
 > Current `main` / automatic Railway deployment verified on 2026-07-22 at `d30d63ab598faae9ede4b3199caa3e31482aeb10`; exact-head CI for PR #278 (run `29928856018`) succeeded.  
 > The detailed production snapshot remains dated 2026-07-18 at `f879fefde08dbd1264829ce201808f726581eb1f` (`f879fefde08d` in Gate status); re-query before operational use.  

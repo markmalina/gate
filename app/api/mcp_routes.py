@@ -62,6 +62,8 @@ from app.application.reply_sends import (
     SendApprovedReplyService,
 )
 from app.application.reply_sequences import (
+    MAX_SEQUENCE_DRAFTS,
+    MIN_SEQUENCE_DRAFTS,
     QueueApprovedReplySequenceCommand,
     QueueApprovedReplySequenceService,
     ReplySequenceError,
@@ -3211,7 +3213,8 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
         "name": "gate_queue_approved_reply_sequence",
         "title": "Queue an explicitly approved Gate reply sequence",
         "description": (
-            "Queue two to twenty saved drafts for the same RU/BY recipient. "
+            f"Queue {MIN_SEQUENCE_DRAFTS} to {MAX_SEQUENCE_DRAFTS} saved drafts "
+            "for the same RU/BY recipient. "
             "Call only after showing Mark the account, recipient and every final "
             "message in order and receiving one explicit confirmation of the whole "
             "sequence. The first item becomes due immediately and later items no "
@@ -3222,8 +3225,8 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
             "properties": {
                 "draft_ids": {
                     "type": "array",
-                    "minItems": 2,
-                    "maxItems": 20,
+                    "minItems": MIN_SEQUENCE_DRAFTS,
+                    "maxItems": MAX_SEQUENCE_DRAFTS,
                     "uniqueItems": True,
                     "items": {"type": "string", "format": "uuid"},
                 },

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.application.reply_sequences import MAX_SEQUENCE_DRAFTS, MIN_SEQUENCE_DRAFTS
+
 JsonObject = dict[str, Any]
 
 
@@ -1905,8 +1907,8 @@ SEQUENCE_SUCCESS_SCHEMA = _object(
         "sent": {"type": "boolean", "const": False},
         "items": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 20,
+            "minItems": MIN_SEQUENCE_DRAFTS,
+            "maxItems": MAX_SEQUENCE_DRAFTS,
             "items": _object(
                 {
                     "draft_id": {"type": "string", "format": "uuid"},
