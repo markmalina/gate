@@ -39,11 +39,17 @@ class TelegramApiError(RuntimeError):
         error_code: int | None,
         description: str,
         http_status: int | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(description)
         self.error_code = error_code
         self.description = description
         self.http_status = http_status
+        self.retry_after_seconds = (
+            retry_after_seconds
+            if type(retry_after_seconds) is int and retry_after_seconds >= 0
+            else None
+        )
 
 
 class TelegramClient:
@@ -358,9 +364,19 @@ class TelegramClient:
                 error_code=error_code,
                 description=description[:512],
                 http_status=response.status_code,
+                retry_after_seconds=_telegram_retry_after(result.get("parameters")),
             )
 
         return cast(dict[str, Any], result)
+
+
+def _telegram_retry_after(parameters: object) -> int | None:
+    """Read only a non-negative integer; never coerce or shorten provider cooldowns."""
+
+    if not isinstance(parameters, dict):
+        return None
+    value = parameters.get("retry_after")
+    return value if type(value) is int and value >= 0 else None
 
 
 def _looks_like_html_message(text: str) -> bool:

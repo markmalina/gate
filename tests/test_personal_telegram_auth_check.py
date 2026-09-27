@@ -73,9 +73,15 @@ def test_owner_authorization_reads_only_two_account_facts(
     assert Client.instances[-1].options["receive_updates"] is False
     assert Client.instances[-1].options["request_retries"] == 0
     serialized = ready.as_json()
-    assert "42" not in serialized and "synthetic-api-secret" not in serialized
+    payload = json.loads(serialized)
+    assert set(payload) == {
+        "configured", "authenticated", "runtime_connected", "probe_connected",
+        "send_enabled", "create_group_enabled", "last_successful_check", "error_code",
+    }
+    assert payload["error_code"] is None
+    assert payload["last_successful_check"] == ready.last_successful_check
+    assert "synthetic-api-secret" not in serialized
     assert "synthetic-session-secret" not in serialized
-    assert json.loads(serialized)["error_code"] is None
 
     Client.owner_id = 99
     mismatch = check()

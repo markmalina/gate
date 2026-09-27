@@ -253,7 +253,7 @@ Active tools:
 | `gate_prepare_reply_document` | `gate:drafts:write` | Stages one scoped PDF/ZIP with SHA-256 and metadata; never sends |
 | `gate_send_approved_reply` | `gate:messages:send` | Sends the exact saved draft only after explicit confirmation of account, recipient and final text |
 | `gate_send_approved_document` | `gate:messages:send` | Sends the prepared file only after exact account, recipient, file and caption confirmation; disabled by default |
-| `gate_queue_approved_reply_sequence` | `gate:messages:send` | Queues one explicitly confirmed ordered set of saved drafts |
+| `gate_queue_approved_reply_sequence` | `gate:messages:send` | Queues 2–50 unique saved text drafts for one explicitly confirmed RU/BY recipient and reply task |
 | `gate_alpha_list_installations` | `gate:status:read` | Lists Alpha groups by label and opaque reference; never exposes Telegram IDs |
 | `gate_alpha_control_installation` | `gate:agents:manage` | Confirmed approve, pause or resume with a reviewed-state fence |
 | `gate_alpha_run_model_preflight` | `gate:agents:manage` | One-shot synthetic OpenAI check; no group content or Telegram delivery |
@@ -302,7 +302,7 @@ Sending is the highest-risk currently active path. These invariants are non-nego
 
 Repeated calls for the same draft are idempotent. Separately persisted drafts that Mark explicitly confirms may be sent sequentially from the same reply task, including after its first successful send. A newer inbound reply task supersedes that follow-up path, and any active or `unknown` attempt fences the conversation until its outcome is known. A timeout or crash ambiguity becomes `unknown` and is never retried automatically. Never fall back across RU/BY boundaries. Never send merely because a draft exists.
 
-For an approved message chain, save every paragraph as a separate draft before the first delivery, show Mark the ordered texts plus account and recipient, then call `gate_queue_approved_reply_sequence` once with all draft IDs and `interval_seconds=60`. The queue stores the approval durably. Its first item is due immediately; every later item is held until at least 60 seconds after the preceding confirmed delivery. A newer inbound task, failed send or `unknown` outcome stops the remaining items. The worker is disabled by default and requires `GATE_REPLY_SEQUENCE_WORKER_ENABLED=true`; `GATE_REPLY_SEQUENCE_POLL_SECONDS` controls polling between 1 and 30 seconds.
+For an approved message chain, save 2–50 unique text paragraphs as separate drafts for the same reply task before the first delivery, show Mark the ordered texts plus RU/BY account and recipient, then call `gate_queue_approved_reply_sequence` once with all draft IDs and `interval_seconds=60`. The queue stores the approval durably and returns `queued=true, sent=false`. Its first item is due immediately; every later item is held until at least 60 seconds after the preceding confirmed delivery. A newer inbound task, failed send or `unknown` outcome stops the remaining items. The worker is disabled by default and requires `GATE_REPLY_SEQUENCE_WORKER_ENABLED=true`; `GATE_REPLY_SEQUENCE_POLL_SECONDS` controls polling between 1 and 30 seconds. The current worker discovery window is limited to 500 rows; accepting a 50-draft queue does not itself establish timely delivery when that window is saturated.
 
 The confirmed production send to the BY account succeeded after Business connection reconciliation. This proves the path, not permission for future automatic sends.
 
