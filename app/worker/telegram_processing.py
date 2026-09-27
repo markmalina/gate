@@ -1183,6 +1183,9 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    from app.infrastructure.database import attach_reply_sequence_runtime
+
+    sequences = attach_reply_sequence_runtime(engine, sessions, settings)
     if (
         settings.gate_become_connector_enabled
         and settings.gate_become_canary_enabled
@@ -2018,6 +2021,8 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         await _drain_beta_context(sessions)
         return result
     finally:
+        if sequences is not None:
+            await sequences.close()
         await engine.dispose()
 
 
@@ -2163,4 +2168,5 @@ def _is_become_pilot_review_payload(payload: dict[str, object]) -> bool:
         and bool(value.strip())
         and not value.strip().startswith("/")
     )
+
 

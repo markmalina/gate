@@ -65,6 +65,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         raise RuntimeError("BECOME Pilot Slice 1 kill switch is off")
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+    from app.infrastructure.database import attach_reply_sequence_runtime
+
+    sequences = attach_reply_sequence_runtime(engine, sessions, settings)
     store = SessionFactoryPilotTranscriptReviewStore(sessions)
     slice3_store = SessionFactoryLearnerInvitationStore(sessions)
     result: dict[str, object]
@@ -218,6 +221,8 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         )
         return result
     finally:
+        if sequences is not None:
+            await sequences.close()
         await engine.dispose()
 
 

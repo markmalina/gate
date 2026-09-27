@@ -82,6 +82,11 @@ async def run_reply_sequence_once(
 ) -> int:
     """Deliver at most one due draft per sequence and return the sent count."""
 
+    if (
+        settings.gate_reply_sequence_dispatch_v2_enabled
+        or settings.gate_reply_sequence_stop_on_inbound_enabled
+    ):
+        raise RuntimeError("Legacy sequence iteration is disabled by the v2 guard")
     current_time = now or datetime.now(UTC)
     rows = await _discover_sequence_rows(session_factory)
 
@@ -348,9 +353,7 @@ async def _record_sequence_outcome(
 ) -> None:
     async with session_factory() as session:
         result = await session.execute(
-            select(ReplyDraft)
-            .where(ReplyDraft.account_id == item.account_id)
-            .with_for_update()
+            select(ReplyDraft).where(ReplyDraft.account_id == item.account_id).with_for_update()
         )
         drafts = result.scalars().all()
         for draft in drafts:
@@ -401,6 +404,16 @@ async def run_reply_sequence_worker_loop(
 ) -> None:
     """Poll durable schedules; cancellation is owned by the application lifespan."""
 
+    if settings.gate_reply_sequence_dispatch_v2_enabled:
+        from app.infrastructure.reply_sequence_runtime import runtime_for_session
+        from app.worker.reply_sequence_dispatch import run_dispatch_loop
+
+        async with session_factory() as session:
+            runtime = runtime_for_session(session)
+        if runtime is None:
+            raise RuntimeError("Sequence v2 runtime is not initialized")
+        await run_dispatch_loop(runtime, telegram, health_reporter=health_reporter)
+        return
     while True:
         try:
             sent = await run_reply_sequence_once(

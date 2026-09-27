@@ -157,6 +157,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
                 reply_sequence_task: asyncio.Task[None] | None = None
+                sequence_notification_task: asyncio.Task[None] | None = None
                 reply_document_cleanup_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
@@ -241,6 +242,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 health_reporter=worker_health,
                             )
                         )
+                    if database_runtime.sequences is not None and settings.gate_reply_sequence_notifications_enabled:
+                        from app.worker.reply_sequence_notifications import run_notification_loop
+                        sequence_notification_task = asyncio.create_task(run_notification_loop(
+                            database_runtime.sequences, _app.state.telegram_client))
                     if reply_sequence_worker_enabled:
                         reply_sequence_task = asyncio.create_task(
                             run_reply_sequence_worker_loop(
@@ -264,6 +269,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     yield
                 finally:
                     try:
+                        if sequence_notification_task is not None:
+                            sequence_notification_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await sequence_notification_task
                         if aqub_food_media_task is not None:
                             if not aqub_food_media_task.done():
                                 aqub_food_media_task.cancel()

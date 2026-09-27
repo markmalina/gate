@@ -76,6 +76,8 @@ TOOL_CONTRACTS = (
         "send_tools",
         "_gate_queue_approved_reply_sequence_tool",
     ),
+    ToolContract("gate_get_reply_sequence", "gate:inbox:read", "read_only_tools",
+                 "_gate_get_reply_sequence_tool", True),
     ToolContract(
         "gate_alpha_list_installations",
         "gate:status:read",
@@ -149,7 +151,7 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_every_mcp_projection_matches_the_eighteen_tool_contract() -> None:
+async def test_every_mcp_projection_matches_the_nineteen_tool_contract() -> None:
     settings = Settings(
         _env_file=None,
         GATE_MCP_ENABLED=True,
@@ -171,7 +173,7 @@ async def test_every_mcp_projection_matches_the_eighteen_tool_contract() -> None
         contract.name: contract.scope for contract in TOOL_CONTRACTS
     }
 
-    assert len(TOOL_CONTRACTS) == 18
+    assert len(TOOL_CONTRACTS) == 19
     assert [tool["name"] for tool in advertised_tools] == expected_names
     assert mcp_routes.MCP_TOOL_NAMES == expected_names
     assert mcp_routes.MCP_TOOL_SCOPES == expected_scopes

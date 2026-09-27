@@ -3,11 +3,14 @@
 import hashlib
 import hmac
 import os
+import time
 from collections.abc import Mapping
 from pathlib import PurePosixPath
 from typing import Any, cast
 
 import httpx
+
+from app.services.telegram_delivery_gate import delivery_gate
 
 
 def build_telegram_http_client() -> httpx.AsyncClient:
@@ -188,13 +191,27 @@ class TelegramClient:
         payload: dict[str, str],
         file: tuple[str, tuple[str, bytes, str]],
     ) -> dict[str, Any]:
+        gate = delivery_gate(self._credential)
+        if gate is not None:
+            admitted = await gate.before(payload)
+            if time.monotonic() - admitted > 0.1:
+                raise TelegramApiError(
+                    error_code=429,
+                    description="Transport start window expired",
+                    retry_after_seconds=1,
+                )
         response = await self._http_client.post(
             url,
             data=payload,
             files={file[0]: file[1]},
             timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
         )
-        return self._parse_telegram_response(response)
+        try:
+            return self._parse_telegram_response(response)
+        except TelegramApiError as exc:
+            if gate is not None and exc.error_code == 429:
+                await gate.failed(payload, exc.retry_after_seconds)
+            raise
 
     async def edit_message_text(
         self,
@@ -334,11 +351,23 @@ class TelegramClient:
             payload={"business_connection_id": business_connection_id},
         )
 
-    async def _post_telegram_json(
-        self, *, url: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _post_telegram_json(self, *, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        gate = delivery_gate(self._credential) if url.rsplit("/", 1)[-1] == "sendMessage" else None
+        if gate is not None:
+            admitted = await gate.before(payload)
+            if time.monotonic() - admitted > 0.1:
+                raise TelegramApiError(
+                    error_code=429,
+                    description="Transport start window expired",
+                    retry_after_seconds=1,
+                )
         response = await self._http_client.post(url, json=payload)
-        return self._parse_telegram_response(response)
+        try:
+            return self._parse_telegram_response(response)
+        except TelegramApiError as exc:
+            if gate is not None and exc.error_code == 429:
+                await gate.failed(payload, exc.retry_after_seconds)
+            raise
 
     @staticmethod
     def _parse_telegram_response(response: httpx.Response) -> dict[str, Any]:
@@ -435,9 +464,7 @@ def _build_draft_edit_url(
         or ""
     ).strip()
     secret = (
-        environ.get("ADMIN_BEARER_TOKEN")
-        or environ.get("TELEGRAM_WEBHOOK_SECRET")
-        or ""
+        environ.get("ADMIN_BEARER_TOKEN") or environ.get("TELEGRAM_WEBHOOK_SECRET") or ""
     ).strip()
     if not raw_base_url or not secret:
         return None

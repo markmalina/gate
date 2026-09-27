@@ -34,6 +34,7 @@ dev = [
 ]
 
 [project.scripts]
+gate-reply-sequence-control = "app.worker.reply_sequence_control:main"
 gate-contact-sync = "app.contact_sync.cli:main"
 gate-personal-telegram-enroll = "app.personal_telegram.cli:main"
 gate-personal-telegram-preflight = "app.personal_telegram.preflight_cli:main"

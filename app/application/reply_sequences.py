@@ -52,6 +52,7 @@ class QueueApprovedReplySequenceCommand:
     expected_account: str
     expected_recipient_chat_id: str
     interval_seconds: int = SEQUENCE_INTERVAL_SECONDS
+    expected_inbound_revision: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,8 @@ class QueuedReplySequence:
     recipient_chat_id: str
     interval_seconds: int
     items: tuple[QueuedReplySequenceItem, ...]
+    queued_revision: int | None = None
+    state: str | None = None
 
 
 class ReplySequenceWriter(Protocol):
@@ -131,5 +134,7 @@ class QueueApprovedReplySequenceService:
                 expected_account=account,
                 expected_recipient_chat_id=recipient,
                 interval_seconds=SEQUENCE_INTERVAL_SECONDS,
+                expected_inbound_revision=command.expected_inbound_revision,
             )
         )
+

@@ -47,7 +47,16 @@ class SqlReplySequenceWriter:
         self._session = session
         self._now = now
 
-    async def queue(
+    async def queue(self, command: QueueApprovedReplySequenceCommand) -> QueuedReplySequence:
+        validate_sequence_draft_ids(command.draft_ids)
+        from app.infrastructure.reply_sequence_runtime import runtime_for_session
+
+        runtime = runtime_for_session(self._session)
+        if runtime is not None:
+            return await runtime.queue(self._session, command, self._queue_legacy)
+        return await self._queue_legacy(command)
+
+    async def _queue_legacy(
         self, command: QueueApprovedReplySequenceCommand
     ) -> QueuedReplySequence:
         validate_sequence_draft_ids(command.draft_ids)
@@ -174,9 +183,7 @@ class SqlReplySequenceWriter:
         queued_at = self._now or datetime.now(UTC)
         items: list[QueuedReplySequenceItem] = []
         for position, (draft, *_rest) in enumerate(ordered):
-            scheduled_at = queued_at + timedelta(
-                seconds=position * command.interval_seconds
-            )
+            scheduled_at = queued_at + timedelta(seconds=position * command.interval_seconds)
             context = dict(draft.prompt_context or {})
             context[SEQUENCE_CONTEXT_KEY] = {
                 "id": str(sequence_id),

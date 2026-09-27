@@ -1,6 +1,10 @@
 """PostgreSQL adapters for durable Telegram receipt and outbox processing."""
 
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.infrastructure.reply_sequence_runtime import IngressBinding
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -62,6 +66,20 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
         self,
         command: AcceptTelegramReceiptCommand,
     ) -> TelegramReceiptAcceptance:
+        from app.infrastructure.reply_sequence_runtime import runtime_for_session
+
+        runtime = runtime_for_session(self._session)
+        if runtime is None:
+            return await self._create_receipt(command)
+        async with runtime.ingress(self._session, command) as binding:
+            return await self._create_receipt(command, binding=binding)
+
+    async def _create_receipt(
+        self,
+        command: AcceptTelegramReceiptCommand,
+        *,
+        binding: "IngressBinding | None" = None,
+    ) -> TelegramReceiptAcceptance:
         incoming_digest = canonical_telegram_payload_digest(command.payload)
         receipt_id = uuid4()
         outbox_event_id = uuid4()
@@ -98,9 +116,7 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 )
                 existing = existing_result.one()
                 if _durable_payload_digest(existing[2]) != incoming_digest:
-                    raise TelegramReceiptError(
-                        "telegram_receipt_mutated_replay"
-                    )
+                    raise TelegramReceiptError("telegram_receipt_mutated_replay")
                 await self._session.commit()
                 return TelegramReceiptAcceptance(
                     receipt_id=str(existing[0]),
@@ -115,6 +131,13 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                     available_at=command.received_at,
                 )
             )
+            from app.infrastructure.reply_sequence_runtime import runtime_for_session
+
+            runtime = runtime_for_session(self._session)
+            if runtime is not None:
+                await runtime.inbound(
+                    self._session, binding, inserted_receipt_id, command.received_at
+                )
             await self._session.commit()
             return TelegramReceiptAcceptance(
                 receipt_id=str(inserted_receipt_id),
@@ -156,13 +179,9 @@ class SqlAlphaCapacityDeadLetterReplayer:
                 .where(
                     TelegramReceipt.bot_key == bot_key,
                     TelegramReceipt.status == TelegramReceiptStatus.DEAD_LETTER.value,
-                    TelegramReceipt.last_error_code.in_(
-                        ALPHA_GROUP_CAPACITY_ERROR_CODES
-                    ),
-                    TelegramOutboxEvent.status
-                    == TelegramOutboxStatus.DEAD_LETTER.value,
-                    TelegramOutboxEvent.last_error_code
-                    == TelegramReceipt.last_error_code,
+                    TelegramReceipt.last_error_code.in_(ALPHA_GROUP_CAPACITY_ERROR_CODES),
+                    TelegramOutboxEvent.status == TelegramOutboxStatus.DEAD_LETTER.value,
+                    TelegramOutboxEvent.last_error_code == TelegramReceipt.last_error_code,
                 )
                 .order_by(
                     TelegramReceipt.received_at,

@@ -144,6 +144,8 @@ from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_documents import SqlReplyDocumentWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
+from app.infrastructure.reply_sequence_runtime import runtime_for_session
+from app.models.reply_sequences import ReplyDialogGuard
 from app.infrastructure.alpha_canary import (
     alpha_canary_active_installation_count,
     alpha_canary_audit_counts,
@@ -207,6 +209,7 @@ MCP_TOOL_NAMES = [
     "gate_send_approved_reply",
     "gate_send_approved_document",
     "gate_queue_approved_reply_sequence",
+    "gate_get_reply_sequence",
     "gate_alpha_list_installations",
     "gate_alpha_get_webhook_status",
     "gate_alpha_control_installation",
@@ -229,6 +232,7 @@ MCP_TOOL_SCOPES = {
     "gate_send_approved_reply": "gate:messages:send",
     "gate_send_approved_document": "gate:messages:send",
     "gate_queue_approved_reply_sequence": "gate:messages:send",
+    "gate_get_reply_sequence": "gate:inbox:read",
     "gate_alpha_list_installations": "gate:status:read",
     "gate_alpha_get_webhook_status": "gate:status:read",
     "gate_alpha_control_installation": "gate:agents:manage",
@@ -294,6 +298,7 @@ async def mcp_endpoint(
                     _gate_send_approved_reply_tool(settings),
                     _gate_send_approved_document_tool(settings),
                     _gate_queue_approved_reply_sequence_tool(settings),
+                    _gate_get_reply_sequence_tool(settings),
                     _gate_alpha_list_installations_tool(settings),
                     _gate_alpha_get_webhook_status_tool(settings),
                     _gate_alpha_control_installation_tool(settings),
@@ -350,7 +355,8 @@ async def mcp_endpoint(
                 configured_workspace=settings.gate_workspace_id,
                 account_id=settings.dropbox_call_account_id,
                 project_ids=frozenset(str(value) for value in principal.access_scope.project_ids),
-                intake_project_allowed=UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids,
+                intake_project_allowed=UNCLASSIFIED_PROJECT_ID
+                in principal.access_scope.project_ids,
                 enabled=settings.gate_dropbox_call_intake_enabled,
                 configuration={
                     "app_key": bool(settings.dropbox_call_app_key),
@@ -371,12 +377,10 @@ async def mcp_endpoint(
                 workspace_key=principal.access_scope.workspace_id,
                 settings=settings,
             )
-            snapshot["beta_wedding_space"] = (
-                await beta_wedding_space_operational_status(
-                    session,
-                    workspace_key=principal.access_scope.workspace_id,
-                    settings=settings,
-                )
+            snapshot["beta_wedding_space"] = await beta_wedding_space_operational_status(
+                session,
+                workspace_key=principal.access_scope.workspace_id,
+                settings=settings,
             )
             snapshot["universal_mayak"] = await universal_mayak_operational_status(
                 session,
@@ -386,29 +390,19 @@ async def mcp_endpoint(
             become_status = await become_controlled_intake_status(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
-                transcription_enabled=(
-                    settings.gate_become_voice_transcription_enabled
-                ),
+                transcription_enabled=(settings.gate_become_voice_transcription_enabled),
                 transcription_data_gate_approved=(
                     settings.gate_become_voice_transcription_data_gate_approved
                 ),
-                transcription_max_calls=(
-                    settings.gate_become_voice_transcription_max_calls
-                ),
-                transcription_api_key_configured=bool(
-                    settings.openai_api_key.get_secret_value()
-                ),
-                chain_execution_enabled=(
-                    settings.gate_become_i4_chain_execution_enabled
-                ),
+                transcription_max_calls=(settings.gate_become_voice_transcription_max_calls),
+                transcription_api_key_configured=bool(settings.openai_api_key.get_secret_value()),
+                chain_execution_enabled=(settings.gate_become_i4_chain_execution_enabled),
                 now=datetime.now(UTC),
             )
             recovery_status = await become_i4_recovery_status(
                 session,
                 workspace_key=principal.access_scope.workspace_id,
-                execution_enabled=(
-                    settings.gate_become_i4_recovery_execution_enabled
-                ),
+                execution_enabled=(settings.gate_become_i4_recovery_execution_enabled),
                 max_posts=settings.gate_become_i4_recovery_max_posts,
             )
             become_status.update(recovery_status)
@@ -434,9 +428,7 @@ async def mcp_endpoint(
                     session,
                     workspace_key=principal.access_scope.workspace_id,
                     enabled=settings.gate_telegram_voice_transcription_enabled,
-                    api_key_configured=bool(
-                        settings.openai_api_key.get_secret_value()
-                    ),
+                    api_key_configured=bool(settings.openai_api_key.get_secret_value()),
                     model=settings.gate_telegram_voice_transcription_model,
                     now=datetime.now(UTC),
                 )
@@ -467,6 +459,9 @@ async def mcp_endpoint(
                     http_client=slice3_status_client,
                     now=datetime.now(UTC),
                 )
+            sequence_runtime = runtime_for_session(session)
+            if sequence_runtime is not None:
+                snapshot["reply_sequences"] = await sequence_runtime.summaries(session, principal)
             return _tool_result(snapshot, _format_status_text(snapshot), request_id)
         if tool_name == "gate_alpha_list_installations":
             return await _alpha_list_installations_tool_result(
@@ -549,6 +544,9 @@ async def mcp_endpoint(
                 scope=principal.access_scope,
                 limit=_bounded_limit(arguments.get("limit"), default=10, maximum=50),
             )
+            sequence_runtime = runtime_for_session(session)
+            if sequence_runtime is not None:
+                inbox["reply_sequences"] = await sequence_runtime.summaries(session, principal)
             return _tool_result(inbox, _format_unanswered_text(inbox), request_id)
         if tool_name == "gate_get_reply_context":
             return await _get_reply_context_tool_result(
@@ -590,6 +588,10 @@ async def mcp_endpoint(
                 session=session,
                 telegram=telegram,
                 settings=settings,
+            )
+        if tool_name == "gate_get_reply_sequence":
+            return await _get_reply_sequence_tool_result(
+                request_id=request_id, arguments=arguments, principal=principal, session=session
             )
         if tool_name == "gate_queue_approved_reply_sequence":
             return await _queue_approved_reply_sequence_tool_result(
@@ -782,9 +784,7 @@ async def _get_reply_context_tool_result(
             payload_kind=call_selector,
         )
     try:
-        latest_voice_transcript_alias = _parse_latest_voice_transcript_selector(
-            raw_task_id
-        )
+        latest_voice_transcript_alias = _parse_latest_voice_transcript_selector(raw_task_id)
     except ValueError:
         return _tool_error_result(
             request_id=request_id,
@@ -832,9 +832,7 @@ async def _get_reply_context_tool_result(
             session=session,
         )
     try:
-        task_id, voice_message_id, attachment_selection = (
-            _parse_reply_context_selector(raw_task_id)
-        )
+        task_id, voice_message_id, attachment_selection = _parse_reply_context_selector(raw_task_id)
     except ValueError:
         return _tool_error_result(
             request_id=request_id,
@@ -891,6 +889,21 @@ async def _get_reply_context_tool_result(
             principal=principal,
             session=session,
             settings=settings,
+        )
+    sequence_runtime = runtime_for_session(session)
+    if sequence_runtime is not None:
+        account_id = UUID(context["account"]["id"])
+        chat_id = context["conversation"]["chat_id"]
+        guard = await session.scalar(
+            select(ReplyDialogGuard).where(
+                ReplyDialogGuard.workspace_ref == principal.access_scope.workspace_id,
+                ReplyDialogGuard.account_id == account_id,
+                ReplyDialogGuard.provider_chat_id == chat_id,
+            )
+        )
+        context["dialog_inbound_revision"] = guard.inbound_revision if guard else 0
+        context["reply_sequences"] = await sequence_runtime.summaries(
+            session, principal, account_id=account_id, chat_id=chat_id
         )
     return _tool_result(
         context,
@@ -986,16 +999,10 @@ async def _latest_phone_call_tool_result(
         recording.filename,
     )
     if payload_kind == "transcript":
-        if (
-            recording.transcription_status != "transcribed"
-            or recording.transcript_text is None
-        ):
+        if recording.transcription_status != "transcribed" or recording.transcript_text is None:
             return _tool_error_result(
                 request_id=request_id,
-                code=(
-                    recording.transcription_reason_code
-                    or "phone_call_transcription_pending"
-                ),
+                code=(recording.transcription_reason_code or "phone_call_transcription_pending"),
                 message="The latest mobile call has no completed transcript",
             )
         return _jsonrpc_result(
@@ -1096,12 +1103,8 @@ async def _latest_voice_archive_tool_result(
         .where(
             _voice_account_selector_filter(account_alias),
             Account.id.in_(principal.access_scope.account_ids),
-            TelegramVoiceArchive.account_id.in_(
-                principal.access_scope.account_ids
-            ),
-            TelegramVoiceArchive.project_id.in_(
-                principal.access_scope.project_ids
-            ),
+            TelegramVoiceArchive.account_id.in_(principal.access_scope.account_ids),
+            TelegramVoiceArchive.project_id.in_(principal.access_scope.project_ids),
         )
         .order_by(
             TelegramVoiceArchive.received_at.desc(),
@@ -1191,10 +1194,7 @@ async def _voice_transcript_tool_result(
     session: AsyncSession,
     settings: Settings,
 ) -> JsonObject:
-    if (
-        archive.transcription_status == "transcribed"
-        and archive.transcript_text is not None
-    ):
+    if archive.transcription_status == "transcribed" and archive.transcript_text is not None:
         return _jsonrpc_result(
             request_id=request_id,
             result={
@@ -1211,10 +1211,7 @@ async def _voice_transcript_tool_result(
     if archive.transcription_status is not None:
         return _tool_error_result(
             request_id=request_id,
-            code=(
-                archive.transcription_reason_code
-                or "telegram_voice_transcription_blocked"
-            ),
+            code=(archive.transcription_reason_code or "telegram_voice_transcription_blocked"),
             message="Stored OpenAI voice transcription has no text",
         )
 
@@ -1288,9 +1285,7 @@ async def _voice_transcript_tool_result(
     archive.transcription_status = transcription.outcome.value
     archive.transcript_text = transcription.alpha_input_text
     archive.transcript_language = "ru"
-    archive.transcription_model = (
-        settings.gate_telegram_voice_transcription_model
-    )
+    archive.transcription_model = settings.gate_telegram_voice_transcription_model
     archive.transcription_reason_code = transcription.reason_code
     archive.transcribed_at = occurred_at
     await session.commit()
@@ -1326,11 +1321,7 @@ def _parse_reply_context_selector(
     if len(attachment_parts) == 2 and all(attachment_parts):
         task_raw, selection_raw = attachment_parts
         message_parts = selection_raw.rsplit(":", maxsplit=1)
-        if (
-            len(message_parts) != 2
-            or not all(message_parts)
-            or not message_parts[1].isdigit()
-        ):
+        if len(message_parts) != 2 or not all(message_parts) or not message_parts[1].isdigit():
             raise ValueError("invalid attachment selector")
         attachment_index = int(message_parts[1])
         if attachment_index < 0 or attachment_index > 32:
@@ -1362,9 +1353,7 @@ async def _attachment_reply_context_tool_result(
     settings: Settings,
 ) -> JsonObject:
     visible_message_ids = {
-        item.get("id")
-        for item in context.get("messages", [])
-        if isinstance(item, dict)
+        item.get("id") for item in context.get("messages", []) if isinstance(item, dict)
     }
     if str(message_id) not in visible_message_ids:
         return _tool_error_result(
@@ -1498,28 +1487,17 @@ async def _download_telegram_attachment(
                 or metadata.get("ok") is not True
                 or not isinstance(metadata.get("result"), dict)
             ):
-                raise TelegramAttachmentError(
-                    "telegram_attachment_get_file_rejected"
-                )
+                raise TelegramAttachmentError("telegram_attachment_get_file_rejected")
             file_metadata = metadata["result"]
             file_size = file_metadata.get("file_size")
-            if (
-                type(file_size) is int
-                and file_size > TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES
-            ):
-                raise TelegramAttachmentError(
-                    "telegram_attachment_cloud_limit_exceeded"
-                )
+            if type(file_size) is int and file_size > TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES:
+                raise TelegramAttachmentError("telegram_attachment_cloud_limit_exceeded")
             file_path = file_metadata.get("file_path")
             if not isinstance(file_path, str) or not file_path.strip():
-                raise TelegramAttachmentError(
-                    "telegram_attachment_file_path_missing"
-                )
+                raise TelegramAttachmentError("telegram_attachment_file_path_missing")
             path = PurePosixPath(file_path.strip().lstrip("/"))
             if any(part in {".", ".."} for part in path.parts):
-                raise TelegramAttachmentError(
-                    "telegram_attachment_file_path_invalid"
-                )
+                raise TelegramAttachmentError("telegram_attachment_file_path_invalid")
             safe_path = quote(path.as_posix(), safe="/")
             data = bytearray()
             media_type = attachment.mime_type
@@ -1533,19 +1511,12 @@ async def _download_telegram_attachment(
                     media_type = header_type.split(";", maxsplit=1)[0].strip()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
-                    if (
-                        len(data)
-                        > TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES
-                    ):
-                        raise TelegramAttachmentError(
-                            "telegram_attachment_cloud_limit_exceeded"
-                        )
+                    if len(data) > TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES:
+                        raise TelegramAttachmentError("telegram_attachment_cloud_limit_exceeded")
     except TelegramAttachmentError:
         raise
     except (httpx.HTTPError, ValueError):
-        raise TelegramAttachmentError(
-            "telegram_attachment_download_failed"
-        ) from None
+        raise TelegramAttachmentError("telegram_attachment_download_failed") from None
     if not data:
         raise TelegramAttachmentError("telegram_attachment_empty")
     return bytes(data), media_type or "application/octet-stream"
@@ -1579,10 +1550,7 @@ def _attachment_content_tool_result(
         content_block = {
             "type": "resource",
             "resource": {
-                "uri": (
-                    f"gate://telegram-attachment/{message_id}/"
-                    f"{attachment_index}/{filename}"
-                ),
+                "uri": (f"gate://telegram-attachment/{message_id}/{attachment_index}/{filename}"),
                 "mimeType": media_type,
                 "blob": encoded,
             },
@@ -1616,9 +1584,7 @@ async def _voice_reply_context_tool_result(
     settings: Settings,
 ) -> JsonObject:
     visible_message_ids = {
-        item.get("id")
-        for item in context.get("messages", [])
-        if isinstance(item, dict)
+        item.get("id") for item in context.get("messages", []) if isinstance(item, dict)
     }
     if str(message_id) not in visible_message_ids:
         return _tool_error_result(
@@ -1692,9 +1658,7 @@ async def _voice_reply_context_tool_result(
         )
 
     media_type = (
-        downloaded.media_type
-        if downloaded.media_type.startswith("audio/")
-        else "audio/ogg"
+        downloaded.media_type if downloaded.media_type.startswith("audio/") else "audio/ogg"
     )
     return _voice_audio_tool_result(
         request_id=request_id,
@@ -1724,9 +1688,7 @@ def _extract_voice_from_linked_payloads(
                     continue
                 if field == "document":
                     mime_type = raw_media.get("mime_type")
-                    if not isinstance(mime_type, str) or not mime_type.startswith(
-                        "audio/"
-                    ):
+                    if not isinstance(mime_type, str) or not mime_type.startswith("audio/"):
                         continue
                 reference = _telegram_audio_reference(raw_media)
                 if reference is not None:
@@ -1918,9 +1880,7 @@ async def _beta_export_space_checkpoint_tool_result(
 
     service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
     try:
-        installations = await service.list_status(
-            principal.access_scope.workspace_id
-        )
+        installations = await service.list_status(principal.access_scope.workspace_id)
     except AlphaLifecycleError as exc:
         return _tool_error_result(
             request_id=request_id,
@@ -1928,17 +1888,10 @@ async def _beta_export_space_checkpoint_tool_result(
             message=exc.message,
         )
     installation = next(
-        (
-            item
-            for item in installations
-            if item.installation_key == raw_ref
-        ),
+        (item for item in installations if item.installation_key == raw_ref),
         None,
     )
-    if (
-        installation is None
-        or installation.state != AlphaInstallationState.ACTIVE
-    ):
+    if installation is None or installation.state != AlphaInstallationState.ACTIVE:
         return _tool_error_result(
             request_id=request_id,
             code="beta_checkpoint_installation_not_active",
@@ -1981,10 +1934,7 @@ async def _beta_get_provider_probe_tool_result(
             code="invalid_arguments",
             message="confirmed=true is required",
         )
-    if (
-        settings.gate_env != "production"
-        or not settings.gate_beta_connector_enabled
-    ):
+    if settings.gate_env != "production" or not settings.gate_beta_connector_enabled:
         return _tool_error_result(
             request_id=request_id,
             code="beta_probe_not_production_ready",
@@ -2044,9 +1994,7 @@ async def _alpha_list_installations_tool_result(
 ) -> JsonObject:
     service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
     try:
-        installations = await service.list_status(
-            principal.access_scope.workspace_id
-        )
+        installations = await service.list_status(principal.access_scope.workspace_id)
     except AlphaLifecycleError as exc:
         return _tool_error_result(
             request_id=request_id,
@@ -2086,9 +2034,7 @@ async def _alpha_get_webhook_status_tool_result(
 
     service = AlphaLifecycleService(SqlAlphaLifecycleRepository(session))
     try:
-        installations = await service.list_status(
-            principal.access_scope.workspace_id
-        )
+        installations = await service.list_status(principal.access_scope.workspace_id)
     except AlphaLifecycleError as exc:
         return _tool_error_result(
             request_id=request_id,
@@ -2096,11 +2042,7 @@ async def _alpha_get_webhook_status_tool_result(
             message=exc.message,
         )
     installation = next(
-        (
-            item
-            for item in installations
-            if item.installation_key == raw_ref
-        ),
+        (item for item in installations if item.installation_key == raw_ref),
         None,
     )
     if installation is None:
@@ -2139,8 +2081,7 @@ async def _alpha_get_webhook_status_tool_result(
     match = "exact" if webhook["exact_match"] else "mismatch"
     return _tool_result(
         payload,
-        f"Alpha webhook: {match}; pending="
-        f"{webhook['pending_update_count']}",
+        f"Alpha webhook: {match}; pending={webhook['pending_update_count']}",
         request_id,
     )
 
@@ -2153,11 +2094,7 @@ async def _alpha_list_shadow_reviews_tool_result(
     session: AsyncSession,
 ) -> JsonObject:
     raw_limit = arguments.get("limit", 20)
-    if (
-        not isinstance(raw_limit, int)
-        or isinstance(raw_limit, bool)
-        or not 1 <= raw_limit <= 50
-    ):
+    if not isinstance(raw_limit, int) or isinstance(raw_limit, bool) or not 1 <= raw_limit <= 50:
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
@@ -2175,8 +2112,7 @@ async def _alpha_list_shadow_reviews_tool_result(
     ]
     for item in payload["items"]:
         lines.append(
-            f"- {item['group_label']}: {item['status']}; "
-            f"outcome={item['outcome'] or 'pending'}"
+            f"- {item['group_label']}: {item['status']}; outcome={item['outcome'] or 'pending'}"
         )
     return _tool_result(payload, "\n".join(lines), request_id)
 
@@ -2281,9 +2217,7 @@ async def _alpha_send_review_tool_result(
                     },
                 )
             if response.status_code != 200:
-                raise AQUBGeneralReleaseReplayError(
-                    "aqub_general_cube0_recovery_ingress_failed"
-                )
+                raise AQUBGeneralReleaseReplayError("aqub_general_cube0_recovery_ingress_failed")
             try:
                 value = response.json()
             except ValueError as exc:
@@ -2291,9 +2225,7 @@ async def _alpha_send_review_tool_result(
                     "aqub_general_cube0_recovery_ingress_failed"
                 ) from exc
             if not isinstance(value, dict):
-                raise AQUBGeneralReleaseReplayError(
-                    "aqub_general_cube0_recovery_ingress_failed"
-                )
+                raise AQUBGeneralReleaseReplayError("aqub_general_cube0_recovery_ingress_failed")
             return {str(key): item for key, item in value.items()}
 
         try:
@@ -2314,10 +2246,7 @@ async def _alpha_send_review_tool_result(
             )
         return _tool_result(
             payload,
-            (
-                f"AQUB General Cube 0 recovery: {payload['state']}; "
-                f"replay={payload['replay']}"
-            ),
+            (f"AQUB General Cube 0 recovery: {payload['state']}; replay={payload['replay']}"),
             request_id,
         )
 
@@ -2342,10 +2271,7 @@ async def _alpha_send_review_tool_result(
             )
         return _tool_result(
             payload,
-            (
-                f"AQUB General release replay: {payload['state']}; "
-                f"replay={payload['replay']}"
-            ),
+            (f"AQUB General release replay: {payload['state']}; replay={payload['replay']}"),
             request_id,
         )
 
@@ -2371,10 +2297,7 @@ async def _alpha_send_review_tool_result(
         )
     return _tool_result(
         payload,
-        (
-            f"Alpha review delivery: {payload['state']}; "
-            f"replay={payload['replay']}"
-        ),
+        (f"Alpha review delivery: {payload['state']}; replay={payload['replay']}"),
         request_id,
     )
 
@@ -2397,10 +2320,7 @@ async def _alpha_verify_review_replay_tool_result(
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
-            message=(
-                "installation_ref, turn_ref and expected_candidate_sha256 "
-                "are required"
-            ),
+            message=("installation_ref, turn_ref and expected_candidate_sha256 are required"),
         )
     if raw_ref == AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF:
         try:
@@ -2419,10 +2339,7 @@ async def _alpha_verify_review_replay_tool_result(
             )
         return _tool_result(
             payload,
-            (
-                f"AQUB General replay proof: {payload['state']}; "
-                f"replay={payload['replay']}"
-            ),
+            (f"AQUB General replay proof: {payload['state']}; replay={payload['replay']}"),
             request_id,
         )
 
@@ -2444,10 +2361,7 @@ async def _alpha_verify_review_replay_tool_result(
         )
     return _tool_result(
         payload,
-        (
-            f"Alpha review replay proof: {payload['state']}; "
-            f"replay={payload['replay']}"
-        ),
+        (f"Alpha review replay proof: {payload['state']}; replay={payload['replay']}"),
         request_id,
     )
 
@@ -2471,10 +2385,7 @@ async def _alpha_control_installation_tool_result(
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
-            message=(
-                "installation_ref, action, expected_state and confirmed=true "
-                "are required"
-            ),
+            message=("installation_ref, action, expected_state and confirmed=true are required"),
         )
     try:
         action = AlphaOwnerAction(raw_action)
@@ -2512,8 +2423,7 @@ async def _alpha_control_installation_tool_result(
     }
     return _tool_result(
         payload,
-        f"Alpha {payload['installation']['group_label']}: "
-        f"{payload['installation']['state']}",
+        f"Alpha {payload['installation']['group_label']}: {payload['installation']['state']}",
         request_id,
     )
 
@@ -2590,9 +2500,7 @@ def _gate_beta_export_space_checkpoint_tool(settings: Settings) -> JsonObject:
             "required": ["installation_ref", "confirmed"],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_beta_export_space_checkpoint"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_beta_export_space_checkpoint"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(
@@ -2621,9 +2529,7 @@ def _gate_beta_get_provider_probe_tool(settings: Settings) -> JsonObject:
             "required": ["confirmed"],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_beta_get_provider_probe"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_beta_get_provider_probe"],
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -2651,9 +2557,7 @@ def _gate_alpha_list_installations_tool(settings: Settings) -> JsonObject:
             "properties": {},
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_list_installations"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_list_installations"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(
@@ -2686,9 +2590,7 @@ def _gate_alpha_get_webhook_status_tool(settings: Settings) -> JsonObject:
             "required": ["installation_ref", "confirmed"],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_get_webhook_status"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_get_webhook_status"],
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -2723,9 +2625,7 @@ def _gate_alpha_list_shadow_reviews_tool(settings: Settings) -> JsonObject:
             },
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_list_shadow_reviews"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_list_shadow_reviews"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(
@@ -2757,9 +2657,7 @@ def _gate_alpha_get_test_group_presence_tool(settings: Settings) -> JsonObject:
             "required": ["installation_ref", "confirmed"],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_get_test_group_presence"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_get_test_group_presence"],
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -2854,9 +2752,7 @@ def _gate_alpha_verify_review_replay_tool(settings: Settings) -> JsonObject:
             ],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_verify_review_replay"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_verify_review_replay"],
         "annotations": READ_ONLY_TOOL_ANNOTATIONS,
     }
     return _with_security_scheme(
@@ -2900,9 +2796,7 @@ def _gate_alpha_control_installation_tool(settings: Settings) -> JsonObject:
             ],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_control_installation"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_control_installation"],
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -2933,9 +2827,7 @@ def _gate_alpha_run_model_preflight_tool(settings: Settings) -> JsonObject:
             "required": ["confirmed"],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_alpha_run_model_preflight"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_alpha_run_model_preflight"],
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -2990,34 +2882,23 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
                         {"type": "string", "format": "uuid"},
                         {
                             "type": "string",
-                            "pattern": (
-                                "^[0-9a-fA-F-]{36}:voice:[0-9a-fA-F-]{36}$"
-                            ),
+                            "pattern": ("^[0-9a-fA-F-]{36}:voice:[0-9a-fA-F-]{36}$"),
                         },
                         {
                             "type": "string",
-                            "pattern": (
-                                "^[0-9a-fA-F-]{36}:attachment:"
-                                "[0-9a-fA-F-]{36}:[0-9]+$"
-                            ),
+                            "pattern": ("^[0-9a-fA-F-]{36}:attachment:[0-9a-fA-F-]{36}:[0-9]+$"),
                         },
                         {
                             "type": "string",
-                            "pattern": (
-                                "^voice:latest:[a-z0-9_-]{1,64}$"
-                            ),
+                            "pattern": ("^voice:latest:[a-z0-9_-]{1,64}$"),
                         },
                         {
                             "type": "string",
-                            "pattern": (
-                                "^voice:latest-file:[a-z0-9_-]{1,64}$"
-                            ),
+                            "pattern": ("^voice:latest-file:[a-z0-9_-]{1,64}$"),
                         },
                         {
                             "type": "string",
-                            "pattern": (
-                                "^voice:latest-transcript:[a-z0-9_-]{1,64}$"
-                            ),
+                            "pattern": ("^voice:latest-transcript:[a-z0-9_-]{1,64}$"),
                         },
                         {
                             "type": "string",
@@ -3153,9 +3034,7 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
                 "caption": {"type": "string", "maxLength": 1024, "default": ""},
                 "follow_up": {"type": "boolean", "default": False},
             },
-            "required": [
-                "task_id", "filename", "media_type", "content_base64", "expected_sha256"
-            ],
+            "required": ["task_id", "filename", "media_type", "content_base64", "expected_sha256"],
             "additionalProperties": False,
         },
         "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_prepare_reply_document"],
@@ -3191,9 +3070,14 @@ def _gate_send_approved_document_tool(settings: Settings) -> JsonObject:
                 "expected_document_caption": {"type": "string", "maxLength": 1024},
             },
             "required": [
-                "draft_id", "confirmed", "expected_account", "expected_recipient_chat_id",
-                "expected_document_filename", "expected_document_size_bytes",
-                "expected_document_sha256", "expected_document_caption",
+                "draft_id",
+                "confirmed",
+                "expected_account",
+                "expected_recipient_chat_id",
+                "expected_document_filename",
+                "expected_document_size_bytes",
+                "expected_document_sha256",
+                "expected_document_caption",
             ],
             "additionalProperties": False,
         },
@@ -3218,7 +3102,9 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
             "Call only after showing Mark the account, recipient and every final "
             "message in order and receiving one explicit confirmation of the whole "
             "sequence. The first item becomes due immediately and later items no "
-            "sooner than 60 seconds after the preceding confirmed delivery."
+            "sooner than 60 seconds after the preceding confirmed delivery. "
+            "With v2 enabled, quote expected_inbound_revision from the reviewed context; "
+            "any new recipient message stops the remainder and requires new approval."
         ),
         "inputSchema": {
             "type": "object",
@@ -3241,6 +3127,7 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
                     "maxLength": 255,
                 },
                 "interval_seconds": {"type": "integer", "const": 60},
+                "expected_inbound_revision": {"type": "integer", "minimum": 0},
             },
             "required": [
                 "draft_ids",
@@ -3248,12 +3135,15 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
                 "expected_account",
                 "expected_recipient_chat_id",
                 "interval_seconds",
+                *(
+                    ["expected_inbound_revision"]
+                    if settings.gate_reply_sequence_dispatch_v2_enabled
+                    else []
+                ),
             ],
             "additionalProperties": False,
         },
-        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[
-            "gate_queue_approved_reply_sequence"
-        ],
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_queue_approved_reply_sequence"],
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -3370,8 +3260,7 @@ async def _send_approved_reply_tool_result(
             request_id=request_id,
             code="invalid_arguments",
             message=(
-                "draft_id, confirmed, expected_account and "
-                "expected_recipient_chat_id are required"
+                "draft_id, confirmed, expected_account and expected_recipient_chat_id are required"
             ),
         )
     try:
@@ -3454,9 +3343,7 @@ async def _prepare_reply_document_tool_result(
             code="document_send_disabled",
             message="Business document preparation is disabled",
         )
-    fields = (
-        "task_id", "filename", "media_type", "content_base64", "expected_sha256"
-    )
+    fields = ("task_id", "filename", "media_type", "content_base64", "expected_sha256")
     if any(not isinstance(arguments.get(key), str) for key in fields):
         return _tool_error_result(
             request_id=request_id,
@@ -3478,9 +3365,7 @@ async def _prepare_reply_document_tool_result(
             request_id=request_id, code="invalid_arguments", message="task_id must be UUID"
         )
     try:
-        prepared = await PrepareReplyDocumentService(
-            SqlReplyDocumentWriter(session)
-        ).execute(
+        prepared = await PrepareReplyDocumentService(SqlReplyDocumentWriter(session)).execute(
             PrepareReplyDocumentCommand(
                 principal=principal,
                 task_id=task_id,
@@ -3493,9 +3378,7 @@ async def _prepare_reply_document_tool_result(
             )
         )
     except ReplyDraftError as exc:
-        return _tool_error_result(
-            request_id=request_id, code=exc.code, message=exc.message
-        )
+        return _tool_error_result(request_id=request_id, code=exc.code, message=exc.message)
     await session.commit()
     content = {
         "draft_id": str(prepared.draft_id),
@@ -3533,8 +3416,11 @@ async def _send_approved_document_tool_result(
     settings: Settings,
 ) -> JsonObject:
     names = (
-        "draft_id", "expected_account", "expected_recipient_chat_id",
-        "expected_document_filename", "expected_document_sha256",
+        "draft_id",
+        "expected_account",
+        "expected_recipient_chat_id",
+        "expected_document_filename",
+        "expected_document_sha256",
         "expected_document_caption",
     )
     if (
@@ -3570,9 +3456,7 @@ async def _send_approved_document_tool_result(
             )
         )
     except ReplySendError as exc:
-        return _tool_error_result(
-            request_id=request_id, code=exc.code, message=exc.message
-        )
+        return _tool_error_result(request_id=request_id, code=exc.code, message=exc.message)
     content = {
         "attempt_id": str(sent.attempt_id),
         "draft_id": str(sent.draft_id),
@@ -3642,6 +3526,15 @@ async def _queue_approved_reply_sequence_tool_result(
             message="Every draft_id must be a UUID",
         )
 
+    expected_revision = arguments.get("expected_inbound_revision")
+    if runtime_for_session(session) is not None and (
+        type(expected_revision) is not int or expected_revision < 0
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="inbound_revision_required",
+            message="Review current context and confirm its inbound revision",
+        )
     service = QueueApprovedReplySequenceService(SqlReplySequenceWriter(session))
     try:
         queued = await service.execute(
@@ -3652,6 +3545,7 @@ async def _queue_approved_reply_sequence_tool_result(
                 expected_account=expected_account,
                 expected_recipient_chat_id=expected_recipient,
                 interval_seconds=interval_seconds,
+                expected_inbound_revision=expected_revision,
             )
         )
     except ReplySequenceError as exc:
@@ -3685,6 +3579,15 @@ async def _queue_approved_reply_sequence_tool_result(
             for item in queued.items
         ],
     }
+    if queued.queued_revision is not None:
+        content.update(
+            {
+                "state": "active",
+                "queued_revision": queued.queued_revision,
+                "stop_policy": "any_inbound_message",
+                "notification_readiness": "route_check_pending",
+            }
+        )
     return _tool_result(
         content,
         (
@@ -3735,9 +3638,7 @@ def _oauth_required_tool_result(
     )
 
 
-def _oauth_challenge(
-    *, settings: Settings, scope: str, error: str, description: str
-) -> str:
+def _oauth_challenge(*, settings: Settings, scope: str, error: str, description: str) -> str:
     resource = settings.mcp_public_resource_url.rstrip("/")
     origin = resource.removesuffix("/mcp")
     metadata_url = f"{origin}/.well-known/oauth-protected-resource/mcp"
@@ -3784,8 +3685,7 @@ def _format_status_text(snapshot: JsonObject) -> str:
     ]
     for item in snapshot["connection_health"]:
         lines.append(
-            f"- {item['account']['label']}: {item['state']}; "
-            f"can_reply={item['can_reply']}"
+            f"- {item['account']['label']}: {item['state']}; can_reply={item['can_reply']}"
         )
     lines.extend(["", "Contact directory:"])
     for item in snapshot["contact_directory"]:
@@ -3803,17 +3703,12 @@ def _format_status_text(snapshot: JsonObject) -> str:
             "",
             "Alpha canary:",
             f"- connector_enabled: {alpha['connector_enabled']}",
-            f"- webhook_credentials_configured: "
-            f"{alpha['webhook_credentials_configured']}",
+            f"- webhook_credentials_configured: {alpha['webhook_credentials_configured']}",
             f"- one_group_discovered: {alpha['one_group_discovered']}",
-            f"- one_active_exact_revision: "
-            f"{alpha['one_active_exact_revision']}",
-            f"- groups_within_capacity: "
-            f"{alpha['groups_within_capacity']}",
-            f"- all_active_bindings_exact: "
-            f"{alpha['all_active_bindings_exact']}",
-            f"- reviewed_model_release_ready: "
-            f"{alpha['reviewed_model_release_ready']}",
+            f"- one_active_exact_revision: {alpha['one_active_exact_revision']}",
+            f"- groups_within_capacity: {alpha['groups_within_capacity']}",
+            f"- all_active_bindings_exact: {alpha['all_active_bindings_exact']}",
+            f"- reviewed_model_release_ready: {alpha['reviewed_model_release_ready']}",
             f"- delivery_enabled: {alpha['delivery_enabled']}",
             f"- accepted_messages: {alpha['audit']['canonical_messages']}",
             f"- agent_turns: {alpha['audit']['agent_turns']}",
@@ -3822,21 +3717,16 @@ def _format_status_text(snapshot: JsonObject) -> str:
             "",
             "Alpha model shadow:",
             f"- state: {alpha['model_shadow']['state']}",
-            f"- staged_deployments: "
-            f"{alpha['model_shadow']['staged_deployments']}",
+            f"- staged_deployments: {alpha['model_shadow']['staged_deployments']}",
             f"- provider_preflight_verified: "
             f"{alpha['model_shadow']['provider_preflight_verified']}",
             f"- model_turns: {alpha['model_shadow']['model_turns']}",
             f"- failed_turns: {alpha['model_shadow']['failed_turns']}",
             f"- running_turns: {alpha['model_shadow']['running_turns']}",
-            f"- model_delivery_grants: "
-            f"{alpha['model_shadow']['model_delivery_grants']}",
-            f"- stuck_provider_preflights: "
-            f"{alpha['model_shadow']['stuck_provider_preflights']}",
-            f"- provider_error_category: "
-            f"{alpha['model_shadow']['last_provider_error_category']}",
-            f"- promotion_next: "
-            f"{alpha['model_shadow']['promotion_dry_run']['next_stage']}",
+            f"- model_delivery_grants: {alpha['model_shadow']['model_delivery_grants']}",
+            f"- stuck_provider_preflights: {alpha['model_shadow']['stuck_provider_preflights']}",
+            f"- provider_error_category: {alpha['model_shadow']['last_provider_error_category']}",
+            f"- promotion_next: {alpha['model_shadow']['promotion_dry_run']['next_stage']}",
             f"- promotion_blocked_by: "
             f"{','.join(alpha['model_shadow']['promotion_dry_run']['blocked_by']) or 'none'}",
             f"- budget_reserved: $"
@@ -3886,25 +3776,20 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- settled_count: {voice['settled_count']}",
             f"- open_count: {voice['open_count']}",
             f"- unknown_count: {voice['unknown_count']}",
-            f"- reconciliation_required: "
-            f"{voice['reconciliation_required']}",
+            f"- reconciliation_required: {voice['reconciliation_required']}",
             f"- received_count: {voice['received_count']}",
             f"- processing_count: {voice['processing_count']}",
             f"- pending_count: {voice['pending_count']}",
             f"- active_processing_count: {voice['active_processing_count']}",
             f"- stale_processing_count: {voice['stale_processing_count']}",
-            f"- nonterminal_archive_missing_count: "
-            f"{voice['nonterminal_archive_missing_count']}",
-            f"- nonterminal_archive_pending_count: "
-            f"{voice['nonterminal_archive_pending_count']}",
+            f"- nonterminal_archive_missing_count: {voice['nonterminal_archive_missing_count']}",
+            f"- nonterminal_archive_pending_count: {voice['nonterminal_archive_pending_count']}",
             f"- nonterminal_archive_transcribed_count: "
             f"{voice['nonterminal_archive_transcribed_count']}",
-            f"- nonterminal_archive_other_count: "
-            f"{voice['nonterminal_archive_other_count']}",
+            f"- nonterminal_archive_other_count: {voice['nonterminal_archive_other_count']}",
             f"- nonterminal_transcript_complete_count: "
             f"{voice['nonterminal_transcript_complete_count']}",
-            f"- nonterminal_summary_complete_count: "
-            f"{voice['nonterminal_summary_complete_count']}",
+            f"- nonterminal_summary_complete_count: {voice['nonterminal_summary_complete_count']}",
             f"- transport_unknown_archive_missing_count: "
             f"{voice['transport_unknown_archive_missing_count']}",
             f"- transport_unknown_archive_present_count: "
@@ -3918,14 +3803,10 @@ def _format_status_text(snapshot: JsonObject) -> str:
             f"- dead_letter_count: {voice['dead_letter_count']}",
             f"- dead_letter_by_code: {voice.get('dead_letter_by_code', {})}",
             f"- last_error_code: {voice['last_error_code'] or 'none'}",
-            f"- budget_settled: $"
-            f"{voice['settled_microusd'] / 1_000_000:.6f}",
-            f"- budget_reserved: $"
-            f"{voice['reserved_microusd'] / 1_000_000:.6f}",
-            f"- budget_remaining: $"
-            f"{voice['remaining_microusd'] / 1_000_000:.6f}",
-            f"- telegram_delivery_allowed: "
-            f"{voice['telegram_delivery_allowed']}",
+            f"- budget_settled: ${voice['settled_microusd'] / 1_000_000:.6f}",
+            f"- budget_reserved: ${voice['reserved_microusd'] / 1_000_000:.6f}",
+            f"- budget_remaining: ${voice['remaining_microusd'] / 1_000_000:.6f}",
+            f"- telegram_delivery_allowed: {voice['telegram_delivery_allowed']}",
         ]
     )
     parity = snapshot["telegram_business_text_parity"]
@@ -3996,8 +3877,7 @@ async def _build_alpha_canary_status(
             stuck_provider_preflights=model.stuck_provider_preflights,
             last_provider_error_code=model.last_provider_error_code,
             fixture_binding_active=(
-                binding_readiness["all_active_bindings_exact"]
-                and model.active_model_bindings == 0
+                binding_readiness["all_active_bindings_exact"] and model.active_model_bindings == 0
             ),
             telegram_delivery_blocked=not (
                 settings.gate_alpha_delivery_enabled
@@ -4022,15 +3902,12 @@ async def _build_alpha_canary_status(
         "one_group_discovered": installation_count == 1,
         "one_active_exact_revision": active_binding_count == 1,
         "groups_within_capacity": binding_readiness["groups_within_capacity"],
-        "all_active_bindings_exact": binding_readiness[
-            "all_active_bindings_exact"
-        ],
-        "reviewed_model_release_ready": binding_readiness[
-            "reviewed_model_release_ready"
-        ],
+        "all_active_bindings_exact": binding_readiness["all_active_bindings_exact"],
+        "reviewed_model_release_ready": binding_readiness["reviewed_model_release_ready"],
         "audit": audit_counts,
         "model_shadow": model_shadow,
     }
+
 
 def _format_reply_context_text(context: JsonObject) -> str:
     account = context["account"]
@@ -4121,3 +3998,78 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
+
+def _gate_get_reply_sequence_tool(settings: Settings) -> JsonObject:
+    return _with_security_scheme(
+        tool={
+            "name": "gate_get_reply_sequence",
+            "title": "Read one approved reply sequence",
+            "description": "Read scoped delivery, stop and notification state. Never resumes a sequence.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sequence_id": {"type": "string", "format": "uuid"},
+                    "cursor": {"type": "string", "pattern": "^[0-9]{1,2}$"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["sequence_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_sequence"],
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+        },
+        settings=settings,
+        scope="gate:inbox:read",
+    )
+
+
+async def _get_reply_sequence_tool_result(
+    *, request_id: Any, arguments: JsonObject, principal: Principal, session: AsyncSession
+) -> JsonObject:
+    runtime = runtime_for_session(session)
+    if runtime is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="sequence_guard_unavailable",
+            message="Sequence readback is not enabled",
+        )
+    try:
+        sequence_id = UUID(arguments.get("sequence_id", ""))
+        raw_cursor = arguments.get("cursor", "0")
+        limit = arguments.get("limit", 50)
+        if (
+            not isinstance(raw_cursor, str)
+            or not raw_cursor.isdecimal()
+            or len(raw_cursor) > 2
+            or type(limit) is not int
+            or not 1 <= limit <= 50
+        ):
+            raise ValueError
+        cursor = int(raw_cursor)
+        if cursor > 50:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="A sequence UUID and valid page bounds are required",
+        )
+    result = await runtime.detail(session, principal, sequence_id, cursor=cursor, limit=limit)
+    if result is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="sequence_not_found",
+            message="Sequence not found in allowed scope",
+        )
+    return _tool_result(
+        result,
+        f"Sequence {str(sequence_id)[:8]}: {result['state']}; "
+        f"notification: {result['notification']['state']}; automatic resume disabled.",
+        request_id,
+    )
