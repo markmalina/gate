@@ -12,7 +12,7 @@ from app.core.mcp_security import Principal
 QUEUE_SEQUENCE_SCOPE = "gate:messages:send"
 SEQUENCE_INTERVAL_SECONDS = 60
 MIN_SEQUENCE_DRAFTS = 2
-MAX_SEQUENCE_DRAFTS = 20
+MAX_SEQUENCE_DRAFTS = 50
 
 
 class ReplySequenceError(Exception):
@@ -22,6 +22,24 @@ class ReplySequenceError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def validate_sequence_draft_ids(draft_ids: tuple[UUID, ...]) -> None:
+    """Enforce the same sequence bounds at the application and SQL boundaries."""
+
+    if not MIN_SEQUENCE_DRAFTS <= len(draft_ids) <= MAX_SEQUENCE_DRAFTS:
+        raise ReplySequenceError(
+            code="invalid_sequence",
+            message=(
+                f"A reply sequence must contain {MIN_SEQUENCE_DRAFTS} to "
+                f"{MAX_SEQUENCE_DRAFTS} drafts"
+            ),
+        )
+    if len(set(draft_ids)) != len(draft_ids):
+        raise ReplySequenceError(
+            code="invalid_sequence",
+            message="A reply sequence cannot contain duplicate drafts",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,19 +105,7 @@ class QueueApprovedReplySequenceService:
                 code="confirmation_required",
                 message="Explicit confirmation of the complete ordered sequence is required",
             )
-        if not MIN_SEQUENCE_DRAFTS <= len(command.draft_ids) <= MAX_SEQUENCE_DRAFTS:
-            raise ReplySequenceError(
-                code="invalid_sequence",
-                message=(
-                    f"A reply sequence must contain {MIN_SEQUENCE_DRAFTS} to "
-                    f"{MAX_SEQUENCE_DRAFTS} drafts"
-                ),
-            )
-        if len(set(command.draft_ids)) != len(command.draft_ids):
-            raise ReplySequenceError(
-                code="invalid_sequence",
-                message="A reply sequence cannot contain duplicate drafts",
-            )
+        validate_sequence_draft_ids(command.draft_ids)
         if command.interval_seconds != SEQUENCE_INTERVAL_SECONDS:
             raise ReplySequenceError(
                 code="invalid_interval",

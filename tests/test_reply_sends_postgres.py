@@ -21,10 +21,16 @@ from app.application.reply_sends import (
     ReplySendResult,
     SendApprovedReplyCommand,
 )
+from app.application.reply_sequences import (
+    QueueApprovedReplySequenceCommand,
+    QueueApprovedReplySequenceService,
+    ReplySequenceError,
+)
 from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.models.domain import (
     Account,
     AuditLog,
@@ -45,6 +51,7 @@ from app.models.domain import (
     TelegramBusinessConnection,
 )
 from app.services.telegram import TelegramApiError
+from app.worker.reply_sequences import run_reply_sequence_once
 from sqlalchemy import event, func, select, text, update
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -532,6 +539,148 @@ async def test_draft_writer_waits_on_conversation_before_locking_context() -> No
         assert audits[0].metadata_["task_id"] == str(seed.task_id)
         assert audits[0].metadata_["sent"] is False
         assert outbound_count == 0
+
+
+def _sequence_command(
+    seed: _SeededReply, draft_ids: tuple[UUID, ...]
+) -> QueueApprovedReplySequenceCommand:
+    return QueueApprovedReplySequenceCommand(
+        principal=_command(seed, draft_ids[0]).principal,
+        draft_ids=draft_ids,
+        confirmed=True,
+        expected_account="RU",
+        expected_recipient_chat_id=seed.recipient_chat_id,
+    )
+
+
+@pytest.mark.anyio
+async def test_fifty_reply_drafts_commit_atomically_in_requested_order() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_count=50)
+        ordered = tuple(reversed(seed.draft_ids))
+        now = datetime(2026, 9, 27, 18, 0, tzinfo=UTC)
+        command = _sequence_command(seed, ordered)
+
+        async with sessions() as session:
+            result = await QueueApprovedReplySequenceService(
+                SqlReplySequenceWriter(session, now=now)
+            ).execute(command)
+            await session.commit()
+
+        assert len(result.items) == 50
+        assert [item.draft_id for item in result.items] == list(ordered)
+        assert [item.position for item in result.items] == list(range(50))
+        assert result.items[-1].scheduled_at == now + timedelta(minutes=49)
+
+        async with sessions() as session:
+            drafts = (
+                (await session.execute(
+                    select(ReplyDraft).where(ReplyDraft.id.in_(seed.draft_ids))
+                )).scalars().all()
+            )
+            metadata = {
+                draft.id: draft.prompt_context["reply_sequence"] for draft in drafts
+            }
+            assert len(metadata) == 50
+            assert all(value["size"] == 50 for value in metadata.values())
+            assert all(
+                metadata[draft_id]["position"] == index
+                and metadata[draft_id]["id"] == str(result.sequence_id)
+                for index, draft_id in enumerate(ordered)
+            )
+            audits = (
+                (await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "reply_sequence_queued_from_mcp"
+                    )
+                )).scalars().all()
+            )
+            assert len(audits) == 1
+            with pytest.raises(ReplySequenceError) as raised:
+                await QueueApprovedReplySequenceService(
+                    SqlReplySequenceWriter(session)
+                ).execute(command)
+            assert raised.value.code == "sequence_already_queued"
+            await session.rollback()
+
+
+@pytest.mark.anyio
+async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send() -> None:
+    class DistinctTelegram(_LiteralRecordingTelegram):
+        async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
+            self.plain_calls.append(kwargs)
+            return {"ok": True, "result": {"message_id": 1000 + len(self.plain_calls)}}
+
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_count=50)
+        queued_at = datetime.now(UTC) - timedelta(hours=2)
+        async with sessions() as session:
+            await QueueApprovedReplySequenceService(
+                SqlReplySequenceWriter(session, now=queued_at)
+            ).execute(_sequence_command(seed, seed.draft_ids))
+            await session.commit()
+
+        telegram = DistinctTelegram()
+        observed_at = datetime.now(UTC)
+        for position in range(50):
+            assert await run_reply_sequence_once(
+                settings=_settings(),
+                session_factory=sessions,
+                telegram=telegram,
+                now=observed_at + timedelta(minutes=position + 1),
+            ) == 1
+        assert len(telegram.plain_calls) == 50
+        assert [call["text"] for call in telegram.plain_calls] == [
+            f"Approved draft {position}" for position in range(1, 51)
+        ]
+
+        # A fresh worker invocation recovers the completed series from PostgreSQL.
+        assert await run_reply_sequence_once(
+            settings=_settings(),
+            session_factory=sessions,
+            telegram=telegram,
+            now=observed_at + timedelta(hours=3),
+        ) == 0
+        assert len(telegram.plain_calls) == 50
+        async with sessions() as session:
+            attempts = (
+                (await session.execute(select(SendAttempt))).scalars().all()
+            )
+            assert len(attempts) == 50
+            assert all(attempt.status == SendAttemptStatus.SENT.value for attempt in attempts)
+
+
+@pytest.mark.anyio
+async def test_fiftieth_draft_binding_mismatch_cannot_partially_queue() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_count=50)
+        _, other_draft = await _add_reply_task_in_same_conversation(
+            sessions, seed=seed
+        )
+        command = _sequence_command(seed, seed.draft_ids[:49] + (other_draft,))
+
+        async with sessions() as session:
+            with pytest.raises(ReplySequenceError) as raised:
+                await QueueApprovedReplySequenceService(
+                    SqlReplySequenceWriter(session)
+                ).execute(command)
+            assert raised.value.code == "sequence_binding_mismatch"
+            await session.rollback()
+
+        async with sessions() as session:
+            drafts = (
+                (await session.execute(
+                    select(ReplyDraft).where(
+                        ReplyDraft.id.in_(seed.draft_ids + (other_draft,))
+                    )
+                )).scalars().all()
+            )
+            assert all("reply_sequence" not in draft.prompt_context for draft in drafts)
+            assert await session.scalar(
+                select(func.count()).select_from(AuditLog).where(
+                    AuditLog.action == "reply_sequence_queued_from_mcp"
+                )
+            ) == 0
 
 
 async def _attach_document(
