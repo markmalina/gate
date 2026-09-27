@@ -185,7 +185,7 @@ Worker/sender/config/models/migrations/workflows не входят в предп
 ```bash
 ruff check app/application/reply_sequences.py app/infrastructure/reply_sequences.py app/api/mcp_routes.py app/api/mcp_schemas.py tests/test_reply_sequences.py tests/test_reply_sends_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py
 mypy app
-pytest -q tests/test_reply_sequences.py tests/test_reply_sends_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py tests/test_reply_sends_postgres.py tests/test_reply_send_application.py
+pytest -q tests/test_reply_sequences.py tests/test_reply_sends_postgres.py tests/test_mcp_routes.py tests/test_mcp_surface_consistency.py tests/test_reply_send_application.py
 ```
 
 DATABASE_URL должен указывать только на одноразовый тестовый PostgreSQL. Новые PG fixtures используют отдельную случайную schema и гарантированный cleanup; reuse существующего шаблона из test_reply_sends_postgres.py без общей переработки fixtures.

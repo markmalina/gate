@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from jsonschema import Draft202012Validator
 from app.api.mcp_routes import _gate_queue_approved_reply_sequence_tool
 from app.api.mcp_schemas import GATE_SEQUENCE_OUTPUT_SCHEMA
 from app.application.reply_sequences import (
@@ -21,6 +20,7 @@ from app.worker.reply_sequences import (
     _sequence_row_from_scalars,
     _SequenceRow,
 )
+from jsonschema import Draft202012Validator
 
 ACCOUNT_ID = UUID("22222222-2222-2222-2222-222222222222")
 PROJECT_ID = UUID("33333333-3333-3333-3333-333333333333")
