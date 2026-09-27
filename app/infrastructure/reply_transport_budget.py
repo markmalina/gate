@@ -45,6 +45,7 @@ class SqlTelegramTransportBudget:
         keys = await self._keys(payload)
         async with self.runtime.sessions() as session:
             now = await self.runtime.db_now(session)
+            reserved = []
             for key, gap in keys:
                 await session.execute(
                     insert(ReplyTransportBudget)
@@ -67,6 +68,9 @@ class SqlTelegramTransportBudget:
                         description="Shared transport budget is busy",
                         retry_after_seconds=60,
                     )
+                reserved.append((budget, gap))
+            now = await self.runtime.db_now(session)
+            for budget, gap in reserved:
                 budget.next_allowed_at = now + timedelta(seconds=gap + 0.1)
             admitted = time.monotonic()
             await session.commit()

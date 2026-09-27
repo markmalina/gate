@@ -1,5 +1,6 @@
 """Process registry of durable bot rate gates and scoped, already-reserved sends."""
 
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -12,7 +13,18 @@ class TelegramDeliveryGate(Protocol):
 
 
 _gates: dict[str, TelegramDeliveryGate] = {}
-_reserved: ContextVar[str | None] = ContextVar("telegram_reserved_bot", default=None)
+_reserved: ContextVar[tuple[str, float] | None] = ContextVar("telegram_reserved_bot", default=None)
+
+
+class TelegramDispatchStartExpired(RuntimeError):
+    """Proven local refusal before the HTTP adapter is invoked."""
+
+
+def require_reserved_start_window(credential: str) -> None:
+    reservation = _reserved.get()
+    if reservation is not None and reservation[0] == credential.split(":", 1)[0]:
+        if time.monotonic() > reservation[1]:
+            raise TelegramDispatchStartExpired("dispatch_start_window_expired")
 
 
 def registered_gate(bot_prefix: str) -> TelegramDeliveryGate | None:
@@ -33,7 +45,8 @@ def unregister_gate(bot_prefix: str, gate: TelegramDeliveryGate) -> None:
 
 def delivery_gate(credential: str) -> TelegramDeliveryGate | None:
     prefix = credential.split(":", 1)[0]
-    if _reserved.get() == prefix:
+    reservation = _reserved.get()
+    if reservation is not None and reservation[0] == prefix:
         return None
     gate = _gates.get(prefix)
     if gate is None:
@@ -49,8 +62,8 @@ def delivery_gate(credential: str) -> TelegramDeliveryGate | None:
 
 
 @contextmanager
-def reserved_delivery(credential: str) -> Iterator[None]:
-    token = _reserved.set(credential.split(":", 1)[0])
+def reserved_delivery(credential: str, *, admitted_at: float) -> Iterator[None]:
+    token = _reserved.set((credential.split(":", 1)[0], admitted_at + 0.1))
     try:
         yield
     finally:

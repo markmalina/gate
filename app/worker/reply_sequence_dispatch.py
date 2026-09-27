@@ -107,10 +107,13 @@ async def run_dispatch_loop(
                                 await runtime.release_preflight(claim)
                     if runtime.cursor is None:
                         break
-                if health_reporter is not None and any(c.outcome == "failed" for c in completions):
+                reason = await runtime.health_reason() if health_reporter is not None else None
+                if health_reporter is not None and (
+                    reason or any(c.outcome == "failed" for c in completions)
+                ):
                     health_reporter.record_failure(
                         REPLY_SEQUENCE_WORKER,
-                        error_code="reply_sequence_dispatch_failed",
+                        error_code=reason or "reply_sequence_dispatch_failed",
                         observed_at=datetime.now(UTC),
                     )
                 elif health_reporter is not None:

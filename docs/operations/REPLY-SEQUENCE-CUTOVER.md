@@ -33,13 +33,12 @@ Run full CI on the literal head: Ruff, mypy, PostgreSQL tests, migrations upgrad
 restore drill and container checks. Reviewer acceptance is separate from the author's report.
 
 Verify PostgreSQL session semantics: direct connection or session pooling, never transaction pooling.
-Each enabled process has at most four sender guard connections plus two reserved ingress guard
+Each enabled process reserves the configured local cap (default four) sender guard connections plus two ingress guard
 connections, independently of the ordinary transaction pool. Account for every process and deployment
 replica, including overlapping rollout replicas, CLI and monitoring. Keep at least two ordinary DB
 connections available for ingress/health/recovery at saturated sends. The actual sum must fit the
 verified PostgreSQL connection ceiling; reduce admitted concurrency/replicas if it does not.
-For a configured global cap above four, the fixed sender pool still limits one process to four active
-guards; do not raise the cap without an explicit deployment budget review.
+Do not raise the default cap of four without an explicit deployment connection-budget review.
 
 Verify authenticated Business ingress includes business_message and business_connection updates.
 No transcription/classification/LLM step is allowed ahead of durable receipt+stop. Verify provider

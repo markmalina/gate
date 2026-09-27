@@ -112,7 +112,7 @@ class ReplySequenceRuntime:
         self.shutdown_supervisor: Any = None
         self.sender_guards = sender_guards or create_async_engine(
             engine.url,
-            pool_size=4,
+            pool_size=settings.gate_reply_sequence_max_inflight,
             max_overflow=0,
             pool_timeout=2,
             pool_pre_ping=True,
@@ -936,6 +936,12 @@ class ReplySequenceRuntime:
         cap = control.max_inflight if control.mode == "parallel" else 1
         if slot.slot >= cap:
             raise sequence_error("sequence_config_mismatch")
+        # All resource/permit locks are held now. Use a fresh DB timestamp so
+        # lock contention cannot turn a reservation into an already-expired gap.
+        now = await self.db_now(session)
+        await self.healthy(session, now)
+        if sequence.claim_expires_at <= now or slot.expires_at <= now:
+            raise sequence_error("sequence_claim_stale")
         for budget, gap in budgets:
             budget.next_allowed_at = now + timedelta(seconds=gap + 0.1)
         item.state = "sending"
@@ -1074,6 +1080,26 @@ class ReplySequenceRuntime:
                 row.blocked_until = result.blocked_until
                 row.blocked_indefinitely = result.blocked_indefinitely
             await session.commit()
+
+    async def health_reason(self) -> str | None:
+        async with self.sessions() as session:
+            try:
+                control = await self.control(session)
+                await self.healthy(session, await self.db_now(session))
+            except ReplySequenceError as exc:
+                return exc.code
+            quarantined = await session.scalar(
+                select(func.count())
+                .select_from(ReplyDispatchPermit)
+                .where(
+                    ReplyDispatchPermit.workspace_ref == self.workspace,
+                    ReplyDispatchPermit.state == "quarantined",
+                )
+            )
+            cap = control.max_inflight if control.mode == "parallel" else 1
+            if quarantined is not None and quarantined >= cap:
+                return "sequence_permits_quarantined"
+        return None
 
     async def reconcile(self, *, limit: int = 100) -> int:
         """Repair projections from the ledger; never repeat an external send."""

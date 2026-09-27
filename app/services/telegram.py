@@ -10,7 +10,7 @@ from typing import Any, cast
 
 import httpx
 
-from app.services.telegram_delivery_gate import delivery_gate
+from app.services.telegram_delivery_gate import delivery_gate, require_reserved_start_window
 
 
 def build_telegram_http_client() -> httpx.AsyncClient:
@@ -200,6 +200,7 @@ class TelegramClient:
                     description="Transport start window expired",
                     retry_after_seconds=1,
                 )
+        require_reserved_start_window(self._credential)
         response = await self._http_client.post(
             url,
             data=payload,
@@ -361,6 +362,7 @@ class TelegramClient:
                     description="Transport start window expired",
                     retry_after_seconds=1,
                 )
+        require_reserved_start_window(self._credential)
         response = await self._http_client.post(url, json=payload)
         try:
             return self._parse_telegram_response(response)

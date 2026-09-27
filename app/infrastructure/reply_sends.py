@@ -42,8 +42,9 @@ from app.models.domain import (
     SendAttemptStatus,
     TelegramBusinessConnection,
 )
+from app.models.reply_sequences import ReplySequenceItem
 from app.services.telegram import TelegramApiError, TelegramClient
-from app.services.telegram_delivery_gate import reserved_delivery
+from app.services.telegram_delivery_gate import TelegramDispatchStartExpired, reserved_delivery
 
 _SENDABLE_DRAFT_STATUSES = frozenset(
     {
@@ -204,9 +205,20 @@ class SqlTelegramReplySender:
         metadata = await self._session.scalar(
             select(ReplyDraft.prompt_context).where(ReplyDraft.id == command.draft_id)
         )
+        canonical = None
+        if self._sequence_runtime is not None:
+            canonical = await self._session.scalar(
+                select(ReplySequenceItem.sequence_id).where(
+                    ReplySequenceItem.draft_id == command.draft_id
+                )
+            )
         await self._session.rollback()
-        sequence = (metadata or {}).get("reply_sequence", {})
-        if sequence.get("authority_version") == 2:
+        sequence = metadata.get("reply_sequence", {}) if isinstance(metadata, dict) else {}
+        if not isinstance(sequence, dict):
+            raise ReplySendError(
+                code="sequence_binding_mismatch", message="Sequence metadata is invalid"
+            )
+        if canonical is not None or sequence.get("authority_version") == 2:
             if self._dispatch_claim is None or self._sequence_runtime is None:
                 raise ReplySendError(
                     code="sequence_stopped", message="Sequence drafts require guarded dispatch"
@@ -271,7 +283,10 @@ class SqlTelegramReplySender:
                     business_connection_id=reservation.business_connection_id,
                 )
                 if self._dialog_lease is not None:
-                    with reserved_delivery(self._settings.telegram_bot_token):
+                    assert self._admitted_monotonic is not None
+                    with reserved_delivery(
+                        self._settings.telegram_bot_token, admitted_at=self._admitted_monotonic
+                    ):
                         telegram_result = await self._dialog_lease.transport(transport_effect)
                 else:
                     telegram_result = await transport_effect
@@ -303,7 +318,11 @@ class SqlTelegramReplySender:
                 await self._sequence_runtime.apply_cooldown(
                     self._dispatch_claim, exc.retry_after_seconds
                 )
-            status, error_code = _delivery_failure(exc)
+            status, error_code = (
+                ("cancelled", "dispatch_start_window_expired")
+                if isinstance(exc, TelegramDispatchStartExpired)
+                else _delivery_failure(exc)
+            )
             return await self._finalize_failure(
                 command=command,
                 reservation=reservation,

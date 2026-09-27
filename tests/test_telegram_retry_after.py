@@ -69,3 +69,28 @@ def test_retry_after_is_structured_and_transport_never_retries(
 def test_existing_error_constructor_remains_compatible() -> None:
     error = TelegramApiError(error_code=400, description="synthetic")
     assert error.retry_after_seconds is None
+
+
+@pytest.mark.parametrize("expired", [True, False])
+def test_sequence_start_window_is_rechecked_at_http_adapter_boundary(monkeypatch, expired):
+    from app.services import telegram_delivery_gate as gate
+
+    async def scenario():
+        calls = []
+
+        def handler(request):
+            calls.append(request)
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+        monkeypatch.setattr(gate.time, "monotonic", lambda: 100.2 if expired else 100.05)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as transport:
+            client = TelegramClient("123:synthetic", http_client=transport)
+            with gate.reserved_delivery("123:synthetic", admitted_at=100):
+                if expired:
+                    with pytest.raises(gate.TelegramDispatchStartExpired):
+                        await client.send_plain_message(chat_id="synthetic", text="test")
+                else:
+                    await client.send_plain_message(chat_id="synthetic", text="test")
+        assert len(calls) == (0 if expired else 1)
+
+    asyncio.run(scenario())

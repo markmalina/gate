@@ -66,6 +66,9 @@ async def same_account(sessions, a, b, recipient="54321"):
                 .where(model.id == identity)
                 .values(business_connection_id=a.business_connection_id, chat_id=recipient)
             )
+        await session.execute(
+            update(Message).where(Message.id == b.trigger_message_id).values(sender_id=recipient)
+        )
         await session.commit()
     return replace(
         b,
@@ -589,3 +592,146 @@ async def test_expired_preflight_reconciliation_and_shutdown_quarantine_are_dura
             ).one()
             assert permit.state == "quarantined"
         assert await runtime.claim(q.sequence_id) is None
+
+
+@pytest.mark.anyio
+async def test_concurrent_stop_dispatch_stress_never_starts_after_committed_stop():
+    async with runtime_fixture() as (runtime, sessions):
+        seeds = [await _seed_reply(sessions, draft_count=2) for _ in range(6)]
+        queued = [await queue(runtime, sessions, s) for s in seeds]
+        committed = [False] * 6
+        calls = []
+
+        async def stop(n):
+            await accept(sessions, inbound(seeds[n], update_id=800 + n, message_id=900 + n))
+            committed[n] = True
+
+        async def send(n):
+            claim = await runtime.claim(queued[n].sequence_id)
+            if claim is None:
+                return
+
+            class Transport(FakeTelegram):
+                async def send_plain_message(self, **payload):
+                    assert not committed[n]
+                    assert payload["business_connection_id"] == seeds[n].business_connection_id
+                    calls.append(n)
+                    await asyncio.sleep(0.01)
+                    return {"ok": True, "result": {"message_id": 1000 + n}}
+
+            await dispatch_claim(runtime, Transport(), claim)
+
+        async with asyncio.timeout(10):
+            await asyncio.gather(*(send(n) for n in range(6)), *(stop(n) for n in range(6)))
+        assert len(calls) == len(set(calls))
+        async with sessions() as session:
+            assert (await session.scalars(select(ReplySequence.state))).all() == ["stopped"] * 6
+            assert set((await session.scalars(select(ReplySequenceItem.state))).all()) <= {
+                "sent",
+                "cancelled",
+            }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "error,expected,calls",
+    [
+        (None, "sent", 1),
+        (TelegramApiError(error_code=403, http_status=403, description="synthetic"), "failed", 1),
+        (
+            TelegramApiError(
+                error_code=429, http_status=429, description="synthetic", retry_after_seconds=5
+            ),
+            "failed",
+            4,
+        ),
+    ],
+)
+async def test_notification_success_refusal_and_bounded_known_retry(error, expected, calls):
+    from app.models.domain import Account
+    from app.worker.reply_sequence_notifications import notify_once
+
+    async with runtime_fixture() as (runtime, sessions):
+        seed = await _seed_reply(sessions, draft_count=2)
+        async with sessions() as session:
+            account = await session.get(Account, seed.account_id)
+            account.permissions = {"reply_sequence_owner_subject": "reply-send-postgres-test"}
+            await session.commit()
+        q = await queue(runtime, sessions, seed)
+        assert q.notification_readiness == "ready"
+        await accept(sessions, inbound(seed))
+        telegram = FakeTelegram(error=error)
+        for _ in range(5):
+            await notify_once(runtime, telegram)
+            async with sessions() as session:
+                event = (await session.scalars(select(ReplySequenceNotification))).one()
+                if event.delivery_state == "pending":
+                    assert event.next_attempt_at > event.started_at
+                    event.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+                    await session.commit()
+        assert len(telegram.calls) == calls
+        assert all(c["chat_id"] == "999" for c in telegram.calls)
+        async with sessions() as session:
+            assert (
+                await session.scalar(select(ReplySequenceNotification.delivery_state))
+            ) == expected
+
+
+@pytest.mark.anyio
+async def test_operator_cutover_cannot_reactivate_old_approval_across_ingress_gap(monkeypatch):
+    from argparse import Namespace
+
+    from app.infrastructure.database import DatabaseRuntime
+    from app.worker import reply_sequence_control as control_cli
+
+    async with runtime_fixture() as (runtime, sessions):
+        monkeypatch.setattr(control_cli, "get_settings", lambda: runtime.settings)
+        monkeypatch.setattr(
+            control_cli,
+            "build_database_runtime",
+            lambda _url: DatabaseRuntime(sessions.kw["bind"], sessions, runtime),
+        )
+        seed = await _seed_reply(sessions, draft_count=2)
+        q = await queue(runtime, sessions, seed)
+        await runtime.invalidate_ingress("synthetic_gap")
+        args = Namespace(
+            action="serial",
+            legacy_workers_drained=True,
+            continuity_until=(datetime.now(UTC) + timedelta(minutes=30)).isoformat(),
+            continuity_evidence_ref="synthetic-continuity-receipt",
+        )
+        with pytest.raises(ReplySequenceError) as exc:
+            await control_cli.execute(args)
+        assert exc.value.code == "sequence_continuity_reapproval_required"
+        args.action = "stop-active"
+        assert (await control_cli.execute(args))["stopped"] == 1
+        args.action = "serial"
+        assert (await control_cli.execute(args))["mode"] == "serial"
+        async with sessions() as session:
+            assert (await session.get(ReplySequence, q.sequence_id)).state == "stopped"
+        assert await runtime.claim(q.sequence_id) is None
+
+
+@pytest.mark.anyio
+async def test_canonical_membership_cannot_be_bypassed_by_lost_json_projection():
+    from app.application.reply_sends import ReplySendError
+    from app.infrastructure.reply_sends import SqlTelegramReplySender
+
+    async with runtime_fixture() as (runtime, sessions):
+        seed = await _seed_reply(sessions, draft_count=2)
+        await queue(runtime, sessions, seed)
+        async with sessions() as session:
+            await session.execute(
+                update(ReplyDraft)
+                .where(ReplyDraft.id == seed.draft_ids[0])
+                .values(prompt_context={})
+            )
+            await session.commit()
+        telegram = FakeTelegram()
+        async with sessions() as session:
+            with pytest.raises(ReplySendError) as exc:
+                await SqlTelegramReplySender(
+                    session=session, telegram=telegram, settings=runtime.settings
+                ).send(_command(seed, seed.draft_ids[0]))
+            assert exc.value.code == "sequence_stopped"
+        assert not telegram.calls
