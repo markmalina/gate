@@ -135,6 +135,7 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
 
             runtime = runtime_for_session(self._session)
             if runtime is not None:
+                await runtime.observe_connector(self._session, command)
                 await runtime.inbound(
                     self._session, binding, inserted_receipt_id, command.received_at
                 )

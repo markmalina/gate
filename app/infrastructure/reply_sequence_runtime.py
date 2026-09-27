@@ -153,6 +153,33 @@ class ReplySequenceRuntime:
         await self.sender_guards.dispose()
         await self.ingress_guards.dispose()
 
+    async def invalidate_ingress(self, reason: str) -> None:
+        async with self.sessions() as session:
+            now = await self.db_now(session)
+            await session.execute(
+                insert(ReplyConnectorAdmission)
+                .values(
+                    id=uuid4(),
+                    workspace_ref=self.workspace,
+                    connector_key="telegram_business",
+                    state="reconciling",
+                    safe_reason=reason,
+                    version=1,
+                    observed_at=now,
+                )
+                .on_conflict_do_update(
+                    index_elements=["workspace_ref", "connector_key"],
+                    set_={
+                        "state": "reconciling",
+                        "safe_reason": reason,
+                        "observed_at": now,
+                        "continuity_until": None,
+                        "version": ReplyConnectorAdmission.version + 1,
+                    },
+                )
+            )
+            await session.commit()
+
     async def db_now(self, session: AsyncSession) -> datetime:
         value = await session.scalar(select(func.clock_timestamp()))
         if not isinstance(value, datetime):
@@ -331,8 +358,28 @@ class ReplySequenceRuntime:
                         "authority_version": 2,
                     }
                     draft.prompt_context = metadata
+                from app.infrastructure.reply_sequence_owner_route import owner_route
+
+                route = await owner_route(
+                    session,
+                    account_id=queued.account_id,
+                    principal_subject=command.principal.subject,
+                    recipient=chat,
+                )
+                readiness = (
+                    "disabled"
+                    if not self.settings.gate_reply_sequence_notifications_enabled
+                    else "ready"
+                    if route is not None
+                    else "blocked_route"
+                )
                 await session.commit()
-                return replace(queued, queued_revision=guard.inbound_revision, state="active")
+                return replace(
+                    queued,
+                    queued_revision=guard.inbound_revision,
+                    state="active",
+                    notification_readiness=readiness,
+                )
             except BaseException:
                 await session.rollback()
                 raise
@@ -389,6 +436,38 @@ class ReplySequenceRuntime:
                 await session.rollback()
                 raise sequence_error("sequence_guard_unavailable")
             yield fresh
+
+    async def observe_connector(
+        self, session: AsyncSession, command: AcceptTelegramReceiptCommand
+    ) -> None:
+        if command.bot_key != "telegram_business" or not isinstance(
+            command.payload.get("business_connection"), dict
+        ):
+            return
+        # Authenticated connection/rights updates invalidate continuity. A delayed
+        # processing worker cannot silently retain the previous send authority.
+        await session.execute(
+            insert(ReplyConnectorAdmission)
+            .values(
+                id=uuid4(),
+                workspace_ref=self.workspace,
+                connector_key="telegram_business",
+                state="blocked",
+                safe_reason="connection_changed",
+                version=1,
+                observed_at=command.received_at,
+            )
+            .on_conflict_do_update(
+                index_elements=["workspace_ref", "connector_key"],
+                set_={
+                    "state": "blocked",
+                    "safe_reason": "connection_changed",
+                    "observed_at": command.received_at,
+                    "continuity_until": None,
+                    "version": ReplyConnectorAdmission.version + 1,
+                },
+            )
+        )
 
     async def inbound(
         self, session: AsyncSession, binding: IngressBinding | None, receipt_id: UUID, now: datetime
@@ -1101,7 +1180,7 @@ class ReplySequenceRuntime:
                             await self.stop(
                                 session, sequence, reason="sequence_integrity_invalid", now=now
                             )
-                        elif any(i.state in {"failed", "unknown"} for i in items):
+                        elif any(i.state in {"failed", "unknown", "cancelled"} for i in items):
                             await self.stop(
                                 session,
                                 sequence,

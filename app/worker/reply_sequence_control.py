@@ -9,19 +9,22 @@ import asyncio
 import json
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.application.reply_sequence_policy import text_digest
 from app.core.config import get_settings
 from app.infrastructure.database import build_database_runtime
+from app.infrastructure.reply_sequence_guard import dialog_guard
 from app.infrastructure.reply_sequence_migration import import_legacy, initialize_control
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime, sequence_error
 from app.models.domain import AuditLog
 from app.models.reply_sequences import (
     ReplyConnectorAdmission,
+    ReplyDialogGuard,
     ReplyDispatchControl,
     ReplyDispatchPermit,
+    ReplySequence,
 )
 
 
@@ -41,6 +44,51 @@ async def execute(args: argparse.Namespace) -> dict[str, object]:
         if args.action == "initialize":
             await initialize_control(runtime)
             return {"mode": "disabled", "initialized": True}
+        if args.action == "stop-active":
+            async with db.session_factory() as session:
+                control = await session.get(
+                    ReplyDispatchControl, runtime.workspace, with_for_update=True
+                )
+                if control is None:
+                    raise sequence_error("sequence_migration_incomplete")
+                control.mode = "disabled"
+                control.generation += 1
+                await session.commit()
+                rows = (
+                    await session.execute(
+                        select(
+                            ReplySequence.id,
+                            ReplySequence.account_id,
+                            ReplyDialogGuard.provider_chat_id,
+                        )
+                        .join(ReplyDialogGuard)
+                        .where(
+                            ReplySequence.workspace_ref == runtime.workspace,
+                            ReplySequence.state == "active",
+                        )
+                    )
+                ).all()
+            stopped = 0
+            for identity, account, chat in rows:
+                async with dialog_guard(
+                    runtime.ingress_guards,
+                    workspace=runtime.workspace,
+                    account_id=account,
+                    chat_id=chat,
+                ):
+                    async with db.session_factory() as session:
+                        sequence = await session.get(ReplySequence, identity, with_for_update=True)
+                        if sequence is not None and sequence.state == "active":
+                            await runtime.stop(
+                                session,
+                                sequence,
+                                reason="ingress_continuity_lost",
+                                now=await runtime.db_now(session),
+                                notify=True,
+                            )
+                            stopped += 1
+                        await session.commit()
+            return {"mode": "disabled", "stopped": stopped}
         async with db.session_factory() as session:
             control = await session.get(
                 ReplyDispatchControl, runtime.workspace, with_for_update=True
@@ -56,7 +104,50 @@ async def execute(args: argparse.Namespace) -> dict[str, object]:
                         )
                     )
                 ).all()
+                active = await session.scalar(
+                    select(func.count())
+                    .select_from(ReplySequence)
+                    .where(
+                        ReplySequence.workspace_ref == runtime.workspace,
+                        ReplySequence.state == "active",
+                    )
+                )
+                oldest = await session.scalar(
+                    select(func.min(ReplySequence.next_due_at)).where(
+                        ReplySequence.workspace_ref == runtime.workspace,
+                        ReplySequence.state == "active",
+                    )
+                )
+                latest = await session.scalar(
+                    select(func.max(ReplySequence.last_admitted_at)).where(
+                        ReplySequence.workspace_ref == runtime.workspace
+                    )
+                )
+                connector = await session.scalar(
+                    select(ReplyConnectorAdmission).where(
+                        ReplyConnectorAdmission.workspace_ref == runtime.workspace,
+                        ReplyConnectorAdmission.connector_key == "telegram_business",
+                    )
+                )
+                now = await runtime.db_now(session)
+                healthy = bool(
+                    connector
+                    and connector.state == "healthy"
+                    and connector.continuity_until
+                    and connector.continuity_until > now
+                )
+                capacity = control.max_inflight if control.mode == "parallel" else 1
                 return {
+                    "observed_at": now.isoformat(),
+                    "active": active,
+                    "oldest_due_at": oldest.isoformat() if oldest else None,
+                    "last_admitted_at": latest.isoformat() if latest else None,
+                    "ingress_healthy": healthy,
+                    "degraded_reason": "ingress_unavailable"
+                    if not healthy
+                    else "permits_quarantined"
+                    if sum(p.state == "quarantined" for p in occupied) >= capacity
+                    else None,
                     "mode": control.mode,
                     "generation": control.generation,
                     "migration_complete": control.migration_complete,
@@ -81,6 +172,32 @@ async def execute(args: argparse.Namespace) -> dict[str, object]:
                 now = await runtime.db_now(session)
                 if until.tzinfo is None or not 0 < (until - now).total_seconds() <= 3600:
                     raise ValueError("Continuity evidence must expire within one hour")
+                prior = await session.scalar(
+                    select(ReplyConnectorAdmission)
+                    .where(
+                        ReplyConnectorAdmission.workspace_ref == runtime.workspace,
+                        ReplyConnectorAdmission.connector_key == "telegram_business",
+                    )
+                    .with_for_update()
+                )
+                if (
+                    prior is None
+                    or prior.state != "healthy"
+                    or prior.continuity_until is None
+                    or prior.continuity_until <= now
+                ):
+                    if (
+                        await session.scalar(
+                            select(ReplySequence.id)
+                            .where(
+                                ReplySequence.workspace_ref == runtime.workspace,
+                                ReplySequence.state == "active",
+                            )
+                            .limit(1)
+                        )
+                        is not None
+                    ):
+                        raise sequence_error("sequence_continuity_reapproval_required")
                 from uuid import uuid4
 
                 await session.execute(
@@ -131,7 +248,16 @@ async def execute(args: argparse.Namespace) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=["initialize", "import-legacy", "status", "disable", "serial", "parallel"]
+        "action",
+        choices=[
+            "initialize",
+            "import-legacy",
+            "status",
+            "disable",
+            "stop-active",
+            "serial",
+            "parallel",
+        ],
     )
     parser.add_argument("--legacy-workers-drained", action="store_true")
     parser.add_argument("--continuity-until")

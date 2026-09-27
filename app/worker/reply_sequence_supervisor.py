@@ -1,6 +1,6 @@
-"""Bounded local dispatch ownership for #716, pending durable #718 integration.
+"""Bounded local dispatch ownership for the shared #716/#718 runtime.
 
-This module is deliberately not wired to the legacy sequence worker. Callers
+This module is used only by the v2 dispatcher. Callers
 must obtain durable claims/permits and perform final sender admission; the
 local bound is not a fleet-wide concurrency limit or authorization to send.
 """

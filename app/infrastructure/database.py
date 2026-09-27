@@ -73,6 +73,8 @@ async def database_runtime_lifespan(database_url: str) -> AsyncIterator[Database
 
     runtime = build_database_runtime(database_url)
     try:
+        if runtime.sequences is not None:
+            await runtime.sequences.invalidate_ingress("ingress_runtime_started")
         yield runtime
     finally:
         if runtime.sequences is not None:

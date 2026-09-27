@@ -599,7 +599,11 @@ class SqlTelegramReplySender:
                 ),
             )
 
-        now = datetime.now(UTC)
+        now = (
+            await self._sequence_runtime.db_now(self._session)
+            if self._dispatch_claim is not None and self._sequence_runtime is not None
+            else datetime.now(UTC)
+        )
         attempt = SendAttempt(
             id=uuid4(),
             reply_draft_id=current.draft_id,
@@ -708,7 +712,11 @@ class SqlTelegramReplySender:
             attempt.status = status
             attempt.error_code = error_code
             attempt.error_detail = error_detail
-            attempt.finished_at = datetime.now(UTC)
+            attempt.finished_at = (
+                await self._sequence_runtime.db_now(self._session)
+                if self._dispatch_claim is not None and self._sequence_runtime is not None
+                else datetime.now(UTC)
+            )
             if reservation.context.document_sha256 is not None:
                 await self._session.execute(
                     update(ReplyDocument)
@@ -745,8 +753,12 @@ class SqlTelegramReplySender:
         reservation: _Reservation,
         telegram_result: dict[str, Any],
     ) -> ReplySendResult:
-        finished_at = datetime.now(UTC)
         async with self._session.begin():
+            finished_at = (
+                await self._sequence_runtime.db_now(self._session)
+                if self._dispatch_claim is not None and self._sequence_runtime is not None
+                else datetime.now(UTC)
+            )
             attempt = await self._load_attempt_by_id(
                 attempt_id=reservation.attempt.id,
                 for_update=True,

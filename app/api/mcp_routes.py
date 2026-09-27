@@ -3585,7 +3585,7 @@ async def _queue_approved_reply_sequence_tool_result(
                 "state": "active",
                 "queued_revision": queued.queued_revision,
                 "stop_policy": "any_inbound_message",
-                "notification_readiness": "route_check_pending",
+                "notification_readiness": queued.notification_readiness,
             }
         )
     return _tool_result(

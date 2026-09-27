@@ -73,6 +73,7 @@ class QueuedReplySequence:
     recipient_chat_id: str
     interval_seconds: int
     items: tuple[QueuedReplySequenceItem, ...]
+    notification_readiness: str | None = None
     queued_revision: int | None = None
     state: str | None = None
 

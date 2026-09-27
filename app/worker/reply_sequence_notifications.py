@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, update
 
+from app.infrastructure.reply_sequence_owner_route import owner_route
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
-from app.models.domain import Account, TelegramBusinessConnection
 from app.models.reply_sequences import (
     ReplyDialogGuard,
     ReplySequence,
@@ -55,34 +55,18 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
             return False
         sequence = await session.get(ReplySequence, event.sequence_id)
         assert sequence is not None
-        account = await session.get(Account, sequence.account_id)
         guard = await session.get(ReplyDialogGuard, sequence.guard_id)
-        connections = (
-            await session.scalars(
-                select(TelegramBusinessConnection).where(
-                    TelegramBusinessConnection.account_id == sequence.account_id,
-                    TelegramBusinessConnection.is_enabled.is_(True),
-                )
+        route = (
+            await owner_route(
+                session,
+                account_id=sequence.account_id,
+                principal_subject=sequence.principal_subject,
+                recipient=guard.provider_chat_id,
             )
-        ).all()
-        # This explicit subject binding is stored in account permissions by the
-        # reviewed activation procedure, never taken from webhook/LLM arguments.
-        authorized_subject = (
-            (account.permissions or {}).get("reply_sequence_owner_subject") if account else None
+            if guard
+            else None
         )
-        route = connections[0] if len(connections) == 1 else None
-        if (
-            account is None
-            or guard is None
-            or route is None
-            or not account.is_active
-            or authorized_subject != sequence.principal_subject
-            or account.telegram_user_id is None
-            or account.telegram_user_id <= 0
-            or route.telegram_user_id != account.telegram_user_id
-            or route.user_chat_id != account.telegram_user_id
-            or str(route.user_chat_id) == guard.provider_chat_id
-        ):
+        if route is None:
             event.delivery_state = "blocked_route"
             event.safe_error_code = "owner_route_unverified"
             await session.commit()
