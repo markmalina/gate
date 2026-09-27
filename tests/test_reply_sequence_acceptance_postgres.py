@@ -104,6 +104,10 @@ async def test_same_account_distinct_dialogs_overlap_and_account_cap_two():
 
 @pytest.mark.anyio
 async def test_two_fifty_item_series_preserve_full_order_without_real_sleep(monkeypatch):
+    from app.infrastructure.reply_sends import SqlTelegramReplySender
+
+    # Ordering uses controlled clocks; the real start deadline has its own HTTP test.
+    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
     async with runtime_fixture() as (runtime, sessions):
         seeds = [await _seed_reply(sessions, draft_count=50) for _ in range(2)]
         queued = [await queue(runtime, sessions, s) for s in seeds]
@@ -119,7 +123,9 @@ async def test_two_fifty_item_series_preserve_full_order_without_real_sleep(monk
                 await clear_budget(sessions)
                 claim = await runtime.claim(q.sequence_id)
                 assert claim is not None and claim.position == position
+                calls_before = len(telegram.calls)
                 await dispatch_claim(runtime, telegram, claim)
+                assert len(telegram.calls) == calls_before + 1, (position, q.sequence_id)
             clock += timedelta(seconds=61)
         assert len(telegram.calls) == 100
         for seed in seeds:
@@ -525,10 +531,10 @@ async def test_keyset_discovery_survives_ten_thousand_history_and_thousand_block
                         "EXPLAIN (ANALYZE, FORMAT JSON) SELECT id, next_due_at "
                         "FROM reply_sequences "
                         "WHERE state='active' AND workspace_ref=:workspace "
-                        "AND next_due_at<=clock_timestamp() "
+                        "AND next_due_at<=:now "
                         "ORDER BY next_due_at,id LIMIT 100"
                     ),
-                    {"workspace": runtime.workspace},
+                    {"workspace": runtime.workspace, "now": await runtime.db_now(session)},
                 )
             ).scalar_one()
             assert "ix_reply_sequences_active_due" in str(plan)
