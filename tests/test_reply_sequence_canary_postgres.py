@@ -185,7 +185,8 @@ async def test_http_send_requires_committed_admission_for_each_retry(monkeypatch
             assert retry_after == 1
 
         async def reserve_canary(self, intent, payload):
-            assert intent.matches(payload)
+            if not intent.matches(payload):
+                raise TelegramApiError(error_code=403, description="Canary payload mismatch")
             reservations.append((intent, payload.copy()))
 
     async def handler(request):
