@@ -96,7 +96,7 @@ def delivery_gate(credential: str) -> TelegramDeliveryGate | None:
         if (
             (
                 settings.gate_reply_sequence_stop_on_inbound_enabled
-                or settings.gate_reply_sequence_canary_enabled
+                or getattr(settings, "gate_reply_sequence_canary_enabled", False)
             )
             and prefix == settings.telegram_bot_token.split(":", 1)[0]
         ):

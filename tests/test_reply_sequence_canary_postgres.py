@@ -182,7 +182,7 @@ async def test_http_send_requires_committed_admission_for_each_retry(monkeypatch
             return time.monotonic()
 
         async def failed(self, payload, retry_after):
-            pass
+            assert retry_after == 1
 
         async def reserve_canary(self, intent, payload):
             assert intent.matches(payload)
@@ -190,6 +190,16 @@ async def test_http_send_requires_committed_admission_for_each_retry(monkeypatch
 
     async def handler(request):
         requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                429,
+                json={
+                    "ok": False,
+                    "error_code": 429,
+                    "description": "synthetic rate limit",
+                    "parameters": {"retry_after": 1},
+                },
+            )
         return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
     gate = Gate()
@@ -215,7 +225,9 @@ async def test_http_send_requires_committed_admission_for_each_retry(monkeypatch
                     await telegram.send_plain_message(chat_id="other", text="stop")
             assert not requests
             with canary_delivery(intent):
-                await telegram.send_plain_message(chat_id="owner", text="stop")
+                with pytest.raises(TelegramApiError) as rate_limited:
+                    await telegram.send_plain_message(chat_id="owner", text="stop")
+                assert rate_limited.value.error_code == 429
                 await telegram.send_plain_message(chat_id="owner", text="stop")
             assert len(reservations) == len(requests) == 2
     finally:

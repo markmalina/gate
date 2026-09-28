@@ -5,6 +5,9 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+
 from app.application.reply_sequence_cooldown import (
     ReplySequenceCooldown,
     extend_reply_sequence_cooldown,
@@ -19,8 +22,6 @@ from app.models.domain import TelegramBusinessConnection
 from app.models.reply_sequences import ReplyCanaryScope, ReplyTransportBudget
 from app.services.telegram import TelegramApiError
 from app.services.telegram_delivery_gate import CanaryDelivery
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 
 
 class SqlTelegramTransportBudget:

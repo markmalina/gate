@@ -7,9 +7,10 @@ reserve before every provider HTTP attempt, including notification retries.
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from app.models.reply_sequences import ReplyCanaryAttempt, ReplyCanaryScope
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.reply_sequences import ReplyCanaryAttempt, ReplyCanaryScope
 
 
 class CanaryDenied(Exception):
