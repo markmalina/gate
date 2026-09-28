@@ -9,7 +9,6 @@ from app.api import mcp_routes
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS, SEQUENCE_DETAIL_SCHEMA
 from app.application.reply_sequences import ReplySequenceError
 from app.core.mcp_security import AccessScope
-from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequence_context import approval_context_state
 from app.models.domain import (
     Account,
@@ -36,6 +35,7 @@ from test_reply_sequence_dispatch_postgres import (
     queue,
     runtime_fixture,
 )
+from test_reply_sequence_dispatch_postgres import stable_dispatch_clock as stable_dispatch_clock
 
 
 @pytest.fixture
@@ -161,7 +161,7 @@ async def test_committed_receipt_without_projection_cannot_queue(receipt_state):
 
 
 @pytest.mark.anyio
-async def test_projection_then_fresh_visible_context_allows_new_approval(monkeypatch):
+async def test_projection_then_fresh_visible_context_allows_new_approval():
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
         await accept(sessions, inbound(seed))
@@ -175,7 +175,6 @@ async def test_projection_then_fresh_visible_context_allows_new_approval(monkeyp
         assert old_page["sequence_approval"]["blocked_reason"] == "recipient_context_not_visible"
         q = await queue(runtime, sessions, seed, revision=1)
         claim = await runtime.claim(q.sequence_id)
-        monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
         telegram = FakeTelegram()
         await dispatch_claim(runtime, telegram, claim)
         assert len(telegram.calls) == 1

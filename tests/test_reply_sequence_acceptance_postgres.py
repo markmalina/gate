@@ -1,6 +1,7 @@
 """Additional synthetic concurrency/recovery/cutover acceptance for #716/#718."""
 
 import asyncio
+import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -37,6 +38,7 @@ from test_reply_sequence_dispatch_postgres import (
     queue,
     runtime_fixture,
 )
+from test_reply_sequence_dispatch_postgres import stable_dispatch_clock as stable_dispatch_clock
 
 
 @pytest.fixture
@@ -81,10 +83,7 @@ async def same_account(sessions, a, b, recipient="54321"):
 
 
 @pytest.mark.anyio
-async def test_same_account_distinct_dialogs_overlap_and_account_cap_two(monkeypatch):
-    # Test account permits/overlap independently of the runner's commit/fsync speed.
-    # Admission expiry is tested with both sides of the deadline below and at HTTP.
-    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
+async def test_same_account_distinct_dialogs_overlap_and_account_cap_two():
     async with runtime_fixture() as (runtime, sessions):
         a = await _seed_reply(sessions, draft_count=2)
         b = await same_account(sessions, a, await _seed_reply(sessions, draft_count=2))
@@ -108,10 +107,6 @@ async def test_same_account_distinct_dialogs_overlap_and_account_cap_two(monkeyp
 
 @pytest.mark.anyio
 async def test_two_fifty_item_series_preserve_full_order_without_real_sleep(monkeypatch):
-    from app.infrastructure.reply_sends import SqlTelegramReplySender
-
-    # Ordering uses controlled clocks; the real start deadline has its own HTTP test.
-    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
     async with runtime_fixture() as (runtime, sessions):
         seeds = [await _seed_reply(sessions, draft_count=50) for _ in range(2)]
         queued = [await queue(runtime, sessions, s) for s in seeds]
@@ -201,9 +196,6 @@ async def test_stale_claim_token_cannot_send_or_release_new_owner():
 @pytest.mark.anyio
 @pytest.mark.parametrize("terminal", ["sent", "failed", "unknown"])
 async def test_ledger_projection_crash_recovery_is_idempotent_without_send(monkeypatch, terminal):
-    # Reach the ledger/projection crash under test, rather than an unrelated
-    # pre-transport expiry when the CI host's reservation commit takes >100 ms.
-    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
         q = await queue(runtime, sessions, seed)
@@ -581,11 +573,6 @@ async def test_keyset_discovery_survives_ten_thousand_history_and_thousand_block
         assert seen[-1] == q.sequence_id
         claim = await runtime.claim(q.sequence_id)
         telegram = FakeTelegram()
-        # This test measures indexed discovery, not the CI host's fsync latency.
-        # Real start-window refusal is covered separately at the HTTP boundary.
-        from app.infrastructure.reply_sends import SqlTelegramReplySender
-
-        monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
         await dispatch_claim(runtime, telegram, claim)
         assert len(telegram.calls) == 1
 
@@ -809,17 +796,31 @@ async def test_lost_guard_then_stop_commit_fences_paused_old_http_start(monkeypa
     from app.services.telegram_delivery_gate import require_reserved_start_window
     from sqlalchemy import text
 
+    admitted = []
+    reached_transport = []
+
+    def admission_clock():
+        if not admitted:
+            admitted.append(time.monotonic())
+        return admitted[0]
+
+    # Reach the guard-loss scenario regardless of host fsync latency. The actual
+    # HTTP adapter check still uses real monotonic time from the real admission.
+    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(admission_clock))
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
         q = await queue(runtime, sessions, seed)
         claim = await runtime.claim(q.sequence_id)
 
         async def lose_barrier_then_resume(lease, effect):
+            reached_transport.append(True)
             await lease.connection.scalar(
                 text("SELECT pg_advisory_unlock(:key)"), {"key": lease.key}
             )
             await lease.connection.commit()
+            stop_started = time.monotonic()
             await accept(sessions, inbound(seed))
+            assert time.monotonic() - stop_started >= 0.1
             # The old process resumes only after the new guard owner committed stop.
             return await effect
 
@@ -832,6 +833,7 @@ async def test_lost_guard_then_stop_commit_fences_paused_old_http_start(monkeypa
 
         telegram = PausedTelegram()
         await dispatch_claim(runtime, telegram, claim)
+        assert reached_transport == [True]
         assert not telegram.calls
         async with sessions() as session:
             assert (await session.get(ReplySequence, q.sequence_id)).state == "stopped"

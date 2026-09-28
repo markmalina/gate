@@ -47,6 +47,16 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def stable_dispatch_clock(monkeypatch):
+    """State-machine tests use mock transport, not host fsync performance.
+
+    Deadline tests explicitly replace this clock and retain both admission and
+    HTTP-boundary expiry assertions. No production clock is changed.
+    """
+    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
+
+
 @asynccontextmanager
 async def runtime_fixture():
     for module in pkgutil.iter_modules(app.models.__path__):

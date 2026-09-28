@@ -107,13 +107,16 @@ Docker or an unprivileged PostgreSQL runtime should use the hosted job above.
 ## Acceptance boundary
 
 The first isolated rehearsal exposed host-time coupling in overlap and ledger
-crash-recovery tests: a slow reservation commit can correctly expire the 100 ms
-start window before the mocked transport is called. Those state-machine tests
-now use an explicit controlled sender clock. Two additional PostgreSQL cases
+crash-recovery tests; full CI also found it in provider-outcome recovery. A slow
+reservation commit can correctly expire the 100 ms start window before the mocked
+transport is called. The three state-machine PG modules now share an explicit
+controlled sender-clock fixture. Two additional PostgreSQL cases
 exercise 50 ms admission (one send) and 200 ms admission (cancelled ledger,
 `dispatch_start_window_expired`, zero sends). The existing HTTP-boundary tests
-and lost-guard/resumed-transport race retain their own deadline checks. Production
-clock behavior and the 100 ms bound are unchanged.
+retain their deadline checks. The lost-guard/resumed-transport race takes a real
+admission timestamp, explicitly proves it reached the guard-loss scenario and
+checks the real stop grace period and HTTP expiry. Production clock behavior
+and the 100 ms bound are unchanged.
 
 The implementation Work's rehearsal and the independent reviewer's execution
 are separate. Neither this workflow nor its receipt emits ACCEPT, merges a PR,
