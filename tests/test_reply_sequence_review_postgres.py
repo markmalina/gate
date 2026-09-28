@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 from app.api import mcp_routes
-from app.api.mcp_schemas import REPLY_CONTEXT_SUCCESS_SCHEMA, SEQUENCE_DETAIL_SCHEMA
+from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS, SEQUENCE_DETAIL_SCHEMA
 from app.application.reply_sequences import ReplySequenceError
 from app.core.mcp_security import AccessScope
 from app.infrastructure.reply_sends import SqlTelegramReplySender
@@ -53,7 +53,7 @@ async def context(runtime, sessions, seed, **arguments):
             settings=runtime.settings,
         )
         content = result["result"]["structuredContent"]
-        Draft202012Validator(REPLY_CONTEXT_SUCCESS_SCHEMA).validate(content)
+        Draft202012Validator(MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"]).validate(content)
         return content
 
 
