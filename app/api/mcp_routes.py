@@ -2880,7 +2880,10 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
             "and attachment timeline. Attachment metadata is listed without a "
             "provider call; an exact task:attachment:message:index selector retrieves "
             "one file on explicit request. Existing exact voice and latest call/voice "
-            "selectors remain available for compatibility."
+            "selectors remain available for compatibility. For a sequence, only the "
+            "latest task with sequence_approval.ready=true and non-null "
+            "dialog_inbound_revision can be reviewed for owner approval; a pending "
+            "projection requires refreshing the latest context."
         ),
         "inputSchema": {
             "type": "object",
@@ -3113,7 +3116,8 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
             "sooner than 60 seconds after the preceding confirmed delivery. "
             "With v2 enabled, require sequence_approval.ready=true and quote the non-null "
             "dialog_inbound_revision from the reviewed context as expected_inbound_revision; "
-            "any new recipient message stops the remainder and requires new approval."
+            "any new recipient message stops the remainder and requires new approval. "
+            "A queued=true response has sent=false; use gate_get_reply_sequence for outcomes."
         ),
         "inputSchema": {
             "type": "object",
@@ -4023,7 +4027,10 @@ def _gate_get_reply_sequence_tool(settings: Settings) -> JsonObject:
             "title": "Read one approved reply sequence",
             "description": (
                 "Read scoped delivery, stop, recipient and notification state, plus saved draft "
-                "texts across pages. Text match flags compare current saved bodies to approval. "
+                "texts across pages. Follow every next_cursor until null. "
+                "draft_text_matches_approval false or null means the saved text differs or is "
+                "unavailable; current saved bodies are not immutable approval archives. "
+                "Distinguish pending, blocked_route, failed, unknown and sent notification. "
                 "Never resumes a sequence; new sending requires fresh context and explicit approval."
             ),
             "inputSchema": {

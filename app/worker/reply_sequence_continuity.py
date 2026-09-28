@@ -7,6 +7,8 @@ separately verified epoch can be renewed; a restart/gap stops old approvals.
 import asyncio
 from uuid import UUID
 
+from sqlalchemy import select
+
 from app.infrastructure.reply_sequence_guard import dialog_guard
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
 from app.models.reply_sequences import (
@@ -15,7 +17,6 @@ from app.models.reply_sequences import (
     ReplyDispatchControl,
     ReplySequence,
 )
-from sqlalchemy import select
 
 
 async def reconcile_continuity_once(runtime: ReplySequenceRuntime) -> int:

@@ -150,7 +150,7 @@ def test_execution_requires_both_pytest_success_and_complete_report(
 
     def run(command, **kwargs):
         assert "PYTEST_ADDOPTS" not in kwargs["env"]
-        assert len([arg for arg in command if arg.startswith("tests/")]) == 9
+        assert len([arg for arg in command if arg.startswith("tests/")]) == 10
 
         def alteration(root, suite):
             ElementTree.SubElement(suite[0], "skipped")
