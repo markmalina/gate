@@ -58,6 +58,7 @@ from app.services.telegram_webhook import reconcile_telegram_webhook_with_retrie
 from app.worker.aqub_food_media import run_aqub_food_media_worker_loop
 from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
 from app.worker.beta_space import run_beta_space_worker_loop
+from app.worker.reply_sequence_continuity import run_continuity_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.reply_documents import run_reply_document_cleanup_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
@@ -157,6 +158,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
                 reply_sequence_task: asyncio.Task[None] | None = None
+                sequence_continuity_task: asyncio.Task[None] | None = None
                 sequence_notification_task: asyncio.Task[None] | None = None
                 reply_document_cleanup_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
@@ -246,6 +248,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         from app.worker.reply_sequence_notifications import run_notification_loop
                         sequence_notification_task = asyncio.create_task(run_notification_loop(
                             database_runtime.sequences, _app.state.telegram_client))
+                    if database_runtime.sequences is not None:
+                        sequence_continuity_task = asyncio.create_task(
+                            run_continuity_loop(database_runtime.sequences)
+                        )
                     if reply_sequence_worker_enabled:
                         reply_sequence_task = asyncio.create_task(
                             run_reply_sequence_worker_loop(
@@ -293,6 +299,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 dropbox_call_task.cancel()
                             with suppress(asyncio.CancelledError):
                                 await dropbox_call_task
+                        if sequence_continuity_task is not None:
+                            sequence_continuity_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await sequence_continuity_task
                         if reply_sequence_task is not None:
                             if not reply_sequence_task.done():
                                 reply_sequence_task.cancel()

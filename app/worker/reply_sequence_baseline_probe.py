@@ -10,10 +10,9 @@ import hashlib
 import json
 import re
 
+from app.core.config import get_settings
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
-
-from app.core.config import get_settings
 
 _SAFE_REF = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 _SAFE_REVISION = re.compile(r"[0-9]{4}_[a-z0-9_]+\Z")
