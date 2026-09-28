@@ -48,14 +48,42 @@ After all ingress replicas have started, record new scoped evidence before admit
 Continuity evidence has an explicit expiry of at most one hour; renewal does not excuse an observed gap.
 A gap/expiry with active series requires terminal stop and new user approval, not automatic resume.
 
+## Baseline probe before 0112
+
+The read-only CLI command below uses the configured DB URL in its own process and reads only
+the live SQL session identity and `alembic_version`; it neither constructs the sequence
+runtime nor requires a Telegram bot token or schema 0112. It emits an identity digest, not
+the database/role/host/DSN. The operation ID is an opaque Ops journal reference.
+
+```sh
+gate-reply-sequence-baseline-probe --operation-id REVIEWED_OPAQUE_ID \
+  --expected-workspace mark-personal --expected-schema 0111_reply_documents
+```
+
+A READY receipt proves only this CLI connection. It never proves the binding of web/worker
+processes, the complete replica inventory, legacy drain, backup or transport. Ops must
+compare an independently observed actual DB session on **each** running process with the
+provider target and full schema ledger. UNKNOWN, mismatch or a partially observed process
+keeps the release blocked. The CLI is suitable for the offline/synthetic P1a package and
+a later protected, bounded read-only probe after a separate authorized live plan.
+
 ## Default-off deployment and import
 
-1. Deploy reviewed code with all new flags false, through the registered Ops route when authorized.
-2. Set legacy sequence worker off on every replica/process. Drain and prove there are no reserved or
-   sending legacy SendAttempts. Do not infer this solely from a local process list.
-3. Apply `alembic upgrade head` through the approved migration path. Revision 0112 creates only
-   authority tables/indexes/constraints; it does not send, activate or import payloads.
-4. With worker off and verified pool mode, run:
+1. Before any candidate deploy or automatic `preDeployCommand`, acquire the shared Ops
+   deploy/control lock and prove the exact legacy process inventory. Disable new legacy
+   admissions on **every** replica and drain/classify current attempts; verify durable
+   reserved/sending = 0. A process list or a flag in the new binary is insufficient.
+2. Obtain and verify the pre-migration backup of the **actual** Gate DB and an applicable
+   recovery drill. Record exact identity, scope and retention. Do not use the old
+   `/ops-deploy production target=gate` fast path for this migration: it has no
+   freeze/drain/backup control. Prevent pending auto-deploy until these predicates hold.
+3. Only then deploy the exact reviewed candidate with new flags off through the
+   protected Ops sequence executor. `railway.toml` runs `alembic upgrade head` in
+   `preDeployCommand` **before** the new application starts. Verify the full migration
+   graph from observed baseline to candidate head and reconcile its result; do not
+   treat a later manual Alembic call as a separate required stage. No merge/deploy
+   is authorized by this runbook.
+4. With the worker off and verified pool mode, run:
 
    ```sh
    gate-reply-sequence-control initialize
