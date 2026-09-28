@@ -29,7 +29,7 @@ CASES = {
     "test_reply_sequence_cooldown": 16,
     "test_reply_sequences": 20,
     "test_telegram_retry_after": 29,
-    "test_telegram_client": 19,
+    "test_telegram_client": 20,
 }
 
 

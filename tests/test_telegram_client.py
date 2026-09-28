@@ -1,5 +1,8 @@
 import asyncio
 import json
+import sys
+import time
+from types import ModuleType, SimpleNamespace
 
 import httpx
 import pytest
@@ -8,6 +11,7 @@ from app.services.telegram import (
     TelegramClient,
     build_telegram_http_client,
 )
+from app.services.telegram_delivery_gate import register_gate, unregister_gate
 
 
 @pytest.fixture
@@ -241,6 +245,67 @@ async def test_send_business_document_uses_multipart_and_exact_business_binding(
     assert b'name="document"; filename="review.pdf"' in body
     assert b"Content-Type: application/pdf" in body
     assert b"%PDF-sample\n" in body
+
+
+@pytest.mark.anyio
+async def test_canary_denies_public_and_delegated_multipart_before_http(monkeypatch) -> None:
+    config = ModuleType("app.core.config")
+    settings = SimpleNamespace(gate_reply_sequence_canary_enabled=True)
+    config.get_settings = lambda: settings  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "app.core.config", config)
+    http_calls: list[httpx.Request] = []
+    budget_calls: list[object] = []
+
+    class Budget:
+        async def before(self, payload):
+            budget_calls.append(payload)
+            return time.monotonic()
+
+        async def failed(self, payload, retry_after):
+            raise AssertionError("Unexpected provider failure")
+
+        async def reserve_canary(self, intent, payload):
+            raise AssertionError("Multipart must never reserve a send grant")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        http_calls.append(request)
+        return httpx.Response(200, request=request, json={"ok": True, "result": {"message_id": 7}})
+
+    budget = Budget()
+    register_gate("123456789", budget)
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+            client = TelegramClient("123456789:synthetic", http_client=http_client)
+            with pytest.raises(TelegramApiError, match="Canary method blocked"):
+                await client.send_business_document(
+                    chat_id="out-of-scope",
+                    business_connection_id="synthetic-business",
+                    filename="review.pdf",
+                    media_type="application/pdf",
+                    data=b"%PDF-synthetic\n",
+                )
+            with pytest.raises(TelegramApiError, match="Canary method blocked"):
+                await client._post_telegram_multipart(
+                    url="https://api.telegram.org/bot123456789:synthetic/sendDocument",
+                    payload={
+                        "chat_id": "delegated",
+                        "business_connection_id": "synthetic-business",
+                    },
+                    file=("document", ("review.pdf", b"%PDF-synthetic\n", "application/pdf")),
+                )
+            assert http_calls == budget_calls == []
+
+            settings.gate_reply_sequence_canary_enabled = False
+            await client.send_business_document(
+                chat_id="baseline",
+                business_connection_id="synthetic-business",
+                filename="review.pdf",
+                media_type="application/pdf",
+                data=b"%PDF-synthetic\n",
+            )
+            assert len(http_calls) == len(budget_calls) == 1
+    finally:
+        unregister_gate("123456789", budget)
 
 
 @pytest.mark.anyio

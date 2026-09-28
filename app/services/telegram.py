@@ -196,6 +196,12 @@ class TelegramClient:
         payload: dict[str, str],
         file: tuple[str, tuple[str, bytes, str]],
     ) -> dict[str, Any]:
+        # Multipart has no scoped canary grant. Keep this guard at the shared
+        # HTTP boundary so delegated document paths cannot bypass admission.
+        from app.core.config import get_settings
+
+        if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False):
+            raise TelegramApiError(error_code=403, description="Canary method blocked")
         gate = delivery_gate(self._credential)
         if gate is not None:
             admitted = await gate.before(payload)
