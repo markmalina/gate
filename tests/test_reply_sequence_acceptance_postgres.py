@@ -8,6 +8,7 @@ import pytest
 from app.api.mcp_schemas import SEQUENCE_DETAIL_SCHEMA, SEQUENCE_SUMMARIES_SCHEMA
 from app.application.reply_sequences import ReplySequenceError
 from app.core.mcp_security import AccessScope
+from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequence_guard import dialog_guard
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
 from app.infrastructure.reply_transport_budget import SqlTelegramTransportBudget
@@ -80,7 +81,10 @@ async def same_account(sessions, a, b, recipient="54321"):
 
 
 @pytest.mark.anyio
-async def test_same_account_distinct_dialogs_overlap_and_account_cap_two():
+async def test_same_account_distinct_dialogs_overlap_and_account_cap_two(monkeypatch):
+    # Test account permits/overlap independently of the runner's commit/fsync speed.
+    # Admission expiry is tested with both sides of the deadline below and at HTTP.
+    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
     async with runtime_fixture() as (runtime, sessions):
         a = await _seed_reply(sessions, draft_count=2)
         b = await same_account(sessions, a, await _seed_reply(sessions, draft_count=2))
@@ -197,6 +201,9 @@ async def test_stale_claim_token_cannot_send_or_release_new_owner():
 @pytest.mark.anyio
 @pytest.mark.parametrize("terminal", ["sent", "failed", "unknown"])
 async def test_ledger_projection_crash_recovery_is_idempotent_without_send(monkeypatch, terminal):
+    # Reach the ledger/projection crash under test, rather than an unrelated
+    # pre-transport expiry when the CI host's reservation commit takes >100 ms.
+    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(lambda: 100.0))
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
         q = await queue(runtime, sessions, seed)
@@ -230,6 +237,33 @@ async def test_ledger_projection_crash_recovery_is_idempotent_without_send(monke
             slots = (await session.scalars(select(ReplyDispatchPermit.state))).all()
             assert slots.count("quarantined") == (1 if terminal == "unknown" else 0)
             assert sequence.next_position == (1 if terminal == "sent" else 0)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("elapsed,expected", [(0.05, "sent"), (0.2, "cancelled")])
+async def test_reservation_commit_delay_enforces_dispatch_start_window(
+    monkeypatch, elapsed, expected
+):
+    ticks = []
+
+    def clock():
+        ticks.append(True)
+        return 100.0 if len(ticks) == 1 else 100.0 + elapsed
+
+    monkeypatch.setattr(SqlTelegramReplySender, "_dispatch_clock", staticmethod(clock))
+    async with runtime_fixture() as (runtime, sessions):
+        seed = await _seed_reply(sessions, draft_count=2)
+        queued = await queue(runtime, sessions, seed)
+        claim = await runtime.claim(queued.sequence_id)
+        telegram = FakeTelegram()
+        await dispatch_claim(runtime, telegram, claim)
+        assert len(ticks) == 2  # admission before commit, then final pre-transport check
+        assert len(telegram.calls) == (1 if expected == "sent" else 0)
+        async with sessions() as session:
+            attempt = (await session.scalars(select(SendAttempt))).one()
+            assert attempt.status == expected
+            if expected == "cancelled":
+                assert attempt.error_code == "dispatch_start_window_expired"
 
 
 @pytest.mark.anyio

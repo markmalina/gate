@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CASES = {
     "test_reply_sequence_review_postgres": 15,
     "test_reply_sequence_dispatch_postgres": 23,
-    "test_reply_sequence_acceptance_postgres": 35,
+    "test_reply_sequence_acceptance_postgres": 37,
     "test_reply_sequence_context": 17,
     "test_reply_sequence_supervisor": 16,
     "test_reply_sequence_cooldown": 16,

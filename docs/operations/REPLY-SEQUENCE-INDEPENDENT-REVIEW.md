@@ -26,8 +26,8 @@ does not satisfy that requirement.
 - Runner requires a literal 40-character candidate SHA and clean tracked files.
 - Database preflight requires the designated loopback database, PostgreSQL 17
   and no application tables. It rejects missing DB configuration before pytest.
-- Nine explicitly selected test files: **190 cases**, including **73 PostgreSQL
-  cases** (15 review regressions + 23 dispatch + 35 acceptance).
+- Nine explicitly selected test files: **192 cases**, including **75 PostgreSQL
+  cases** (15 review regressions + 23 dispatch + 37 acceptance).
 - A successful pytest process is insufficient: JUnit must contain the exact
   per-file inventory with no skipped, failed, errored, duplicate or missing cases.
 - Inventory changes require an explicit update and review of the runner manifest.
@@ -72,7 +72,7 @@ credential redaction and agreement between process status and JUnit results.
    `junit.xml` and `pytest.log`, retained for 14 days. The receipt records candidate,
    verified head, PG version, Python, command, counts, timestamps and GitHub
    run/attempt/actor metadata. The same receipt is printed in the job log.
-7. Require `execution_status=succeeded`, `passed=190`, `skipped=0`, matching
+7. Require `execution_status=succeeded`, `passed=192`, `skipped=0`, matching
    per-file counts and `acceptance=not_issued`. Link the new run attempt and job in
    the Delta verdict. Distinct Work identity/independence is established by its
    accepted task and execution receipt; a shared GitHub login alone proves neither.
@@ -105,6 +105,15 @@ Stop the container even if the checks fail. This path is optional; a Work withou
 Docker or an unprivileged PostgreSQL runtime should use the hosted job above.
 
 ## Acceptance boundary
+
+The first isolated rehearsal exposed host-time coupling in overlap and ledger
+crash-recovery tests: a slow reservation commit can correctly expire the 100 ms
+start window before the mocked transport is called. Those state-machine tests
+now use an explicit controlled sender clock. Two additional PostgreSQL cases
+exercise 50 ms admission (one send) and 200 ms admission (cancelled ledger,
+`dispatch_start_window_expired`, zero sends). The existing HTTP-boundary tests
+and lost-guard/resumed-transport race retain their own deadline checks. Production
+clock behavior and the 100 ms bound are unchanged.
 
 The implementation Work's rehearsal and the independent reviewer's execution
 are separate. Neither this workflow nor its receipt emits ACCEPT, merges a PR,
