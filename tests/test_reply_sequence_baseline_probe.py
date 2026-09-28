@@ -4,7 +4,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from app.worker import reply_sequence_baseline_probe as probe
 
 

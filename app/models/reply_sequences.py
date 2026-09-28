@@ -16,6 +16,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.domain import Base
@@ -222,3 +223,35 @@ class ReplyTransportBudget(Base):
     next_allowed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked_indefinitely: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ReplyCanaryScope(Base):
+    __tablename__ = "reply_canary_scopes"
+    __table_args__ = (
+        CheckConstraint("state IN ('active','closed')"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 6"),
+        CheckConstraint("attempts_reserved >= 0 AND attempts_reserved <= max_attempts"),
+        UniqueConstraint("execution_id"),
+    )
+    workspace_ref: Mapped[str] = mapped_column(String(128), primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(128))
+    state: Mapped[str] = mapped_column(String(16), default="active")
+    principal_subject: Mapped[str] = mapped_column(String(255))
+    sequence_grants: Mapped[list[str]] = mapped_column(JSONB)
+    notification_destination: Mapped[str] = mapped_column(String(255))
+    notification_template: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    max_attempts: Mapped[int] = mapped_column(Integer)
+    attempts_reserved: Mapped[int] = mapped_column(Integer, default=0)
+    scope_sha256: Mapped[str] = mapped_column(String(64))
+
+
+class ReplyCanaryAttempt(Base):
+    __tablename__ = "reply_canary_attempts"
+    __table_args__ = (UniqueConstraint("workspace_ref", "attempt_key"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    workspace_ref: Mapped[str] = mapped_column(ForeignKey("reply_canary_scopes.workspace_ref"))
+    attempt_key: Mapped[UUID] = mapped_column()
+    kind: Mapped[str] = mapped_column(String(32))
+    execution_id: Mapped[str] = mapped_column(String(128))
+    reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

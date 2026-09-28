@@ -3,8 +3,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
-
 from app.models.reply_sequences import (
     ReplyConnectorAdmission,
     ReplyDispatchControl,
@@ -13,6 +11,8 @@ from app.models.reply_sequences import (
     ReplySequenceNotification,
 )
 from app.worker.reply_sequence_continuity import reconcile_continuity_once
+from sqlalchemy import select
+
 from test_reply_sends_postgres import _seed_reply
 from test_reply_sequence_dispatch_postgres import queue, runtime_fixture
 
