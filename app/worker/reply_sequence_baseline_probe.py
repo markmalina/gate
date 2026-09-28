@@ -37,11 +37,15 @@ async def read_session_identity(connection: AsyncConnection) -> tuple[str, str]:
     )
     identity = result.one()
     versions = (
-        await connection.execute(text("SELECT version_num FROM alembic_version"))
-    ).scalars().all()
+        (await connection.execute(text("SELECT version_num FROM alembic_version")))
+        .scalars()
+        .all()
+    )
     if len(versions) != 1 or not isinstance(versions[0], str):
         raise ValueError("invalid_schema_ledger")
-    encoded = json.dumps(list(identity), separators=(",", ":"), ensure_ascii=True).encode()
+    encoded = json.dumps(
+        list(identity), separators=(",", ":"), ensure_ascii=True
+    ).encode()
     return hashlib.sha256(encoded).hexdigest(), versions[0]
 
 
@@ -71,7 +75,9 @@ async def execute(
         "workspace_ref": expected_workspace,
         "result": "READY" if revision == expected_schema else "BLOCKED_SCHEMA",
         "expected_schema": expected_schema,
-        "observed_schema": revision if _SAFE_REVISION.fullmatch(revision) else "unknown",
+        "observed_schema": revision
+        if _SAFE_REVISION.fullmatch(revision)
+        else "unknown",
         "cli_db_session_identity_sha256": digest,
         "runtime_processes_verified": False,
         "legacy_drained": False,
@@ -96,13 +102,28 @@ def main() -> None:
     except Exception as exc:
         # SQLAlchemy/provider exceptions can embed a URL or server detail.
         # Log only the allowlisted local validation code, never the exception.
-        code = str(exc) if isinstance(exc, ValueError) and str(exc) in {
-            "invalid_reference", "invalid_schema_revision", "invalid_schema_ledger",
-            "workspace_mismatch", "database_binding_missing",
-        } else "probe_failed"
-        print(json.dumps({
-            "contract": "gate.sequence.baseline-probe.v1", "result": "BLOCKED", "code": code
-        }))
+        code = (
+            str(exc)
+            if isinstance(exc, ValueError)
+            and str(exc)
+            in {
+                "invalid_reference",
+                "invalid_schema_revision",
+                "invalid_schema_ledger",
+                "workspace_mismatch",
+                "database_binding_missing",
+            }
+            else "probe_failed"
+        )
+        print(
+            json.dumps(
+                {
+                    "contract": "gate.sequence.baseline-probe.v1",
+                    "result": "BLOCKED",
+                    "code": code,
+                }
+            )
+        )
         raise SystemExit(2) from None
     print(json.dumps(receipt, sort_keys=True))
     if receipt["result"] != "READY":
