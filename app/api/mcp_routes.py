@@ -145,7 +145,7 @@ from app.infrastructure.reply_documents import SqlReplyDocumentWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.infrastructure.reply_sequence_runtime import runtime_for_session
-from app.models.reply_sequences import ReplyDialogGuard
+from app.infrastructure.reply_sequence_context import approval_context_state, context_approval_reason
 from app.infrastructure.alpha_canary import (
     alpha_canary_active_installation_count,
     alpha_canary_audit_counts,
@@ -850,6 +850,12 @@ async def _get_reply_context_tool_result(
             code="invalid_arguments",
             message="cursor must be an opaque string",
         )
+    sequence_runtime = runtime_for_session(session)
+    approval_before = (
+        await approval_context_state(session, principal.access_scope, task_id)
+        if sequence_runtime is not None
+        else None
+    )
     try:
         context = await get_reply_context(
             session=session,
@@ -890,18 +896,20 @@ async def _get_reply_context_tool_result(
             session=session,
             settings=settings,
         )
-    sequence_runtime = runtime_for_session(session)
     if sequence_runtime is not None:
         account_id = UUID(context["account"]["id"])
         chat_id = context["conversation"]["chat_id"]
-        guard = await session.scalar(
-            select(ReplyDialogGuard).where(
-                ReplyDialogGuard.workspace_ref == principal.access_scope.workspace_id,
-                ReplyDialogGuard.account_id == account_id,
-                ReplyDialogGuard.provider_chat_id == chat_id,
-            )
+        approval_after = await approval_context_state(session, principal.access_scope, task_id)
+        approval_reason = context_approval_reason(
+            approval_before, approval_after, {m["id"] for m in context["messages"]}
         )
-        context["dialog_inbound_revision"] = guard.inbound_revision if guard else 0
+        context["dialog_inbound_revision"] = (
+            approval_before.revision if approval_before is not None and approval_reason is None else None
+        )
+        context["sequence_approval"] = {
+            "ready": approval_reason is None,
+            "blocked_reason": approval_reason,
+        }
         context["reply_sequences"] = await sequence_runtime.summaries(
             session, principal, account_id=account_id, chat_id=chat_id
         )
@@ -3103,7 +3111,8 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
             "message in order and receiving one explicit confirmation of the whole "
             "sequence. The first item becomes due immediately and later items no "
             "sooner than 60 seconds after the preceding confirmed delivery. "
-            "With v2 enabled, quote expected_inbound_revision from the reviewed context; "
+            "With v2 enabled, require sequence_approval.ready=true and quote the non-null "
+            "dialog_inbound_revision from the reviewed context as expected_inbound_revision; "
             "any new recipient message stops the remainder and requires new approval."
         ),
         "inputSchema": {
@@ -3919,6 +3928,13 @@ def _format_reply_context_text(context: JsonObject) -> str:
         "",
         f"Recent messages: {context['count']}",
     ]
+    approval = context.get("sequence_approval")
+    if approval is not None:
+        lines.append(
+            f"Sequence approval revision: {context['dialog_inbound_revision']}"
+            if approval["ready"]
+            else f"Sequence approval unavailable: {approval['blocked_reason']}; refresh context."
+        )
     for message in context["messages"]:
         direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
         lines.extend(
@@ -4005,7 +4021,11 @@ def _gate_get_reply_sequence_tool(settings: Settings) -> JsonObject:
         tool={
             "name": "gate_get_reply_sequence",
             "title": "Read one approved reply sequence",
-            "description": "Read scoped delivery, stop and notification state. Never resumes a sequence.",
+            "description": (
+                "Read scoped delivery, stop, recipient and notification state, plus saved draft "
+                "texts across pages. Text match flags compare current saved bodies to approval. "
+                "Never resumes a sequence; new sending requires fresh context and explicit approval."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {

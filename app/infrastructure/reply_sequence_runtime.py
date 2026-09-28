@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, or_, select, true, tuple_
+from sqlalchemy import and_, func, or_, select, true, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -36,8 +36,10 @@ from app.application.reply_sequences import (
 )
 from app.application.telegram_processing import AcceptTelegramReceiptCommand, TelegramReceiptError
 from app.core.config import Settings
-from app.core.mcp_security import Principal
+from app.core.mcp_security import AccessScope, Principal
+from app.infrastructure.reply_sequence_context import approval_context_state
 from app.infrastructure.reply_sequence_guard import dialog_guard
+from app.infrastructure.reply_sequence_recipient import recipient_display
 from app.models.domain import (
     Account,
     AuditLog,
@@ -268,7 +270,7 @@ class ReplySequenceRuntime:
             raise sequence_error("invalid_access_scope")
         row = (
             await session.execute(
-                select(ReplyDraft.account_id, Conversation.chat_id)
+                select(ReplyDraft.account_id, Conversation.chat_id, ReplyDraft.reply_task_id)
                 .join(Conversation, ReplyDraft.conversation_id == Conversation.id)
                 .where(
                     ReplyDraft.id == command.draft_ids[0],
@@ -280,7 +282,7 @@ class ReplySequenceRuntime:
         await session.rollback()
         if row is None:
             raise sequence_error("draft_not_found")
-        account_id, chat = row
+        account_id, chat, task_id = row
         if chat != command.expected_recipient_chat_id:
             raise sequence_error("recipient_confirmation_mismatch")
         async with dialog_guard(
@@ -295,6 +297,11 @@ class ReplySequenceRuntime:
                     raise sequence_error("sequence_guard_unavailable")
                 if guard.inbound_revision != command.expected_inbound_revision:
                     raise sequence_error("recipient_context_changed")
+                context_state = await approval_context_state(session, scope, task_id)
+                if context_state is None or context_state.revision != guard.inbound_revision:
+                    raise sequence_error("recipient_context_changed")
+                if context_state.blocked_reason:
+                    raise sequence_error(context_state.blocked_reason)
                 active = await session.scalar(
                     select(ReplySequence.id).where(
                         ReplySequence.guard_id == guard.id, ReplySequence.state == "active"
@@ -850,6 +857,19 @@ class ReplySequenceRuntime:
             or guard.inbound_revision != sequence.queued_revision
         ):
             raise sequence_error("recipient_context_changed")
+        context_state = await approval_context_state(
+            session,
+            AccessScope(
+                workspace_id=claim.workspace,
+                account_ids=frozenset({claim.account_id}),
+                project_ids=frozenset({claim.project_id}),
+            ),
+            claim.task_id,
+        )
+        if context_state is None or context_state.revision != sequence.queued_revision:
+            raise sequence_error("recipient_context_changed")
+        if context_state.blocked_reason:
+            raise sequence_error(context_state.blocked_reason)
         if (
             sequence.account_id,
             sequence.project_id,
@@ -1307,10 +1327,23 @@ class ReplySequenceRuntime:
         rows = (
             await session.execute(
                 select(
-                    ReplySequence, ReplyDialogGuard, ReplySequenceItem, ReplySequenceNotification
+                    ReplySequence, ReplyDialogGuard, ReplySequenceItem, ReplySequenceNotification,
+                    ReplyDraft.draft_text,
                 )
                 .join(ReplyDialogGuard, ReplyDialogGuard.id == ReplySequence.guard_id)
                 .outerjoin(ReplySequenceItem, ReplySequenceItem.sequence_id == ReplySequence.id)
+                .outerjoin(
+                    ReplyDraft,
+                    and_(
+                        ReplyDraft.id == ReplySequenceItem.draft_id,
+                        ReplyDraft.account_id == ReplySequence.account_id,
+                        ReplyDraft.project_id == ReplySequence.project_id,
+                        ReplyDraft.conversation_id == ReplySequence.conversation_id,
+                        ReplyDraft.reply_task_id == ReplySequence.task_id,
+                        ReplyDraft.account_id.in_(scope.account_ids),
+                        ReplyDraft.project_id.in_(scope.project_ids),
+                    ),
+                )
                 .outerjoin(
                     ReplySequenceNotification,
                     ReplySequenceNotification.sequence_id == ReplySequence.id,
@@ -1326,7 +1359,8 @@ class ReplySequenceRuntime:
         ).all()
         if not rows:
             return None
-        sequence, guard, _, notification = rows[0]
+        sequence, guard, _, notification, _ = rows[0]
+        draft_texts = {r[2].draft_id: r[4] for r in rows if r[2] is not None}
         all_items = [r[2] for r in rows if r[2] is not None]
         counts = {
             state: sum(i.state == state for i in all_items)
@@ -1372,6 +1406,13 @@ class ReplySequenceRuntime:
             if sequence.stop_receipt_ref
             else None,
             "account_label": sequence.account_label,
+            "recipient_display": await recipient_display(
+                session,
+                account_id=sequence.account_id,
+                project_id=sequence.project_id,
+                conversation_id=sequence.conversation_id,
+                chat_id=guard.provider_chat_id,
+            ),
             "total": sequence.item_count,
             "counts": {
                 state: counts.get(state, 0)
@@ -1389,6 +1430,11 @@ class ReplySequenceRuntime:
                 {
                     "position": i.position,
                     "draft_id": str(i.draft_id),
+                    "draft_text": draft_texts[i.draft_id],
+                    "draft_text_matches_approval": (
+                        text_digest(draft_texts[i.draft_id]) == i.approved_text_sha256
+                        if draft_texts[i.draft_id] is not None else None
+                    ),
                     "item_state": i.state,
                     "safe_error_code": i.safe_error_code,
                     "confirmed_at": i.finished_at.isoformat() if i.finished_at else None,

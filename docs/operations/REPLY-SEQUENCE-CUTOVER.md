@@ -94,6 +94,12 @@ gate-reply-sequence-control serial --legacy-workers-drained \
 The CLI records only the evidence digest in audit. It rejects activation across an unverified gap
 while active series exist. Use `stop-active` first for that incident; obtain new user approvals later.
 Queue fresh synthetic/staging series with the current `dialog_inbound_revision` from context.
+Require `sequence_approval.ready=true` and a non-null revision. A pending/dead-letter receipt,
+missing message projection, obsolete task, changed revision during the read, or an older history
+page does not supply approval authority. Refresh the latest task/context after processing completes;
+never substitute the revision from sequence detail or guess a counter. Queue and final admission
+independently recheck projection readiness. A dead-letter receipt needs normal worker recovery;
+marking it processed without the latest scoped Message projection does not authorize sending.
 Observe serial delivery, stop-on-inbound, duplicate webhook, expiry and notification readback.
 For production canary, obtain exact owner-only installation/recipient refs and hard send caps first.
 Never use contacts or historical conversations as convenient test targets.
@@ -111,6 +117,11 @@ item progress and resource wait. `gate_get_reply_sequence` requires workspace/ac
 unknown and foreign refs have identical not-found behavior. Detail counts partition all items,
 not just the returned page; unknown and sending are never counted as sent. Readback includes stop
 reason, revision, notification state, due/cooldown and no-auto-resume evidence.
+Detail also includes `recipient_display` and paginated saved `draft_text` values. Iterate every
+`next_cursor` to recover the remaining paragraphs. `draft_text_matches_approval=false` means the
+saved body changed; null means no correctly bound body is available. These are current saved drafts,
+not a second immutable body archive. Owner notifications use the same bounded, single-line recipient
+label; unnamed dialogs get a stable opaque fallback. Incoming message bodies are not copied into them.
 
 - Provider 429: current series stops; shared account/bot/recipient cooldown persists. Neighbors wait
   for that resource. Missing delay falls back to 60 s; unrepresentable delay blocks indefinitely.

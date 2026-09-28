@@ -2421,7 +2421,10 @@ GATE_UNANSWERED_OUTPUT_SCHEMA["properties"]["reply_sequences"] = SEQUENCE_SUMMAR
 REPLY_CONTEXT_SUCCESS_SCHEMA["properties"].update(
     {
         "reply_sequences": SEQUENCE_SUMMARIES_SCHEMA,
-        "dialog_inbound_revision": {"type": "integer", "minimum": 0},
+        "dialog_inbound_revision": {"type": ["integer", "null"], "minimum": 0},
+        "sequence_approval": _object(
+            {"ready": {"type": "boolean"}, "blocked_reason": _nullable("string")}
+        ),
     }
 )
 SEQUENCE_SUCCESS_SCHEMA["properties"].update(
@@ -2441,6 +2444,7 @@ SEQUENCE_DETAIL_SCHEMA = _object(
         "stopped_at": _nullable("string"),
         "stopped_by_receipt_ref": _nullable("string"),
         "account_label": {"type": "string"},
+        "recipient_display": {"type": "string", "maxLength": 120},
         "total": {"type": "integer", "minimum": 2, "maximum": 50},
         "counts": _object(
             {
@@ -2463,6 +2467,8 @@ SEQUENCE_DETAIL_SCHEMA = _object(
                 {
                     "position": {"type": "integer", "minimum": 0, "maximum": 49},
                     "draft_id": {"type": "string", "format": "uuid"},
+                    "draft_text": _nullable("string"),
+                    "draft_text_matches_approval": {"type": ["boolean", "null"]},
                     "item_state": {"type": "string"},
                     "safe_error_code": _nullable("string"),
                     "confirmed_at": _nullable("string"),

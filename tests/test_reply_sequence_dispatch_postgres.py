@@ -333,10 +333,12 @@ async def test_failure_stops_tail_without_retry_and_preserves_outcome(error, exp
 async def test_stale_revision_and_direct_cancelled_send_are_denied():
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
+        queued = await queue(runtime, sessions, seed)
         await accept(sessions, inbound(seed))
         with pytest.raises(ReplySequenceError, match="recipient context changed"):
             await queue(runtime, sessions, seed, revision=0)
-        queued = await queue(runtime, sessions, seed, revision=1)
+        with pytest.raises(ReplySequenceError, match="recipient context pending"):
+            await queue(runtime, sessions, seed, revision=1)
         await accept(sessions, inbound(seed, update_id=501, message_id=701))
         telegram = FakeTelegram()
         from app.application.reply_sends import ReplySendError

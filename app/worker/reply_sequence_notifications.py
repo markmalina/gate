@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, update
 
 from app.infrastructure.reply_sequence_owner_route import owner_route
+from app.infrastructure.reply_sequence_recipient import recipient_display
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
 from app.models.reply_sequences import (
     ReplyDialogGuard,
@@ -71,6 +72,7 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
             event.safe_error_code = "owner_route_unverified"
             await session.commit()
             return True
+        assert guard is not None
         items = (
             await session.scalars(
                 select(ReplySequenceItem).where(ReplySequenceItem.sequence_id == sequence.id)
@@ -80,8 +82,16 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
             state: sum(i.state == state for i in items)
             for state in ("sent", "cancelled", "unknown", "sending")
         }
+        display = await recipient_display(
+            session,
+            account_id=sequence.account_id,
+            project_id=sequence.project_id,
+            conversation_id=sequence.conversation_id,
+            chat_id=guard.provider_chat_id,
+        )
         text = (
-            f"Серия {str(sequence.id)[:8]} ({sequence.account_label}) остановлена. "
+            f"Серия {str(sequence.id)[:8]} ({sequence.account_label}) "
+            f"адресату «{display}» остановлена. "
             f"{now.astimezone(ZoneInfo('Europe/Moscow')):%d.%m.%Y %H:%M} МСК. "
             f"Отправлено: {counts['sent']}/{sequence.item_count}; отменено: {counts['cancelled']}; "
             f"неопределённо/в процессе: {counts['unknown'] + counts['sending']}. "
