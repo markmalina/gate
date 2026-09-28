@@ -10,11 +10,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import and_, case, or_, select, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import undefer
-
 from app.application.account_labels import account_label
 from app.application.reply_sends import (
     ReplySendError,
@@ -44,7 +39,16 @@ from app.models.domain import (
 )
 from app.models.reply_sequences import ReplySequenceItem
 from app.services.telegram import TelegramApiError, TelegramClient
-from app.services.telegram_delivery_gate import TelegramDispatchStartExpired, reserved_delivery
+from app.services.telegram_delivery_gate import (
+    CanaryDelivery,
+    TelegramDispatchStartExpired,
+    canary_delivery,
+    reserved_delivery,
+)
+from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 _SENDABLE_DRAFT_STATUSES = frozenset(
     {
@@ -288,8 +292,19 @@ class SqlTelegramReplySender:
                 )
                 if self._dialog_lease is not None:
                     assert self._admitted_monotonic is not None
+                    assert self._dispatch_claim is not None
                     with reserved_delivery(
                         self._settings.telegram_bot_token, admitted_at=self._admitted_monotonic
+                    ), canary_delivery(
+                        CanaryDelivery(
+                            kind="sequence",
+                            principal_subject=self._dispatch_claim.principal_subject,
+                            account_id=self._dispatch_claim.account_id,
+                            dialog_ref=self._dispatch_claim.recipient,
+                            body_sha256=hashlib.sha256(context.draft_text.encode("utf-8")).hexdigest(),
+                            destination=context.target_chat_id,
+                            business_connection_id=reservation.business_connection_id,
+                        )
                     ):
                         telegram_result = await self._dialog_lease.transport(transport_effect)
                 else:

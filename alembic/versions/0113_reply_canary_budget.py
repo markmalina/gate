@@ -39,8 +39,39 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["workspace_ref"], ["reply_canary_scopes.workspace_ref"]),
         sa.UniqueConstraint("workspace_ref", "attempt_key"),
     )
+    op.execute("""
+        CREATE FUNCTION guard_reply_canary_scope() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION 'canary scope cannot be deleted';
+            END IF;
+            IF NEW.workspace_ref IS DISTINCT FROM OLD.workspace_ref
+                OR NEW.execution_id IS DISTINCT FROM OLD.execution_id
+                OR NEW.principal_subject IS DISTINCT FROM OLD.principal_subject
+                OR NEW.sequence_grants IS DISTINCT FROM OLD.sequence_grants
+                OR NEW.notification_destination IS DISTINCT FROM OLD.notification_destination
+                OR NEW.notification_template IS DISTINCT FROM OLD.notification_template
+                OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+                OR NEW.max_attempts IS DISTINCT FROM OLD.max_attempts
+                OR NEW.scope_sha256 IS DISTINCT FROM OLD.scope_sha256
+                OR NEW.attempts_reserved < OLD.attempts_reserved
+                OR NEW.attempts_reserved > OLD.attempts_reserved + 1
+                OR (OLD.state = 'closed' AND NEW.state <> 'closed')
+                OR (OLD.state = 'closed' AND NEW.attempts_reserved <> OLD.attempts_reserved)
+            THEN
+                RAISE EXCEPTION 'canary scope is immutable';
+            END IF;
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER guard_reply_canary_scope_update
+        BEFORE UPDATE OR DELETE ON reply_canary_scopes
+        FOR EACH ROW EXECUTE FUNCTION guard_reply_canary_scope()
+    """)
 
 
 def downgrade() -> None:
     op.drop_table("reply_canary_attempts")
     op.drop_table("reply_canary_scopes")
+    op.execute("DROP FUNCTION guard_reply_canary_scope()")

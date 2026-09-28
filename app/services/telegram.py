@@ -9,8 +9,12 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import httpx
-
-from app.services.telegram_delivery_gate import delivery_gate, require_reserved_start_window
+from app.services.telegram_delivery_gate import (
+    canary_intent,
+    delivery_gate,
+    registered_gate,
+    require_reserved_start_window,
+)
 
 
 def build_telegram_http_client() -> httpx.AsyncClient:
@@ -353,7 +357,14 @@ class TelegramClient:
         )
 
     async def _post_telegram_json(self, *, url: str, payload: dict[str, Any]) -> dict[str, Any]:
-        gate = delivery_gate(self._credential) if url.rsplit("/", 1)[-1] == "sendMessage" else None
+        method = url.rsplit("/", 1)[-1]
+        sending = method == "sendMessage"
+        if method.startswith("send") and not sending:
+            from app.core.config import get_settings
+
+            if get_settings().gate_reply_sequence_canary_enabled:
+                raise TelegramApiError(error_code=403, description="Canary method blocked")
+        gate = delivery_gate(self._credential) if sending else None
         if gate is not None:
             admitted = await gate.before(payload)
             if time.monotonic() - admitted > 0.1:
@@ -362,6 +373,15 @@ class TelegramClient:
                     description="Transport start window expired",
                     retry_after_seconds=1,
                 )
+        if sending:
+            from app.core.config import get_settings
+
+            if get_settings().gate_reply_sequence_canary_enabled:
+                intent = canary_intent()
+                owner = registered_gate(self._credential.split(":", 1)[0])
+                if intent is None or owner is None:
+                    raise TelegramApiError(error_code=403, description="Canary admission closed")
+                await owner.reserve_canary(intent, payload)
         require_reserved_start_window(self._credential)
         response = await self._http_client.post(url, json=payload)
         try:

@@ -33,7 +33,7 @@ def report(path, *, alteration=None):
 def test_complete_inventory_passes(tmp_path):
     counts = runner.validate_junit(report(tmp_path / "result.xml"))
     assert counts == runner.CASES
-    assert sum(counts.values()) == 197
+    assert sum(counts.values()) == 198
 
 
 @pytest.mark.parametrize("tag", ["skipped", "failure", "error"])

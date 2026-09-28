@@ -1,19 +1,59 @@
 """Process registry of durable bot rate gates and scoped, already-reserved sends."""
 
+import hashlib
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import UUID
 
 
 class TelegramDeliveryGate(Protocol):
     async def before(self, payload: dict[str, Any]) -> float: ...
     async def failed(self, payload: dict[str, Any], retry_after: int | None) -> None: ...
+    async def reserve_canary(self, intent: "CanaryDelivery", payload: dict[str, Any]) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class CanaryDelivery:
+    """Bound to persisted dispatch/outbox state, then verified against HTTP JSON."""
+
+    kind: str
+    principal_subject: str
+    account_id: UUID | None
+    dialog_ref: str | None
+    body_sha256: str | None
+    destination: str
+    business_connection_id: str | None = None
+    notification_template: str | None = None
+    notification_text_sha256: str | None = None
+
+    def matches(self, payload: dict[str, Any]) -> bool:
+        text = payload.get("text")
+        if not isinstance(text, str) or str(payload.get("chat_id")) != self.destination:
+            return False
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if self.kind == "sequence":
+            return (
+                self.body_sha256 == digest
+                and self.dialog_ref == self.destination
+                and self.business_connection_id is not None
+                and payload.get("business_connection_id") == self.business_connection_id
+            )
+        if self.kind == "notification":
+            return (
+                self.notification_text_sha256 == digest
+                and self.business_connection_id is None
+                and "business_connection_id" not in payload
+            )
+        return False
 
 
 _gates: dict[str, TelegramDeliveryGate] = {}
 _reserved: ContextVar[tuple[str, float] | None] = ContextVar("telegram_reserved_bot", default=None)
+_canary: ContextVar[CanaryDelivery | None] = ContextVar("telegram_canary", default=None)
 
 
 class TelegramDispatchStartExpired(RuntimeError):
@@ -54,11 +94,27 @@ def delivery_gate(credential: str) -> TelegramDeliveryGate | None:
 
         settings = get_settings()
         if (
-            settings.gate_reply_sequence_stop_on_inbound_enabled
+            (
+                settings.gate_reply_sequence_stop_on_inbound_enabled
+                or settings.gate_reply_sequence_canary_enabled
+            )
             and prefix == settings.telegram_bot_token.split(":", 1)[0]
         ):
             raise RuntimeError("Telegram shared budget is not initialized")
     return gate
+
+
+def canary_intent() -> CanaryDelivery | None:
+    return _canary.get()
+
+
+@contextmanager
+def canary_delivery(intent: CanaryDelivery) -> Iterator[None]:
+    token = _canary.set(intent)
+    try:
+        yield
+    finally:
+        _canary.reset(token)
 
 
 @contextmanager

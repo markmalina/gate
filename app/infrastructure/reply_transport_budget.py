@@ -3,23 +3,57 @@
 import time
 from datetime import timedelta
 from typing import Any
-
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
+from uuid import uuid4
 
 from app.application.reply_sequence_cooldown import (
     ReplySequenceCooldown,
     extend_reply_sequence_cooldown,
 )
+from app.infrastructure.reply_sequence_canary import (
+    CanaryAttemptRequest,
+    CanaryDenied,
+    reserve_canary_attempt,
+)
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
 from app.models.domain import TelegramBusinessConnection
-from app.models.reply_sequences import ReplyTransportBudget
+from app.models.reply_sequences import ReplyCanaryScope, ReplyTransportBudget
 from app.services.telegram import TelegramApiError
+from app.services.telegram_delivery_gate import CanaryDelivery
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 
 
 class SqlTelegramTransportBudget:
     def __init__(self, runtime: ReplySequenceRuntime) -> None:
         self.runtime = runtime
+
+    async def reserve_canary(self, intent: CanaryDelivery, payload: dict[str, Any]) -> None:
+        if not intent.matches(payload):
+            raise TelegramApiError(error_code=403, description="Canary payload mismatch")
+        async with self.runtime.sessions() as session:
+            scope = await session.get(ReplyCanaryScope, self.runtime.workspace)
+            if scope is None:
+                raise TelegramApiError(error_code=403, description="Canary admission closed")
+            request = CanaryAttemptRequest(
+                workspace_ref=self.runtime.workspace,
+                execution_id=scope.execution_id,
+                attempt_key=uuid4(),
+                kind=intent.kind,
+                principal_subject=intent.principal_subject,
+                account_id=intent.account_id,
+                dialog_ref=intent.dialog_ref,
+                body_sha256=intent.body_sha256,
+                notification_destination=(
+                    intent.destination if intent.kind == "notification" else None
+                ),
+                notification_template=intent.notification_template,
+            )
+            try:
+                await reserve_canary_attempt(session, request)
+            except CanaryDenied:
+                raise TelegramApiError(
+                    error_code=403, description="Canary admission closed"
+                ) from None
 
     async def _keys(self, payload: dict[str, Any]) -> list[tuple[str, float]]:
         connection_id = payload.get("business_connection_id")

@@ -599,6 +599,9 @@ class Settings(BaseSettings):
     gate_reply_sequence_notifications_enabled: bool = Field(
         default=False, validation_alias="GATE_REPLY_SEQUENCE_NOTIFICATIONS_ENABLED"
     )
+    gate_reply_sequence_canary_enabled: bool = Field(
+        default=False, validation_alias="GATE_REPLY_SEQUENCE_CANARY_ENABLED"
+    )
     gate_reply_sequence_db_pool_mode: str = Field(
         default="unknown", validation_alias="GATE_REPLY_SEQUENCE_DB_POOL_MODE"
     )

@@ -1,6 +1,7 @@
 """Durable owner-only stop notifications; ambiguous delivery is never replayed."""
 
 import asyncio
+import hashlib
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -16,6 +17,7 @@ from app.models.reply_sequences import (
     ReplySequenceNotification,
 )
 from app.services.telegram import TelegramApiError, TelegramClient
+from app.services.telegram_delivery_gate import CanaryDelivery, canary_delivery
 
 
 async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -> bool:
@@ -102,6 +104,7 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
         event.attempts += 1
         event.owner_route_ref = route.id
         event_id, destination = event.id, str(route.user_chat_id)
+        principal_subject = sequence.principal_subject
         await session.commit()
     outcome = "unknown"
     error: str | None = "notification_delivery_unknown"
@@ -109,7 +112,19 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
     retry_after: int | None = None
     try:
         async with asyncio.timeout(20):
-            response = await telegram.send_plain_message(chat_id=destination, text=text)
+            with canary_delivery(
+                CanaryDelivery(
+                    kind="notification",
+                    principal_subject=principal_subject,
+                    account_id=None,
+                    dialog_ref=None,
+                    body_sha256=None,
+                    destination=destination,
+                    notification_template="reply_sequence_stop_v1",
+                    notification_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                )
+            ):
+                response = await telegram.send_plain_message(chat_id=destination, text=text)
         result = response.get("result")
         if (
             response.get("ok") is True
@@ -124,6 +139,8 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
                 "notification_rate_limited",
                 exc.retry_after_seconds,
             )
+        elif exc.error_code == 403 and exc.http_status is None:
+            outcome, error = "failed", "canary_admission_closed"
         elif exc.http_status is not None and exc.http_status < 500:
             outcome, error = "failed", "notification_provider_rejected"
     except Exception:
