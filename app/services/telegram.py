@@ -9,6 +9,8 @@ from typing import Any, cast
 
 import httpx
 
+from app.services.process_send_fence import process_send_fence
+
 
 def build_telegram_http_client() -> httpx.AsyncClient:
     """Build the bounded process-owned HTTP transport for Telegram API calls."""
@@ -182,13 +184,14 @@ class TelegramClient:
         payload: dict[str, str],
         file: tuple[str, tuple[str, bytes, str]],
     ) -> dict[str, Any]:
-        response = await self._http_client.post(
-            url,
-            data=payload,
-            files={file[0]: file[1]},
-            timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
-        )
-        return self._parse_telegram_response(response)
+        with process_send_fence().admitted():
+            response = await self._http_client.post(
+                url,
+                data=payload,
+                files={file[0]: file[1]},
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
+            )
+            return self._parse_telegram_response(response)
 
     async def edit_message_text(
         self,
@@ -331,8 +334,14 @@ class TelegramClient:
     async def _post_telegram_json(
         self, *, url: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        response = await self._http_client.post(url, json=payload)
-        return self._parse_telegram_response(response)
+        if url.rsplit("/", 1)[-1] in {
+            "getBusinessConnection", "getChatMember", "getChatAdministrators"
+        }:
+            response = await self._http_client.post(url, json=payload)
+            return self._parse_telegram_response(response)
+        with process_send_fence().admitted():
+            response = await self._http_client.post(url, json=payload)
+            return self._parse_telegram_response(response)
 
     @staticmethod
     def _parse_telegram_response(response: httpx.Response) -> dict[str, Any]:

@@ -1,0 +1,38 @@
+{
+  "config_evidence": {
+    "gate_account_by_send_enabled": false,
+    "gate_account_ru_send_enabled": false,
+    "gate_default_mode": "manual",
+    "gate_document_send_enabled": false,
+    "gate_env": "production",
+    "gate_reply_sequence_poll_seconds": "5",
+    "gate_reply_sequence_worker_enabled": false,
+    "gate_send_enabled": false,
+    "gate_telegram_worker_enabled": true
+  },
+  "config_sha256": "7279cd89b398ce401c070957cdfca7b708c62149285b40ca3f56db825dd21384",
+  "contract": "gate.baseline-config-fixture.v1",
+  "process_metadata": {
+    "boot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "config": "7279cd89b398ce401c070957cdfca7b708c62149285b40ca3f56db825dd21384",
+    "deployment": "28cd52aed5c8741799549ec57dc0a1706acbddaeee5883c083f7d738d23f51b4",
+    "replica": "b29683da350818d02cc85c998d69749d33a615b5111fb58740e9fa986750b531",
+    "source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "workspace": "f19a2698394c9e3ba8616cd57350e998e4f34d78a7a56ceaf966556edc6eb82c"
+  },
+  "provider_input": {
+    "RAILWAY_DEPLOYMENT_ID": "synthetic-deployment",
+    "RAILWAY_REPLICA_ID": "synthetic-replica"
+  },
+  "settings_input": {
+    "gate_account_by_send_enabled": false,
+    "gate_account_ru_send_enabled": false,
+    "gate_default_mode": "manual",
+    "gate_document_send_enabled": false,
+    "gate_env": "production",
+    "gate_reply_sequence_poll_seconds": "5",
+    "gate_reply_sequence_worker_enabled": false,
+    "gate_send_enabled": false,
+    "gate_telegram_worker_enabled": true
+  }
+}

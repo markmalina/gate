@@ -31,6 +31,7 @@ from app.models.domain import (
     SendAttempt,
     SendAttemptStatus,
 )
+from app.services.process_send_fence import BaselineSendClosed, process_send_fence
 from app.services.telegram import TelegramClient
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,10 @@ async def run_reply_sequence_once(
 ) -> int:
     """Deliver at most one due draft per sequence and return the sent count."""
 
+    try:
+        process_send_fence().require_admission()
+    except BaselineSendClosed:
+        return 0
     current_time = now or datetime.now(UTC)
     rows = await _discover_sequence_rows(session_factory)
 

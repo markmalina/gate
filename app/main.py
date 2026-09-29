@@ -39,6 +39,8 @@ from app.infrastructure.beta_connector_binding import (
 )
 from app.infrastructure.beta_space import reconcile_beta_katya_space_binding
 from app.infrastructure.database import database_runtime_lifespan
+from app.infrastructure.baseline_observation import run_baseline_observer
+from app.services.process_send_fence import ProcessSendFence, install_process_send_fence
 from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.services.telegram_alpha_webhook import (
@@ -138,6 +140,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.aqub_provider_readiness = aqub_provider_readiness
     async with database_runtime_lifespan(settings.database_url) as database_runtime:
         _app.state.database_runtime = database_runtime
+        baseline_fence = ProcessSendFence(
+            settings, observations_required=True, observer_owned=True
+        )
+        previous_fence = install_process_send_fence(baseline_fence)
+        baseline_task = asyncio.create_task(
+            run_baseline_observer(engine=database_runtime.engine, fence=baseline_fence)
+        )
         try:
             if getattr(settings, "gate_become_connector_enabled", False):
                 await reconcile_become_connector_binding(
@@ -316,6 +325,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         if hasattr(_app.state, "http_client"):
                             delattr(_app.state, "http_client")
         finally:
+            baseline_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await baseline_task
+            install_process_send_fence(previous_fence)
             delattr(_app.state, "database_runtime")
             delattr(_app.state, "worker_health_registry")
             delattr(_app.state, "aqub_provider_readiness")
