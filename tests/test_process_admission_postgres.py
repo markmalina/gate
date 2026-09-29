@@ -16,7 +16,7 @@ from app.worker.reply_sequence_dispatch import dispatch_claim
 from app.worker.reply_sequence_notifications import notify_once
 from sqlalchemy import select, text
 
-from test_reply_sends_postgres import _seed_reply
+from test_reply_sends_postgres import _live_connection, _seed_reply
 from test_reply_sequence_dispatch_postgres import accept, inbound, queue, runtime_fixture
 from test_reply_sequence_epoch_postgres import prepare_epoch
 
@@ -36,19 +36,23 @@ async def test_admitted_sequence_local_fence_denial_is_cancelled_not_provider_un
         queued = await queue(runtime, sessions, seed)
         claim = await runtime.claim(queued.sequence_id)
         assert claim is not None
-        calls = []
+        reads, calls, denials = [], [], []
+
+        def transport(request):
+            if request.url.path.endswith("/getBusinessConnection"):
+                reads.append(request)
+                return httpx.Response(200, json=_live_connection(seed.business_connection_id))
+            calls.append(request)
+            return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
         async def deny(resource):
+            denials.append(resource)
             raise BaselineSendClosed("synthetic_local_health_loss")
 
         fence = ProcessSendFence(runtime.settings, candidate_mode=True, candidate_health=deny)
         previous = install_process_send_fence(fence)
         try:
-            async with httpx.AsyncClient(
-                transport=httpx.MockTransport(
-                    lambda request: calls.append(request) or httpx.Response(200, json={"ok": True})
-                )
-            ) as http:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as http:
                 await dispatch_claim(
                     runtime,
                     TelegramClient(runtime.settings.telegram_bot_token, http_client=http),
@@ -58,6 +62,7 @@ async def test_admitted_sequence_local_fence_denial_is_cancelled_not_provider_un
                 attempt = (await session.scalars(select(SendAttempt))).one()
                 assert attempt.status == "cancelled"
                 assert attempt.error_code == "process_admission_closed"
+            assert len(reads) == 1 and denials == [runtime.bot_resource]
             assert not calls and fence.inflight == 0
         finally:
             install_process_send_fence(previous)
