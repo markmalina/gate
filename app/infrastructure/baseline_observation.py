@@ -253,7 +253,7 @@ async def standalone_process_observation(
 
 
 ACTIVITY_SQL = (
-    "SELECT application_name, query, "
+    "SELECT application_name, left(query, 1024) AS query, "
     "extract(epoch FROM clock_timestamp()-query_start) AS age, "
     "backend_start, query_start, xact_start, state, pid "
     "FROM pg_stat_activity WHERE application_name LIKE 'gate-g1a:%' LIMIT 129"

@@ -64,7 +64,9 @@ credential access. Its caller must use a fresh AUTOCOMMIT connection and prove:
   an old process has stopped.
 
 The bounded read allows at most 128 expected processes and reads at most 129
-marker rows. It requires exact marker grammar, unique boot and backend IDs,
+marker rows. The server limits each returned query to 1024 characters before
+transfer; oversized/truncated values fail the strict ASCII grammar and terminal
+sentinel. Validation requires exact marker grammar, unique boot and backend IDs,
 matching application name, idle state, no transaction, DB-clock query age
 between 0 and 15 seconds, and every pinned expectation exactly once. The read
 uses `clock_timestamp()`, not a transaction-frozen timestamp. Missing/hidden/
