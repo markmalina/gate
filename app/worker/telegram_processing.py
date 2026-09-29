@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.application.alpha_canary import (
     BETA_DISCLOSURE_PREFIX,
@@ -151,6 +156,7 @@ from app.infrastructure.alpha_delivery import (
 from app.infrastructure.alpha_shadow_worker import (
     SessionFactoryAlphaShadowTurnRepository,
 )
+from app.infrastructure.baseline_observation import standalone_process_observation
 from app.infrastructure.become_controlled_consent import (
     SessionFactoryBecomeControlledConsentStore,
     SessionFactoryBecomeRelationsHandoffBackfiller,
@@ -1182,6 +1188,16 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         raise RuntimeError("DATABASE_URL is required for an enabled Telegram worker")
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    try:
+        async with standalone_process_observation(engine=engine, settings=settings):
+            return await _run_worker_with_engine(settings, engine)
+    finally:
+        await engine.dispose()
+
+
+async def _run_worker_with_engine(
+    settings: Settings, engine: AsyncEngine
+) -> TelegramWorkerRuntimeResult:
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     if (
         settings.gate_become_connector_enabled
