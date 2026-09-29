@@ -743,8 +743,9 @@ async def test_operator_cutover_cannot_reactivate_old_approval_across_ingress_ga
         args.action = "stop-active"
         assert (await control_cli.execute(args))["stopped"] == 1
         args.action = "serial"
-        with pytest.raises(ReplySequenceError, match="sequence_guard_unavailable"):
+        with pytest.raises(ReplySequenceError) as exc:
             await control_cli.execute(args)
+        assert exc.value.code == "sequence_guard_unavailable"
         await prepare_epoch(runtime, sessions)
         assert (await control_cli.execute(args))["mode"] == "serial"
         async with sessions() as session:

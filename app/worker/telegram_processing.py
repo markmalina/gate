@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.alpha_canary import (
     BETA_DISCLOSURE_PREFIX,
@@ -1181,11 +1181,10 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is required for an enabled Telegram worker")
 
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    from app.infrastructure.database import attach_reply_sequence_runtime
+    from app.infrastructure.database import build_database_runtime, close_database_runtime
 
-    sequences = attach_reply_sequence_runtime(engine, sessions, settings)
+    database = build_database_runtime(settings.database_url, settings=settings)
+    sessions = database.session_factory
     if (
         settings.gate_become_connector_enabled
         and settings.gate_become_canary_enabled
@@ -2021,9 +2020,7 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         await _drain_beta_context(sessions)
         return result
     finally:
-        if sequences is not None:
-            await sequences.close()
-        await engine.dispose()
+        await close_database_runtime(database)
 
 
 async def _drain_beta_context(

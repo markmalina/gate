@@ -9,8 +9,6 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app.application.become_transcript_review import (
     DeliverPilotTranscriptReview,
 )
@@ -63,11 +61,10 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         and not settings.gate_become_pilot_slice1_enabled
     ):
         raise RuntimeError("BECOME Pilot Slice 1 kill switch is off")
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    from app.infrastructure.database import attach_reply_sequence_runtime
+    from app.infrastructure.database import build_database_runtime, close_database_runtime
 
-    sequences = attach_reply_sequence_runtime(engine, sessions, settings)
+    database = build_database_runtime(settings.database_url, settings=settings)
+    sessions = database.session_factory
     store = SessionFactoryPilotTranscriptReviewStore(sessions)
     slice3_store = SessionFactoryLearnerInvitationStore(sessions)
     result: dict[str, object]
@@ -221,9 +218,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         )
         return result
     finally:
-        if sequences is not None:
-            await sequences.close()
-        await engine.dispose()
+        await close_database_runtime(database)
 
 
 def main() -> None:

@@ -100,3 +100,12 @@ no token values may appear in receipts. This excludes the Alpha raw-send and
 AQUB webhook-reply paths from the personal-bot identity. Distinct product bots
 retain their transport. Protected fleet evidence must also verify actual
 webhook ownership; a local configuration comparison cannot prove provider state.
+
+Web lifespan and both standalone sending entrypoints (`gate-telegram-worker`,
+`gate-become-pilot-maintenance`) construct the same database runtime with their
+explicit settings and close the same transport owner. They cannot bypass the
+fence or bot identity predicate by calling a flags-only attachment helper.
+The remaining packaged CLIs are DB control/recovery/probe, contact sync,
+personal-session enrollment/auth/preflight, or BECOME preflight; they do not
+send messages through the personal Bot API transport. Raw sprint15b calls are
+webhook inspection/configuration; MCP attachment calls are file reads.

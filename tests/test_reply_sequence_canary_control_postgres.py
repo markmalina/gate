@@ -219,3 +219,86 @@ async def test_control_runtime_does_not_require_or_register_telegram_credential(
         assert control.bot_resource == runtime.bot_resource
         with pytest.raises(ValueError, match="cannot register"):
             control.register_transport_gate()
+
+
+@pytest.mark.anyio
+async def test_actual_cli_serial_disable_parallel_preserves_epoch_and_canary_budget(monkeypatch):
+    from argparse import Namespace
+
+    from app.infrastructure.database import DatabaseRuntime
+    from app.models.reply_sequences import ReplyConnectorAdmission
+    from app.worker import reply_sequence_control as cli
+
+    from test_reply_sequence_epoch_postgres import prepare_epoch
+
+    async with runtime_fixture() as (runtime, sessions):
+        seed, request = await prepare(runtime, sessions)
+        assert runtime.settings.gate_reply_sequence_parallel_enabled
+        await prepare_epoch(runtime, sessions)
+        async with sessions() as session:
+            control = await session.get(ReplyDispatchControl, runtime.workspace)
+            control.mode = "disabled"
+            generation = control.generation
+            await session.commit()
+        await arm_canary(runtime, request)
+        monkeypatch.setattr(cli, "get_settings", lambda: runtime.settings)
+        monkeypatch.setattr(
+            cli,
+            "build_control_runtime",
+            lambda _settings, _bot: (
+                DatabaseRuntime(sessions.kw["bind"], sessions, runtime),
+                runtime,
+            ),
+        )
+        async with sessions() as session:
+            connector = (await session.scalars(select(ReplyConnectorAdmission))).one()
+            epoch_before = (connector.epoch_id, connector.version, connector.continuity_until)
+            scope = await session.get(ReplyCanaryScope, runtime.workspace)
+            scope_before = (
+                scope.execution_id,
+                scope.scope_sha256,
+                scope.expires_at,
+                scope.max_attempts,
+            )
+        args = Namespace(
+            action="serial", legacy_workers_drained=True, bot_resource_id=runtime.bot_resource
+        )
+        assert (await cli.execute(args))["mode"] == "serial"
+        async with sessions() as session:
+            await reserve_canary_attempt(
+                session,
+                CanaryAttemptRequest(
+                    workspace_ref=runtime.workspace,
+                    execution_id=request.execution_id,
+                    attempt_key=uuid4(),
+                    kind="sequence",
+                    principal_subject=request.principal_subject,
+                    account_id=seed.account_id,
+                    dialog_ref=seed.recipient_chat_id,
+                    body_sha256=request.grants[0].body_sha256,
+                    notification_destination=None,
+                    notification_template=None,
+                ),
+            )
+        for action in ("disable", "parallel"):
+            args.action = action
+            result = await cli.execute(args)
+            assert result["mode"] == ("disabled" if action == "disable" else action)
+        async with sessions() as session:
+            connector = (await session.scalars(select(ReplyConnectorAdmission))).one()
+            assert (
+                connector.epoch_id,
+                connector.version,
+                connector.continuity_until,
+            ) == epoch_before
+            scope = await session.get(ReplyCanaryScope, runtime.workspace)
+            assert (
+                scope.execution_id,
+                scope.scope_sha256,
+                scope.expires_at,
+                scope.max_attempts,
+            ) == scope_before
+            assert scope.attempts_reserved == 1 and scope.state == "active"
+            control = await session.get(ReplyDispatchControl, runtime.workspace)
+            assert control.mode == "parallel" and control.generation == generation + 3
+        assert runtime.settings.gate_reply_sequence_parallel_enabled

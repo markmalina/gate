@@ -28,7 +28,9 @@ class DatabaseRuntime:
     startup_fence: "tuple[str, SqlCanaryStartupFence] | None" = None
 
 
-def build_database_runtime(database_url: str) -> DatabaseRuntime:
+def build_database_runtime(
+    database_url: str, *, settings: "Settings | None" = None
+) -> DatabaseRuntime:
     """Build the process-scoped database runtime without opening a connection."""
 
     normalized_url = database_url.strip()
@@ -37,7 +39,7 @@ def build_database_runtime(database_url: str) -> DatabaseRuntime:
 
     from app.core.config import get_settings
 
-    settings = get_settings()
+    settings = settings if settings is not None else get_settings()
     validate_personal_bot_identity(settings)
     engine = create_async_engine(normalized_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -105,8 +107,15 @@ async def database_runtime_lifespan(database_url: str) -> AsyncIterator[Database
             await runtime.sequences.invalidate_ingress("ingress_runtime_started")
         yield runtime
     finally:
+        await close_database_runtime(runtime)
+
+
+async def close_database_runtime(runtime: DatabaseRuntime) -> None:
+    """Release the same transport owner and engine for web and standalone workers."""
+    try:
         if runtime.sequences is not None:
             await runtime.sequences.close()
+    finally:
         if runtime.startup_fence is not None:
             from app.services.telegram_delivery_gate import unregister_gate
 

@@ -276,3 +276,100 @@ def test_actual_startup_rejects_other_product_alias_of_personal_bot(name, aliase
         match="identity must be isolated" if aliased else "synthetic engine boundary",
     ):
         database.build_database_runtime("synthetic://offline")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("state", ["active", "closed", "absent", "legacy", "db_error"])
+async def test_standalone_worker_installs_and_releases_same_durable_fence(state, monkeypatch):
+    import app.infrastructure.database as database
+    from app.core.config import Settings
+    from app.services.telegram_delivery_gate import registered_gate
+    from app.worker import telegram_processing as worker
+
+    calls, reads, disposed = [], [], []
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def scalar(self, query):
+            reads.append(True)
+            if state == "db_error":
+                raise RuntimeError("synthetic DB unavailable")
+            return None if state == "legacy" else "reply_canary_scopes"
+
+        async def get(self, model, identity):
+            return SimpleNamespace(state=state) if state in {"active", "closed"} else None
+
+    class Engine:
+        async def dispose(self):
+            disposed.append(True)
+
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="synthetic://offline",
+        TELEGRAM_BOT_TOKEN="126:synthetic",
+        GATE_TELEGRAM_WORKER_ENABLED=True,
+    )
+    monkeypatch.setattr(database, "create_async_engine", lambda *a, **kw: Engine())
+    monkeypatch.setattr(database, "async_sessionmaker", lambda *a, **kw: Session)
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+    async def once(**kwargs):
+        assert registered_gate("126") is not None
+        async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+            await TelegramClient("126:synthetic", http_client=client).send_plain_message(
+                chat_id="outside", text="synthetic"
+            )
+        return "synthetic-done"
+
+    async def drain(_sessions):
+        pass
+
+    monkeypatch.setattr(worker, "run_telegram_worker_once", once)
+    monkeypatch.setattr(worker, "_drain_beta_context", drain)
+    if state in {"active", "db_error"}:
+        with pytest.raises(TelegramApiError if state == "active" else RuntimeError):
+            await worker._run_from_settings(settings)
+        assert not calls
+    else:
+        assert await worker._run_from_settings(settings) == "synthetic-done"
+        assert len(calls) == 1
+    assert reads and disposed == [True]
+    assert registered_gate("126") is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entrypoint", ["worker", "pilot"])
+async def test_standalone_entrypoints_reject_primary_bot_alias_before_engine(
+    entrypoint, monkeypatch
+):
+    import app.infrastructure.database as database
+    from app.core.config import Settings
+    from app.worker import become_pilot_maintenance as pilot
+    from app.worker import telegram_processing as worker
+
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="synthetic://offline",
+        TELEGRAM_BOT_TOKEN="126:synthetic",
+        TELEGRAM_BECOME_BOT_TOKEN="126:other",
+        GATE_TELEGRAM_WORKER_ENABLED=True,
+    )
+
+    def engine(*args, **kwargs):
+        pytest.fail("alias must reject before engine creation")
+
+    monkeypatch.setattr(database, "create_async_engine", engine)
+    monkeypatch.setattr(pilot, "get_settings", lambda: settings)
+    with pytest.raises(ValueError, match="identity must be isolated"):
+        if entrypoint == "worker":
+            await worker._run_from_settings(settings)
+        else:
+            await pilot._run(SimpleNamespace(command="status"))
