@@ -81,3 +81,22 @@ Full migration graph from the baseline in #722 is now
 `0111_reply_documents → 0112_reply_sequence_control → 0113_reply_canary_budget
 → 0114_reply_continuity_epoch → 0115_reply_canary_binding`.
 Recompute against the exact final head if another additive migration is added.
+
+### Durable transport fence and bot identity
+
+Every personal-bot JSON/multipart `send*` transport checks durable scope before
+HTTP, even with no canary intent and `CANARY_ENABLED=false`. Application database
+startup installs a minimal SQL fence when all sequence flags are off. It checks
+actual table existence for baseline compatibility; an SQL failure never means
+"no scope". An active (including expired/exhausted) scope blocks those sends.
+Closed/absent scopes preserve ordinary transport, while execution-bound tails
+remain denied. Lifespan removes its fence on shutdown.
+
+Before any database engine/transport startup, the personal numeric bot ID from
+`TELEGRAM_BOT_TOKEN` must differ from every nonempty `TELEGRAM_ALPHA_BOT_TOKEN`,
+`TELEGRAM_BETA_BOT_TOKEN`, `TELEGRAM_BECOME_BOT_TOKEN`, and
+`TELEGRAM_AQUB_BOT_TOKEN`. Ops must verify this predicate privately before deploy;
+no token values may appear in receipts. This excludes the Alpha raw-send and
+AQUB webhook-reply paths from the personal-bot identity. Distinct product bots
+retain their transport. Protected fleet evidence must also verify actual
+webhook ownership; a local configuration comparison cannot prove provider state.

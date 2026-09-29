@@ -24,7 +24,7 @@ CASES = {
     "test_reply_sequence_continuity_postgres": 3,
     "test_reply_sequence_canary_postgres": 3,
     "test_reply_sequence_canary_control_postgres": 10,
-    "test_reply_sequence_control_contract": 5,
+    "test_reply_sequence_control_contract": 37,
     "test_reply_sequence_epoch": 17,
     "test_reply_sequence_epoch_postgres": 8,
     "test_reply_sequence_acceptance_postgres": 37,

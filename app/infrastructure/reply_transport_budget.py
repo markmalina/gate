@@ -28,10 +28,34 @@ class SqlTelegramTransportBudget:
     def __init__(self, runtime: ReplySequenceRuntime) -> None:
         self.runtime = runtime
 
+    async def guard_send(self, method: str, intent: CanaryDelivery | None) -> None:
+        """Durable scope fences all send paths even after the canary flag is off.
+
+        This gate exists only on the migrated sequence runtime. A plain flag is
+        never sufficient to discard a persisted active canary fence.
+        """
+        async with self.runtime.sessions() as session:
+            scope = await session.get(ReplyCanaryScope, self.runtime.workspace)
+            enabled = self.runtime.settings.gate_reply_sequence_canary_enabled
+            bound = intent is not None and intent.execution_id is not None
+            if not enabled and not bound and (scope is None or scope.state == "closed"):
+                return
+            now = await self.runtime.db_now(session)
+            if (
+                not enabled
+                or scope is None
+                or scope.state != "active"
+                or scope.expires_at <= now
+                or scope.attempts_reserved >= scope.max_attempts
+                or method != "sendMessage"
+                or intent is None
+                or intent.execution_id != scope.execution_id
+            ):
+                raise TelegramApiError(error_code=403, description="Canary admission closed")
+
     async def reserve_canary(self, intent: CanaryDelivery, payload: dict[str, Any]) -> None:
-        if (
-            not self.runtime.settings.gate_reply_sequence_canary_enabled
-            or not intent.matches(payload)
+        if not self.runtime.settings.gate_reply_sequence_canary_enabled or not intent.matches(
+            payload
         ):
             raise TelegramApiError(error_code=403, description="Canary payload mismatch")
         async with self.runtime.sessions() as session:

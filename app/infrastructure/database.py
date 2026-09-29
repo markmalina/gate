@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.core.config import Settings
+    from app.infrastructure.reply_canary_startup_fence import SqlCanaryStartupFence
     from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
 
 from sqlalchemy.ext.asyncio import (
@@ -24,6 +25,7 @@ class DatabaseRuntime:
     engine: AsyncEngine
     session_factory: async_sessionmaker[AsyncSession]
     sequences: "ReplySequenceRuntime | None" = None
+    startup_fence: "tuple[str, SqlCanaryStartupFence] | None" = None
 
 
 def build_database_runtime(database_url: str) -> DatabaseRuntime:
@@ -33,12 +35,38 @@ def build_database_runtime(database_url: str) -> DatabaseRuntime:
     if not normalized_url:
         raise RuntimeError("DATABASE_URL is required")
 
-    engine = create_async_engine(normalized_url, pool_pre_ping=True)
     from app.core.config import get_settings
 
+    settings = get_settings()
+    validate_personal_bot_identity(settings)
+    engine = create_async_engine(normalized_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
-    sequences = attach_reply_sequence_runtime(engine, sessions, get_settings())
-    return DatabaseRuntime(engine=engine, session_factory=sessions, sequences=sequences)
+    sequences = attach_reply_sequence_runtime(engine, sessions, settings)
+    fence = None
+    if sequences is None:
+        from app.infrastructure.reply_canary_startup_fence import SqlCanaryStartupFence
+        from app.services.telegram_delivery_gate import register_gate, registered_gate
+
+        prefix = settings.telegram_bot_token.split(":", 1)[0]
+        if prefix.isdecimal() and int(prefix) > 0 and registered_gate(prefix) is None:
+            gate = SqlCanaryStartupFence(sessions, settings.gate_workspace_id)
+            register_gate(prefix, gate)
+            fence = (prefix, gate)
+    return DatabaseRuntime(
+        engine=engine, session_factory=sessions, sequences=sequences, startup_fence=fence
+    )
+
+
+def validate_personal_bot_identity(settings: "Settings") -> None:
+    """Other product webhook/raw transports must never impersonate the personal bot."""
+    primary = settings.telegram_bot_token.strip().split(":", 1)[0]
+    if not primary.isdecimal() or int(primary) <= 0:
+        return
+    for name in ("alpha", "beta", "become", "aqub"):
+        configured = getattr(settings, f"telegram_{name}_bot_token", None)
+        secondary = configured.get_secret_value().strip() if configured is not None else ""
+        if secondary and secondary.split(":", 1)[0] == primary:
+            raise ValueError("Personal Telegram bot identity must be isolated")
 
 
 def attach_reply_sequence_runtime(
@@ -79,4 +107,8 @@ async def database_runtime_lifespan(database_url: str) -> AsyncIterator[Database
     finally:
         if runtime.sequences is not None:
             await runtime.sequences.close()
+        if runtime.startup_fence is not None:
+            from app.services.telegram_delivery_gate import unregister_gate
+
+            unregister_gate(*runtime.startup_fence)
         await runtime.engine.dispose()

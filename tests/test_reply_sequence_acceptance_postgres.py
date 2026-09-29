@@ -718,12 +718,16 @@ async def test_operator_cutover_cannot_reactivate_old_approval_across_ingress_ga
     from app.infrastructure.database import DatabaseRuntime
     from app.worker import reply_sequence_control as control_cli
 
+    from test_reply_sequence_epoch_postgres import prepare_epoch
+
     async with runtime_fixture() as (runtime, sessions):
         monkeypatch.setattr(control_cli, "get_settings", lambda: runtime.settings)
         monkeypatch.setattr(
             control_cli,
-            "build_database_runtime",
-            lambda _url: DatabaseRuntime(sessions.kw["bind"], sessions, runtime),
+            "build_control_runtime",
+            lambda _settings, _bot: (
+                DatabaseRuntime(sessions.kw["bind"], sessions, runtime), runtime
+            ),
         )
         seed = await _seed_reply(sessions, draft_count=2)
         q = await queue(runtime, sessions, seed)
@@ -731,15 +735,17 @@ async def test_operator_cutover_cannot_reactivate_old_approval_across_ingress_ga
         args = Namespace(
             action="serial",
             legacy_workers_drained=True,
-            continuity_until=(datetime.now(UTC) + timedelta(minutes=30)).isoformat(),
-            continuity_evidence_ref="synthetic-continuity-receipt",
+            bot_resource_id=runtime.bot_resource,
         )
         with pytest.raises(ReplySequenceError) as exc:
             await control_cli.execute(args)
-        assert exc.value.code == "sequence_continuity_reapproval_required"
+        assert exc.value.code == "sequence_guard_unavailable"
         args.action = "stop-active"
         assert (await control_cli.execute(args))["stopped"] == 1
         args.action = "serial"
+        with pytest.raises(ReplySequenceError, match="sequence_guard_unavailable"):
+            await control_cli.execute(args)
+        await prepare_epoch(runtime, sessions)
         assert (await control_cli.execute(args))["mode"] == "serial"
         async with sessions() as session:
             assert (await session.get(ReplySequence, q.sequence_id)).state == "stopped"

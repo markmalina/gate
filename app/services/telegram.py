@@ -202,6 +202,10 @@ class TelegramClient:
 
         if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False):
             raise TelegramApiError(error_code=403, description="Canary method blocked")
+        owner = registered_gate(self._credential.split(":", 1)[0])
+        guard = getattr(owner, "guard_send", None)
+        if guard is not None:
+            await guard(url.rsplit("/", 1)[-1], canary_intent())
         gate = delivery_gate(self._credential)
         if gate is not None:
             admitted = await gate.before(payload)
@@ -366,6 +370,11 @@ class TelegramClient:
     async def _post_telegram_json(self, *, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         method = url.rsplit("/", 1)[-1]
         sending = method == "sendMessage"
+        if method.startswith("send"):
+            owner = registered_gate(self._credential.split(":", 1)[0])
+            guard = getattr(owner, "guard_send", None)
+            if guard is not None:
+                await guard(method, canary_intent())
         if method.startswith("send") and not sending:
             from app.core.config import get_settings
 

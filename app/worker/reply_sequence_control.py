@@ -14,7 +14,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.infrastructure.database import DatabaseRuntime
 from app.infrastructure.reply_sequence_guard import dialog_guard
 from app.infrastructure.reply_sequence_migration import import_legacy, initialize_control
@@ -36,11 +36,11 @@ from app.models.reply_sequences import (
 )
 
 
-async def execute(args: argparse.Namespace) -> dict[str, object]:
-    settings = get_settings()
-    if settings.gate_reply_sequence_db_pool_mode not in {"direct", "session"}:
-        raise ValueError("Verify direct/session pooling before running sequence control")
-    if not args.bot_resource_id:
+def build_control_runtime(
+    settings: Settings,
+    bot_resource_id: str,
+) -> tuple[DatabaseRuntime, ReplySequenceRuntime]:
+    if not bot_resource_id:
         raise ValueError("verified_bot_resource_required")
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     db = DatabaseRuntime(engine, async_sessionmaker(engine, expire_on_commit=False))
@@ -48,8 +48,16 @@ async def execute(args: argparse.Namespace) -> dict[str, object]:
         engine=engine,
         settings=settings,
         sessions=db.session_factory,
-        bot_resource_id=args.bot_resource_id,
+        bot_resource_id=bot_resource_id,
     )
+    return db, runtime
+
+
+async def execute(args: argparse.Namespace) -> dict[str, object]:
+    settings = get_settings()
+    if settings.gate_reply_sequence_db_pool_mode not in {"direct", "session"}:
+        raise ValueError("Verify direct/session pooling before running sequence control")
+    db, runtime = build_control_runtime(settings, args.bot_resource_id)
     try:
         if args.action == "epoch-arm":
             from app.infrastructure.reply_sequence_epoch import install_verified_epoch
