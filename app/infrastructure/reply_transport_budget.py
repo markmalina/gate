@@ -29,11 +29,14 @@ class SqlTelegramTransportBudget:
         self.runtime = runtime
 
     async def reserve_canary(self, intent: CanaryDelivery, payload: dict[str, Any]) -> None:
-        if not intent.matches(payload):
+        if (
+            not self.runtime.settings.gate_reply_sequence_canary_enabled
+            or not intent.matches(payload)
+        ):
             raise TelegramApiError(error_code=403, description="Canary payload mismatch")
         async with self.runtime.sessions() as session:
             scope = await session.get(ReplyCanaryScope, self.runtime.workspace)
-            if scope is None:
+            if scope is None or intent.execution_id != scope.execution_id:
                 raise TelegramApiError(error_code=403, description="Canary admission closed")
             request = CanaryAttemptRequest(
                 workspace_ref=self.runtime.workspace,

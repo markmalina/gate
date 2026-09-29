@@ -107,7 +107,11 @@ async def run_dispatch_loop(
                                 await runtime.release_preflight(claim)
                     if runtime.cursor is None:
                         break
-                reason = await runtime.health_reason() if health_reporter is not None else None
+                reason = (
+                    await runtime.health_reason(closed_dispatch_ok=True)
+                    if health_reporter is not None
+                    else None
+                )
                 if health_reporter is not None and (
                     reason or any(c.outcome == "failed" for c in completions)
                 ):

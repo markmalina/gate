@@ -139,6 +139,12 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 await runtime.inbound(
                     self._session, binding, inserted_receipt_id, command.received_at
                 )
+                from app.models.reply_sequences import ReplyIngressProjection
+
+                self._session.add(ReplyIngressProjection(
+                    receipt_id=inserted_receipt_id, workspace_ref=runtime.workspace,
+                    boot_id=runtime.owner,
+                ))
             await self._session.commit()
             return TelegramReceiptAcceptance(
                 receipt_id=str(inserted_receipt_id),

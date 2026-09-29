@@ -299,6 +299,7 @@ class SqlTelegramReplySender:
                     ), canary_delivery(
                         CanaryDelivery(
                             kind="sequence",
+                            execution_id=self._dispatch_claim.canary_execution_id,
                             principal_subject=self._dispatch_claim.principal_subject,
                             account_id=self._dispatch_claim.account_id,
                             dialog_ref=self._dispatch_claim.recipient,

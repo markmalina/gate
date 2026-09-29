@@ -29,6 +29,7 @@ class CanaryDelivery:
     business_connection_id: str | None = None
     notification_template: str | None = None
     notification_text_sha256: str | None = None
+    execution_id: str | None = None
 
     def matches(self, payload: dict[str, Any]) -> bool:
         text = payload.get("text")

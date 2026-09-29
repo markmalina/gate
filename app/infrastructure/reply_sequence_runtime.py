@@ -87,6 +87,7 @@ class DispatchClaim:
     principal_subject: str
     position: int
     generation: int
+    canary_execution_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +106,7 @@ class ReplySequenceRuntime:
         sessions: async_sessionmaker[AsyncSession],
         sender_guards: AsyncEngine | None = None,
         ingress_guards: AsyncEngine | None = None,
+        bot_resource_id: str | None = None,
     ) -> None:
         self.settings = settings
         self.sessions = sessions
@@ -131,13 +133,24 @@ class ReplySequenceRuntime:
         )
         # Token prefix is Telegram's stable bot identity; credentials are never persisted.
         prefix = settings.telegram_bot_token.split(":", 1)[0]
-        if not prefix.isdecimal() or int(prefix) <= 0:
-            raise ValueError("Sequence runtime requires a valid bot identity")
-        self.bot_resource = text_digest("telegram-bot:" + prefix)
+        if bot_resource_id is not None:
+            if len(bot_resource_id) != 64 or any(
+                c not in "0123456789abcdef" for c in bot_resource_id
+            ):
+                raise ValueError("Sequence control requires verified bot resource digest")
+            if prefix and text_digest("telegram-bot:" + prefix) != bot_resource_id:
+                raise ValueError("Sequence bot identity mismatch")
+            self.bot_resource = bot_resource_id
+        else:
+            if not prefix.isdecimal() or int(prefix) <= 0:
+                raise ValueError("Sequence runtime requires a valid bot identity")
+            self.bot_resource = text_digest("telegram-bot:" + prefix)
         self.bot_prefix = prefix
         self.transport_gate: Any = None
 
     def register_transport_gate(self) -> None:
+        if not self.bot_prefix:
+            raise ValueError("Control runtime cannot register a Telegram transport")
         from app.infrastructure.reply_transport_budget import SqlTelegramTransportBudget
         from app.services.telegram_delivery_gate import register_gate, registered_gate
 
@@ -246,6 +259,7 @@ class ReplySequenceRuntime:
         )
         if (
             connector is None
+            or connector.epoch_id is None
             or connector.state != "healthy"
             or connector.continuity_until is None
             or connector.continuity_until <= now
@@ -319,6 +333,21 @@ class ReplySequenceRuntime:
                     ).all()
                 }
                 hashes = [(d, text_digest(drafts[d].draft_text)) for d in command.draft_ids]
+                from app.infrastructure.reply_sequence_canary import CanaryDenied
+                from app.infrastructure.reply_sequence_operations import admit_canary_queue
+
+                try:
+                    canary_execution = await admit_canary_queue(
+                        session,
+                        runtime=self,
+                        principal=command.principal.subject,
+                        account_id=queued.account_id,
+                        recipient=chat,
+                        drafts=hashes,
+                        now=now,
+                    )
+                except CanaryDenied:
+                    raise sequence_error("canary_admission_closed") from None
                 sequence = ReplySequence(
                     id=queued.sequence_id,
                     guard_id=guard.id,
@@ -330,6 +359,7 @@ class ReplySequenceRuntime:
                     principal_subject=command.principal.subject,
                     account_label=queued.account_label,
                     bot_resource_id=self.bot_resource,
+                    canary_execution_id=canary_execution,
                     queued_revision=guard.inbound_revision,
                     item_count=len(hashes),
                     next_due_at=now,
@@ -711,6 +741,10 @@ class ReplySequenceRuntime:
                 )
                 if sequence is None or sequence.admitted_attempt_id is not None:
                     return None
+                from app.infrastructure.reply_sequence_operations import canary_sequence_allowed
+
+                if not await canary_sequence_allowed(session, self, sequence, now):
+                    return None
                 guard = await session.get(ReplyDialogGuard, sequence.guard_id)
                 assert guard is not None
                 if (
@@ -817,6 +851,7 @@ class ReplySequenceRuntime:
                     sequence.principal_subject,
                     item.position,
                     control.generation,
+                    sequence.canary_execution_id,
                 )
                 await session.commit()
                 return claim
@@ -850,6 +885,10 @@ class ReplySequenceRuntime:
             or claim.generation != control.generation
         ):
             raise sequence_error("sequence_stopped")
+        from app.infrastructure.reply_sequence_operations import canary_sequence_allowed
+
+        if not await canary_sequence_allowed(session, self, sequence, now):
+            raise sequence_error("canary_admission_closed")
         guard = await session.get(ReplyDialogGuard, sequence.guard_id)
         if (
             guard is None
@@ -1115,8 +1154,15 @@ class ReplySequenceRuntime:
                 row.blocked_indefinitely = result.blocked_indefinitely
             await session.commit()
 
-    async def health_reason(self) -> str | None:
+    async def health_reason(self, *, closed_dispatch_ok: bool = False) -> str | None:
         async with self.sessions() as session:
+            if closed_dispatch_ok:
+                observed = await session.get(ReplyDispatchControl, self.workspace)
+                if (
+                    observed is not None and observed.migration_complete
+                    and observed.mode == "disabled"
+                ):
+                    return None  # Completed idle dispatcher loop; this is not send admission.
             try:
                 control = await self.control(session)
                 await self.healthy(session, await self.db_now(session))
@@ -1327,7 +1373,10 @@ class ReplySequenceRuntime:
         rows = (
             await session.execute(
                 select(
-                    ReplySequence, ReplyDialogGuard, ReplySequenceItem, ReplySequenceNotification,
+                    ReplySequence,
+                    ReplyDialogGuard,
+                    ReplySequenceItem,
+                    ReplySequenceNotification,
                     ReplyDraft.draft_text,
                 )
                 .join(ReplyDialogGuard, ReplyDialogGuard.id == ReplySequence.guard_id)
@@ -1433,7 +1482,8 @@ class ReplySequenceRuntime:
                     "draft_text": draft_texts[i.draft_id],
                     "draft_text_matches_approval": (
                         text_digest(draft_texts[i.draft_id]) == i.approved_text_sha256
-                        if draft_texts[i.draft_id] is not None else None
+                        if draft_texts[i.draft_id] is not None
+                        else None
                     ),
                     "item_state": i.state,
                     "safe_error_code": i.safe_error_code,

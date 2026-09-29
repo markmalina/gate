@@ -250,7 +250,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                             database_runtime.sequences, _app.state.telegram_client))
                     if database_runtime.sequences is not None:
                         sequence_continuity_task = asyncio.create_task(
-                            run_continuity_loop(database_runtime.sequences)
+                            run_continuity_loop(database_runtime.sequences, health_registry=worker_health)
                         )
                     if reply_sequence_worker_enabled:
                         reply_sequence_task = asyncio.create_task(

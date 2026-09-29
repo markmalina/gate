@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from test_reply_sends_postgres import _seed_reply
 from test_reply_sequence_dispatch_postgres import queue, runtime_fixture
+from test_reply_sequence_epoch_postgres import prepare_epoch
 
 
 @pytest.fixture
@@ -26,6 +27,7 @@ def anyio_backend():
 async def test_healthy_evidence_does_not_change_generation_or_approval():
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
+        await prepare_epoch(runtime, sessions)
         queued = await queue(runtime, sessions, seed)
         async with sessions() as session:
             before = await session.get(ReplyDispatchControl, runtime.workspace)
@@ -43,12 +45,11 @@ async def test_healthy_evidence_does_not_change_generation_or_approval():
 async def test_expiry_or_restart_fences_before_terminal_stop_without_auto_resume(loss):
     async with runtime_fixture() as (runtime, sessions):
         seed = await _seed_reply(sessions, draft_count=2)
+        await prepare_epoch(runtime, sessions)
         queued = await queue(runtime, sessions, seed)
         if loss == "expiry":
             async with sessions() as session:
-                connector = (
-                    await session.scalars(select(ReplyConnectorAdmission))
-                ).one()
+                connector = (await session.scalars(select(ReplyConnectorAdmission))).one()
                 connector.continuity_until = datetime.now(UTC) - timedelta(seconds=1)
                 await session.commit()
         else:

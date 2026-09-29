@@ -384,8 +384,10 @@ class TelegramClient:
         if sending:
             from app.core.config import get_settings
 
-            if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False):
-                intent = canary_intent()
+            intent = canary_intent()
+            if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False) or (
+                intent is not None and intent.execution_id is not None
+            ):
                 owner = registered_gate(self._credential.split(":", 1)[0])
                 if intent is None or owner is None:
                     raise TelegramApiError(error_code=403, description="Canary admission closed")

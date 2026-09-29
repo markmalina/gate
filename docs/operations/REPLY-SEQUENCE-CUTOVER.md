@@ -80,15 +80,16 @@ a later protected, bounded read-only probe after a separate authorized live plan
 3. Only then deploy the exact reviewed candidate with new flags off through the
    protected Ops sequence executor. `railway.toml` runs `alembic upgrade head` in
    `preDeployCommand` **before** the new application starts. Verify the full migration
-   graph from observed baseline to candidate head and reconcile its result; do not
+   graph from observed baseline to candidate head (0111 → 0112 → 0113 → 0114 → 0115)
+   and reconcile its result; do not
    treat a later manual Alembic call as a separate required stage. No merge/deploy
    is authorized by this runbook.
 4. With the worker off and verified pool mode, run:
 
    ```sh
-   gate-reply-sequence-control initialize
-   gate-reply-sequence-control import-legacy --legacy-workers-drained
-   gate-reply-sequence-control status
+   gate-reply-sequence-control initialize --bot-resource-id REVIEWED_BOT_DIGEST
+   gate-reply-sequence-control import-legacy --bot-resource-id REVIEWED_BOT_DIGEST --legacy-workers-drained
+   gate-reply-sequence-control status --bot-resource-id REVIEWED_BOT_DIGEST
    ```
 
    Import discovers sequence identities by keyset, then loads full memberships of 2–50, independent
@@ -103,7 +104,10 @@ a later protected, bounded read-only probe after a separate authorized live plan
 ## Serial activation, then parallel
 
 Configure STOP_ON_INBOUND and DISPATCH_V2 true together, DB_POOL_MODE to the verified value,
-WORKER_ENABLED true, PARALLEL false initially. Restart every relevant process. Keep DB mode disabled.
+WORKER_ENABLED true, and PARALLEL true if the reviewed plan includes parallel mode.
+Restart every relevant process before installing the epoch; keep DB mode disabled.
+The initial DB mode is serial even when the configuration permits parallel.
+This avoids a configuration restart inside the bounded canary window.
 Initialize notification routing through the already approved account permissions mechanism:
 `reply_sequence_owner_subject` must equal the queue approver's authenticated subject. Account owner
 Telegram identity and exactly one enabled Business connection must agree; the owner private chat
@@ -111,16 +115,20 @@ must be the same owner ID and must differ from the counterparty. Alias/last-chat
 Enable NOTIFICATIONS only for the authorized owner route. Queue returns ready, blocked_route or
 disabled; missing delivery readiness does not undo a committed stop.
 
-After verifying uninterrupted ingress, activate serial with an opaque evidence reference and explicit
-aware expiry (substitute the reviewed values, not the literal examples):
+After Ops verifies the complete live inventory, install the exact initial epoch using
+`epoch-arm --bot-resource-id REVIEWED_BOT_DIGEST` with protected bounded stdin JSON
+as specified in [canary admission](REPLY-SEQUENCE-CANARY-ADMISSION.md). When canary
+is configured, arm its immutable scope before activation. Inputs and evidence must
+come from the authenticated reviewed Ops executor; a user-provided digest is not
+proof of inventory. Activate with:
 
 ```sh
-gate-reply-sequence-control serial --legacy-workers-drained \
-  --continuity-evidence-ref REVIEWED_OPAQUE_REF --continuity-until REVIEWED_ISO8601_EXPIRY
+gate-reply-sequence-control serial --bot-resource-id REVIEWED_BOT_DIGEST --legacy-workers-drained
 ```
 
-The CLI records only the evidence digest in audit. It rejects activation across an unverified gap
-while active series exist. Use `stop-active` first for that incident; obtain new user approvals later.
+No arbitrary continuity expiry/ref is accepted. The runtime automatically renews
+only the same verified healthy epoch and preserves generation. A gap is terminal;
+use `stop-active`, reconcile and obtain new approvals after a newly verified epoch.
 Queue fresh synthetic/staging series with the current `dialog_inbound_revision` from context.
 Require `sequence_approval.ready=true` and a non-null revision. A pending/dead-letter receipt,
 missing message projection, obsolete task, changed revision during the read, or an older history
@@ -132,13 +140,16 @@ Observe serial delivery, stop-on-inbound, duplicate webhook, expiry and notifica
 For production canary, obtain exact owner-only installation/recipient refs and hard send caps first.
 Never use contacts or historical conversations as convenient test targets.
 
-After the serial gate, enable PARALLEL, roll all replicas, re-verify continuity after startup, and run
-the same activation command with `parallel`. Record mode/generation and source/deployed SHA.
+After the serial gate, with PARALLEL already enabled and the same verified epoch healthy,
+run the same activation command with `parallel`. Canary scope, expiry and attempt count
+are unchanged. A configuration change or restart requires closing the old canary and
+a separately reviewed new epoch/scope; do not reset the deadline or quota.
+Record mode/generation and source/deployed SHA.
 Configuration changes invalidate old claims; existing accepted requests retain honest outcomes.
 
 ## Monitoring and incident response
 
-`gate-reply-sequence-control status` is payload-free: mode/generation/import status, occupied and
+`gate-reply-sequence-control status --bot-resource-id REVIEWED_BOT_DIGEST` is payload-free: mode/generation/import status, occupied and
 quarantined permits, active series, oldest due, last admission, observed time and ingress/degradation
 reason. Worker heartbeat proves loop liveness only. Compare oldest eligible work against confirmed
 item progress and resource wait. `gate_get_reply_sequence` requires workspace/account/project scope;
@@ -174,14 +185,14 @@ label; unnamed dialogs get a stable opaque fallback. Incoming message bodies are
 For immediate admission stop:
 
 ```sh
-gate-reply-sequence-control disable
-gate-reply-sequence-control status
+gate-reply-sequence-control disable --bot-resource-id REVIEWED_BOT_DIGEST
+gate-reply-sequence-control status --bot-resource-id REVIEWED_BOT_DIGEST
 ```
 
 For an observed ingress gap/expired evidence/connection rebind with active series:
 
 ```sh
-gate-reply-sequence-control stop-active
+gate-reply-sequence-control stop-active --bot-resource-id REVIEWED_BOT_DIGEST
 ```
 
 This disables admission first, then terminally stops active series under their dialog barriers.
@@ -203,3 +214,4 @@ recorded last-known-good deployment only after its feature/schema compatibility 
 The release receipt must distinguish code/CI acceptance, migration acceptance, runtime continuity,
 owner notification delivery and bounded live-canary acceptance. No production-ready claim follows
 from a green build alone.
+

@@ -1,7 +1,7 @@
 """Fail closed when durable ingress continuity is no longer healthy.
 
-This loop never asserts new health or extends an evidence expiry. Only a
-separately verified epoch can be renewed; a restart/gap stops old approvals.
+Renewal consumes real process/receipt observations within a separately verified
+fleet epoch; a restart/gap stops old approvals and never manufactures new health.
 """
 
 import asyncio
@@ -9,6 +9,12 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from app.application.worker_health import WorkerHealthRegistry
+from app.infrastructure.reply_sequence_epoch import (
+    ContinuityDenied,
+    observe_process,
+    renew_verified_epoch,
+)
 from app.infrastructure.reply_sequence_guard import dialog_guard
 from app.infrastructure.reply_sequence_runtime import ReplySequenceRuntime
 from app.models.reply_sequences import (
@@ -23,9 +29,7 @@ async def reconcile_continuity_once(runtime: ReplySequenceRuntime) -> int:
     """Fence new admissions first; then stop every remaining active sequence."""
 
     async with runtime.sessions() as session:
-        control = await session.get(
-            ReplyDispatchControl, runtime.workspace, with_for_update=True
-        )
+        control = await session.get(ReplyDispatchControl, runtime.workspace, with_for_update=True)
         if control is None:
             return 0  # Schema/import not initialized; DB admission is already closed.
         now = await runtime.db_now(session)
@@ -37,13 +41,18 @@ async def reconcile_continuity_once(runtime: ReplySequenceRuntime) -> int:
             )
             .with_for_update()
         )
-        if (
-            connector is not None
-            and connector.state == "healthy"
-            and connector.continuity_until is not None
-            and connector.continuity_until > now
-        ):
+        try:
+            if connector is None:
+                raise ContinuityDenied("continuity_connector_missing")
+            await renew_verified_epoch(session, connector=connector, now=now)
+            await session.commit()
             return 0
+        except ContinuityDenied as exc:
+            if connector is not None and connector.state == "healthy":
+                connector.state = "blocked"
+                connector.safe_reason = str(exc)
+                connector.continuity_until = None
+                connector.version += 1
         if control.mode != "disabled":
             control.mode = "disabled"
             control.generation += 1
@@ -81,9 +90,7 @@ async def reconcile_continuity_once(runtime: ReplySequenceRuntime) -> int:
                 chat_id=chat,
             ):
                 async with runtime.sessions() as session:
-                    sequence = await session.get(
-                        ReplySequence, identity, with_for_update=True
-                    )
+                    sequence = await session.get(ReplySequence, identity, with_for_update=True)
                     if sequence is not None and sequence.state == "active":
                         await runtime.stop(
                             session,
@@ -97,11 +104,20 @@ async def reconcile_continuity_once(runtime: ReplySequenceRuntime) -> int:
     return stopped
 
 
-async def run_continuity_loop(runtime: ReplySequenceRuntime) -> None:
+async def run_continuity_loop(
+    runtime: ReplySequenceRuntime,
+    *,
+    health_registry: WorkerHealthRegistry | None = None,
+) -> None:
     """A failed DB visit never manufactures health; retry stops after recovery."""
 
     while True:
         try:
+            if health_registry is not None:
+                await observe_process(runtime, health_registry)
+            from app.infrastructure.reply_sequence_operations import reconcile_canary_once
+
+            await reconcile_canary_once(runtime)
             await reconcile_continuity_once(runtime)
         except asyncio.CancelledError:
             raise
@@ -109,4 +125,4 @@ async def run_continuity_loop(runtime: ReplySequenceRuntime) -> None:
             # Claim/send also require the durable connector row and DB; a lost DB
             # prevents admission. Repeat the terminal stop once it is reachable.
             pass
-        await asyncio.sleep(min(runtime.settings.gate_reply_sequence_poll_seconds, 300))
+        await asyncio.sleep(min(runtime.settings.gate_reply_sequence_poll_seconds, 30))

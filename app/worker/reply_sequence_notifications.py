@@ -58,6 +58,14 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
             return False
         sequence = await session.get(ReplySequence, event.sequence_id)
         assert sequence is not None
+        from app.infrastructure.reply_sequence_operations import canary_sequence_allowed
+
+        if not await canary_sequence_allowed(session, runtime, sequence, now):
+            event.delivery_state = "failed"
+            event.safe_error_code = "canary_admission_closed"
+            event.finished_at = now
+            await session.commit()
+            return True
         guard = await session.get(ReplyDialogGuard, sequence.guard_id)
         route = (
             await owner_route(
@@ -115,6 +123,7 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
             with canary_delivery(
                 CanaryDelivery(
                     kind="notification",
+                    execution_id=sequence.canary_execution_id,
                     principal_subject=principal_subject,
                     account_id=None,
                     dialog_ref=None,

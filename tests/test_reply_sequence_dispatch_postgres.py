@@ -25,6 +25,7 @@ from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
 from app.models.domain import Account, ReplyDraft, SendAttempt, TelegramReceipt
 from app.models.reply_sequences import (
     ReplyConnectorAdmission,
+    ReplyContinuityEpoch,
     ReplyDialogGuard,
     ReplyDispatchControl,
     ReplyDispatchPermit,
@@ -84,11 +85,28 @@ async def runtime_fixture():
         async with sessions() as session:
             control = await session.get(ReplyDispatchControl, runtime.workspace)
             control.mode, control.migration_complete = "parallel", True
+            from uuid import uuid4
+
+            from app.infrastructure.reply_sequence_epoch import binding_digest
+
+            epoch = ReplyContinuityEpoch(
+                id=uuid4(),
+                workspace_ref=runtime.workspace,
+                evidence_sha256=uuid4().hex + uuid4().hex,
+                bot_resource_id=runtime.bot_resource,
+                binding_sha256=await binding_digest(session),
+                members=[],
+                verified_at=datetime.now(UTC),
+                started_at=datetime.now(UTC),
+            )
+            session.add(epoch)
+            await session.flush()
             session.add(
                 ReplyConnectorAdmission(
                     workspace_ref=runtime.workspace,
                     connector_key="telegram_business",
                     state="healthy",
+                    epoch_id=epoch.id,
                     continuity_until=datetime.now(UTC) + timedelta(hours=1),
                 )
             )
