@@ -3,11 +3,21 @@
 import hashlib
 import hmac
 import os
+import time
 from collections.abc import Mapping
+from contextlib import nullcontext
 from pathlib import PurePosixPath
 from typing import Any, cast
 
 import httpx
+
+from app.services.process_send_fence import process_send_fence
+from app.services.telegram_delivery_gate import (
+    canary_intent,
+    delivery_gate,
+    registered_gate,
+    require_reserved_start_window,
+)
 
 
 def build_telegram_http_client() -> httpx.AsyncClient:
@@ -39,11 +49,17 @@ class TelegramApiError(RuntimeError):
         error_code: int | None,
         description: str,
         http_status: int | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(description)
         self.error_code = error_code
         self.description = description
         self.http_status = http_status
+        self.retry_after_seconds = (
+            retry_after_seconds
+            if type(retry_after_seconds) is int and retry_after_seconds >= 0
+            else None
+        )
 
 
 class TelegramClient:
@@ -182,13 +198,40 @@ class TelegramClient:
         payload: dict[str, str],
         file: tuple[str, tuple[str, bytes, str]],
     ) -> dict[str, Any]:
-        response = await self._http_client.post(
-            url,
-            data=payload,
-            files={file[0]: file[1]},
-            timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
-        )
-        return self._parse_telegram_response(response)
+        await process_send_fence().require_write_admission(self._credential.split(":", 1)[0])
+        # Multipart has no scoped canary grant. Keep this guard at the shared
+        # HTTP boundary so delegated document paths cannot bypass admission.
+        from app.core.config import get_settings
+
+        if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False):
+            raise TelegramApiError(error_code=403, description="Canary method blocked")
+        owner = registered_gate(self._credential.split(":", 1)[0])
+        guard = getattr(owner, "guard_send", None)
+        if guard is not None:
+            await guard(url.rsplit("/", 1)[-1], canary_intent())
+        gate = delivery_gate(self._credential)
+        if gate is not None:
+            admitted = await gate.before(payload)
+            if time.monotonic() - admitted > 0.1:
+                raise TelegramApiError(
+                    error_code=429,
+                    description="Transport start window expired",
+                    retry_after_seconds=1,
+                )
+        require_reserved_start_window(self._credential)
+        with process_send_fence().admitted():
+            response = await self._http_client.post(
+                url,
+                data=payload,
+                files={file[0]: file[1]},
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
+            )
+        try:
+            return self._parse_telegram_response(response)
+        except TelegramApiError as exc:
+            if gate is not None and exc.error_code == 429:
+                await gate.failed(payload, exc.retry_after_seconds)
+            raise
 
     async def edit_message_text(
         self,
@@ -328,11 +371,58 @@ class TelegramClient:
             payload={"business_connection_id": business_connection_id},
         )
 
-    async def _post_telegram_json(
-        self, *, url: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        response = await self._http_client.post(url, json=payload)
-        return self._parse_telegram_response(response)
+    async def _post_telegram_json(self, *, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        method = url.rsplit("/", 1)[-1]
+        sending = method == "sendMessage"
+        writing = method not in {"getBusinessConnection", "getChatMember", "getChatAdministrators"}
+        if writing:
+            await process_send_fence().require_write_admission(self._credential.split(":", 1)[0])
+        if writing:
+            owner = registered_gate(self._credential.split(":", 1)[0])
+            guard = getattr(owner, "guard_send", None)
+            if guard is not None:
+                await guard(method, canary_intent())
+        if method.startswith("send") and not sending:
+            from app.core.config import get_settings
+
+            if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False):
+                raise TelegramApiError(error_code=403, description="Canary method blocked")
+        gate = delivery_gate(self._credential) if sending else None
+        admitted: float | None = None
+        if gate is not None:
+            admitted = await gate.before(payload)
+            if time.monotonic() - admitted > 0.1:
+                raise TelegramApiError(
+                    error_code=429,
+                    description="Transport start window expired",
+                    retry_after_seconds=1,
+                )
+        if sending:
+            from app.core.config import get_settings
+
+            intent = canary_intent()
+            if getattr(get_settings(), "gate_reply_sequence_canary_enabled", False) or (
+                intent is not None and intent.execution_id is not None
+            ):
+                owner = registered_gate(self._credential.split(":", 1)[0])
+                if intent is None or owner is None:
+                    raise TelegramApiError(error_code=403, description="Canary admission closed")
+                await owner.reserve_canary(intent, payload)
+        if admitted is not None and time.monotonic() - admitted > 0.1:
+            raise TelegramApiError(
+                error_code=429,
+                description="Transport start window expired",
+                retry_after_seconds=1,
+            )
+        require_reserved_start_window(self._credential)
+        with process_send_fence().admitted() if writing else nullcontext():
+            response = await self._http_client.post(url, json=payload)
+        try:
+            return self._parse_telegram_response(response)
+        except TelegramApiError as exc:
+            if gate is not None and exc.error_code == 429:
+                await gate.failed(payload, exc.retry_after_seconds)
+            raise
 
     @staticmethod
     def _parse_telegram_response(response: httpx.Response) -> dict[str, Any]:
@@ -358,9 +448,19 @@ class TelegramClient:
                 error_code=error_code,
                 description=description[:512],
                 http_status=response.status_code,
+                retry_after_seconds=_telegram_retry_after(result.get("parameters")),
             )
 
         return cast(dict[str, Any], result)
+
+
+def _telegram_retry_after(parameters: object) -> int | None:
+    """Read only a non-negative integer; never coerce or shorten provider cooldowns."""
+
+    if not isinstance(parameters, dict):
+        return None
+    value = parameters.get("retry_after")
+    return value if type(value) is int and value >= 0 else None
 
 
 def _looks_like_html_message(text: str) -> bool:
@@ -419,9 +519,7 @@ def _build_draft_edit_url(
         or ""
     ).strip()
     secret = (
-        environ.get("ADMIN_BEARER_TOKEN")
-        or environ.get("TELEGRAM_WEBHOOK_SECRET")
-        or ""
+        environ.get("ADMIN_BEARER_TOKEN") or environ.get("TELEGRAM_WEBHOOK_SECRET") or ""
     ).strip()
     if not raw_base_url or not secret:
         return None

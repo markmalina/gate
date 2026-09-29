@@ -852,6 +852,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
+        "gate_get_reply_sequence",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_control_installation",
@@ -873,6 +874,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
+        "gate_get_reply_sequence",
         "gate_alpha_get_webhook_status",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
@@ -912,32 +914,26 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "idempotentHint": False,
         "openWorldHint": True,
     }
-    assert tools[8]["annotations"]["readOnlyHint"] is True
-    assert tools[9]["annotations"] == {
+    assert tools[9]["annotations"]["readOnlyHint"] is True
+    assert tools[10]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
-    }
-    assert tools[10]["annotations"] == {
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
     }
     assert tools[11]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
-        "openWorldHint": True,
-    }
-    assert tools[12]["annotations"]["readOnlyHint"] is True
-    assert tools[15]["annotations"] == {
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
         "openWorldHint": False,
     }
+    assert tools[12]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    assert tools[13]["annotations"]["readOnlyHint"] is True
     assert tools[16]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
@@ -945,6 +941,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "openWorldHint": False,
     }
     assert tools[17]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[18]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,

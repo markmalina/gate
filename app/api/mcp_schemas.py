@@ -136,10 +136,7 @@ ATTACHMENT_DETAILS_SCHEMA = _object(
         },
         "selector": {
             "type": "string",
-            "pattern": (
-                "^[0-9a-fA-F-]{36}:attachment:"
-                "[0-9a-fA-F-]{36}:[0-9]+$"
-            ),
+            "pattern": ("^[0-9a-fA-F-]{36}:attachment:[0-9a-fA-F-]{36}:[0-9]+$"),
         },
     }
 )
@@ -790,21 +787,15 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "chain_recovery_mayaki_source_sha": {
                         "type": "string",
-                        "const": (
-                            "2078d230852af1c7e3a309f00d716fa2fc664f68"
-                        ),
+                        "const": ("2078d230852af1c7e3a309f00d716fa2fc664f68"),
                     },
                     "chain_recovery_oko_source_sha": {
                         "type": "string",
-                        "const": (
-                            "2c304529d04be43726e677d2b864c4b5f8283be8"
-                        ),
+                        "const": ("2c304529d04be43726e677d2b864c4b5f8283be8"),
                     },
                     "chain_recovery_take_source_sha": {
                         "type": "string",
-                        "const": (
-                            "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
-                        ),
+                        "const": ("4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"),
                     },
                     "chain_recovery_mayaki_state": {
                         "type": "string",
@@ -865,9 +856,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "mayaki_private_hostname": {
                         "type": "string",
-                        "const": (
-                            "become-mayaki-controlled.railway.internal"
-                        ),
+                        "const": ("become-mayaki-controlled.railway.internal"),
                     },
                     "mayaki_private_port": {
                         "type": "integer",
@@ -875,9 +864,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "mayaki_source_sha": {
                         "type": "string",
-                        "const": (
-                            "2078d230852af1c7e3a309f00d716fa2fc664f68"
-                        ),
+                        "const": ("2078d230852af1c7e3a309f00d716fa2fc664f68"),
                     },
                     "mayaki_health_external_effects": {
                         "type": "integer",
@@ -899,9 +886,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "oko_source_sha": {
                         "type": "string",
-                        "const": (
-                            "2c304529d04be43726e677d2b864c4b5f8283be8"
-                        ),
+                        "const": ("2c304529d04be43726e677d2b864c4b5f8283be8"),
                     },
                     "oko_health_external_effects": {
                         "type": "integer",
@@ -923,9 +908,7 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                     },
                     "take_source_sha": {
                         "type": "string",
-                        "const": (
-                            "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
-                        ),
+                        "const": ("4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"),
                     },
                     "take_health_external_effects": {
                         "type": "integer",
@@ -1262,11 +1245,12 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_get_status",
                                 "gate_list_unanswered",
                                 "gate_get_reply_context",
-                                 "gate_save_reply_draft",
-                                 "gate_prepare_reply_document",
-                                 "gate_send_approved_reply",
-                                 "gate_send_approved_document",
+                                "gate_save_reply_draft",
+                                "gate_prepare_reply_document",
+                                "gate_send_approved_reply",
+                                "gate_send_approved_document",
                                 "gate_queue_approved_reply_sequence",
+                                "gate_get_reply_sequence",
                                 "gate_alpha_list_installations",
                                 "gate_alpha_get_webhook_status",
                                 "gate_alpha_control_installation",
@@ -1279,8 +1263,8 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
                                 "gate_beta_get_provider_probe",
                             ],
                         },
-                        "minItems": 18,
-                        "maxItems": 18,
+                        "minItems": 19,
+                        "maxItems": 19,
                         "uniqueItems": True,
                     },
                     "draft_writes_enabled": {"type": "boolean"},
@@ -1292,7 +1276,6 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
         }
     ),
 }
-
 
 
 HISTORICAL_VOICE_DEBT_RECORD_SCHEMA = _object(
@@ -1435,9 +1418,7 @@ HISTORICAL_PARITY_DEBT_RECORD_SCHEMA = _object(
         "text_matched": {"type": "boolean"},
         "verified_identity_count": {"type": "integer", "minimum": 0},
         "person_identity_confirmed": {"type": "boolean"},
-        "message_should_create_reply_task": {
-            "anyOf": [{"type": "boolean"}, {"type": "null"}]
-        },
+        "message_should_create_reply_task": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
         "classification": {
             "type": "string",
             "enum": [
@@ -1582,15 +1563,9 @@ BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA = _object(
                 "relations_posts": {"type": "integer", "minimum": 0, "maximum": 1},
             }
         ),
-        "slice3_status": {
-            "anyOf": [BECOME_SLICE3_STATUS_SCHEMA, {"type": "null"}]
-        },
-        "rollback_preflight": {
-            "anyOf": [BECOME_SLICE3_ROLLBACK_SCHEMA, {"type": "null"}]
-        },
-        "counts": {
-            "anyOf": [BECOME_SLICE3_COUNTS_SCHEMA, {"type": "null"}]
-        },
+        "slice3_status": {"anyOf": [BECOME_SLICE3_STATUS_SCHEMA, {"type": "null"}]},
+        "rollback_preflight": {"anyOf": [BECOME_SLICE3_ROLLBACK_SCHEMA, {"type": "null"}]},
+        "counts": {"anyOf": [BECOME_SLICE3_COUNTS_SCHEMA, {"type": "null"}]},
         "relations": BECOME_SLICE3_RELATIONS_HEALTH_SCHEMA,
         "private_content_exposed": {"type": "boolean", "const": False},
         "provider_identifiers_exposed": {"type": "boolean", "const": False},
@@ -1623,8 +1598,12 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
             "properties": {
                 name: {"type": "boolean"}
                 for name in (
-                    "app_key", "app_secret", "refresh_token", "account_id",
-                    "openai_key", "inbox_path_valid",
+                    "app_key",
+                    "app_secret",
+                    "refresh_token",
+                    "account_id",
+                    "openai_key",
+                    "inbox_path_valid",
                 )
             },
             "additionalProperties": False,
@@ -1671,39 +1650,56 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
     }
 )
 _dropbox_status_properties = GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"]["properties"]
-_dropbox_status_properties.update({
-    "no_speech_count": {"type": "integer", "minimum": 0},
-    "requires_attention_count": {"type": "integer", "minimum": 0},
-    "incomplete_recordings": {
-        **_dropbox_status_properties["recent_recordings"], "maxItems": 100,
-    },
-    "incomplete_truncated": {"type": "boolean"},
-    "archive_counts": _object({
-        name: {"type": "integer", "minimum": 0}
-        for name in ("total", "completed", "superseded", "incomplete")
-    }),
-})
-GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
-GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"] = _object({
-    **{name: {"type": "integer", "minimum": 0}
-       for name in ("total", "completed", "incomplete")},
-    "truncated": {"type": "boolean"},
-    "private_content_exposed": {"const": False},
-    "incomplete_recordings": {"type": "array", "maxItems": 100, "items": _object({
-        "archive_id": {"type": "string"}, "received_at": {"type": "string"},
-        "status": _nullable("string"), "reason_code": _nullable("string"),
-        "duration_seconds": {"type": "integer"}, "size_bytes": {"type": "integer"},
-        "summary_status": _nullable("string"),
-    })},
-})
-GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"]["properties"].update({
-    "historical_short_voice_overflow_count": {"type": "integer", "minimum": 0},
-    "no_speech_count": {"type": "integer", "minimum": 0},
-    "requires_attention_count": {"type": "integer", "minimum": 0},
-})
-GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = (
-    BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
+_dropbox_status_properties.update(
+    {
+        "no_speech_count": {"type": "integer", "minimum": 0},
+        "requires_attention_count": {"type": "integer", "minimum": 0},
+        "incomplete_recordings": {
+            **_dropbox_status_properties["recent_recordings"],
+            "maxItems": 100,
+        },
+        "incomplete_truncated": {"type": "boolean"},
+        "archive_counts": _object(
+            {
+                name: {"type": "integer", "minimum": 0}
+                for name in ("total", "completed", "superseded", "incomplete")
+            }
+        ),
+    }
 )
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["historical_debt"] = HISTORICAL_DEBT_SCHEMA
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"] = _object(
+    {
+        **{
+            name: {"type": "integer", "minimum": 0} for name in ("total", "completed", "incomplete")
+        },
+        "truncated": {"type": "boolean"},
+        "private_content_exposed": {"const": False},
+        "incomplete_recordings": {
+            "type": "array",
+            "maxItems": 100,
+            "items": _object(
+                {
+                    "archive_id": {"type": "string"},
+                    "received_at": {"type": "string"},
+                    "status": _nullable("string"),
+                    "reason_code": _nullable("string"),
+                    "duration_seconds": {"type": "integer"},
+                    "size_bytes": {"type": "integer"},
+                    "summary_status": _nullable("string"),
+                }
+            ),
+        },
+    }
+)
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["telegram_voice_archives"]["properties"].update(
+    {
+        "historical_short_voice_overflow_count": {"type": "integer", "minimum": 0},
+        "no_speech_count": {"type": "integer", "minimum": 0},
+        "requires_attention_count": {"type": "integer", "minimum": 0},
+    }
+)
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["become_slice3"] = BECOME_SLICE3_PRODUCTION_EVIDENCE_SCHEMA
 
 
 UNANSWERED_ITEM_SCHEMA = _object(
@@ -2389,6 +2385,118 @@ ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+SEQUENCE_SUMMARIES_SCHEMA = _object(
+    {
+        "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": _object(
+                {
+                    "sequence_id": {"type": "string", "format": "uuid"},
+                    "task_id": {"type": "string", "format": "uuid"},
+                    "state": {"type": "string", "enum": ["active", "completed", "stopped"]},
+                    "stop_reason": _nullable("string"),
+                    "notification_state": {"type": "string"},
+                    "total": {"type": "integer", "minimum": 2, "maximum": 50},
+                }
+            ),
+        },
+        "limit": {"type": "integer", "const": 20},
+        "counts": _object(
+            {
+                state: {"type": "integer", "minimum": 0}
+                for state in ("active", "stopped", "completed")
+            }
+        ),
+        "notification_counts": _object(
+            {
+                state: {"type": "integer", "minimum": 0}
+                for state in ("pending", "sending", "sent", "failed", "unknown", "blocked_route")
+            }
+        ),
+    }
+)
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["reply_sequences"] = SEQUENCE_SUMMARIES_SCHEMA
+GATE_UNANSWERED_OUTPUT_SCHEMA["properties"]["reply_sequences"] = SEQUENCE_SUMMARIES_SCHEMA
+REPLY_CONTEXT_SUCCESS_SCHEMA["properties"].update(
+    {
+        "reply_sequences": SEQUENCE_SUMMARIES_SCHEMA,
+        "dialog_inbound_revision": {"type": ["integer", "null"], "minimum": 0},
+        "sequence_approval": _object(
+            {"ready": {"type": "boolean"}, "blocked_reason": _nullable("string")}
+        ),
+    }
+)
+SEQUENCE_SUCCESS_SCHEMA["properties"].update(
+    {
+        "state": {"type": "string", "const": "active"},
+        "queued_revision": {"type": "integer", "minimum": 0},
+        "stop_policy": {"type": "string", "const": "any_inbound_message"},
+        "notification_readiness": {"type": "string"},
+    }
+)
+SEQUENCE_DETAIL_SCHEMA = _object(
+    {
+        "sequence_id": {"type": "string", "format": "uuid"},
+        "task_id": {"type": "string", "format": "uuid"},
+        "state": {"type": "string", "enum": ["active", "completed", "stopped"]},
+        "stop_reason": _nullable("string"),
+        "stopped_at": _nullable("string"),
+        "stopped_by_receipt_ref": _nullable("string"),
+        "account_label": {"type": "string"},
+        "recipient_display": {"type": "string", "maxLength": 120},
+        "total": {"type": "integer", "minimum": 2, "maximum": 50},
+        "counts": _object(
+            {
+                state: {"type": "integer", "minimum": 0}
+                for state in (
+                    "scheduled",
+                    "reserved",
+                    "sending",
+                    "sent",
+                    "failed",
+                    "unknown",
+                    "cancelled",
+                )
+            }
+        ),
+        "items": {
+            "type": "array",
+            "maxItems": 50,
+            "items": _object(
+                {
+                    "position": {"type": "integer", "minimum": 0, "maximum": 49},
+                    "draft_id": {"type": "string", "format": "uuid"},
+                    "draft_text": _nullable("string"),
+                    "draft_text_matches_approval": {"type": ["boolean", "null"]},
+                    "item_state": {"type": "string"},
+                    "safe_error_code": _nullable("string"),
+                    "confirmed_at": _nullable("string"),
+                }
+            ),
+        },
+        "notification": _object(
+            {
+                "state": {"type": "string"},
+                "safe_error_code": _nullable("string"),
+                "delivered_at": _nullable("string"),
+            }
+        ),
+        "can_auto_resume": {"type": "boolean", "const": False},
+        "requires_new_approval": {"type": "boolean"},
+        "queued_revision": {"type": "integer", "minimum": 0},
+        "dialog_inbound_revision": {"type": "integer", "minimum": 0},
+        "version": {"type": "integer", "minimum": 0},
+        "observed_at": {"type": "string"},
+        "next_position": {"type": "integer", "minimum": 0, "maximum": 50},
+        "next_due_at": {"type": "string"},
+        "admitted": {"type": "boolean"},
+        "rate_wait_until": _nullable("string"),
+        "resource_blocked": {"type": "boolean"},
+        "next_cursor": _nullable("string"),
+    }
+)
+
 MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_get_status": GATE_STATUS_OUTPUT_SCHEMA,
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
@@ -2398,6 +2506,7 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_send_approved_reply": GATE_SEND_OUTPUT_SCHEMA,
     "gate_send_approved_document": GATE_DOCUMENT_SEND_OUTPUT_SCHEMA,
     "gate_queue_approved_reply_sequence": GATE_SEQUENCE_OUTPUT_SCHEMA,
+    "gate_get_reply_sequence": _success_or_error(SEQUENCE_DETAIL_SCHEMA, {}),
     "gate_alpha_list_installations": ALPHA_INSTALLATIONS_OUTPUT_SCHEMA,
     "gate_alpha_get_webhook_status": ALPHA_WEBHOOK_STATUS_OUTPUT_SCHEMA,
     "gate_alpha_control_installation": ALPHA_CONTROL_OUTPUT_SCHEMA,

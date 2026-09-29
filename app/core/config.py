@@ -280,9 +280,7 @@ class Settings(BaseSettings):
     )
     gate_become_voice_transcription_data_gate_approved: bool = Field(
         default=False,
-        validation_alias=(
-            "GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED"
-        ),
+        validation_alias=("GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED"),
     )
     gate_become_voice_transcription_max_calls: int = Field(
         default=0,
@@ -304,17 +302,13 @@ class Settings(BaseSettings):
         default=100,
         ge=100,
         le=10_000,
-        validation_alias=(
-            "GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND"
-        ),
+        validation_alias=("GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND"),
     )
     gate_become_voice_transcription_timeout_seconds: float = Field(
         default=60,
         ge=5,
         le=120,
-        validation_alias=(
-            "GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS"
-        ),
+        validation_alias=("GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS"),
     )
     gate_become_pilot_slice1_enabled: bool = Field(
         default=False,
@@ -330,9 +324,7 @@ class Settings(BaseSettings):
         default=0,
         ge=0,
         le=1,
-        validation_alias=(
-            "GATE_BECOME_PILOT_SLICE1_PROVIDER_MAX_CALLS"
-        ),
+        validation_alias=("GATE_BECOME_PILOT_SLICE1_PROVIDER_MAX_CALLS"),
     )
     gate_become_pilot_slice2_enabled: bool = Field(
         default=False,
@@ -459,10 +451,7 @@ class Settings(BaseSettings):
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_REF",
     )
     gate_beta_checkpoint_oidc_workflow_ref: str = Field(
-        default=(
-            "AlphaCenter/beta/.github/workflows/"
-            "checkpoint-context.yml@refs/heads/main"
-        ),
+        default=("AlphaCenter/beta/.github/workflows/checkpoint-context.yml@refs/heads/main"),
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF",
     )
     gate_alpha_delivery_enabled: bool = Field(
@@ -597,6 +586,33 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=128,
         validation_alias="GATE_WORKSPACE_ID",
+    )
+    gate_reply_sequence_stop_on_inbound_enabled: bool = Field(
+        default=False, validation_alias="GATE_REPLY_SEQUENCE_STOP_ON_INBOUND_ENABLED"
+    )
+    gate_reply_sequence_dispatch_v2_enabled: bool = Field(
+        default=False, validation_alias="GATE_REPLY_SEQUENCE_DISPATCH_V2_ENABLED"
+    )
+    gate_reply_sequence_parallel_enabled: bool = Field(
+        default=False, validation_alias="GATE_REPLY_SEQUENCE_PARALLEL_ENABLED"
+    )
+    gate_reply_sequence_notifications_enabled: bool = Field(
+        default=False, validation_alias="GATE_REPLY_SEQUENCE_NOTIFICATIONS_ENABLED"
+    )
+    gate_reply_sequence_canary_enabled: bool = Field(
+        default=False, validation_alias="GATE_REPLY_SEQUENCE_CANARY_ENABLED"
+    )
+    gate_reply_sequence_db_pool_mode: str = Field(
+        default="unknown", validation_alias="GATE_REPLY_SEQUENCE_DB_POOL_MODE"
+    )
+    gate_reply_sequence_max_inflight: int = Field(
+        default=4, ge=1, le=8, validation_alias="GATE_REPLY_SEQUENCE_MAX_INFLIGHT"
+    )
+    gate_reply_sequence_max_inflight_per_account: int = Field(
+        default=2, ge=1, le=8, validation_alias="GATE_REPLY_SEQUENCE_MAX_INFLIGHT_PER_ACCOUNT"
+    )
+    gate_reply_sequence_max_inflight_per_bot: int = Field(
+        default=4, ge=1, le=8, validation_alias="GATE_REPLY_SEQUENCE_MAX_INFLIGHT_PER_BOT"
     )
     gate_reply_sequence_worker_enabled: bool = Field(
         default=False,

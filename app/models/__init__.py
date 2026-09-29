@@ -1,5 +1,6 @@
 """Database models."""
 
+from app.models import reply_sequences as reply_sequences
 from app.models.aqub import (
     AQUBFoodMedia,
     AQUBFoodRoute,
@@ -69,3 +70,4 @@ __all__ = [
     "TelegramBusinessConnection",
     "TelegramUpdate",
 ]
+

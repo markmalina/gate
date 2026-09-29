@@ -1,7 +1,9 @@
 """SQLAlchemy and Telegram adapter for explicit idempotent reply delivery."""
 
+import asyncio
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -19,7 +21,10 @@ from app.application.reply_sends import (
     ReplySendResult,
     SendApprovedReplyCommand,
 )
+from app.application.reply_sequences import ReplySequenceError
 from app.core.config import Settings
+from app.infrastructure.reply_sequence_guard import DialogLease, dialog_guard
+from app.infrastructure.reply_sequence_runtime import DispatchClaim, runtime_for_session
 from app.models.domain import (
     Account,
     AuditLog,
@@ -37,7 +42,15 @@ from app.models.domain import (
     SendAttemptStatus,
     TelegramBusinessConnection,
 )
+from app.models.reply_sequences import ReplySequenceItem
+from app.services.process_send_fence import BaselineSendClosed
 from app.services.telegram import TelegramApiError, TelegramClient
+from app.services.telegram_delivery_gate import (
+    CanaryDelivery,
+    TelegramDispatchStartExpired,
+    canary_delivery,
+    reserved_delivery,
+)
 
 _SENDABLE_DRAFT_STATUSES = frozenset(
     {
@@ -162,17 +175,72 @@ class SqlTelegramReplySender:
         session: AsyncSession,
         telegram: TelegramClient,
         settings: Settings,
+        dispatch_claim: DispatchClaim | None = None,
     ) -> None:
         self._session = session
         self._telegram = telegram
         self._settings = settings
+        self._dispatch_claim = dispatch_claim
+        self._sequence_runtime = runtime_for_session(session)
+        self._dialog_lease: DialogLease | None = None
+        self._admitted_monotonic: float | None = None
+
+    @staticmethod
+    def _dispatch_clock() -> float:
+        return time.monotonic()
 
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
         preflight = await self._preflight(command)
         if isinstance(preflight, ReplySendResult):
             return preflight
 
+        await self._check_sequence_authority(command)
         probe = await self._probe_connection(preflight)
+        claim, runtime = self._dispatch_claim, self._sequence_runtime
+        if claim is not None and runtime is not None:
+            async with dialog_guard(
+                runtime.sender_guards,
+                workspace=claim.workspace,
+                account_id=claim.account_id,
+                chat_id=claim.recipient,
+            ) as lease:
+                self._dialog_lease = lease
+                await lease.check()
+                result = await self._send_prepared(command, preflight, probe)
+                await runtime.project_outcome(claim, coroutine_finished=True)
+                return result
+        return await self._send_prepared(command, preflight, probe)
+
+    async def _check_sequence_authority(self, command: SendApprovedReplyCommand) -> None:
+        metadata = await self._session.scalar(
+            select(ReplyDraft.prompt_context).where(ReplyDraft.id == command.draft_id)
+        )
+        canonical = None
+        if self._sequence_runtime is not None:
+            canonical = await self._session.scalar(
+                select(ReplySequenceItem.sequence_id).where(
+                    ReplySequenceItem.draft_id == command.draft_id
+                )
+            )
+        await self._session.rollback()
+        sequence = metadata.get("reply_sequence", {}) if isinstance(metadata, dict) else {}
+        if not isinstance(sequence, dict):
+            raise ReplySendError(
+                code="sequence_binding_mismatch", message="Sequence metadata is invalid"
+            )
+        if canonical is not None or sequence.get("authority_version") == 2:
+            if self._dispatch_claim is None or self._sequence_runtime is None:
+                raise ReplySendError(
+                    code="sequence_stopped", message="Sequence drafts require guarded dispatch"
+                )
+        elif self._dispatch_claim is not None:
+            raise ReplySendError(
+                code="sequence_binding_mismatch", message="Sequence authority is missing"
+            )
+
+    async def _send_prepared(
+        self, command: SendApprovedReplyCommand, preflight: _SendIntent, probe: _ConnectionProbe
+    ) -> ReplySendResult:
         reservation = await self._reserve(
             command=command,
             intent=preflight,
@@ -182,6 +250,19 @@ class SqlTelegramReplySender:
             return reservation
 
         self._require_provider_outside_transaction()
+        if self._dialog_lease is not None:
+            await self._dialog_lease.check()
+            if (
+                self._admitted_monotonic is None
+                or self._dispatch_clock() - self._admitted_monotonic > 0.1
+            ):
+                return await self._finalize_failure(
+                    command=command,
+                    reservation=reservation,
+                    status="cancelled",
+                    error_code="dispatch_start_window_expired",
+                    error_detail="",
+                )
         try:
             context = reservation.context
             if context.document_sha256 is not None:
@@ -206,17 +287,64 @@ class SqlTelegramReplySender:
                     reservation.business_connection_id,
                 )
             else:
-                telegram_result = await self._telegram.send_plain_message(
+                transport_effect = self._telegram.send_plain_message(
                     chat_id=context.target_chat_id,
                     text=context.draft_text,
                     business_connection_id=reservation.business_connection_id,
                 )
+                if self._dialog_lease is not None:
+                    assert self._admitted_monotonic is not None
+                    assert self._dispatch_claim is not None
+                    with reserved_delivery(
+                        self._settings.telegram_bot_token, admitted_at=self._admitted_monotonic
+                    ), canary_delivery(
+                        CanaryDelivery(
+                            kind="sequence",
+                            execution_id=self._dispatch_claim.canary_execution_id,
+                            principal_subject=self._dispatch_claim.principal_subject,
+                            account_id=self._dispatch_claim.account_id,
+                            dialog_ref=self._dispatch_claim.recipient,
+                            body_sha256=hashlib.sha256(context.draft_text.encode("utf-8")).hexdigest(),
+                            destination=context.target_chat_id,
+                            business_connection_id=reservation.business_connection_id,
+                        )
+                    ):
+                        telegram_result = await self._dialog_lease.transport(transport_effect)
+                else:
+                    telegram_result = await transport_effect
             if telegram_result.get("ok") is not True:
                 raise RuntimeError("Telegram API did not confirm delivery")
             if _provider_message_id(telegram_result) is None:
                 raise RuntimeError("Telegram API did not return a confirmed message id")
+        except asyncio.CancelledError:
+            if self._dispatch_claim is not None:
+                await self._finalize_failure(
+                    command=command,
+                    reservation=reservation,
+                    status="unknown",
+                    error_code="sequence_dispatch_cancelled",
+                    error_detail="",
+                )
+                if self._sequence_runtime is not None:
+                    await self._sequence_runtime.project_outcome(
+                        self._dispatch_claim, coroutine_finished=True
+                    )
+            raise
         except Exception as exc:
-            status, error_code = _delivery_failure(exc)
+            if (
+                isinstance(exc, TelegramApiError)
+                and exc.error_code == 429
+                and self._dispatch_claim is not None
+                and self._sequence_runtime is not None
+            ):
+                await self._sequence_runtime.apply_cooldown(
+                    self._dispatch_claim, exc.retry_after_seconds
+                )
+            status, error_code = (
+                ("cancelled", "dispatch_start_window_expired")
+                if isinstance(exc, TelegramDispatchStartExpired)
+                else _delivery_failure(exc)
+            )
             return await self._finalize_failure(
                 command=command,
                 reservation=reservation,
@@ -512,7 +640,11 @@ class SqlTelegramReplySender:
                 ),
             )
 
-        now = datetime.now(UTC)
+        now = (
+            await self._sequence_runtime.db_now(self._session)
+            if self._dispatch_claim is not None and self._sequence_runtime is not None
+            else datetime.now(UTC)
+        )
         attempt = SendAttempt(
             id=uuid4(),
             reply_draft_id=current.draft_id,
@@ -529,6 +661,15 @@ class SqlTelegramReplySender:
             started_at=now,
         )
         self._session.add(attempt)
+        if self._dispatch_claim is not None and self._sequence_runtime is not None:
+            try:
+                await self._sequence_runtime.admission(
+                    self._session, self._dispatch_claim, attempt, current.draft_text
+                )
+            except ReplySequenceError as exc:
+                raise ReplySendError(code=exc.code, message=exc.message) from exc
+            # Start before this reservation transaction commits, never after it.
+            self._admitted_monotonic = self._dispatch_clock()
         self._session.add(
             AuditLog(
                 actor=f"mcp:{command.principal.subject}"[:255],
@@ -613,7 +754,11 @@ class SqlTelegramReplySender:
             attempt.status = status
             attempt.error_code = error_code
             attempt.error_detail = error_detail
-            attempt.finished_at = datetime.now(UTC)
+            attempt.finished_at = (
+                await self._sequence_runtime.db_now(self._session)
+                if self._dispatch_claim is not None and self._sequence_runtime is not None
+                else datetime.now(UTC)
+            )
             if reservation.context.document_sha256 is not None:
                 await self._session.execute(
                     update(ReplyDocument)
@@ -650,8 +795,12 @@ class SqlTelegramReplySender:
         reservation: _Reservation,
         telegram_result: dict[str, Any],
     ) -> ReplySendResult:
-        finished_at = datetime.now(UTC)
         async with self._session.begin():
+            finished_at = (
+                await self._sequence_runtime.db_now(self._session)
+                if self._dispatch_claim is not None and self._sequence_runtime is not None
+                else datetime.now(UTC)
+            )
             attempt = await self._load_attempt_by_id(
                 attempt_id=reservation.attempt.id,
                 for_update=True,
@@ -858,8 +1007,7 @@ class SqlTelegramReplySender:
 
         raw_context = draft.prompt_context if isinstance(draft.prompt_context, dict) else {}
         is_document = (
-            raw_context.get("kind") == "document"
-            or draft.source == "chatgpt-mcp-document"
+            raw_context.get("kind") == "document" or draft.source == "chatgpt-mcp-document"
         )
         document = None
         if is_document or command.expected_document_sha256 is not None:
@@ -1373,6 +1521,8 @@ def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bo
 
 
 def _delivery_failure(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, BaselineSendClosed):
+        return SendAttemptStatus.CANCELLED.value, "process_admission_closed"
     if isinstance(exc, TelegramApiError):
         server_code = next(
             (

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.alpha_canary import (
     BETA_DISCLOSURE_PREFIX,
@@ -196,11 +196,13 @@ from app.infrastructure.become_voice_transcription import (
 from app.infrastructure.beta_context import SessionFactoryBetaContextTransfer
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.canonical_messaging import SessionFactoryCanonicalIngressStore
+from app.infrastructure.database import DatabaseRuntime
 from app.infrastructure.openai_agent_runtime import ConfiguredAlphaRuntimeFactory
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
+from app.infrastructure.process_admission import runtime_process_admission
 from app.infrastructure.telegram_business_text_inbox import (
     SessionFactoryTelegramBusinessTextInboxProjector,
 )
@@ -1181,8 +1183,23 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is required for an enabled Telegram worker")
 
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    from app.infrastructure.database import build_database_runtime, close_database_runtime
+
+    database = build_database_runtime(settings.database_url, settings=settings)
+    try:
+        async with runtime_process_admission(database, settings=settings, wait_baseline=True):
+            return await run_telegram_worker_with_runtime(settings, database)
+    finally:
+        await close_database_runtime(database)
+
+
+async def run_telegram_worker_with_runtime(
+    settings: Settings, database: DatabaseRuntime
+) -> TelegramWorkerRuntimeResult:
+    """Run one iteration on the owning process runtime; never create/close an engine."""
+    if not settings.gate_telegram_worker_enabled:
+        return await run_telegram_worker_once(settings=settings)
+    sessions = database.session_factory
     if (
         settings.gate_become_connector_enabled
         and settings.gate_become_canary_enabled
@@ -1243,782 +1260,779 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         sessions
     )
     business_text_inbox = SessionFactoryTelegramBusinessTextInboxProjector(sessions)
-    try:
-        if (
-            settings.gate_alpha_canary_enabled
-            or settings.gate_beta_canary_enabled
-            or settings.gate_become_canary_enabled
-            or settings.gate_universal_mayak_runtime_enabled
-            or settings.gate_telegram_voice_transcription_enabled
-            or settings.gate_telegram_voice_archive_enabled
-        ):
-            async with build_telegram_http_client() as http_client:
-                if (
-                    settings.gate_become_connector_enabled
-                    and settings.gate_become_canary_enabled
-                    and settings.gate_become_privacy_mode_confirmed
-                    and settings.gate_become_group_capacity == 1
-                ):
-                    delivered_consent = (
-                        await SessionFactoryBecomeRelationsHandoffDeliverer(
+    if (
+        settings.gate_alpha_canary_enabled
+        or settings.gate_beta_canary_enabled
+        or settings.gate_become_canary_enabled
+        or settings.gate_universal_mayak_runtime_enabled
+        or settings.gate_telegram_voice_transcription_enabled
+        or settings.gate_telegram_voice_archive_enabled
+    ):
+        async with build_telegram_http_client() as http_client:
+            if (
+                settings.gate_become_connector_enabled
+                and settings.gate_become_canary_enabled
+                and settings.gate_become_privacy_mode_confirmed
+                and settings.gate_become_group_capacity == 1
+            ):
+                delivered_consent = (
+                    await SessionFactoryBecomeRelationsHandoffDeliverer(
+                        sessions,
+                        http_client=http_client,
+                    ).deliver_one()
+                )
+                if delivered_consent:
+                    logger.info(
+                        "Delivered one BECOME consent handoff to Relations"
+                    )
+            alpha_canary = None
+            if settings.gate_alpha_canary_enabled:
+                telegram = TelegramClient(
+                    credential=settings.telegram_alpha_bot_token.get_secret_value(),
+                    api_base_url=os.getenv(
+                        "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                    ),
+                    http_client=http_client,
+                )
+                alpha_canary = ProcessAlphaCanaryUpdateService(
+                    store=SessionFactoryAlphaCanaryStore(
+                        sessions,
+                        group_capacity=settings.gate_alpha_group_capacity,
+                    ),
+                    shadow=ProcessAlphaShadowMessageService(
+                        port=SessionFactoryAlphaShadowTurnRepository(
                             sessions,
+                            verified_model_shadow_enabled=True,
+                        ),
+                        bundle_loader=DeployedInstructionBundleLoader(
+                            Path(settings.gate_agent_bundle_root)
+                        ),
+                        runtime_factory=ConfiguredAlphaRuntimeFactory(
                             http_client=http_client,
-                        ).deliver_one()
-                    )
-                    if delivered_consent:
-                        logger.info(
-                            "Delivered one BECOME consent handoff to Relations"
-                        )
-                alpha_canary = None
-                if settings.gate_alpha_canary_enabled:
-                    telegram = TelegramClient(
-                        credential=settings.telegram_alpha_bot_token.get_secret_value(),
-                        api_base_url=os.getenv(
-                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                            api_key=settings.openai_api_key.get_secret_value(),
+                            api_base_url=settings.openai_api_base_url,
+                            model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
+                            model_data_gate_approved=(
+                                settings.gate_alpha_model_data_gate_approved
+                            ),
+                            max_output_tokens=(
+                                settings.gate_alpha_model_max_output_tokens
+                            ),
+                            timeout_seconds=settings.gate_alpha_model_timeout_seconds,
                         ),
-                        http_client=http_client,
-                    )
-                    alpha_canary = ProcessAlphaCanaryUpdateService(
-                        store=SessionFactoryAlphaCanaryStore(
+                    ),
+                    delivery=DeliverAlphaGrantService(
+                        store=SessionFactoryAlphaDeliveryStore(sessions),
+                        telegram=TelegramClientAlphaTextAdapter(telegram),
+                    ),
+                )
+            beta_canary = None
+            if settings.gate_beta_canary_enabled:
+                beta_telegram = TelegramClient(
+                    credential=settings.telegram_beta_bot_token.get_secret_value(),
+                    api_base_url=os.getenv(
+                        "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                    ),
+                    http_client=http_client,
+                )
+                beta_canary = ProcessAlphaCanaryUpdateService(
+                    store=SessionFactoryAlphaCanaryStore(
+                        sessions,
+                        group_capacity=settings.gate_beta_group_capacity,
+                        pinned_installation_key=_optional_installation_key(
+                            settings.gate_beta_installation_key
+                        ),
+                    ),
+                    shadow=ProcessAlphaShadowMessageService(
+                        port=SessionFactoryAlphaShadowTurnRepository(
                             sessions,
-                            group_capacity=settings.gate_alpha_group_capacity,
+                            verified_model_shadow_enabled=True,
                         ),
-                        shadow=ProcessAlphaShadowMessageService(
-                            port=SessionFactoryAlphaShadowTurnRepository(
-                                sessions,
-                                verified_model_shadow_enabled=True,
+                        bundle_loader=DeployedInstructionBundleLoader(
+                            Path(settings.gate_agent_bundle_root)
+                        ),
+                        runtime_factory=ConfiguredAlphaRuntimeFactory(
+                            http_client=http_client,
+                            api_key=settings.openai_api_key.get_secret_value(),
+                            api_base_url=settings.openai_api_base_url,
+                            model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
+                            model_data_gate_approved=(
+                                settings.gate_alpha_model_data_gate_approved
                             ),
-                            bundle_loader=DeployedInstructionBundleLoader(
-                                Path(settings.gate_agent_bundle_root)
+                            max_output_tokens=(
+                                settings.gate_alpha_model_max_output_tokens
                             ),
-                            runtime_factory=ConfiguredAlphaRuntimeFactory(
-                                http_client=http_client,
-                                api_key=settings.openai_api_key.get_secret_value(),
-                                api_base_url=settings.openai_api_base_url,
-                                model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
-                                model_data_gate_approved=(
-                                    settings.gate_alpha_model_data_gate_approved
-                                ),
-                                max_output_tokens=(
-                                    settings.gate_alpha_model_max_output_tokens
-                                ),
-                                timeout_seconds=settings.gate_alpha_model_timeout_seconds,
-                            ),
+                            timeout_seconds=settings.gate_alpha_model_timeout_seconds,
                         ),
-                        delivery=DeliverAlphaGrantService(
-                            store=SessionFactoryAlphaDeliveryStore(sessions),
-                            telegram=TelegramClientAlphaTextAdapter(telegram),
-                        ),
-                    )
-                beta_canary = None
-                if settings.gate_beta_canary_enabled:
-                    beta_telegram = TelegramClient(
-                        credential=settings.telegram_beta_bot_token.get_secret_value(),
-                        api_base_url=os.getenv(
-                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
-                        ),
-                        http_client=http_client,
-                    )
-                    beta_canary = ProcessAlphaCanaryUpdateService(
-                        store=SessionFactoryAlphaCanaryStore(
+                    ),
+                    delivery=DeliverAlphaGrantService(
+                        store=SessionFactoryAlphaDeliveryStore(sessions),
+                        telegram=TelegramClientAlphaTextAdapter(beta_telegram),
+                    ),
+                    connector_key=TelegramConnectorKey.BETA_GROUP.value,
+                    disclosure_prefix=BETA_DISCLOSURE_PREFIX,
+                )
+            become_canary = None
+            become_review = None
+            become_program_review = None
+            become_learner = None
+            if settings.gate_become_canary_enabled:
+                become_telegram = TelegramClient(
+                    credential=settings.telegram_become_bot_token.get_secret_value(),
+                    api_base_url=os.getenv(
+                        "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                    ),
+                    http_client=http_client,
+                )
+                become_canary = ProcessAlphaCanaryUpdateService(
+                    store=SessionFactoryAlphaCanaryStore(
+                        sessions,
+                        group_capacity=settings.gate_become_group_capacity,
+                    ),
+                    shadow=ProcessAlphaShadowMessageService(
+                        port=SessionFactoryAlphaShadowTurnRepository(
                             sessions,
-                            group_capacity=settings.gate_beta_group_capacity,
-                            pinned_installation_key=_optional_installation_key(
-                                settings.gate_beta_installation_key
-                            ),
+                            verified_model_shadow_enabled=False,
                         ),
-                        shadow=ProcessAlphaShadowMessageService(
-                            port=SessionFactoryAlphaShadowTurnRepository(
-                                sessions,
-                                verified_model_shadow_enabled=True,
-                            ),
-                            bundle_loader=DeployedInstructionBundleLoader(
-                                Path(settings.gate_agent_bundle_root)
-                            ),
-                            runtime_factory=ConfiguredAlphaRuntimeFactory(
-                                http_client=http_client,
-                                api_key=settings.openai_api_key.get_secret_value(),
-                                api_base_url=settings.openai_api_base_url,
-                                model_runtime_enabled=settings.gate_alpha_model_runtime_enabled,
-                                model_data_gate_approved=(
-                                    settings.gate_alpha_model_data_gate_approved
-                                ),
-                                max_output_tokens=(
-                                    settings.gate_alpha_model_max_output_tokens
-                                ),
-                                timeout_seconds=settings.gate_alpha_model_timeout_seconds,
-                            ),
+                        bundle_loader=DeployedInstructionBundleLoader(
+                            Path(settings.gate_agent_bundle_root)
                         ),
-                        delivery=DeliverAlphaGrantService(
-                            store=SessionFactoryAlphaDeliveryStore(sessions),
-                            telegram=TelegramClientAlphaTextAdapter(beta_telegram),
+                        runtime_factory=ConfiguredAlphaRuntimeFactory(
+                            http_client=http_client,
+                            api_key="",
+                            api_base_url=settings.openai_api_base_url,
+                            model_runtime_enabled=False,
+                            model_data_gate_approved=False,
+                            max_output_tokens=1,
+                            timeout_seconds=settings.gate_alpha_model_timeout_seconds,
                         ),
-                        connector_key=TelegramConnectorKey.BETA_GROUP.value,
-                        disclosure_prefix=BETA_DISCLOSURE_PREFIX,
-                    )
-                become_canary = None
-                become_review = None
-                become_program_review = None
-                become_learner = None
-                if settings.gate_become_canary_enabled:
-                    become_telegram = TelegramClient(
-                        credential=settings.telegram_become_bot_token.get_secret_value(),
-                        api_base_url=os.getenv(
-                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                    ),
+                    delivery=DeliverAlphaGrantService(
+                        store=SessionFactoryAlphaDeliveryStore(sessions),
+                        telegram=TelegramClientAlphaTextAdapter(become_telegram),
+                    ),
+                    connector_key=TelegramConnectorKey.BECOME_GROUP.value,
+                )
+                become_presence = TelegramBecomeOwnerPresence(
+                    bot_token=(
+                        settings.telegram_become_bot_token.get_secret_value()
+                    ),
+                    http_client=http_client,
+                )
+                subject_pepper = (
+                    settings.telegram_become_webhook_secret.get_secret_value()
+                )
+                become_intake = ProcessBecomeRegistrationService(
+                    store=SessionFactoryBecomeControlledIntakeStore(sessions),
+                    presence=become_presence,
+                    subject_pepper=subject_pepper,
+                )
+                become_consent = ProcessBecomeConsentService(
+                    store=SessionFactoryBecomeControlledConsentStore(sessions),
+                    presence=become_presence,
+                    subject_pepper=subject_pepper,
+                )
+                review_store = SessionFactoryPilotTranscriptReviewStore(
+                    sessions
+                )
+                become_review = ProcessPilotTranscriptReviewUpdate(
+                    store=review_store,
+                    telegram=become_telegram,
+                    identity_pepper=subject_pepper,
+                    enabled=settings.gate_become_pilot_slice1_enabled,
+                )
+                program_store = SessionFactoryProgramDraftStore(sessions)
+                slice3_store = SessionFactoryLearnerInvitationStore(sessions)
+                become_learner = (
+                    ProcessSlice3Update(
+                        store=slice3_store,
+                        identity_pepper=subject_pepper,
+                        workspace_key=settings.gate_workspace_id,
+                        become_space_ref=(
+                            settings.gate_become_pilot_slice3_space_ref
                         ),
-                        http_client=http_client,
-                    )
-                    become_canary = ProcessAlphaCanaryUpdateService(
-                        store=SessionFactoryAlphaCanaryStore(
-                            sessions,
-                            group_capacity=settings.gate_become_group_capacity,
+                        bot_installation_identity=(
+                            settings
+                            .gate_become_pilot_slice3_bot_installation_identity
                         ),
-                        shadow=ProcessAlphaShadowMessageService(
-                            port=SessionFactoryAlphaShadowTurnRepository(
-                                sessions,
-                                verified_model_shadow_enabled=False,
-                            ),
-                            bundle_loader=DeployedInstructionBundleLoader(
-                                Path(settings.gate_agent_bundle_root)
-                            ),
-                            runtime_factory=ConfiguredAlphaRuntimeFactory(
-                                http_client=http_client,
-                                api_key="",
-                                api_base_url=settings.openai_api_base_url,
-                                model_runtime_enabled=False,
-                                model_data_gate_approved=False,
-                                max_output_tokens=1,
-                                timeout_seconds=settings.gate_alpha_model_timeout_seconds,
-                            ),
+                        enabled=True,
+                        data_gate_approved=(
+                            settings
+                            .gate_become_pilot_slice3_data_gate_approved
                         ),
-                        delivery=DeliverAlphaGrantService(
-                            store=SessionFactoryAlphaDeliveryStore(sessions),
-                            telegram=TelegramClientAlphaTextAdapter(become_telegram),
-                        ),
-                        connector_key=TelegramConnectorKey.BECOME_GROUP.value,
                     )
-                    become_presence = TelegramBecomeOwnerPresence(
-                        bot_token=(
-                            settings.telegram_become_bot_token.get_secret_value()
-                        ),
-                        http_client=http_client,
-                    )
-                    subject_pepper = (
-                        settings.telegram_become_webhook_secret.get_secret_value()
-                    )
-                    become_intake = ProcessBecomeRegistrationService(
-                        store=SessionFactoryBecomeControlledIntakeStore(sessions),
-                        presence=become_presence,
-                        subject_pepper=subject_pepper,
-                    )
-                    become_consent = ProcessBecomeConsentService(
-                        store=SessionFactoryBecomeControlledConsentStore(sessions),
-                        presence=become_presence,
-                        subject_pepper=subject_pepper,
-                    )
-                    review_store = SessionFactoryPilotTranscriptReviewStore(
-                        sessions
-                    )
-                    become_review = ProcessPilotTranscriptReviewUpdate(
-                        store=review_store,
+                    if settings.gate_become_pilot_slice3_enabled
+                    else None
+                )
+                become_program_review = (
+                    ProcessPilotProgramReviewUpdate(
+                        store=program_store,
                         telegram=become_telegram,
                         identity_pepper=subject_pepper,
-                        enabled=settings.gate_become_pilot_slice1_enabled,
+                        enabled=True,
                     )
-                    program_store = SessionFactoryProgramDraftStore(sessions)
-                    slice3_store = SessionFactoryLearnerInvitationStore(sessions)
-                    become_learner = (
-                        ProcessSlice3Update(
-                            store=slice3_store,
-                            identity_pepper=subject_pepper,
-                            workspace_key=settings.gate_workspace_id,
-                            become_space_ref=(
-                                settings.gate_become_pilot_slice3_space_ref
-                            ),
-                            bot_installation_identity=(
-                                settings
-                                .gate_become_pilot_slice3_bot_installation_identity
-                            ),
-                            enabled=True,
-                            data_gate_approved=(
-                                settings
-                                .gate_become_pilot_slice3_data_gate_approved
-                            ),
-                        )
-                        if settings.gate_become_pilot_slice3_enabled
-                        else None
-                    )
-                    become_program_review = (
-                        ProcessPilotProgramReviewUpdate(
-                            store=program_store,
-                            telegram=become_telegram,
-                            identity_pepper=subject_pepper,
-                            enabled=True,
-                        )
-                        if settings.gate_become_pilot_slice2_enabled
-                        else None
-                    )
-                    become_media = ProcessBecomeMediaService(
-                        store=SessionFactoryBecomeMediaStore(sessions),
-                        downloader=TelegramBecomeMediaDownloader(
-                            bot_token=(
-                                settings.telegram_become_bot_token
-                                .get_secret_value()
-                            ),
-                            http_client=http_client,
-                            api_base_url=os.getenv(
-                                "TELEGRAM_API_BASE_URL",
-                                "https://api.telegram.org",
-                            ),
+                    if settings.gate_become_pilot_slice2_enabled
+                    else None
+                )
+                become_media = ProcessBecomeMediaService(
+                    store=SessionFactoryBecomeMediaStore(sessions),
+                    downloader=TelegramBecomeMediaDownloader(
+                        bot_token=(
+                            settings.telegram_become_bot_token
+                            .get_secret_value()
                         ),
-                        presence=become_presence,
-                        subject_pepper=subject_pepper,
-                    )
-                    try:
-                        correlation = await (
-                            SessionFactoryBecomeVoiceChainStore(
-                                sessions
-                            ).reconcile_one(
-                                workspace_key=settings.gate_workspace_id,
-                                prepared_at=datetime.now(UTC),
-                            )
-                        )
-                    except BecomeControlledIntakeError as exc:
-                        logger.warning(
-                            "BECOME voice correlation blocked: code=%s",
-                            exc.code,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            (
-                                "BECOME voice correlation deferred: "
-                                "error_type=%s"
-                            ),
-                            exc.__class__.__name__,
-                        )
-                    else:
-                        if correlation is not None:
-                            logger.info(
-                                (
-                                    "BECOME voice correlation ready: "
-                                    "duplicate=%s slots=%s"
-                                ),
-                                correlation.duplicate,
-                                correlation.slot_count,
-                            )
-                    try:
-                        api_key = settings.openai_api_key.get_secret_value()
-                        transcription_result = await (
-                            ProcessBecomeVoiceTranscriptionService(
-                                store=(
-                                    SessionFactoryBecomeVoiceTranscriptionStore(
-                                        sessions
-                                    )
-                                ),
-                                normalizer=TelegramVoiceNormalizer(),
-                                budget=SqlBillingBudgetService(sessions),
-                                speech_to_text=OpenAITranscriptionClient(
-                                    config=OpenAITranscriptionConfig(
-                                        api_key=api_key,
-                                        enabled=(
-                                            settings
-                                            .gate_become_pilot_slice1_enabled
-                                            and settings
-                                            .gate_become_pilot_slice1_provider_max_calls
-                                            == 1
-                                            and settings
-                                            .gate_become_voice_transcription_enabled
-                                            and settings
-                                            .gate_become_voice_transcription_data_gate_approved
-                                            and settings
-                                            .gate_become_voice_transcription_max_calls
-                                            == 1
-                                            and bool(api_key)
-                                        ),
-                                        model=(
-                                            settings
-                                            .gate_become_voice_transcription_model
-                                        ),
-                                        base_url=settings.openai_api_base_url,
-                                        timeout_seconds=(
-                                            settings
-                                            .gate_become_voice_transcription_timeout_seconds
-                                        ),
-                                    ),
-                                    http=http_client,
-                                ),
-                                workspace_key=settings.gate_workspace_id,
-                                model=(
-                                    settings
-                                    .gate_become_voice_transcription_model
-                                ),
-                                language=(
-                                    settings
-                                    .gate_become_voice_transcription_language
-                                ),
-                                reserve_microusd_per_second=(
-                                    settings
-                                    .gate_become_voice_transcription_reserve_microusd_per_second
-                                ),
-                                enabled=(
-                                    settings
-                                    .gate_become_voice_transcription_enabled
-                                ),
-                                data_gate_approved=(
-                                    settings
-                                    .gate_become_voice_transcription_data_gate_approved
-                                ),
-                                max_calls=(
-                                    settings
-                                    .gate_become_voice_transcription_max_calls
-                                ),
-                                slice1_enabled=(
-                                    settings.gate_become_pilot_slice1_enabled
-                                ),
-                                slice1_provider_max_calls=(
-                                    settings
-                                    .gate_become_pilot_slice1_provider_max_calls
-                                ),
-                            ).run_once(now=datetime.now(UTC))
-                        )
-                    except BecomeControlledIntakeError as exc:
-                        logger.warning(
-                            "BECOME voice transcription blocked: code=%s",
-                            exc.code,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            (
-                                "BECOME voice transcription deferred: "
-                                "error_type=%s"
-                            ),
-                            exc.__class__.__name__,
-                        )
-                    else:
-                        if transcription_result.disposition != "disabled":
-                            logger.info(
-                                (
-                                    "BECOME voice transcription state: "
-                                    "disposition=%s reconciliation=%s"
-                                ),
-                                transcription_result.disposition,
-                                transcription_result.reconciliation_required,
-                            )
-                    try:
-                        chain_result = await SessionFactoryBecomeI4Executor(
-                            sessions,
-                            http_client=http_client,
-                            enabled=(
-                                settings.gate_become_i4_chain_execution_enabled
-                            ),
-                        ).run_once(
-                            workspace_key=settings.gate_workspace_id,
-                            now=datetime.now(UTC),
-                        )
-                    except BecomeControlledIntakeError as exc:
-                        logger.warning(
-                            "BECOME I4 chain blocked: code=%s",
-                            exc.code,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "BECOME I4 chain deferred: error_type=%s",
-                            exc.__class__.__name__,
-                        )
-                    else:
-                        if chain_result.disposition != "disabled":
-                            logger.info(
-                                (
-                                    "BECOME I4 chain state: disposition=%s "
-                                    "stage=%s attempted=%s reconciliation=%s"
-                                ),
-                                chain_result.disposition,
-                                (
-                                    chain_result.stage.value
-                                    if chain_result.stage is not None
-                                    else "none"
-                                ),
-                                chain_result.attempted,
-                                chain_result.reconciliation_required,
-                            )
-                    try:
-                        recovery_result = (
-                            await SessionFactoryBecomeI4RecoveryExecutor(
-                                sessions,
-                                http_client=http_client,
-                                enabled=(
-                                    settings
-                                    .gate_become_i4_recovery_execution_enabled
-                                ),
-                                max_posts=(
-                                    settings.gate_become_i4_recovery_max_posts
-                                ),
-                            ).run_once(
-                                workspace_key=settings.gate_workspace_id,
-                                now=datetime.now(UTC),
-                            )
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "BECOME I4 recovery deferred: error_type=%s",
-                            exc.__class__.__name__,
-                        )
-                    else:
-                        if recovery_result.disposition != "disabled":
-                            logger.info(
-                                (
-                                    "BECOME I4 recovery state: "
-                                    "disposition=%s stage=%s attempted=%s "
-                                    "reconciliation=%s"
-                                ),
-                                recovery_result.disposition,
-                                (
-                                    recovery_result.stage.value
-                                    if recovery_result.stage is not None
-                                    else "none"
-                                ),
-                                recovery_result.attempted,
-                                recovery_result.reconciliation_required,
-                            )
-                    try:
-                        program_purged = await program_store.purge_expired(
-                            now=datetime.now(UTC)
-                        )
-                        if program_purged:
-                            logger.info(
-                                "Purged expired BECOME program bodies: count=%s",
-                                program_purged,
-                            )
-                        api_key = settings.openai_api_key.get_secret_value()
-                        program_result = await ProcessConfirmedTranscriptToProgramDraft(
-                            store=program_store,
-                            provider=OpenAIProgramDraftProvider(
-                                http_client=http_client,
-                                api_key=api_key,
-                                model=settings.gate_become_pilot_slice2_model,
-                                api_base_url=settings.openai_api_base_url,
-                                max_output_tokens=(
-                                    settings
-                                    .gate_become_pilot_slice2_max_output_tokens
-                                ),
-                                timeout_seconds=(
-                                    settings
-                                    .gate_become_pilot_slice2_timeout_seconds
-                                ),
-                                enabled=(
-                                    settings.gate_become_pilot_slice2_enabled
-                                    and settings
-                                    .gate_become_pilot_slice2_provider_max_calls
-                                    == 1
-                                    and bool(api_key)
-                                ),
-                                data_gate_approved=(
-                                    settings
-                                    .gate_become_pilot_slice2_data_gate_approved
-                                ),
-                            ),
-                            workspace_key=settings.gate_workspace_id,
-                            provider_model=settings.gate_become_pilot_slice2_model,
-                            enabled=settings.gate_become_pilot_slice2_enabled,
-                            provider_max_calls=(
-                                settings
-                                .gate_become_pilot_slice2_provider_max_calls
-                            ),
-                        ).run_once(now=datetime.now(UTC))
-                        if program_result is not ProgramDraftDisposition.IDLE:
-                            logger.info(
-                                "BECOME program draft state: disposition=%s",
-                                program_result.value,
-                            )
-                        program_delivery = await DeliverPilotProgramDraft(
-                            store=program_store,
-                            telegram=become_telegram,
-                            enabled=settings.gate_become_pilot_slice2_enabled,
-                            max_operations=(
-                                settings.gate_become_pilot_slice2_max_operations
-                            ),
-                        ).run_once(now=datetime.now(UTC))
-                        if program_delivery != "idle":
-                            logger.info(
-                                "BECOME program delivery state: disposition=%s",
-                                program_delivery,
-                            )
-                        if become_learner is not None:
-                            slice3_delivery = await DeliverSlice3(
-                                store=slice3_store,
-                                telegram=become_telegram,
-                                enabled=(
-                                    settings
-                                    .gate_become_pilot_slice3_delivery_enabled
-                                ),
-                                max_sends=(
-                                    settings
-                                    .gate_become_pilot_slice3_max_telegram_sends
-                                ),
-                            ).run_once(now=datetime.now(UTC))
-                            if slice3_delivery not in {"idle", "disabled"}:
-                                logger.info(
-                                    "BECOME Slice 3 delivery state: disposition=%s",
-                                    slice3_delivery,
-                                )
-                            slice3_relations = await PostSlice3Relations(
-                                store=slice3_store,
-                                relations=HttpSlice3RelationsClient(
-                                    http_client=http_client,
-                                    endpoint=(
-                                        settings
-                                        .gate_become_pilot_slice3_relations_url
-                                    ),
-                                    enabled=(
-                                        settings
-                                        .gate_become_pilot_slice3_relations_enabled
-                                    ),
-                                ),
-                                enabled=(
-                                    settings
-                                    .gate_become_pilot_slice3_relations_enabled
-                                ),
-                                max_posts=(
-                                    settings
-                                    .gate_become_pilot_slice3_max_relations_posts
-                                ),
-                            ).run_once(now=datetime.now(UTC))
-                            if slice3_relations not in {"idle", "disabled"}:
-                                logger.info(
-                                    "BECOME Slice 3 Relations state: disposition=%s",
-                                    slice3_relations,
-                                )
-                    except BecomeControlledIntakeError as exc:
-                        logger.warning(
-                            "BECOME program draft blocked: code=%s",
-                            exc.code,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "BECOME program draft deferred: error_type=%s",
-                            exc.__class__.__name__,
-                        )
-                    try:
-                        review_delivery = await DeliverPilotTranscriptReview(
-                            store=review_store,
-                            telegram=become_telegram,
-                            enabled=settings.gate_become_pilot_slice1_enabled,
-                            max_operations=(
-                                settings.gate_become_pilot_slice1_max_operations
-                            ),
-                        ).run_once(now=datetime.now(UTC))
-                    except BecomeControlledIntakeError as exc:
-                        logger.warning(
-                            "BECOME Pilot delivery blocked: code=%s",
-                            exc.code,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "BECOME Pilot delivery deferred: error_type=%s",
-                            exc.__class__.__name__,
-                        )
-                    else:
-                        if review_delivery != "disabled":
-                            logger.info(
-                                "BECOME Pilot delivery state: disposition=%s",
-                                review_delivery,
-                            )
-                    try:
-                        prompt_result = await (
-                            DeliverBecomeMediaPromptService(
-                                store=SessionFactoryBecomeMediaPromptStore(
-                                    sessions
-                                ),
-                                presence=become_presence,
-                                telegram=(
-                                    TelegramClientBecomeMediaPromptAdapter(
-                                        become_telegram
-                                    )
-                                ),
-                            ).execute(
-                                workspace_key=settings.gate_workspace_id,
-                                now=datetime.now(UTC),
-                            )
-                        )
-                    except BecomeControlledIntakeError as exc:
-                        logger.warning(
-                            "BECOME media prompt blocked: code=%s",
-                            exc.code,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            (
-                                "BECOME media prompt deferred: "
-                                "error_type=%s"
-                            ),
-                            exc.__class__.__name__,
-                        )
-                    else:
-                        if prompt_result.sent:
-                            logger.info(
-                                (
-                                    "BECOME media reply prompt ready: "
-                                    "duplicate=%s"
-                                ),
-                                prompt_result.duplicate,
-                            )
-                else:
-                    become_intake = None
-                    become_consent = None
-                    become_media = None
-                universal_mayak = None
-                universal_mayak_delivery = None
-                if settings.gate_universal_mayak_runtime_enabled:
-                    bundle = DeployedInstructionBundleLoader(
-                        Path(settings.gate_agent_bundle_root)
-                    ).load("universal_mayak_oko_v2")
-                    model = build_configured_universal_mayak_model(
-                        bundle=bundle,
                         http_client=http_client,
-                        api_key=settings.openai_api_key.get_secret_value(),
-                        api_base_url=settings.openai_api_base_url,
-                        model_profile=(
-                            settings.gate_universal_mayak_model_profile
-                        ),
-                        runtime_enabled=(
-                            settings.gate_universal_mayak_runtime_enabled
-                        ),
-                        data_gate_approved=(
-                            settings.gate_universal_mayak_model_data_gate_approved
-                        ),
-                        max_output_tokens=(
-                            settings.gate_universal_mayak_max_output_tokens
-                        ),
-                        timeout_seconds=(
-                            settings.gate_universal_mayak_timeout_seconds
-                        ),
-                    )
-                    business_telegram = TelegramClient(
-                        credential=settings.telegram_bot_token,
                         api_base_url=os.getenv(
-                            "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                            "TELEGRAM_API_BASE_URL",
+                            "https://api.telegram.org",
                         ),
-                        http_client=http_client,
-                    )
-                    universal_mayak_delivery = (
-                        TelegramBusinessUniversalMayakDelivery(
-                            sessions=sessions,
-                            telegram=business_telegram,
-                            enabled=settings.gate_universal_mayak_delivery_enabled,
+                    ),
+                    presence=become_presence,
+                    subject_pepper=subject_pepper,
+                )
+                try:
+                    correlation = await (
+                        SessionFactoryBecomeVoiceChainStore(
+                            sessions
+                        ).reconcile_one(
+                            workspace_key=settings.gate_workspace_id,
+                            prepared_at=datetime.now(UTC),
                         )
                     )
-                    universal_mayak = ProcessUniversalMayakPrivateMessageService(
-                        bindings=SessionFactoryApprovedPrivateBindingResolver(
-                            sessions
+                except BecomeControlledIntakeError as exc:
+                    logger.warning(
+                        "BECOME voice correlation blocked: code=%s",
+                        exc.code,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        (
+                            "BECOME voice correlation deferred: "
+                            "error_type=%s"
                         ),
-                        mayak=ProcessUniversalMayakDemoService(
-                            store=SessionFactoryUniversalMayakDemoStore(
-                                sessions
+                        exc.__class__.__name__,
+                    )
+                else:
+                    if correlation is not None:
+                        logger.info(
+                            (
+                                "BECOME voice correlation ready: "
+                                "duplicate=%s slots=%s"
                             ),
-                            model=model,
-                            delivery=universal_mayak_delivery,
-
-                        ),
-                    )
-                voice_downloader = None
-                if (
-                    settings.gate_telegram_voice_archive_enabled
-                    or settings.gate_telegram_voice_transcription_enabled
-                ):
-                    voice_downloader = TelegramVoiceDownloader(
-                        config=TelegramVoiceDownloadConfig(
-                            bot_token=settings.telegram_bot_token,
-                            api_base_url=os.getenv(
-                                "TELEGRAM_API_BASE_URL",
-                                "https://api.telegram.org",
-                            ),
-                        ),
-                        http=http_client,
-                    )
-                voice_archive = None
-                if settings.gate_telegram_voice_archive_enabled:
-                    if voice_downloader is None:
-                        raise RuntimeError("Telegram voice downloader is required")
-                    voice_archive = ArchiveTelegramVoiceService(
-                        downloader=voice_downloader,
-                        store=SessionFactoryTelegramVoiceArchiveStore(sessions),
-                    )
-                voice_updates = None
-                if settings.gate_telegram_voice_transcription_enabled:
-                    if voice_downloader is None:
-                        raise RuntimeError("Telegram voice downloader is required")
+                            correlation.duplicate,
+                            correlation.slot_count,
+                        )
+                try:
                     api_key = settings.openai_api_key.get_secret_value()
-                    voice_updates = ProcessTelegramVoiceUpdateService(
-                        TelegramVoiceTranscriptionService(
-                            downloader=voice_downloader,
+                    transcription_result = await (
+                        ProcessBecomeVoiceTranscriptionService(
+                            store=(
+                                SessionFactoryBecomeVoiceTranscriptionStore(
+                                    sessions
+                                )
+                            ),
                             normalizer=TelegramVoiceNormalizer(),
                             budget=SqlBillingBudgetService(sessions),
                             speech_to_text=OpenAITranscriptionClient(
                                 config=OpenAITranscriptionConfig(
                                     api_key=api_key,
-                                    enabled=bool(api_key),
+                                    enabled=(
+                                        settings
+                                        .gate_become_pilot_slice1_enabled
+                                        and settings
+                                        .gate_become_pilot_slice1_provider_max_calls
+                                        == 1
+                                        and settings
+                                        .gate_become_voice_transcription_enabled
+                                        and settings
+                                        .gate_become_voice_transcription_data_gate_approved
+                                        and settings
+                                        .gate_become_voice_transcription_max_calls
+                                        == 1
+                                        and bool(api_key)
+                                    ),
                                     model=(
-                                        settings.gate_telegram_voice_transcription_model
+                                        settings
+                                        .gate_become_voice_transcription_model
                                     ),
                                     base_url=settings.openai_api_base_url,
+                                    timeout_seconds=(
+                                        settings
+                                        .gate_become_voice_transcription_timeout_seconds
+                                    ),
                                 ),
                                 http=http_client,
                             ),
+                            workspace_key=settings.gate_workspace_id,
+                            model=(
+                                settings
+                                .gate_become_voice_transcription_model
+                            ),
+                            language=(
+                                settings
+                                .gate_become_voice_transcription_language
+                            ),
+                            reserve_microusd_per_second=(
+                                settings
+                                .gate_become_voice_transcription_reserve_microusd_per_second
+                            ),
+                            enabled=(
+                                settings
+                                .gate_become_voice_transcription_enabled
+                            ),
+                            data_gate_approved=(
+                                settings
+                                .gate_become_voice_transcription_data_gate_approved
+                            ),
+                            max_calls=(
+                                settings
+                                .gate_become_voice_transcription_max_calls
+                            ),
+                            slice1_enabled=(
+                                settings.gate_become_pilot_slice1_enabled
+                            ),
+                            slice1_provider_max_calls=(
+                                settings
+                                .gate_become_pilot_slice1_provider_max_calls
+                            ),
+                        ).run_once(now=datetime.now(UTC))
+                    )
+                except BecomeControlledIntakeError as exc:
+                    logger.warning(
+                        "BECOME voice transcription blocked: code=%s",
+                        exc.code,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        (
+                            "BECOME voice transcription deferred: "
+                            "error_type=%s"
+                        ),
+                        exc.__class__.__name__,
+                    )
+                else:
+                    if transcription_result.disposition != "disabled":
+                        logger.info(
+                            (
+                                "BECOME voice transcription state: "
+                                "disposition=%s reconciliation=%s"
+                            ),
+                            transcription_result.disposition,
+                            transcription_result.reconciliation_required,
+                        )
+                try:
+                    chain_result = await SessionFactoryBecomeI4Executor(
+                        sessions,
+                        http_client=http_client,
+                        enabled=(
+                            settings.gate_become_i4_chain_execution_enabled
+                        ),
+                    ).run_once(
+                        workspace_key=settings.gate_workspace_id,
+                        now=datetime.now(UTC),
+                    )
+                except BecomeControlledIntakeError as exc:
+                    logger.warning(
+                        "BECOME I4 chain blocked: code=%s",
+                        exc.code,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "BECOME I4 chain deferred: error_type=%s",
+                        exc.__class__.__name__,
+                    )
+                else:
+                    if chain_result.disposition != "disabled":
+                        logger.info(
+                            (
+                                "BECOME I4 chain state: disposition=%s "
+                                "stage=%s attempted=%s reconciliation=%s"
+                            ),
+                            chain_result.disposition,
+                            (
+                                chain_result.stage.value
+                                if chain_result.stage is not None
+                                else "none"
+                            ),
+                            chain_result.attempted,
+                            chain_result.reconciliation_required,
+                        )
+                try:
+                    recovery_result = (
+                        await SessionFactoryBecomeI4RecoveryExecutor(
+                            sessions,
+                            http_client=http_client,
+                            enabled=(
+                                settings
+                                .gate_become_i4_recovery_execution_enabled
+                            ),
+                            max_posts=(
+                                settings.gate_become_i4_recovery_max_posts
+                            ),
+                        ).run_once(
+                            workspace_key=settings.gate_workspace_id,
+                            now=datetime.now(UTC),
                         )
                     )
-                async with sessions() as session:
-                    result = await run_telegram_worker_once(
-                        settings=settings,
-                        session=session,
-                        identity_reader=identity_reader,
-                        canonical_store=canonical_store,
-                        alpha_canary=alpha_canary,
-                        beta_canary=beta_canary,
-                        become_canary=become_canary,
-                        become_intake=become_intake,
-                        become_consent=become_consent,
-                        become_media=become_media,
-                        become_program_review=become_program_review,
-                        become_learner=become_learner,
-                        become_review=become_review,
-                        business_text_parity=business_text_parity,
-                        business_text_inbox=business_text_inbox,
-                        universal_mayak=universal_mayak,
-                        mayak_delivery_recovery=universal_mayak_delivery,
-                        voice_updates=voice_updates,
-                        voice_archive=voice_archive,
-                        generic_stale_recovery=RecoverStaleTelegramClaimsService(
-                            SqlTelegramQueueMaintenance(session)
+                except Exception as exc:
+                    logger.warning(
+                        "BECOME I4 recovery deferred: error_type=%s",
+                        exc.__class__.__name__,
+                    )
+                else:
+                    if recovery_result.disposition != "disabled":
+                        logger.info(
+                            (
+                                "BECOME I4 recovery state: "
+                                "disposition=%s stage=%s attempted=%s "
+                                "reconciliation=%s"
+                            ),
+                            recovery_result.disposition,
+                            (
+                                recovery_result.stage.value
+                                if recovery_result.stage is not None
+                                else "none"
+                            ),
+                            recovery_result.attempted,
+                            recovery_result.reconciliation_required,
+                        )
+                try:
+                    program_purged = await program_store.purge_expired(
+                        now=datetime.now(UTC)
+                    )
+                    if program_purged:
+                        logger.info(
+                            "Purged expired BECOME program bodies: count=%s",
+                            program_purged,
+                        )
+                    api_key = settings.openai_api_key.get_secret_value()
+                    program_result = await ProcessConfirmedTranscriptToProgramDraft(
+                        store=program_store,
+                        provider=OpenAIProgramDraftProvider(
+                            http_client=http_client,
+                            api_key=api_key,
+                            model=settings.gate_become_pilot_slice2_model,
+                            api_base_url=settings.openai_api_base_url,
+                            max_output_tokens=(
+                                settings
+                                .gate_become_pilot_slice2_max_output_tokens
+                            ),
+                            timeout_seconds=(
+                                settings
+                                .gate_become_pilot_slice2_timeout_seconds
+                            ),
+                            enabled=(
+                                settings.gate_become_pilot_slice2_enabled
+                                and settings
+                                .gate_become_pilot_slice2_provider_max_calls
+                                == 1
+                                and bool(api_key)
+                            ),
+                            data_gate_approved=(
+                                settings
+                                .gate_become_pilot_slice2_data_gate_approved
+                            ),
                         ),
-                        stale_recovery=(
-                            RecoverStaleTelegramClaimsService(
-                                SqlTelegramQueueMaintenance(session)
+                        workspace_key=settings.gate_workspace_id,
+                        provider_model=settings.gate_become_pilot_slice2_model,
+                        enabled=settings.gate_become_pilot_slice2_enabled,
+                        provider_max_calls=(
+                            settings
+                            .gate_become_pilot_slice2_provider_max_calls
+                        ),
+                    ).run_once(now=datetime.now(UTC))
+                    if program_result is not ProgramDraftDisposition.IDLE:
+                        logger.info(
+                            "BECOME program draft state: disposition=%s",
+                            program_result.value,
+                        )
+                    program_delivery = await DeliverPilotProgramDraft(
+                        store=program_store,
+                        telegram=become_telegram,
+                        enabled=settings.gate_become_pilot_slice2_enabled,
+                        max_operations=(
+                            settings.gate_become_pilot_slice2_max_operations
+                        ),
+                    ).run_once(now=datetime.now(UTC))
+                    if program_delivery != "idle":
+                        logger.info(
+                            "BECOME program delivery state: disposition=%s",
+                            program_delivery,
+                        )
+                    if become_learner is not None:
+                        slice3_delivery = await DeliverSlice3(
+                            store=slice3_store,
+                            telegram=become_telegram,
+                            enabled=(
+                                settings
+                                .gate_become_pilot_slice3_delivery_enabled
+                            ),
+                            max_sends=(
+                                settings
+                                .gate_become_pilot_slice3_max_telegram_sends
+                            ),
+                        ).run_once(now=datetime.now(UTC))
+                        if slice3_delivery not in {"idle", "disabled"}:
+                            logger.info(
+                                "BECOME Slice 3 delivery state: disposition=%s",
+                                slice3_delivery,
                             )
-                            if (
-                                settings.gate_telegram_voice_archive_enabled
-                                and settings.gate_telegram_voice_transcription_enabled
+                        slice3_relations = await PostSlice3Relations(
+                            store=slice3_store,
+                            relations=HttpSlice3RelationsClient(
+                                http_client=http_client,
+                                endpoint=(
+                                    settings
+                                    .gate_become_pilot_slice3_relations_url
+                                ),
+                                enabled=(
+                                    settings
+                                    .gate_become_pilot_slice3_relations_enabled
+                                ),
+                            ),
+                            enabled=(
+                                settings
+                                .gate_become_pilot_slice3_relations_enabled
+                            ),
+                            max_posts=(
+                                settings
+                                .gate_become_pilot_slice3_max_relations_posts
+                            ),
+                        ).run_once(now=datetime.now(UTC))
+                        if slice3_relations not in {"idle", "disabled"}:
+                            logger.info(
+                                "BECOME Slice 3 Relations state: disposition=%s",
+                                slice3_relations,
                             )
-                            else None
+                except BecomeControlledIntakeError as exc:
+                    logger.warning(
+                        "BECOME program draft blocked: code=%s",
+                        exc.code,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "BECOME program draft deferred: error_type=%s",
+                        exc.__class__.__name__,
+                    )
+                try:
+                    review_delivery = await DeliverPilotTranscriptReview(
+                        store=review_store,
+                        telegram=become_telegram,
+                        enabled=settings.gate_become_pilot_slice1_enabled,
+                        max_operations=(
+                            settings.gate_become_pilot_slice1_max_operations
+                        ),
+                    ).run_once(now=datetime.now(UTC))
+                except BecomeControlledIntakeError as exc:
+                    logger.warning(
+                        "BECOME Pilot delivery blocked: code=%s",
+                        exc.code,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "BECOME Pilot delivery deferred: error_type=%s",
+                        exc.__class__.__name__,
+                    )
+                else:
+                    if review_delivery != "disabled":
+                        logger.info(
+                            "BECOME Pilot delivery state: disposition=%s",
+                            review_delivery,
+                        )
+                try:
+                    prompt_result = await (
+                        DeliverBecomeMediaPromptService(
+                            store=SessionFactoryBecomeMediaPromptStore(
+                                sessions
+                            ),
+                            presence=become_presence,
+                            telegram=(
+                                TelegramClientBecomeMediaPromptAdapter(
+                                    become_telegram
+                                )
+                            ),
+                        ).execute(
+                            workspace_key=settings.gate_workspace_id,
+                            now=datetime.now(UTC),
+                        )
+                    )
+                except BecomeControlledIntakeError as exc:
+                    logger.warning(
+                        "BECOME media prompt blocked: code=%s",
+                        exc.code,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        (
+                            "BECOME media prompt deferred: "
+                            "error_type=%s"
+                        ),
+                        exc.__class__.__name__,
+                    )
+                else:
+                    if prompt_result.sent:
+                        logger.info(
+                            (
+                                "BECOME media reply prompt ready: "
+                                "duplicate=%s"
+                            ),
+                            prompt_result.duplicate,
+                        )
+            else:
+                become_intake = None
+                become_consent = None
+                become_media = None
+            universal_mayak = None
+            universal_mayak_delivery = None
+            if settings.gate_universal_mayak_runtime_enabled:
+                bundle = DeployedInstructionBundleLoader(
+                    Path(settings.gate_agent_bundle_root)
+                ).load("universal_mayak_oko_v2")
+                model = build_configured_universal_mayak_model(
+                    bundle=bundle,
+                    http_client=http_client,
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    api_base_url=settings.openai_api_base_url,
+                    model_profile=(
+                        settings.gate_universal_mayak_model_profile
+                    ),
+                    runtime_enabled=(
+                        settings.gate_universal_mayak_runtime_enabled
+                    ),
+                    data_gate_approved=(
+                        settings.gate_universal_mayak_model_data_gate_approved
+                    ),
+                    max_output_tokens=(
+                        settings.gate_universal_mayak_max_output_tokens
+                    ),
+                    timeout_seconds=(
+                        settings.gate_universal_mayak_timeout_seconds
+                    ),
+                )
+                business_telegram = TelegramClient(
+                    credential=settings.telegram_bot_token,
+                    api_base_url=os.getenv(
+                        "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
+                    ),
+                    http_client=http_client,
+                )
+                universal_mayak_delivery = (
+                    TelegramBusinessUniversalMayakDelivery(
+                        sessions=sessions,
+                        telegram=business_telegram,
+                        enabled=settings.gate_universal_mayak_delivery_enabled,
+                    )
+                )
+                universal_mayak = ProcessUniversalMayakPrivateMessageService(
+                    bindings=SessionFactoryApprovedPrivateBindingResolver(
+                        sessions
+                    ),
+                    mayak=ProcessUniversalMayakDemoService(
+                        store=SessionFactoryUniversalMayakDemoStore(
+                            sessions
+                        ),
+                        model=model,
+                        delivery=universal_mayak_delivery,
+
+                    ),
+                )
+            voice_downloader = None
+            if (
+                settings.gate_telegram_voice_archive_enabled
+                or settings.gate_telegram_voice_transcription_enabled
+            ):
+                voice_downloader = TelegramVoiceDownloader(
+                    config=TelegramVoiceDownloadConfig(
+                        bot_token=settings.telegram_bot_token,
+                        api_base_url=os.getenv(
+                            "TELEGRAM_API_BASE_URL",
+                            "https://api.telegram.org",
+                        ),
+                    ),
+                    http=http_client,
+                )
+            voice_archive = None
+            if settings.gate_telegram_voice_archive_enabled:
+                if voice_downloader is None:
+                    raise RuntimeError("Telegram voice downloader is required")
+                voice_archive = ArchiveTelegramVoiceService(
+                    downloader=voice_downloader,
+                    store=SessionFactoryTelegramVoiceArchiveStore(sessions),
+                )
+            voice_updates = None
+            if settings.gate_telegram_voice_transcription_enabled:
+                if voice_downloader is None:
+                    raise RuntimeError("Telegram voice downloader is required")
+                api_key = settings.openai_api_key.get_secret_value()
+                voice_updates = ProcessTelegramVoiceUpdateService(
+                    TelegramVoiceTranscriptionService(
+                        downloader=voice_downloader,
+                        normalizer=TelegramVoiceNormalizer(),
+                        budget=SqlBillingBudgetService(sessions),
+                        speech_to_text=OpenAITranscriptionClient(
+                            config=OpenAITranscriptionConfig(
+                                api_key=api_key,
+                                enabled=bool(api_key),
+                                model=(
+                                    settings.gate_telegram_voice_transcription_model
+                                ),
+                                base_url=settings.openai_api_base_url,
+                            ),
+                            http=http_client,
                         ),
                     )
-                await _drain_beta_context(sessions)
-                return result
-        async with sessions() as session:
-            result = await run_telegram_worker_once(
-                settings=settings,
-                session=session,
-                identity_reader=identity_reader,
-                canonical_store=canonical_store,
-                business_text_parity=business_text_parity,
-                business_text_inbox=business_text_inbox,
-                generic_stale_recovery=RecoverStaleTelegramClaimsService(
-                    SqlTelegramQueueMaintenance(session)
-                ),
-            )
-        await _drain_beta_context(sessions)
-        return result
-    finally:
-        await engine.dispose()
+                )
+            async with sessions() as session:
+                result = await run_telegram_worker_once(
+                    settings=settings,
+                    session=session,
+                    identity_reader=identity_reader,
+                    canonical_store=canonical_store,
+                    alpha_canary=alpha_canary,
+                    beta_canary=beta_canary,
+                    become_canary=become_canary,
+                    become_intake=become_intake,
+                    become_consent=become_consent,
+                    become_media=become_media,
+                    become_program_review=become_program_review,
+                    become_learner=become_learner,
+                    become_review=become_review,
+                    business_text_parity=business_text_parity,
+                    business_text_inbox=business_text_inbox,
+                    universal_mayak=universal_mayak,
+                    mayak_delivery_recovery=universal_mayak_delivery,
+                    voice_updates=voice_updates,
+                    voice_archive=voice_archive,
+                    generic_stale_recovery=RecoverStaleTelegramClaimsService(
+                        SqlTelegramQueueMaintenance(session)
+                    ),
+                    stale_recovery=(
+                        RecoverStaleTelegramClaimsService(
+                            SqlTelegramQueueMaintenance(session)
+                        )
+                        if (
+                            settings.gate_telegram_voice_archive_enabled
+                            and settings.gate_telegram_voice_transcription_enabled
+                        )
+                        else None
+                    ),
+                )
+            await _drain_beta_context(sessions)
+            return result
+    async with sessions() as session:
+        result = await run_telegram_worker_once(
+            settings=settings,
+            session=session,
+            identity_reader=identity_reader,
+            canonical_store=canonical_store,
+            business_text_parity=business_text_parity,
+            business_text_inbox=business_text_inbox,
+            generic_stale_recovery=RecoverStaleTelegramClaimsService(
+                SqlTelegramQueueMaintenance(session)
+            ),
+        )
+    await _drain_beta_context(sessions)
+    return result
 
 
 async def _drain_beta_context(
@@ -2163,4 +2177,5 @@ def _is_become_pilot_review_payload(payload: dict[str, object]) -> bool:
         and bool(value.strip())
         and not value.strip().startswith("/")
     )
+
 
