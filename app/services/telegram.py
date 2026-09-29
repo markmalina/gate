@@ -5,11 +5,13 @@ import hmac
 import os
 import time
 from collections.abc import Mapping
+from contextlib import nullcontext
 from pathlib import PurePosixPath
 from typing import Any, cast
 
 import httpx
 
+from app.services.process_send_fence import process_send_fence
 from app.services.telegram_delivery_gate import (
     canary_intent,
     delivery_gate,
@@ -196,6 +198,7 @@ class TelegramClient:
         payload: dict[str, str],
         file: tuple[str, tuple[str, bytes, str]],
     ) -> dict[str, Any]:
+        await process_send_fence().require_write_admission(self._credential.split(":", 1)[0])
         # Multipart has no scoped canary grant. Keep this guard at the shared
         # HTTP boundary so delegated document paths cannot bypass admission.
         from app.core.config import get_settings
@@ -216,12 +219,13 @@ class TelegramClient:
                     retry_after_seconds=1,
                 )
         require_reserved_start_window(self._credential)
-        response = await self._http_client.post(
-            url,
-            data=payload,
-            files={file[0]: file[1]},
-            timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
-        )
+        with process_send_fence().admitted():
+            response = await self._http_client.post(
+                url,
+                data=payload,
+                files={file[0]: file[1]},
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
+            )
         try:
             return self._parse_telegram_response(response)
         except TelegramApiError as exc:
@@ -370,7 +374,10 @@ class TelegramClient:
     async def _post_telegram_json(self, *, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         method = url.rsplit("/", 1)[-1]
         sending = method == "sendMessage"
-        if method.startswith("send"):
+        writing = method not in {"getBusinessConnection", "getChatMember", "getChatAdministrators"}
+        if writing:
+            await process_send_fence().require_write_admission(self._credential.split(":", 1)[0])
+        if writing:
             owner = registered_gate(self._credential.split(":", 1)[0])
             guard = getattr(owner, "guard_send", None)
             if guard is not None:
@@ -408,7 +415,8 @@ class TelegramClient:
                 retry_after_seconds=1,
             )
         require_reserved_start_window(self._credential)
-        response = await self._http_client.post(url, json=payload)
+        with process_send_fence().admitted() if writing else nullcontext():
+            response = await self._http_client.post(url, json=payload)
         try:
             return self._parse_telegram_response(response)
         except TelegramApiError as exc:

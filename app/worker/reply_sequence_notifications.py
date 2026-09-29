@@ -16,6 +16,7 @@ from app.models.reply_sequences import (
     ReplySequenceItem,
     ReplySequenceNotification,
 )
+from app.services.process_send_fence import BaselineSendClosed
 from app.services.telegram import TelegramApiError, TelegramClient
 from app.services.telegram_delivery_gate import CanaryDelivery, canary_delivery
 
@@ -141,6 +142,8 @@ async def notify_once(runtime: ReplySequenceRuntime, telegram: TelegramClient) -
             and type(result.get("message_id")) is int
         ):
             outcome, error, message_id = "sent", None, str(result["message_id"])
+    except BaselineSendClosed:
+        outcome, error = "failed", "process_admission_closed"
     except TelegramApiError as exc:
         if exc.error_code == 429:
             outcome, error, retry_after = (

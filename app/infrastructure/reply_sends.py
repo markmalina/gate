@@ -43,6 +43,7 @@ from app.models.domain import (
     TelegramBusinessConnection,
 )
 from app.models.reply_sequences import ReplySequenceItem
+from app.services.process_send_fence import BaselineSendClosed
 from app.services.telegram import TelegramApiError, TelegramClient
 from app.services.telegram_delivery_gate import (
     CanaryDelivery,
@@ -1520,6 +1521,8 @@ def _runtime_send_enabled(*, settings: Settings, account_label_value: str) -> bo
 
 
 def _delivery_failure(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, BaselineSendClosed):
+        return SendAttemptStatus.CANCELLED.value, "process_admission_closed"
     if isinstance(exc, TelegramApiError):
         server_code = next(
             (

@@ -19,6 +19,12 @@ from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = {
+    "test_baseline_observation": 28,
+    "test_baseline_observation_postgres": 1,
+    "test_process_admission": 20,
+    "test_process_admission_postgres": 3,
+    "test_process_lifecycle_integration": 6,
+    "test_reply_sequence_process_health_postgres": 29,
     "test_reply_sequence_review_postgres": 15,
     "test_reply_sequence_dispatch_postgres": 23,
     "test_reply_sequence_continuity_postgres": 3,

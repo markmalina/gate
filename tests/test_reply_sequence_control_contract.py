@@ -281,8 +281,13 @@ def test_actual_startup_rejects_other_product_alias_of_personal_bot(name, aliase
 @pytest.mark.anyio
 @pytest.mark.parametrize("state", ["active", "closed", "absent", "legacy", "db_error"])
 async def test_standalone_worker_installs_and_releases_same_durable_fence(state, monkeypatch):
+    import asyncio
+    from time import monotonic
+
     import app.infrastructure.database as database
+    import app.infrastructure.process_admission as admission
     from app.core.config import Settings
+    from app.services.process_send_fence import BaselineSendClosed
     from app.services.telegram_delivery_gate import registered_gate
     from app.worker import telegram_processing as worker
 
@@ -294,6 +299,13 @@ async def test_standalone_worker_installs_and_releases_same_durable_fence(state,
 
         async def __aexit__(self, *args):
             pass
+
+        async def execute(self, query):
+            reads.append(True)
+            if state == "db_error":
+                raise RuntimeError("synthetic DB unavailable")
+            revision = "0111_reply_documents" if state == "legacy" else "0115_reply_canary_binding"
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [revision]))
 
         async def scalar(self, query):
             reads.append(True)
@@ -332,10 +344,17 @@ async def test_standalone_worker_installs_and_releases_same_durable_fence(state,
     async def drain(_sessions):
         pass
 
+    async def observer(*, engine, fence):
+        fence.last_observed = monotonic()
+        await asyncio.Future()
+
+    monkeypatch.setattr(admission, "run_baseline_observer", observer)
     monkeypatch.setattr(worker, "run_telegram_worker_once", once)
     monkeypatch.setattr(worker, "_drain_beta_context", drain)
-    if state in {"active", "db_error"}:
-        with pytest.raises(TelegramApiError if state == "active" else RuntimeError):
+    if state != "legacy":
+        # Candidate schema with every v2 flag off has no verified G2 callback,
+        # irrespective of whether the durable canary is active/closed/absent.
+        with pytest.raises(BaselineSendClosed):
             await worker._run_from_settings(settings)
         assert not calls
     else:

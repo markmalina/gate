@@ -28,6 +28,7 @@ from app.models.domain import (
     ReplyTaskStatus,
     SendAttempt,
 )
+from app.services.process_send_fence import BaselineSendClosed, process_send_fence
 
 SEQUENCE_CONTEXT_KEY = "reply_sequence"
 _QUEUEABLE_DRAFT_STATUSES = {
@@ -48,6 +49,12 @@ class SqlReplySequenceWriter:
         self._now = now
 
     async def queue(self, command: QueueApprovedReplySequenceCommand) -> QueuedReplySequence:
+        try:
+            process_send_fence().require_admission()
+        except BaselineSendClosed as exc:
+            raise ReplySequenceError(
+                code="baseline_admission_closed", message="Reply sequence admission is closed"
+            ) from exc
         validate_sequence_draft_ids(command.draft_ids)
         from app.infrastructure.reply_sequence_runtime import runtime_for_session
 

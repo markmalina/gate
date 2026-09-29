@@ -1,6 +1,8 @@
 """Application integration tests for process-scoped database ownership."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import cast
 from unittest.mock import AsyncMock
 
@@ -17,6 +19,22 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def synthetic_admission_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests isolate cleanup/reconciliation using an opaque fake DB pool.
+
+    Actual schema admission and entry-point ordering are covered by the process
+    admission and process lifecycle integration suites, not this opaque fixture.
+    """
+
+    @asynccontextmanager
+    async def admitted(database: DatabaseRuntime, *, settings: object) -> AsyncIterator[None]:
+        assert isinstance(database, DatabaseRuntime)
+        yield
+
+    monkeypatch.setattr(main_module, "runtime_process_admission", admitted)
 
 
 def test_application_registers_liveness_and_readiness_routes() -> None:

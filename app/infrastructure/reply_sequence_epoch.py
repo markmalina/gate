@@ -53,6 +53,7 @@ def config_digest(runtime: ReplySequenceRuntime) -> str:
     names = (
         "gate_workspace_id",
         "deployment_sha",
+        "gate_send_enabled",
         "gate_reply_sequence_db_pool_mode",
         "gate_reply_sequence_stop_on_inbound_enabled",
         "gate_reply_sequence_dispatch_v2_enabled",

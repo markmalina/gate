@@ -89,7 +89,7 @@ HTTP, even with no canary intent and `CANARY_ENABLED=false`. Application databas
 startup installs a minimal SQL fence when all sequence flags are off. It checks
 actual table existence for baseline compatibility; an SQL failure never means
 "no scope". An active (including expired/exhausted) scope blocks those sends.
-Closed/absent scopes preserve ordinary transport, while execution-bound tails
+Closed/absent scopes remove this canary veto; process admission still applies, while execution-bound tails
 remain denied. Lifespan removes its fence on shutdown.
 
 Before any database engine/transport startup, the personal numeric bot ID from
@@ -109,3 +109,8 @@ The remaining packaged CLIs are DB control/recovery/probe, contact sync,
 personal-session enrollment/auth/preflight, or BECOME preflight; they do not
 send messages through the personal Bot API transport. Raw sprint15b calls are
 webhook inspection/configuration; MCP attachment calls are file reads.
+
+The combined candidate also enforces the schema-selected process handoff in
+[PROCESS-ADMISSION-HANDOFF.md](PROCESS-ADMISSION-HANDOFF.md). On actual schema0115,
+all v2 flags off does not reopen primary sending after a canary closes: current
+verified G2 process health and an explicit dispatch mode remain required.

@@ -33,7 +33,7 @@ def report(path, *, alteration=None):
 def test_complete_inventory_passes(tmp_path):
     counts = runner.validate_junit(report(tmp_path / "result.xml"))
     assert counts == runner.CASES
-    assert sum(counts.values()) == 279
+    assert sum(counts.values()) == 366
 
 
 @pytest.mark.parametrize("tag", ["skipped", "failure", "error"])
@@ -150,7 +150,7 @@ def test_execution_requires_both_pytest_success_and_complete_report(
 
     def run(command, **kwargs):
         assert "PYTEST_ADDOPTS" not in kwargs["env"]
-        assert len([arg for arg in command if arg.startswith("tests/")]) == 15
+        assert len([arg for arg in command if arg.startswith("tests/")]) == 21
 
         def alteration(root, suite):
             ElementTree.SubElement(suite[0], "skipped")

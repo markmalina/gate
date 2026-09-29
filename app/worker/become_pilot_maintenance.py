@@ -12,7 +12,7 @@ from pathlib import Path
 from app.application.become_transcript_review import (
     DeliverPilotTranscriptReview,
 )
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.infrastructure.become_learner_invitation import (
     SessionFactoryLearnerInvitationStore,
 )
@@ -22,6 +22,8 @@ from app.infrastructure.become_media_intake import (
 from app.infrastructure.become_transcript_review import (
     SessionFactoryPilotTranscriptReviewStore,
 )
+from app.infrastructure.database import DatabaseRuntime
+from app.infrastructure.process_admission import runtime_process_admission
 from app.services.telegram import TelegramClient, build_telegram_http_client
 
 logger = logging.getLogger(__name__)
@@ -64,161 +66,170 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     from app.infrastructure.database import build_database_runtime, close_database_runtime
 
     database = build_database_runtime(settings.database_url, settings=settings)
+    try:
+        async with runtime_process_admission(database, settings=settings, wait_baseline=True):
+            return await _run_with_runtime(args, settings=settings, database=database)
+    finally:
+        await close_database_runtime(database)
+
+
+async def _run_with_runtime(
+    args: argparse.Namespace, *, settings: Settings, database: DatabaseRuntime
+) -> dict[str, object]:
+    """Operate only within the caller-owned process admission/runtime lifecycle."""
+    command = str(args.command)
     sessions = database.session_factory
     store = SessionFactoryPilotTranscriptReviewStore(sessions)
     slice3_store = SessionFactoryLearnerInvitationStore(sessions)
     result: dict[str, object]
-    try:
-        if command == "slice3-status":
-            result = await slice3_store.status(now=datetime.now(UTC))
-        elif command == "slice3-rollback-preflight":
-            result = await slice3_store.rollback_preflight()
-        elif command == "slice3-purge":
-            result = await slice3_store.purge_expired(now=datetime.now(UTC))
-        elif command == "status":
-            result = {
-                "schema": "gate.become-pilot-slice1-status@1",
-                "state": await store.status(now=datetime.now(UTC)),
-                "content_exposed": False,
-            }
-        elif command == "rollback-preflight":
-            result = {
-                "schema": "gate.become-pilot-slice1-rollback-preflight@1",
-                **await store.rollback_preflight(),
-            }
-        elif command == "purge":
-            now = datetime.now(UTC)
-            media = await SessionFactoryBecomeMediaRetention(
-                sessions
-            ).purge_expired(now=now)
-            review = await store.purge_expired(now=now)
-            result = {
-                "schema": "gate.become-pilot-slice1-purge@1",
-                "raw_purged": media.raw_purged,
-                "transcripts_purged": media.transcripts_purged,
-                **review,
-                "content_exposed": False,
-            }
-        elif command == "deliver":
-            async with build_telegram_http_client() as http:
-                telegram = TelegramClient(
-                    credential=(
-                        settings.telegram_become_bot_token.get_secret_value()
-                    ),
-                    http_client=http,
-                )
-                disposition = await DeliverPilotTranscriptReview(
-                    store=store,
-                    telegram=telegram,
-                    enabled=True,
-                    max_operations=(
-                        settings.gate_become_pilot_slice1_max_operations
-                    ),
-                ).run_once(now=datetime.now(UTC))
-            result = {
-                "schema": "gate.become-pilot-slice1-delivery@1",
-                "disposition": disposition,
-                "content_exposed": False,
-            }
-        elif command == "redisplay":
-            review_id, version, digest = _exact_binding(args)
-            disposition = await store.owner_redisplay(
-                review_id=review_id,
-                expected_version=version,
-                expected_digest=digest,
-                now=datetime.now(UTC),
+    if command == "slice3-status":
+        result = await slice3_store.status(now=datetime.now(UTC))
+    elif command == "slice3-rollback-preflight":
+        result = await slice3_store.rollback_preflight()
+    elif command == "slice3-purge":
+        result = await slice3_store.purge_expired(now=datetime.now(UTC))
+    elif command == "status":
+        result = {
+            "schema": "gate.become-pilot-slice1-status@1",
+            "state": await store.status(now=datetime.now(UTC)),
+            "content_exposed": False,
+        }
+    elif command == "rollback-preflight":
+        result = {
+            "schema": "gate.become-pilot-slice1-rollback-preflight@1",
+            **await store.rollback_preflight(),
+        }
+    elif command == "purge":
+        now = datetime.now(UTC)
+        media = await SessionFactoryBecomeMediaRetention(
+            sessions
+        ).purge_expired(now=now)
+        review = await store.purge_expired(now=now)
+        result = {
+            "schema": "gate.become-pilot-slice1-purge@1",
+            "raw_purged": media.raw_purged,
+            "transcripts_purged": media.transcripts_purged,
+            **review,
+            "content_exposed": False,
+        }
+    elif command == "deliver":
+        async with build_telegram_http_client() as http:
+            telegram = TelegramClient(
+                credential=(
+                    settings.telegram_become_bot_token.get_secret_value()
+                ),
+                http_client=http,
             )
-            result = {
-                "schema": "gate.become-pilot-slice1-owner-action@1",
-                "action": command,
-                "disposition": disposition,
-                "content_exposed": False,
-            }
-        elif command == "manual-correct":
-            review_id = _required(args.review_id, "--review-id")
-            if not isinstance(args.expected_version, int):
-                raise RuntimeError("--expected-version is required")
-            text_path = Path(_required(args.text_file, "--text-file"))
-            correction = text_path.read_text().strip()
-            if not correction:
-                raise RuntimeError("correction file is empty")
-            disposition = await store.owner_apply_correction(
-                review_id=review_id,
-                expected_version=args.expected_version,
-                correction_text=correction,
-                now=datetime.now(UTC),
-            )
-            result = {
-                "schema": "gate.become-pilot-slice1-owner-action@1",
-                "action": command,
-                "disposition": disposition,
-                "content_exposed": False,
-            }
-        elif command == "approve":
-            review_id, version, digest = _exact_binding(args)
-            disposition = await store.owner_approve(
-                review_id=review_id,
-                expected_version=version,
-                expected_digest=digest,
-                now=datetime.now(UTC),
-            )
-            result = {
-                "schema": "gate.become-pilot-slice1-owner-action@1",
-                "action": command,
-                "disposition": disposition,
-                "content_exposed": False,
-            }
-        elif command == "reconcile-delivery":
-            delivery_id = _required(args.delivery_id, "--delivery-id")
-            action = _required(args.reconciliation_action, "--action")
-            evidence_digest = _required(
-                args.evidence_digest,
-                "--evidence-digest",
-            )
-            disposition = await store.owner_reconcile_delivery(
-                delivery_id=delivery_id,
-                action=action,
-                evidence_digest=evidence_digest,
-                external_message_id=args.external_message_id,
-                owner_authorized=True,
-                now=datetime.now(UTC),
-            )
-            result = {
-                "schema": "gate.become-pilot-slice1-reconciliation@1",
-                "action": action,
-                "disposition": disposition,
-                "content_exposed": False,
-            }
-        elif command == "retry-transcription":
-            if args.confirm_rejected_failure != "REJECTED":
-                raise RuntimeError(
-                    "--confirm-rejected-failure REJECTED is required"
-                )
-            disposition = await store.owner_prepare_transcription_retry(
-                now=datetime.now(UTC)
-            )
-            result = {
-                "schema": "gate.become-pilot-slice1-owner-action@1",
-                "action": command,
-                "disposition": disposition,
-                "content_exposed": False,
-            }
-        elif command == "reset-check":
-            review_id = _required(args.review_id, "--review-id")
-            readiness = await store.owner_reset_ready(review_id=review_id)
-            result = {
-                "schema": "gate.become-pilot-slice1-reset-check@1",
-                **readiness,
-            }
-        else:
-            raise RuntimeError("unknown command")
-        logger.info(
-            "BECOME Pilot owner action completed: command=%s content_exposed=false",
-            command,
+            disposition = await DeliverPilotTranscriptReview(
+                store=store,
+                telegram=telegram,
+                enabled=True,
+                max_operations=(
+                    settings.gate_become_pilot_slice1_max_operations
+                ),
+            ).run_once(now=datetime.now(UTC))
+        result = {
+            "schema": "gate.become-pilot-slice1-delivery@1",
+            "disposition": disposition,
+            "content_exposed": False,
+        }
+    elif command == "redisplay":
+        review_id, version, digest = _exact_binding(args)
+        disposition = await store.owner_redisplay(
+            review_id=review_id,
+            expected_version=version,
+            expected_digest=digest,
+            now=datetime.now(UTC),
         )
-        return result
-    finally:
-        await close_database_runtime(database)
+        result = {
+            "schema": "gate.become-pilot-slice1-owner-action@1",
+            "action": command,
+            "disposition": disposition,
+            "content_exposed": False,
+        }
+    elif command == "manual-correct":
+        review_id = _required(args.review_id, "--review-id")
+        if not isinstance(args.expected_version, int):
+            raise RuntimeError("--expected-version is required")
+        text_path = Path(_required(args.text_file, "--text-file"))
+        correction = text_path.read_text().strip()
+        if not correction:
+            raise RuntimeError("correction file is empty")
+        disposition = await store.owner_apply_correction(
+            review_id=review_id,
+            expected_version=args.expected_version,
+            correction_text=correction,
+            now=datetime.now(UTC),
+        )
+        result = {
+            "schema": "gate.become-pilot-slice1-owner-action@1",
+            "action": command,
+            "disposition": disposition,
+            "content_exposed": False,
+        }
+    elif command == "approve":
+        review_id, version, digest = _exact_binding(args)
+        disposition = await store.owner_approve(
+            review_id=review_id,
+            expected_version=version,
+            expected_digest=digest,
+            now=datetime.now(UTC),
+        )
+        result = {
+            "schema": "gate.become-pilot-slice1-owner-action@1",
+            "action": command,
+            "disposition": disposition,
+            "content_exposed": False,
+        }
+    elif command == "reconcile-delivery":
+        delivery_id = _required(args.delivery_id, "--delivery-id")
+        action = _required(args.reconciliation_action, "--action")
+        evidence_digest = _required(
+            args.evidence_digest,
+            "--evidence-digest",
+        )
+        disposition = await store.owner_reconcile_delivery(
+            delivery_id=delivery_id,
+            action=action,
+            evidence_digest=evidence_digest,
+            external_message_id=args.external_message_id,
+            owner_authorized=True,
+            now=datetime.now(UTC),
+        )
+        result = {
+            "schema": "gate.become-pilot-slice1-reconciliation@1",
+            "action": action,
+            "disposition": disposition,
+            "content_exposed": False,
+        }
+    elif command == "retry-transcription":
+        if args.confirm_rejected_failure != "REJECTED":
+            raise RuntimeError(
+                "--confirm-rejected-failure REJECTED is required"
+            )
+        disposition = await store.owner_prepare_transcription_retry(
+            now=datetime.now(UTC)
+        )
+        result = {
+            "schema": "gate.become-pilot-slice1-owner-action@1",
+            "action": command,
+            "disposition": disposition,
+            "content_exposed": False,
+        }
+    elif command == "reset-check":
+        review_id = _required(args.review_id, "--review-id")
+        readiness = await store.owner_reset_ready(review_id=review_id)
+        result = {
+            "schema": "gate.become-pilot-slice1-reset-check@1",
+            **readiness,
+        }
+    else:
+        raise RuntimeError("unknown command")
+    logger.info(
+        "BECOME Pilot owner action completed: command=%s content_exposed=false",
+        command,
+    )
+    return result
 
 
 def main() -> None:
