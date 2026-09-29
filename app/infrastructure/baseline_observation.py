@@ -331,19 +331,25 @@ async def read_frozen_fleet(
             text(
                 "SELECT count(*) FILTER (WHERE status='reserved'), "
                 "count(*) FILTER (WHERE status='sending'), "
-                "count(*) FILTER (WHERE status='unknown') FROM send_attempts"
+                "count(*) FILTER (WHERE status='unknown' AND finished_at IS NULL), "
+                "count(*) FILTER (WHERE status='unknown' AND finished_at IS NOT NULL) "
+                "FROM send_attempts"
             )
         )
     ).one()
-    reserved, sending, unknown = map(int, counts)
+    reserved, sending, incomplete_unknown, terminal_unknown = map(int, counts)
     return {
         "contract": "gate.baseline-fleet.v1",
-        "result": "FROZEN_DRAINED" if reserved + sending + unknown == 0 else "BLOCKED_ATTEMPTS",
+        "result": (
+            "FROZEN_DRAINED" if reserved + sending + incomplete_unknown == 0 else "BLOCKED_ATTEMPTS"
+        ),
         "process_count": len(processes),
         "identity_sha256": identity,
         "reserved": reserved,
         "sending": sending,
-        "unknown": unknown,
+        "unknown": incomplete_unknown + terminal_unknown,
+        "incomplete_unknown": incomplete_unknown,
+        "terminal_unknown": terminal_unknown,
         "provider_inventory_verified": False,
         "backup_verified": False,
     }

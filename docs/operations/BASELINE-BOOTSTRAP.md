@@ -98,9 +98,17 @@ the local counter; that alone never proves the remote outcome.
 
 `read_frozen_fleet` requires send=false, worker=false and actual HTTP inflight=0
 on every observed process; separately counts global durable reserved/sending/
-unknown attempts. Unknown is retained as a blocker, never reset or retried.
+unknown attempts. Reserved/sending always block. Unknown without `finished_at`
+is an incomplete record and blocks. Legacy sender finalization and stale-send
+recovery record terminal unknown with `finished_at`: these historical terminal
+records are counted and preserved, but do not block migration/drain forever.
+The receipt retains total `unknown` and distinguishes `incomplete_unknown` from
+`terminal_unknown`; none are reset, deleted, retried or declared delivered.
 An old process restart with counter zero cannot resolve its durable attempts.
-Use the separately reviewed recovery/classification operation and re-observe.
+`finished_at` alone is not a fleet stop: the separate complete frozen-process,
+HTTP in-flight and provider termination evidence is still required. This uses
+explicit durable lifecycle state, never elapsed age/TTL. Use the separately
+reviewed recovery/classification operation for incomplete attempts and re-observe.
 No history/import/recovery writes occur in this package. The receipt expressly
 does not certify provider inventory or backup.
 
@@ -123,7 +131,8 @@ and zero-message plan; no live actions are authorized by this document.
 `pytest tests/test_baseline_observation.py tests/test_baseline_observation_postgres.py`
 checks strict bounded markers, negative fleet evidence, shared JSON/multipart
 freeze, queue/worker admission, real in-flight cancellation accounting and an
-actual PostgreSQL physical-session observation using only schema-0111 tables.
+actual PostgreSQL physical-session observation using only schema-0111 tables,
+including preserved terminal unknown versus blocking incomplete/active attempts.
 PostgreSQL absence is a skip, never a pass. Existing CI provides PG17. The full
 migration graph must continue to have the single head `0111_reply_documents`.
 

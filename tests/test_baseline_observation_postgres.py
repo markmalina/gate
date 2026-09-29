@@ -50,7 +50,9 @@ async def test_actual_process_session_idle_identity_drain_and_pool_cleanup(
                     "v": BASELINE_SCHEMA,
                 },
             )
-            await connection.execute(text("CREATE TABLE send_attempts (status text)"))
+            await connection.execute(
+                text("CREATE TABLE send_attempts (status text, finished_at timestamptz)")
+            )
         monkeypatch.setenv("RAILWAY_REPLICA_ID", "synthetic-replica")
         monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "synthetic-deployment")
         settings = Settings(
@@ -79,16 +81,44 @@ async def test_actual_process_session_idle_identity_drain_and_pool_cleanup(
             assert receipt["process_count"] == 1
             assert receipt["provider_inventory_verified"] is False
         async with engine.begin() as connection:
-            await connection.execute(text("INSERT INTO send_attempts VALUES ('unknown')"))
+            await connection.execute(
+                text(
+                    "INSERT INTO send_attempts (status, finished_at) "
+                    "VALUES ('unknown', clock_timestamp())"
+                )
+            )
         async with engine.connect() as connection:
             receipt = await read_frozen_fleet(connection, expected=expected)
-            assert receipt["result"] == "BLOCKED_ATTEMPTS" and receipt["unknown"] == 1
+            assert receipt["result"] == "FROZEN_DRAINED"
+            assert receipt["unknown"] == receipt["terminal_unknown"] == 1
+            assert receipt["incomplete_unknown"] == 0
+            assert (await connection.scalar(text("SELECT count(*) FROM send_attempts"))) == 1
+        async with engine.begin() as connection:
+            await connection.execute(text("INSERT INTO send_attempts (status) VALUES ('unknown')"))
+        async with engine.connect() as connection:
+            receipt = await read_frozen_fleet(connection, expected=expected)
+            assert receipt["result"] == "BLOCKED_ATTEMPTS"
+            assert receipt["unknown"] == 2 and receipt["incomplete_unknown"] == 1
+            assert receipt["terminal_unknown"] == 1
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO send_attempts (status, finished_at) VALUES "
+                    "('reserved', clock_timestamp()), ('sending', clock_timestamp())"
+                )
+            )
+        async with engine.connect() as connection:
+            receipt = await read_frozen_fleet(connection, expected=expected)
+            assert receipt["result"] == "BLOCKED_ATTEMPTS"
+            # Active statuses block even if their timestamps are inconsistent.
+            assert receipt["reserved"] == receipt["sending"] == 1
+            assert receipt["terminal_unknown"] == receipt["incomplete_unknown"] == 1
         observer.cancel()
         with suppress(asyncio.CancelledError):
             await observer
         async with engine.begin() as connection:
             # Observer connection is discarded, never returned read-only to pool.
-            await connection.execute(text("INSERT INTO send_attempts VALUES ('reserved')"))
+            await connection.execute(text("INSERT INTO send_attempts (status) VALUES ('reserved')"))
             rows = (await connection.execute(text(ACTIVITY_SQL))).all()
             assert rows == []
     finally:
