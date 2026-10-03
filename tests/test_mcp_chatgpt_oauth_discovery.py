@@ -630,6 +630,9 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
 async def test_verified_oauth_principal_can_save_draft_without_sending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.application.telegram_formatting import compile_text
+
+    expected_preview = compile_text("  Привет!  ")
     session = CommitSession()
     task_id = UUID("11111111-1111-1111-1111-111111111111")
     account_id = UUID("22222222-2222-2222-2222-222222222222")
@@ -666,6 +669,7 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
                 recipient_chat_id="12345",
                 status="generated",
                 text=command.text,
+                formatting=command.formatting,
             )
 
     app.dependency_overrides[get_db_session] = override_session
@@ -686,7 +690,8 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
 
     result = response.json()["result"]
     assert result["isError"] is False
-    assert result["structuredContent"]["text"] == "Привет!"
+    assert result["structuredContent"]["text"] == "  Привет!  "
+    assert result["structuredContent"]["formatting"] == expected_preview.to_dict()
     assert result["structuredContent"]["sent"] is False
     assert result["structuredContent"]["approval_required"] is True
     assert result["structuredContent"]["send_available"] is True
@@ -695,6 +700,7 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
     assert result["structuredContent"]["confirmation"] == {
         "expected_account": "RU",
         "expected_recipient_chat_id": "12345",
+        "expected_payload_sha256": expected_preview.payload_sha256,
     }
     assert session.commits == 1
 

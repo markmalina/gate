@@ -14,6 +14,7 @@ from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api import routes as legacy
 from app.api.deps import get_db_session
+from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
 from app.core.config import Settings, get_settings
 from app.models.domain import (
     AuditLog,
@@ -267,6 +268,12 @@ async def _send_approved_draft(
         return text
 
     draft, task, conversation = rows[0]
+    if (
+        FORMAT_KEY in (draft.prompt_context or {})
+        or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
+    ):
+        return ("This draft requires its saved formatting preview "
+                "and hash confirmation through Gate MCP.")
     sent_at = datetime.now(UTC)
     client_send_result = await telegram.send_message(
         chat_id=conversation.chat_id,

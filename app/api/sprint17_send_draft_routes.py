@@ -32,6 +32,7 @@ from app.models.domain import (
     TelegramBusinessConnection,
     TelegramUpdate,
 )
+from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -180,6 +181,8 @@ async def _send_draft_reply(
         return _send_result_text(settings=settings, scope_label=scope_label, status="ambiguous", detail=f"draft reference is ambiguous: {draft_ref}")
 
     draft, task, conversation, trigger_message = rows[0]
+    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail="saved formatting requires Gate MCP preview/hash confirmation")
     if draft.status == ReplyDraftStatus.APPROVED.value:
         return _send_result_text(settings=settings, scope_label=scope_label, status="already_sent", detail=f"draft already approved: {str(draft.id)[:8]}")
 

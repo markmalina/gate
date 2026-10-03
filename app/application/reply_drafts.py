@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
+from app.application.telegram_formatting import FormattingError, FormattingPreview, compile_text
 from app.core.mcp_security import Principal
 
 SAVE_DRAFT_SCOPE = "gate:drafts:write"
@@ -56,6 +57,8 @@ class SaveReplyDraftCommand:
     task_id: UUID
     text: str
     follow_up: bool = False
+    text_format: str = "plain"
+    formatting: FormattingPreview | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +74,7 @@ class SavedReplyDraft:
     recipient_chat_id: str
     status: str
     text: str
+    formatting: FormattingPreview | None = None
 
 
 class ReplyDraftWriter(Protocol):
@@ -97,19 +101,17 @@ class SaveReplyDraftService:
                 code="invalid_access_scope",
                 message="Explicit workspace, account, and project grants are required",
             )
-        text = command.text.strip()
-        if not text:
-            raise ReplyDraftError(code="invalid_text", message="Draft text must not be empty")
-        if len(text) > MAX_DRAFT_LENGTH:
-            raise ReplyDraftError(
-                code="invalid_text",
-                message=f"Draft text must not exceed {MAX_DRAFT_LENGTH} characters",
-            )
+        try:
+            preview = compile_text(command.text, text_format=command.text_format)
+        except FormattingError as exc:
+            raise ReplyDraftError(code=exc.code, message=exc.message) from exc
         return await self._writer.save(
             SaveReplyDraftCommand(
                 principal=principal,
                 task_id=command.task_id,
-                text=text,
+                text=preview.text,
                 follow_up=command.follow_up,
+                text_format=preview.text_format,
+                formatting=preview,
             )
         )

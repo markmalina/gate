@@ -19,6 +19,13 @@ from app.application.reply_sends import (
     ReplySendResult,
     SendApprovedReplyCommand,
 )
+from app.application.telegram_formatting import (
+    CAPTION_FORMAT_KEY,
+    FORMAT_KEY,
+    FormattingError,
+    FormattingPreview,
+    stored_preview,
+)
 from app.core.config import Settings
 from app.models.domain import (
     Account,
@@ -91,6 +98,7 @@ class _SendContextSnapshot:
     document_caption: str | None = None
     document_data: bytes | None = None
     document_expires_at: datetime | None = None
+    formatting: FormattingPreview | None = None
 
     @property
     def origin_connection_id(self) -> str | None:
@@ -184,6 +192,7 @@ class SqlTelegramReplySender:
         self._require_provider_outside_transaction()
         try:
             context = reservation.context
+            self._validate_reserved_formatting(context)
             if context.document_sha256 is not None:
                 if (
                     context.document_data is None
@@ -199,11 +208,23 @@ class SqlTelegramReplySender:
                     media_type=context.document_media_type,
                     data=context.document_data,
                     caption=context.document_caption,
+                    **(
+                        {"caption_entities": list(context.formatting.entities)}
+                        if context.formatting is not None
+                        else {}
+                    ),
                 )
                 _validate_document_provider_result(
                     telegram_result,
                     context,
                     reservation.business_connection_id,
+                )
+            elif context.formatting is not None and context.formatting.text_format == "markdown":
+                telegram_result = await self._telegram.send_formatted_message(
+                    chat_id=context.target_chat_id,
+                    text=context.formatting.text,
+                    entities=list(context.formatting.entities),
+                    business_connection_id=reservation.business_connection_id,
                 )
             else:
                 telegram_result = await self._telegram.send_plain_message(
@@ -250,6 +271,7 @@ class SqlTelegramReplySender:
             existing = await self._load_attempt_model(draft_id=context.draft_id)
             if existing is not None:
                 self._validate_attempt_binding(existing, context)
+                await self._validate_saved_payload_binding(existing, context)
                 replay = self._attempt_result(
                     attempt=_snapshot_attempt(existing),
                     context=context,
@@ -391,6 +413,7 @@ class SqlTelegramReplySender:
                         context=current,
                     )
                     self._validate_attempt_binding(existing, current)
+                    await self._validate_saved_payload_binding(existing, current)
                     replay = self._attempt_result(
                         attempt=_snapshot_attempt(existing),
                         context=current,
@@ -544,6 +567,9 @@ class SqlTelegramReplySender:
                     "account_label": current.account_label,
                     "target_chat_id": current.target_chat_id,
                     "business_connection_id": probe.business_connection_id,
+                    "payload_sha256": (
+                        current.formatting.payload_sha256 if current.formatting else None
+                    ),
                 },
             )
         )
@@ -580,6 +606,7 @@ class SqlTelegramReplySender:
                     message="Reply send reservation failed safely",
                 ) from cause
             self._validate_attempt_binding(concurrent, context)
+            await self._validate_saved_payload_binding(concurrent, context)
             return self._attempt_result(
                 attempt=_snapshot_attempt(concurrent),
                 context=context,
@@ -706,9 +733,22 @@ class SqlTelegramReplySender:
                     .values(data=None)
                 )
 
+            snapshot_key = (
+                CAPTION_FORMAT_KEY
+                if reservation.context.document_sha256 is not None
+                else FORMAT_KEY
+            )
+            current_metadata = (
+                draft.prompt_context if isinstance(draft.prompt_context, dict) else {}
+            )
+            reserved_formatting = (
+                reservation.context.formatting.to_dict() if reservation.context.formatting else None
+            )
             draft_changed_after_reservation = (
                 draft.draft_text != reservation.context.draft_text
                 or draft.status != reservation.context.draft_status
+                or _canonical_json_fingerprint(current_metadata.get(snapshot_key))
+                != _canonical_json_fingerprint(reserved_formatting)
             )
             if not draft_changed_after_reservation:
                 draft.status = ReplyDraftStatus.APPROVED.value
@@ -799,6 +839,11 @@ class SqlTelegramReplySender:
                             "display_name": (reservation.context.counterparty_display_name)
                         },
                         "_gate_document_sha256": reservation.context.document_sha256,
+                        "_gate_payload_sha256": (
+                            reservation.context.formatting.payload_sha256
+                            if reservation.context.formatting
+                            else None
+                        ),
                     },
                     sent_at=finished_at,
                 )
@@ -858,8 +903,7 @@ class SqlTelegramReplySender:
 
         raw_context = draft.prompt_context if isinstance(draft.prompt_context, dict) else {}
         is_document = (
-            raw_context.get("kind") == "document"
-            or draft.source == "chatgpt-mcp-document"
+            raw_context.get("kind") == "document" or draft.source == "chatgpt-mcp-document"
         )
         document = None
         if is_document or command.expected_document_sha256 is not None:
@@ -885,7 +929,19 @@ class SqlTelegramReplySender:
                 message="Document belongs to another authenticated principal",
             )
 
+        try:
+            formatting = stored_preview(
+                document.caption if document else draft.draft_text,
+                raw_context,
+                key=CAPTION_FORMAT_KEY if document else FORMAT_KEY,
+                max_length=1024 if document else 4096,
+                allow_empty=document is not None,
+            )
+        except FormattingError as exc:
+            raise ReplySendError(code=exc.code, message=exc.message) from exc
+
         return _SendContextSnapshot(
+            formatting=formatting,
             draft_id=draft.id,
             draft_text=draft.draft_text,
             draft_status=draft.status,
@@ -1194,6 +1250,22 @@ class SqlTelegramReplySender:
                 code="recipient_confirmation_mismatch",
                 message="Confirmed recipient does not match the reply task",
             )
+        if context.formatting is not None:
+            if command.expected_payload_sha256 is None:
+                raise ReplySendError(
+                    code="payload_confirmation_required",
+                    message="Confirm the exact saved formatting payload SHA-256 before sending",
+                )
+            if command.expected_payload_sha256 != context.formatting.payload_sha256:
+                raise ReplySendError(
+                    code="payload_confirmation_mismatch",
+                    message="Confirmed formatting payload differs from the saved preview",
+                )
+        elif command.expected_payload_sha256 is not None:
+            raise ReplySendError(
+                code="payload_confirmation_mismatch",
+                message="Legacy draft has no saved formatting preview to confirm",
+            )
         if (
             command.expected_document_sha256 != context.document_sha256
             or command.expected_document_filename != context.document_filename
@@ -1248,6 +1320,34 @@ class SqlTelegramReplySender:
                 message=(f"Runtime sending is disabled for account {context.account_label}"),
             )
 
+    async def _validate_saved_payload_binding(
+        self,
+        attempt: SendAttempt,
+        context: _SendContextSnapshot,
+    ) -> None:
+        """A replay is bound to the payload recorded with its durable reservation."""
+        reservation_metadata = await self._session.scalar(
+            select(AuditLog.metadata_)
+            .where(
+                AuditLog.action == "reply_send_reserved_from_mcp",
+                AuditLog.account_id == context.account_id,
+                AuditLog.project_id == context.project_id,
+                AuditLog.metadata_["attempt_id"].astext == str(attempt.id),
+            )
+            .limit(1)
+        )
+        saved_digest = (
+            reservation_metadata.get("payload_sha256")
+            if isinstance(reservation_metadata, dict)
+            else None
+        )
+        current_digest = context.formatting.payload_sha256 if context.formatting else None
+        if saved_digest != current_digest:
+            raise ReplySendError(
+                code="send_attempt_payload_mismatch",
+                message="Stored send attempt belongs to another saved formatting payload",
+            )
+
     def _validate_attempt_binding(
         self,
         attempt: SendAttempt,
@@ -1266,6 +1366,31 @@ class SqlTelegramReplySender:
                 code="send_attempt_binding_mismatch",
                 message=("Stored send attempt does not match the confirmed scoped context"),
             )
+
+    @staticmethod
+    def _validate_reserved_formatting(context: _SendContextSnapshot) -> None:
+        """Validate the immutable reservation payload without re-rendering Markdown."""
+        if context.formatting is None:
+            return
+        key = CAPTION_FORMAT_KEY if context.document_sha256 is not None else FORMAT_KEY
+        text = context.draft_text
+        if context.document_sha256 is not None:
+            if context.document_caption is None:
+                raise ReplySendError(
+                    code="document_binding_mismatch",
+                    message="Reserved caption is missing",
+                )
+            text = context.document_caption
+        try:
+            stored_preview(
+                text,
+                {key: context.formatting.to_dict()},
+                key=key,
+                max_length=1024 if context.document_sha256 is not None else 4096,
+                allow_empty=context.document_sha256 is not None,
+            )
+        except FormattingError as exc:
+            raise ReplySendError(code=exc.code, message=exc.message) from exc
 
     def _require_provider_outside_transaction(self) -> None:
         if self._session.in_transaction():
@@ -1297,6 +1422,7 @@ class SqlTelegramReplySender:
             document_media_type=context.document_media_type,
             document_size_bytes=context.document_size_bytes,
             document_sha256=context.document_sha256,
+            payload_sha256=context.formatting.payload_sha256 if context.formatting else None,
         )
 
 
@@ -1342,6 +1468,9 @@ def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
         context.document_sha256,
         context.document_caption,
         context.document_expires_at,
+        _canonical_json_fingerprint(context.formatting.to_dict())
+        if context.formatting is not None
+        else None,
     )
 
 

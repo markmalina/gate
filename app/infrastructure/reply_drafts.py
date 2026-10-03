@@ -12,6 +12,7 @@ from app.application.reply_drafts import (
     SavedReplyDraft,
     SaveReplyDraftCommand,
 )
+from app.application.telegram_formatting import FORMAT_KEY
 from app.models.domain import (
     Account,
     AuditLog,
@@ -74,9 +75,7 @@ class SqlReplyDraftWriter:
         if row is None:
             raise ReplyTaskNotFoundError()
         task, conversation, trigger_message, account = row
-        is_follow_up = (
-            task.status == ReplyTaskStatus.REPLIED.value and command.follow_up
-        )
+        is_follow_up = task.status == ReplyTaskStatus.REPLIED.value and command.follow_up
         if task.status != ReplyTaskStatus.NEEDS_REPLY.value and not is_follow_up:
             raise ReplyTaskClosedError()
         if is_follow_up:
@@ -112,6 +111,7 @@ class SqlReplyDraftWriter:
                 "bounded_context": True,
                 "source": "chatgpt-mcp",
                 "follow_up": is_follow_up,
+                **({FORMAT_KEY: command.formatting.to_dict()} if command.formatting else {}),
             },
         )
         self._session.add(draft)
@@ -147,4 +147,5 @@ class SqlReplyDraftWriter:
             recipient_chat_id=recipient_chat_id,
             status=draft.status,
             text=draft.draft_text,
+            formatting=command.formatting,
         )

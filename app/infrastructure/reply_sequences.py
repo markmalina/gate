@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -16,7 +17,9 @@ from app.application.reply_sequences import (
     QueuedReplySequenceItem,
     ReplySequenceError,
     validate_sequence_draft_ids,
+    validate_sequence_payload_digests,
 )
+from app.application.telegram_formatting import FormattingError, stored_preview
 from app.models.domain import (
     Account,
     AuditLog,
@@ -47,10 +50,9 @@ class SqlReplySequenceWriter:
         self._session = session
         self._now = now
 
-    async def queue(
-        self, command: QueueApprovedReplySequenceCommand
-    ) -> QueuedReplySequence:
+    async def queue(self, command: QueueApprovedReplySequenceCommand) -> QueuedReplySequence:
         validate_sequence_draft_ids(command.draft_ids)
+        validate_sequence_payload_digests(command.draft_ids, command.expected_payload_sha256s)
         scope = command.principal.access_scope
         result = await self._session.execute(
             select(ReplyDraft, ReplyTask, Conversation, Message, Account)
@@ -170,13 +172,39 @@ class SqlReplySequenceWriter:
                 message="Confirmed recipient does not match the sequence task",
             )
 
+        payload_digests: list[str | None] = []
+        for position, (draft, *_rest) in enumerate(ordered):
+            try:
+                formatting = stored_preview(draft.draft_text, draft.prompt_context or {})
+            except FormattingError as exc:
+                raise ReplySequenceError(code=exc.code, message=exc.message) from exc
+            if formatting is not None:
+                if command.expected_payload_sha256s is None:
+                    raise ReplySequenceError(
+                        code="formatting_confirmation_required",
+                        message="Confirm the exact ordered payload digests shown in the previews",
+                    )
+                if not hmac.compare_digest(
+                    formatting.payload_sha256, command.expected_payload_sha256s[position]
+                ):
+                    raise ReplySequenceError(
+                        code="formatting_confirmation_mismatch",
+                        message="A sequence payload differs from the confirmed preview",
+                    )
+                payload_digests.append(formatting.payload_sha256)
+            else:
+                if command.expected_payload_sha256s is not None:
+                    raise ReplySequenceError(
+                        code="formatting_confirmation_mismatch",
+                        message="A sequence draft has no matching formatting preview",
+                    )
+                payload_digests.append(None)
+
         sequence_id = uuid4()
         queued_at = self._now or datetime.now(UTC)
         items: list[QueuedReplySequenceItem] = []
         for position, (draft, *_rest) in enumerate(ordered):
-            scheduled_at = queued_at + timedelta(
-                seconds=position * command.interval_seconds
-            )
+            scheduled_at = queued_at + timedelta(seconds=position * command.interval_seconds)
             context = dict(draft.prompt_context or {})
             context[SEQUENCE_CONTEXT_KEY] = {
                 "id": str(sequence_id),
@@ -189,6 +217,7 @@ class SqlReplySequenceWriter:
                 "expected_recipient_chat_id": recipient_chat_id,
                 "principal_subject": command.principal.subject,
                 "workspace_id": scope.workspace_id,
+                "payload_sha256": payload_digests[position],
             }
             draft.prompt_context = context
             items.append(
@@ -196,6 +225,7 @@ class SqlReplySequenceWriter:
                     draft_id=draft.id,
                     position=position,
                     scheduled_at=scheduled_at,
+                    payload_sha256=payload_digests[position],
                 )
             )
 

@@ -56,6 +56,7 @@ class _SequenceRow:
     workspace_id: str
     attempt_status: str | None
     attempt_finished_at: datetime | None
+    payload_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +72,7 @@ class _DueSequenceItem:
     expected_recipient_chat_id: str
     principal_subject: str
     workspace_id: str
+    payload_sha256: str | None = None
 
 
 async def run_reply_sequence_once(
@@ -125,6 +127,7 @@ async def run_reply_sequence_once(
                         confirmed=True,
                         expected_account=item.expected_account,
                         expected_recipient_chat_id=item.expected_recipient_chat_id,
+                        expected_payload_sha256=item.payload_sha256,
                     )
                 )
             except ReplySendError as exc:
@@ -235,6 +238,7 @@ def _sequence_row_from_scalars(
             workspace_id=str(metadata["workspace_id"]),
             attempt_status=attempt_status,
             attempt_finished_at=attempt_finished_at,
+            payload_sha256=_metadata_payload_digest(metadata.get("payload_sha256")),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -293,6 +297,7 @@ def _due_items(
                 expected_recipient_chat_id=candidate.expected_recipient_chat_id,
                 principal_subject=candidate.principal_subject,
                 workspace_id=candidate.workspace_id,
+                payload_sha256=candidate.payload_sha256,
             )
         )
     return tuple(due)
@@ -306,6 +311,21 @@ def _metadata_int(value: object) -> int:
     if isinstance(value, str):
         return int(value)
     raise TypeError("Sequence metadata is not an integer")
+
+
+def _metadata_payload_digest(value: object) -> str | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        # Retain the row as an explicit invalid approval so the send service
+        # stops the series. Dropping it here could make the next item look like
+        # the first unsent item and skip a predecessor.
+        return "invalid"
+    return value
 
 
 async def _sequence_superseded(
@@ -348,9 +368,7 @@ async def _record_sequence_outcome(
 ) -> None:
     async with session_factory() as session:
         result = await session.execute(
-            select(ReplyDraft)
-            .where(ReplyDraft.account_id == item.account_id)
-            .with_for_update()
+            select(ReplyDraft).where(ReplyDraft.account_id == item.account_id).with_for_update()
         )
         drafts = result.scalars().all()
         for draft in drafts:

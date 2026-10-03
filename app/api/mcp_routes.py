@@ -3060,7 +3060,11 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "name": "gate_save_reply_draft",
         "title": "Save a Gate reply draft",
         "description": (
-            "Save proposed text as a scoped draft for an unanswered task. "
+            "Save proposed text with explicit text_format=plain (literal default) or markdown. "
+            "Markdown supports bold, italic, strike, underline, spoiler, links, code, headings, lists and quotes; unsupported or malformed syntax is rejected. "
+            "Returns exact normalized text, UTF-16 entities and versioned formatting preview/hash. "
+            "Show that result before confirmation and pass its payload_sha256 to send/queue. "
+            "A reply must fit 4096 UTF-16 units after conversion; no automatic splitting. "
             "For a task_id returned by answered_items, set follow_up=true explicitly. "
             "This tool never approves or sends the message."
         ),
@@ -3068,7 +3072,8 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
             "type": "object",
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
-                "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "text": {"type": "string", "minLength": 1, "maxLength": 65536},
+                "text_format": {"type": "string", "enum": ["plain", "markdown"], "default": "plain"},
                 "follow_up": {"type": "boolean", "default": False},
             },
             "required": ["task_id", "text"],
@@ -3090,6 +3095,8 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
         "name": "gate_send_approved_reply",
         "title": "Send an explicitly approved Gate reply",
         "description": (
+            "Use expected_payload_sha256 from the displayed formatting preview; "
+            "required for newly saved drafts/captions. Legacy rows without a preview retain the old contract. "
             "Send the exact saved draft through its originating RU/BY Telegram "
             "Business account. Call only after showing the account, recipient and "
             "final text to Mark and receiving explicit confirmation."
@@ -3099,6 +3106,7 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
             "properties": {
                 "draft_id": {"type": "string", "format": "uuid"},
                 "confirmed": {"type": "boolean", "const": True},
+                "expected_payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 "expected_account": {
                     "type": "string",
                     "enum": ["RU", "BY"],
@@ -3137,7 +3145,9 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
         "name": "gate_prepare_reply_document",
         "title": "Prepare one Gate Business document",
         "description": (
-            "Stage one selected local PDF or ZIP for a scoped reply task. "
+            "Stage one selected local PDF or ZIP; choose caption_format=plain (literal default) or markdown. "
+            "Returns saved caption text/entities/version/hash; max 1024 UTF-16 units after conversion. "
+            "Pass its formatting.payload_sha256 to approved send after showing the preview. "
             "The base64 bytes are accepted only in this upload argument, never "
             "in a text draft or tool response. No message is sent. Show Mark "
             "account, recipient, file name, MIME, size, SHA-256 and exact caption."
@@ -3150,7 +3160,8 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
                 "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
                 "content_base64": {"type": "string", "minLength": 1, "maxLength": 11184812},
                 "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                "caption": {"type": "string", "maxLength": 1024, "default": ""},
+                "caption": {"type": "string", "maxLength": 65536, "default": ""},
+                "caption_format": {"type": "string", "enum": ["plain", "markdown"], "default": "plain"},
                 "follow_up": {"type": "boolean", "default": False},
             },
             "required": [
@@ -3174,6 +3185,8 @@ def _gate_send_approved_document_tool(settings: Settings) -> JsonObject:
         "name": "gate_send_approved_document",
         "title": "Send one explicitly approved Gate Business document",
         "description": (
+            "Use expected_payload_sha256 from the displayed formatting preview; "
+            "required for newly saved drafts/captions. Legacy rows without a preview retain the old contract. "
             "Send the exact staged file through its originating RU/BY Business "
             "account. Call only after Mark has confirmed the displayed account, "
             "recipient, filename, size, SHA-256 and exact caption."
@@ -3183,6 +3196,7 @@ def _gate_send_approved_document_tool(settings: Settings) -> JsonObject:
             "properties": {
                 "draft_id": {"type": "string", "format": "uuid"},
                 "confirmed": {"type": "boolean", "const": True},
+                "expected_payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 "expected_account": {"type": "string", "enum": ["RU", "BY"]},
                 "expected_recipient_chat_id": {"type": "string", "minLength": 1},
                 "expected_document_filename": {"type": "string", "minLength": 1},
@@ -3213,6 +3227,8 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
         "name": "gate_queue_approved_reply_sequence",
         "title": "Queue an explicitly approved Gate reply sequence",
         "description": (
+            "Include expected_payload_sha256s in draft order from each displayed formatting preview; "
+            "required for new drafts. Never split or reformat during delivery. "
             f"Queue {MIN_SEQUENCE_DRAFTS} to {MAX_SEQUENCE_DRAFTS} saved drafts "
             "for the same RU/BY recipient. "
             "Call only after showing Mark the account, recipient and every final "
@@ -3231,6 +3247,7 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
                     "items": {"type": "string", "format": "uuid"},
                 },
                 "confirmed": {"type": "boolean", "const": True},
+                "expected_payload_sha256s": {"type": "array", "minItems": MIN_SEQUENCE_DRAFTS, "maxItems": MAX_SEQUENCE_DRAFTS, "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
                 "expected_account": {
                     "type": "string",
                     "enum": ["RU", "BY"],
@@ -3275,13 +3292,25 @@ async def _save_reply_draft_tool_result(
     principal: Principal,
     session: AsyncSession,
 ) -> JsonObject:
+    if arguments.keys() - {
+        'task_id',
+        'text',
+        'text_format',
+        'follow_up',
+    }:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments",
+            message="Unknown arguments are not supported",
+        )
     raw_task_id = arguments.get("task_id")
     raw_text = arguments.get("text")
     raw_follow_up = arguments.get("follow_up", False)
+    text_format = arguments.get("text_format", "plain")
     if (
         not isinstance(raw_task_id, str)
         or not isinstance(raw_text, str)
         or not isinstance(raw_follow_up, bool)
+        or text_format not in ("plain", "markdown")
     ):
         return _tool_error_result(
             request_id=request_id,
@@ -3305,6 +3334,7 @@ async def _save_reply_draft_tool_result(
                 task_id=task_id,
                 text=raw_text,
                 follow_up=raw_follow_up,
+                text_format=text_format,
             )
         )
     except ReplyDraftError as exc:
@@ -3327,10 +3357,12 @@ async def _save_reply_draft_tool_result(
         "recipient_chat_id": saved.recipient_chat_id,
         "status": saved.status,
         "text": saved.text,
+        "formatting": saved.formatting.to_dict() if saved.formatting else None,
         "sent": False,
         "approval_required": True,
         "send_available": True,
         "confirmation": {
+            "expected_payload_sha256": saved.formatting.payload_sha256 if saved.formatting else None,
             "expected_account": saved.account_label,
             "expected_recipient_chat_id": saved.recipient_chat_id,
         },
@@ -3341,7 +3373,7 @@ async def _save_reply_draft_tool_result(
             f"Draft saved: {content['draft_ref']}\n"
             f"Account: {saved.account_label}\n"
             f"Recipient chat: {saved.recipient_chat_id}\n"
-            "Not sent. Show the final text and ask Mark for explicit confirmation."
+            "Not sent. Show exact text and formatting preview; confirm its hash, account and recipient."
         ),
         request_id,
     )
@@ -3356,6 +3388,20 @@ async def _send_approved_reply_tool_result(
     telegram: TelegramClient,
     settings: Settings,
 ) -> JsonObject:
+    if arguments.keys() - {
+        'draft_id',
+        'confirmed',
+        'expected_account',
+        'expected_recipient_chat_id',
+        'expected_payload_sha256',
+    }:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments",
+            message="Unknown arguments are not supported",
+        )
+    expected_payload_sha256 = arguments.get("expected_payload_sha256")
+    if expected_payload_sha256 is not None and not isinstance(expected_payload_sha256, str):
+        return _tool_error_result(request_id=request_id, code="invalid_arguments", message="expected_payload_sha256 must be a SHA-256 string")
     raw_draft_id = arguments.get("draft_id")
     confirmed = arguments.get("confirmed")
     expected_account = arguments.get("expected_account")
@@ -3395,6 +3441,7 @@ async def _send_approved_reply_tool_result(
             SendApprovedReplyCommand(
                 principal=principal,
                 draft_id=draft_id,
+                expected_payload_sha256=expected_payload_sha256,
                 confirmed=confirmed,
                 expected_account=expected_account,
                 expected_recipient_chat_id=expected_recipient,
@@ -3422,6 +3469,7 @@ async def _send_approved_reply_tool_result(
         "status": sent.status,
         "sent": sent.sent,
         "idempotent_replay": sent.idempotent_replay,
+        "payload_sha256": sent.payload_sha256,
         "provider_message_id": sent.provider_message_id,
         "error_code": sent.error_code,
         "error_detail": sent.error_detail,
@@ -3448,6 +3496,20 @@ async def _prepare_reply_document_tool_result(
     session: AsyncSession,
     settings: Settings,
 ) -> JsonObject:
+    if arguments.keys() - {
+        'task_id',
+        'filename',
+        'media_type',
+        'content_base64',
+        'expected_sha256',
+        'caption',
+        'caption_format',
+        'follow_up',
+    }:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments",
+            message="Unknown arguments are not supported",
+        )
     if not settings.gate_document_send_enabled:
         return _tool_error_result(
             request_id=request_id,
@@ -3464,8 +3526,9 @@ async def _prepare_reply_document_tool_result(
             message="Task and exact document metadata are required",
         )
     caption = arguments.get("caption", "")
+    caption_format = arguments.get("caption_format", "plain")
     follow_up = arguments.get("follow_up", False)
-    if not isinstance(caption, str) or type(follow_up) is not bool:
+    if not isinstance(caption, str) or type(follow_up) is not bool or caption_format not in ("plain", "markdown"):
         return _tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
@@ -3489,6 +3552,7 @@ async def _prepare_reply_document_tool_result(
                 content_base64=arguments["content_base64"],
                 expected_sha256=arguments["expected_sha256"],
                 caption=caption,
+                caption_format=caption_format,
                 follow_up=follow_up,
             )
         )
@@ -3507,6 +3571,7 @@ async def _prepare_reply_document_tool_result(
         "size_bytes": prepared.size_bytes,
         "sha256": prepared.sha256,
         "caption": prepared.caption,
+        "formatting": prepared.formatting.to_dict() if prepared.formatting else None,
         "sent": False,
         "approval_required": True,
     }
@@ -3532,6 +3597,24 @@ async def _send_approved_document_tool_result(
     telegram: TelegramClient,
     settings: Settings,
 ) -> JsonObject:
+    if arguments.keys() - {
+        'draft_id',
+        'confirmed',
+        'expected_account',
+        'expected_recipient_chat_id',
+        'expected_document_filename',
+        'expected_document_size_bytes',
+        'expected_document_sha256',
+        'expected_document_caption',
+        'expected_payload_sha256',
+    }:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments",
+            message="Unknown arguments are not supported",
+        )
+    expected_payload_sha256 = arguments.get("expected_payload_sha256")
+    if expected_payload_sha256 is not None and not isinstance(expected_payload_sha256, str):
+        return _tool_error_result(request_id=request_id, code="invalid_arguments", message="expected_payload_sha256 must be a SHA-256 string")
     names = (
         "draft_id", "expected_account", "expected_recipient_chat_id",
         "expected_document_filename", "expected_document_sha256",
@@ -3560,6 +3643,7 @@ async def _send_approved_document_tool_result(
             SendApprovedReplyCommand(
                 principal=principal,
                 draft_id=draft_id,
+                expected_payload_sha256=expected_payload_sha256,
                 confirmed=arguments["confirmed"],
                 expected_account=arguments["expected_account"],
                 expected_recipient_chat_id=arguments["expected_recipient_chat_id"],
@@ -3586,6 +3670,7 @@ async def _send_approved_document_tool_result(
         "status": sent.status,
         "sent": sent.sent,
         "idempotent_replay": sent.idempotent_replay,
+        "payload_sha256": sent.payload_sha256,
         "provider_message_id": sent.provider_message_id,
         "error_code": sent.error_code,
         "error_detail": sent.error_detail,
@@ -3611,6 +3696,21 @@ async def _queue_approved_reply_sequence_tool_result(
     principal: Principal,
     session: AsyncSession,
 ) -> JsonObject:
+    if arguments.keys() - {
+        'draft_ids',
+        'confirmed',
+        'expected_account',
+        'expected_recipient_chat_id',
+        'interval_seconds',
+        'expected_payload_sha256s',
+    }:
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments",
+            message="Unknown arguments are not supported",
+        )
+    raw_hashes = arguments.get("expected_payload_sha256s")
+    if raw_hashes is not None and (not isinstance(raw_hashes, list) or not all(isinstance(item, str) for item in raw_hashes)):
+        return _tool_error_result(request_id=request_id, code="invalid_arguments", message="expected_payload_sha256s must contain ordered SHA-256 strings")
     raw_draft_ids = arguments.get("draft_ids")
     confirmed = arguments.get("confirmed")
     expected_account = arguments.get("expected_account")
@@ -3652,6 +3752,7 @@ async def _queue_approved_reply_sequence_tool_result(
                 expected_account=expected_account,
                 expected_recipient_chat_id=expected_recipient,
                 interval_seconds=interval_seconds,
+                expected_payload_sha256s=tuple(raw_hashes) if raw_hashes is not None else None,
             )
         )
     except ReplySequenceError as exc:
@@ -3680,6 +3781,7 @@ async def _queue_approved_reply_sequence_tool_result(
             {
                 "draft_id": str(item.draft_id),
                 "position": item.position,
+                "payload_sha256": item.payload_sha256,
                 "scheduled_at": item.scheduled_at.isoformat(),
             }
             for item in queued.items

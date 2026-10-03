@@ -42,6 +42,23 @@ def validate_sequence_draft_ids(draft_ids: tuple[UUID, ...]) -> None:
         )
 
 
+def validate_sequence_payload_digests(
+    draft_ids: tuple[UUID, ...], payloads: tuple[str, ...] | None
+) -> None:
+    if payloads is None:
+        return
+    if len(payloads) != len(draft_ids) or any(
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+        for value in payloads
+    ):
+        raise ReplySequenceError(
+            code="invalid_confirmation",
+            message="One ordered SHA-256 payload digest is required for every draft",
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class QueueApprovedReplySequenceCommand:
     """One explicit approval covering an ordered set of persisted drafts."""
@@ -52,6 +69,7 @@ class QueueApprovedReplySequenceCommand:
     expected_account: str
     expected_recipient_chat_id: str
     interval_seconds: int = SEQUENCE_INTERVAL_SECONDS
+    expected_payload_sha256s: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +77,7 @@ class QueuedReplySequenceItem:
     draft_id: UUID
     position: int
     scheduled_at: datetime
+    payload_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +94,7 @@ class QueuedReplySequence:
 
 
 class ReplySequenceWriter(Protocol):
-    async def queue(
-        self, command: QueueApprovedReplySequenceCommand
-    ) -> QueuedReplySequence: ...
+    async def queue(self, command: QueueApprovedReplySequenceCommand) -> QueuedReplySequence: ...
 
 
 class QueueApprovedReplySequenceService:
@@ -86,9 +103,7 @@ class QueueApprovedReplySequenceService:
     def __init__(self, writer: ReplySequenceWriter) -> None:
         self._writer = writer
 
-    async def execute(
-        self, command: QueueApprovedReplySequenceCommand
-    ) -> QueuedReplySequence:
+    async def execute(self, command: QueueApprovedReplySequenceCommand) -> QueuedReplySequence:
         principal = command.principal
         if QUEUE_SEQUENCE_SCOPE not in principal.scopes:
             raise ReplySequenceError(
@@ -106,6 +121,7 @@ class QueueApprovedReplySequenceService:
                 message="Explicit confirmation of the complete ordered sequence is required",
             )
         validate_sequence_draft_ids(command.draft_ids)
+        validate_sequence_payload_digests(command.draft_ids, command.expected_payload_sha256s)
         if command.interval_seconds != SEQUENCE_INTERVAL_SECONDS:
             raise ReplySequenceError(
                 code="invalid_interval",
@@ -131,5 +147,6 @@ class QueueApprovedReplySequenceService:
                 expected_account=account,
                 expected_recipient_chat_id=recipient,
                 interval_seconds=SEQUENCE_INTERVAL_SECONDS,
+                expected_payload_sha256s=command.expected_payload_sha256s,
             )
         )

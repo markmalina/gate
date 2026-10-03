@@ -64,7 +64,7 @@ async def test_save_reply_draft_normalizes_text_and_never_sends() -> None:
         )
     )
 
-    assert saved.text == "Привет! Рад знакомству."
+    assert saved.text == "  Привет! Рад знакомству.  "
     assert writer.commands[0].text == saved.text
 
 
@@ -101,5 +101,5 @@ async def test_save_reply_draft_rejects_invalid_text(text: str) -> None:
             )
         )
 
-    assert exc_info.value.code == "invalid_text"
+    assert exc_info.value.code == ("text_too_long" if len(text) > 4096 else "invalid_text")
     assert writer.commands == []
