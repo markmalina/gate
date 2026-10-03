@@ -36,6 +36,8 @@ emoji or another Unicode character. Underscores inside an alphanumeric word
 are literal, so `sample_value` remains a word. Valid nested styles and styles
 inside link labels are supported. Crossing ranges, nested links, overlapping
 code/styles and unsupported combinations fail before any send.
+Inline styles and links must fit on one line; close and reopen a style on each
+line rather than spanning a newline. Fenced code and blockquotes may span lines.
 
 Tables, images, HTML/angle-bracket links, reference links, horizontal rules,
 nested blockquotes, tilde fences and malformed or unclosed delimiters are

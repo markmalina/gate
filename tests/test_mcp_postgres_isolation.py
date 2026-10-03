@@ -448,6 +448,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             class RecordingTelegram:
                 def __init__(self) -> None:
                     self.calls: list[dict[str, object]] = []
+                    self.probe_calls: list[str] = []
 
                 async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
                     self.calls.append(kwargs)
@@ -456,6 +457,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 async def get_business_connection(
                     self, *, business_connection_id: str
                 ) -> dict[str, object]:
+                    self.probe_calls.append(business_connection_id)
                     return {
                         "ok": True,
                         "result": {
@@ -542,7 +544,14 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             allowed_draft_id = allowed_payload["draft_id"]
             follow_up_draft_id = follow_up_payload["draft_id"]
 
-            def send_payload(*, request_id: str, draft_id: str) -> dict[str, object]:
+            allowed_digest = allowed_payload["formatting"]["payload_sha256"]
+            follow_up_digest = follow_up_payload["formatting"]["payload_sha256"]
+            assert allowed_payload["confirmation"]["expected_payload_sha256"] == allowed_digest
+            assert follow_up_payload["confirmation"]["expected_payload_sha256"] == follow_up_digest
+
+            def send_payload(
+                *, request_id: str, draft_id: str, digest: str | None,
+            ) -> dict[str, object]:
                 return {
                     "jsonrpc": "2.0",
                     "id": request_id,
@@ -554,6 +563,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                             "confirmed": True,
                             "expected_account": "RU",
                             "expected_recipient_chat_id": "sender",
+                            **({"expected_payload_sha256": digest} if digest is not None else {}),
                         },
                     },
                 }
@@ -561,12 +571,31 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             first_send_payload = send_payload(
                 request_id="send-approved",
                 draft_id=allowed_draft_id,
+                digest=allowed_digest,
             )
             follow_up_send_payload = send_payload(
                 request_id="send-follow-up",
                 draft_id=follow_up_draft_id,
+                digest=follow_up_digest,
             )
             async with AsyncClient(transport=transport, base_url="http://test") as client:
+                unconfirmed = await client.post(
+                    "/mcp",
+                    headers={"Authorization": "Bearer signed-token"},
+                    json=send_payload(
+                        request_id="send-missing-payload-confirmation",
+                        draft_id=allowed_draft_id,
+                        digest=None,
+                    ),
+                )
+                unconfirmed_result = unconfirmed.json()["result"]
+                assert unconfirmed_result["isError"] is True
+                assert (
+                    unconfirmed_result["structuredContent"]["error"]
+                    == "payload_confirmation_required"
+                )
+                assert telegram.calls == []
+                assert telegram.probe_calls == []
                 sent = await client.post(
                     "/mcp",
                     headers={"Authorization": "Bearer signed-token"},
@@ -593,6 +622,9 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             send_validator.validate(sent_payload)
             send_validator.validate(followed_up_payload)
             send_validator.validate(replayed_payload)
+            assert sent_payload["payload_sha256"] == allowed_digest
+            assert followed_up_payload["payload_sha256"] == follow_up_digest
+            assert replayed_payload["payload_sha256"] == follow_up_digest
             assert sent_payload["sent"] is True
             assert sent_payload["account"]["label"] == "RU"
             assert sent_payload["recipient_chat_id"] == "sender"
