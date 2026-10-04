@@ -33,6 +33,7 @@ class SendApprovedReplyCommand:
     expected_document_filename: str | None = None
     expected_document_size_bytes: int | None = None
     expected_document_caption: str | None = None
+    expected_payload_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,7 @@ class ReplySendResult:
     document_media_type: str | None = None
     document_size_bytes: int | None = None
     document_sha256: str | None = None
+    payload_sha256: str | None = None
 
 
 class ReplySendExecutor(Protocol):
@@ -100,6 +102,14 @@ class SendApprovedReplyService:
                 code="invalid_confirmation",
                 message="Expected recipient chat id is required",
             )
+        if command.expected_payload_sha256 is not None and (
+            len(command.expected_payload_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in command.expected_payload_sha256)
+        ):
+            raise ReplySendError(
+                code="invalid_confirmation",
+                message="Expected payload SHA-256 must be 64 lowercase hexadecimal characters",
+            )
         if command.expected_document_sha256 is not None:
             if (
                 len(command.expected_document_sha256) != 64
@@ -136,5 +146,6 @@ class SendApprovedReplyService:
                 expected_document_filename=command.expected_document_filename,
                 expected_document_size_bytes=command.expected_document_size_bytes,
                 expected_document_caption=command.expected_document_caption,
+                expected_payload_sha256=command.expected_payload_sha256,
             )
         )

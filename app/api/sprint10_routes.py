@@ -28,6 +28,7 @@ from app.models.domain import (
     ReplyTask,
     ReplyTaskStatus,
 )
+from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -139,6 +140,8 @@ async def edit_draft_form(
 
     await _require_valid_draft_token(draft_ref=draft_ref, token=token, settings=settings)
     draft, task = await _load_single_draft_for_edit(session=session, draft_ref=draft_ref)
+    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Save a new Gate MCP draft to regenerate and confirm the formatting preview")
     return HTMLResponse(_render_draft_edit_form(draft=draft, task=task, token=token))
 
 
@@ -155,6 +158,8 @@ async def save_draft_form(
 
     await _require_valid_draft_token(draft_ref=draft_ref, token=token, settings=settings)
     draft, task = await _load_single_draft_for_edit(session=session, draft_ref=draft_ref)
+    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Save a new Gate MCP draft to regenerate and confirm the formatting preview")
     body = (await request.body()).decode("utf-8")
     form = parse_qs(body, keep_blank_values=True)
     draft_text = form.get("draft_text", [""])[0].strip()
@@ -332,7 +337,9 @@ async def _send_draft_edit_link(
         text = f"Draft reference is ambiguous: {draft_ref}"
     else:
         draft, task, _conversation = rows[0]
-        if not _is_draft_open(draft=draft, task=task):
+        if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+            text = "Saved formatting requires Gate MCP preview/hash confirmation."
+        elif not _is_draft_open(draft=draft, task=task):
             text = _closed_draft_message(action="edited", draft=draft, task=task)
         else:
             full_ref = str(draft.id)
@@ -503,6 +510,8 @@ async def _send_approved_draft_once(
         )
 
     draft, task, _conversation = rows[0]
+    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+        return "Saved formatting requires Gate MCP preview/hash confirmation."
     if _is_draft_open(draft=draft, task=task):
         return await _original_send_approved_draft(
             session=session,

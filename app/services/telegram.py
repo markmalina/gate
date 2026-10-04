@@ -2,12 +2,15 @@
 
 import hashlib
 import hmac
+import json
 import os
 from collections.abc import Mapping
 from pathlib import PurePosixPath
 from typing import Any, cast
 
 import httpx
+
+from app.application.telegram_formatting import validate_entities
 
 
 def build_telegram_http_client() -> httpx.AsyncClient:
@@ -126,6 +129,34 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def send_formatted_message(
+        self,
+        *,
+        chat_id: str,
+        text: str,
+        entities: list[dict[str, Any]],
+        business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Send exact saved text and entities without parse-mode guessing or retries."""
+
+        if not self._credential:
+            raise RuntimeError("Telegram credential is required")
+        checked = validate_entities(text, entities)
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "entities": list(checked),
+        }
+        if business_connection_id is not None:
+            payload["business_connection_id"] = business_connection_id
+        if reply_to_message_id is not None:
+            if type(reply_to_message_id) is not int or reply_to_message_id < 1:
+                raise ValueError("Telegram reply message id is invalid")
+            payload["reply_parameters"] = {"message_id": reply_to_message_id}
+        url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
+        return await self._post_telegram_json(url=url, payload=payload)
+
     async def send_business_document(
         self,
         *,
@@ -135,6 +166,7 @@ class TelegramClient:
         media_type: str,
         data: bytes,
         caption: str = "",
+        caption_entities: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Upload one literal PDF or ZIP as a Business document.
 
@@ -164,14 +196,21 @@ class TelegramClient:
         if not isinstance(caption, str) or len(caption) > 1024:
             raise ValueError("Document caption is too long")
 
+        payload = {
+            "chat_id": chat_id,
+            "business_connection_id": business_connection_id,
+            "caption": caption,
+        }
+        if caption_entities is not None:
+            payload["caption_entities"] = json.dumps(
+                list(validate_entities(caption, caption_entities)),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
         url = f"{self._api_base_url}/bot{self._credential}/sendDocument"
         return await self._post_telegram_multipart(
             url=url,
-            payload={
-                "chat_id": chat_id,
-                "business_connection_id": business_connection_id,
-                "caption": caption,
-            },
+            payload=payload,
             file=("document", (filename, data, media_type)),
         )
 

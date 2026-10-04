@@ -152,6 +152,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_get_status",
         "gate_list_unanswered",
         "gate_get_reply_context",
+        "gate_get_owner_reply_readiness",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
@@ -188,6 +189,7 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_get_status",
         "gate_list_unanswered",
         "gate_get_reply_context",
+        "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
         "gate_send_approved_reply",
@@ -215,13 +217,14 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         {"type": "oauth2", "scopes": ["gate:inbox:read"]}
     ]
     assert tools[3]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:drafts:write"]}
+        {"type": "oauth2", "scopes": ["gate:inbox:read"]}
     ]
+    assert tools[3]["annotations"]["readOnlyHint"] is True
     assert tools[4]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:drafts:write"]}
     ]
     assert tools[5]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:messages:send"]}
+        {"type": "oauth2", "scopes": ["gate:drafts:write"]}
     ]
     assert tools[6]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:messages:send"]}
@@ -230,24 +233,27 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[8]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:status:read"]}
+        {"type": "oauth2", "scopes": ["gate:messages:send"]}
     ]
     assert tools[9]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]
     assert tools[10]["securitySchemes"] == [
-        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+        {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]
     assert tools[11]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:agents:manage"]}
     ]
-    assert tools[13]["securitySchemes"] == [
+    assert tools[12]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:agents:manage"]}
     ]
-    assert tools[3]["annotations"]["destructiveHint"] is False
-    assert "never approves or sends" in tools[3]["description"]
-    assert tools[5]["annotations"]["idempotentHint"] is True
-    assert tools[5]["annotations"]["openWorldHint"] is True
+    assert tools[14]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:agents:manage"]}
+    ]
+    assert tools[4]["annotations"]["destructiveHint"] is False
+    assert "never approves or sends" in tools[4]["description"]
+    assert tools[6]["annotations"]["idempotentHint"] is True
+    assert tools[6]["annotations"]["openWorldHint"] is True
 
 
 @pytest.mark.anyio
@@ -630,6 +636,9 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
 async def test_verified_oauth_principal_can_save_draft_without_sending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.application.telegram_formatting import compile_text
+
+    expected_preview = compile_text("  Привет!  ")
     session = CommitSession()
     task_id = UUID("11111111-1111-1111-1111-111111111111")
     account_id = UUID("22222222-2222-2222-2222-222222222222")
@@ -666,6 +675,7 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
                 recipient_chat_id="12345",
                 status="generated",
                 text=command.text,
+                formatting=command.formatting,
             )
 
     app.dependency_overrides[get_db_session] = override_session
@@ -678,7 +688,9 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
             "method": "tools/call",
             "params": {
                 "name": "gate_save_reply_draft",
-                "arguments": {"task_id": str(task_id), "text": "  Привет!  "},
+                "arguments": {
+                    "task_id": str(task_id), "text": "  Привет!  ", "text_format": "plain",
+                },
             },
         },
         authorization="Bearer signed-token",
@@ -686,7 +698,8 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
 
     result = response.json()["result"]
     assert result["isError"] is False
-    assert result["structuredContent"]["text"] == "Привет!"
+    assert result["structuredContent"]["text"] == "  Привет!  "
+    assert result["structuredContent"]["formatting"] == expected_preview.to_dict()
     assert result["structuredContent"]["sent"] is False
     assert result["structuredContent"]["approval_required"] is True
     assert result["structuredContent"]["send_available"] is True
@@ -695,6 +708,7 @@ async def test_verified_oauth_principal_can_save_draft_without_sending(
     assert result["structuredContent"]["confirmation"] == {
         "expected_account": "RU",
         "expected_recipient_chat_id": "12345",
+        "expected_payload_sha256": expected_preview.payload_sha256,
     }
     assert session.commits == 1
 

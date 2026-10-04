@@ -6,12 +6,17 @@ import base64
 import binascii
 import hashlib
 import hmac
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Protocol
 from uuid import UUID
 
 from app.application.reply_drafts import ReplyDraftError
+from app.application.telegram_formatting import (
+    FormattingError,
+    FormattingPreview,
+    compile_text,
+)
 from app.core.mcp_security import Principal
 
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
@@ -28,6 +33,8 @@ class PrepareReplyDocumentCommand:
     expected_sha256: str
     caption: str = ""
     follow_up: bool = False
+    caption_format: str | None = None
+    formatting: FormattingPreview | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +48,7 @@ class PreparedReplyDocument:
     size_bytes: int
     sha256: str
     caption: str
+    formatting: FormattingPreview | None = None
 
 
 class ReplyDocumentWriter(Protocol):
@@ -78,13 +86,22 @@ class PrepareReplyDocumentService:
         allowed = {".pdf": "application/pdf", ".zip": "application/zip"}
         if allowed.get(PurePosixPath(filename).suffix.lower()) != command.media_type:
             raise ReplyDraftError(code="invalid_document", message="Filename and MIME mismatch")
-        if not isinstance(command.caption, str) or len(command.caption) > 1024:
-            raise ReplyDraftError(
-                code="invalid_document", message="Caption exceeds 1024 characters"
-            )
-        if (
-            len(command.expected_sha256) != 64
-            or any(char not in "0123456789abcdef" for char in command.expected_sha256)
+        formatting = None
+        if command.caption_format is None:
+            # Legacy captions are literal and preserve the original whitespace contract.
+            if not isinstance(command.caption, str) or len(command.caption) > 1024:
+                raise ReplyDraftError(
+                    code="invalid_document", message="Caption exceeds 1024 characters"
+                )
+        else:
+            try:
+                formatting = compile_text(
+                    command.caption, command.caption_format, max_length=1024, allow_empty=True
+                )
+            except FormattingError as exc:
+                raise ReplyDraftError(code=exc.code, message=exc.message) from exc
+        if len(command.expected_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in command.expected_sha256
         ):
             raise ReplyDraftError(code="invalid_document", message="Invalid SHA-256")
         if (
@@ -110,4 +127,11 @@ class PrepareReplyDocumentService:
         digest = hashlib.sha256(data).hexdigest()
         if not hmac.compare_digest(digest, command.expected_sha256):
             raise ReplyDraftError(code="document_changed", message="Document SHA-256 differs")
-        return await self._writer.save(command, data)
+        return await self._writer.save(
+            replace(
+                command,
+                caption=formatting.text if formatting else command.caption,
+                formatting=formatting,
+            ),
+            data,
+        )

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.application.owner_reply_readiness import (
+    OWNER_REPLY_READINESS_OUTPUT_SCHEMA,
+    OWNER_REPLY_READINESS_TOOL_NAME,
+)
 from app.application.reply_sequences import MAX_SEQUENCE_DRAFTS, MIN_SEQUENCE_DRAFTS
 
 JsonObject = dict[str, Any]
@@ -1796,6 +1800,31 @@ GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 
 
+TELEGRAM_ENTITY_SCHEMA = _object(
+    {
+        "type": {"type": "string", "enum": [
+            "bold", "italic", "strikethrough", "underline", "spoiler",
+            "text_link", "code", "pre", "blockquote",
+        ]},
+        "offset": {"type": "integer", "minimum": 0},
+        "length": {"type": "integer", "minimum": 1},
+        "url": {"type": "string"},
+        "language": {"type": "string"},
+    }, required=["type", "offset", "length"],
+)
+FORMATTING_PREVIEW_SCHEMA = _object(
+    {
+        "source_text": {"type": "string", "maxLength": 65536},
+        "text": {"type": "string", "maxLength": 4096},
+        "text_format": {"type": "string", "enum": ["plain", "markdown"]},
+        "converter_version": {"type": "string", "const": "gate.telegram-markdown.v1"},
+        "entities": {"type": "array", "maxItems": 100, "items": TELEGRAM_ENTITY_SCHEMA},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    }
+)
+NULLABLE_FORMATTING_PREVIEW_SCHEMA = {"anyOf": [FORMATTING_PREVIEW_SCHEMA, {"type": "null"}]}
+
+
 DRAFT_SUCCESS_SCHEMA = _object(
     {
         "draft_id": {"type": "string", "format": "uuid"},
@@ -1822,6 +1851,10 @@ DRAFT_SUCCESS_SCHEMA = _object(
         ),
     }
 )
+DRAFT_SUCCESS_SCHEMA["properties"]["formatting"] = NULLABLE_FORMATTING_PREVIEW_SCHEMA
+DRAFT_SUCCESS_SCHEMA["properties"]["confirmation"]["properties"]["expected_payload_sha256"] = (
+    _nullable("string")
+)
 GATE_DRAFT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     DRAFT_SUCCESS_SCHEMA,
     {"account_label": ACCOUNT_LABEL_SCHEMA},
@@ -1846,6 +1879,7 @@ SEND_SUCCESS_SCHEMA = _object(
         "error_detail": _nullable("string"),
     }
 )
+SEND_SUCCESS_SCHEMA["properties"]["payload_sha256"] = _nullable("string")
 GATE_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     SEND_SUCCESS_SCHEMA,
     {"account_label": ACCOUNT_LABEL_SCHEMA},
@@ -1892,6 +1926,12 @@ GATE_DOCUMENT_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     {},
 )
 
+# Formatting fields are optional only for legacy compatibility fixtures.
+GATE_DOCUMENT_PREPARE_OUTPUT_SCHEMA["oneOf"][0]["properties"]["formatting"] = (
+    NULLABLE_FORMATTING_PREVIEW_SCHEMA
+)
+GATE_DOCUMENT_SEND_OUTPUT_SCHEMA["oneOf"][0]["properties"]["payload_sha256"] = _nullable("string")
+
 
 SEQUENCE_SUCCESS_SCHEMA = _object(
     {
@@ -1918,6 +1958,9 @@ SEQUENCE_SUCCESS_SCHEMA = _object(
             ),
         },
     }
+)
+SEQUENCE_SUCCESS_SCHEMA["properties"]["items"]["items"]["properties"]["payload_sha256"] = (
+    _nullable("string")
 )
 GATE_SEQUENCE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     SEQUENCE_SUCCESS_SCHEMA,
@@ -2390,6 +2433,7 @@ ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 
 
 MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
+    OWNER_REPLY_READINESS_TOOL_NAME: _success_or_error(OWNER_REPLY_READINESS_OUTPUT_SCHEMA, {}),
     "gate_get_status": GATE_STATUS_OUTPUT_SCHEMA,
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
     "gate_get_reply_context": GATE_REPLY_CONTEXT_OUTPUT_SCHEMA,

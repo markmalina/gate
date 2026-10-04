@@ -20,6 +20,7 @@ from app.api.mcp_routes import (
 )
 from app.core.config import get_settings
 from app.main import app
+from test_reply_formatting_mcp_transport import _assert_main_legacy_output
 
 TOKEN = "mcp-read-token"
 ACCOUNT_ID = "22222222-2222-2222-2222-222222222222"
@@ -847,6 +848,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_status",
         "gate_list_unanswered",
         "gate_get_reply_context",
+        "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
         "gate_send_approved_reply",
@@ -868,6 +870,7 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         Draft202012Validator.check_schema(tool["outputSchema"])
     for tool_name in (
         "gate_get_reply_context",
+        "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
         "gate_send_approved_reply",
@@ -887,57 +890,52 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[1]["annotations"]["readOnlyHint"] is True
     assert tools[2]["annotations"]["readOnlyHint"] is True
-    assert tools[3]["annotations"] == {
+    assert tools[3]["annotations"]["readOnlyHint"] is True
+    assert tools[4]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": False,
     }
-    assert tools[4]["annotations"] == tools[3]["annotations"]
+    assert tools[5]["annotations"] == tools[4]["annotations"]
+    assert tools[7]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
     assert tools[6]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
     }
-    assert tools[5]["annotations"] == {
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    }
-    assert tools[7]["annotations"] == {
+    assert tools[8]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
     }
-    assert tools[8]["annotations"]["readOnlyHint"] is True
-    assert tools[9]["annotations"] == {
+    assert tools[9]["annotations"]["readOnlyHint"] is True
+    assert tools[10]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": True,
-    }
-    assert tools[10]["annotations"] == {
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
     }
     assert tools[11]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
-        "openWorldHint": True,
-    }
-    assert tools[12]["annotations"]["readOnlyHint"] is True
-    assert tools[15]["annotations"] == {
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
         "openWorldHint": False,
     }
+    assert tools[12]["annotations"] == {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+    assert tools[13]["annotations"]["readOnlyHint"] is True
     assert tools[16]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
@@ -945,6 +943,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "openWorldHint": False,
     }
     assert tools[17]["annotations"] == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert tools[18]["annotations"] == {
         "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": True,
@@ -1126,6 +1130,10 @@ async def test_mcp_status_is_scoped(
     result = response.json()["result"]
     structured = result["structuredContent"]
     _assert_valid_output("gate_get_status", structured)
+    _assert_main_legacy_output("gate_get_status", structured)
+    assert len(structured["mcp"]["tools"]) == 18
+    assert structured["mcp"]["tools"] == mcp_routes.MCP_LEGACY_STATUS_TOOL_NAMES
+    assert set(structured["mcp"]["tools"]) < set(mcp_routes.MCP_TOOL_NAMES)
     assert structured["telegram_voice_archives"]["completed"] == 3
     assert structured["telegram_voice_archives"]["incomplete"] == 0
     assert structured["access"]["workspace_id"] == "mark-personal"
