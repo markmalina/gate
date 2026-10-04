@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.application.owner_reply_readiness import (
+    OWNER_REPLY_READINESS_OUTPUT_SCHEMA,
+    OWNER_REPLY_READINESS_TOOL_NAME,
+)
 from app.application.reply_sequences import MAX_SEQUENCE_DRAFTS, MIN_SEQUENCE_DRAFTS
 
 JsonObject = dict[str, Any]
@@ -2429,6 +2433,7 @@ ALPHA_OWNER_TEST_DELIVERY_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 
 
 MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
+    OWNER_REPLY_READINESS_TOOL_NAME: _success_or_error(OWNER_REPLY_READINESS_OUTPUT_SCHEMA, {}),
     "gate_get_status": GATE_STATUS_OUTPUT_SCHEMA,
     "gate_list_unanswered": GATE_UNANSWERED_OUTPUT_SCHEMA,
     "gate_get_reply_context": GATE_REPLY_CONTEXT_OUTPUT_SCHEMA,

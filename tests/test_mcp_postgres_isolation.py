@@ -503,6 +503,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                             "arguments": {
                                 "task_id": str(task_ids["allowed message"]),
                                 "text": "Привет! С удовольствием расскажу подробнее.",
+                                "text_format": "plain",
                             },
                         },
                     },
@@ -519,6 +520,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                             "arguments": {
                                 "task_id": str(task_ids["allowed message"]),
                                 "text": "И ещё одно подтверждённое сообщение.",
+                                "text_format": "plain",
                             },
                         },
                     },

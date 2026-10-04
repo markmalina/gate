@@ -47,6 +47,13 @@ TOOL_CONTRACTS = (
         True,
     ),
     ToolContract(
+        "gate_get_owner_reply_readiness",
+        "gate:inbox:read",
+        "read_only_tools",
+        "_gate_owner_reply_readiness_tool",
+        True,
+    ),
+    ToolContract(
         "gate_save_reply_draft",
         "gate:drafts:write",
         "write_tools",
@@ -149,7 +156,7 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_every_mcp_projection_matches_the_eighteen_tool_contract() -> None:
+async def test_every_mcp_projection_matches_the_nineteen_tool_contract() -> None:
     settings = Settings(
         _env_file=None,
         GATE_MCP_ENABLED=True,
@@ -171,9 +178,14 @@ async def test_every_mcp_projection_matches_the_eighteen_tool_contract() -> None
         contract.name: contract.scope for contract in TOOL_CONTRACTS
     }
 
-    assert len(TOOL_CONTRACTS) == 18
+    assert len(TOOL_CONTRACTS) == 19
     assert [tool["name"] for tool in advertised_tools] == expected_names
     assert mcp_routes.MCP_TOOL_NAMES == expected_names
+    expected_legacy_core = [
+        name for name in expected_names if name != "gate_get_owner_reply_readiness"
+    ]
+    assert len(expected_legacy_core) == 18
+    assert mcp_routes.MCP_LEGACY_STATUS_TOOL_NAMES == expected_legacy_core
     assert mcp_routes.MCP_TOOL_SCOPES == expected_scopes
     assert set(MCP_TOOL_OUTPUT_SCHEMAS) == set(expected_names)
 
@@ -194,7 +206,7 @@ async def test_every_mcp_projection_matches_the_eighteen_tool_contract() -> None
         textwrap.dedent(inspect.getsource(mcp_routes.mcp_endpoint))
     )
     assert _handled_tool_names(endpoint_tree) == set(expected_names)
-    assert _status_uses_canonical_tool_names(endpoint_tree)
+    assert _status_uses_legacy_core_tool_names(endpoint_tree)
 
     metadata = mcp_metadata_routes._mcp_metadata(settings=settings)
     for bucket in ("read_only_tools", "write_tools", "send_tools"):
@@ -240,7 +252,7 @@ def _handled_tool_names(endpoint_tree: ast.AST) -> set[str]:
     return handled
 
 
-def _status_uses_canonical_tool_names(endpoint_tree: ast.AST) -> bool:
+def _status_uses_legacy_core_tool_names(endpoint_tree: ast.AST) -> bool:
     for node in ast.walk(endpoint_tree):
         if not isinstance(node, ast.Call):
             continue
@@ -250,7 +262,7 @@ def _status_uses_canonical_tool_names(endpoint_tree: ast.AST) -> bool:
             if (
                 keyword.arg == "tool_names"
                 and isinstance(keyword.value, ast.Name)
-                and keyword.value.id == "MCP_TOOL_NAMES"
+                and keyword.value.id == "MCP_LEGACY_STATUS_TOOL_NAMES"
             ):
                 return True
     return False

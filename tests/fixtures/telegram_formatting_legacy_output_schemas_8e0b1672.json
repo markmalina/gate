@@ -1,0 +1,4096 @@
+{
+  "source_revision": "8e0b1672",
+  "source_path": "app/api/mcp_schemas.py",
+  "schemas": {
+    "gate_save_reply_draft": {
+      "type": "object",
+      "$defs": {
+        "account_label": {
+          "type": "object",
+          "properties": {
+            "alias": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "alias",
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "draft_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "draft_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8
+            },
+            "task_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "$ref": "#/$defs/account_label"
+            },
+            "recipient_chat_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "sent": {
+              "type": "boolean",
+              "const": false
+            },
+            "approval_required": {
+              "type": "boolean",
+              "const": true
+            },
+            "send_available": {
+              "type": "boolean"
+            },
+            "confirmation": {
+              "type": "object",
+              "properties": {
+                "expected_account": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "expected_recipient_chat_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "expected_account",
+                "expected_recipient_chat_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "draft_id",
+            "draft_ref",
+            "task_id",
+            "account_id",
+            "project_id",
+            "account",
+            "recipient_chat_id",
+            "status",
+            "text",
+            "sent",
+            "approval_required",
+            "send_available",
+            "confirmation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gate_prepare_reply_document": {
+      "type": "object",
+      "$defs": {},
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "draft_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "task_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "type": "string",
+              "enum": [
+                "RU",
+                "BY"
+              ]
+            },
+            "recipient_chat_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "filename": {
+              "type": "string",
+              "minLength": 1
+            },
+            "media_type": {
+              "type": "string",
+              "enum": [
+                "application/pdf",
+                "application/zip"
+              ]
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "caption": {
+              "type": "string"
+            },
+            "sent": {
+              "type": "boolean",
+              "const": false
+            },
+            "approval_required": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "draft_id",
+            "task_id",
+            "account",
+            "recipient_chat_id",
+            "filename",
+            "media_type",
+            "size_bytes",
+            "sha256",
+            "caption",
+            "sent",
+            "approval_required"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gate_send_approved_reply": {
+      "type": "object",
+      "$defs": {
+        "account_label": {
+          "type": "object",
+          "properties": {
+            "alias": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "alias",
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "attempt_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "attempt_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8
+            },
+            "draft_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "task_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "$ref": "#/$defs/account_label"
+            },
+            "recipient_chat_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sent": {
+              "type": "boolean"
+            },
+            "idempotent_replay": {
+              "type": "boolean"
+            },
+            "provider_message_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "error_detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "attempt_id",
+            "attempt_ref",
+            "draft_id",
+            "task_id",
+            "account_id",
+            "project_id",
+            "account",
+            "recipient_chat_id",
+            "status",
+            "sent",
+            "idempotent_replay",
+            "provider_message_id",
+            "error_code",
+            "error_detail"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gate_send_approved_document": {
+      "type": "object",
+      "$defs": {},
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "attempt_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "draft_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "task_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "type": "string",
+              "enum": [
+                "RU",
+                "BY"
+              ]
+            },
+            "recipient_chat_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "filename": {
+              "type": "string",
+              "minLength": 1
+            },
+            "media_type": {
+              "type": "string",
+              "enum": [
+                "application/pdf",
+                "application/zip"
+              ]
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sent": {
+              "type": "boolean"
+            },
+            "idempotent_replay": {
+              "type": "boolean"
+            },
+            "provider_message_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "error_detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "attempt_id",
+            "draft_id",
+            "task_id",
+            "account",
+            "recipient_chat_id",
+            "filename",
+            "media_type",
+            "size_bytes",
+            "sha256",
+            "status",
+            "sent",
+            "idempotent_replay",
+            "provider_message_id",
+            "error_code",
+            "error_detail"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gate_queue_approved_reply_sequence": {
+      "type": "object",
+      "$defs": {
+        "account_label": {
+          "type": "object",
+          "properties": {
+            "alias": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "alias",
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "sequence_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sequence_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8
+            },
+            "task_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "account": {
+              "$ref": "#/$defs/account_label"
+            },
+            "recipient_chat_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "interval_seconds": {
+              "type": "integer",
+              "const": 60
+            },
+            "queued": {
+              "type": "boolean",
+              "const": true
+            },
+            "sent": {
+              "type": "boolean",
+              "const": false
+            },
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "draft_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "position": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "scheduled_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "draft_id",
+                  "position",
+                  "scheduled_at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "sequence_id",
+            "sequence_ref",
+            "task_id",
+            "account_id",
+            "project_id",
+            "account",
+            "recipient_chat_id",
+            "interval_seconds",
+            "queued",
+            "sent",
+            "items"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gate_get_status": {
+      "type": "object",
+      "$defs": {
+        "account": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "alias": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "id",
+            "alias",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        "connection_health": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "$ref": "#/$defs/account"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "ready",
+                "degraded",
+                "cannot_reply",
+                "inactive",
+                "missing"
+              ]
+            },
+            "connected": {
+              "type": "boolean"
+            },
+            "can_reply": {
+              "type": "boolean"
+            },
+            "last_checked_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "account",
+            "state",
+            "connected",
+            "can_reply",
+            "last_checked_at",
+            "last_error"
+          ],
+          "additionalProperties": false
+        },
+        "contact_directory": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "$ref": "#/$defs/account"
+            },
+            "imported_contacts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_import_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "account",
+            "imported_contacts",
+            "last_source",
+            "last_import_at"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "properties": {
+        "service": {
+          "type": "string",
+          "const": "gate"
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bot_username": {
+          "type": "string",
+          "minLength": 1
+        },
+        "default_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "send_enabled": {
+          "type": "boolean"
+        },
+        "access": {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workspace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "account_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "project_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "subject",
+            "workspace_id",
+            "account_count",
+            "project_count"
+          ],
+          "additionalProperties": false
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "accounts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "business_connections": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "active_business_connections": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "conversations": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "messages": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reply_tasks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unanswered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "answered_messages": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "drafts": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "accounts",
+            "business_connections",
+            "active_business_connections",
+            "conversations",
+            "messages",
+            "reply_tasks",
+            "unanswered",
+            "answered_messages",
+            "drafts"
+          ],
+          "additionalProperties": false
+        },
+        "connection_health": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/connection_health"
+          }
+        },
+        "contact_directory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/contact_directory"
+          }
+        },
+        "alpha_canary": {
+          "type": "object",
+          "properties": {
+            "telegram_worker_enabled": {
+              "type": "boolean"
+            },
+            "connector_enabled": {
+              "type": "boolean"
+            },
+            "shadow_worker_enabled": {
+              "type": "boolean"
+            },
+            "canary_enabled": {
+              "type": "boolean"
+            },
+            "delivery_enabled": {
+              "type": "boolean"
+            },
+            "privacy_mode_confirmed": {
+              "type": "boolean"
+            },
+            "webhook_credentials_configured": {
+              "type": "boolean"
+            },
+            "one_group_discovered": {
+              "type": "boolean"
+            },
+            "one_active_exact_revision": {
+              "type": "boolean"
+            },
+            "groups_within_capacity": {
+              "type": "boolean"
+            },
+            "all_active_bindings_exact": {
+              "type": "boolean"
+            },
+            "reviewed_model_release_ready": {
+              "type": "boolean"
+            },
+            "audit": {
+              "type": "object",
+              "properties": {
+                "canonical_messages": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "agent_turns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "delivery_grants": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "send_attempts": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "canonical_messages",
+                "agent_turns",
+                "delivery_grants",
+                "send_attempts"
+              ],
+              "additionalProperties": false
+            },
+            "model_shadow": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "configuration_incomplete",
+                    "deployment_not_exact",
+                    "budget_exhausted",
+                    "safety_invariant_violated",
+                    "provider_preflight_stuck",
+                    "awaiting_provider_preflight",
+                    "provider_preflight_failed",
+                    "provider_preflight_verified",
+                    "shadow_observed"
+                  ]
+                },
+                "prerequisites_ready": {
+                  "type": "boolean"
+                },
+                "provider_preflight_verified": {
+                  "type": "boolean"
+                },
+                "ready_for_provider_preflight": {
+                  "type": "boolean"
+                },
+                "ready_for_shadow_observation": {
+                  "type": "boolean"
+                },
+                "runtime_enabled": {
+                  "type": "boolean"
+                },
+                "data_gate_approved": {
+                  "type": "boolean"
+                },
+                "api_key_configured": {
+                  "type": "boolean"
+                },
+                "telegram_delivery_blocked": {
+                  "type": "boolean"
+                },
+                "fixture_binding_active": {
+                  "type": "boolean"
+                },
+                "staged_deployments": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "model_turns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "queued_turns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "running_turns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "proposed_turns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "failed_turns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "model_delivery_grants": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "provider_preflight_successes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "provider_preflight_failures": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "stuck_provider_preflights": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "last_provider_error_category": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "credentials",
+                    "rate_limit",
+                    "availability",
+                    "request",
+                    "contract",
+                    "unknown"
+                  ]
+                },
+                "alerts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "promotion_dry_run": {
+                  "type": "object",
+                  "properties": {
+                    "execution_mode": {
+                      "type": "string",
+                      "const": "dry_run"
+                    },
+                    "mutation_allowed": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "current_stage": {
+                      "type": "string"
+                    },
+                    "next_stage": {
+                      "type": "string"
+                    },
+                    "blocked_by": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "shadow_proposals_required": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "shadow_proposals_observed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limited_canary_review_ready": {
+                      "type": "boolean"
+                    },
+                    "rollback_target": {
+                      "type": "string",
+                      "const": "fixture_canary"
+                    },
+                    "automatic_stop_conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "execution_mode",
+                    "mutation_allowed",
+                    "current_stage",
+                    "next_stage",
+                    "blocked_by",
+                    "shadow_proposals_required",
+                    "shadow_proposals_observed",
+                    "limited_canary_review_ready",
+                    "rollback_target",
+                    "automatic_stop_conditions"
+                  ],
+                  "additionalProperties": false
+                },
+                "budget": {
+                  "type": "object",
+                  "properties": {
+                    "monthly_microusd": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reserved_microusd": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "remaining_microusd": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "monthly_microusd",
+                    "reserved_microusd",
+                    "remaining_microusd"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "state",
+                "prerequisites_ready",
+                "provider_preflight_verified",
+                "ready_for_provider_preflight",
+                "ready_for_shadow_observation",
+                "runtime_enabled",
+                "data_gate_approved",
+                "api_key_configured",
+                "telegram_delivery_blocked",
+                "fixture_binding_active",
+                "staged_deployments",
+                "model_turns",
+                "queued_turns",
+                "running_turns",
+                "proposed_turns",
+                "failed_turns",
+                "model_delivery_grants",
+                "provider_preflight_successes",
+                "provider_preflight_failures",
+                "stuck_provider_preflights",
+                "last_provider_error_category",
+                "alerts",
+                "promotion_dry_run",
+                "budget"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "telegram_worker_enabled",
+            "connector_enabled",
+            "shadow_worker_enabled",
+            "canary_enabled",
+            "delivery_enabled",
+            "privacy_mode_confirmed",
+            "webhook_credentials_configured",
+            "one_group_discovered",
+            "one_active_exact_revision",
+            "groups_within_capacity",
+            "all_active_bindings_exact",
+            "reviewed_model_release_ready",
+            "audit",
+            "model_shadow"
+          ],
+          "additionalProperties": false
+        },
+        "beta_katya_space": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "connector_not_ready",
+                "configuration_incomplete",
+                "awaiting_binding",
+                "awaiting_consent",
+                "reconciliation_required",
+                "active",
+                "revoked"
+              ]
+            },
+            "gates": {
+              "type": "object",
+              "properties": {
+                "production": {
+                  "type": "boolean"
+                },
+                "connector": {
+                  "type": "boolean"
+                },
+                "privacy_mode_confirmed": {
+                  "type": "boolean"
+                },
+                "space_enabled": {
+                  "type": "boolean"
+                },
+                "space_ready": {
+                  "type": "boolean"
+                },
+                "delivery_enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "production",
+                "connector",
+                "privacy_mode_confirmed",
+                "space_enabled",
+                "space_ready",
+                "delivery_enabled"
+              ],
+              "additionalProperties": false
+            },
+            "configured": {
+              "type": "object",
+              "properties": {
+                "chat_binding": {
+                  "type": "boolean"
+                },
+                "subject_binding": {
+                  "type": "boolean"
+                },
+                "consent_digest": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "chat_binding",
+                "subject_binding",
+                "consent_digest"
+              ],
+              "additionalProperties": false
+            },
+            "binding_state": {
+              "type": "string",
+              "enum": [
+                "absent",
+                "ready",
+                "consented",
+                "revoked"
+              ]
+            },
+            "production_ready": {
+              "type": "boolean"
+            },
+            "event_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "consent_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fact_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "delivery_sent_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "delivery_unknown_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "private_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "private_payload_exposed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "state",
+            "gates",
+            "configured",
+            "binding_state",
+            "production_ready",
+            "event_count",
+            "consent_count",
+            "fact_count",
+            "delivery_sent_count",
+            "delivery_unknown_count",
+            "private_identifiers_exposed",
+            "private_payload_exposed"
+          ],
+          "additionalProperties": false
+        },
+        "beta_wedding_space": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "connector_not_ready",
+                "awaiting_binding",
+                "active",
+                "revoked"
+              ]
+            },
+            "gates": {
+              "type": "object",
+              "properties": {
+                "production": {
+                  "type": "boolean"
+                },
+                "connector": {
+                  "type": "boolean"
+                },
+                "privacy_mode_confirmed": {
+                  "type": "boolean"
+                },
+                "space_enabled": {
+                  "type": "boolean"
+                },
+                "space_ready": {
+                  "type": "boolean"
+                },
+                "delivery_enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "production",
+                "connector",
+                "privacy_mode_confirmed",
+                "space_enabled",
+                "space_ready",
+                "delivery_enabled"
+              ],
+              "additionalProperties": false
+            },
+            "configured": {
+              "type": "object",
+              "properties": {
+                "chat_binding": {
+                  "type": "boolean"
+                },
+                "subject_binding": {
+                  "type": "boolean"
+                },
+                "activation_digest": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "chat_binding",
+                "subject_binding",
+                "activation_digest"
+              ],
+              "additionalProperties": false
+            },
+            "binding_state": {
+              "type": "string",
+              "enum": [
+                "absent",
+                "consented",
+                "revoked"
+              ]
+            },
+            "production_ready": {
+              "type": "boolean"
+            },
+            "event_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fact_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reply_sent_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reply_unknown_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "private_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "private_payload_exposed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "state",
+            "gates",
+            "configured",
+            "binding_state",
+            "production_ready",
+            "event_count",
+            "fact_count",
+            "reply_sent_count",
+            "reply_unknown_count",
+            "private_identifiers_exposed",
+            "private_payload_exposed"
+          ],
+          "additionalProperties": false
+        },
+        "universal_mayak": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "workspace_unavailable",
+                "disabled",
+                "installation_not_ready",
+                "reconciliation_required",
+                "ready",
+                "active_observed"
+              ]
+            },
+            "workspace_ready": {
+              "type": "boolean"
+            },
+            "gates": {
+              "type": "object",
+              "properties": {
+                "runtime_enabled": {
+                  "type": "boolean"
+                },
+                "model_data_gate_approved": {
+                  "type": "boolean"
+                },
+                "delivery_enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "runtime_enabled",
+                "model_data_gate_approved",
+                "delivery_enabled"
+              ],
+              "additionalProperties": false
+            },
+            "configuration_ready": {
+              "type": "boolean"
+            },
+            "installation": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "discovered": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pending_approval": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "active": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "paused": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "revoked": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "exact_active": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "ready": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "total",
+                "discovered",
+                "pending_approval",
+                "active",
+                "paused",
+                "revoked",
+                "exact_active",
+                "ready"
+              ],
+              "additionalProperties": false
+            },
+            "owner_route_probe": {
+              "type": "object",
+              "properties": {
+                "task_present": {
+                  "type": "boolean"
+                },
+                "account_ready": {
+                  "type": "boolean"
+                },
+                "trigger_message_present": {
+                  "type": "boolean"
+                },
+                "projects_allowed": {
+                  "type": "boolean"
+                },
+                "canonical_ready": {
+                  "type": "boolean"
+                },
+                "private_inbound_ready": {
+                  "type": "boolean"
+                },
+                "actor_dialog_ready": {
+                  "type": "boolean"
+                },
+                "connector_ready": {
+                  "type": "boolean"
+                },
+                "business_connection_ready": {
+                  "type": "boolean"
+                },
+                "release_ready": {
+                  "type": "boolean"
+                },
+                "ready": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "task_present",
+                "account_ready",
+                "trigger_message_present",
+                "projects_allowed",
+                "canonical_ready",
+                "private_inbound_ready",
+                "actor_dialog_ready",
+                "connector_ready",
+                "business_connection_ready",
+                "release_ready",
+                "ready"
+              ],
+              "additionalProperties": false
+            },
+            "sessions": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "active": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "paused": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "completed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "handoff_required": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "total",
+                "active",
+                "paused",
+                "completed",
+                "handoff_required"
+              ],
+              "additionalProperties": false
+            },
+            "turns": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "queued": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "running": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "proposed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "failed": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "total",
+                "queued",
+                "running",
+                "proposed",
+                "failed"
+              ],
+              "additionalProperties": false
+            },
+            "delivery_grants": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "open": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "used": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "revoked": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "total",
+                "open",
+                "used",
+                "revoked"
+              ],
+              "additionalProperties": false
+            },
+            "send_attempts": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "reserved": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sending": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sent": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "failed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "blocked": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "total",
+                "reserved",
+                "sending",
+                "sent",
+                "failed",
+                "unknown",
+                "blocked"
+              ],
+              "additionalProperties": false
+            },
+            "last_result_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_attempt_state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_attempt_error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reconciliation_required": {
+              "type": "boolean"
+            },
+            "provider_free_replay_verifier": {
+              "type": "object",
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "input_digest_bound": {
+                  "type": "boolean"
+                },
+                "terminal_state": {
+                  "type": "boolean"
+                },
+                "verified": {
+                  "type": "boolean"
+                },
+                "provider_call_required": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "required": [
+                "available",
+                "input_digest_bound",
+                "terminal_state",
+                "verified",
+                "provider_call_required"
+              ],
+              "additionalProperties": false
+            },
+            "private_content_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "provider_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "telegram_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "state",
+            "workspace_ready",
+            "gates",
+            "configuration_ready",
+            "installation",
+            "owner_route_probe",
+            "sessions",
+            "turns",
+            "delivery_grants",
+            "send_attempts",
+            "last_result_code",
+            "last_attempt_state",
+            "last_attempt_error_code",
+            "reconciliation_required",
+            "provider_free_replay_verifier",
+            "private_content_exposed",
+            "provider_identifiers_exposed",
+            "telegram_identifiers_exposed"
+          ],
+          "additionalProperties": false
+        },
+        "become_controlled_intake": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string",
+              "const": "gate.become-controlled-intake@1"
+            },
+            "receipt_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "registration_confirmed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "owner_only_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "registration_ready": {
+              "type": "boolean"
+            },
+            "consent_accepted_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "consent_ready": {
+              "type": "boolean"
+            },
+            "relations_handoff_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations_handoff_ready": {
+              "type": "boolean"
+            },
+            "relations_delivery_enabled": {
+              "type": "boolean"
+            },
+            "relations_delivered_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations_delivery_ready": {
+              "type": "boolean"
+            },
+            "relations_delivery_attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations_consent_executed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations_consent_executed_ready": {
+              "type": "boolean"
+            },
+            "media_prompt_gate_ready": {
+              "type": "boolean"
+            },
+            "media_prompt_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_prompt_sent_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_prompt_unknown_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_prompt_failed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_prompt_ready": {
+              "type": "boolean"
+            },
+            "media_prompt_reply_required": {
+              "type": "boolean"
+            },
+            "media_prompt_reconciliation_required": {
+              "type": "boolean"
+            },
+            "media_intake_gate_ready": {
+              "type": "boolean"
+            },
+            "media_intake_ready": {
+              "type": "boolean"
+            },
+            "media_intake_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_pending_download_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_intake_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "video_intake_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_correlation_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_correlation_ready": {
+              "type": "boolean"
+            },
+            "chain_slot_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_slots_initialized_ready": {
+              "type": "boolean"
+            },
+            "chain_execution_enabled": {
+              "type": "boolean"
+            },
+            "chain_ready_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_requested_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_unknown_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_failed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_last_failure_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_receipt_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_recovery_prepared_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "chain_recovery_prepared_receipt_enabled": {
+              "type": "boolean",
+              "const": false
+            },
+            "chain_recovery_enabled": {
+              "type": "boolean"
+            },
+            "chain_recovery_activation_max_posts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "chain_recovery_attempt_version": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "chain_recovery_target_source_sha": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_source_failure_preserved": {
+              "type": "boolean"
+            },
+            "chain_recovery_attempt_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "chain_recovery_activation_receipt_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "chain_recovery_attempt_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_prepared_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_attempt_state": {
+              "type": "string",
+              "enum": [
+                "prepared",
+                "in_progress",
+                "completed",
+                "failed",
+                "unknown"
+              ]
+            },
+            "chain_recovery_post_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "chain_recovery_reconciliation_required": {
+              "type": "boolean"
+            },
+            "chain_recovery_mayaki_source_sha": {
+              "type": "string",
+              "const": "2078d230852af1c7e3a309f00d716fa2fc664f68"
+            },
+            "chain_recovery_oko_source_sha": {
+              "type": "string",
+              "const": "2c304529d04be43726e677d2b864c4b5f8283be8"
+            },
+            "chain_recovery_take_source_sha": {
+              "type": "string",
+              "const": "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
+            },
+            "chain_recovery_mayaki_state": {
+              "type": "string",
+              "enum": [
+                "not_started",
+                "reserved",
+                "completed",
+                "failed",
+                "unknown"
+              ]
+            },
+            "chain_recovery_mayaki_post_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "chain_recovery_mayaki_request_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_mayaki_receipt_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_oko_state": {
+              "type": "string",
+              "enum": [
+                "not_started",
+                "reserved",
+                "completed",
+                "failed",
+                "unknown"
+              ]
+            },
+            "chain_recovery_oko_post_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "chain_recovery_oko_request_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_oko_receipt_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_take_state": {
+              "type": "string",
+              "enum": [
+                "not_started",
+                "reserved",
+                "completed",
+                "failed",
+                "unknown"
+              ]
+            },
+            "chain_recovery_take_post_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "chain_recovery_take_request_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chain_recovery_take_receipt_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mayaki_connectivity_proven": {
+              "type": "boolean"
+            },
+            "mayaki_connectivity_error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mayaki_service_name": {
+              "type": "string",
+              "const": "become-mayaki-controlled"
+            },
+            "mayaki_private_hostname": {
+              "type": "string",
+              "const": "become-mayaki-controlled.railway.internal"
+            },
+            "mayaki_private_port": {
+              "type": "integer",
+              "const": 3000
+            },
+            "mayaki_source_sha": {
+              "type": "string",
+              "const": "2078d230852af1c7e3a309f00d716fa2fc664f68"
+            },
+            "mayaki_health_external_effects": {
+              "type": "integer",
+              "const": 0
+            },
+            "oko_connectivity_proven": {
+              "type": "boolean"
+            },
+            "oko_connectivity_error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "oko_service_name": {
+              "type": "string",
+              "const": "become-oko-controlled"
+            },
+            "oko_private_hostname": {
+              "type": "string",
+              "const": "become-oko-controlled.railway.internal"
+            },
+            "oko_private_port": {
+              "type": "integer",
+              "const": 3000
+            },
+            "oko_source_sha": {
+              "type": "string",
+              "const": "2c304529d04be43726e677d2b864c4b5f8283be8"
+            },
+            "oko_health_external_effects": {
+              "type": "integer",
+              "const": 0
+            },
+            "take_connectivity_proven": {
+              "type": "boolean"
+            },
+            "take_connectivity_error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "take_service_name": {
+              "type": "string",
+              "const": "become-take-controlled"
+            },
+            "take_private_hostname": {
+              "type": "string",
+              "const": "become-take-controlled.railway.internal"
+            },
+            "take_private_port": {
+              "type": "integer",
+              "const": 8000
+            },
+            "take_source_sha": {
+              "type": "string",
+              "const": "4a81bf8e221929be8b8898ddd52a0cbdbbe2e9dc"
+            },
+            "take_health_external_effects": {
+              "type": "integer",
+              "const": 0
+            },
+            "chain_reconciliation_required": {
+              "type": "boolean"
+            },
+            "relations_chain_completed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mayaki_chain_completed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "oko_chain_completed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "take_chain_completed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quest_projection_enabled": {
+              "type": "boolean",
+              "const": false
+            },
+            "quest_activation_max_operations": {
+              "type": "integer",
+              "const": 0
+            },
+            "quest_role_gate_enabled": {
+              "type": "boolean",
+              "const": false
+            },
+            "quest_approval_gate_enabled": {
+              "type": "boolean",
+              "const": false
+            },
+            "quest_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quest_participant_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quest_approval_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quest_enrollment_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quest_attempt_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quest_reconciliation_required": {
+              "type": "boolean"
+            },
+            "quest_external_effects": {
+              "type": "integer",
+              "const": 0
+            },
+            "free_result_delivery_enabled": {
+              "type": "boolean",
+              "const": false
+            },
+            "controlled_test_payment_enabled": {
+              "type": "boolean",
+              "const": false
+            },
+            "raw_media_retention_days": {
+              "type": "integer",
+              "const": 7
+            },
+            "raw_media_retained_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "raw_media_purged_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "raw_media_retained_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "confirmed_transcript_retention_days": {
+              "type": "integer",
+              "const": 30
+            },
+            "confirmed_transcript_retained_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "confirmed_transcript_purged_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_enabled": {
+              "type": "boolean"
+            },
+            "voice_transcription_data_gate_approved": {
+              "type": "boolean"
+            },
+            "voice_transcription_max_calls": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "voice_transcription_eligible_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_prerequisites_ready": {
+              "type": "boolean"
+            },
+            "voice_transcription_gate_ready": {
+              "type": "boolean"
+            },
+            "voice_transcription_attempt_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_call_boundary_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_confirmed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_rejected_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_unknown_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_blocked_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_settlement_pending_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_transcription_ready": {
+              "type": "boolean"
+            },
+            "voice_transcription_reconciliation_required": {
+              "type": "boolean"
+            },
+            "external_effects": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "provider_calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "messages_or_publications": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "media_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "real_payments": {
+              "type": "integer",
+              "const": 0
+            },
+            "private_content_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "provider_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "telegram_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "schema",
+            "receipt_count",
+            "registration_confirmed_count",
+            "owner_only_count",
+            "registration_ready",
+            "consent_accepted_count",
+            "consent_ready",
+            "relations_handoff_count",
+            "relations_handoff_ready",
+            "relations_delivery_enabled",
+            "relations_delivered_count",
+            "relations_delivery_ready",
+            "relations_delivery_attempts",
+            "relations_consent_executed_count",
+            "relations_consent_executed_ready",
+            "media_prompt_gate_ready",
+            "media_prompt_count",
+            "media_prompt_sent_count",
+            "media_prompt_unknown_count",
+            "media_prompt_failed_count",
+            "media_prompt_ready",
+            "media_prompt_reply_required",
+            "media_prompt_reconciliation_required",
+            "media_intake_gate_ready",
+            "media_intake_ready",
+            "media_intake_count",
+            "media_pending_download_count",
+            "voice_intake_count",
+            "video_intake_count",
+            "voice_correlation_count",
+            "voice_correlation_ready",
+            "chain_slot_count",
+            "chain_slots_initialized_ready",
+            "chain_execution_enabled",
+            "chain_ready_count",
+            "chain_requested_count",
+            "chain_unknown_count",
+            "chain_failed_count",
+            "chain_last_failure_code",
+            "chain_recovery_receipt_count",
+            "chain_recovery_prepared_count",
+            "chain_recovery_prepared_receipt_enabled",
+            "chain_recovery_enabled",
+            "chain_recovery_activation_max_posts",
+            "chain_recovery_attempt_version",
+            "chain_recovery_target_source_sha",
+            "chain_recovery_source_failure_preserved",
+            "chain_recovery_attempt_count",
+            "chain_recovery_activation_receipt_count",
+            "chain_recovery_attempt_digest",
+            "chain_recovery_prepared_digest",
+            "chain_recovery_attempt_state",
+            "chain_recovery_post_count",
+            "chain_recovery_reconciliation_required",
+            "chain_recovery_mayaki_source_sha",
+            "chain_recovery_oko_source_sha",
+            "chain_recovery_take_source_sha",
+            "chain_recovery_mayaki_state",
+            "chain_recovery_mayaki_post_count",
+            "chain_recovery_mayaki_request_digest",
+            "chain_recovery_mayaki_receipt_digest",
+            "chain_recovery_oko_state",
+            "chain_recovery_oko_post_count",
+            "chain_recovery_oko_request_digest",
+            "chain_recovery_oko_receipt_digest",
+            "chain_recovery_take_state",
+            "chain_recovery_take_post_count",
+            "chain_recovery_take_request_digest",
+            "chain_recovery_take_receipt_digest",
+            "mayaki_connectivity_proven",
+            "mayaki_connectivity_error_code",
+            "mayaki_service_name",
+            "mayaki_private_hostname",
+            "mayaki_private_port",
+            "mayaki_source_sha",
+            "mayaki_health_external_effects",
+            "oko_connectivity_proven",
+            "oko_connectivity_error_code",
+            "oko_service_name",
+            "oko_private_hostname",
+            "oko_private_port",
+            "oko_source_sha",
+            "oko_health_external_effects",
+            "take_connectivity_proven",
+            "take_connectivity_error_code",
+            "take_service_name",
+            "take_private_hostname",
+            "take_private_port",
+            "take_source_sha",
+            "take_health_external_effects",
+            "chain_reconciliation_required",
+            "relations_chain_completed_count",
+            "mayaki_chain_completed_count",
+            "oko_chain_completed_count",
+            "take_chain_completed_count",
+            "quest_projection_enabled",
+            "quest_activation_max_operations",
+            "quest_role_gate_enabled",
+            "quest_approval_gate_enabled",
+            "quest_count",
+            "quest_participant_count",
+            "quest_approval_count",
+            "quest_enrollment_count",
+            "quest_attempt_count",
+            "quest_reconciliation_required",
+            "quest_external_effects",
+            "free_result_delivery_enabled",
+            "controlled_test_payment_enabled",
+            "raw_media_retention_days",
+            "raw_media_retained_count",
+            "raw_media_purged_count",
+            "raw_media_retained_bytes",
+            "confirmed_transcript_retention_days",
+            "confirmed_transcript_retained_count",
+            "confirmed_transcript_purged_count",
+            "voice_transcription_enabled",
+            "voice_transcription_data_gate_approved",
+            "voice_transcription_max_calls",
+            "voice_transcription_eligible_count",
+            "voice_transcription_prerequisites_ready",
+            "voice_transcription_gate_ready",
+            "voice_transcription_attempt_count",
+            "voice_transcription_call_boundary_count",
+            "voice_transcription_confirmed_count",
+            "voice_transcription_rejected_count",
+            "voice_transcription_unknown_count",
+            "voice_transcription_blocked_count",
+            "voice_transcription_settlement_pending_count",
+            "voice_transcription_ready",
+            "voice_transcription_reconciliation_required",
+            "external_effects",
+            "provider_calls",
+            "messages_or_publications",
+            "media_bytes",
+            "real_payments",
+            "private_content_exposed",
+            "provider_identifiers_exposed",
+            "telegram_identifiers_exposed"
+          ],
+          "additionalProperties": false
+        },
+        "telegram_voice": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "disabled",
+                "configuration_incomplete",
+                "budget_exhausted",
+                "settlement_pending",
+                "reconciliation_required",
+                "ready"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "api_key_configured": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "entitlement_active": {
+              "type": "boolean"
+            },
+            "period_key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "hard_limit_microusd": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "settled_microusd": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reserved_microusd": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "remaining_microusd": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "settled_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "open_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unknown_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reconciliation_required": {
+              "type": "boolean"
+            },
+            "received_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "processing_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pending_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "active_processing_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "stale_processing_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nonterminal_archive_missing_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nonterminal_archive_pending_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nonterminal_archive_transcribed_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nonterminal_archive_other_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nonterminal_transcript_complete_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nonterminal_summary_complete_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transport_unknown_archive_missing_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transport_unknown_archive_present_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transport_unknown_transcript_complete_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transport_unknown_summary_complete_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "delivered_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retry_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dead_letter_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_error_code": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "telegram_delivery_allowed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "state",
+            "enabled",
+            "api_key_configured",
+            "model",
+            "entitlement_active",
+            "period_key",
+            "hard_limit_microusd",
+            "settled_microusd",
+            "reserved_microusd",
+            "remaining_microusd",
+            "settled_count",
+            "open_count",
+            "unknown_count",
+            "reconciliation_required",
+            "received_count",
+            "processing_count",
+            "pending_count",
+            "active_processing_count",
+            "stale_processing_count",
+            "nonterminal_archive_missing_count",
+            "nonterminal_archive_pending_count",
+            "nonterminal_archive_transcribed_count",
+            "nonterminal_archive_other_count",
+            "nonterminal_transcript_complete_count",
+            "nonterminal_summary_complete_count",
+            "transport_unknown_archive_missing_count",
+            "transport_unknown_archive_present_count",
+            "transport_unknown_transcript_complete_count",
+            "transport_unknown_summary_complete_count",
+            "delivered_count",
+            "retry_count",
+            "dead_letter_count",
+            "last_error_code",
+            "telegram_delivery_allowed"
+          ],
+          "additionalProperties": false
+        },
+        "telegram_business_text_parity": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "no_evidence",
+                "collecting",
+                "blocked",
+                "ready"
+              ]
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pending_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mismatch_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "required_account_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "covered_account_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mismatch_codes": {
+              "type": "array",
+              "maxItems": 7,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "telegram_business_text_parity_account_mismatch",
+                      "telegram_business_text_parity_direction_mismatch",
+                      "telegram_business_text_parity_dialog_mismatch",
+                      "telegram_business_text_parity_text_mismatch",
+                      "telegram_business_text_parity_reply_task_mismatch",
+                      "telegram_business_text_parity_legacy_cardinality",
+                      "telegram_business_text_parity_legacy_invalid"
+                    ]
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "code",
+                  "count"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "cutover_ready": {
+              "type": "boolean"
+            },
+            "private_content_exposed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "state",
+            "total_count",
+            "matched_count",
+            "pending_count",
+            "mismatch_count",
+            "required_account_count",
+            "covered_account_count",
+            "mismatch_codes",
+            "cutover_ready",
+            "private_content_exposed"
+          ],
+          "additionalProperties": false
+        },
+        "mcp": {
+          "type": "object",
+          "properties": {
+            "protocol_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "gate_get_status",
+                  "gate_list_unanswered",
+                  "gate_get_reply_context",
+                  "gate_save_reply_draft",
+                  "gate_prepare_reply_document",
+                  "gate_send_approved_reply",
+                  "gate_send_approved_document",
+                  "gate_queue_approved_reply_sequence",
+                  "gate_alpha_list_installations",
+                  "gate_alpha_get_webhook_status",
+                  "gate_alpha_control_installation",
+                  "gate_alpha_run_model_preflight",
+                  "gate_alpha_list_shadow_reviews",
+                  "gate_alpha_get_test_group_presence",
+                  "gate_alpha_send_review",
+                  "gate_alpha_verify_review_replay",
+                  "gate_beta_export_space_checkpoint",
+                  "gate_beta_get_provider_probe"
+                ]
+              },
+              "minItems": 18,
+              "maxItems": 18,
+              "uniqueItems": true
+            },
+            "draft_writes_enabled": {
+              "type": "boolean"
+            },
+            "send_enabled": {
+              "type": "boolean"
+            },
+            "send_requires_explicit_confirmation": {
+              "type": "boolean"
+            },
+            "auth": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "protocol_version",
+            "tools",
+            "draft_writes_enabled",
+            "send_enabled",
+            "send_requires_explicit_confirmation",
+            "auth"
+          ],
+          "additionalProperties": false
+        },
+        "personal_telegram": {
+          "type": "object",
+          "properties": {
+            "configured": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "authenticated": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "runtime_connected": {
+              "type": "boolean"
+            },
+            "send_enabled": {
+              "type": "boolean"
+            },
+            "create_group_enabled": {
+              "type": "boolean"
+            },
+            "last_successful_check": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "configured",
+            "authenticated",
+            "runtime_connected",
+            "send_enabled",
+            "create_group_enabled",
+            "last_successful_check",
+            "error_code"
+          ],
+          "additionalProperties": false
+        },
+        "dropbox_calls": {
+          "type": "object",
+          "properties": {
+            "scope_allowed": {
+              "type": "boolean"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "configuration": {
+              "type": "object",
+              "properties": {
+                "app_key": {
+                  "type": "boolean"
+                },
+                "app_secret": {
+                  "type": "boolean"
+                },
+                "refresh_token": {
+                  "type": "boolean"
+                },
+                "account_id": {
+                  "type": "boolean"
+                },
+                "openai_key": {
+                  "type": "boolean"
+                },
+                "inbox_path_valid": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "inbox": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "cursor_present": {
+                      "type": "boolean"
+                    },
+                    "backfill_version": {
+                      "type": "integer"
+                    },
+                    "pending": {
+                      "type": "boolean"
+                    },
+                    "attempt_count": {
+                      "type": "integer"
+                    },
+                    "next_attempt_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "last_error_code": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "webhook_received_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "state_updated_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "cursor_present",
+                    "backfill_version",
+                    "pending",
+                    "attempt_count",
+                    "next_attempt_at",
+                    "last_error_code",
+                    "webhook_received_at",
+                    "state_updated_at"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "recent_recordings": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "recording_id": {
+                    "type": "string"
+                  },
+                  "source_revision_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "received_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "created_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcription_status": {
+                    "type": "string"
+                  },
+                  "transcription_reason_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcribed_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcript_present": {
+                    "type": "boolean"
+                  },
+                  "summary_status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "recording_id",
+                  "source_revision_sha256",
+                  "size_bytes",
+                  "received_at",
+                  "created_at",
+                  "transcription_status",
+                  "transcription_reason_code",
+                  "transcribed_at",
+                  "transcript_present",
+                  "summary_status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "record_limit": {
+              "const": 20
+            },
+            "private_content_exposed": {
+              "const": false
+            },
+            "provider_calls": {
+              "const": 0
+            },
+            "mutation_allowed": {
+              "const": false
+            },
+            "no_speech_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requires_attention_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "incomplete_recordings": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "recording_id": {
+                    "type": "string"
+                  },
+                  "source_revision_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "received_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "created_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcription_status": {
+                    "type": "string"
+                  },
+                  "transcription_reason_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcribed_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcript_present": {
+                    "type": "boolean"
+                  },
+                  "summary_status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "recording_id",
+                  "source_revision_sha256",
+                  "size_bytes",
+                  "received_at",
+                  "created_at",
+                  "transcription_status",
+                  "transcription_reason_code",
+                  "transcribed_at",
+                  "transcript_present",
+                  "summary_status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "incomplete_truncated": {
+              "type": "boolean"
+            },
+            "archive_counts": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "completed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "superseded": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "incomplete": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "total",
+                "completed",
+                "superseded",
+                "incomplete"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "scope_allowed",
+            "enabled",
+            "configuration",
+            "inbox",
+            "recent_recordings",
+            "record_limit",
+            "private_content_exposed",
+            "provider_calls",
+            "mutation_allowed"
+          ],
+          "additionalProperties": false
+        },
+        "historical_debt": {
+          "type": "object",
+          "properties": {
+            "voice_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "parity_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "voice_records": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "receipt_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "event_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "archive_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "record_ref": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 16
+                  },
+                  "reason_code": {
+                    "type": "string",
+                    "enum": [
+                      "billing_reservation_replayed",
+                      "openai_transcription_transport_unknown"
+                    ]
+                  },
+                  "received_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "last_error_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "workspace_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "account_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "project_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "country_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "chat_scope_matched": {
+                    "type": "boolean"
+                  },
+                  "business_connection_scope_matched": {
+                    "type": "boolean"
+                  },
+                  "verified_identity_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "telegram_identity_confirmed": {
+                    "type": "boolean"
+                  },
+                  "logical_operation_sha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "reservation_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reservation_states": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "reserved",
+                        "settled",
+                        "released",
+                        "unknown"
+                      ]
+                    }
+                  },
+                  "original_reservation_state": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "reserved",
+                          "settled",
+                          "released",
+                          "unknown"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "settlement_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "release_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "unknown_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "usage_event_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "ledger_entry_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "provider_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "archive_status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcript_complete": {
+                    "type": "boolean"
+                  },
+                  "summary_complete": {
+                    "type": "boolean"
+                  },
+                  "provider_result_saved": {
+                    "type": "boolean"
+                  },
+                  "canonical_projection_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "legacy_projection_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "billing_verdict": {
+                    "type": "string",
+                    "enum": [
+                      "not_applicable",
+                      "safe_replay_rejected",
+                      "ambiguous"
+                    ]
+                  },
+                  "transport_verdict": {
+                    "type": "string",
+                    "enum": [
+                      "not_applicable",
+                      "provider_free_projection_recovery_available",
+                      "residual_provider_outcome_unknown",
+                      "residual_archive_missing"
+                    ]
+                  },
+                  "projection_recovery_allowed": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "receipt_id",
+                  "event_id",
+                  "archive_id",
+                  "record_ref",
+                  "reason_code",
+                  "received_at",
+                  "last_error_at",
+                  "workspace_id",
+                  "account_id",
+                  "project_id",
+                  "country_code",
+                  "chat_scope_matched",
+                  "business_connection_scope_matched",
+                  "verified_identity_count",
+                  "telegram_identity_confirmed",
+                  "logical_operation_sha256",
+                  "reservation_count",
+                  "reservation_states",
+                  "original_reservation_state",
+                  "settlement_count",
+                  "release_count",
+                  "unknown_count",
+                  "usage_event_count",
+                  "ledger_entry_count",
+                  "provider_attempt_count",
+                  "archive_status",
+                  "transcript_complete",
+                  "summary_complete",
+                  "provider_result_saved",
+                  "canonical_projection_count",
+                  "legacy_projection_count",
+                  "billing_verdict",
+                  "transport_verdict",
+                  "projection_recovery_allowed"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "parity_records": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "evidence_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canonical_message_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "legacy_message_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "record_ref": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 16
+                  },
+                  "first_observed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "last_observed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "observation_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "canonical_message_exists": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "legacy_message_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reply_task_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reply_task_state": {
+                    "type": "string",
+                    "enum": [
+                      "absent",
+                      "present",
+                      "duplicated"
+                    ]
+                  },
+                  "trigger_matches_message": {
+                    "type": "boolean"
+                  },
+                  "account_scope_matched": {
+                    "type": "boolean"
+                  },
+                  "project_scope_matched": {
+                    "type": "boolean"
+                  },
+                  "chat_scope_matched": {
+                    "type": "boolean"
+                  },
+                  "business_connection_scope_matched": {
+                    "type": "boolean"
+                  },
+                  "text_matched": {
+                    "type": "boolean"
+                  },
+                  "verified_identity_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "person_identity_confirmed": {
+                    "type": "boolean"
+                  },
+                  "message_should_create_reply_task": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classification": {
+                    "type": "string",
+                    "enum": [
+                      "real_defect_missing_reply_task",
+                      "historical_residue_repaired",
+                      "real_defect_unexpected_reply_task",
+                      "ambiguous"
+                    ]
+                  },
+                  "mayak_parity": {
+                    "type": "object",
+                    "properties": {
+                      "exact_join": {
+                        "type": "boolean"
+                      },
+                      "mayak_turn_ref": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 16,
+                            "maxLength": 16
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "mayak_disposition": {
+                        "type": "string",
+                        "enum": [
+                          "processed",
+                          "unknown"
+                        ]
+                      },
+                      "effective_route": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "agent_turn"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reply_task_expected": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "observed_reply_task_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "parity_policy_version": {
+                        "type": "integer",
+                        "minimum": 3
+                      },
+                      "classification": {
+                        "type": "string",
+                        "enum": [
+                          "expected_zero_reply_task",
+                          "unexpected_reply_task",
+                          "ambiguous"
+                        ]
+                      },
+                      "historical_false_positive": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "exact_join",
+                      "mayak_turn_ref",
+                      "mayak_disposition",
+                      "effective_route",
+                      "reply_task_expected",
+                      "observed_reply_task_count",
+                      "parity_policy_version",
+                      "classification",
+                      "historical_false_positive"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "evidence_id",
+                  "canonical_message_id",
+                  "legacy_message_id",
+                  "record_ref",
+                  "first_observed_at",
+                  "last_observed_at",
+                  "observation_count",
+                  "canonical_message_exists",
+                  "legacy_message_count",
+                  "reply_task_count",
+                  "reply_task_state",
+                  "trigger_matches_message",
+                  "account_scope_matched",
+                  "project_scope_matched",
+                  "chat_scope_matched",
+                  "business_connection_scope_matched",
+                  "text_matched",
+                  "verified_identity_count",
+                  "person_identity_confirmed",
+                  "message_should_create_reply_task",
+                  "classification",
+                  "mayak_parity"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "private_content_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "provider_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "billing_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "mutation_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "provider_call_allowed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "voice_count",
+            "parity_count",
+            "voice_records",
+            "parity_records",
+            "private_content_exposed",
+            "provider_identifiers_exposed",
+            "billing_identifiers_exposed",
+            "mutation_allowed",
+            "provider_call_allowed"
+          ],
+          "additionalProperties": false
+        },
+        "telegram_voice_archives": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "incomplete": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "private_content_exposed": {
+              "const": false
+            },
+            "incomplete_recordings": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "archive_id": {
+                    "type": "string"
+                  },
+                  "received_at": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reason_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "duration_seconds": {
+                    "type": "integer"
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "summary_status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "archive_id",
+                  "received_at",
+                  "status",
+                  "reason_code",
+                  "duration_seconds",
+                  "size_bytes",
+                  "summary_status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "historical_short_voice_overflow_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "no_speech_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requires_attention_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "total",
+            "completed",
+            "incomplete",
+            "truncated",
+            "private_content_exposed",
+            "incomplete_recordings"
+          ],
+          "additionalProperties": false
+        },
+        "become_slice3": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string",
+              "const": "gate.become-pilot-slice3-production-evidence@1"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_sha": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "expected_alembic_head": {
+              "type": "string",
+              "const": "0087_become_pilot_slice3_learner"
+            },
+            "alembic_head": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "gates": {
+              "type": "object",
+              "properties": {
+                "runtime_enabled": {
+                  "type": "boolean"
+                },
+                "data_gate_approved": {
+                  "type": "boolean"
+                },
+                "delivery_enabled": {
+                  "type": "boolean"
+                },
+                "relations_enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "runtime_enabled",
+                "data_gate_approved",
+                "delivery_enabled",
+                "relations_enabled"
+              ],
+              "additionalProperties": false
+            },
+            "caps": {
+              "type": "object",
+              "properties": {
+                "telegram_sends": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2
+                },
+                "relations_posts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "telegram_sends",
+                "relations_posts"
+              ],
+              "additionalProperties": false
+            },
+            "slice3_status": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "type": "string",
+                      "const": "gate.become-pilot-slice3-status@1"
+                    },
+                    "candidate_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "slot_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invitation_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "accepted_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "expiry_due_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "acceptance_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delivery_unknown_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "relations_unknown_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "relations_executed_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "candidate_tombstone_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "content_exposed": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "provider_identifiers_exposed": {
+                      "type": "boolean",
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "candidate_count",
+                    "slot_count",
+                    "invitation_count",
+                    "accepted_count",
+                    "expiry_due_count",
+                    "acceptance_count",
+                    "delivery_unknown_count",
+                    "relations_unknown_count",
+                    "relations_executed_count",
+                    "candidate_tombstone_count",
+                    "content_exposed",
+                    "provider_identifiers_exposed"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rollback_preflight": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "type": "string",
+                      "const": "gate.become-pilot-slice3-rollback-preflight@1"
+                    },
+                    "accepted_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unresolved_delivery_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unresolved_relations_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "schema_downgrade_allowed": {
+                      "type": "boolean"
+                    },
+                    "application_rollback_allowed": {
+                      "type": "boolean"
+                    },
+                    "content_exposed": {
+                      "type": "boolean",
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "accepted_count",
+                    "unresolved_delivery_count",
+                    "unresolved_relations_count",
+                    "schema_downgrade_allowed",
+                    "application_rollback_allowed",
+                    "content_exposed"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "counts": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "candidate_total_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "candidate_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "slot_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invitation_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "accepted_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "expiry_due_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "acceptance_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delivery_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delivery_reserved_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delivery_unknown_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "outbox_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "outbox_reserved_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "relations_unknown_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "relations_executed_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "candidate_tombstone_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "candidate_total_count",
+                    "candidate_count",
+                    "slot_count",
+                    "invitation_count",
+                    "accepted_count",
+                    "expiry_due_count",
+                    "acceptance_count",
+                    "delivery_count",
+                    "delivery_reserved_count",
+                    "delivery_unknown_count",
+                    "outbox_count",
+                    "outbox_reserved_count",
+                    "relations_unknown_count",
+                    "relations_executed_count",
+                    "candidate_tombstone_count"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "relations": {
+              "type": "object",
+              "properties": {
+                "ready": {
+                  "type": "boolean"
+                },
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source_sha": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "execution_count": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider_calls": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "external_effects": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ready",
+                "error_code",
+                "source_sha",
+                "execution_count",
+                "provider_calls",
+                "external_effects"
+              ],
+              "additionalProperties": false
+            },
+            "private_content_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "provider_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "telegram_identifiers_exposed": {
+              "type": "boolean",
+              "const": false
+            },
+            "mutation_allowed": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "schema",
+            "ready",
+            "error_code",
+            "source_sha",
+            "expected_alembic_head",
+            "alembic_head",
+            "gates",
+            "caps",
+            "slice3_status",
+            "rollback_preflight",
+            "counts",
+            "relations",
+            "private_content_exposed",
+            "provider_identifiers_exposed",
+            "telegram_identifiers_exposed",
+            "mutation_allowed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "service",
+        "environment",
+        "commit",
+        "bot_username",
+        "default_mode",
+        "send_enabled",
+        "access",
+        "counts",
+        "connection_health",
+        "contact_directory",
+        "alpha_canary",
+        "beta_katya_space",
+        "beta_wedding_space",
+        "universal_mayak",
+        "become_controlled_intake",
+        "telegram_voice",
+        "telegram_business_text_parity",
+        "mcp"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

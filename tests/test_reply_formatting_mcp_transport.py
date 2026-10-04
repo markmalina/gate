@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -14,8 +15,17 @@ from uuid import uuid4
 import httpx
 import pytest
 from app.api import mcp_routes, sprint9_routes, sprint10_routes, sprint17_send_draft_routes
-from app.application.reply_documents import PreparedReplyDocument
-from app.application.reply_drafts import SavedReplyDraft
+from app.application.reply_documents import (
+    PreparedReplyDocument,
+    PrepareReplyDocumentCommand,
+    PrepareReplyDocumentService,
+)
+from app.application.reply_drafts import (
+    ReplyDraftError,
+    SavedReplyDraft,
+    SaveReplyDraftCommand,
+    SaveReplyDraftService,
+)
 from app.application.reply_sends import ReplySendResult
 from app.application.reply_sequences import QueuedReplySequence, QueuedReplySequenceItem
 from app.application.telegram_formatting import (
@@ -58,6 +68,42 @@ def _output(tool: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     content = result["result"]["structuredContent"]
     Draft202012Validator(tool["outputSchema"], format_checker=FormatChecker()).validate(content)
     return content
+
+
+def _assert_main_legacy_output(tool_name: str, content: dict[str, Any]) -> None:
+    fixture = json.loads(
+        (
+            Path(__file__).parent
+            / "fixtures/telegram_formatting_legacy_output_schemas_8e0b1672.json"
+        ).read_text()
+    )
+    assert fixture["source_revision"] == "8e0b1672"
+    validator = Draft202012Validator(fixture["schemas"][tool_name], format_checker=FormatChecker())
+    validator.validate(content)
+    # Prove this immutable fixture rejects newly advertised nullable fields.
+    forbidden = (
+        "formatting"
+        if tool_name in {"gate_save_reply_draft", "gate_prepare_reply_document"}
+        else "payload_sha256"
+    )
+    with pytest.raises(ValidationError):
+        validator.validate({**content, forbidden: None})
+    if tool_name == "gate_save_reply_draft":
+        with pytest.raises(ValidationError):
+            validator.validate(
+                {
+                    **content,
+                    "confirmation": {**content["confirmation"], "expected_payload_sha256": None},
+                }
+            )
+    elif tool_name == "gate_queue_approved_reply_sequence":
+        with pytest.raises(ValidationError):
+            validator.validate(
+                {
+                    **content,
+                    "items": [{**item, "payload_sha256": None} for item in content["items"]],
+                }
+            )
 
 
 @pytest.mark.anyio
@@ -283,14 +329,14 @@ def test_actual_mcp_schemas_accept_explicit_formats_hashes_and_reject_invalid_ty
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("text_format", ["plain", "markdown"])
+@pytest.mark.parametrize("text_format", [None, "plain", "markdown"])
 async def test_mcp_save_returns_exact_compiled_preview_and_confirmation_hash(
     monkeypatch: pytest.MonkeyPatch,
-    text_format: str,
+    text_format: str | None,
 ) -> None:
     calls: list[Any] = []
-    source = "💚 **Результат**\nстрока"
-    preview = compile_text(source, text_format)
+    source = "  💚 **Результат**\nстрока  "
+    preview = compile_text(source, text_format) if text_format else None
 
     class Writer:
         async def save(self, command: Any) -> SavedReplyDraft:
@@ -310,26 +356,36 @@ async def test_mcp_save_returns_exact_compiled_preview_and_confirmation_hash(
 
     monkeypatch.setattr(mcp_routes, "SqlReplyDraftWriter", lambda session: Writer())
     session = SimpleNamespace(commit=AsyncMock())
+    arguments = {"task_id": str(uuid4()), "text": source}
+    if text_format is not None:
+        arguments["text_format"] = text_format
     result = await mcp_routes._save_reply_draft_tool_result(
         request_id=1,
-        arguments={"task_id": str(uuid4()), "text": source, "text_format": text_format},
+        arguments=arguments,
         principal=_principal(),
         session=session,
     )
     content = _output(mcp_routes._gate_save_reply_draft_tool(_settings()), result)
-    assert content["text"] == preview.text
-    assert content["formatting"] == preview.to_dict()
-    assert content["confirmation"]["expected_payload_sha256"] == preview.payload_sha256
+    assert content["text"] == (preview.text if preview else source.strip())
+    if preview:
+        assert content["formatting"] == preview.to_dict()
+        assert content["confirmation"]["expected_payload_sha256"] == preview.payload_sha256
+    else:
+        assert "formatting" not in content
+        assert "expected_payload_sha256" not in content["confirmation"]
+        _assert_main_legacy_output("gate_save_reply_draft", content)
     assert calls[0].formatting == preview
     session.commit.assert_awaited_once()
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("caption_format", [None, "plain", "markdown"])
 async def test_mcp_document_returns_exact_caption_source_entities_hash(
     monkeypatch: pytest.MonkeyPatch,
+    caption_format: str | None,
 ) -> None:
-    source = "💚 **Документ**"
-    preview = compile_text(source, "markdown", max_length=1024)
+    source = "  💚 **Документ**\n "
+    preview = compile_text(source, caption_format, max_length=1024) if caption_format else None
     data = b"%PDF-1.7 synthetic document"
     commands: list[Any] = []
 
@@ -352,34 +408,43 @@ async def test_mcp_document_returns_exact_caption_source_entities_hash(
 
     monkeypatch.setattr(mcp_routes, "SqlReplyDocumentWriter", lambda session: Writer())
     session = SimpleNamespace(commit=AsyncMock())
+    arguments = {
+        "task_id": str(uuid4()),
+        "filename": "synthetic.pdf",
+        "media_type": "application/pdf",
+        "content_base64": base64.b64encode(data).decode(),
+        "expected_sha256": hashlib.sha256(data).hexdigest(),
+        "caption": source,
+    }
+    if caption_format is not None:
+        arguments["caption_format"] = caption_format
     result = await mcp_routes._prepare_reply_document_tool_result(
         request_id=1,
-        arguments={
-            "task_id": str(uuid4()),
-            "filename": "synthetic.pdf",
-            "media_type": "application/pdf",
-            "content_base64": base64.b64encode(data).decode(),
-            "expected_sha256": hashlib.sha256(data).hexdigest(),
-            "caption": source,
-            "caption_format": "markdown",
-        },
+        arguments=arguments,
         principal=_principal(),
         session=session,
         settings=_settings(),
     )
     content = _output(mcp_routes._gate_prepare_reply_document_tool(_settings()), result)
-    assert content["caption"] == preview.text
-    assert content["formatting"] == preview.to_dict()
+    assert content["caption"] == (preview.text if preview else source)
+    if preview:
+        assert content["formatting"] == preview.to_dict()
+    else:
+        assert "formatting" not in content
+        _assert_main_legacy_output("gate_prepare_reply_document", content)
     assert commands[0].formatting == preview
     session.commit.assert_awaited_once()
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("document", [False, True])
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_mcp_send_preserves_hash_through_application_service(
-    monkeypatch: pytest.MonkeyPatch, document: bool
+    monkeypatch: pytest.MonkeyPatch,
+    document: bool,
+    legacy: bool,
 ) -> None:
-    digest = compile_text("**Подтверждено**", "markdown").payload_sha256
+    digest = None if legacy else compile_text("**Подтверждено**", "markdown").payload_sha256
     commands: list[Any] = []
 
     class Sender:
@@ -411,8 +476,9 @@ async def test_mcp_send_preserves_hash_through_application_service(
         "confirmed": True,
         "expected_account": "RU",
         "expected_recipient_chat_id": "synthetic-chat",
-        "expected_payload_sha256": digest,
     }
+    if digest is not None:
+        arguments["expected_payload_sha256"] = digest
     if document:
         arguments.update(
             expected_document_filename="synthetic.pdf",
@@ -440,12 +506,18 @@ async def test_mcp_send_preserves_hash_through_application_service(
     )
     content = _output(factory(_settings()), result)
     assert commands[0].expected_payload_sha256 == digest
-    assert content["payload_sha256"] == digest
+    if legacy:
+        assert "payload_sha256" not in content
+        _assert_main_legacy_output(factory(_settings())["name"], content)
+    else:
+        assert content["payload_sha256"] == digest
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_mcp_sequence_preserves_ordered_digests_through_application_service(
     monkeypatch: pytest.MonkeyPatch,
+    legacy: bool,
 ) -> None:
     hashes = [
         compile_text(text, "markdown").payload_sha256 for text in ("**Первый**", "💚 **Второй**")
@@ -469,7 +541,7 @@ async def test_mcp_sequence_preserves_ordered_digests_through_application_servic
                         draft_id=id_,
                         position=i,
                         scheduled_at=datetime.now(UTC),
-                        payload_sha256=hashes[i],
+                        payload_sha256=None if legacy else hashes[i],
                     )
                     for i, id_ in enumerate(command.draft_ids)
                 ),
@@ -477,22 +549,28 @@ async def test_mcp_sequence_preserves_ordered_digests_through_application_servic
 
     monkeypatch.setattr(mcp_routes, "SqlReplySequenceWriter", lambda session: Writer())
     session = SimpleNamespace(commit=AsyncMock())
+    arguments = {
+        "draft_ids": [str(uuid4()), str(uuid4())],
+        "confirmed": True,
+        "expected_account": "RU",
+        "expected_recipient_chat_id": "synthetic-chat",
+        "interval_seconds": 60,
+    }
+    if not legacy:
+        arguments["expected_payload_sha256s"] = hashes
     result = await mcp_routes._queue_approved_reply_sequence_tool_result(
         request_id=1,
-        arguments={
-            "draft_ids": [str(uuid4()), str(uuid4())],
-            "confirmed": True,
-            "expected_account": "RU",
-            "expected_recipient_chat_id": "synthetic-chat",
-            "interval_seconds": 60,
-            "expected_payload_sha256s": hashes,
-        },
+        arguments=arguments,
         principal=_principal(),
         session=session,
     )
     content = _output(mcp_routes._gate_queue_approved_reply_sequence_tool(_settings()), result)
-    assert commands[0].expected_payload_sha256s == tuple(hashes)
-    assert [item["payload_sha256"] for item in content["items"]] == hashes
+    assert commands[0].expected_payload_sha256s == (None if legacy else tuple(hashes))
+    if legacy:
+        assert all("payload_sha256" not in item for item in content["items"])
+        _assert_main_legacy_output("gate_queue_approved_reply_sequence", content)
+    else:
+        assert [item["payload_sha256"] for item in content["items"]] == hashes
     session.commit.assert_awaited_once()
 
 
@@ -696,6 +774,7 @@ async def test_edit_link_preserves_legacy_outcomes_and_refuses_formatted_snapsho
     admin_reply = AsyncMock()
     monkeypatch.setattr(sprint9_routes, "_send_admin_reply", admin_reply)
     token = "synthetic-edit-token"
+
     def token_builder(**kwargs: Any) -> str:
         return token
 
@@ -764,3 +843,201 @@ async def test_effective_legacy_send_wrapper_refuses_snapshots_before_open_or_cl
     assert text == "Saved formatting requires Gate MCP preview/hash confirmation."
     original_send.assert_not_awaited()
     admin_reply.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("document", [False, True])
+@pytest.mark.parametrize("invalid_mode", [None, "html", True, 17, {}, []])
+async def test_explicit_invalid_or_null_format_is_rejected_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+    document: bool,
+    invalid_mode: Any,
+) -> None:
+    def forbidden_writer(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("Invalid explicit mode entered writer")
+
+    monkeypatch.setattr(mcp_routes, "SqlReplyDraftWriter", forbidden_writer)
+    monkeypatch.setattr(mcp_routes, "SqlReplyDocumentWriter", forbidden_writer)
+    arguments = {"task_id": str(uuid4())}
+    if document:
+        arguments.update(
+            filename="synthetic.pdf",
+            media_type="application/pdf",
+            content_base64="JVBERi0=",
+            expected_sha256="a" * 64,
+            caption="Synthetic",
+            caption_format=invalid_mode,
+        )
+        result = await mcp_routes._prepare_reply_document_tool_result(
+            request_id=1,
+            arguments=arguments,
+            principal=_principal(),
+            session=object(),
+            settings=_settings(),
+        )
+    else:
+        arguments.update(text="Synthetic", text_format=invalid_mode)
+        result = await mcp_routes._save_reply_draft_tool_result(
+            request_id=1,
+            arguments=arguments,
+            principal=_principal(),
+            session=object(),
+        )
+    assert result["result"]["isError"] is True
+    assert result["result"]["structuredContent"] == {"error": "invalid_arguments"}
+
+
+@pytest.mark.anyio
+async def test_omitted_reply_mode_preserves_old_strip_literal_and_character_limit() -> None:
+    captured: list[SaveReplyDraftCommand] = []
+
+    class Writer:
+        async def save(self, command: SaveReplyDraftCommand) -> Any:
+            captured.append(command)
+            return command
+
+    service = SaveReplyDraftService(Writer())
+    injected = compile_text("**Synthetic**", "markdown")
+    saved = await service.execute(
+        SaveReplyDraftCommand(
+            principal=_principal(),
+            task_id=uuid4(),
+            text=" \n💚 **unclosed _literal \t ",
+            formatting=injected,
+        )
+    )
+    assert saved.text == "💚 **unclosed _literal"
+    assert saved.formatting is None and saved.text_format is None
+    boundary = await service.execute(
+        SaveReplyDraftCommand(
+            principal=_principal(),
+            task_id=uuid4(),
+            text=" " + "💚" * 4096 + " ",
+        )
+    )
+    assert len(boundary.text) == 4096 and boundary.formatting is None
+    with pytest.raises(ReplyDraftError) as too_long:
+        await service.execute(
+            SaveReplyDraftCommand(
+                principal=_principal(),
+                task_id=uuid4(),
+                text="x" * 4097,
+            )
+        )
+    assert too_long.value.code == "invalid_text"
+    with pytest.raises(ReplyDraftError) as strict:
+        await service.execute(
+            SaveReplyDraftCommand(
+                principal=_principal(),
+                task_id=uuid4(),
+                text="💚" * 4096,
+                text_format="plain",
+            )
+        )
+    assert strict.value.code == "text_too_long"
+    assert len(captured) == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("document", [False, True])
+async def test_explicit_null_new_send_hash_is_rejected_before_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    document: bool,
+) -> None:
+    def forbidden_executor(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("Explicit null hash entered executor")
+
+    monkeypatch.setattr(mcp_routes, "SqlTelegramReplySender", forbidden_executor)
+    arguments = {
+        "draft_id": str(uuid4()),
+        "confirmed": True,
+        "expected_account": "RU",
+        "expected_recipient_chat_id": "synthetic-chat",
+        "expected_payload_sha256": None,
+    }
+    if document:
+        arguments.update(
+            expected_document_filename="synthetic.pdf",
+            expected_document_size_bytes=5,
+            expected_document_sha256="b" * 64,
+            expected_document_caption="Synthetic",
+        )
+    handler = (
+        mcp_routes._send_approved_document_tool_result
+        if document
+        else mcp_routes._send_approved_reply_tool_result
+    )
+    result = await handler(
+        request_id=1,
+        arguments=arguments,
+        principal=_principal(),
+        session=object(),
+        telegram=object(),
+        settings=_settings(),
+    )
+    assert result["result"]["isError"] is True
+    assert result["result"]["structuredContent"] == {"error": "invalid_arguments"}
+
+
+@pytest.mark.anyio
+async def test_explicit_null_new_sequence_hashes_rejected_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_writer(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("Explicit null hashes entered writer")
+
+    monkeypatch.setattr(mcp_routes, "SqlReplySequenceWriter", forbidden_writer)
+    result = await mcp_routes._queue_approved_reply_sequence_tool_result(
+        request_id=1,
+        arguments={
+            "draft_ids": [str(uuid4()), str(uuid4())],
+            "confirmed": True,
+            "expected_account": "RU",
+            "expected_recipient_chat_id": "synthetic-chat",
+            "interval_seconds": 60,
+            "expected_payload_sha256s": None,
+        },
+        principal=_principal(),
+        session=object(),
+    )
+    assert result["result"]["isError"] is True
+    assert result["result"]["structuredContent"] == {"error": "invalid_arguments"}
+
+
+@pytest.mark.anyio
+async def test_omitted_caption_mode_preserves_old_verbatim_literal_character_limit() -> None:
+    class Writer:
+        async def save(self, command: PrepareReplyDocumentCommand, data: bytes) -> Any:
+            assert data == b"%PDF-synthetic"
+            return command
+
+    service = PrepareReplyDocumentService(Writer())
+    data = b"%PDF-synthetic"
+    metadata = dict(
+        principal=_principal(),
+        task_id=uuid4(),
+        filename="synthetic.pdf",
+        media_type="application/pdf",
+        content_base64=base64.b64encode(data).decode(),
+        expected_sha256=hashlib.sha256(data).hexdigest(),
+    )
+    source = " \n💚 **unclosed _literal \t "
+    saved = await service.execute(
+        PrepareReplyDocumentCommand(
+            **metadata,
+            caption=source,
+            formatting=compile_text("**Synthetic**", "markdown"),
+        )
+    )
+    assert saved.caption == source
+    assert saved.formatting is None and saved.caption_format is None
+    boundary = await service.execute(PrepareReplyDocumentCommand(**metadata, caption="💚" * 1024))
+    assert len(boundary.caption) == 1024 and boundary.formatting is None
+    with pytest.raises(ReplyDraftError) as legacy:
+        await service.execute(PrepareReplyDocumentCommand(**metadata, caption="x" * 1025))
+    assert legacy.value.code == "invalid_document"
+    with pytest.raises(ReplyDraftError) as strict:
+        await service.execute(
+            PrepareReplyDocumentCommand(**metadata, caption="💚" * 1024, caption_format="plain")
+        )
+    assert strict.value.code == "text_too_long"

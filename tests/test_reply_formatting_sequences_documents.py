@@ -4,10 +4,13 @@ import base64
 import hashlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from app.api import mcp_routes
 from app.application.reply_documents import (
     PreparedReplyDocument,
     PrepareReplyDocumentCommand,
@@ -37,7 +40,10 @@ from app.worker.reply_sequences import (
 )
 from sqlalchemy import func, select
 
+from test_reply_formatting_mcp_transport import _assert_main_legacy_output
 from test_reply_sends_postgres import (
+    _command,
+    _DocumentTelegram,
     _LiteralRecordingTelegram,
     _postgres_sessions,
     _save_draft_command,
@@ -126,6 +132,29 @@ async def test_empty_plain_caption_is_an_explicit_snapshot() -> None:
 
 
 @pytest.mark.anyio
+async def test_real_document_writer_accepts_legacy_caption_and_reaches_sql_cleanup() -> None:
+    """Catch the old unconditional preview guard without claiming persistence occurred."""
+    session = SimpleNamespace(execute=AsyncMock(side_effect=RuntimeError("synthetic SQL boundary")))
+    command = replace(_caption_command("  **legacy literal**  "), caption_format=None)
+    with pytest.raises(RuntimeError, match="synthetic SQL boundary"):
+        await SqlReplyDocumentWriter(session).save(command, b"%PDF-synthetic")
+    session.execute.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_real_document_writer_keeps_explicit_caption_snapshot_guard_before_sql() -> None:
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=AssertionError("Invalid snapshot entered SQL"))
+    )
+    with pytest.raises(ReplyDraftError) as missing:
+        await SqlReplyDocumentWriter(session).save(
+            _caption_command("Synthetic", "plain"), b"%PDF-synthetic"
+        )
+    assert missing.value.code == "invalid_formatting"
+    session.execute.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_document_caption_snapshot_persists_without_a_send() -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
@@ -157,6 +186,125 @@ async def test_document_caption_snapshot_persists_without_a_send() -> None:
             assert snapshot == prepared.formatting
             assert draft.prompt_context[CAPTION_FORMAT_KEY]["source_text"] == source
             assert await session.scalar(select(func.count()).select_from(SendAttempt)) == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("document", [False, True])
+async def test_real_sql_omitted_format_save_persist_send_replay_matches_main_legacy_schema(
+    document: bool,
+) -> None:
+    """Exercise actual SQL writers and sender; only the Telegram provider is simulated."""
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        principal = replace(
+            _command(seed, seed.draft_ids[0]).principal,
+            scopes=frozenset({"gate:drafts:write", "gate:messages:send"}),
+        )
+        settings = _settings()
+        settings.gate_document_send_enabled = True
+        source = " \n💚 **unclosed _literal \t "
+        data = b"%PDF-1.7\nsynthetic legacy database fixture"
+        prepare_arguments = {"task_id": str(seed.task_id)}
+        if document:
+            prepare_arguments.update(
+                filename="synthetic.pdf",
+                media_type="application/pdf",
+                content_base64=base64.b64encode(data).decode(),
+                expected_sha256=hashlib.sha256(data).hexdigest(),
+                caption=source,
+            )
+        else:
+            prepare_arguments["text"] = source
+        async with sessions() as session:
+            if document:
+                prepared = await mcp_routes._prepare_reply_document_tool_result(
+                    request_id=1,
+                    arguments=prepare_arguments,
+                    principal=principal,
+                    session=session,
+                    settings=settings,
+                )
+            else:
+                prepared = await mcp_routes._save_reply_draft_tool_result(
+                    request_id=1,
+                    arguments=prepare_arguments,
+                    principal=principal,
+                    session=session,
+                )
+        assert prepared["result"]["isError"] is False
+        saved = prepared["result"]["structuredContent"]
+        _assert_main_legacy_output(
+            "gate_prepare_reply_document" if document else "gate_save_reply_draft",
+            saved,
+        )
+        from uuid import UUID
+
+        draft_id = UUID(saved["draft_id"])
+        async with sessions() as session:
+            draft = await session.get(ReplyDraft, draft_id)
+            assert draft is not None
+            assert FORMAT_KEY not in draft.prompt_context
+            assert CAPTION_FORMAT_KEY not in draft.prompt_context
+            if document:
+                stored = await session.scalar(
+                    select(ReplyDocument).where(ReplyDocument.reply_draft_id == draft_id)
+                )
+                assert stored is not None and stored.data == data and stored.caption == source
+                assert draft.prompt_context["kind"] == "document"
+                assert saved["caption"] == source
+            else:
+                assert draft.draft_text == saved["text"] == source.strip()
+            assert await session.scalar(select(func.count()).select_from(SendAttempt)) == 0
+
+        arguments = {
+            "draft_id": str(draft_id),
+            "confirmed": True,
+            "expected_account": "RU",
+            "expected_recipient_chat_id": seed.recipient_chat_id,
+        }
+        if document:
+            arguments.update(
+                expected_document_filename=saved["filename"],
+                expected_document_size_bytes=saved["size_bytes"],
+                expected_document_sha256=saved["sha256"],
+                expected_document_caption=saved["caption"],
+            )
+        telegram = _DocumentTelegram() if document else _LiteralRecordingTelegram()
+        handler = (
+            mcp_routes._send_approved_document_tool_result
+            if document
+            else mcp_routes._send_approved_reply_tool_result
+        )
+        outcomes = []
+        for request_id in (2, 3):
+            async with sessions() as session:
+                outcome = await handler(
+                    request_id=request_id,
+                    arguments=arguments,
+                    principal=principal,
+                    session=session,
+                    telegram=telegram,
+                    settings=settings,
+                )
+            assert outcome["result"]["isError"] is False
+            result = outcome["result"]["structuredContent"]
+            _assert_main_legacy_output(
+                "gate_send_approved_document" if document else "gate_send_approved_reply",
+                result,
+            )
+            assert result["sent"] is True
+            assert "payload_sha256" not in result
+            outcomes.append(result)
+        assert outcomes[0]["idempotent_replay"] is False
+        assert outcomes[1]["idempotent_replay"] is True
+        assert outcomes[0]["attempt_id"] == outcomes[1]["attempt_id"]
+        calls = telegram.calls if document else telegram.plain_calls
+        assert len(calls) == 1
+        if document:
+            assert calls[0]["caption"] == source and calls[0]["data"] == data
+            assert "caption_entities" not in calls[0]
+        else:
+            assert calls[0]["text"] == source.strip()
 
 
 @pytest.mark.anyio

@@ -1,8 +1,12 @@
 # Telegram formatting for approved replies (#727)
 
 Gate accepts an explicit `plain` or `markdown` mode when preparing text.
-The default is `plain`; stars, underscores, backticks, HTML-looking text and
-other characters remain literal in that mode. Gate never guesses the mode.
+Explicit `plain` preserves the exact text literally and saves a formatting
+preview; stars, underscores, backticks and HTML-looking text remain literal.
+Omitting `text_format` or `caption_format` selects the legacy literal contract
+for clients whose registered tool catalog has not been refreshed. It does not
+create a formatting snapshot or require a formatting digest. Gate never guesses
+a mode; explicit `null` or an unsupported mode is rejected.
 The Markdown converter is `gate.telegram-markdown.v1`, a bounded documented
 dialect rather than unrestricted CommonMark or Telegram MarkdownV2.
 
@@ -45,8 +49,8 @@ rejected with a safe error. Use a shown plain-text version or separate approved
 messages for such content. Code fences require standalone opening and matching
 closing lines. This converter does not claim full CommonMark compatibility.
 
-The converter accepts at most 65,536 source characters, 100 entities and
-16 levels of nesting. Prepared text uses a conservative limit of 4,096 UTF-16
+For explicit modes, the converter accepts at most 65,536 source characters,
+100 entities and 16 levels of nesting. Prepared text uses a conservative limit of 4,096 UTF-16
 units; document captions use 1,024. These limits apply **after** conversion.
 Text replies cannot be empty or whitespace-only. A document caption may be
 exactly empty; whitespace-only captions are rejected. Gate rejects oversized
@@ -71,8 +75,8 @@ and show each separate draft and confirm the ordered sequence explicitly.
    the account and recipient together. Existing 2–50 bounds and the minimum
    60 seconds after a preceding confirmed delivery remain unchanged.
 
-Every newly prepared draft, including plain mode and an empty document
-caption, has a formatting snapshot. Text snapshots are stored under
+Every draft prepared with an explicit mode, including `plain` and an empty
+document caption, has a formatting snapshot. Text snapshots are stored under
 `telegram_formatting`; document caption snapshots under
 `telegram_document_caption_formatting` in the existing draft JSON metadata.
 The file bytes and file SHA-256 retain their existing independent protection.
@@ -87,8 +91,16 @@ the worker carries it into the send command after restart/discovery; a changed
 item stops the remaining sequence without an HTTP send for that item.
 
 Legacy drafts with no formatting metadata continue their existing literal
-text or caption behavior. A new snapshot cannot be sent using a legacy
-approval that omits the payload digest. A legacy-only sequence may still omit
+text or caption behavior. Preparing without a mode preserves the original
+validation: text is stripped at its boundaries and limited to 4,096 characters;
+a caption remains verbatim and is limited to 1,024 characters, including the
+legacy allowance for whitespace-only captions. Legacy preparation and send
+responses omit the new formatting and payload-digest fields so that older,
+closed output schemas remain valid; legacy sequence items omit digest fields.
+
+An existing snapshot cannot be downgraded or sent using a legacy approval that
+omits the payload digest. Explicit modes still require the exact saved hash;
+there is no send-time fallback. A legacy-only sequence may still omit
 digests. Mixed legacy/new sequences are rejected: prepare fresh explicit
 previews for all items before confirming one ordered digest list.
 
@@ -105,9 +117,32 @@ After a reviewed release, check the actual Production fingerprint and server
 tool schema, then the tools available in the current Work. Confirm that the
 registered `Gate M` client exposes the new preparation modes, preview and
 send/sequence digest parameters; a backend deployment alone does not refresh
-the registered client. If the client remains stale, stop formatted sends and
-request its supported refresh/reconnection. Do not assume an unavailable
-refresh API or silently bypass the registered client.
+the registered client. If the client remains stale, formatted sends require its
+supported refresh/reconnection; the omitted-mode literal workflow remains
+compatible. Do not assume an unavailable refresh API or silently bypass the
+registered client.
+
+`gate_get_status.mcp.tools` retains the eighteen-tool core subset of the older
+closed output schema. It is a compatibility projection, not the exhaustive
+catalog; MCP `tools/list` advertises all current tools, including the read-only
+`gate_get_owner_reply_readiness` capability. No new OAuth scope is required.
+
+That readiness tool accepts `account_alias="RU"|"BY"` and the exact positive
+`recipient_chat_id` of the other explicitly granted owner account. It returns
+only task/binding scalars, scoped sequence counts and the existing in-process
+worker heartbeat. An optional exact `provider_message_id` correlates a fresh
+inbound task and its processed receipt/agent-turn count. It reads no message
+text or raw payload, creates no task, and makes no provider call.
+
+Treat its sixty-second unbound observation as one preflight fact, not a
+guarantee or authorization to send. Before one synthetic owner bootstrap,
+exclude parallel binding/configuration changes and verify that the current
+admission path blocks an absent installation before any model call. After
+ingress, require an exact processed receipt, matching human task and zero
+correlated durable agent turns. The current runtime does not persist the
+literal Mayak blocked reason; do not invent that evidence. Unknown worker
+state, unresolved attempts, pending unrelated sequences or malformed metadata
+block a live series; this capability never enables or changes a worker.
 
 Repository tests use synthetic inputs and disposable PostgreSQL only.
 Production rollout and live sends are separate gates. The proposed owner-only

@@ -57,7 +57,7 @@ class SaveReplyDraftCommand:
     task_id: UUID
     text: str
     follow_up: bool = False
-    text_format: str = "plain"
+    text_format: str | None = None
     formatting: FormattingPreview | None = None
 
 
@@ -101,17 +101,30 @@ class SaveReplyDraftService:
                 code="invalid_access_scope",
                 message="Explicit workspace, account, and project grants are required",
             )
-        try:
-            preview = compile_text(command.text, text_format=command.text_format)
-        except FormattingError as exc:
-            raise ReplyDraftError(code=exc.code, message=exc.message) from exc
+        preview = None
+        if command.text_format is None:
+            # Omitted mode retains the literal contract for clients with an older catalog.
+            text = command.text.strip()
+            if not text:
+                raise ReplyDraftError(code="invalid_text", message="Draft text must not be empty")
+            if len(text) > MAX_DRAFT_LENGTH:
+                raise ReplyDraftError(
+                    code="invalid_text",
+                    message=f"Draft text must not exceed {MAX_DRAFT_LENGTH} characters",
+                )
+        else:
+            try:
+                preview = compile_text(command.text, text_format=command.text_format)
+            except FormattingError as exc:
+                raise ReplyDraftError(code=exc.code, message=exc.message) from exc
+            text = preview.text
         return await self._writer.save(
             SaveReplyDraftCommand(
                 principal=principal,
                 task_id=command.task_id,
-                text=preview.text,
+                text=text,
                 follow_up=command.follow_up,
-                text_format=preview.text_format,
+                text_format=command.text_format,
                 formatting=preview,
             )
         )
