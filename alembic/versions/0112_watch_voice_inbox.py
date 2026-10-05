@@ -16,7 +16,7 @@ def upgrade() -> None:
         "watch_voice_cursors",
         sa.Column("workspace_key", sa.String(128), nullable=False),
         sa.Column("account_id", sa.String(255), nullable=False),
-        sa.Column("cursor", sa.String(None), nullable=True),
+        sa.Column("cursor", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("workspace_key", "account_id"),
     )
     op.create_table(
@@ -37,7 +37,7 @@ def upgrade() -> None:
         sa.Column("dropbox_modified_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("received_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("transcription_state", sa.String(16), nullable=False),
-        sa.Column("transcript", sa.String(None), nullable=True),
+        sa.Column("transcript", sa.Text(), nullable=True),
         sa.Column("model", sa.String(64), nullable=True),
         sa.Column("transcribed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("delivery_state", sa.String(16), nullable=False),
