@@ -62,7 +62,10 @@ ACCOUNT_LABEL_SCHEMA = _object(
 )
 COUNTERPARTY_SCHEMA = _object(
     {
-        "platform": {"type": "string", "enum": ["telegram", "phone_call_dropbox"]},
+        "platform": {
+            "type": "string",
+            "enum": ["telegram", "phone_call_dropbox", "watch_voice_dropbox"],
+        },
         "platform_user_id": _nullable("string"),
         "display_name": _nullable("string"),
         "username": _nullable("string"),
@@ -2453,3 +2456,12 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_beta_export_space_checkpoint": BETA_CHECKPOINT_EXPORT_OUTPUT_SCHEMA,
     "gate_beta_get_provider_probe": BETA_PROVIDER_PROBE_OUTPUT_SCHEMA,
 }
+
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice"] = _object({
+    "enabled": {"type": "boolean"},
+    "configured": {"type": "boolean"},
+    "scope_allowed": {"type": "boolean"},
+    "delivery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "transcription_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "private_content_exposed": {"type": "boolean", "enum": [False]},
+})

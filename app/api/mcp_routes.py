@@ -5,6 +5,7 @@
 from typing import Annotated, Any
 
 import base64
+import hashlib
 import mimetypes
 import httpx
 import json
@@ -76,6 +77,8 @@ from app.application.reply_sequences import (
     QueueApprovedReplySequenceService,
     ReplySequenceError,
 )
+from app.models.watch_voice import WatchVoiceNote
+from app.worker.watch_voice import operational_status as watch_voice_operational_status
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
 from app.core.mcp_security import (
@@ -377,6 +380,12 @@ async def mcp_endpoint(
                     "inbox_path_valid": settings.dropbox_call_inbox_path == "/Alpha/Calls",
                 },
             )
+            if settings.gate_watch_voice_enabled:
+                snapshot["watch_voice"] = await watch_voice_operational_status(
+                    session, settings,
+                    scope_allowed=(principal.access_scope.workspace_id == settings.gate_workspace_id
+                                   and UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids),
+                )
             snapshot["alpha_canary"] = await _build_alpha_canary_status(
                 session=session,
                 settings=settings,
@@ -789,6 +798,11 @@ async def _get_reply_context_tool_result(
             code="invalid_arguments",
             message="task_id is required",
         )
+    if raw_task_id.startswith("watch-voice:") or raw_task_id.startswith("watch-voice-file:"):
+        return await _watch_voice_tool_result(
+            request_id=request_id, selector=raw_task_id, principal=principal,
+            session=session, settings=settings,
+        )
     try:
         call_selector = _parse_latest_call_selector(raw_task_id)
     except ValueError:
@@ -935,6 +949,109 @@ def _parse_latest_voice_selector(raw_task_id: str) -> str | None:
     ):
         raise ValueError("invalid latest voice selector")
     return alias
+
+
+async def _watch_voice_tool_result(
+    *,
+    request_id: Any,
+    selector: str,
+    principal: Principal,
+    session: AsyncSession,
+    settings: Settings,
+) -> JsonObject:
+    if (
+        principal.access_scope.workspace_id != settings.gate_workspace_id
+        or UNCLASSIFIED_PROJECT_ID not in principal.access_scope.project_ids
+    ):
+        return _tool_error_result(
+            request_id=request_id,
+            code="watch_voice_scope_denied",
+            message="Watch voice is outside the allowed owner scope",
+        )
+    prefix, ref = selector.split(":", 1)
+    try:
+        note_id = None if ref == "latest" else str(UUID(ref))
+    except ValueError:
+        return _tool_error_result(
+            request_id=request_id,
+            code="invalid_arguments",
+            message="Exact watch voice UUID or latest is required",
+        )
+    query = select(WatchVoiceNote).where(
+        WatchVoiceNote.workspace_key == settings.gate_workspace_id,
+        WatchVoiceNote.account_id == settings.dropbox_call_account_id,
+    )
+    if note_id is not None:
+        query = query.where(WatchVoiceNote.id == note_id)
+    row = await session.scalar(query.order_by(WatchVoiceNote.received_at.desc()).limit(1))
+    if row is None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="watch_voice_archive_empty",
+            message="No watch voice archive exists in this owner scope",
+        )
+    context = {
+        "task_id": row.id,
+        "task_ref": row.id[:8],
+        "status": "watch_voice_" + row.transcription_state,
+        "reply_required": False,
+        "account": {"id": row.id, "alias": "watch_voice", "label": "WATCH VOICE"},
+        "conversation": {"id": row.id, "chat_id": "watch-voice", "business_connection_id": None},
+        "counterparty": {
+            "platform": "watch_voice_dropbox",
+            "platform_user_id": None,
+            "display_name": None,
+            "username": None,
+            "label": None,
+        },
+        "messages": [],
+        "count": 0,
+        "limit": 1,
+        "next_cursor": None,
+        "has_more": False,
+    }
+    if prefix == "watch-voice-file":
+        if hashlib.sha256(row.data).hexdigest() != row.sha256 or len(row.data) != row.size_bytes:
+            return _tool_error_result(
+                request_id=request_id,
+                code="watch_voice_integrity_failed",
+                message="Watch original integrity failed",
+            )
+        return _voice_file_tool_result(
+            request_id=request_id,
+            context=context,
+            archive_id=row.id,
+            data=row.data,
+            media_type=row.media_type,
+            filename_prefix="watch-voice",
+        )
+    receipt = {
+        "event_id": row.id,
+        "source_file_id": row.file_id,
+        "revision": row.revision,
+        "audio_sha256": row.sha256,
+        "size_bytes": row.size_bytes,
+        "recorded_at": None,
+        "dropbox_modified_at": row.dropbox_modified_at.isoformat(),
+        "gate_received_at": row.received_at.isoformat(),
+        "transcribed_at": row.transcribed_at.isoformat() if row.transcribed_at else None,
+        "transcript": row.transcript,
+        "transcription_state": row.transcription_state,
+        "delivery_state": row.delivery_state,
+        "issue_url": row.issue_url,
+        "github_received_at": row.github_received_at.isoformat()
+        if row.github_received_at
+        else None,
+        "last_error": row.last_error,
+    }
+    return _jsonrpc_result(
+        request_id=request_id,
+        result={
+            "content": [{"type": "text", "text": json.dumps(receipt, ensure_ascii=False)}],
+            "structuredContent": context,
+            "isError": False,
+        },
+    )
 
 
 def _parse_latest_call_selector(raw_task_id: str) -> str | None:
@@ -3012,6 +3129,10 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
                 "task_id": {
                     "oneOf": [
                         {"type": "string", "format": "uuid"},
+                        {
+                            "type": "string",
+                            "pattern": "^watch-voice(-file)?:(latest|[0-9a-fA-F-]{36})$",
+                        },
                         {
                             "type": "string",
                             "pattern": (
