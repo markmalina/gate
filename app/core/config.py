@@ -572,6 +572,13 @@ class Settings(BaseSettings):
         le=300,
         validation_alias="GATE_DROPBOX_CALL_POLL_SECONDS",
     )
+    gate_watch_voice_actions_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
+    )
+    gate_watch_voice_actions_workflow_sha256: str = Field(
+        default="", max_length=64,
+        validation_alias="GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256",
+    )
     gate_watch_voice_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_ENABLED"
     )

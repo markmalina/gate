@@ -324,11 +324,18 @@ async def transcribe_note(
 
 
 async def publish_note(
-    factory: async_sessionmaker[AsyncSession], client: MarkInboxClient, note: WatchVoiceNote
+    factory: async_sessionmaker[AsyncSession],
+    client: MarkInboxClient,
+    note: WatchVoiceNote,
+    *,
+    max_parts: int | None = None,
 ) -> None:
     if note.transcription_state != TelegramVoiceOutcome.TRANSCRIBED.value or not note.transcript:
         return
+    completed_parts = 0
     while note.delivery_state in {"pending", "unknown"}:
+        if max_parts is not None and completed_parts >= max_parts:
+            return
         part, body = note.next_part, issue_body(note, note.next_part)
         if note.delivery_state == "unknown":
             # No absence-of-search-result is allowed to authorize a second POST.
@@ -375,6 +382,7 @@ async def publish_note(
                     await session.commit()
                 return
         await save_receipt(factory, note, receipt)
+        completed_parts += 1
 
 
 async def save_receipt(

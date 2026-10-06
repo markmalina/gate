@@ -40,3 +40,39 @@ Daily: launch watch Voice Recorder, tap Record, dictate, Stop. Owner confirmed p
 Watch Manager hotspot popup persists even with watch Wi-Fi off, but audio transfers after ignoring it. Owner needs hotspot on; this code does not fix the Samsung dialog and must not disable hotspot.
 
 Owner excluded 1C from this stage on 06.10.2026. It is not an acceptance requirement or activation blocker here.
+
+## Private Mark Actions alternative (Gate #731 successor)
+
+The default-off `/internal/watch-voice/drain` endpoint accepts only an empty JSON
+object, exact private Mark main GitHub OIDC, and a header-only repository job
+token. It verifies the current main SHA, current run metadata, pinned workflow
+bytes and fixed `.gate/watch-voice-binding.json` before any audio/STT effect.
+No permanent Mark writer secret is required in this mode. Repository scope and
+writer are independently verified; a connector credential is never substituted.
+
+Reviewed source configuration may enable `GATE_WATCH_VOICE_MARK_OIDC_ENABLED`
+and set `GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256` to the exact private caller
+workflow SHA-256. Keep `GATE_WATCH_VOICE_ENABLED=false`. Publish current main only
+through the registered Gate Ops deploy lane; preDeploy Alembic applies additive
+`0113_watch_voice_drain_runs`. Roll back by disabling this endpoint and restoring
+the recorded application revision; preserve originals, replay journal and cursor.
+Do not downgrade tables after owner data ingestion.
+
+Private binding schema `watch-voice-binding.v1` uses `schema`, `enabled`,
+`workspace_key=mark-personal`, and `scope=initial-exact` plus exact `file_id` and
+`revision`. All identifiers stay private. After initial product acceptance, a
+private `scope=future-only` binding instead names `accepted_initial_event_id`.
+A delivered scoped initial note and existing cursor are required; the first
+future run persists a stable cutover timestamp and excludes preexisting archived
+or queued rows. This transition cannot silently backfill earlier notes.
+
+Each authenticated run is permanently consumed by run/jti hashes, considers at
+most one note, and advances at most one transcript part. A long transcript
+continues in later fresh runs with no retranscription. Unknown publication only
+read-reconciles an exact bot-authored body; no-result is not permission to POST.
+The private workflow's five-minute schedule is a mechanism, not a latency SLA.
+The scoped `gate_get_status.watch_voice_actions` reports live flags, pin presence
+and journal counts; these flags never claim current credential or binding
+readiness. Protected `watch-voice:` / `watch-voice-file:` reads supply actual
+receipts/originals. Activation, receipt, original hash, full transcript and three
+fresh replay cycles still require independent live verification.

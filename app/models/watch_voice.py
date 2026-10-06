@@ -24,6 +24,7 @@ class WatchVoiceCursor(Base):
     workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
     account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     cursor: Mapped[str | None] = mapped_column(Text)
+    future_cutover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WatchVoiceNote(Base):
@@ -74,3 +75,12 @@ class WatchVoiceNote(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+
+
+class WatchVoiceDrainRun(Base):
+    """Permanent replay guard; hashes only, never credentials or source payload."""
+
+    __tablename__ = "watch_voice_drain_runs"
+    run_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    jwt_key: Mapped[str] = mapped_column(String(64), unique=True)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
