@@ -26,6 +26,7 @@ personal-telegram = [
   "Telethon==1.44.0",
 ]
 dev = [
+  "aiosqlite>=0.22.1,<0.23",
   "anyio>=4.4.0",
   "jsonschema>=4.23.0",
   "mypy>=1.11.0",

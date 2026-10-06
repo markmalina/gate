@@ -77,3 +77,32 @@ Rollback disables Dropbox call intake and restores the last-known-good
 Production revision recorded by the current execution. Stored source rows remain
 durable for an explicitly authorized later recovery; no automatic provider
 retry is introduced.
+
+## Owner watch-note and private Mark addendum — 2026-10-05
+
+Mark explicitly requested Galaxy Watch /Alpha/Voice → Gate transcription →
+full transcript GitHub issue in private markmalina/mark, and confirmed continued
+implementation at 19:42 MSK on 2026-10-05. This owner-private transport addition
+reuses all v2 provider, model, timeout, part, budget and retention limits above.
+It does not select a new provider/model or expand the USD 3 shared monthly ceiling.
+
+The isolated feature is default-off (GATE_WATCH_VOICE_ENABLED=false) and requires
+GATE_WATCH_VOICE_DATA_GATE_APPROVED, an exact configured owner workspace and
+authenticated Dropbox account. Source is fixed /Alpha/Voice, at most 25 MiB
+and 60 minutes, separate from Calls and their historical recovery.
+The fixed normal model is gpt-4o-mini-transcribe. No provider retry is added;
+a crashed/uncertain claim is quarantined as unknown.
+
+The prohibition on private text/audio in shared GitHub evidence still applies.
+The explicit private data destination exception is full transcripts and source
+metadata in markmalina/mark issues only, authenticated and verified private before
+provider I/O. Raw audio remains in Gate's protected archive, never in GitHub.
+No public audio links, company payload logs, other repositories, Telegram sends,
+new bot, classifier or automatic execution of incoming tasks are authorized here.
+
+Activation requires the exact released revision, applied additive schema,
+server-side GitHub credential confined to Mark Issues, verified configured writer,
+and recorded rollback. Initial live acceptance cap: one exact owner-selected
+watch note, at most one transcription attempt per bounded part and one initial
+issue plus required transcript continuation parts, zero Telegram sends.
+No initial personal data/backfill is processed in the repository test stage.

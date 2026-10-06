@@ -572,6 +572,39 @@ class Settings(BaseSettings):
         le=300,
         validation_alias="GATE_DROPBOX_CALL_POLL_SECONDS",
     )
+    gate_watch_voice_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_ENABLED"
+    )
+    gate_watch_voice_data_gate_approved: bool = Field(
+        default=False,
+        validation_alias="GATE_WATCH_VOICE_DATA_GATE_APPROVED",
+    )
+    gate_watch_voice_workspace_key: str = Field(
+        default="",
+        max_length=128,
+        validation_alias="GATE_WATCH_VOICE_WORKSPACE_KEY",
+    )
+    gate_watch_voice_poll_seconds: float = Field(
+        default=30,
+        ge=5,
+        le=300,
+        validation_alias="GATE_WATCH_VOICE_POLL_SECONDS",
+    )
+    gate_watch_voice_file_id: str = Field(
+        default="", max_length=255, validation_alias="GATE_WATCH_VOICE_FILE_ID"
+    )
+    gate_watch_voice_revision: str = Field(
+        default="", max_length=255, validation_alias="GATE_WATCH_VOICE_REVISION"
+    )
+    gate_mark_github_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="GATE_MARK_GITHUB_TOKEN",
+    )
+    gate_mark_github_writer: str = Field(
+        default="",
+        max_length=128,
+        validation_alias="GATE_MARK_GITHUB_WRITER",
+    )
     gate_alpha_model_runtime_enabled: bool = Field(
         default=False,
         validation_alias="GATE_ALPHA_MODEL_RUNTIME_ENABLED",

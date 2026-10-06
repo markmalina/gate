@@ -24,6 +24,7 @@ from app.models import (  # noqa: F401
     billing,
     canonical,
     relationship_crm,
+    watch_voice,
 )
 from app.models.domain import Base
 from sqlalchemy import pool
