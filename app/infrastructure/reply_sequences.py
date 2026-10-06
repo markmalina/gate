@@ -178,6 +178,11 @@ class SqlReplySequenceWriter:
                 formatting = stored_preview(draft.draft_text, draft.prompt_context or {})
             except FormattingError as exc:
                 raise ReplySequenceError(code=exc.code, message=exc.message) from exc
+            if formatting is not None and formatting.text_format == "rich":
+                raise ReplySequenceError(
+                    code="rich_surface_unsupported",
+                    message="Rich reply sequences are unsupported in sprint 1",
+                )
             if formatting is not None:
                 if command.expected_payload_sha256s is None:
                     raise ReplySequenceError(

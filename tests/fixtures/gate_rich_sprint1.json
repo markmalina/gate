@@ -1,0 +1,95 @@
+{
+  "schema_version": "gate.rich-sprint1-fixtures.v1",
+  "task_id": "00000000-0000-4000-8000-000000000737",
+  "P": {
+    "text_format": "rich",
+    "rich_content": {
+      "schema_version": "gate.rich.v1",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Gate Rich Sprint 1 — синтетическая проверка доступности."
+        }
+      ]
+    }
+  },
+  "D": {
+    "text_format": "rich",
+    "rich_content": {
+      "schema_version": "gate.rich.v1",
+      "blocks": [
+        {
+          "type": "heading",
+          "size": 1,
+          "text": "Gate Rich — спринт 1"
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            "Синтетический пример. Это ",
+            {
+              "type": "bold",
+              "text": "проверка"
+            },
+            " ",
+            {
+              "type": "italic",
+              "text": "оформления"
+            },
+            ", а не отчёт о фактической готовности. ",
+            {
+              "type": "url",
+              "text": "Документация Telegram",
+              "url": "https://core.telegram.org/bots/api#sendrichmessage"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            "Текст и список сохраняют порядок.",
+            "Код передаётся без исполнения."
+          ]
+        },
+        {
+          "type": "blockquote",
+          "text": "Отправитель, получатель и содержимое привязаны к сохранённому черновику."
+        },
+        {
+          "type": "table",
+          "header": [
+            "Блок",
+            "Ожидаемый вид"
+          ],
+          "rows": [
+            [
+              "Текст",
+              "Абзац"
+            ],
+            [
+              "Таблица",
+              "Ячейки"
+            ],
+            [
+              "Код",
+              "Python"
+            ]
+          ]
+        },
+        {
+          "type": "pre",
+          "language": "python",
+          "text": "def sample_total(values):\n    return sum(values)\n\nprint(sample_total([1, 2, 3]))\n"
+        }
+      ]
+    }
+  },
+  "L": {
+    "text_format": "plain",
+    "text": "Gate Sprint 1 plain: **буквальные звёздочки**, _подчёркивания_, `sample_value`."
+  },
+  "M": {
+    "text_format": "markdown",
+    "text": "**Gate Sprint 1 Markdown**\n\n*Курсив* и `sample_value`.\n\n[Документация](https://core.telegram.org/bots/api)."
+  }
+}

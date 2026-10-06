@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.application.telegram_formatting import FormattingError, FormattingPreview, compile_text
+from app.application.telegram_rich import compile_rich
 from app.core.mcp_security import Principal
 
 SAVE_DRAFT_SCOPE = "gate:drafts:write"
@@ -55,10 +56,11 @@ class SaveReplyDraftCommand:
 
     principal: Principal
     task_id: UUID
-    text: str
+    text: str = ""
     follow_up: bool = False
     text_format: str | None = None
     formatting: FormattingPreview | None = None
+    rich_content: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,8 +103,23 @@ class SaveReplyDraftService:
                 code="invalid_access_scope",
                 message="Explicit workspace, account, and project grants are required",
             )
-        preview = None
-        if command.text_format is None:
+        preview: FormattingPreview | None = None
+        if command.text_format == "rich":
+            if command.text or command.rich_content is None:
+                raise ReplyDraftError(
+                    code="invalid_arguments",
+                    message="Rich requires rich_content and omitted or empty text",
+                )
+            try:
+                preview = compile_rich(command.rich_content)
+            except FormattingError as exc:
+                raise ReplyDraftError(code=exc.code, message=exc.message) from exc
+            text = preview.text
+        elif command.rich_content is not None:
+            raise ReplyDraftError(
+                code="invalid_arguments", message="rich_content requires text_format=rich"
+            )
+        elif command.text_format is None:
             # Omitted mode retains the literal contract for clients with an older catalog.
             text = command.text.strip()
             if not text:
@@ -125,6 +142,7 @@ class SaveReplyDraftService:
                 text=text,
                 follow_up=command.follow_up,
                 text_format=command.text_format,
+                rich_content=command.rich_content,
                 formatting=preview,
             )
         )
