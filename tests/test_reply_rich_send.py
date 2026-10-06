@@ -326,7 +326,8 @@ async def test_concurrent_exact_replay_never_calls_provider_twice() -> None:
         try:
             await asyncio.wait_for(telegram.started.wait(), timeout=5)
             replay = await asyncio.wait_for(send(sessions, telegram, command), timeout=5)
-            assert replay.idempotent_replay and replay.status == "sending"
+            assert replay.idempotent_replay and replay.status == "unknown" and not replay.sent
+            assert replay.error_code == replay.error_detail == "rich_receipt_pending"
             assert len(telegram.calls) == 1
             telegram.release.set()
             first = await asyncio.wait_for(first_task, timeout=5)

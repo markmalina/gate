@@ -64,3 +64,21 @@ Only current-main publication is exposed; rollback is a reviewed fix-forward
 revert followed by publication with its new source SHA. Historical LKG SHA is
 not falsely presented as a directly publishable target. Parent #735 remains
 open; no implementation result here closes #737 or records personal acceptance.
+
+
+## Independent review correction — attempt after δ #250 REJECT
+
+Independent δ identified a test-contract defect in the rich two-session
+concurrency scenario: the PG assertion expected internal SENDING to be returned
+directly as the public status. The existing implementation deliberately
+reports that in-flight replay as `unknown/rich_receipt_pending`, because delivery
+is not yet confirmed. The assertion now requires that truthful result,
+`sent=false`, `idempotent_replay=true` and the retained one-provider-call guard.
+No runtime code/behavior was changed. The new rich tests were searched for
+analogous SENDING assertions; only this incorrect expectation was present.
+
+After correction, local focused native/MCP tests remain **37 passed,
+34 PostgreSQL skipped**; focused Ruff passes. The corrected concurrency assertion
+still requires actual PostgreSQL execution in hosted CI and a new independent
+review attempt. This correction is not a claim that hosted CI is green or that
+δ has accepted the next candidate.
