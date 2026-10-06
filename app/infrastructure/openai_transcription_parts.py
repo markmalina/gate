@@ -14,6 +14,7 @@ from app.application.telegram_voice_transcription import (
     ProviderTranscript,
     TranscriptionProviderError,
 )
+from app.infrastructure.openai_transcription import _quota_unavailable
 
 logger = logging.getLogger(__name__)
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
@@ -171,13 +172,17 @@ def _log_error(response: httpx.Response, *, model: str) -> None:
 def _error_code(response: httpx.Response) -> str:
     if response.status_code >= 500:
         return "openai_transcription_provider_unknown"
-    if response.status_code == 429:
-        return "openai_transcription_rate_limited"
     try:
         payload: Any = response.json()
     except ValueError:
         payload = None
     error = payload.get("error") if isinstance(payload, dict) else None
+    if response.status_code == 429:
+        return (
+            "openai_transcription_quota_unavailable"
+            if _quota_unavailable(error)
+            else "openai_transcription_rate_limited"
+        )
     fields = (
         error.get("message") if isinstance(error, dict) else None,
         error.get("code") if isinstance(error, dict) else None,

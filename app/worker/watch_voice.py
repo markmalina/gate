@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
+    NormalizedVoice,
+    TelegramVoiceError,
     TelegramVoiceOutcome,
     TelegramVoiceReference,
     TelegramVoiceTranscriptionService,
@@ -252,14 +254,34 @@ async def transcribe_note(
             return
         note = await session.get(WatchVoiceNote, note_id)
         assert note is not None
+    await transcribe_claimed_note(settings, factory, http, note)
+
+
+class RecoveryVoiceNormalizer(TelegramVoiceNormalizer):
+    async def normalize(self, voice: DownloadedVoice) -> NormalizedVoice:
+        normalized = await super().normalize(voice)
+        if normalized.additional_parts:
+            raise TelegramVoiceError("watch_voice_recovery_single_part_required")
+        return normalized
+
+
+async def transcribe_claimed_note(
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    note: WatchVoiceNote,
+    *,
+    recovery: bool = False,
+) -> None:
+    """Only callers with a committed normal/recovery claim may enter this boundary."""
     assert note.duration_seconds is not None
-    model = settings.gate_telegram_voice_transcription_model
+    model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
     received = note.received_at
     if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
         received = received.replace(tzinfo=UTC)
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
-        normalizer=TelegramVoiceNormalizer(),
+        normalizer=RecoveryVoiceNormalizer() if recovery else TelegramVoiceNormalizer(),
         budget=SqlBillingBudgetService(factory),
         speech_to_text=OpenAITranscriptionClient(
             config=OpenAITranscriptionConfig(
@@ -282,7 +304,7 @@ async def transcribe_note(
                 ),
                 workspace_key=settings.gate_workspace_id,
                 connector_ref="telegram_business",
-                reservation_key=f"watch-voice:{note.id}",
+                reservation_key=f"watch-voice:{note.id}" + (":recovery1" if recovery else ""),
                 period_key=received.strftime("%Y-%m"),
                 requested_microusd=max(
                     100,

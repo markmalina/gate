@@ -245,13 +245,17 @@ def _provider_error_code(response: httpx.Response) -> str:
 
     if response.status_code >= 500:
         return "openai_transcription_provider_unknown"
-    if response.status_code == 429:
-        return "openai_transcription_rate_limited"
     try:
         payload: Any = response.json()
     except ValueError:
         payload = None
     error = payload.get("error") if isinstance(payload, dict) else None
+    if response.status_code == 429:
+        return (
+            "openai_transcription_quota_unavailable"
+            if _quota_unavailable(error)
+            else "openai_transcription_rate_limited"
+        )
     message = error.get("message") if isinstance(error, dict) else None
     safe_fields = (
         message,
@@ -309,3 +313,16 @@ def _provider_error_code(response: httpx.Response) -> str:
     else:
         category = f"http_{response.status_code}"
     return f"openai_transcription_rejected_{category}"
+
+
+def _quota_unavailable(error: Any) -> bool:
+    """Use typed fields only; never infer or persist a provider message."""
+    if not isinstance(error, dict):
+        return False
+    return error.get("type") == "insufficient_quota" or error.get("code") in (
+        "insufficient_quota",
+        "organization_usage_limit_exceeded",
+        "billing_hard_limit_reached",
+        "billing_not_active",
+        "credit_balance_too_low",
+    )

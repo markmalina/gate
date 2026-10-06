@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.domain import Base
@@ -84,3 +87,32 @@ class WatchVoiceDrainRun(Base):
     run_key: Mapped[str] = mapped_column(String(64), primary_key=True)
     jwt_key: Mapped[str] = mapped_column(String(64), unique=True)
     claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WatchVoiceRecoveryClaim(Base):
+    """One permanent recovery per original note, preserving the rejected attempt."""
+
+    __tablename__ = "watch_voice_recovery_claims"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('claimed','transcribed','rejected','unknown')",
+            name="ck_watch_voice_recovery_outcome",
+        ),
+    )
+
+    note_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("watch_voice_notes.id"), primary_key=True
+    )
+    original_reservation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("billing_budget_reservations.id")
+    )
+    original_error: Mapped[str] = mapped_column(String(128))
+    original_model: Mapped[str] = mapped_column(String(64))
+    original_attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    authorization_sha: Mapped[str] = mapped_column(String(40))
+    authorization_kind: Mapped[str] = mapped_column(String(32))
+    authorized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str] = mapped_column(String(16))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(128))

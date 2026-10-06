@@ -22,7 +22,13 @@ from app.core.watch_voice_actions_oidc import (
     WORKFLOW_PATH,
 )
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+from app.infrastructure.watch_voice_recovery import RECOVERY_ERRORS, authorized_at, recover_note
+from app.models.watch_voice import (
+    WatchVoiceCursor,
+    WatchVoiceDrainRun,
+    WatchVoiceNote,
+    WatchVoiceRecoveryClaim,
+)
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import _refresh_access_token, _verify_account_id
 
@@ -133,17 +139,28 @@ def validate_binding(binding: object) -> dict[str, Any]:
     scope = binding.get("scope")
     required = {"schema", "enabled", "workspace_key", "scope"}
     required |= (
-        {"file_id", "revision"} if scope == "initial-exact" else {"accepted_initial_event_id"}
+        {"file_id", "revision"}
+        if scope in {"initial-exact", "initial-quota-probe"}
+        else {"accepted_initial_event_id"}
     )
+    if scope == "initial-quota-probe":
+        required |= {
+            "event_id",
+            "expected_audio_sha256",
+            "expected_error",
+            "owner_quota_probe",
+            "authorized_at",
+            "provider_cause",
+        }
     if (
         set(binding) != required
         or binding.get("schema") != "watch-voice-binding.v1"
         or binding.get("enabled") is not True
         or binding.get("workspace_key") != "mark-personal"
-        or scope not in {"initial-exact", "future-only"}
+        or scope not in {"initial-exact", "future-only", "initial-quota-probe"}
     ):
         raise WatchVoiceError("watch_voice_actions_binding_invalid")
-    if scope == "initial-exact":
+    if scope in {"initial-exact", "initial-quota-probe"}:
         if (
             not isinstance(binding["file_id"], str)
             or re.fullmatch(r"id:[A-Za-z0-9_-]{1,252}", binding["file_id"]) is None
@@ -151,6 +168,20 @@ def validate_binding(binding: object) -> dict[str, Any]:
             or re.fullmatch(r"[a-f0-9]{1,255}", binding["revision"]) is None
         ):
             raise WatchVoiceError("watch_voice_actions_binding_invalid")
+        if scope == "initial-quota-probe":
+            if (
+                binding["owner_quota_probe"] is not True
+                or binding["provider_cause"] != "insufficient_quota"
+                or not isinstance(binding["expected_error"], str)
+                or binding["expected_error"] not in RECOVERY_ERRORS
+                or not isinstance(binding["event_id"], str)
+                or re.fullmatch(r"[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", binding["event_id"])
+                is None
+                or not isinstance(binding["expected_audio_sha256"], str)
+                or re.fullmatch(r"[a-f0-9]{64}", binding["expected_audio_sha256"]) is None
+            ):
+                raise WatchVoiceError("watch_voice_actions_binding_invalid")
+            authorized_at(binding["authorized_at"])
     elif (
         not isinstance(binding["accepted_initial_event_id"], str)
         or re.fullmatch(
@@ -173,7 +204,7 @@ async def bound_settings(
     if settings.gate_workspace_id != "mark-personal" or settings.gate_watch_voice_enabled:
         raise WatchVoiceError("watch_voice_actions_runtime_scope_mismatch")
     file_id, revision = "", ""
-    if binding["scope"] == "initial-exact":
+    if binding["scope"] in {"initial-exact", "initial-quota-probe"}:
         file_id, revision = binding["file_id"], binding["revision"]
     else:
         async with factory() as session:
@@ -247,6 +278,11 @@ async def drain(
     scoped = await bound_settings(settings, binding, factory, job_token=job_token)
     if not await claim_run(factory, claims):
         return result("replayed")
+    if binding["scope"] == "initial-quota-probe":
+        recovered_note = await recover_note(
+            scoped, factory, http, binding, authorization_sha=claims["sha"]
+        )
+        return await publish_result(factory, client, recovered_note)
     await worker.ensure_cursor(scoped, factory)
     if binding["scope"] == "future-only":
         # Stable cutover excludes every preexisting archived/queued note. Commit
@@ -381,22 +417,31 @@ async def drain(
         if note.transcription_state != "transcribed":
             await coordinator.commit()
             return result("processed", considered=1)
-        before_part = note.next_part
-        was_unknown = note.delivery_state == "unknown"
-        await worker.publish_note(factory, client, note, max_parts=1)
-        async with factory() as session:
-            refreshed = await session.get(WatchVoiceNote, note.id)
-        if refreshed is None:
-            raise WatchVoiceError("watch_voice_actions_note_missing")
-        advanced = int(refreshed.next_part == before_part + 1)
+        payload = await publish_result(factory, client, note)
         await coordinator.commit()
-        return result(
-            "processed",
-            considered=1,
-            published_parts=advanced if not was_unknown else 0,
-            reconciled=advanced if was_unknown else 0,
-            delivered=int(refreshed.delivery_state == "delivered" and bool(advanced)),
-        )
+        return payload
+
+
+async def publish_result(
+    factory: async_sessionmaker[AsyncSession], client: ActionsInboxClient, note: WatchVoiceNote
+) -> dict[str, Any]:
+    if note.transcription_state != "transcribed":
+        return result("processed", considered=1)
+    before_part = note.next_part
+    was_unknown = note.delivery_state == "unknown"
+    await worker.publish_note(factory, client, note, max_parts=1)
+    async with factory() as session:
+        refreshed = await session.get(WatchVoiceNote, note.id)
+    if refreshed is None:
+        raise WatchVoiceError("watch_voice_actions_note_missing")
+    advanced = int(refreshed.next_part == before_part + 1)
+    return result(
+        "processed",
+        considered=1,
+        published_parts=advanced if not was_unknown else 0,
+        reconciled=advanced if was_unknown else 0,
+        delivered=int(refreshed.delivery_state == "delivered" and bool(advanced)),
+    )
 
 
 async def operational_status(
@@ -405,6 +450,7 @@ async def operational_status(
     """Live flags and scoped journal counts; never claims current token or binding readiness."""
     delivery_counts: dict[str, int] = {}
     transcription_counts: dict[str, int] = {}
+    recovery_counts: dict[str, int] = {}
     runs = 0
     if scope_allowed and settings.gate_watch_voice_actions_enabled:
         scope = (
@@ -418,6 +464,13 @@ async def operational_status(
             rows = await session.execute(select(field, func.count()).where(*scope).group_by(field))
             target.update({str(state): count for state, count in rows})
         runs = int(await session.scalar(select(func.count()).select_from(WatchVoiceDrainRun)) or 0)
+        rows = await session.execute(
+            select(WatchVoiceRecoveryClaim.outcome, func.count())
+            .join(WatchVoiceNote, WatchVoiceNote.id == WatchVoiceRecoveryClaim.note_id)
+            .where(*scope)
+            .group_by(WatchVoiceRecoveryClaim.outcome)
+        )
+        recovery_counts.update({str(state): count for state, count in rows})
     return {
         "enabled": settings.gate_watch_voice_actions_enabled,
         "workflow_pin_configured": bool(
@@ -428,5 +481,6 @@ async def operational_status(
         "run_claim_count": runs,
         "delivery_counts": delivery_counts,
         "transcription_counts": transcription_counts,
+        "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }

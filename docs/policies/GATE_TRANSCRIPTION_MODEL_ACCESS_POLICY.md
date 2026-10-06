@@ -143,3 +143,52 @@ data-controls and pricing documentation were rechecked: supported model and
 25 MB upload/chunk limits persist; estimated mini-transcribe price remains
 USD 0.003/minute. This does not alter the hard shared monthly budget or claim
 account-level ZDR provisioning.
+
+## One owner-authorized same-note quota probe — 2026-10-06
+
+At 19:14 MSK on 2026-10-06 Mark explicitly requested checking current provider
+quota by transcribing the existing archived note and completing its private
+Mark task. This supersedes the earlier prerequisite for a factual restoration
+confirmation. The authorization is to observe readiness, not to assert that
+quota is restored. Historical `insufficient_quota` was proven by the registered
+typed read-only Ops diagnostic. No payment, credential/provider change, billing
+mutation, automatic retry or different-source substitution is included.
+
+The new protected private binding `scope=initial-quota-probe` requires
+`owner_quota_probe=true`, a valid `authorized_at` after the original attempt,
+and the same exact source/event/hash/error with historical
+`provider_cause=insufficient_quota`. Existing initial/future bindings do not
+activate this probe. The unchanged private Mark OIDC/current-main/workflow/token
+preflight precedes one permanent per-note claim. Only an archived note with a
+definitely rejected first attempt and matched released original reservation is
+eligible. Unknown work, existing transcript/publication, foreign scope and
+archive mismatch fail closed. The original error, model, attempt, reservation
+and immutable source remain preserved; fresh workflow/config revisions never
+extend the one-shot cap. The journal records authorization kind and time, not
+an unverified restoration time.
+
+The isolated attempt uses only already-pinned `gpt-4o-transcribe`, the same
+endpoint/server credential, one normalized part, one 60-second request, 25 MB
+upload, 100,000-character output and zero automatic retries. A new suffixed
+reservation uses the same hard shared USD3 current-month entitlement and actual
+usage settlement. Unknown work stays quarantined. Readiness is derived solely
+from this attempt: success, typed quota rejection, rate limitation, unknown or
+not established; success is not a global account/budget guarantee.
+
+Successful text uses only the existing private Mark outbox, one publication
+part per fresh run, including read-only reconciliation of unknown publication.
+Raw audio stays protected in Gate; zero Telegram messages. Default/future watch
+transcription remains `gpt-4o-mini-transcribe`. Official OpenAI speech, pricing
+and retention documentation was rechecked on 2026-10-06: model/endpoint/media
+bounds and retention rules persist; isolated estimated price is USD0.006/minute
+(input USD2.50/output USD10 per million tokens). Typed429 mapping uses only safe
+error enums, never provider messages/bodies. Policy v2 and skill/lock pins remain.
+The reviewed private caller may also run from the exact newly created owner
+comment `/gate-watch-voice drain` on private Mark control issue #47, excluding
+pull requests. Gate allows `issue_comment` only with the immutable owner actor
+ID. A local event-file check enforces case-sensitive command equality before
+the authentication step; the GitHub expression guard alone ignores case.
+Current-main/run/attempt/private-repository/OIDC/workflow-byte verification
+and the empty request body remain mandatory. The comment trigger adds no
+provider calls beyond the permanent same-note cap, no arbitrary selector,
+no credentials, no new scheduled automation and no automatic retry.
