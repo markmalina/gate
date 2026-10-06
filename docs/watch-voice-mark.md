@@ -74,7 +74,10 @@ The private workflow's five-minute schedule is a mechanism, not a latency SLA.
 The same pinned workflow also accepts the exact owner control comment
 `/gate-watch-voice drain` on private Mark control issue #47. Its job guard
 requires a newly created comment, immutable owner ID, and a real issue rather
-than a pull request. Gate accepts `issue_comment` only from that owner ID and
+than a pull request. Because GitHub expression string equality ignores case,
+a local event-file check also requires the exact case-sensitive command before
+the authentication step reads credentials or requests OIDC. Gate accepts
+`issue_comment` only from that owner ID and
 still verifies the private repository, main, current run, attempt and workflow
 pin. Comment text, issue selectors and URLs never become endpoint parameters.
 This provides a fresh bounded run when dispatch is unavailable; it adds no

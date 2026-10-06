@@ -186,7 +186,9 @@ error enums, never provider messages/bodies. Policy v2 and skill/lock pins remai
 The reviewed private caller may also run from the exact newly created owner
 comment `/gate-watch-voice drain` on private Mark control issue #47, excluding
 pull requests. Gate allows `issue_comment` only with the immutable owner actor
-ID; current-main/run/attempt/private-repository/OIDC/workflow-byte verification
+ID. A local event-file check enforces case-sensitive command equality before
+the authentication step; the GitHub expression guard alone ignores case.
+Current-main/run/attempt/private-repository/OIDC/workflow-byte verification
 and the empty request body remain mandatory. The comment trigger adds no
 provider calls beyond the permanent same-note cap, no arbitrary selector,
 no credentials, no new scheduled automation and no automatic retry.
