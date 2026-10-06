@@ -491,6 +491,53 @@ def test_exact_rollout_source_skips_other_revisions(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("queued_state", ["received", "transcribed", "blocked"])
+def test_exact_rollout_does_not_process_preexisting_other_note(tmp_path, monkeypatch, queued_state):
+    world = World()
+    world.patches(monkeypatch)
+    selected = settings(
+        GATE_WATCH_VOICE_FILE_ID=world.entry["id"],
+        GATE_WATCH_VOICE_REVISION=world.entry["rev"],
+    )
+
+    async def run():
+        async with database(tmp_path) as factory:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                # A previous broader rollout stored an unrelated revision before the cap.
+                other_entry = dict(world.entry, id="id:other", rev="other-revision")
+                await worker.store_entry(settings(), factory, http, "synthetic", other_entry)
+                other = (await notes(factory))[0]
+                async with factory() as session:
+                    queued = await session.get(WatchVoiceNote, other.id)
+                    queued.transcription_state = (
+                        "received" if queued_state == "received" else "transcribed"
+                    )
+                    if queued_state != "received":
+                        queued.transcript = "Unrelated queued transcript"
+                        queued.transcribed_at = datetime.now(UTC)
+                    if queued_state == "blocked":
+                        queued.delivery_state = "blocked"
+                        queued.last_error = "github_post_rejected"
+                    await session.commit()
+                if queued_state == "blocked":
+                    assert not await worker.resume_rejected_delivery(selected, factory, other.id)
+                for _ in range(3):
+                    await worker.process_watch_voice(selected, factory, http)
+            rows = {row.file_id: row for row in await notes(factory)}
+            assert len(rows) == 2
+            assert rows[world.entry["id"]].delivery_state == "delivered"
+            assert rows["id:other"].transcription_state == (
+                "received" if queued_state == "received" else "transcribed"
+            )
+            assert rows["id:other"].delivery_state == (
+                "blocked" if queued_state == "blocked" else "pending"
+            )
+            assert world.provider_calls == 1 and world.posts == 1
+            assert len(world.issues) == 1
+
+    asyncio.run(run())
+
+
 def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
     from app.api import mcp_routes
 

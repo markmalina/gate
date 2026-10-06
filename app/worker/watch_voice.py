@@ -118,6 +118,19 @@ def timestamp(value: str) -> datetime:
     return result.astimezone(UTC)
 
 
+def note_scope(settings: Settings) -> tuple[Any, ...]:
+    scope: tuple[Any, ...] = (
+        WatchVoiceNote.workspace_key == settings.gate_workspace_id,
+        WatchVoiceNote.account_id == settings.dropbox_call_account_id,
+    )
+    if settings.gate_watch_voice_file_id:
+        scope += (
+            WatchVoiceNote.file_id == settings.gate_watch_voice_file_id,
+            WatchVoiceNote.revision == settings.gate_watch_voice_revision,
+        )
+    return scope
+
+
 def issue_body(note: WatchVoiceNote, part: int) -> str:
     parts = transcript_parts(note.transcript or "")
     transcribed = note.transcribed_at.isoformat() if note.transcribed_at else "неизвестно"
@@ -229,8 +242,7 @@ async def transcribe_note(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note_id,
-                WatchVoiceNote.workspace_key == settings.gate_workspace_id,
-                WatchVoiceNote.account_id == settings.dropbox_call_account_id,
+                *note_scope(settings),
                 WatchVoiceNote.transcription_state == "received",
             )
             .values(transcription_state="processing", attempted_at=datetime.now(UTC))
@@ -477,10 +489,7 @@ async def process_watch_voice(
             state.cursor = cursor
             if not delta["has_more"]:
                 break
-        scope = (
-            WatchVoiceNote.workspace_key == settings.gate_workspace_id,
-            WatchVoiceNote.account_id == settings.dropbox_call_account_id,
-        )
+        scope = note_scope(settings)
         # Crashed effect claims are quarantined, never blindly retried.
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:
@@ -601,8 +610,7 @@ async def resume_rejected_delivery(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note_id,
-                WatchVoiceNote.workspace_key == settings.gate_workspace_id,
-                WatchVoiceNote.account_id == settings.dropbox_call_account_id,
+                *note_scope(settings),
                 WatchVoiceNote.transcription_state == "transcribed",
                 WatchVoiceNote.delivery_state == "blocked",
                 WatchVoiceNote.last_error == "github_post_rejected",
