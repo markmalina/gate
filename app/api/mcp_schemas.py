@@ -2475,5 +2475,6 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "run_claim_count": {"type": "integer", "minimum": 0},
     "delivery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "transcription_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })

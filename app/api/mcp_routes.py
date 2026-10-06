@@ -19,6 +19,7 @@ from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
+from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.health_routes import _get_worker_health_registry
@@ -1050,7 +1051,10 @@ async def _watch_voice_tool_result(
         if row.github_received_at
         else None,
         "last_error": row.last_error,
+        "model": row.model,
     }
+    if row.model == "gpt-4o-transcribe":
+        receipt["recovery"] = await protected_recovery_receipt(session, row)
     return _jsonrpc_result(
         request_id=request_id,
         result={

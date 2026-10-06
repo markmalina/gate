@@ -76,3 +76,48 @@ and journal counts; these flags never claim current credential or binding
 readiness. Protected `watch-voice:` / `watch-voice-file:` reads supply actual
 receipts/originals. Activation, receipt, original hash, full transcript and three
 fresh replay cycles still require independent live verification.
+
+## Owner-authorized same-note quota probe (Gate #736)
+
+Mark explicitly requested a current quota check on the archived note on
+2026-10-06 at 19:14 MSK. This overrides the earlier factual quota-restoration
+prerequisite. Available Gate budget does not prove provider quota. An actual
+bounded request now establishes the outcome, without payment, billing UI
+mutation, key extraction/replacement or new provider/source.
+
+The fixed private binding must contain `scope=initial-quota-probe`, the same
+exact `file_id`/`revision`, existing `event_id`, verified `expected_audio_sha256`,
+original `expected_error` (legacy rate_limited or typed quota_unavailable),
+`provider_cause=insufficient_quota`, `owner_quota_probe=true`, and
+`authorized_at=YYYY-MM-DDTHH:MM:SSZ` (the actual owner instruction time, following
+the original provider attempt). Absent/false approval and invalid/future/old
+approval time fail closed. Legacy `quota_restored` fields are rejected rather
+than fabricated. Model, endpoint, repository and workflow are not selectors.
+
+The pinned caller and empty endpoint body are unchanged. Private repository,
+current-main/run/workflow checks precede the protected archive read and require
+exact source/hash, rejected mini-model attempt, no transcript/publication and
+matched released original Gate speech reservation. The attempt stays in the
+original current budget period under the existing USD3 entitlement. No Dropbox
+list/redownload or second event is needed.
+
+Additive migration `0114_watch_voice_recovery_claims` preserves original
+error/model/time/reservation and records the approving private-main SHA,
+`authorization_kind=owner_quota_probe`, and `authorized_at`. One permanent claim
+is never rearmed. Isolated `gpt-4o-transcribe` gets exactly one normalized part
+and one 60-second request with `watch-voice:<event_id>:recovery1` reservation and
+actual usage settlement. Budget/media rejection, provider refusal and
+unknown/crashed work consume the cap. Zero automatic retries/Telegram sends.
+
+Protected receipt `provider_readiness` reports observations; runner receipt keys
+remain unchanged to match the pinned private workflow:
+`available_for_attempt`, `quota_unavailable`, `rate_limited`, `unknown`, or
+`not_established`. They never claim that billing/account state was changed.
+Success uses existing private Mark outbox one part per fresh run; unknown
+publication only read-reconciles. Owner-scoped status exposes recovery counts.
+The protected watch-voice receipt includes original released-reservation proof
+and new reservation state/actual cost. Exact-head PostgreSQL CI, independent
+review and registered deploy precede activation. On mismatch disable endpoint
+or binding and preserve both journals; never downgrade real-use evidence.
+Delivered initial receipt and cursor gate later owner-approved `future-only`;
+normal future access still needs a new recording receipt/replay verification.
