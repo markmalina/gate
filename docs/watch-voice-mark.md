@@ -71,6 +71,14 @@ most one note, and advances at most one transcript part. A long transcript
 continues in later fresh runs with no retranscription. Unknown publication only
 read-reconciles an exact bot-authored body; no-result is not permission to POST.
 The private workflow's five-minute schedule is a mechanism, not a latency SLA.
+The same pinned workflow also accepts the exact owner control comment
+`/gate-watch-voice drain` on private Mark control issue #47. Its job guard
+requires a newly created comment, immutable owner ID, and a real issue rather
+than a pull request. Gate accepts `issue_comment` only from that owner ID and
+still verifies the private repository, main, current run, attempt and workflow
+pin. Comment text, issue selectors and URLs never become endpoint parameters.
+This provides a fresh bounded run when dispatch is unavailable; it adds no
+automation, credentials, provider retry or publication allowance.
 The scoped `gate_get_status.watch_voice_actions` reports live flags, pin presence
 and journal counts; these flags never claim current credential or binding
 readiness. Protected `watch-voice:` / `watch-voice-file:` reads supply actual
@@ -94,7 +102,7 @@ the original provider attempt). Absent/false approval and invalid/future/old
 approval time fail closed. Legacy `quota_restored` fields are rejected rather
 than fabricated. Model, endpoint, repository and workflow are not selectors.
 
-The pinned caller and empty endpoint body are unchanged. Private repository,
+The pinned caller path and empty endpoint body are unchanged. Private repository,
 current-main/run/workflow checks precede the protected archive read and require
 exact source/hash, rejected mini-model attempt, no transcript/publication and
 matched released original Gate speech reservation. The attempt stays in the

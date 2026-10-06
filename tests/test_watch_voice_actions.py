@@ -158,6 +158,9 @@ class ActionsWorld(World):
         {"jti": ""},
         {"iat": 1},
         {"event_name": "push", "actor_id": "1"},
+        {"event_name": "issue_comment", "actor_id": "1"},
+        {"event_name": "issue_comment", "actor_id": None},
+        {"event_name": "issue_comment", "actor_id": int(OWNER_ID)},
     ],
 )
 def test_oidc_rejects_wrong_exact_identity(change):
@@ -169,6 +172,56 @@ def test_oidc_accepts_exact_schedule_or_owner_main_push():
     authorize_claims(claims())
     authorize_claims(claims(event_name="push", actor_id=OWNER_ID))
     authorize_claims(claims(event_name="workflow_dispatch", actor_id=OWNER_ID))
+    authorize_claims(claims(event_name="issue_comment", actor_id=OWNER_ID))
+
+
+def test_owner_comment_fresh_runs_keep_exact_receipt_and_no_duplicate_effects(
+    tmp_path, monkeypatch
+):
+    world = ActionsWorld()
+    world.run_event = "issue_comment"
+    world.patches(monkeypatch)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http,
+        ):
+            async with factory() as session:
+                await session.run_sync(
+                    lambda s: WatchVoiceDrainRun.__table__.create(s.connection())
+                )
+                await session.commit()
+            for index in range(4):
+                world.current_run = str(321 + index)
+                claim = claims(
+                    event_name="issue_comment",
+                    actor_id=OWNER_ID,
+                    run_id=world.current_run,
+                    jti=f"owner-comment-{index}",
+                )
+                authorize_claims(claim)
+                receipt = await drain(
+                    settings=action_settings(),
+                    factory=factory,
+                    http=http,
+                    claims=claim,
+                    job_token="synthetic-job-token",
+                )
+                assert set(receipt) == {
+                    "schema",
+                    "result",
+                    "considered",
+                    "published_parts",
+                    "delivered",
+                    "reconciled",
+                    "private_content_exposed",
+                }
+                assert receipt["delivered"] == int(index == 0)
+            assert world.posts == world.provider_calls == 1
+            assert (await notes(factory))[0].delivery_state == "delivered"
+
+    asyncio.run(run())
 
 
 def test_binding_forbids_client_url_workspace_and_incomplete_pair():

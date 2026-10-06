@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -101,6 +101,34 @@ async def recover_note(
                     existing.outcome = "unknown"
                     existing.last_error = note.last_error
                     existing.finished_at = now
+                if (
+                    note.transcription_state == "transcribed"
+                    and note.delivery_state == "sending"
+                    and note.attempted_at is not None
+                    and _utc(note.attempted_at) < now - timedelta(hours=1)
+                ):
+                    # A crash after POST may leave an acknowledged remote issue
+                    # without its local receipt. Quarantine only the observed
+                    # exact publication claim; never rearm it for another POST.
+                    await session.execute(
+                        update(WatchVoiceNote)
+                        .where(
+                            WatchVoiceNote.id == note.id,
+                            *worker.note_scope(settings),
+                            WatchVoiceNote.sha256 == binding["expected_audio_sha256"],
+                            WatchVoiceNote.transcription_state == "transcribed",
+                            WatchVoiceNote.delivery_state == "sending",
+                            WatchVoiceNote.next_part == note.next_part,
+                            WatchVoiceNote.attempted_at == note.attempted_at,
+                            WatchVoiceNote.attempted_at < now - timedelta(hours=1),
+                        )
+                        .values(
+                            delivery_state="unknown",
+                            last_error="watch_voice_stale_publication",
+                        )
+                        .execution_options(synchronize_session=False)
+                    )
+                    await session.refresh(note)
                 return note
             if (
                 note.transcription_state != "rejected"

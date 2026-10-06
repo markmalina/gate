@@ -550,6 +550,115 @@ def test_lost_ack_reconciles_one_post_and_no_new_transcription(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize(
+    "stale,exact_receipt,accepted",
+    [(False, True, True), (True, True, True), (True, False, True), (True, False, False)],
+)
+def test_crash_after_actual_post_only_stale_claim_read_reconciles(
+    tmp_path, monkeypatch, stale, exact_receipt, accepted
+):
+    from app.infrastructure.watch_voice_actions import ActionsInboxClient
+
+    world = RecoveryWorld()
+    world.normalizer(monkeypatch)
+    original_post = ActionsInboxClient.post
+
+    async def crash_after_post(self, **kwargs):
+        if accepted:
+            await original_post(self, **kwargs)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(ActionsInboxClient, "post", crash_after_post)
+
+    async def run():
+        async with database(tmp_path) as factory:
+            note_id, _ = await seed(factory, world)
+            with pytest.raises(asyncio.CancelledError):
+                await call(factory, world)
+            assert world.provider_calls == 1
+            assert world.posts == len(world.issues) == int(accepted)
+            async with factory() as session:
+                note = await session.get(WatchVoiceNote, note_id)
+                assert note.transcription_state == "transcribed"
+                assert note.delivery_state == "sending" and note.issue_number is None
+                original_audit_error = (
+                    await session.get(WatchVoiceRecoveryClaim, note_id)
+                ).last_error
+                if stale:
+                    note.attempted_at = datetime.now(UTC) - timedelta(hours=2)
+                    await session.commit()
+            if not exact_receipt and accepted:
+                world.issues[0]["body"] = "different synthetic body"
+            monkeypatch.setattr(ActionsInboxClient, "post", original_post)
+            if stale and exact_receipt:
+                from app.infrastructure.watch_voice_actions import bound_settings
+
+                scoped = await bound_settings(
+                    action_settings(), world.binding, factory, job_token="synthetic-job-token"
+                )
+                async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                    await asyncio.gather(
+                        *(
+                            recover_note(
+                                scoped,
+                                factory,
+                                http,
+                                world.binding,
+                                authorization_sha=claims()["sha"],
+                            )
+                            for _ in range(6)
+                        )
+                    )
+            second = await call(factory, world, "322")
+            assert second["published_parts"] == 0
+            assert second["reconciled"] == second["delivered"] == int(stale and exact_receipt)
+            async with factory() as session:
+                note = await session.get(WatchVoiceNote, note_id)
+                audit = await session.get(WatchVoiceRecoveryClaim, note_id)
+                expected = (
+                    "delivered" if stale and exact_receipt else "unknown" if stale else "sending"
+                )
+                assert note.delivery_state == expected
+                assert note.next_part == int(stale and exact_receipt)
+                assert audit.outcome == "transcribed" and audit.last_error == original_audit_error
+            await call(factory, world, "323")
+            assert world.posts == int(accepted) and world.provider_calls == 1
+
+    asyncio.run(run())
+
+
+def test_stale_recovery_publication_does_not_cross_source_scope(tmp_path, monkeypatch):
+    from app.infrastructure.watch_voice_actions import ActionsInboxClient
+
+    world = RecoveryWorld()
+    world.normalizer(monkeypatch)
+    original_post = ActionsInboxClient.post
+
+    async def crash_after_post(self, **kwargs):
+        await original_post(self, **kwargs)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(ActionsInboxClient, "post", crash_after_post)
+
+    async def run():
+        async with database(tmp_path) as factory:
+            note_id, _ = await seed(factory, world)
+            with pytest.raises(asyncio.CancelledError):
+                await call(factory, world)
+            async with factory() as session:
+                note = await session.get(WatchVoiceNote, note_id)
+                note.attempted_at = datetime.now(UTC) - timedelta(hours=2)
+                await session.commit()
+            world.binding["file_id"] = "id:foreign"
+            with pytest.raises(WatchVoiceError, match="source_mismatch"):
+                await call(factory, world, "322")
+            async with factory() as session:
+                assert (await session.get(WatchVoiceNote, note_id)).delivery_state == "sending"
+            assert world.posts == world.provider_calls == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
     "change",
     [
         {"owner_quota_probe": False},

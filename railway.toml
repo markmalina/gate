@@ -4,7 +4,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 preDeployCommand = "alembic upgrade head"
-startCommand = "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=04cefa676b43b9fb517d7d4bf20a297339ab46a16887e85b81bd7533c9912f92; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_AQUB_MEDIA_FORWARD_ENABLED=true; export GATE_AQUB_FOOD_MEDIA_PROCESSING_ENABLED=true; export GATE_AQUB_FOOD_MEDIA_DATA_GATE_APPROVED=true; export TELEGRAM_AQUB_BOT_TOKEN=\"${TELEGRAM_AQUB_BOT_TOKEN:-$TELEGRAM_AQUBAGENTBOT_TOKEN}\"; GATE_AQUB_RUNTIME_URL=https://aqub-production.up.railway.app exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+startCommand = "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=c2ed7eba1ee7783b14bb2652d41f20e94ac23026546f4015b9e8b622d0d7bccc; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_AQUB_MEDIA_FORWARD_ENABLED=true; export GATE_AQUB_FOOD_MEDIA_PROCESSING_ENABLED=true; export GATE_AQUB_FOOD_MEDIA_DATA_GATE_APPROVED=true; export TELEGRAM_AQUB_BOT_TOKEN=\"${TELEGRAM_AQUB_BOT_TOKEN:-$TELEGRAM_AQUBAGENTBOT_TOKEN}\"; GATE_AQUB_RUNTIME_URL=https://aqub-production.up.railway.app exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 healthcheckPath = "/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"

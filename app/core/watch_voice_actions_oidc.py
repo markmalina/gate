@@ -48,9 +48,10 @@ def authorize_claims(claims: dict[str, Any], *, now: float | None = None) -> Non
     if (
         any(claims.get(key) != value for key, value in expected.items())
         or claims.get("sub") not in subjects
-        or claims.get("event_name") not in {"schedule", "workflow_dispatch", "push"}
+        or claims.get("event_name")
+        not in {"schedule", "workflow_dispatch", "push", "issue_comment"}
         or (
-            claims.get("event_name") in {"workflow_dispatch", "push"}
+            claims.get("event_name") in {"workflow_dispatch", "push", "issue_comment"}
             and claims.get("actor_id") != OWNER_ID
         )
         or not isinstance(claims.get("run_id"), str)
