@@ -2465,3 +2465,15 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice"] = _object({
     "transcription_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+
+
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
+    "enabled": {"type": "boolean"},
+    "workflow_pin_configured": {"type": "boolean"},
+    "ordinary_worker_enabled": {"type": "boolean"},
+    "scope_allowed": {"type": "boolean"},
+    "run_claim_count": {"type": "integer", "minimum": 0},
+    "delivery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "transcription_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "private_content_exposed": {"type": "boolean", "enum": [False]},
+})

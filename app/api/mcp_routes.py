@@ -78,6 +78,7 @@ from app.application.reply_sequences import (
     ReplySequenceError,
 )
 from app.models.watch_voice import WatchVoiceNote
+from app.infrastructure.watch_voice_actions import operational_status as watch_voice_actions_status
 from app.worker.watch_voice import operational_status as watch_voice_operational_status
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
@@ -380,6 +381,12 @@ async def mcp_endpoint(
                     "inbox_path_valid": settings.dropbox_call_inbox_path == "/Alpha/Calls",
                 },
             )
+            if settings.gate_watch_voice_actions_enabled:
+                snapshot["watch_voice_actions"] = await watch_voice_actions_status(
+                    session, settings,
+                    scope_allowed=(principal.access_scope.workspace_id == settings.gate_workspace_id
+                                   and UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids),
+                )
             if settings.gate_watch_voice_enabled:
                 snapshot["watch_voice"] = await watch_voice_operational_status(
                     session, settings,

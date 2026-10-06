@@ -16,6 +16,7 @@ import httpx
 
 from app.api.alpha_admin_routes import router as alpha_admin_router
 from app.api.beta_checkpoint_routes import router as beta_checkpoint_router
+from app.api.watch_voice_routes import router as watch_voice_router
 from app.api.contact_snapshot_routes import router as contact_snapshot_router
 from app.api.dropbox_call_routes import router as dropbox_call_router
 from app.api.health_routes import router as health_router
@@ -439,6 +440,7 @@ def create_app() -> FastAPI:
     app.include_router(owner_one_off_transcription_router)
     app.include_router(alpha_admin_router)
     app.include_router(beta_checkpoint_router)
+    app.include_router(watch_voice_router)
     include_telegram_ingress(app)
     app.include_router(sprint12_router)
     app.include_router(router)

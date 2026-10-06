@@ -106,3 +106,40 @@ and recorded rollback. Initial live acceptance cap: one exact owner-selected
 watch note, at most one transcription attempt per bounded part and one initial
 issue plus required transcript continuation parts, zero Telegram sends.
 No initial personal data/backfill is processed in the repository test stage.
+
+## Private Mark Actions delivery addendum — 2026-10-06
+
+The owner requested completion of Gate #731/resources #4 and delegated this
+bounded successor. This alternative to a persistent Mark token is default-off
+through `GATE_WATCH_VOICE_MARK_OIDC_ENABLED=false`. It preserves every v2 model,
+endpoint, media, duration, part, timeout, retention and shared USD 3 budget bound.
+
+One authenticated private `markmalina/mark` main workflow provides its automatic
+job token in a request header. Gate verifies exact GitHub OIDC issuer/audience,
+RS256 signature, immutable repository and owner IDs, private visibility, main,
+exact pinned workflow bytes, current main revision and one current run attempt.
+The repository-scoped job token remains request-local; it is never persisted,
+logged or transported elsewhere. Private repository metadata and exact approved
+private binding are verified before Dropbox audio or any transcription I/O.
+
+The fixed private binding selects one exact owner note for initial acceptance.
+A later owner-approved `future-only` binding requires its delivered initial
+receipt and existing Dropbox cursor; a durable cutover excludes every preexisting
+archive/queued note. There is no historical import, classifier or arbitrary
+client-selected repository/workspace/source/URL. One fresh run consumes a durable
+hash-only replay claim before effects and processes at most one note plus one
+publication part. Unknown provider work is not retried; unknown GitHub work is
+read-reconciled and never blindly posted again. Zero Telegram sends.
+
+The ordinary persistent-token worker remains off in this mode. The job token
+may create full-transcript issues/comments only in private `markmalina/mark`,
+validated with exact `github-actions[bot]` writer/body receipts. Runner responses
+contain only bounded counts/enums; original audio and full receipt remain in the
+protected Gate archive. First-note live acceptance and a verified deployed
+revision/schema remain mandatory; synthetic tests are not product acceptance.
+
+The pinned skill SHA was verified exactly on 2026-10-06. Official OpenAI speech,
+data-controls and pricing documentation were rechecked: supported model and
+25 MB upload/chunk limits persist; estimated mini-transcribe price remains
+USD 0.003/minute. This does not alter the hard shared monthly budget or claim
+account-level ZDR provisioning.
