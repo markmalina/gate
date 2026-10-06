@@ -157,6 +157,27 @@ class TelegramClient:
         url = f"{self._api_base_url}/bot{self._credential}/sendMessage"
         return await self._post_telegram_json(url=url, payload=payload)
 
+    async def send_rich_message(
+        self,
+        *,
+        chat_id: str,
+        business_connection_id: str,
+        blocks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """One blocks-only rich write on the shared bounded HTTP client; no retry."""
+        if not self._credential or not chat_id or not business_connection_id:
+            raise ValueError("Telegram Business destination is required")
+        from app.application.telegram_rich import validate_provider_blocks
+
+        validate_provider_blocks(blocks)
+        payload = {
+            "chat_id": chat_id,
+            "business_connection_id": business_connection_id,
+            "rich_message": {"blocks": blocks, "skip_entity_detection": True},
+        }
+        url = f"{self._api_base_url}/bot{self._credential}/sendRichMessage"
+        return await self._post_telegram_json(url=url, payload=payload)
+
     async def send_business_document(
         self,
         *,

@@ -59,6 +59,10 @@ class ReplySendResult:
     document_size_bytes: int | None = None
     document_sha256: str | None = None
     payload_sha256: str | None = None
+    delivery_mode: str | None = None
+    draft_revision: int | None = None
+    runtime_revision: str | None = None
+    reservation_time: str | None = None
 
 
 class ReplySendExecutor(Protocol):
