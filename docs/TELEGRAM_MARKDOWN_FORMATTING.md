@@ -1,6 +1,10 @@
 # Telegram formatting for approved replies (#727)
 
 Gate accepts an explicit `plain` or `markdown` mode when preparing text.
+Native single-message Rich uses a separate explicit `text_format=rich` and
+`rich_content` contract; see [Gate Rich sprint 1](specs/ISSUE-737-RICH-SPRINT-1.md)
+for the typed blocks, exact preview/approval, limits and operator JSON.
+Rich is not enabled in sequences or document captions.
 Explicit `plain` preserves the exact text literally and saves a formatting
 preview; stars, underscores, backticks and HTML-looking text remain literal.
 Omitting `text_format` or `caption_format` selects the legacy literal contract

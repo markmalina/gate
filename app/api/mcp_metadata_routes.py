@@ -81,6 +81,7 @@ async def mcp_metadata(
         "service": "gate",
         "resource": resource,
         "commit": _commit(settings),
+        "reply_formats": _reply_formats(settings),
         "auth": {
             "type": "temporary_bearer_or_oauth2.1",
             "mode": settings.mcp_auth_mode,
@@ -131,6 +132,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "endpoint": "/mcp",
         "protocol_version": "2025-06-18",
         "commit": _commit(settings),
+        "reply_formats": _reply_formats(settings),
         "enabled": settings.gate_mcp_enabled,
         "auth_mode": settings.mcp_auth_mode,
         "auth_enforced": settings.gate_mcp_enabled,
@@ -165,6 +167,24 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "send_requires_explicit_confirmation": True,
     }
 
+
+
+def _reply_formats(settings: Settings) -> JsonObject:
+    return {
+        "text_modes": ["plain", "markdown", "rich"],
+        "legacy_omission": "literal",
+        "rich": {
+            "schema_version": "gate.rich.v1",
+            "converter_version": "gate.telegram-rich.v1",
+            "runtime_enabled": settings.gate_rich_send_enabled,
+            "explicit_opt_in": True,
+            "single_message_only": True,
+            "series_supported": False,
+            "captions_supported": False,
+            "provider_capability": "requires_live_business_user_support",
+            "visual_capability": "requires_client_verification",
+        },
+    }
 
 def _auth_status(settings: Settings) -> str:
     if not settings.gate_mcp_enabled:

@@ -49,6 +49,7 @@ from app.application.mcp_status import (
     build_gate_status,
     serialize_connection_health as _serialize_connection_health,
 )
+from app.application.telegram_rich import rich_content_schema
 from app.application.reply_drafts import (
     ReplyDraftError,
     SaveReplyDraftCommand,
@@ -3275,7 +3276,7 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "name": "gate_save_reply_draft",
         "title": "Save a Gate reply draft",
         "description": (
-            "Save proposed text with explicit text_format=plain (literal) or markdown. "
+            "Save proposed text with text_format=plain, markdown, or rich. Rich requires rich_content (gate.rich.v1) and omitted or empty text; supports heading, paragraph, list, blockquote, pre, table. Rich is single-message only; no series/captions. "
             "Omitting text_format keeps the legacy literal contract without a formatting preview. "
             "Markdown supports bold, italic, strike, underline, spoiler, links, code, headings, lists and quotes; unsupported or malformed syntax is rejected. "
             "Returns exact normalized text, UTF-16 entities and versioned formatting preview/hash. "
@@ -3288,11 +3289,30 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
             "type": "object",
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
-                "text": {"type": "string", "minLength": 1, "maxLength": 65536},
-                "text_format": {"type": "string", "enum": ["plain", "markdown"]},
+                "text": {"type": "string", "maxLength": 65536},
+                "text_format": {"type": "string", "enum": ["plain", "markdown", "rich"]},
+                "rich_content": rich_content_schema(),
                 "follow_up": {"type": "boolean", "default": False},
             },
-            "required": ["task_id", "text"],
+            "required": ["task_id"],
+            "oneOf": [
+                {
+                    "properties": {"text_format": {"const": "rich"}, "text": {"const": ""}},
+                    "required": ["text_format", "rich_content"],
+                },
+                {
+                    "required": ["text"],
+                    "not": {
+                        "anyOf": [
+                            {"required": ["rich_content"]},
+                            {
+                                "properties": {"text_format": {"const": "rich"}},
+                                "required": ["text_format"],
+                            },
+                        ]
+                    },
+                },
+            ],
             "additionalProperties": False,
         },
         "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS["gate_save_reply_draft"],
@@ -3511,24 +3531,26 @@ async def _save_reply_draft_tool_result(
     session: AsyncSession,
 ) -> JsonObject:
     if arguments.keys() - {
-        'task_id',
-        'text',
-        'text_format',
-        'follow_up',
+        "task_id",
+        "text",
+        "text_format",
+        "rich_content",
+        "follow_up",
     }:
         return _tool_error_result(
             request_id=request_id, code="invalid_arguments",
             message="Unknown arguments are not supported",
         )
     raw_task_id = arguments.get("task_id")
-    raw_text = arguments.get("text")
+    raw_text = arguments.get("text", "" if arguments.get("text_format") == "rich" else None)
     raw_follow_up = arguments.get("follow_up", False)
     text_format = arguments.get("text_format")
     if (
         not isinstance(raw_task_id, str)
         or not isinstance(raw_text, str)
         or not isinstance(raw_follow_up, bool)
-        or ("text_format" in arguments and text_format not in ("plain", "markdown"))
+        or ("rich_content" in arguments and text_format != "rich")
+        or ("text_format" in arguments and text_format not in ("plain", "markdown", "rich"))
     ):
         return _tool_error_result(
             request_id=request_id,
@@ -3553,6 +3575,7 @@ async def _save_reply_draft_tool_result(
                 text=raw_text,
                 follow_up=raw_follow_up,
                 text_format=text_format,
+                rich_content=arguments.get("rich_content"),
             )
         )
     except ReplyDraftError as exc:
@@ -3690,6 +3713,9 @@ async def _send_approved_reply_tool_result(
         "status": sent.status,
         "sent": sent.sent,
         "idempotent_replay": sent.idempotent_replay,
+        **({"delivery_mode": sent.delivery_mode, "draft_revision": sent.draft_revision,
+            "runtime_revision": sent.runtime_revision, "reservation_time": sent.reservation_time}
+           if sent.delivery_mode == "rich" else {}),
         **({"payload_sha256": sent.payload_sha256} if sent.payload_sha256 is not None else {}),
         "provider_message_id": sent.provider_message_id,
         "error_code": sent.error_code,
@@ -3749,6 +3775,12 @@ async def _prepare_reply_document_tool_result(
     caption = arguments.get("caption", "")
     caption_format = arguments.get("caption_format")
     follow_up = arguments.get("follow_up", False)
+    if caption_format == "rich":
+        return _tool_error_result(
+            request_id=request_id,
+            code="rich_surface_unsupported",
+            message="Rich document captions are unsupported in sprint 1",
+        )
     if not isinstance(caption, str) or type(follow_up) is not bool or ("caption_format" in arguments and caption_format not in ("plain", "markdown")):
         return _tool_error_result(
             request_id=request_id,
@@ -4355,6 +4387,7 @@ async def _build_alpha_canary_status(
         "audit": audit_counts,
         "model_shadow": model_shadow,
     }
+
 
 def _format_reply_context_text(context: JsonObject) -> str:
     account = context["account"]

@@ -453,6 +453,11 @@ def stored_preview(
     if key not in metadata:
         return None
     value = metadata[key]
+    if isinstance(value, dict) and value.get("text_format") == "rich":
+        if key != FORMAT_KEY:
+            _fail("Rich document captions are unsupported", "rich_surface_unsupported")
+        from app.application.telegram_rich import stored_rich_preview
+        return stored_rich_preview(text, value)
     if not isinstance(value, dict) or set(value) != _FIELDS:
         _fail("Saved formatting snapshot structure is invalid")
     if any(not isinstance(value[k], str) for k in _FIELDS - {"entities"}):

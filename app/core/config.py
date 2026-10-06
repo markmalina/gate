@@ -104,6 +104,7 @@ class Settings(BaseSettings):
         default="", validation_alias="GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID"
     )
     gate_send_enabled: bool = Field(default=True, validation_alias="GATE_SEND_ENABLED")
+    gate_rich_send_enabled: bool = Field(default=False, validation_alias="GATE_RICH_SEND_ENABLED")
     gate_document_send_enabled: bool = Field(
         default=False, validation_alias="GATE_DOCUMENT_SEND_ENABLED"
     )
@@ -280,9 +281,7 @@ class Settings(BaseSettings):
     )
     gate_become_voice_transcription_data_gate_approved: bool = Field(
         default=False,
-        validation_alias=(
-            "GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED"
-        ),
+        validation_alias=("GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED"),
     )
     gate_become_voice_transcription_max_calls: int = Field(
         default=0,
@@ -304,17 +303,13 @@ class Settings(BaseSettings):
         default=100,
         ge=100,
         le=10_000,
-        validation_alias=(
-            "GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND"
-        ),
+        validation_alias=("GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND"),
     )
     gate_become_voice_transcription_timeout_seconds: float = Field(
         default=60,
         ge=5,
         le=120,
-        validation_alias=(
-            "GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS"
-        ),
+        validation_alias=("GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS"),
     )
     gate_become_pilot_slice1_enabled: bool = Field(
         default=False,
@@ -330,9 +325,7 @@ class Settings(BaseSettings):
         default=0,
         ge=0,
         le=1,
-        validation_alias=(
-            "GATE_BECOME_PILOT_SLICE1_PROVIDER_MAX_CALLS"
-        ),
+        validation_alias=("GATE_BECOME_PILOT_SLICE1_PROVIDER_MAX_CALLS"),
     )
     gate_become_pilot_slice2_enabled: bool = Field(
         default=False,
@@ -459,10 +452,7 @@ class Settings(BaseSettings):
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_REF",
     )
     gate_beta_checkpoint_oidc_workflow_ref: str = Field(
-        default=(
-            "AlphaCenter/beta/.github/workflows/"
-            "checkpoint-context.yml@refs/heads/main"
-        ),
+        default=("AlphaCenter/beta/.github/workflows/checkpoint-context.yml@refs/heads/main"),
         validation_alias="GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF",
     )
     gate_alpha_delivery_enabled: bool = Field(
@@ -576,7 +566,8 @@ class Settings(BaseSettings):
         default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
     )
     gate_watch_voice_actions_workflow_sha256: str = Field(
-        default="", max_length=64,
+        default="",
+        max_length=64,
         validation_alias="GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256",
     )
     gate_watch_voice_enabled: bool = Field(

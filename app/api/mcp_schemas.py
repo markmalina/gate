@@ -1301,7 +1301,6 @@ GATE_STATUS_OUTPUT_SCHEMA: JsonObject = {
 }
 
 
-
 HISTORICAL_VOICE_DEBT_RECORD_SCHEMA = _object(
     {
         "receipt_id": {"type": "string", "format": "uuid"},
@@ -1825,7 +1824,37 @@ FORMATTING_PREVIEW_SCHEMA = _object(
         "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     }
 )
-NULLABLE_FORMATTING_PREVIEW_SCHEMA = {"anyOf": [FORMATTING_PREVIEW_SCHEMA, {"type": "null"}]}
+RICH_PREVIEW_SCHEMA = _object(
+    {
+        "source_text": {"type": "string", "maxLength": 65536},
+        "text": {"type": "string", "maxLength": 65536},
+        "text_format": {"const": "rich"},
+        "converter_version": {"const": "gate.telegram-rich.v1"},
+        "schema_version": {"const": "gate.rich.v1"},
+        "entities": {"type": "array", "maxItems": 0},
+        "source_content": {"type": "object"},
+        "blocks": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "object"}},
+        "scope": _object(
+            {
+                key: {"type": "string", "minLength": 1}
+                for key in (
+                    "workspace_id",
+                    "account_id",
+                    "project_id",
+                    "recipient_chat_id",
+                    "connection_id",
+                    "draft_id",
+                )
+            }
+        ),
+        "revision": {"const": 1},
+        "limits": {"type": "object"},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    }
+)
+NULLABLE_FORMATTING_PREVIEW_SCHEMA = {
+    "anyOf": [FORMATTING_PREVIEW_SCHEMA, RICH_PREVIEW_SCHEMA, {"type": "null"}]
+}
 
 
 DRAFT_SUCCESS_SCHEMA = _object(
@@ -1838,7 +1867,7 @@ DRAFT_SUCCESS_SCHEMA = _object(
         "account": _ref("account_label"),
         "recipient_chat_id": {"type": "string", "minLength": 1, "maxLength": 255},
         "status": {"type": "string", "minLength": 1},
-        "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "text": {"type": "string", "minLength": 1, "maxLength": 65536},
         "sent": {"type": "boolean", "const": False},
         "approval_required": {"type": "boolean", "const": True},
         "send_available": {"type": "boolean"},
@@ -1883,6 +1912,10 @@ SEND_SUCCESS_SCHEMA = _object(
     }
 )
 SEND_SUCCESS_SCHEMA["properties"]["payload_sha256"] = _nullable("string")
+SEND_SUCCESS_SCHEMA["properties"].update({
+    "delivery_mode": {"const": "rich"}, "draft_revision": {"const": 1},
+    "runtime_revision": _nullable("string"), "reservation_time": _nullable("string"),
+})
 GATE_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     SEND_SUCCESS_SCHEMA,
     {"account_label": ACCOUNT_LABEL_SCHEMA},

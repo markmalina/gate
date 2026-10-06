@@ -26,6 +26,7 @@ from app.application.telegram_formatting import (
     FormattingPreview,
     stored_preview,
 )
+from app.application.telegram_rich import RichPreview
 from app.core.config import Settings
 from app.models.domain import (
     Account,
@@ -174,6 +175,7 @@ class SqlTelegramReplySender:
         self._session = session
         self._telegram = telegram
         self._settings = settings
+        self._rich_receipt_context: dict[UUID, tuple[str, str]] = {}
 
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
         preflight = await self._preflight(command)
@@ -219,6 +221,20 @@ class SqlTelegramReplySender:
                     context,
                     reservation.business_connection_id,
                 )
+            elif isinstance(context.formatting, RichPreview):
+                if reservation.business_connection_id != context.formatting.scope["connection_id"]:
+                    raise ReplySendError(
+                        code="rich_connection_changed",
+                        message="Rich approval cannot transfer to another Business connection",
+                    )
+                telegram_result = await self._telegram.send_rich_message(
+                    chat_id=context.target_chat_id,
+                    business_connection_id=reservation.business_connection_id,
+                    blocks=list(context.formatting.blocks),
+                )
+                _validate_rich_provider_result(
+                    telegram_result, context, reservation.business_connection_id
+                )
             elif context.formatting is not None and context.formatting.text_format == "markdown":
                 telegram_result = await self._telegram.send_formatted_message(
                     chat_id=context.target_chat_id,
@@ -243,14 +259,31 @@ class SqlTelegramReplySender:
                 reservation=reservation,
                 status=status,
                 error_code=error_code,
-                error_detail=_safe_error_detail(exc),
+                error_detail=error_code
+                if isinstance(reservation.context.formatting, RichPreview)
+                else _safe_error_detail(exc),
             )
 
-        return await self._finalize_success(
-            command=command,
-            reservation=reservation,
-            telegram_result=telegram_result,
-        )
+        try:
+            return await self._finalize_success(
+                command=command,
+                reservation=reservation,
+                telegram_result=telegram_result,
+            )
+        except Exception:
+            if not isinstance(reservation.context.formatting, RichPreview):
+                raise
+            # Provider accepted, but receipt transaction failed or its commit
+            # outcome is ambiguous. Never label this as a safe failed-to-send.
+            await self._session.rollback()
+            return await self._finalize_failure(
+                command=command,
+                reservation=reservation,
+                status=SendAttemptStatus.UNKNOWN.value,
+                error_code="rich_receipt_pending",
+                error_detail="rich_receipt_pending",
+                provider_message_id=_provider_message_id(telegram_result),
+            )
 
     async def _preflight(
         self,
@@ -322,6 +355,12 @@ class SqlTelegramReplySender:
 
         validation_unavailable = False
         for candidate in intent.candidates:
+            if (
+                isinstance(intent.context.formatting, RichPreview)
+                and candidate.business_connection_id
+                != intent.context.formatting.scope["connection_id"]
+            ):
+                continue
             self._require_provider_outside_transaction()
             try:
                 live_response = await self._telegram.get_business_connection(
@@ -473,6 +512,14 @@ class SqlTelegramReplySender:
         """Create one durable SENDING attempt inside the active short transaction."""
 
         self._validate_context_delivery(current)
+        if (
+            isinstance(current.formatting, RichPreview)
+            and probe.business_connection_id != current.formatting.scope["connection_id"]
+        ):
+            raise ReplySendError(
+                code="rich_connection_changed",
+                message="Rich approval requires the exact saved Business connection",
+            )
         origin_id = current.origin_connection_id
         if not origin_id:
             raise ReplySendError(
@@ -552,6 +599,11 @@ class SqlTelegramReplySender:
             started_at=now,
         )
         self._session.add(attempt)
+        if isinstance(current.formatting, RichPreview):
+            self._rich_receipt_context[attempt.id] = (
+                self._settings.deployment_sha,
+                now.isoformat(),
+            )
         self._session.add(
             AuditLog(
                 actor=f"mcp:{command.principal.subject}"[:255],
@@ -569,6 +621,16 @@ class SqlTelegramReplySender:
                     "business_connection_id": probe.business_connection_id,
                     "payload_sha256": (
                         current.formatting.payload_sha256 if current.formatting else None
+                    ),
+                    **(
+                        {
+                            "delivery_mode": "rich",
+                            "rich_revision": current.formatting.revision,
+                            "runtime_revision": self._settings.deployment_sha,
+                            "reservation_time": now.isoformat(),
+                        }
+                        if isinstance(current.formatting, RichPreview)
+                        else {}
                     ),
                 },
             )
@@ -621,6 +683,7 @@ class SqlTelegramReplySender:
         status: str,
         error_code: str,
         error_detail: str,
+        provider_message_id: str | None = None,
     ) -> ReplySendResult:
         async with self._session.begin():
             attempt = await self._load_attempt_by_id(
@@ -640,6 +703,8 @@ class SqlTelegramReplySender:
             attempt.status = status
             attempt.error_code = error_code
             attempt.error_detail = error_detail
+            if provider_message_id is not None:
+                attempt.provider_message_id = provider_message_id
             attempt.finished_at = datetime.now(UTC)
             if reservation.context.document_sha256 is not None:
                 await self._session.execute(
@@ -940,6 +1005,20 @@ class SqlTelegramReplySender:
         except FormattingError as exc:
             raise ReplySendError(code=exc.code, message=exc.message) from exc
 
+        if isinstance(formatting, RichPreview):
+            expected_scope = {
+                "workspace_id": command.principal.access_scope.workspace_id,
+                "account_id": str(draft.account_id),
+                "project_id": str(draft.project_id),
+                "recipient_chat_id": trigger.sender_id,
+                "connection_id": conversation.business_connection_id
+                or trigger.business_connection_id,
+                "draft_id": str(draft.id),
+            }
+            if formatting.scope != expected_scope:
+                raise ReplySendError(
+                    code="rich_scope_changed", message="Saved rich approval scope changed"
+                )
         return _SendContextSnapshot(
             formatting=formatting,
             draft_id=draft.id,
@@ -1278,6 +1357,13 @@ class SqlTelegramReplySender:
             )
 
     def _validate_context_delivery(self, context: _SendContextSnapshot) -> None:
+        if (
+            isinstance(context.formatting, RichPreview)
+            and not self._settings.gate_rich_send_enabled
+        ):
+            raise ReplySendError(
+                code="rich_send_disabled", message="Rich Business sending is disabled"
+            )
         if context.document_sha256 is not None:
             if not self._settings.gate_document_send_enabled:
                 raise ReplySendError(
@@ -1341,6 +1427,11 @@ class SqlTelegramReplySender:
             if isinstance(reservation_metadata, dict)
             else None
         )
+        if isinstance(context.formatting, RichPreview) and isinstance(reservation_metadata, dict):
+            runtime_revision = reservation_metadata.get("runtime_revision")
+            reservation_time = reservation_metadata.get("reservation_time")
+            if isinstance(runtime_revision, str) and isinstance(reservation_time, str):
+                self._rich_receipt_context[attempt.id] = (runtime_revision, reservation_time)
         current_digest = context.formatting.payload_sha256 if context.formatting else None
         if saved_digest != current_digest:
             raise ReplySendError(
@@ -1403,6 +1494,10 @@ class SqlTelegramReplySender:
         context: _SendContextSnapshot,
         idempotent_replay: bool = False,
     ) -> ReplySendResult:
+        rich_ambiguous = isinstance(context.formatting, RichPreview) and attempt.status in {
+            SendAttemptStatus.SENDING.value,
+            SendAttemptStatus.RESERVED.value,
+        }
         return ReplySendResult(
             attempt_id=attempt.id,
             draft_id=attempt.draft_id,
@@ -1412,17 +1507,23 @@ class SqlTelegramReplySender:
             account_alias=context.account_alias,
             account_label=attempt.account_label,
             recipient_chat_id=attempt.target_chat_id,
-            status=attempt.status,
+            status=SendAttemptStatus.UNKNOWN.value if rich_ambiguous else attempt.status,
             sent=attempt.status == SendAttemptStatus.SENT.value,
             idempotent_replay=idempotent_replay,
             provider_message_id=attempt.provider_message_id,
-            error_code=attempt.error_code,
-            error_detail=attempt.error_detail,
+            error_code="rich_receipt_pending" if rich_ambiguous else attempt.error_code,
+            error_detail="rich_receipt_pending" if rich_ambiguous else attempt.error_detail,
             document_filename=context.document_filename,
             document_media_type=context.document_media_type,
             document_size_bytes=context.document_size_bytes,
             document_sha256=context.document_sha256,
             payload_sha256=context.formatting.payload_sha256 if context.formatting else None,
+            delivery_mode="rich" if isinstance(context.formatting, RichPreview) else None,
+            draft_revision=context.formatting.revision
+            if isinstance(context.formatting, RichPreview)
+            else None,
+            runtime_revision=self._rich_receipt_context.get(attempt.id, (None, None))[0],
+            reservation_time=self._rich_receipt_context.get(attempt.id, (None, None))[1],
         )
 
 
@@ -1543,6 +1644,28 @@ def _provider_message_id(result: dict[str, Any]) -> str | None:
         return None
     message_id = payload.get("message_id")
     return str(message_id) if message_id is not None else None
+
+
+def _validate_rich_provider_result(
+    result: dict[str, Any],
+    context: _SendContextSnapshot,
+    business_connection_id: str,
+) -> None:
+    message = result.get("result")
+    if not isinstance(message, dict):
+        raise RuntimeError("telegram_rich_ack_invalid")
+    chat, rich = message.get("chat"), message.get("rich_message")
+    if (
+        type(message.get("message_id")) is not int
+        or message["message_id"] < 1
+        or not isinstance(chat, dict)
+        or str(chat.get("id")) != context.target_chat_id
+        or not isinstance(rich, dict)
+        or not isinstance(rich.get("blocks"), list)
+        or not rich["blocks"]
+        or message.get("business_connection_id") != business_connection_id
+    ):
+        raise RuntimeError("telegram_rich_ack_mismatch")
 
 
 def _validate_document_provider_result(

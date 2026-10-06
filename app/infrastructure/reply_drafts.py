@@ -1,5 +1,7 @@
 """SQLAlchemy adapter for scoped reply-draft persistence."""
 
+from uuid import uuid4
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -13,6 +15,7 @@ from app.application.reply_drafts import (
     SaveReplyDraftCommand,
 )
 from app.application.telegram_formatting import FORMAT_KEY
+from app.application.telegram_rich import RichPreview
 from app.models.domain import (
     Account,
     AuditLog,
@@ -96,7 +99,31 @@ class SqlReplyDraftWriter:
 
         label = account_label(alias=account.alias, country_code=account.country_code)
         recipient_chat_id = trigger_message.sender_id
+        draft_id = uuid4()
+        formatting = command.formatting
+        if isinstance(formatting, RichPreview):
+            connection_id = (
+                conversation.business_connection_id or trigger_message.business_connection_id
+            )
+            if not connection_id:
+                from app.application.reply_drafts import ReplyDraftError
+
+                raise ReplyDraftError(
+                    code="origin_connection_missing",
+                    message="Rich draft requires an originating Business connection",
+                )
+            formatting = formatting.bind(
+                {
+                    "workspace_id": scope.workspace_id,
+                    "account_id": str(task.account_id),
+                    "project_id": str(task.project_id),
+                    "recipient_chat_id": recipient_chat_id,
+                    "connection_id": connection_id,
+                    "draft_id": str(draft_id),
+                }
+            )
         draft = ReplyDraft(
+            id=draft_id,
             account_id=task.account_id,
             project_id=task.project_id,
             person_id=task.person_id,
@@ -111,7 +138,7 @@ class SqlReplyDraftWriter:
                 "bounded_context": True,
                 "source": "chatgpt-mcp",
                 "follow_up": is_follow_up,
-                **({FORMAT_KEY: command.formatting.to_dict()} if command.formatting else {}),
+                **({FORMAT_KEY: formatting.to_dict()} if formatting else {}),
             },
         )
         self._session.add(draft)
@@ -147,5 +174,5 @@ class SqlReplyDraftWriter:
             recipient_chat_id=recipient_chat_id,
             status=draft.status,
             text=draft.draft_text,
-            formatting=command.formatting,
+            formatting=formatting,
         )
