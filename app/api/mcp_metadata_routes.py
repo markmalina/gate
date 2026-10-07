@@ -101,6 +101,7 @@ async def mcp_metadata(
                 "gate_list_unanswered",
                 "gate_get_reply_context",
                 "gate_get_owner_reply_readiness",
+                "gate_preview_reply_media",
                 "gate_alpha_list_installations",
                 "gate_alpha_get_webhook_status",
                 "gate_alpha_list_shadow_reviews",
@@ -110,6 +111,7 @@ async def mcp_metadata(
             "write": [
                 "gate_save_reply_draft",
                 "gate_prepare_reply_document",
+                "gate_prepare_reply_media",
                 "gate_alpha_control_installation",
                 "gate_alpha_run_model_preflight",
                 "gate_alpha_get_test_group_presence",
@@ -142,6 +144,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_list_unanswered",
             "gate_get_reply_context",
             "gate_get_owner_reply_readiness",
+            "gate_preview_reply_media",
             "gate_alpha_list_installations",
             "gate_alpha_get_webhook_status",
             "gate_alpha_list_shadow_reviews",
@@ -152,6 +155,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
         "write_tools": [
             "gate_save_reply_draft",
             "gate_prepare_reply_document",
+            "gate_prepare_reply_media",
             "gate_alpha_control_installation",
             "gate_alpha_run_model_preflight",
             "gate_alpha_get_test_group_presence",
@@ -173,6 +177,7 @@ def _reply_formats(settings: Settings) -> JsonObject:
     return {
         "text_modes": ["plain", "markdown", "rich"],
         "legacy_omission": "literal",
+        "media": {"schema_version": "gate.rich.v2", "modes": ["photo", "album", "rich_photo", "rich_slideshow", "rich_collage"], "upload": "structured_base64", "preview": "actual_images", "max_file_bytes": 8388608, "max_package_bytes": 25165824, "max_items": 10, "retention_hours": 24},
         "rich": {
             "schema_version": "gate.rich.v1",
             "converter_version": "gate.telegram-rich.v1",

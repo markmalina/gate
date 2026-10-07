@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.api.mcp_media import MEDIA_OUTPUT_SCHEMA
 from app.application.owner_reply_readiness import (
     OWNER_REPLY_READINESS_OUTPUT_SCHEMA,
     OWNER_REPLY_READINESS_TOOL_NAME,
@@ -1913,9 +1914,13 @@ SEND_SUCCESS_SCHEMA = _object(
 )
 SEND_SUCCESS_SCHEMA["properties"]["payload_sha256"] = _nullable("string")
 SEND_SUCCESS_SCHEMA["properties"].update({
-    "delivery_mode": {"const": "rich"}, "draft_revision": {"const": 1},
+    "delivery_mode": {"enum": [
+        "rich", "photo", "album", "rich_photo", "rich_slideshow", "rich_collage"
+    ]},
+    "draft_revision": {"const": 1},
     "runtime_revision": _nullable("string"), "reservation_time": _nullable("string"),
 })
+SEND_SUCCESS_SCHEMA["properties"]["media"] = {"type": "object"}
 GATE_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     SEND_SUCCESS_SCHEMA,
     {"account_label": ACCOUNT_LABEL_SCHEMA},
@@ -2475,6 +2480,8 @@ MCP_TOOL_OUTPUT_SCHEMAS: dict[str, JsonObject] = {
     "gate_get_reply_context": GATE_REPLY_CONTEXT_OUTPUT_SCHEMA,
     "gate_save_reply_draft": GATE_DRAFT_OUTPUT_SCHEMA,
     "gate_prepare_reply_document": GATE_DOCUMENT_PREPARE_OUTPUT_SCHEMA,
+    "gate_prepare_reply_media": MEDIA_OUTPUT_SCHEMA,
+    "gate_preview_reply_media": MEDIA_OUTPUT_SCHEMA,
     "gate_send_approved_reply": GATE_SEND_OUTPUT_SCHEMA,
     "gate_send_approved_document": GATE_DOCUMENT_SEND_OUTPUT_SCHEMA,
     "gate_queue_approved_reply_sequence": GATE_SEQUENCE_OUTPUT_SCHEMA,
