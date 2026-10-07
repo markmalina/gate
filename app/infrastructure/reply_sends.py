@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -100,6 +101,7 @@ class _SendContextSnapshot:
     document_data: bytes | None = None
     document_expires_at: datetime | None = None
     formatting: FormattingPreview | None = None
+    media: dict[str, Any] | None = None
 
     @property
     def origin_connection_id(self) -> str | None:
@@ -176,6 +178,7 @@ class SqlTelegramReplySender:
         self._telegram = telegram
         self._settings = settings
         self._rich_receipt_context: dict[UUID, tuple[str, str]] = {}
+        self._media_receipts: dict[UUID, dict[str, Any]] = {}
 
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
         preflight = await self._preflight(command)
@@ -192,10 +195,53 @@ class SqlTelegramReplySender:
             return reservation
 
         self._require_provider_outside_transaction()
+        assessment: dict[str, Any] | None = None
+        provider_started = False
         try:
             context = reservation.context
             self._validate_reserved_formatting(context)
-            if context.document_sha256 is not None:
+            if context.media is not None:
+                self._validate_context_delivery(context)
+                media = context.media
+                items = list(media["items"])
+                kwargs = {
+                    "chat_id": context.target_chat_id,
+                    "business_connection_id": reservation.business_connection_id,
+                }
+                provider_started = True
+                if media["mode"] == "photo":
+                    item = items[0]
+                    telegram_result = await self._telegram.send_business_photo(
+                        **kwargs,
+                        filename=item["filename"],
+                        media_type=item["media_type"],
+                        data=item["data"],
+                        caption=item["caption"],
+                        caption_entities=item["caption_entities"],
+                    )
+                elif media["mode"] == "album":
+                    telegram_result = await self._telegram.send_business_album(
+                        **kwargs, items=items
+                    )
+                else:
+                    telegram_result = await self._telegram.send_business_rich_media(
+                        **kwargs,
+                        blocks=deepcopy(media["snapshot"]["rich"]["blocks"]),
+                        items=items,
+                    )
+                assessment = _assess_media_provider_result(
+                    telegram_result, context, reservation.business_connection_id
+                )
+                if not assessment["complete"]:
+                    return await self._finalize_failure(
+                        command=command,
+                        reservation=reservation,
+                        status=SendAttemptStatus.UNKNOWN.value,
+                        error_code="media_ack_unconfirmed",
+                        error_detail="media_ack_unconfirmed",
+                        media_evidence=assessment,
+                    )
+            elif context.document_sha256 is not None:
                 if (
                     context.document_data is None
                     or context.document_filename is None
@@ -250,10 +296,12 @@ class SqlTelegramReplySender:
                 )
             if telegram_result.get("ok") is not True:
                 raise RuntimeError("Telegram API did not confirm delivery")
-            if _provider_message_id(telegram_result) is None:
+            if context.media is None and _provider_message_id(telegram_result) is None:
                 raise RuntimeError("Telegram API did not return a confirmed message id")
         except Exception as exc:
             status, error_code = _delivery_failure(exc)
+            if reservation.context.media is not None and not provider_started:
+                status, error_code = SendAttemptStatus.FAILED.value, "media_pre_dispatch_rejected"
             return await self._finalize_failure(
                 command=command,
                 reservation=reservation,
@@ -261,7 +309,9 @@ class SqlTelegramReplySender:
                 error_code=error_code,
                 error_detail=error_code
                 if isinstance(reservation.context.formatting, RichPreview)
+                or reservation.context.media is not None
                 else _safe_error_detail(exc),
+                media_evidence=assessment if reservation.context.media else None,
             )
 
         try:
@@ -271,7 +321,10 @@ class SqlTelegramReplySender:
                 telegram_result=telegram_result,
             )
         except Exception:
-            if not isinstance(reservation.context.formatting, RichPreview):
+            if (
+                not isinstance(reservation.context.formatting, RichPreview)
+                and reservation.context.media is None
+            ):
                 raise
             # Provider accepted, but receipt transaction failed or its commit
             # outcome is ambiguous. Never label this as a safe failed-to-send.
@@ -280,9 +333,14 @@ class SqlTelegramReplySender:
                 command=command,
                 reservation=reservation,
                 status=SendAttemptStatus.UNKNOWN.value,
-                error_code="rich_receipt_pending",
-                error_detail="rich_receipt_pending",
+                error_code="media_receipt_pending"
+                if reservation.context.media
+                else "rich_receipt_pending",
+                error_detail="media_receipt_pending"
+                if reservation.context.media
+                else "rich_receipt_pending",
                 provider_message_id=_provider_message_id(telegram_result),
+                media_evidence=assessment if reservation.context.media else None,
             )
 
     async def _preflight(
@@ -520,6 +578,14 @@ class SqlTelegramReplySender:
                 code="rich_connection_changed",
                 message="Rich approval requires the exact saved Business connection",
             )
+        if (
+            current.media is not None
+            and probe.business_connection_id != current.media["snapshot"]["scope"]["connection_id"]
+        ):
+            raise ReplySendError(
+                code="media_connection_changed",
+                message="Media approval requires the saved Business connection",
+            )
         origin_id = current.origin_connection_id
         if not origin_id:
             raise ReplySendError(
@@ -599,7 +665,12 @@ class SqlTelegramReplySender:
             started_at=now,
         )
         self._session.add(attempt)
-        if isinstance(current.formatting, RichPreview):
+        await self._reserve_execution_budget(command, attempt, current)
+        if (
+            isinstance(current.formatting, RichPreview)
+            or current.media is not None
+            or command.execution_id
+        ):
             self._rich_receipt_context[attempt.id] = (
                 self._settings.deployment_sha,
                 now.isoformat(),
@@ -620,16 +691,22 @@ class SqlTelegramReplySender:
                     "target_chat_id": current.target_chat_id,
                     "business_connection_id": probe.business_connection_id,
                     "payload_sha256": (
-                        current.formatting.payload_sha256 if current.formatting else None
+                        current.media["package_sha256"]
+                        if current.media
+                        else (current.formatting.payload_sha256 if current.formatting else None)
                     ),
                     **(
                         {
-                            "delivery_mode": "rich",
-                            "rich_revision": current.formatting.revision,
+                            "delivery_mode": current.media["mode"] if current.media else "rich",
+                            "rich_revision": current.formatting.revision
+                            if isinstance(current.formatting, RichPreview)
+                            else 1,
                             "runtime_revision": self._settings.deployment_sha,
                             "reservation_time": now.isoformat(),
                         }
                         if isinstance(current.formatting, RichPreview)
+                        or current.media is not None
+                        or command.execution_id
                         else {}
                     ),
                 },
@@ -684,6 +761,7 @@ class SqlTelegramReplySender:
         error_code: str,
         error_detail: str,
         provider_message_id: str | None = None,
+        media_evidence: dict[str, Any] | None = None,
     ) -> ReplySendResult:
         async with self._session.begin():
             attempt = await self._load_attempt_by_id(
@@ -706,6 +784,8 @@ class SqlTelegramReplySender:
             if provider_message_id is not None:
                 attempt.provider_message_id = provider_message_id
             attempt.finished_at = datetime.now(UTC)
+            if reservation.context.media is not None:
+                await self._persist_media_receipt(reservation, status, media_evidence, error_code)
             if reservation.context.document_sha256 is not None:
                 await self._session.execute(
                     update(ReplyDocument)
@@ -786,6 +866,14 @@ class SqlTelegramReplySender:
                 raise RuntimeError("Reply send context disappeared after delivery")
 
             provider_message_id = _provider_message_id(telegram_result)
+            if reservation.context.media is not None:
+                assessment = _assess_media_provider_result(
+                    telegram_result, reservation.context, reservation.business_connection_id
+                )
+                provider_message_id = str(assessment["messages"][0]["message_id"])
+                await self._persist_media_receipt(
+                    reservation, SendAttemptStatus.SENT.value, assessment, None
+                )
             attempt.status = SendAttemptStatus.SENT.value
             attempt.provider_message_id = provider_message_id
             attempt.error_code = None
@@ -810,7 +898,12 @@ class SqlTelegramReplySender:
                 reservation.context.formatting.to_dict() if reservation.context.formatting else None
             )
             draft_changed_after_reservation = (
-                draft.draft_text != reservation.context.draft_text
+                (
+                    reservation.context.media is not None
+                    and current_metadata.get("_gate_media_package")
+                    != reservation.context.media["sentinel"]
+                )
+                or draft.draft_text != reservation.context.draft_text
                 or draft.status != reservation.context.draft_status
                 or _canonical_json_fingerprint(current_metadata.get(snapshot_key))
                 != _canonical_json_fingerprint(reserved_formatting)
@@ -862,57 +955,58 @@ class SqlTelegramReplySender:
             if conversation.last_message_at is None or conversation.last_message_at < finished_at:
                 conversation.last_message_at = finished_at
 
-            self._session.add(
-                Message(
-                    bot_id=reservation.context.bot_id,
-                    gate_event_id=None,
-                    account_id=reservation.context.account_id,
-                    project_id=reservation.context.project_id,
-                    person_id=reservation.context.person_id,
-                    direction=MessageDirection.OUTBOUND.value,
-                    source=(
-                        "gate-approved-document"
-                        if reservation.context.document_sha256 is not None
-                        else "gate-approved-draft"
-                    ),
-                    event_type=(
-                        "telegram_business_document"
-                        if reservation.context.document_sha256 is not None
-                        else "telegram_business_reply"
-                    ),
-                    chat_id=reservation.context.target_chat_id,
-                    sender_id=(
-                        str(reservation.context.account_telegram_user_id)
-                        if reservation.context.account_telegram_user_id is not None
-                        else "gate"
-                    ),
-                    recipient_id=reservation.context.target_chat_id,
-                    telegram_message_id=(
-                        int(provider_message_id)
-                        if provider_message_id is not None and provider_message_id.isdigit()
-                        else None
-                    ),
-                    text=(
-                        reservation.context.document_caption
-                        if reservation.context.document_sha256 is not None
-                        else reservation.context.draft_text
-                    ),
-                    business_connection_id=reservation.business_connection_id,
-                    payload={
-                        **telegram_result,
-                        "_gate_counterparty": {
-                            "display_name": (reservation.context.counterparty_display_name)
-                        },
-                        "_gate_document_sha256": reservation.context.document_sha256,
-                        "_gate_payload_sha256": (
-                            reservation.context.formatting.payload_sha256
-                            if reservation.context.formatting
+            if reservation.context.media is None:
+                self._session.add(
+                    Message(
+                        bot_id=reservation.context.bot_id,
+                        gate_event_id=None,
+                        account_id=reservation.context.account_id,
+                        project_id=reservation.context.project_id,
+                        person_id=reservation.context.person_id,
+                        direction=MessageDirection.OUTBOUND.value,
+                        source=(
+                            "gate-approved-document"
+                            if reservation.context.document_sha256 is not None
+                            else "gate-approved-draft"
+                        ),
+                        event_type=(
+                            "telegram_business_document"
+                            if reservation.context.document_sha256 is not None
+                            else "telegram_business_reply"
+                        ),
+                        chat_id=reservation.context.target_chat_id,
+                        sender_id=(
+                            str(reservation.context.account_telegram_user_id)
+                            if reservation.context.account_telegram_user_id is not None
+                            else "gate"
+                        ),
+                        recipient_id=reservation.context.target_chat_id,
+                        telegram_message_id=(
+                            int(provider_message_id)
+                            if provider_message_id is not None and provider_message_id.isdigit()
                             else None
                         ),
-                    },
-                    sent_at=finished_at,
+                        text=(
+                            reservation.context.document_caption
+                            if reservation.context.document_sha256 is not None
+                            else reservation.context.draft_text
+                        ),
+                        business_connection_id=reservation.business_connection_id,
+                        payload={
+                            **telegram_result,
+                            "_gate_counterparty": {
+                                "display_name": (reservation.context.counterparty_display_name)
+                            },
+                            "_gate_document_sha256": reservation.context.document_sha256,
+                            "_gate_payload_sha256": (
+                                reservation.context.formatting.payload_sha256
+                                if reservation.context.formatting
+                                else None
+                            ),
+                        },
+                        sent_at=finished_at,
+                    )
                 )
-            )
             self._session.add(
                 AuditLog(
                     actor=f"mcp:{command.principal.subject}"[:255],
@@ -947,6 +1041,356 @@ class SqlTelegramReplySender:
                 attempt=_snapshot_attempt(attempt),
                 context=reservation.context,
             )
+
+    async def _load_media_snapshot(
+        self,
+        command: SendApprovedReplyCommand,
+        draft: ReplyDraft,
+        raw_context: dict[str, Any],
+        conversation: Conversation,
+        trigger: Message,
+        *,
+        for_update: bool,
+    ) -> dict[str, Any] | None:
+        from app.application.reply_media import (
+            MEDIA_PACKAGE_KEY,
+            PreparedMediaItem,
+            media_package_digest,
+        )
+        from app.application.telegram_rich_media import validate_rich_media_attachments
+        from app.models.reply_media import ReplyMediaItem, ReplyMediaPackage
+
+        marker = raw_context.get(MEDIA_PACKAGE_KEY)
+        is_media = draft.source == "chatgpt-mcp-media" or marker is not None
+        if not is_media:
+            if command.expected_media_package_sha256 is not None:
+                raise ReplySendError(
+                    code="media_binding_mismatch", message="Draft is not a prepared media package"
+                )
+            return None
+        statement = select(ReplyMediaPackage).where(ReplyMediaPackage.reply_draft_id == draft.id)
+        if for_update:
+            statement = statement.with_for_update()
+        package = await self._session.scalar(statement)
+        if package is None:
+            raise ReplySendError(
+                code="media_binding_mismatch", message="Prepared media package is missing"
+            )
+        item_statement = (
+            select(ReplyMediaItem)
+            .where(ReplyMediaItem.package_id == package.id)
+            .order_by(ReplyMediaItem.ordinal)
+        )
+        if for_update:
+            item_statement = item_statement.with_for_update()
+        rows = list((await self._session.scalars(item_statement)).all())
+        snapshot = deepcopy(package.snapshot_json)
+        expected_scope = {
+            "workspace_id": command.principal.access_scope.workspace_id,
+            "account_id": str(draft.account_id),
+            "project_id": str(draft.project_id),
+            "principal_subject": command.principal.subject,
+            "recipient_chat_id": trigger.sender_id,
+            "connection_id": conversation.business_connection_id or trigger.business_connection_id,
+            "draft_id": str(draft.id),
+            "draft_revision": 1,
+            "execution_id": package.execution_id,
+        }
+        sentinel = {
+            "package_id": str(package.id),
+            "package_sha256": package.package_sha256,
+            "mode": package.mode,
+        }
+        if (
+            package.workspace_id != command.principal.access_scope.workspace_id
+            or package.principal_subject != command.principal.subject
+            or snapshot.get("scope") != expected_scope
+            or marker != sentinel
+            or snapshot.get("package_id") != str(package.id)
+            or snapshot.get("mode") != package.mode
+            or snapshot.get("package_sha256") != package.package_sha256
+            or media_package_digest(snapshot) != package.package_sha256
+            or snapshot.get("draft_text") != draft.draft_text
+            or snapshot.get("schema_version") != "gate.media.v1"
+            or snapshot.get("converter_version") != "gate.media-package.v1"
+        ):
+            raise ReplySendError(
+                code="media_scope_changed",
+                message="Saved media identity, approval or scope changed",
+            )
+        metadata = []
+        items = []
+        for ordinal, item in enumerate(rows, 1):
+            if item.ordinal != ordinal:
+                raise ReplySendError(
+                    code="media_binding_mismatch", message="Prepared media order changed"
+                )
+            meta = PreparedMediaItem(
+                media_ref=str(item.id),
+                ordinal=item.ordinal,
+                filename=item.filename,
+                media_type=item.media_type,
+                source_size_bytes=item.source_size_bytes,
+                size_bytes=item.size_bytes,
+                source_sha256=item.source_sha256,
+                output_sha256=item.output_sha256,
+                width=item.width,
+                height=item.height,
+                transform_version=item.transform_version,
+                transform=item.transform,
+                caption=item.caption,
+                caption_format=item.caption_format,
+                caption_formatting_json=deepcopy(item.caption_formatting_json),
+            ).to_dict()
+            try:
+                formatting = stored_preview(
+                    item.caption,
+                    {CAPTION_FORMAT_KEY: item.caption_formatting_json},
+                    key=CAPTION_FORMAT_KEY,
+                    max_length=1024,
+                    allow_empty=True,
+                )
+            except FormattingError as exc:
+                raise ReplySendError(code=exc.code, message=exc.message) from exc
+            if formatting is None or formatting.text_format != item.caption_format:
+                raise ReplySendError(
+                    code="media_changed", message="Prepared caption formatting changed"
+                )
+            metadata.append(meta)
+            items.append(
+                {
+                    **meta,
+                    "id": item.id,
+                    "data": item.data,
+                    "caption": formatting.text,
+                    "caption_entities": list(formatting.entities),
+                }
+            )
+        expected_count = len(items) if package.mode == "album" else 1
+        if (
+            not 1 <= len(items) <= 10
+            or snapshot.get("items") != metadata
+            or package.expected_message_count != expected_count
+            or snapshot.get("expected_message_count") != expected_count
+            or (package.mode in {"photo", "rich_photo"} and len(items) != 1)
+            or (package.mode in {"album", "rich_slideshow", "rich_collage"} and len(items) < 2)
+        ):
+            raise ReplySendError(
+                code="media_changed", message="Saved media metadata or cardinality changed"
+            )
+        if package.mode.startswith("rich_"):
+            rich = snapshot.get("rich")
+            if (
+                not isinstance(rich, dict)
+                or rich.get("schema_version") != "gate.rich.v2"
+                or rich.get("converter_version") != "gate.telegram-rich-media.v1"
+            ):
+                raise ReplySendError(
+                    code="media_changed", message="Saved Rich media version changed"
+                )
+            mode_block = {
+                "rich_photo": "photo",
+                "rich_slideshow": "slideshow",
+                "rich_collage": "collage",
+            }[package.mode]
+            media_blocks = [
+                b
+                for b in rich["blocks"]
+                if isinstance(b, dict) and b.get("type") in {"photo", "slideshow", "collage"}
+            ]
+            if len(media_blocks) != 1 or media_blocks[0].get("type") != mode_block:
+                raise ReplySendError(
+                    code="media_changed", message="Media mode and native blocks disagree"
+                )
+            try:
+                validate_rich_media_attachments(
+                    rich["blocks"], {f"photo_{n}" for n in range(1, len(items) + 1)}
+                )
+            except (FormattingError, KeyError) as exc:
+                raise ReplySendError(
+                    code="media_changed", message="Saved media attachment mapping changed"
+                ) from exc
+        elif snapshot.get("rich") is not None:
+            raise ReplySendError(
+                code="media_changed", message="Ordinary media cannot contain Rich blocks"
+            )
+        if package.receipt_json:
+            self._media_receipts[package.id] = deepcopy(package.receipt_json)
+        return {
+            "package_id": package.id,
+            "package_sha256": package.package_sha256,
+            "mode": package.mode,
+            "snapshot": snapshot,
+            "items": tuple(items),
+            "expires_at": package.expires_at,
+            "sentinel": sentinel,
+            "expected_message_count": expected_count,
+        }
+
+    async def _reserve_execution_budget(
+        self,
+        command: SendApprovedReplyCommand,
+        attempt: SendAttempt,
+        context: _SendContextSnapshot,
+    ) -> None:
+        if command.execution_id is None and context.media is None:
+            return
+        from app.models.reply_media import ReplyMediaBudgetReservation, ReplyMediaExecutionBudget
+
+        budget = await self._session.scalar(
+            select(ReplyMediaExecutionBudget)
+            .where(
+                ReplyMediaExecutionBudget.workspace_id
+                == command.principal.access_scope.workspace_id,
+                ReplyMediaExecutionBudget.principal_subject == command.principal.subject,
+                ReplyMediaExecutionBudget.execution_id == command.execution_id,
+            )
+            .with_for_update()
+        )
+        messages = context.media["expected_message_count"] if context.media else 1
+        if (
+            budget is None
+            or budget.expires_at <= datetime.now(UTC)
+            or budget.write_cap != 12
+            or budget.message_cap != 20
+        ):
+            raise ReplySendError(
+                code="media_execution_expired",
+                message="Current bounded execution budget is required",
+            )
+        if context.media is not None and (
+            context.media["snapshot"].get("execution_expires_at") != budget.expires_at.isoformat()
+            or context.media["expires_at"] > budget.expires_at
+        ):
+            raise ReplySendError(
+                code="media_execution_changed",
+                message="Saved execution deadline or asset expiry differs from its budget",
+            )
+        if (
+            budget.writes_reserved + 1 > budget.write_cap
+            or budget.messages_reserved + messages > budget.message_cap
+        ):
+            raise ReplySendError(
+                code="media_execution_budget_exhausted",
+                message="Provider operation or visible message budget is exhausted",
+            )
+        budget.writes_reserved += 1
+        budget.messages_reserved += messages
+        await self._session.flush()
+        self._session.add(
+            ReplyMediaBudgetReservation(
+                send_attempt_id=attempt.id, budget_id=budget.id, expected_messages=messages
+            )
+        )
+        await self._session.flush()
+
+    async def _persist_media_receipt(
+        self,
+        reservation: _Reservation,
+        status: str,
+        evidence: dict[str, Any] | None,
+        error_code: str | None,
+    ) -> None:
+        from app.models.reply_media import ReplyMediaItem, ReplyMediaPackage
+
+        media = reservation.context.media
+        assert media is not None
+        package = await self._session.scalar(
+            select(ReplyMediaPackage)
+            .where(ReplyMediaPackage.id == media["package_id"])
+            .with_for_update()
+        )
+        if package is None:
+            raise RuntimeError("Durable media package disappeared")
+        receipt = _empty_media_receipt(media, status)
+        runtime, reserved_at = self._rich_receipt_context.get(reservation.attempt.id, (None, None))
+        receipt.update(
+            {
+                "attempt_id": str(reservation.attempt.id),
+                "runtime_revision": runtime,
+                "reservation_time": reserved_at,
+                "error_code": error_code,
+            }
+        )
+        if evidence is not None:
+            receipt.update(
+                {
+                    "confirmed_message_count": len(evidence["messages"]),
+                    "unknown_message_count": max(
+                        0, receipt["expected_message_count"] - len(evidence["messages"])
+                    ),
+                    "provider_message_ids": [str(m["message_id"]) for m in evidence["messages"]],
+                    "items": evidence["items"],
+                }
+            )
+        if status == "failed":
+            receipt["unknown_message_count"] = 0
+            for item in receipt["items"]:
+                item["outcome"] = "failed"
+        receipt["confirmed_item_count"] = sum(
+            item["outcome"] == "sent" for item in receipt["items"]
+        )
+        receipt["unknown_item_count"] = sum(
+            item["outcome"] == "unknown" for item in receipt["items"]
+        )
+        package.receipt_json = deepcopy(receipt)
+        self._media_receipts[package.id] = deepcopy(receipt)
+        rows = list(
+            (
+                await self._session.scalars(
+                    select(ReplyMediaItem)
+                    .where(ReplyMediaItem.package_id == package.id)
+                    .order_by(ReplyMediaItem.ordinal)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        for row, item_receipt in zip(rows, receipt["items"], strict=True):
+            row.receipt_json = deepcopy(item_receipt)
+            row.provider_message_id = item_receipt.get("provider_message_id")
+        # Retain only route-validated provider messages; one outward row per
+        # album message, never a synthetic inbound task or a phantom success.
+        for message in evidence["messages"] if evidence else []:
+            assert evidence is not None
+            position = evidence["message_positions"].get(message["message_id"])
+            self._session.add(
+                Message(
+                    bot_id=reservation.context.bot_id,
+                    gate_event_id=None,
+                    account_id=reservation.context.account_id,
+                    project_id=reservation.context.project_id,
+                    person_id=reservation.context.person_id,
+                    direction=MessageDirection.OUTBOUND.value,
+                    source="gate-approved-media",
+                    event_type="telegram_business_media",
+                    chat_id=reservation.context.target_chat_id,
+                    sender_id=str(reservation.context.account_telegram_user_id)
+                    if reservation.context.account_telegram_user_id is not None
+                    else "gate",
+                    recipient_id=reservation.context.target_chat_id,
+                    telegram_message_id=message["message_id"],
+                    text=message.get(
+                        "caption",
+                        media["snapshot"].get("rich", {}).get("semantic_preview", "")
+                        if media["snapshot"].get("rich")
+                        else "",
+                    ),
+                    business_connection_id=reservation.business_connection_id,
+                    payload={
+                        "ok": True,
+                        "result": deepcopy(message),
+                        "_gate_media_package_id": str(package.id),
+                        "_gate_media_package_sha256": media["package_sha256"],
+                        "_gate_media_position": position,
+                        "_gate_outcome": status,
+                        "_gate_counterparty": {
+                            "display_name": reservation.context.counterparty_display_name
+                        },
+                    },
+                    sent_at=datetime.now(UTC),
+                )
+            )
+        await self._session.flush()
 
     async def _load_context_snapshot(
         self,
@@ -994,13 +1438,20 @@ class SqlTelegramReplySender:
                 message="Document belongs to another authenticated principal",
             )
 
+        media = await self._load_media_snapshot(
+            command, draft, raw_context, conversation, trigger, for_update=for_update
+        )
         try:
-            formatting = stored_preview(
-                document.caption if document else draft.draft_text,
-                raw_context,
-                key=CAPTION_FORMAT_KEY if document else FORMAT_KEY,
-                max_length=1024 if document else 4096,
-                allow_empty=document is not None,
+            formatting = (
+                None
+                if media is not None
+                else stored_preview(
+                    document.caption if document else draft.draft_text,
+                    raw_context,
+                    key=CAPTION_FORMAT_KEY if document else FORMAT_KEY,
+                    max_length=1024 if document else 4096,
+                    allow_empty=document is not None,
+                )
             )
         except FormattingError as exc:
             raise ReplySendError(code=exc.code, message=exc.message) from exc
@@ -1021,6 +1472,7 @@ class SqlTelegramReplySender:
                 )
         return _SendContextSnapshot(
             formatting=formatting,
+            media=media,
             draft_id=draft.id,
             draft_text=draft.draft_text,
             draft_status=draft.status,
@@ -1329,6 +1781,16 @@ class SqlTelegramReplySender:
                 code="recipient_confirmation_mismatch",
                 message="Confirmed recipient does not match the reply task",
             )
+        if command.expected_media_package_sha256 != (
+            context.media["package_sha256"] if context.media else None
+        ) or (
+            context.media is not None
+            and command.execution_id != context.media["snapshot"]["scope"]["execution_id"]
+        ):
+            raise ReplySendError(
+                code="media_confirmation_mismatch",
+                message="Exact approved media digest and execution are required",
+            )
         if context.formatting is not None:
             if command.expected_payload_sha256 is None:
                 raise ReplySendError(
@@ -1357,6 +1819,26 @@ class SqlTelegramReplySender:
             )
 
     def _validate_context_delivery(self, context: _SendContextSnapshot) -> None:
+        if context.media is not None:
+            media = context.media
+            if media["mode"].startswith("rich_") and not self._settings.gate_rich_send_enabled:
+                raise ReplySendError(
+                    code="rich_send_disabled", message="Rich Business sending is disabled"
+                )
+            if media["expires_at"] <= datetime.now(UTC):
+                raise ReplySendError(
+                    code="media_expired", message="Prepared media expired; prepare again"
+                )
+            for item in media["items"]:
+                if (
+                    not isinstance(item["data"], bytes)
+                    or len(item["data"]) != item["size_bytes"]
+                    or hashlib.sha256(item["data"]).hexdigest() != item["output_sha256"]
+                ):
+                    raise ReplySendError(
+                        code="media_unavailable",
+                        message="Prepared media bytes changed or are unavailable",
+                    )
         if (
             isinstance(context.formatting, RichPreview)
             and not self._settings.gate_rich_send_enabled
@@ -1427,12 +1909,16 @@ class SqlTelegramReplySender:
             if isinstance(reservation_metadata, dict)
             else None
         )
-        if isinstance(context.formatting, RichPreview) and isinstance(reservation_metadata, dict):
+        if isinstance(reservation_metadata, dict):
             runtime_revision = reservation_metadata.get("runtime_revision")
             reservation_time = reservation_metadata.get("reservation_time")
             if isinstance(runtime_revision, str) and isinstance(reservation_time, str):
                 self._rich_receipt_context[attempt.id] = (runtime_revision, reservation_time)
-        current_digest = context.formatting.payload_sha256 if context.formatting else None
+        current_digest = (
+            context.media["package_sha256"]
+            if context.media
+            else (context.formatting.payload_sha256 if context.formatting else None)
+        )
         if saved_digest != current_digest:
             raise ReplySendError(
                 code="send_attempt_payload_mismatch",
@@ -1494,7 +1980,9 @@ class SqlTelegramReplySender:
         context: _SendContextSnapshot,
         idempotent_replay: bool = False,
     ) -> ReplySendResult:
-        rich_ambiguous = isinstance(context.formatting, RichPreview) and attempt.status in {
+        rich_ambiguous = (
+            isinstance(context.formatting, RichPreview) or context.media is not None
+        ) and attempt.status in {
             SendAttemptStatus.SENDING.value,
             SendAttemptStatus.RESERVED.value,
         }
@@ -1511,19 +1999,37 @@ class SqlTelegramReplySender:
             sent=attempt.status == SendAttemptStatus.SENT.value,
             idempotent_replay=idempotent_replay,
             provider_message_id=attempt.provider_message_id,
-            error_code="rich_receipt_pending" if rich_ambiguous else attempt.error_code,
-            error_detail="rich_receipt_pending" if rich_ambiguous else attempt.error_detail,
+            error_code=("media_receipt_pending" if context.media else "rich_receipt_pending")
+            if rich_ambiguous
+            else attempt.error_code,
+            error_detail=("media_receipt_pending" if context.media else "rich_receipt_pending")
+            if rich_ambiguous
+            else attempt.error_detail,
             document_filename=context.document_filename,
             document_media_type=context.document_media_type,
             document_size_bytes=context.document_size_bytes,
             document_sha256=context.document_sha256,
-            payload_sha256=context.formatting.payload_sha256 if context.formatting else None,
-            delivery_mode="rich" if isinstance(context.formatting, RichPreview) else None,
-            draft_revision=context.formatting.revision
-            if isinstance(context.formatting, RichPreview)
-            else None,
+            payload_sha256=context.media["package_sha256"]
+            if context.media
+            else (context.formatting.payload_sha256 if context.formatting else None),
+            delivery_mode=context.media["mode"]
+            if context.media
+            else ("rich" if isinstance(context.formatting, RichPreview) else None),
+            draft_revision=context.media["snapshot"]["scope"]["draft_revision"]
+            if context.media is not None
+            else (
+                context.formatting.revision if isinstance(context.formatting, RichPreview) else None
+            ),
             runtime_revision=self._rich_receipt_context.get(attempt.id, (None, None))[0],
             reservation_time=self._rich_receipt_context.get(attempt.id, (None, None))[1],
+            media=(
+                self._media_receipts.get(context.media["package_id"])
+                or _empty_media_receipt(
+                    context.media, "unknown" if rich_ambiguous else attempt.status
+                )
+            )
+            if context.media
+            else None,
         )
 
 
@@ -1569,6 +2075,7 @@ def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
         context.document_sha256,
         context.document_caption,
         context.document_expires_at,
+        _canonical_json_fingerprint(context.media["snapshot"]) if context.media else None,
         _canonical_json_fingerprint(context.formatting.to_dict())
         if context.formatting is not None
         else None,
@@ -1701,3 +2208,186 @@ def _validate_document_provider_result(
         )
     ):
         raise RuntimeError("Telegram document acknowledgement mismatched preparation")
+
+
+def _empty_media_receipt(media: dict[str, Any], status: str) -> dict[str, Any]:
+    return {
+        "package_id": str(media["package_id"]),
+        "mode": media["mode"],
+        "schema_version": "gate.media.v1",
+        "package_sha256": media["package_sha256"],
+        "expected_message_count": media["expected_message_count"],
+        "confirmed_message_count": 0,
+        "unknown_message_count": media["expected_message_count"],
+        "expected_item_count": len(media["items"]),
+        "confirmed_item_count": 0,
+        "unknown_item_count": len(media["items"]),
+        "status": status,
+        "provider_message_ids": [],
+        "items": [
+            {
+                "position": item["ordinal"],
+                "media_ref": item["media_ref"],
+                "sha256": item["output_sha256"],
+                "size_bytes": item["size_bytes"],
+                "caption_sha256": _media_item_caption_digest(media, item),
+                "outcome": "unknown",
+                "provider_message_id": None,
+                "provider_media_group_id": None,
+            }
+            for item in media["items"]
+        ],
+    }
+
+
+def _assess_media_provider_result(
+    result: dict[str, Any],
+    context: _SendContextSnapshot,
+    business_connection_id: str,
+) -> dict[str, Any]:
+    """Assess without throwing away known delivery evidence or retrying.
+
+    Cardinality, unique/increasing IDs, recipient, Business connection, media
+    groups and per-position captions must all match before overall SENT.
+    Route-valid messages with insufficient item linkage remain explicitly known
+    messages with unknown item outcomes.
+    """
+    media = context.media
+    assert media is not None
+    receipt_items = _empty_media_receipt(media, "unknown")["items"]
+    payload = result.get("result")
+    raw_messages = payload if media["mode"] == "album" and isinstance(payload, list) else [payload]
+    messages: list[dict[str, Any]] = []
+    positions: dict[int, int | None] = {}
+    seen: set[int] = set()
+    complete = result.get("ok") is True and len(raw_messages) == media["expected_message_count"]
+    group_ids: set[str] = set()
+    ordered_ids: list[int] = []
+    for index, message in enumerate(raw_messages):
+        if not isinstance(message, dict):
+            complete = False
+            continue
+        message_id = message.get("message_id")
+        chat = message.get("chat")
+        valid_route = (
+            type(message_id) is int
+            and message_id > 0
+            and isinstance(chat, dict)
+            and str(chat.get("id")) == context.target_chat_id
+            and message.get("business_connection_id") == business_connection_id
+        )
+        if not valid_route or message_id in seen:
+            complete = False
+            continue
+        assert isinstance(message_id, int)
+        seen.add(message_id)
+        ordered_ids.append(message_id)
+        messages.append(deepcopy(message))
+        positions[message_id] = None
+        if media["mode"] in {"photo", "album"}:
+            photos = message.get("photo")
+            group_id = message.get("media_group_id")
+            if media["mode"] == "album":
+                if not isinstance(group_id, str) or not group_id:
+                    complete = False
+                    continue
+                group_ids.add(group_id)
+            if (
+                index >= len(media["items"])
+                or not _valid_provider_photo_sizes(photos)
+                or message.get("caption", "") != media["items"][index]["caption"]
+                or message.get("caption_entities", []) != media["items"][index]["caption_entities"]
+            ):
+                complete = False
+                continue
+            receipt_items[index].update(
+                {
+                    "outcome": "sent",
+                    "provider_message_id": str(message_id),
+                    "provider_media_group_id": group_id,
+                }
+            )
+            positions[message_id] = index + 1
+        else:
+            rich = message.get("rich_message")
+            actual_blocks = rich.get("blocks") if isinstance(rich, dict) else None
+            expected_blocks = media["snapshot"]["rich"]["blocks"]
+            if not _rich_media_ack_matches(actual_blocks, expected_blocks):
+                complete = False
+                continue
+            for item in receipt_items:
+                item.update({"outcome": "sent", "provider_message_id": str(message_id)})
+    if media["mode"] == "album" and (len(group_ids) != 1 or ordered_ids != sorted(ordered_ids)):
+        complete = False
+        # A wrong group/order cannot prove the requested album item linkage.
+        for item in receipt_items:
+            item.update(
+                {"outcome": "unknown", "provider_message_id": None, "provider_media_group_id": None}
+            )
+        positions = dict.fromkeys(positions)
+    complete = (
+        complete
+        and len(messages) == media["expected_message_count"]
+        and all(item["outcome"] == "sent" for item in receipt_items)
+    )
+    return {
+        "complete": complete,
+        "messages": messages,
+        "items": receipt_items,
+        "message_positions": positions,
+    }
+
+
+def _valid_provider_photo_sizes(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(
+            isinstance(photo, dict)
+            and isinstance(photo.get("file_id"), str)
+            and bool(photo["file_id"])
+            and isinstance(photo.get("file_unique_id"), str)
+            and bool(photo["file_unique_id"])
+            and type(photo.get("width")) is int
+            and photo["width"] > 0
+            and type(photo.get("height")) is int
+            and photo["height"] > 0
+            for photo in value
+        )
+    )
+
+
+def _rich_media_ack_matches(actual: Any, expected: list[dict[str, Any]]) -> bool:
+    if not isinstance(actual, list) or len(actual) != len(expected):
+        return False
+    for got, wanted in zip(actual, expected, strict=True):
+        if not isinstance(got, dict) or got.get("type") != wanted["type"]:
+            return False
+        if wanted["type"] == "photo":
+            if not _valid_provider_photo_sizes(got.get("photo")) or got.get(
+                "caption"
+            ) != wanted.get("caption"):
+                return False
+        elif wanted["type"] in {"slideshow", "collage"}:
+            if got.get("caption") != wanted.get("caption") or not _rich_media_ack_matches(
+                got.get("blocks"), wanted["blocks"]
+            ):
+                return False
+        elif got != wanted:
+            return False
+    return True
+
+
+def _media_item_caption_digest(media: dict[str, Any], item: dict[str, Any]) -> str:
+    rich = media["snapshot"].get("rich")
+    if not rich:
+        return str(item["caption_formatting_json"]["payload_sha256"])
+    target = f"attach://photo_{item['ordinal']}"
+    for block in rich["blocks"]:
+        children = (
+            block.get("blocks", []) if block.get("type") in {"slideshow", "collage"} else [block]
+        )
+        for photo in children:
+            if photo.get("type") == "photo" and photo["photo"]["media"] == target:
+                return _canonical_json_fingerprint(photo.get("caption"))
+    raise RuntimeError("Saved photo caption identity disappeared")

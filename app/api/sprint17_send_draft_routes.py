@@ -33,6 +33,7 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
+from app.application.telegram_rich_media import is_media_draft
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -100,7 +101,9 @@ async def sprint17_telegram_webhook(
             settings=settings,
             draft_ref=draft_ref,
             account_id=admin_context.scoped_account_id,
-            scope_label="all" if admin_context.is_super_admin else admin_context.account_alias or "unknown",
+            scope_label="all"
+            if admin_context.is_super_admin
+            else admin_context.account_alias or "unknown",
         )
         audit_action = "telegram_admin_console_send_draft_sent"
     else:
@@ -168,7 +171,12 @@ async def _send_draft_reply(
     scope_label: str,
 ) -> str:
     if not settings.gate_send_enabled:
-        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail="global send disabled")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="blocked",
+            detail="global send disabled",
+        )
 
     rows = await _load_draft_rows_by_ref(
         session=session,
@@ -176,15 +184,39 @@ async def _send_draft_reply(
         account_id=account_id,
     )
     if not rows:
-        return _send_result_text(settings=settings, scope_label=scope_label, status="not_found", detail=f"draft not found: {draft_ref}")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="not_found",
+            detail=f"draft not found: {draft_ref}",
+        )
     if len(rows) > 1:
-        return _send_result_text(settings=settings, scope_label=scope_label, status="ambiguous", detail=f"draft reference is ambiguous: {draft_ref}")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="ambiguous",
+            detail=f"draft reference is ambiguous: {draft_ref}",
+        )
 
     draft, task, conversation, trigger_message = rows[0]
-    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
-        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail="saved formatting requires Gate MCP preview/hash confirmation")
+    if (
+        is_media_draft(draft)
+        or FORMAT_KEY in (draft.prompt_context or {})
+        or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
+    ):
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="blocked",
+            detail="saved formatting requires Gate MCP preview/hash confirmation",
+        )
     if draft.status == ReplyDraftStatus.APPROVED.value:
-        return _send_result_text(settings=settings, scope_label=scope_label, status="already_sent", detail=f"draft already approved: {str(draft.id)[:8]}")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="already_sent",
+            detail=f"draft already approved: {str(draft.id)[:8]}",
+        )
 
     connection, account = await _resolve_send_connection(
         session=session,
@@ -193,11 +225,26 @@ async def _send_draft_reply(
         trigger_message=trigger_message,
     )
     if connection is None or account is None:
-        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail="active send connection not found")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="blocked",
+            detail="active send connection not found",
+        )
     if not _account_send_enabled(settings=settings, account_alias=account.alias):
-        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail=f"send disabled for {account.alias}")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="blocked",
+            detail=f"send disabled for {account.alias}",
+        )
     if connection.rights.get("can_reply") is False:
-        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail="business connection can_reply=false")
+        return _send_result_text(
+            settings=settings,
+            scope_label=scope_label,
+            status="blocked",
+            detail="business connection can_reply=false",
+        )
 
     target_chat_id = _resolve_target_chat_id(
         trigger_message=trigger_message,
@@ -229,7 +276,9 @@ async def _send_draft_reply(
                 },
             )
         )
-        return _send_result_text(settings=settings, scope_label=scope_label, status="failed", detail=error_detail)
+        return _send_result_text(
+            settings=settings, scope_label=scope_label, status="failed", detail=error_detail
+        )
 
     now = datetime.now(UTC)
     draft.status = ReplyDraftStatus.APPROVED.value
@@ -315,7 +364,9 @@ async def _load_draft_rows_by_ref(
             )
         )
     result = await session.execute(query)
-    return [(draft, task, conversation, message) for draft, task, conversation, message in result.all()]
+    return [
+        (draft, task, conversation, message) for draft, task, conversation, message in result.all()
+    ]
 
 
 async def _resolve_send_connection(
@@ -381,9 +432,15 @@ async def _origin_connection_allowed_for_scope(
     return trigger_message.chat_id in user_chat_ids or trigger_message.sender_id in user_chat_ids
 
 
-def _resolve_target_chat_id(*, trigger_message: Message, connection: TelegramBusinessConnection) -> str:
+def _resolve_target_chat_id(
+    *, trigger_message: Message, connection: TelegramBusinessConnection
+) -> str:
     owner_chat_id = str(connection.user_chat_id) if connection.user_chat_id is not None else None
-    if owner_chat_id and trigger_message.chat_id == owner_chat_id and trigger_message.sender_id != owner_chat_id:
+    if (
+        owner_chat_id
+        and trigger_message.chat_id == owner_chat_id
+        and trigger_message.sender_id != owner_chat_id
+    ):
         return trigger_message.sender_id
     return trigger_message.chat_id
 

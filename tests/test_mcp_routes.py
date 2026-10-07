@@ -851,6 +851,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -873,6 +875,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -887,6 +891,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_beta_get_provider_probe",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
+    media_tools = {tool["name"]: tool for tool in tools if tool["name"] in {
+        "gate_prepare_reply_media", "gate_preview_reply_media"
+    }}
+    assert media_tools["gate_prepare_reply_media"]["annotations"]["readOnlyHint"] is False
+    assert media_tools["gate_preview_reply_media"]["annotations"]["readOnlyHint"] is True
+    tools = [tool for tool in tools if tool["name"] not in media_tools]
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[1]["annotations"]["readOnlyHint"] is True
     assert tools[2]["annotations"]["readOnlyHint"] is True

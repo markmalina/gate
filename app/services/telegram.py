@@ -235,17 +235,125 @@ class TelegramClient:
             file=("document", (filename, data, media_type)),
         )
 
+    async def send_business_photo(
+        self,
+        *,
+        chat_id: str,
+        business_connection_id: str,
+        filename: str,
+        media_type: str,
+        data: bytes,
+        caption: str = "",
+        caption_entities: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """One approved photo through the same bounded multipart transport."""
+        files = _checked_photo_files([("photo_1", filename, media_type, data)])
+        self._require_business_destination(chat_id, business_connection_id)
+        payload = {
+            "chat_id": chat_id,
+            "business_connection_id": business_connection_id,
+            "photo": "attach://photo_1",
+            "caption": caption,
+            "caption_entities": _caption_entities_json(caption, caption_entities or []),
+        }
+        return await self._post_telegram_multipart(
+            url=f"{self._api_base_url}/bot{self._credential}/sendPhoto",
+            payload=payload,
+            files=files,
+        )
+
+    async def send_business_album(
+        self,
+        *,
+        chat_id: str,
+        business_connection_id: str,
+        items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """One native album POST; no splitting, retry or fallback."""
+        self._require_business_destination(chat_id, business_connection_id)
+        if not 2 <= len(items) <= 10:
+            raise ValueError("Album requires 2-10 photos")
+        files = _checked_photo_files(
+            [
+                (f"photo_{index}", item["filename"], item["media_type"], item["data"])
+                for index, item in enumerate(items, 1)
+            ]
+        )
+        media = []
+        for index, item in enumerate(items, 1):
+            caption = item["caption"]
+            entities = item.get("caption_entities", [])
+            _caption_entities_json(caption, entities)
+            media.append(
+                {
+                    "type": "photo",
+                    "media": f"attach://photo_{index}",
+                    "caption": caption,
+                    "caption_entities": entities,
+                }
+            )
+        return await self._post_telegram_multipart(
+            url=f"{self._api_base_url}/bot{self._credential}/sendMediaGroup",
+            payload={
+                "chat_id": chat_id,
+                "business_connection_id": business_connection_id,
+                "media": json.dumps(media, ensure_ascii=False, separators=(",", ":")),
+            },
+            files=files,
+        )
+
+    async def send_business_rich_media(
+        self,
+        *,
+        chat_id: str,
+        business_connection_id: str,
+        blocks: list[dict[str, Any]],
+        items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """One native blocks-only rich write, local multipart attachments only."""
+        from app.application.telegram_rich_media import validate_rich_media_attachments
+
+        self._require_business_destination(chat_id, business_connection_id)
+        files = _checked_photo_files(
+            [
+                (f"photo_{index}", item["filename"], item["media_type"], item["data"])
+                for index, item in enumerate(items, 1)
+            ]
+        )
+        validate_rich_media_attachments(blocks, set(files))
+        return await self._post_telegram_multipart(
+            url=f"{self._api_base_url}/bot{self._credential}/sendRichMessage",
+            payload={
+                "chat_id": chat_id,
+                "business_connection_id": business_connection_id,
+                "rich_message": json.dumps(
+                    {"blocks": blocks, "skip_entity_detection": True},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            },
+            files=files,
+        )
+
+    def _require_business_destination(self, chat_id: str, business_connection_id: str) -> None:
+        if not self._credential or not chat_id or not business_connection_id:
+            raise ValueError("Telegram Business destination is required")
+
     async def _post_telegram_multipart(
         self,
         *,
         url: str,
         payload: dict[str, str],
-        file: tuple[str, tuple[str, bytes, str]],
+        file: tuple[str, tuple[str, bytes, str]] | None = None,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
     ) -> dict[str, Any]:
+        if (file is None) == (files is None):
+            raise ValueError("Exactly one multipart attachment mapping is required")
+        attachments = {file[0]: file[1]} if file is not None else files
         response = await self._http_client.post(
             url,
             data=payload,
-            files={file[0]: file[1]},
+            files=attachments,
             timeout=httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=2.0),
         )
         return self._parse_telegram_response(response)
@@ -388,9 +496,7 @@ class TelegramClient:
             payload={"business_connection_id": business_connection_id},
         )
 
-    async def _post_telegram_json(
-        self, *, url: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _post_telegram_json(self, *, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = await self._http_client.post(url, json=payload)
         return self._parse_telegram_response(response)
 
@@ -421,6 +527,50 @@ class TelegramClient:
             )
 
         return cast(dict[str, Any], result)
+
+
+def _checked_photo_files(
+    items: list[tuple[str, str, str, bytes]],
+) -> dict[str, tuple[str, bytes, str]]:
+    """Defense in depth; full decode/transform belongs to immutable preparation."""
+    if not 1 <= len(items) <= 10:
+        raise ValueError("Media requires 1-10 photos")
+    files = {}
+    total = 0
+    for name, filename, media_type, data in items:
+        if (
+            not filename
+            or PurePosixPath(filename).name != filename
+            or "\\" in filename
+            or any(ord(c) < 32 or ord(c) == 127 for c in filename)
+            or len(filename.encode()) > 255
+        ):
+            raise ValueError("Invalid photo filename")
+        extension = PurePosixPath(filename).suffix.lower()
+        if (
+            {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(extension)
+            != media_type
+            or not isinstance(data, bytes)
+            or not 0 < len(data) <= 8 * 1024 * 1024
+        ):
+            raise ValueError("Photo MIME, extension or bytes are invalid")
+        if (media_type == "image/png" and not data.startswith(b"\x89PNG\r\n\x1a\n")) or (
+            media_type == "image/jpeg" and not data.startswith(b"\xff\xd8")
+        ):
+            raise ValueError("Photo signature is invalid")
+        total += len(data)
+        if total > 24 * 1024 * 1024 or name in files:
+            raise ValueError("Photo attachment mapping or total size is invalid")
+        files[name] = (filename, data, media_type)
+    return files
+
+
+def _caption_entities_json(caption: str, entities: list[dict[str, Any]]) -> str:
+    if not isinstance(caption, str) or len(caption.encode("utf-16-le")) // 2 > 1024:
+        raise ValueError("Photo caption exceeds 1024 UTF-16 units")
+    return json.dumps(
+        list(validate_entities(caption, entities)), ensure_ascii=False, separators=(",", ":")
+    )
 
 
 def _looks_like_html_message(text: str) -> bool:
@@ -479,9 +629,7 @@ def _build_draft_edit_url(
         or ""
     ).strip()
     secret = (
-        environ.get("ADMIN_BEARER_TOKEN")
-        or environ.get("TELEGRAM_WEBHOOK_SECRET")
-        or ""
+        environ.get("ADMIN_BEARER_TOKEN") or environ.get("TELEGRAM_WEBHOOK_SECRET") or ""
     ).strip()
     if not raw_base_url or not secret:
         return None

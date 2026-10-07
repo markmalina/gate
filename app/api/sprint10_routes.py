@@ -29,6 +29,7 @@ from app.models.domain import (
     ReplyTaskStatus,
 )
 from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
+from app.application.telegram_rich_media import is_media_draft
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -140,8 +141,18 @@ async def edit_draft_form(
 
     await _require_valid_draft_token(draft_ref=draft_ref, token=token, settings=settings)
     draft, task = await _load_single_draft_for_edit(session=session, draft_ref=draft_ref)
-    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Save a new Gate MCP draft to regenerate and confirm the formatting preview")
+    if is_media_draft(draft):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Prepare a new Gate media package and confirm its exact preview",
+        )
+    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (
+        draft.prompt_context or {}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Save a new Gate MCP draft to regenerate and confirm the formatting preview",
+        )
     return HTMLResponse(_render_draft_edit_form(draft=draft, task=task, token=token))
 
 
@@ -158,15 +169,27 @@ async def save_draft_form(
 
     await _require_valid_draft_token(draft_ref=draft_ref, token=token, settings=settings)
     draft, task = await _load_single_draft_for_edit(session=session, draft_ref=draft_ref)
-    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Save a new Gate MCP draft to regenerate and confirm the formatting preview")
+    if is_media_draft(draft):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Prepare a new Gate media package and confirm its exact preview",
+        )
+    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (
+        draft.prompt_context or {}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Save a new Gate MCP draft to regenerate and confirm the formatting preview",
+        )
     body = (await request.body()).decode("utf-8")
     form = parse_qs(body, keep_blank_values=True)
     draft_text = form.get("draft_text", [""])[0].strip()
     if not draft_text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Draft text is empty")
     if len(draft_text) > 4096:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Draft text is too long")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Draft text is too long"
+        )
 
     draft.draft_text = draft_text
     draft.status = ReplyDraftStatus.EDITED.value
@@ -337,7 +360,11 @@ async def _send_draft_edit_link(
         text = f"Draft reference is ambiguous: {draft_ref}"
     else:
         draft, task, _conversation = rows[0]
-        if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+        if (
+            is_media_draft(draft)
+            or FORMAT_KEY in (draft.prompt_context or {})
+            or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
+        ):
             text = "Saved formatting requires Gate MCP preview/hash confirmation."
         elif not _is_draft_open(draft=draft, task=task):
             text = _closed_draft_message(action="edited", draft=draft, task=task)
@@ -377,7 +404,9 @@ async def _load_single_draft_for_edit(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found")
     if len(rows) > 1:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Draft reference is ambiguous")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Draft reference is ambiguous"
+        )
     draft, task, _conversation = rows[0]
     if not _is_draft_open(draft=draft, task=task):
         raise HTTPException(
@@ -390,7 +419,9 @@ async def _load_single_draft_for_edit(
 async def _require_valid_draft_token(*, draft_ref: str, token: str, settings: Settings) -> None:
     expected = _draft_edit_token(draft_ref=draft_ref, settings=settings)
     if not expected or not hmac.compare_digest(expected, token):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid draft edit token")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid draft edit token"
+        )
 
 
 def _draft_edit_token(*, draft_ref: str, settings: Settings) -> str:
@@ -412,10 +443,14 @@ def _extract_edit_draft_ref(text: str) -> str | None:
 
 
 def _is_draft_open(*, draft: ReplyDraft, task: ReplyTask) -> bool:
-    return draft.status in {
-        ReplyDraftStatus.GENERATED.value,
-        ReplyDraftStatus.EDITED.value,
-    } and task.status == ReplyTaskStatus.NEEDS_REPLY.value
+    return (
+        draft.status
+        in {
+            ReplyDraftStatus.GENERATED.value,
+            ReplyDraftStatus.EDITED.value,
+        }
+        and task.status == ReplyTaskStatus.NEEDS_REPLY.value
+    )
 
 
 def _closed_draft_message(*, action: str, draft: ReplyDraft, task: ReplyTask) -> str:
@@ -510,7 +545,11 @@ async def _send_approved_draft_once(
         )
 
     draft, task, _conversation = rows[0]
-    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (draft.prompt_context or {}):
+    if (
+        is_media_draft(draft)
+        or FORMAT_KEY in (draft.prompt_context or {})
+        or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
+    ):
         return "Saved formatting requires Gate MCP preview/hash confirmation."
     if _is_draft_open(draft=draft, task=task):
         return await _original_send_approved_draft(
