@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
+from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.health_routes import _get_worker_health_registry
@@ -1056,6 +1057,7 @@ async def _watch_voice_tool_result(
     }
     if row.model == "gpt-4o-transcribe":
         receipt["recovery"] = await protected_recovery_receipt(session, row)
+        receipt["post_payment"] = await protected_post_payment_receipt(session, row)
     return _jsonrpc_result(
         request_id=request_id,
         result={

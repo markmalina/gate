@@ -22,7 +22,13 @@ from app.core.watch_voice_actions_oidc import (
     WORKFLOW_PATH,
 )
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
-from app.infrastructure.watch_voice_recovery import RECOVERY_ERRORS, authorized_at, recover_note
+from app.infrastructure.watch_voice_post_payment import continue_note
+from app.infrastructure.watch_voice_recovery import (
+    RECOVERY_ERRORS,
+    _utc,
+    authorized_at,
+    recover_note,
+)
 from app.models.watch_voice import (
     WatchVoiceCursor,
     WatchVoiceDrainRun,
@@ -140,7 +146,7 @@ def validate_binding(binding: object) -> dict[str, Any]:
     required = {"schema", "enabled", "workspace_key", "scope"}
     required |= (
         {"file_id", "revision"}
-        if scope in {"initial-exact", "initial-quota-probe"}
+        if scope in {"initial-exact", "initial-quota-probe", "initial-post-payment"}
         else {"accepted_initial_event_id"}
     )
     if scope == "initial-quota-probe":
@@ -152,15 +158,25 @@ def validate_binding(binding: object) -> dict[str, Any]:
             "authorized_at",
             "provider_cause",
         }
+    if scope == "initial-post-payment":
+        required |= {
+            "event_id",
+            "expected_audio_sha256",
+            "expected_error",
+            "owner_post_payment",
+            "authorized_at",
+            "provider_cause",
+        }
     if (
         set(binding) != required
         or binding.get("schema") != "watch-voice-binding.v1"
         or binding.get("enabled") is not True
         or binding.get("workspace_key") != "mark-personal"
-        or scope not in {"initial-exact", "future-only", "initial-quota-probe"}
+        or scope
+        not in {"initial-exact", "future-only", "initial-quota-probe", "initial-post-payment"}
     ):
         raise WatchVoiceError("watch_voice_actions_binding_invalid")
-    if scope in {"initial-exact", "initial-quota-probe"}:
+    if scope in {"initial-exact", "initial-quota-probe", "initial-post-payment"}:
         if (
             not isinstance(binding["file_id"], str)
             or re.fullmatch(r"id:[A-Za-z0-9_-]{1,252}", binding["file_id"]) is None
@@ -168,12 +184,24 @@ def validate_binding(binding: object) -> dict[str, Any]:
             or re.fullmatch(r"[a-f0-9]{1,255}", binding["revision"]) is None
         ):
             raise WatchVoiceError("watch_voice_actions_binding_invalid")
-        if scope == "initial-quota-probe":
+        if scope in {"initial-quota-probe", "initial-post-payment"}:
             if (
-                binding["owner_quota_probe"] is not True
-                or binding["provider_cause"] != "insufficient_quota"
+                binding[
+                    "owner_quota_probe" if scope == "initial-quota-probe" else "owner_post_payment"
+                ]
+                is not True
+                or binding["provider_cause"]
+                != (
+                    "insufficient_quota"
+                    if scope == "initial-quota-probe"
+                    else "credit_balance_exhausted"
+                )
                 or not isinstance(binding["expected_error"], str)
                 or binding["expected_error"] not in RECOVERY_ERRORS
+                or (
+                    scope == "initial-post-payment"
+                    and binding["expected_error"] != "openai_transcription_quota_unavailable"
+                )
                 or not isinstance(binding["event_id"], str)
                 or re.fullmatch(r"[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", binding["event_id"])
                 is None
@@ -204,7 +232,7 @@ async def bound_settings(
     if settings.gate_workspace_id != "mark-personal" or settings.gate_watch_voice_enabled:
         raise WatchVoiceError("watch_voice_actions_runtime_scope_mismatch")
     file_id, revision = "", ""
-    if binding["scope"] in {"initial-exact", "initial-quota-probe"}:
+    if binding["scope"] in {"initial-exact", "initial-quota-probe", "initial-post-payment"}:
         file_id, revision = binding["file_id"], binding["revision"]
     else:
         async with factory() as session:
@@ -282,7 +310,14 @@ async def drain(
         recovered_note = await recover_note(
             scoped, factory, http, binding, authorization_sha=claims["sha"]
         )
+        if recovered_note is None:
+            return result("replayed")
         return await publish_result(factory, client, recovered_note)
+    if binding["scope"] == "initial-post-payment":
+        continued_note = await continue_note(
+            scoped, factory, http, binding, authorization_sha=claims["sha"]
+        )
+        return await publish_result(factory, client, continued_note)
     await worker.ensure_cursor(scoped, factory)
     if binding["scope"] == "future-only":
         # Stable cutover excludes every preexisting archived/queued note. Commit
@@ -360,6 +395,11 @@ async def drain(
                     or entry["rev"] != scoped.gate_watch_voice_revision
                 ):
                     continue
+                if binding["scope"] == "future-only":
+                    if state.future_cutover_at is None:
+                        raise WatchVoiceError("watch_voice_actions_cutover_required")
+                    if worker.timestamp(entry["server_modified"]) <= _utc(state.future_cutover_at):
+                        continue
                 await worker.store_entry(scoped, factory, http, token, entry)
             state.cursor = cursor = delta["cursor"]
             if not delta["has_more"]:
@@ -370,7 +410,10 @@ async def drain(
         if binding["scope"] == "future-only":
             if state.future_cutover_at is None:
                 raise WatchVoiceError("watch_voice_actions_cutover_required")
-            scope += (WatchVoiceNote.received_at >= state.future_cutover_at,)
+            scope += (
+                WatchVoiceNote.received_at >= state.future_cutover_at,
+                WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
+            )
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:
             for field, active, error in (

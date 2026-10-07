@@ -534,10 +534,27 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
     import uuid
     from datetime import timedelta
 
+    from app.infrastructure import watch_voice_actions as actions
     from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
+
+    cutover = datetime.now(UTC) - timedelta(minutes=1)
+    clock = [cutover]
+
+    class CutoverClock:
+        @staticmethod
+        def now(tz=None):
+            return clock[0]
+
+    monkeypatch.setattr(actions, "datetime", CutoverClock)
 
     world = ActionsWorld()
     history = {**world.entry, "id": "id:history", "rev": "bbb123"}
+    equal_history = {
+        **world.entry,
+        "id": "id:equalcutover",
+        "rev": "ddd123",
+        "server_modified": cutover.isoformat().replace("+00:00", "Z"),
+    }
     normal_handle = world.handle
     list_paths = []
 
@@ -547,6 +564,7 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
             response = normal_handle(request)
             payload = response.json()
             payload["entries"].append(history)
+            payload["entries"].append(equal_history)
             return httpx.Response(200, json=payload)
         return normal_handle(request)
 
@@ -580,7 +598,9 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
                 id=str(uuid.uuid4()),
                 file_id="id:oldarchive",
                 revision="aaa123",
-                received_at=datetime.now(UTC) - timedelta(days=1),
+                # Even newly stored backlog cannot bypass the Dropbox watermark.
+                received_at=cutover + timedelta(seconds=1),
+                dropbox_modified_at=cutover - timedelta(seconds=1),
                 transcription_state="received",
                 transcript=None,
                 delivery_state="pending",
@@ -599,14 +619,41 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
                 "scope": "future-only",
                 "accepted_initial_event_id": initial.id,
             }
-            world.entry = {**world.entry, "id": "id:newfuture", "rev": "ccc123"}
-            history.clear()  # Dropbox continuation must not re-list old history
             world.current_run = "322"
+            before_downloads = sum(url.endswith("/files/download") for _, url in world.calls)
+            skipped = await drain(
+                settings=action_settings(),
+                factory=factory,
+                http=http,
+                claims=claims(run_id="322", jti="jwt-old-delta"),
+                job_token="synthetic-job-token",
+            )
+            assert skipped["considered"] == skipped["published_parts"] == 0
+            assert world.provider_calls == world.posts == 1
+            assert (
+                sum(url.endswith("/files/download") for _, url in world.calls) == before_downloads
+            )
+            assert len(await notes(factory)) == 2
+            async with factory() as session:
+                cursor = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                first_cutover = cursor.future_cutover_at
+                assert first_cutover.replace(tzinfo=UTC) == cutover
+                assert cursor.cursor == "synthetic-cursor"
+            clock[0] = cutover + timedelta(days=1)
+            world.entry = {
+                **world.entry,
+                "id": "id:newfuture",
+                "rev": "ccc123",
+                "server_modified": (cutover + timedelta(seconds=1))
+                .isoformat()
+                .replace("+00:00", "Z"),
+            }
+            world.current_run = "323"
             receipt = await drain(
                 settings=action_settings(),
                 factory=factory,
                 http=http,
-                claims=claims(run_id="322", jti="jwt-future"),
+                claims=claims(run_id="323", jti="jwt-future"),
                 job_token="synthetic-job-token",
             )
             assert receipt["published_parts"] == receipt["delivered"] == 1
@@ -614,9 +661,19 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
             rows = await notes(factory)
             old = next(row for row in rows if row.file_id == "id:oldarchive")
             assert old.transcription_state == "received" and old.transcript is None
+            assert not any(row.file_id in {"id:history", "id:equalcutover"} for row in rows)
+            assert len(rows) == 3
+            assert (
+                sum(url.endswith("/files/download") for _, url in world.calls)
+                == before_downloads + 1
+            )
             async with factory() as session:
                 cursor = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
-                assert cursor.future_cutover_at is not None
-            assert list_paths == ["/2/files/list_folder", "/2/files/list_folder/continue"]
+                assert cursor.future_cutover_at == first_cutover
+            assert list_paths == [
+                "/2/files/list_folder",
+                "/2/files/list_folder/continue",
+                "/2/files/list_folder/continue",
+            ]
 
     asyncio.run(run())

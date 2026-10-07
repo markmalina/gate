@@ -16,7 +16,11 @@ from app.core.config import Settings
 from app.infrastructure.watch_voice_github import WatchVoiceError
 from app.models.billing import BillingBudgetReservationModel, BillingEntitlementModel
 from app.models.canonical import Workspace
-from app.models.watch_voice import WatchVoiceNote, WatchVoiceRecoveryClaim
+from app.models.watch_voice import (
+    WatchVoiceNote,
+    WatchVoicePostPaymentClaim,
+    WatchVoiceRecoveryClaim,
+)
 from app.worker import watch_voice as worker
 
 RECOVERY_ERRORS = {
@@ -54,7 +58,7 @@ async def recover_note(
     binding: dict[str, Any],
     *,
     authorization_sha: str,
-) -> WatchVoiceNote:
+) -> WatchVoiceNote | None:
     """After current private Actions preflight; this never imports or rearms a note."""
     approval_at = authorized_at(binding["authorized_at"])
     now = datetime.now(UTC)
@@ -77,6 +81,9 @@ async def recover_note(
             ):
                 raise WatchVoiceError("watch_voice_recovery_source_mismatch")
             existing = await session.get(WatchVoiceRecoveryClaim, note.id)
+            if await session.get(WatchVoicePostPaymentClaim, note.id) is not None:
+                # An old binding cannot publish or alter the successor's current state.
+                return None
             if existing is not None:
                 if note.model != "gpt-4o-transcribe":
                     raise WatchVoiceError("watch_voice_recovery_receipt_mismatch")
@@ -266,7 +273,7 @@ async def protected_recovery_receipt(
         "original_reservation_released": original is not None and original.state == "released",
         "authorization_sha": claim.authorization_sha,
         "authorization_kind": claim.authorization_kind,
-        "provider_readiness": provider_readiness(note),
+        "provider_readiness": attempt_readiness(claim.outcome, claim.last_error),
         "authorized_at": _utc(claim.authorized_at).isoformat(),
         "claimed_at": _utc(claim.claimed_at).isoformat(),
         "outcome": claim.outcome,
@@ -279,12 +286,17 @@ async def protected_recovery_receipt(
 
 def provider_readiness(note: WatchVoiceNote) -> str:
     """Observation from this bounded attempt, never a global account guarantee."""
-    if note.transcription_state == "transcribed":
+    return attempt_readiness(note.transcription_state, note.last_error)
+
+
+def attempt_readiness(outcome: str, error: str | None) -> str:
+    """Read a journal's outcome, so later attempts cannot rewrite historical readiness."""
+    if outcome == "transcribed":
         return "available_for_attempt"
-    if note.last_error == "openai_transcription_quota_unavailable":
+    if error == "openai_transcription_quota_unavailable":
         return "quota_unavailable"
-    if note.last_error == "openai_transcription_rate_limited":
+    if error == "openai_transcription_rate_limited":
         return "rate_limited"
-    if note.transcription_state == "unknown":
+    if outcome == "unknown":
         return "unknown"
     return "not_established"

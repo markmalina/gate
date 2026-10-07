@@ -192,3 +192,44 @@ Current-main/run/attempt/private-repository/OIDC/workflow-byte verification
 and the empty request body remain mandatory. The comment trigger adds no
 provider calls beyond the permanent same-note cap, no arbitrary selector,
 no credentials, no new scheduled automation and no automatic retry.
+
+## One separate post-payment continuation — 2026-10-07
+
+Mark reported API funding at 2026-10-07T14:23:37Z and retained his explicit
+instruction to complete the same archived note and private Mark delivery.
+This authorizes one separate bounded continuation; it does not reset the
+consumed recovery1 claim or assert that the server credential's organization
+matches the funded account. Readiness is established only by this attempt.
+
+The closed private binding `scope=initial-post-payment` requires
+`owner_post_payment=true`, that actual `authorized_at` after recovery1 completed,
+the same exact file/revision/event/audio hash, the typed prior quota error and
+historically diagnosed `provider_cause=credit_balance_exhausted`. No model,
+endpoint, repository, workspace, payment payload or attempt number is a selector.
+The existing private-repository/current-main/run/workflow/OIDC/token preflight
+and empty request body remain unchanged.
+
+Only a definitely rejected quota recovery1 with its exact released reservation
+and released original reservation in the same current month is eligible.
+Unknown, pending, settled, foreign, changed-archive, already transcribed or
+published work is denied before provider I/O. Additive migration
+`0115_watch_voice_post_payment` creates one permanent successor claim per note,
+committed before I/O. Original bytes, initial audit, recovery1 journal and both
+prior reservations remain intact. Old bindings become a no-op once this claim
+exists; new SHA/run/config changes never replenish either cap.
+
+The fixed `:postpayment1` reservation uses the same shared USD3 entitlement,
+isolated `gpt-4o-transcribe`, one normalized part, 25 MB upload, 60 seconds,
+100,000-character output and zero automatic retries. Definite refusal releases
+its reservation; uncertain work remains quarantined and consumes the grant.
+Success settles actual provider usage and uses only the existing private Mark
+outbox/reconciliation. No credential, billing, model, provider or retention
+configuration changes and zero Telegram sends are included.
+
+Protected receipts keep historical recovery1 readiness separate from this
+continuation. Only after accepted initial delivery may `future-only` activate.
+Its durable cutover excludes Dropbox entries with `server_modified` at or before
+the watermark before download and excludes stored notes whose Dropbox timestamp
+is not later, even when Gate received them after cutover. Replays do not move
+the watermark; excluded delta pages still advance the existing cursor. No
+historical backfill or additional automation is authorized by this addition.
