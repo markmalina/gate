@@ -116,3 +116,32 @@ class WatchVoiceRecoveryClaim(Base):
     outcome: Mapped[str] = mapped_column(String(16))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+
+
+class WatchVoicePostPaymentClaim(Base):
+    """One fixed paid continuation; the permanent first recovery stays intact."""
+
+    __tablename__ = "watch_voice_post_payment_claims"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('claimed','transcribed','rejected','unknown')",
+            name="ck_watch_voice_post_payment_outcome",
+        ),
+    )
+
+    note_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("watch_voice_recovery_claims.note_id"), primary_key=True
+    )
+    previous_reservation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("billing_budget_reservations.id")
+    )
+    previous_error: Mapped[str] = mapped_column(String(128))
+    previous_model: Mapped[str] = mapped_column(String(64))
+    previous_attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    authorization_sha: Mapped[str] = mapped_column(String(40))
+    authorization_kind: Mapped[str] = mapped_column(String(32))
+    authorized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str] = mapped_column(String(16))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(128))

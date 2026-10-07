@@ -132,3 +132,44 @@ review and registered deploy precede activation. On mismatch disable endpoint
 or binding and preserve both journals; never downgrade real-use evidence.
 Delivered initial receipt and cursor gate later owner-approved `future-only`;
 normal future access still needs a new recording receipt/replay verification.
+
+## Separate paid continuation (Gate #736) — 2026-10-07
+
+Mark's paid/completion instruction at 2026-10-07T14:23:37Z authorizes ONE new
+bounded attempt on the same protected original after review, exact-head CI and
+registered deployment. Personal API funding does not prove the configured
+server credential uses that organization. Observe actual readiness through this
+attempt; never fabricate quota_restored or reset the spent recovery1 claim.
+
+Private binding uses `scope=initial-post-payment`, the existing exact
+`file_id`/`revision`/`event_id`/`expected_audio_sha256`,
+`expected_error=openai_transcription_quota_unavailable`,
+`owner_post_payment=true`, `provider_cause=credit_balance_exhausted`, and the
+actual `authorized_at` above. No old owner_quota_probe/quota_restored fields or
+new endpoint/model/repository selectors are accepted. Workflow bytes and pin,
+OIDC/main/run/attempt/private target preflight and empty body remain unchanged.
+
+Additive `0115_watch_voice_post_payment` records a separate permanent claim.
+It requires recovery1 rejected by quota, its exact released reservation, the
+released original reservation and current-month shared USD3 entitlement before
+I/O. Fixed `:postpayment1` uses one normalized `gpt-4o-transcribe` part, 25 MB,
+60 seconds, 100,000 characters and zero retries. Failure/unknown/crash consumes
+this cap forever. Old source/audit/reservations stay intact; old binding is a
+no-op after this successor claim. Protected receipt contains historical
+`recovery` and separate `post_payment`; they cannot rewrite one another's
+readiness. Private Mark outbox/reconciliation is unchanged. Preserve all
+journals on rollback, without schema downgrade or silent rearming.
+
+The code baseline is d5a9fbb8a0b5444c0734cba040e0a67bd1a7424e, but deploying
+that bare revision after applying 0115 would leave its Alembic code unable to
+locate the database head. Stop effects by disabling the private binding, then
+use a reviewed forward application revert that retains 0115, its model and all
+journals, published through the registered current-main Ops lane. Never
+downgrade or erase Production schema/history.
+
+After initial transcript/issue/display and replay acceptance, existing
+future-only cutover rejects `server_modified <= future_cutover_at` before any
+download and excludes stored backlog whose Dropbox timestamp is not later.
+Both comparisons retain full UTC precision. A skipped delta still advances the
+existing cursor; retries/restarts never move the durable cutover. A new actual
+recording after that watermark remains a separate required product receipt.
