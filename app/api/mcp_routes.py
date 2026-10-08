@@ -198,6 +198,7 @@ from app.application.telegram_attachments import (
     validated_telegram_receipt_payload,
 )
 from app.application.telegram_voice_update import extract_telegram_voice
+from app.application.telegram_replies import format_telegram_reply
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -3134,6 +3135,9 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "description": (
             "Return one scoped RU/BY conversation as a chronological text, voice "
             "and attachment timeline. Attachment metadata is listed without a "
+            "provider call. Immediate same-chat reply snapshots and quoted excerpts "
+            "identify the original text or document, even outside the history page. "
+            "Unavailable reply sources are explicit. Attachment metadata needs no "
             "provider call; an exact task:attachment:message:index selector retrieves "
             "one file on explicit request. Existing exact voice and latest call/voice "
             "selectors remain available for compatibility."
@@ -4414,6 +4418,8 @@ def _format_reply_context_text(context: JsonObject) -> str:
                 f"[{direction}] {message['text_preview'] or '<empty>'}",
             ]
         )
+        if message.get("reply_to") is not None:
+            lines.extend(format_telegram_reply(message["reply_to"]))
         for attachment in message.get("attachments", []):
             availability = (
                 "available on request"
@@ -4485,4 +4491,5 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
 
