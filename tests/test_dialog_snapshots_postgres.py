@@ -210,6 +210,7 @@ async def test_other_project_change_invalidates_without_exposing_its_content() -
                 Message(
                     bot_id=seed.bot_id, account_id=seed.account_id, project_id=project_id,
                     chat_id=seed.recipient_chat_id, direction="inbound", source="synthetic",
+                    sender_id=seed.recipient_chat_id,
                     event_type="business_message", text="Synthetic restricted message", payload={},
                 ),
             ])
