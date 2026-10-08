@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -14,17 +14,23 @@ from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.dialog_snapshots import dialog_snapshot
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
+from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
 from app.models.domain import Conversation, ReplyDialogVersion, ReplyDraft, SendAttempt
+from app.worker.reply_sequences import run_reply_sequence_once
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from test_reply_sends_postgres import (
+    _attach_document,
     _command,
+    _document_command,
+    _DocumentTelegram,
     _LiteralRecordingTelegram,
     _postgres_sessions,
     _save_draft_command,
     _seed_reply,
+    _sequence_command,
     _settings,
     _wait_for_backend_lock,
 )
@@ -91,6 +97,85 @@ async def test_raw_receipt_stops_stale_draft_without_waiting_for_projection(
             assert error.value.code == "context_changed"
             assert await session.scalar(select(func.count()).select_from(SendAttempt)) == 0
         assert telegram.plain_calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("extension", [".xlsx", ".png"])
+async def test_stale_original_office_or_image_document_never_dispatches(extension: str) -> None:
+    from app.application.document_formats import DOCUMENT_TYPES
+
+    from test_document_formats import image_bytes, ooxml
+
+    data = ooxml(extension) if extension == ".xlsx" else image_bytes(extension)
+    filename = "synthetic" + extension
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        await _attach_document(
+            sessions, seed, filename=filename, media_type=DOCUMENT_TYPES[extension], data=data,
+        )
+        await receive(sessions, seed)
+        telegram = _DocumentTelegram()
+        settings = _settings()
+        settings.gate_document_send_enabled = True
+        async with sessions() as session:
+            with pytest.raises(ReplySendError) as error:
+                await SqlTelegramReplySender(
+                    session=session, telegram=telegram, settings=settings,
+                ).send(replace(_document_command(seed, data), expected_document_filename=filename))
+            assert error.value.code == "context_changed"
+            assert await session.scalar(select(func.count()).select_from(SendAttempt)) == 0
+        assert telegram.calls == []
+
+
+@pytest.mark.anyio
+async def test_raw_event_during_sequence_http_stops_the_unsent_tail() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_count=2)
+        now = datetime.now(UTC)
+        async with sessions() as session:
+            await SqlReplySequenceWriter(session, now=now - timedelta(hours=1)).queue(
+                _sequence_command(seed, seed.draft_ids),
+            )
+            await session.commit()
+
+        class Telegram(_LiteralRecordingTelegram):
+            async def send_plain_message(self, **kwargs: Any) -> dict:
+                await receive(sessions, seed)
+                return await super().send_plain_message(**kwargs)
+
+        telegram = Telegram()
+        assert await run_reply_sequence_once(
+            settings=_settings(), session_factory=sessions, telegram=telegram, now=now,
+        ) == 1
+        assert await run_reply_sequence_once(
+            settings=_settings(), session_factory=sessions, telegram=telegram,
+            now=now + timedelta(minutes=2),
+        ) == 0
+        assert len(telegram.plain_calls) == 1
+        async with sessions() as session:
+            tail = await session.get(ReplyDraft, seed.draft_ids[1])
+            assert tail.prompt_context["reply_sequence"]["state"] == "stopped"
+            assert tail.prompt_context["reply_sequence"]["error_code"] == "context_changed"
+
+
+@pytest.mark.anyio
+async def test_refusal_does_not_grant_context_read_permission() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        await receive(sessions, seed)
+        command = _command(seed, seed.draft_ids[0])
+        async with sessions() as session:
+            response = await _send_approved_reply_tool_result(
+                request_id=1, arguments={
+                    "draft_id": str(command.draft_id), "confirmed": True,
+                    "expected_account": command.expected_account,
+                    "expected_recipient_chat_id": command.expected_recipient_chat_id,
+                }, principal=command.principal, session=session,
+                telegram=_LiteralRecordingTelegram(), settings=_settings(),
+            )
+        assert response["result"]["structuredContent"] == {
+            "error": "context_changed", "sent": False, "current_context": None,
+        }
 
 
 @pytest.mark.anyio

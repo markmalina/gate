@@ -357,6 +357,11 @@ class SqlTelegramReplySender:
                 draft, _task, conversation, _trigger, _account = await self._load_context_models(
                     command, for_update=False,
                 )
+                if conversation.chat_id != context.target_chat_id:
+                    raise ReplySendError(
+                        code="context_scope_mismatch",
+                        message="Reviewed dialog does not match the delivery destination",
+                    )
                 await require_saved_dialog_snapshot(
                     self._session, scope=command.principal.access_scope,
                     draft=draft, conversation=conversation,

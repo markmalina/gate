@@ -90,17 +90,6 @@ class SqlReplySequenceWriter:
 
         ordered = [by_id[draft_id] for draft_id in command.draft_ids]
         first_draft, first_task, first_conversation, first_message, account = ordered[0]
-        try:
-            for draft, _task, conversation, _message, _account in ordered:
-                await require_saved_dialog_snapshot(
-                    self._session, scope=scope, draft=draft, conversation=conversation,
-                )
-            if any((draft.prompt_context or {}).get(SNAPSHOT_KEY) !=
-                   (first_draft.prompt_context or {}).get(SNAPSHOT_KEY)
-                   for draft, *_ in ordered):
-                raise ReplySendError(code="context_changed", message="Sequence snapshots differ")
-        except ReplySendError as exc:
-            raise ReplySequenceError(code=exc.code, message=exc.message) from exc
         binding = (
             first_draft.reply_task_id,
             first_draft.conversation_id,
@@ -143,6 +132,18 @@ class SqlReplySequenceWriter:
                 code="sequence_already_queued",
                 message="One or more drafts already belong to a reply sequence",
             )
+
+        try:
+            for draft, _task, conversation, _message, _account in ordered:
+                await require_saved_dialog_snapshot(
+                    self._session, scope=scope, draft=draft, conversation=conversation,
+                )
+            if any((draft.prompt_context or {}).get(SNAPSHOT_KEY) !=
+                   (first_draft.prompt_context or {}).get(SNAPSHOT_KEY)
+                   for draft, *_ in ordered):
+                raise ReplySendError(code="context_changed", message="Sequence snapshots differ")
+        except ReplySendError as exc:
+            raise ReplySequenceError(code=exc.code, message=exc.message) from exc
 
         attempts = await self._session.execute(
             select(SendAttempt.reply_draft_id).where(
