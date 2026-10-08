@@ -163,6 +163,7 @@ async def test_document_caption_snapshot_persists_without_a_send() -> None:
             _caption_command(source),
             principal=_save_draft_command(seed, "unused").principal,
             task_id=seed.task_id,
+            expected_context_snapshot=seed.context_snapshot,
         )
         async with sessions() as session:
             prepared = await PrepareReplyDocumentService(SqlReplyDocumentWriter(session)).execute(
@@ -204,7 +205,9 @@ async def test_real_sql_omitted_format_save_persist_send_replay_matches_main_leg
         settings.gate_document_send_enabled = True
         source = " \n💚 **unclosed _literal \t "
         data = b"%PDF-1.7\nsynthetic legacy database fixture"
-        prepare_arguments = {"task_id": str(seed.task_id)}
+        prepare_arguments = {
+            "task_id": str(seed.task_id), "expected_context_snapshot": seed.context_snapshot,
+        }
         if document:
             prepare_arguments.update(
                 filename="synthetic.pdf",
@@ -370,7 +373,7 @@ async def test_sequence_rejects_unconfirmed_or_changed_formatting_atomically(fai
                 draft = await session.get(ReplyDraft, draft_id)
                 assert draft is not None
                 draft.draft_text = preview.text
-                draft.prompt_context = {FORMAT_KEY: preview.to_dict()}
+                draft.prompt_context = {**draft.prompt_context, FORMAT_KEY: preview.to_dict()}
             await session.commit()
         digests = tuple(preview.payload_sha256 for preview in previews)
         if failure == "reordered":
@@ -381,6 +384,7 @@ async def test_sequence_rejects_unconfirmed_or_changed_formatting_atomically(fai
                 assert draft is not None
                 # A valid alternate formatting has identical text but another entity.
                 draft.prompt_context = {
+                    **draft.prompt_context,
                     FORMAT_KEY: compile_text("**Второй**", "markdown").to_dict()
                 }
                 await session.commit()
@@ -419,7 +423,7 @@ async def test_sequence_frozen_payload_survives_discovery_and_worker_replay() ->
                 draft = await session.get(ReplyDraft, draft_id)
                 assert draft is not None
                 draft.draft_text = preview.text
-                draft.prompt_context = {FORMAT_KEY: preview.to_dict()}
+                draft.prompt_context = {**draft.prompt_context, FORMAT_KEY: preview.to_dict()}
             await session.commit()
         now = datetime.now(UTC)
         digests = tuple(preview.payload_sha256 for preview in previews)
@@ -476,7 +480,7 @@ async def test_entities_only_edit_after_queue_stops_unsent_tail_without_http() -
                 draft = await session.get(ReplyDraft, draft_id)
                 assert draft is not None
                 draft.draft_text = preview.text
-                draft.prompt_context = {FORMAT_KEY: preview.to_dict()}
+                draft.prompt_context = {**draft.prompt_context, FORMAT_KEY: preview.to_dict()}
             await session.commit()
         now = datetime.now(UTC)
         async with sessions() as session:

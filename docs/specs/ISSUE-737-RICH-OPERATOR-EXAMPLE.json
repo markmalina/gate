@@ -74,7 +74,8 @@
             "text": "def sample_total(values):\n    return sum(values)\n\nprint(sample_total([1, 2, 3]))\n"
           }
         ]
-      }
+      },
+      "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
     }
   }
 }

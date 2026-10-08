@@ -37,7 +37,11 @@ def _ref(name: str) -> JsonObject:
 
 
 def _error_schema() -> JsonObject:
-    return _object({"error": {"type": "string", "minLength": 1}})
+    return _object({
+        "error": {"type": "string", "minLength": 1},
+        "sent": {"type": "boolean", "const": False},
+        "current_context": {"type": ["object", "null"]},
+    }, required=["error"])
 
 
 def _success_or_error(success: JsonObject, definitions: JsonObject) -> JsonObject:
@@ -1774,6 +1778,10 @@ GATE_UNANSWERED_OUTPUT_SCHEMA: JsonObject = {
 
 REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
     {
+        "context_snapshot": {"type": ["string", "null"], "pattern": "^dialog-v1:[0-9a-f]{64}$"},
+        "context_ready": {"type": "boolean"},
+        "dialog_events": {"type": "array", "items": {"type": "object"}},
+        "dialog_events_has_more": {"type": "boolean"},
         "task_id": {"type": "string", "format": "uuid"},
         "task_ref": {"type": "string", "minLength": 1, "maxLength": 8},
         "status": {"type": "string", "minLength": 1},
@@ -2512,4 +2520,5 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+
 

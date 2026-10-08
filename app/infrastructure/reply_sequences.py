@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.dialog_snapshots import SNAPSHOT_KEY
+from app.application.reply_sends import ReplySendError
 from app.application.reply_sequences import (
     QueueApprovedReplySequenceCommand,
     QueuedReplySequence,
@@ -20,6 +22,7 @@ from app.application.reply_sequences import (
     validate_sequence_payload_digests,
 )
 from app.application.telegram_formatting import FormattingError, stored_preview
+from app.infrastructure.dialog_snapshots import require_saved_dialog_snapshot
 from app.models.domain import (
     Account,
     AuditLog,
@@ -87,6 +90,17 @@ class SqlReplySequenceWriter:
 
         ordered = [by_id[draft_id] for draft_id in command.draft_ids]
         first_draft, first_task, first_conversation, first_message, account = ordered[0]
+        try:
+            for draft, _task, conversation, _message, _account in ordered:
+                await require_saved_dialog_snapshot(
+                    self._session, scope=scope, draft=draft, conversation=conversation,
+                )
+            if any((draft.prompt_context or {}).get(SNAPSHOT_KEY) !=
+                   (first_draft.prompt_context or {}).get(SNAPSHOT_KEY)
+                   for draft, *_ in ordered):
+                raise ReplySendError(code="context_changed", message="Sequence snapshots differ")
+        except ReplySendError as exc:
+            raise ReplySequenceError(code=exc.code, message=exc.message) from exc
         binding = (
             first_draft.reply_task_id,
             first_draft.conversation_id,

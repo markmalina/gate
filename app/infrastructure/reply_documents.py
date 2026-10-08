@@ -73,6 +73,7 @@ class SqlReplyDocumentWriter:
                 task_id=command.task_id,
                 text=command.filename,
                 follow_up=command.follow_up,
+                expected_context_snapshot=command.expected_context_snapshot,
             )
         )
         model = await self._session.scalar(
@@ -135,3 +136,4 @@ async def prune_expired_reply_documents(session: AsyncSession) -> int:
         .returning(ReplyDocument.id)
     )
     return len(result.scalars().all())
+

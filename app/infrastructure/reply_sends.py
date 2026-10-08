@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.dialog_snapshots import SNAPSHOT_KEY
 from app.application.document_formats import DOCUMENT_TYPES
 from app.application.reply_sends import (
     ReplySendError,
@@ -30,6 +31,12 @@ from app.application.telegram_formatting import (
 )
 from app.application.telegram_rich import RichPreview
 from app.core.config import Settings
+from app.infrastructure.dialog_snapshots import (
+    bump_dialog_version,
+    dialog_snapshot,
+    require_dialog_snapshot,
+    require_saved_dialog_snapshot,
+)
 from app.models.domain import (
     Account,
     AuditLog,
@@ -102,6 +109,7 @@ class _SendContextSnapshot:
     document_data: bytes | None = None
     document_expires_at: datetime | None = None
     formatting: FormattingPreview | None = None
+    dialog_snapshot: str | None = None
 
     @property
     def origin_connection_id(self) -> str | None:
@@ -162,6 +170,7 @@ class _Reservation:
     attempt: _AttemptSnapshot
     business_connection_id: str
     covered_task_ids: tuple[UUID, ...]
+    admission_snapshot: str | None = None
 
 
 class SqlTelegramReplySender:
@@ -192,6 +201,19 @@ class SqlTelegramReplySender:
         )
         if isinstance(reservation, ReplySendResult):
             return reservation
+
+        # A receipt can commit after reservation. Recheck again at dispatch;
+        # a proven refusal before HTTP is FAILED, never UNKNOWN or SENT.
+        try:
+            await self._admit_dispatch(command=command, reservation=reservation)
+        except ReplySendError as exc:
+            await self._session.rollback()
+            await self._finalize_failure(
+                command=command, reservation=reservation,
+                status=SendAttemptStatus.FAILED.value,
+                error_code=exc.code, error_detail=exc.code,
+            )
+            raise
 
         self._require_provider_outside_transaction()
         try:
@@ -287,6 +309,25 @@ class SqlTelegramReplySender:
                 provider_message_id=_provider_message_id(telegram_result),
             )
 
+    async def _admit_dispatch(
+        self, *, command: SendApprovedReplyCommand, reservation: _Reservation,
+    ) -> None:
+        async with self._session.begin():
+            draft, _task, conversation, _trigger, _account = await self._load_context_models(
+                command, for_update=False,
+            )
+            if (
+                (draft.prompt_context or {}).get(SNAPSHOT_KEY)
+                != reservation.context.dialog_snapshot
+            ):
+                raise ReplySendError(
+                    code="context_changed", message="Saved dialog snapshot changed",
+                )
+            await require_dialog_snapshot(
+                self._session, scope=command.principal.access_scope,
+                conversation=conversation, expected=reservation.admission_snapshot, lock=True,
+            )
+
     async def _preflight(
         self,
         command: SendApprovedReplyCommand,
@@ -313,6 +354,13 @@ class SqlTelegramReplySender:
                     idempotent_replay=True,
                 )
             else:
+                draft, _task, conversation, _trigger, _account = await self._load_context_models(
+                    command, for_update=False,
+                )
+                await require_saved_dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    draft=draft, conversation=conversation,
+                )
                 await self._raise_if_task_send_blocked(
                     conversation_id=context.conversation_id,
                     task_id=context.task_id,
@@ -461,6 +509,13 @@ class SqlTelegramReplySender:
                         idempotent_replay=True,
                     )
                 else:
+                    draft, _task, conversation, _trigger, _account = (
+                        await self._load_context_models(command, for_update=False)
+                    )
+                    await require_saved_dialog_snapshot(
+                        self._session, scope=command.principal.access_scope,
+                        draft=draft, conversation=conversation, lock=True,
+                    )
                     await self._raise_if_task_send_blocked(
                         conversation_id=intent.context.conversation_id,
                         task_id=intent.context.task_id,
@@ -585,6 +640,10 @@ class SqlTelegramReplySender:
             )
 
         now = datetime.now(UTC)
+        await bump_dialog_version(
+            self._session, connection_id=probe.business_connection_id,
+            chat_id=current.target_chat_id,
+        )
         attempt = SendAttempt(
             id=uuid4(),
             reply_draft_id=current.draft_id,
@@ -624,6 +683,7 @@ class SqlTelegramReplySender:
                     "payload_sha256": (
                         current.formatting.payload_sha256 if current.formatting else None
                     ),
+                    SNAPSHOT_KEY: current.dialog_snapshot,
                     **(
                         {
                             "delivery_mode": "rich",
@@ -637,11 +697,18 @@ class SqlTelegramReplySender:
                 },
             )
         )
+        conversation = await self._session.get(Conversation, current.conversation_id)
+        if conversation is None:
+            raise ReplySendError(code="context_unavailable", message="Dialog is unavailable")
         return _Reservation(
             context=current,
             attempt=_snapshot_attempt(attempt),
             business_connection_id=probe.business_connection_id,
             covered_task_ids=covered_task_ids,
+            admission_snapshot=await dialog_snapshot(
+                self._session, scope=command.principal.access_scope,
+                conversation=conversation,
+            ),
         )
 
     async def _load_concurrent_replay(
@@ -786,6 +853,17 @@ class SqlTelegramReplySender:
             draft = draft_result.scalar_one_or_none()
             if draft is None or conversation is None:
                 raise RuntimeError("Reply send context disappeared after delivery")
+
+            sequence = (draft.prompt_context or {}).get("reply_sequence")
+            advance_sequence = False
+            if isinstance(sequence, dict):
+                # Only an exact own package receipt can advance its cursor. Any
+                # separately accepted event while HTTP was in flight stops it.
+                before_effect = await dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    conversation=conversation, lock=True,
+                )
+                advance_sequence = before_effect == reservation.admission_snapshot
 
             provider_message_id = _provider_message_id(telegram_result)
             attempt.status = SendAttemptStatus.SENT.value
@@ -945,6 +1023,24 @@ class SqlTelegramReplySender:
                     },
                 )
             )
+            if advance_sequence and isinstance(sequence, dict):
+                await self._session.flush()
+                next_snapshot = await dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    conversation=conversation,
+                )
+                self._session.add(AuditLog(
+                    actor="gate", action="reply_sequence_snapshot_advanced",
+                    account_id=reservation.context.account_id,
+                    project_id=reservation.context.project_id,
+                    metadata_={
+                        "sequence_id": sequence.get("id"),
+                        "position": sequence.get("position"),
+                        "baseline_snapshot": reservation.context.dialog_snapshot,
+                        "next_snapshot": next_snapshot,
+                        "attempt_id": str(attempt.id),
+                    },
+                ))
             return self._attempt_result(
                 attempt=_snapshot_attempt(attempt),
                 context=reservation.context,
@@ -1022,6 +1118,7 @@ class SqlTelegramReplySender:
                     code="rich_scope_changed", message="Saved rich approval scope changed"
                 )
         return _SendContextSnapshot(
+            dialog_snapshot=raw_context.get(SNAPSHOT_KEY),
             formatting=formatting,
             draft_id=draft.id,
             draft_text=draft.draft_text,
@@ -1432,6 +1529,11 @@ class SqlTelegramReplySender:
             if isinstance(reservation_metadata, dict)
             else None
         )
+        if (isinstance(reservation_metadata, dict)
+            and reservation_metadata.get(SNAPSHOT_KEY) != context.dialog_snapshot):
+            raise ReplySendError(
+                code="send_attempt_payload_mismatch", message="Saved dialog snapshot changed",
+            )
         if isinstance(context.formatting, RichPreview) and isinstance(reservation_metadata, dict):
             runtime_revision = reservation_metadata.get("runtime_revision")
             reservation_time = reservation_metadata.get("reservation_time")
@@ -1550,6 +1652,7 @@ def _snapshot_attempt(attempt: SendAttempt) -> _AttemptSnapshot:
 
 def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
     return (
+        context.dialog_snapshot,
         context.draft_id,
         context.draft_text,
         context.draft_status,
@@ -1706,4 +1809,5 @@ def _validate_document_provider_result(
         )
     ):
         raise RuntimeError("Telegram document acknowledgement mismatched preparation")
+
 
