@@ -18,6 +18,7 @@ from app.application.telegram_attachments import (
     validated_telegram_receipt_payload,
 )
 from app.application.telegram_contacts import extract_scoped_telegram_contact
+from app.application.telegram_replies import extract_scoped_telegram_reply
 from app.core.mcp_security import AccessScope
 from app.infrastructure.dialog_snapshots import dialog_snapshot, recent_dialog_events
 from app.models.canonical import CanonicalMessage
@@ -435,6 +436,19 @@ async def get_reply_context(
                 fallback_name=getattr(conversation, "title", None),
             ),
         }
+        reply = extract_scoped_telegram_reply(
+            telegram_update.payload if telegram_update is not None else None,
+            gate_event.payload if gate_event is not None else None,
+            getattr(message, "payload", None),
+            receipt_payload,
+            update_id=getattr(message, "telegram_update_id", None),
+            event_type=getattr(message, "event_type", ""),
+            telegram_message_id=getattr(message, "telegram_message_id", None),
+            chat_id=message.chat_id,
+            business_connection_id=getattr(message, "business_connection_id", None),
+        )
+        if reply is not None:
+            serialized["reply_to"] = reply
         key = (
             _message_effective_at(message),
             0,
@@ -512,6 +526,22 @@ async def get_reply_context(
                         "platform_user_id": platform_user_id,
                     },
                 )
+                archive_update_id = getattr(archive, "telegram_update_id", None)
+                if getattr(receipt, "update_id", None) == archive_update_id:
+                    for event_type in (
+                        "business_message", "edited_business_message", "message", "edited_message",
+                    ):
+                        voice_reply = extract_scoped_telegram_reply(
+                            receipt.payload,
+                            update_id=archive_update_id,
+                            event_type=event_type,
+                            telegram_message_id=archive.telegram_message_id,
+                            chat_id=archive.chat_id,
+                            business_connection_id=archive.business_connection_id,
+                        )
+                        if voice_reply is not None:
+                            voice_item["reply_to"] = voice_reply
+                            break
                 existing_index = message_items_by_telegram_id.get(
                     int(archive.telegram_message_id)
                 )
@@ -523,6 +553,8 @@ async def get_reply_context(
                     voice_item["recipient_id"] = existing_item["recipient_id"]
                     voice_item["created_at"] = existing_item["created_at"]
                     voice_item["sent_at"] = existing_item["sent_at"]
+                    if "reply_to" in existing_item:
+                        voice_item["reply_to"] = existing_item["reply_to"]
                     timeline[existing_index] = (
                         (archive.received_at, 1, archive.id),
                         voice_item,
@@ -968,3 +1000,4 @@ def _serialize_datetime(value: Any) -> str | None:
     if value is None:
         return None
     return value.isoformat() if isinstance(value, datetime) else str(value)
+
