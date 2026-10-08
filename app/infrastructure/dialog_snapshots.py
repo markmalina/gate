@@ -156,7 +156,7 @@ async def require_saved_dialog_snapshot(
 async def recent_dialog_events(
     session: AsyncSession, *, scope: AccessScope, conversation: Conversation,
     owner_id: int | None, limit: int = 20,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[dict[str, Any]], bool, bool]:
     """Expose accepted events before projection, only for an unambiguous scope.
 
     A connection/chat may have multiple routed projects. In that case raw text
@@ -174,6 +174,14 @@ async def recent_dialog_events(
         Conversation.chat_id == conversation.chat_id,
         or_(Conversation.project_id.is_(None), Conversation.project_id.not_in(scope.project_ids)),
     ).limit(1))
+    hidden_message = await session.scalar(select(Message.id).where(
+        Message.account_id == conversation.account_id,
+        Message.chat_id == conversation.chat_id,
+        or_(Message.project_id.is_(None), Message.project_id.not_in(scope.project_ids)),
+    ).limit(1))
+    # Scope completeness is independent of the bounded receipt page: a hidden
+    # projected message can exist without a recent receipt or conversation row.
+    scope_complete = other_project is None and hidden_message is None
     predicates = []
     for key in ("business_message", "edited_business_message", "deleted_business_messages"):
         raw_event = TelegramReceipt.payload[key]
@@ -197,17 +205,17 @@ async def recent_dialog_events(
                     else "inbound" if isinstance(sender, dict) else "unknown"
                 )
                 value = event.get("text", event.get("caption"))
-                text_value = value if isinstance(value, str) and other_project is None else None
+                text_value = value if isinstance(value, str) and scope_complete else None
                 result.append({
                     "event_ref": str(receipt.id), "kind": key, "direction": direction,
                     "received_at": receipt.received_at.isoformat(),
                     "text": text_value[:4096] if text_value is not None else None,
                     "text_truncated": text_value is not None and len(text_value) > 4096,
                     "projection_status": receipt.status,
-                    "content_available": other_project is None,
+                    "content_available": scope_complete,
                     "content_type": next((kind for kind in (
                         "voice", "photo", "document", "video", "audio", "sticker", "text"
                     ) if kind in event), "other"),
                 })
                 break
-    return result, len(receipts) > limit
+    return result, len(receipts) > limit, scope_complete

@@ -361,6 +361,6 @@ def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
     async def snapshot(*args, **kwargs):
         return "dialog-v1:" + "0" * 64
     async def events(*args, **kwargs):
-        return [], False
+        return [], False, True
     monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
     monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)

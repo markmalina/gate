@@ -189,7 +189,11 @@ async def test_refusal_does_not_grant_context_read_permission() -> None:
 
 
 @pytest.mark.anyio
-async def test_other_project_change_invalidates_without_exposing_its_content() -> None:
+@pytest.mark.parametrize("raw_event", [False, True])
+@pytest.mark.parametrize("conversation_row", [False, True])
+async def test_other_project_change_invalidates_without_exposing_its_content(
+    raw_event: bool, conversation_row: bool,
+) -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
         project_id = uuid4()
@@ -200,32 +204,35 @@ async def test_other_project_change_invalidates_without_exposing_its_content() -
                 name="Synthetic other project", adapter_type="test",
             ))
             await session.flush()
-            session.add_all([
-                Conversation(
+            if conversation_row:
+                session.add(Conversation(
                     bot_id=seed.bot_id, account_id=seed.account_id, project_id=project_id,
                     chat_id=seed.recipient_chat_id,
                     business_connection_id=seed.business_connection_id,
                     last_message_at=datetime.now(UTC),
-                ),
-                Message(
+                ))
+            session.add(Message(
                     bot_id=seed.bot_id, account_id=seed.account_id, project_id=project_id,
                     chat_id=seed.recipient_chat_id, direction="inbound", source="synthetic",
                     sender_id=seed.recipient_chat_id,
                     event_type="business_message", text="Synthetic restricted message", payload={},
-                ),
-            ])
+            ))
             await session.commit()
             conversation = await session.get(Conversation, seed.conversation_id)
             assert await dialog_snapshot(
                 session, scope=scope, conversation=conversation,
             ) != seed.context_snapshot
-        await receive(sessions, seed, content={"text": "Synthetic restricted raw event"})
+        if raw_event:
+            await receive(sessions, seed, content={"text": "Synthetic restricted raw event"})
         async with sessions() as session:
             context = await get_reply_context(
                 session=session, scope=scope, task_id=seed.task_id, limit=30,
             )
-        assert context["dialog_events"][-1]["text"] is None
-        assert context["dialog_events"][-1]["content_available"] is False
+        if raw_event:
+            assert context["dialog_events"][-1]["text"] is None
+            assert context["dialog_events"][-1]["content_available"] is False
+        else:
+            assert context["dialog_events"] == []
         assert context["context_ready"] is False and context["context_snapshot"] is None
         assert "Synthetic restricted" not in str(context)
 

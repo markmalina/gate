@@ -1306,7 +1306,7 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
         reads += 1
         return "dialog-v1:" + ("1" if changes_during_read and reads > 1 else "0") * 64
     async def events(*args, **kwargs):
-        return [], False
+        return [], False, True
     # Chronology/schema unit test; real revision SQL is covered in PostgreSQL.
     monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
     monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)

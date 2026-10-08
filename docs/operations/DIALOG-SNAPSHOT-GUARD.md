@@ -26,6 +26,9 @@ also has `gate:inbox:read` and the context can be read. Otherwise it is null.
 Raw event text is withheld when the dialog has a conversation in an ungranted
 project. The snapshot is a concurrency precondition, not an authorization grant.
 Such a redacted read is not ready for composition and returns no usable token.
+Scope completeness is checked against both conversation and projected-message
+rows even when the recent raw-event page is empty. A hidden message without a
+conversation row also prevents a sendable snapshot; its content remains hidden.
 Historical pages and reads that change while being assembled return no usable
 snapshot. `dialog_events_has_more` flags bounded raw-event history.
 
