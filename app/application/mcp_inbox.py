@@ -8,6 +8,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import String, and_, case, cast, func, or_, select, union_all
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
+
 from app.application.account_labels import account_label
 from app.application.telegram_attachments import (
     serialize_telegram_attachments,
@@ -31,9 +35,6 @@ from app.models.domain import (
     TelegramUpdate,
     TelegramVoiceArchive,
 )
-from sqlalchemy import String, and_, case, cast, func, or_, select, union_all
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import undefer
 
 JsonObject = dict[str, Any]
 ANSWERED_MESSAGE_SOURCES = ("telegram", "gate-approved-draft")
