@@ -25,9 +25,10 @@ from app.models.domain import (
     ReplyDialogVersion,
     ReplyDraft,
     SendAttempt,
+    TelegramBusinessConnection,
 )
 from app.worker.reply_sequences import run_reply_sequence_once
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from test_reply_sends_postgres import (
@@ -225,6 +226,33 @@ async def test_other_project_change_invalidates_without_exposing_its_content() -
         assert context["dialog_events"][-1]["content_available"] is False
         assert context["context_ready"] is False and context["context_snapshot"] is None
         assert "Synthetic restricted" not in str(context)
+
+
+@pytest.mark.anyio
+async def test_history_without_connection_is_readable_but_never_authorizes_delivery() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        command = _command(seed, seed.draft_ids[0])
+        async with sessions() as session:
+            await session.execute(delete(TelegramBusinessConnection))
+            conversation = await session.get(Conversation, seed.conversation_id)
+            trigger = await session.get(Message, seed.trigger_message_id)
+            conversation.business_connection_id = None
+            trigger.business_connection_id = None
+            await session.commit()
+            context = await get_reply_context(
+                session=session, scope=command.principal.access_scope,
+                task_id=seed.task_id, limit=30,
+            )
+            assert context["messages"] and context["context_snapshot"] is not None
+            await session.rollback()
+            telegram = _LiteralRecordingTelegram()
+            with pytest.raises(ReplySendError) as error:
+                await SqlTelegramReplySender(
+                    session=session, telegram=telegram, settings=_settings(),
+                ).send(command)
+            assert error.value.code == "origin_connection_missing"
+            assert telegram.plain_calls == []
 
 
 @pytest.mark.anyio

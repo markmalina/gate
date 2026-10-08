@@ -56,8 +56,8 @@ async def dialog_snapshot(
     )).all())
     if conversation.business_connection_id:
         connections.add(conversation.business_connection_id)
-    if not connections:
-        raise ReplySendError(code="context_unavailable", message="Dialog connection is unavailable")
+    # Imported/legacy history is still readable without a Business connection.
+    # The sender separately requires an authorized live origin before any I/O.
     if lock:
         for connection in sorted(connections):
             await session.execute(
