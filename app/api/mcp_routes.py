@@ -64,6 +64,7 @@ from app.application.owner_reply_readiness import (
     OwnerReplyReadinessError,
     build_owner_reply_readiness,
 )
+from app.application.document_formats import DOCUMENT_MIME_TYPES
 from app.application.reply_documents import (
     PrepareReplyDocumentCommand,
     PrepareReplyDocumentService,
@@ -3387,8 +3388,8 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
         "name": "gate_prepare_reply_document",
         "title": "Prepare one Gate Business document",
         "description": (
-            "Stage one selected local PDF or ZIP; choose caption_format=plain (literal) or markdown. "
-            "Omitting caption_format keeps the legacy literal caption contract without a preview. "
+            "Stage one original PDF/ZIP, Excel/Word/PowerPoint or JPEG/PNG/WEBP/GIF file as a document; "
+            "No conversion/compression. Max 8 MiB; private staging 24 hours. Use caption_format=plain or markdown. Omitting it preserves legacy literal captions. "
             "Returns saved caption text/entities/version/hash; max 1024 UTF-16 units after conversion. "
             "Pass its formatting.payload_sha256 to approved send after showing the preview. "
             "The base64 bytes are accepted only in this upload argument, never "
@@ -3400,7 +3401,7 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
                 "filename": {"type": "string", "minLength": 1, "maxLength": 255},
-                "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+                "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
                 "content_base64": {"type": "string", "minLength": 1, "maxLength": 11184812},
                 "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 "caption": {"type": "string", "maxLength": 65536, "default": ""},
@@ -3839,7 +3840,7 @@ async def _prepare_reply_document_tool_result(
         (
             f"Document prepared; not sent. Account {prepared.account_label}; "
             f"recipient {prepared.recipient_chat_id}; file {prepared.filename}; "
-            f"MIME {prepared.media_type}; size {prepared.size_bytes}; "
+            f"mode document (original file); MIME {prepared.media_type}; size {prepared.size_bytes}; "
             f"SHA-256 {prepared.sha256}; caption {prepared.caption!r}. "
             "Show these exact values to Mark for confirmation."
         ),
@@ -4484,3 +4485,4 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+

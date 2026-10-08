@@ -684,21 +684,22 @@ async def test_fiftieth_draft_binding_mismatch_cannot_partially_queue() -> None:
 
 
 async def _attach_document(
-    sessions: async_sessionmaker[AsyncSession], seed: _SeededReply
+    sessions: async_sessionmaker[AsyncSession], seed: _SeededReply, *,
+    filename: str = "bundle.zip", media_type: str = "application/zip",
+    data: bytes = b"PK\x03\x04selected document bytes",
 ) -> bytes:
-    data = b"PK\x03\x04selected document bytes"
     async with sessions() as session:
         draft = await session.get(ReplyDraft, seed.draft_ids[0])
         assert draft is not None
         draft.source = "chatgpt-mcp-document"
-        draft.draft_text = "bundle.zip"
+        draft.draft_text = filename
         draft.prompt_context = {"kind": "document"}
         session.add(
             ReplyDocument(
                 reply_draft_id=draft.id,
                 principal_subject="reply-send-postgres-test",
-                filename="bundle.zip",
-                media_type="application/zip",
+                filename=filename,
+                media_type=media_type,
                 size_bytes=len(data),
                 sha256=hashlib.sha256(data).hexdigest(),
                 caption="Ready",
@@ -2174,3 +2175,55 @@ async def test_cancelled_post_leaves_committed_sending_fence_for_exact_retry() -
         assert conversation.status == ConversationStatus.OPEN.value
         assert conversation.requires_reply is True
         assert outbound_count == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("extension", [".xlsx", ".docx", ".pptx", ".xls", ".doc", ".ppt",
+                                      ".jpg", ".png", ".webp", ".gif"])
+async def test_original_document_formats_replay_exact_bytes(extension: str) -> None:
+    from app.application.document_formats import DOCUMENT_TYPES
+
+    from test_document_formats import image_bytes, legacy_office, ooxml
+
+    data = (ooxml(extension) if extension.endswith("x") else legacy_office(extension)
+            if extension in {".xls", ".doc", ".ppt"} else image_bytes(extension))
+    filename = "Gate-original" + extension
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        await _attach_document(sessions, seed, filename=filename,
+                               media_type=DOCUMENT_TYPES[extension], data=data)
+        command = replace(_document_command(seed, data), expected_document_filename=filename)
+        telegram = _DocumentTelegram()
+        results = []
+        for _ in range(2):
+            async with sessions() as session:
+                results.append(await SqlTelegramReplySender(
+                    session=session, telegram=telegram,
+                    settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+                ).send(command))
+        assert results[0].sent and results[1].idempotent_replay
+        assert results[0].attempt_id == results[1].attempt_id
+        assert len(telegram.calls) == 1
+        assert telegram.calls[0]["data"] == data
+        assert telegram.calls[0]["filename"] == filename
+        assert telegram.calls[0]["media_type"] == DOCUMENT_TYPES[extension]
+
+
+@pytest.mark.anyio
+async def test_document_mime_substitution_is_rejected_before_provider_io() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        data = await _attach_document(sessions, seed)
+        async with sessions() as session:
+            await session.execute(update(ReplyDocument).where(
+                ReplyDocument.reply_draft_id == seed.draft_ids[0]
+            ).values(media_type="image/png"))
+            await session.commit()
+        telegram = _DocumentTelegram()
+        async with sessions() as session:
+            with pytest.raises(ReplySendError, match="expired or changed"):
+                await SqlTelegramReplySender(
+                    session=session, telegram=telegram,
+                    settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
+                ).send(_document_command(seed, data))
+        assert telegram.calls == []

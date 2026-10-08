@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.application.document_formats import DOCUMENT_MIME_TYPES
 from app.application.owner_reply_readiness import (
     OWNER_REPLY_READINESS_OUTPUT_SCHEMA,
     OWNER_REPLY_READINESS_TOOL_NAME,
@@ -1929,7 +1930,7 @@ GATE_DOCUMENT_PREPARE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
             "account": {"type": "string", "enum": ["RU", "BY"]},
             "recipient_chat_id": {"type": "string", "minLength": 1},
             "filename": {"type": "string", "minLength": 1},
-            "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+            "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
             "size_bytes": {"type": "integer", "minimum": 1},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "caption": {"type": "string"},
@@ -1948,7 +1949,7 @@ GATE_DOCUMENT_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
             "account": {"type": "string", "enum": ["RU", "BY"]},
             "recipient_chat_id": {"type": "string", "minLength": 1},
             "filename": {"type": "string", "minLength": 1},
-            "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+            "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
             "size_bytes": {"type": "integer", "minimum": 1},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "status": {"type": "string", "minLength": 1},
@@ -2511,3 +2512,4 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+

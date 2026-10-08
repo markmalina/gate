@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.document_formats import DOCUMENT_TYPES
 from app.application.reply_sends import (
     ReplySendError,
     ReplySendResult,
@@ -1377,6 +1379,9 @@ class SqlTelegramReplySender:
                 or context.document_size_bytes != len(context.document_data)
                 or hashlib.sha256(context.document_data).hexdigest() != context.document_sha256
                 or context.draft_text != context.document_filename
+                or DOCUMENT_TYPES.get(
+                    PurePosixPath(context.document_filename or "").suffix.lower()
+                ) != context.document_media_type
             ):
                 raise ReplySendError(
                     code="document_unavailable",
@@ -1701,3 +1706,4 @@ def _validate_document_provider_result(
         )
     ):
         raise RuntimeError("Telegram document acknowledgement mismatched preparation")
+
