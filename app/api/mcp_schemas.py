@@ -162,6 +162,37 @@ CONTACT_DETAILS_SCHEMA = _object(
         "source_message_id": {"type": "integer", "minimum": 1},
     }
 )
+REPLY_DETAILS_SCHEMA = _object(
+    {
+        "status": {"type": "string", "enum": ["snapshot", "unavailable"]},
+        "reason_code": _nullable("string"),
+        "provider_message_id": _nullable("string"),
+        "author": _nullable("string"),
+        "sent_at": _nullable("string"),
+        "text": {"type": ["string", "null"], "maxLength": 4096},
+        "caption": {"type": ["string", "null"], "maxLength": 1024},
+        "attachments": {
+            "type": "array",
+            "maxItems": 1,
+            "items": _object({
+                "kind": {"type": "string", "enum": [
+                    "document", "photo", "voice", "audio", "video", "animation", "video_note",
+                ]},
+                "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+                "mime_type": _nullable("string"),
+                "size_bytes": {"type": ["integer", "null"], "minimum": 1},
+            }),
+        },
+        "quote": {"anyOf": [
+            _object({
+                "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "position": {"type": "integer", "minimum": 0},
+                "is_manual": {"type": "boolean"},
+            }),
+            {"type": "null"},
+        ]},
+    }
+)
 REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
     {
         **MESSAGE_SCHEMA["properties"],
@@ -186,6 +217,7 @@ REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
                 {"type": "null"},
             ]
         },
+        "reply_to": REPLY_DETAILS_SCHEMA,
         "counterparty": _ref("counterparty"),
     },
     required=[
@@ -2512,4 +2544,5 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+
 
