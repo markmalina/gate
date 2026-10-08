@@ -571,9 +571,13 @@ async def get_reply_context(
         session, scope=scope, conversation=conversation, owner_id=account.telegram_user_id,
     )
     final_snapshot = await dialog_snapshot(session, scope=scope, conversation=conversation)
+    context_ready = (
+        final_snapshot == initial_snapshot and cursor is None
+        and all(event["content_available"] for event in events)
+    )
     content.update({
-        "context_snapshot": final_snapshot if final_snapshot == initial_snapshot else None,
-        "context_ready": final_snapshot == initial_snapshot and cursor is None,
+        "context_snapshot": final_snapshot if context_ready else None,
+        "context_ready": context_ready,
         "dialog_events": events,
         "dialog_events_has_more": events_has_more,
     })

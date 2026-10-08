@@ -25,6 +25,7 @@ Refusals return `sent=false`, an error code, and `current_context` when the call
 also has `gate:inbox:read` and the context can be read. Otherwise it is null.
 Raw event text is withheld when the dialog has a conversation in an ungranted
 project. The snapshot is a concurrency precondition, not an authorization grant.
+Such a redacted read is not ready for composition and returns no usable token.
 Historical pages and reads that change while being assembled return no usable
 snapshot. `dialog_events_has_more` flags bounded raw-event history.
 

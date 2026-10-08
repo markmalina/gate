@@ -86,6 +86,12 @@ async def dialog_snapshot(
             Message.chat_id == conversation.chat_id,
         ).order_by(Message.id)
     )).all()
+    # Opaque IDs detect projected changes in another routed project without
+    # exposing that project's private message content to the current Work.
+    message_ids = (await session.scalars(select(Message.id).where(
+        Message.account_id == conversation.account_id,
+        Message.chat_id == conversation.chat_id,
+    ).order_by(Message.id))).all()
     return snapshot_digest({
         "workspace": scope.workspace_id,
         "account": str(conversation.account_id),
@@ -95,6 +101,7 @@ async def dialog_snapshot(
         "connections": [(key, revisions[key]) for key in sorted(connections)
                         if revisions.get(key, 0) > 0],
         "messages": [tuple(row) for row in messages],
+        "dialog_message_ids": [str(message_id) for message_id in message_ids],
     })
 
 
