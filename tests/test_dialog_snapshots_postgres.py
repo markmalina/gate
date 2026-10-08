@@ -205,6 +205,7 @@ async def test_other_project_change_invalidates_without_exposing_its_content() -
                     bot_id=seed.bot_id, account_id=seed.account_id, project_id=project_id,
                     chat_id=seed.recipient_chat_id,
                     business_connection_id=seed.business_connection_id,
+                    last_message_at=datetime.now(UTC),
                 ),
                 Message(
                     bot_id=seed.bot_id, account_id=seed.account_id, project_id=project_id,
