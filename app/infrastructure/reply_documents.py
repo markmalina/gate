@@ -1,4 +1,4 @@
-"""Scoped SQL staging of one immutable PDF or ZIP for a reply task."""
+"""Scoped SQL staging of one immutable original document for a reply task."""
 
 from __future__ import annotations
 
