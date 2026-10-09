@@ -89,6 +89,10 @@ The #745 Railway predeploy command is `python -m app.worker.reply_cutover`.
 It reads only Alembic revisions and aggregate `send_attempts.status` counts,
 works on the pre-guard schema, and permits only the single baseline
 `0115_watch_voice_post_payment` or already-applied `0116_reply_dialog_versions`.
+On 0115, `GATE_SEND_ENABLED=false` is also required before migration. An
+ordinary deploy with delivery still enabled fails before applying 0116. On
+already-applied 0116, enabled delivery is permitted for the guarded activation
+deploy; active-attempt and exact-schema checks still apply.
 Any other or multiple revision heads, an unavailable database, or any
 `reserved` / `sending` attempt stops deployment before migration. It runs only
 `upgrade 0116_reply_dialog_versions` and verifies the resulting revision and
@@ -111,6 +115,13 @@ counts, the process's configured send flag, and the `dialog-v1` guard contract.
 It returns 503 with a safe code if observation is unavailable. This endpoint
 does not enable delivery and cannot attest other instances. Ops must correlate
 it with exact new deployment identities and the absence of old instances before
-acceptance or enabling reviewed sends. If a two-stage frozen/enabled rollout is
-used, the same fixed predeploy check accepts 0116 idempotently on activation;
-it does not infer freeze from a mutable settings flag.
+acceptance or enabling reviewed sends. The release uses two stages: set the
+fixed service send variable false without starting a deploy; prove all old
+instances stopped; create and bind the backup; deploy the guarded SHA with
+delivery disabled; verify 0116, that SHA, the disabled flag, and only guarded
+instances; then set the send variable true and redeploy the exact same SHA.
+Verify the enabled flag and only guarded instances again. The same fixed
+predeploy check accepts 0116 idempotently on activation. The flag requirement
+fences migration with enabled delivery; it does not prove old fleet shutdown.
+Before merge, Ops must separately prove automatic deployment is disabled so
+the reviewed stop-and-backup sequence cannot be bypassed.

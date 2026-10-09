@@ -37,7 +37,9 @@ def main() -> None:
             "sending": observation.sending,
             "unknown": observation.unknown,
         }, sort_keys=True))
-        observation.require_migration_preconditions()
+        observation.require_migration_preconditions(
+            sends_enabled=get_settings().gate_send_enabled,
+        )
         command.upgrade(Config("alembic.ini"), GUARDED_REVISION)
         after = asyncio.run(_observe())
         if after.schema_revisions != (GUARDED_REVISION,) or after.active_attempts:

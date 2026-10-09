@@ -24,9 +24,11 @@ class ReplyCutoverObservation:
     def active_attempts(self) -> int:
         return self.reserved + self.sending
 
-    def require_migration_preconditions(self) -> None:
+    def require_migration_preconditions(self, *, sends_enabled: bool) -> None:
         if self.schema_revisions not in ((BASELINE_REVISION,), (GUARDED_REVISION,)):
             raise RuntimeError("reply_cutover_schema_unexpected")
+        if self.schema_revisions == (BASELINE_REVISION,) and sends_enabled:
+            raise RuntimeError("reply_cutover_sends_not_disabled")
         if self.active_attempts:
             raise RuntimeError("reply_cutover_attempts_not_drained")
 

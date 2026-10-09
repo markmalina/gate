@@ -44,9 +44,13 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         finally:
             await engine.dispose()
 
-    def process(*arguments: str) -> subprocess.CompletedProcess[str]:
+    def process(
+        *arguments: str, send_enabled: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, "-m", *arguments], env=environment,
+            [sys.executable, "-m", *arguments], env={
+                **environment, "GATE_SEND_ENABLED": str(send_enabled).lower(),
+            },
             capture_output=True, text=True, timeout=60, check=False,
         )
 
@@ -142,8 +146,12 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         assert asyncio.run(stored_state()) == initial_state
 
         asyncio.run(settle_synthetic_active_attempts())
-        drained_rows = asyncio.run(stored_state())[2]
+        drained_state = asyncio.run(stored_state())
+        drained_rows = drained_state[2]
         unknown_row = next(row for row in drained_rows if row[1] == "unknown")
+        enabled_baseline = process("app.worker.reply_cutover", send_enabled=True)
+        assert enabled_baseline.returncode == 1
+        assert asyncio.run(stored_state()) == drained_state
         migrated = process("app.worker.reply_cutover")
         assert migrated.returncode == 0, migrated.stderr
         after = asyncio.run(stored_state())
@@ -151,7 +159,7 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         assert after[2] == drained_rows
         assert next(row for row in after[2] if row[1] == "unknown") == unknown_row
 
-        replay = process("app.worker.reply_cutover")
+        replay = process("app.worker.reply_cutover", send_enabled=True)
         assert replay.returncode == 0, replay.stderr
         assert asyncio.run(stored_state()) == after
         assert asyncio.run(real_health()) == {

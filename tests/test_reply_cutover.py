@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 @pytest.mark.parametrize("revision", [BASELINE_REVISION, GUARDED_REVISION])
 def test_fixed_schema_and_preserved_unknowns_admit_migration(revision: str) -> None:
     observation = ReplyCutoverObservation((revision,), reserved=0, sending=0, unknown=7)
-    observation.require_migration_preconditions()
+    observation.require_migration_preconditions(sends_enabled=False)
     assert observation.unknown == 7
 
 
@@ -26,13 +26,15 @@ def test_fixed_schema_and_preserved_unknowns_admit_migration(revision: str) -> N
 def test_active_attempts_block_migration(reserved: int, sending: int) -> None:
     observation = ReplyCutoverObservation((BASELINE_REVISION,), reserved, sending, unknown=0)
     with pytest.raises(RuntimeError, match="reply_cutover_attempts_not_drained"):
-        observation.require_migration_preconditions()
+        observation.require_migration_preconditions(sends_enabled=False)
 
 
 @pytest.mark.parametrize("revisions", [(), ("unreviewed",), (BASELINE_REVISION, "other")])
 def test_unknown_schema_or_multiple_heads_block_migration(revisions: tuple[str, ...]) -> None:
     with pytest.raises(RuntimeError, match="reply_cutover_schema_unexpected"):
-        ReplyCutoverObservation(revisions, 0, 0, 0).require_migration_preconditions()
+        ReplyCutoverObservation(revisions, 0, 0, 0).require_migration_preconditions(
+            sends_enabled=False,
+        )
 
 
 @pytest.mark.anyio
@@ -132,6 +134,10 @@ def test_predeploy_uses_only_fixed_migration_and_preserves_unknowns(
     ])
     upgrade = MagicMock()
     monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(
+        reply_cutover, "get_settings",
+        lambda: Settings(_env_file=None, GATE_SEND_ENABLED=False),
+    )
     monkeypatch.setattr(reply_cutover.command, "upgrade", upgrade)
     reply_cutover.main()
     assert upgrade.call_count == 1
@@ -146,8 +152,53 @@ def test_predeploy_active_attempts_abort_before_migration(
     observe = AsyncMock(return_value=ReplyCutoverObservation((BASELINE_REVISION,), 0, 1, 0))
     upgrade = MagicMock()
     monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(
+        reply_cutover, "get_settings",
+        lambda: Settings(_env_file=None, GATE_SEND_ENABLED=False),
+    )
     monkeypatch.setattr(reply_cutover.command, "upgrade", upgrade)
     with pytest.raises(SystemExit) as caught:
         reply_cutover.main()
     assert caught.value.code == 1
     upgrade.assert_not_called()
+
+
+def test_predeploy_enabled_sends_on_baseline_abort_before_migration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.worker import reply_cutover
+
+    observe = AsyncMock(return_value=ReplyCutoverObservation((BASELINE_REVISION,), 0, 0, 4))
+    upgrade = MagicMock()
+    monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(
+        reply_cutover, "get_settings",
+        lambda: Settings(_env_file=None, GATE_SEND_ENABLED=True),
+    )
+    monkeypatch.setattr(reply_cutover.command, "upgrade", upgrade)
+    with pytest.raises(SystemExit) as caught:
+        reply_cutover.main()
+    assert caught.value.code == 1
+    upgrade.assert_not_called()
+    assert observe.await_count == 1
+
+
+def test_predeploy_enabled_sends_on_guarded_schema_allow_activation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.worker import reply_cutover
+
+    observation = ReplyCutoverObservation((GUARDED_REVISION,), 0, 0, 4)
+    observe = AsyncMock(return_value=observation)
+    upgrade = MagicMock()
+    monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(
+        reply_cutover, "get_settings",
+        lambda: Settings(_env_file=None, GATE_SEND_ENABLED=True),
+    )
+    monkeypatch.setattr(reply_cutover.command, "upgrade", upgrade)
+    reply_cutover.main()
+    assert upgrade.call_count == 1
+    assert upgrade.call_args.args[1] == GUARDED_REVISION
+    assert observe.await_count == 2
+    assert observation.unknown == 4
