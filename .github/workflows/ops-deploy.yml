@@ -66,13 +66,13 @@ jobs:
       - id: deploy
         name: Deploy through Ops
         continue-on-error: true
-        uses: AlphaCenter/ops/agent-ops/actions/gate-deploy@990f4cfd7f2a41089f9e93aca9891f504484705b
+        uses: AlphaCenter/ops/agent-ops/actions/gate-deploy@7bd47fe1c646f30c87207dc513cd1e5990d23a78
         with:
           target: gate
           expected-source-sha: ${{ steps.request.outputs.source_sha }}
         env:
           RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          AGENT_OPS_REVIEWER_PRIVATE_KEY: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+          AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ github.token }}
 
       - name: Save receipt
         if: ${{ always() && steps.deploy.outputs.receipt-path != '' }}

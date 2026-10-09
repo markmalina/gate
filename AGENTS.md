@@ -36,8 +36,10 @@ After the exact owner Gate-only release gate and exact-head checks, post only:
 
 The requester accepts only Mark's immutable identity, the exact control issue
 and reviewed current main; it invokes the pinned Ops Gate-only executor.
-AQUB/all and an AQUB caller are forbidden. Existing protected Gate credentials
-must validate against the fixed target. Missing/mismatched credentials stop
+AQUB/all and an AQUB caller are forbidden. Source access uses this Gate workflow's ephemeral `GITHUB_TOKEN` at
+`contents:read`; no permanent GitHub App source key is needed. Existing
+protected Gate Railway credentials must validate against the fixed target.
+Missing/mismatched credentials stop
 before mutation: never copy AQUB secrets or use a provider UI/API fallback.
 This grants no migration, source drift, credential provisioning or AQUB action.
 Other Gate operations, including Gate745, need a reviewed independent
