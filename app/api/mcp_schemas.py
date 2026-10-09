@@ -2544,11 +2544,3 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
-
-
-
-
-# Owner freeze: bounded source-enforced runtime boundary, no provider lookup.
-GATE_STATUS_OUTPUT_SCHEMA["properties"]["project_boundaries"] = _object(
-    {"aqub": {"type": "string", "enum": ["frozen_disconnected"]}},
-)
