@@ -491,11 +491,11 @@ async def test_plain_alpha_text_is_confirmed_after_durable_capture_without_runti
 
 
 @pytest.mark.anyio
-async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> None:
+async def test_legacy_alpha_capture_reports_frozen_runtime_without_http() -> None:
     store = Store()
 
     def unavailable(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("synthetic unavailable", request=request)
+        raise AssertionError("Frozen runtime must not access HTTP")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unavailable)) as http_client:
         result = await AQUBLiveIngressAdapter(
@@ -510,17 +510,14 @@ async def test_plain_alpha_text_is_confirmed_after_bounded_http_failure() -> Non
     assert result.accepted is True
     assert result.reason == "aqub_live_durable_only"
     assert result.captured_content is AQUBTransportContentKind.TEXT
-    assert result.runtime_error_code == "aqub_runtime_transport_unavailable"
+    assert result.runtime_error_code == "aqub_project_frozen"
     assert len(store.commands) == 1
 
 
 @pytest.mark.anyio
-async def test_runtime_client_classifies_allowlisted_aqub_error() -> None:
+async def test_frozen_client_refuses_before_reading_aqub_response() -> None:
     def binding_missing(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            403,
-            json={"ok": False, "code": "AQUB_LIVE_BINDING_NOT_FOUND"},
-        )
+        raise AssertionError("Frozen runtime must not read a provider response")
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(binding_missing)
@@ -532,7 +529,7 @@ async def test_runtime_client_classifies_allowlisted_aqub_error() -> None:
         with pytest.raises(AQUBRuntimeUnavailable) as exc_info:
             await runtime.post_envelope(raw_body=b"{}", signature="synthetic")
 
-    assert exc_info.value.code == "aqub_runtime_binding_not_found"
+    assert exc_info.value.code == "aqub_project_frozen"
 
 
 @pytest.mark.anyio
@@ -1021,7 +1018,7 @@ async def test_plain_text_preserves_direct_route_without_pending_album() -> None
 
 
 @pytest.mark.anyio
-async def test_http_runtime_default_timeout_supports_sequential_food_provider_budget() -> None:
+async def test_frozen_http_runtime_does_not_use_the_legacy_provider_budget() -> None:
     captured: dict[str, object] = {}
 
     class RecordingClient:
@@ -1034,11 +1031,9 @@ async def test_http_runtime_default_timeout_supports_sequential_food_provider_bu
         base_url="https://aqub.invalid",
         http_client=cast(httpx.AsyncClient, RecordingClient()),
     )
-    result = await runtime.post_envelope(
-        raw_body=b"{}",
-        signature="synthetic-signature",
-    )
-
-    assert result == {"ok": True}
-    assert captured["url"] == "https://aqub.invalid/gate/inbound"
-    assert captured["timeout"] == 45.0
+    with pytest.raises(AQUBRuntimeUnavailable, match="aqub_project_frozen"):
+        await runtime.post_envelope(
+            raw_body=b"{}",
+            signature="synthetic-signature",
+        )
+    assert captured == {}

@@ -228,7 +228,7 @@ async def test_retries_are_bounded_and_logs_are_redacted(
 
 
 @pytest.mark.anyio
-async def test_startup_reconciliation_includes_aqub_without_replacing_routes(
+async def test_startup_reconciliation_excludes_frozen_aqub(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app import main
@@ -245,11 +245,11 @@ async def test_startup_reconciliation_includes_aqub_without_replacing_routes(
     monkeypatch.setattr(main, "reconcile_alpha_telegram_webhook_with_retries", stub("alpha"))
     monkeypatch.setattr(main, "reconcile_beta_telegram_webhook_with_retries", stub("beta"))
     monkeypatch.setattr(main, "reconcile_become_telegram_webhook_with_retries", stub("become"))
-    monkeypatch.setattr(main, "reconcile_aqub_telegram_provider_with_retries", stub("aqub"))
-    state = AQUBProviderReadinessState()
+    assert not hasattr(main, "reconcile_aqub_telegram_provider_with_retries")
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda _: httpx.Response(500))
     ) as http_client:
-        await main._reconcile_all_telegram_webhooks(_settings(), http_client, state)
+        await main._reconcile_all_telegram_webhooks(_settings(), http_client)
 
-    assert calls == ["gate", "alpha", "beta", "become", "aqub"]
+    assert calls == ["gate", "alpha", "beta", "become"]
+
