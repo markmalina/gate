@@ -444,43 +444,28 @@ async def test_send_replay_rejects_wrong_digest_before_database_access() -> None
 
 
 @pytest.mark.anyio
-async def test_mcp_send_review_routes_the_exact_aqub_selector(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    expected = {
-        "installation_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-        "turn_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
-        "state": "sent",
-        "replay": False,
-        "provider_message_id_exposed": False,
-        "participant_identities_exposed": False,
-    }
-
-    async def fake_send(**kwargs: object) -> dict[str, object]:
-        assert kwargs["confirmed"] is True
-        return expected
-
-    monkeypatch.setattr(
-        mcp_routes,
-        "send_aqub_general_release_replay",
-        fake_send,
-    )
+async def test_mcp_rejects_aqub_selector_before_database_access() -> None:
     session = FakeSession([])
-
-    result = await mcp_routes._alpha_send_review_tool_result(
-        request_id="replay",
-        arguments={
-            "installation_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-            "turn_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
-            "expected_candidate_sha256": (
-                replay.AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256
+    for handler in (
+        mcp_routes._alpha_send_review_tool_result,
+        mcp_routes._alpha_verify_review_replay_tool_result,
+    ):
+        result = await handler(
+            request_id="frozen",
+            arguments={
+                "installation_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
+                "turn_ref": replay.AQUB_GENERAL_RELEASE_REPLAY_TURN_REF,
+                "expected_candidate_sha256": replay.AQUB_GENERAL_RELEASE_REPLAY_CANDIDATE_SHA256,
+                "confirmed": True,
+            },
+            principal=SimpleNamespace(),
+            session=session,  # type: ignore[arg-type]
+            **(
+                {"settings": SimpleNamespace()}
+                if handler is mcp_routes._alpha_send_review_tool_result
+                else {}
             ),
-            "confirmed": True,
-        },
-        principal=SimpleNamespace(),
-        session=session,  # type: ignore[arg-type]
-        settings=SimpleNamespace(),  # type: ignore[arg-type]
-    )
-
-    assert result["result"]["structuredContent"] == expected
+        )
+        assert result["result"]["isError"] is True
+        assert "aqub_project_frozen" in str(result)
     assert session.rollback_calls == 0

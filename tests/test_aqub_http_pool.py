@@ -1,10 +1,10 @@
-"""AQUB runtime transport reuses the Gate process-owned HTTP client."""
+"""Frozen AQUB cannot use the Gate process-owned HTTP client."""
 
 from __future__ import annotations
 
 import httpx
 import pytest
-from app.application.aqub_live import HttpAQUBRuntimeClient
+from app.application.aqub_live import AQUBRuntimeUnavailable, HttpAQUBRuntimeClient
 
 
 @pytest.fixture
@@ -13,7 +13,7 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_runtime_transport_reuses_supplied_http_client_for_multiple_posts() -> None:
+async def test_frozen_runtime_never_posts_or_closes_supplied_http_client() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -25,15 +25,10 @@ async def test_runtime_transport_reuses_supplied_http_client_for_multiple_posts(
             base_url="https://aqub.example",
             http_client=shared,
         )
-        first = await runtime.post_envelope(raw_body=b"{}", signature="sig-1")
-        second = await runtime.post_envelope(raw_body=b"{}", signature="sig-2")
+        for signature in ("sig-1", "sig-2"):
+            with pytest.raises(AQUBRuntimeUnavailable, match="aqub_project_frozen"):
+                await runtime.post_envelope(raw_body=b"{}", signature=signature)
         assert shared.is_closed is False
 
     assert shared.is_closed is True
-    assert first["ok"] is True
-    assert second["ok"] is True
-    assert [request.url.path for request in requests] == ["/gate/inbound", "/gate/inbound"]
-    assert [request.headers["x-aqub-signature"] for request in requests] == [
-        "sig-1",
-        "sig-2",
-    ]
+    assert requests == []

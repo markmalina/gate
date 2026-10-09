@@ -129,29 +129,8 @@ class HttpAQUBRuntimeClient:
         self._timeout_seconds = timeout_seconds
 
     async def post_envelope(self, *, raw_body: bytes, signature: str) -> JsonObject:
-        try:
-            response = await self._http_client.post(
-                f"{self._base_url}{AQUB_RUNTIME_INBOUND_PATH}",
-                content=raw_body,
-                headers={
-                    "content-type": "application/json",
-                    "x-aqub-signature": signature,
-                },
-                timeout=self._timeout_seconds,
-            )
-        except httpx.HTTPError as exc:
-            raise AQUBRuntimeUnavailable(
-                "aqub_runtime_transport_unavailable"
-            ) from exc
-        if response.status_code < 200 or response.status_code >= 300:
-            raise AQUBRuntimeUnavailable(_runtime_response_error_code(response))
-        try:
-            value: Any = response.json()
-        except ValueError as exc:
-            raise AQUBRuntimeUnavailable("aqub_runtime_invalid_json") from exc
-        if not isinstance(value, dict) or value.get("ok") is not True:
-            raise AQUBRuntimeUnavailable("aqub_runtime_invalid_response")
-        return {str(key): item for key, item in value.items()}
+        # Owner freeze is a source boundary, not an environment feature flag.
+        raise AQUBRuntimeUnavailable("aqub_project_frozen")
 
 
 class AQUBLiveIngressAdapter:
@@ -801,3 +780,4 @@ def _build_signed_album_envelope_body(
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+

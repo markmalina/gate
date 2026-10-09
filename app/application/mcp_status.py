@@ -122,6 +122,7 @@ async def build_gate_status(
         "service": "gate",
         "environment": settings.gate_env,
         "commit": _commit(settings),
+        "project_boundaries": {"aqub": "frozen_disconnected"},
         "bot_username": settings.telegram_bot_username,
         "default_mode": settings.gate_default_mode,
         "send_enabled": settings.gate_send_enabled,
@@ -364,3 +365,4 @@ def _serialize_datetime(value: Any) -> str | None:
 
 def _commit(settings: Settings) -> str:
     return settings.deployment_sha[:12] if settings.deployment_sha != "unknown" else "unknown"
+
