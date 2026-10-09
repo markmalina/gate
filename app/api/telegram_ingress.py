@@ -242,11 +242,9 @@ def include_telegram_ingress(app: FastAPI) -> None:
     """Register the public durable seam before the frozen legacy stack."""
 
     from app.api.alpha_telegram_ingress import router as alpha_router
-    from app.api.aqub_telegram import router as aqub_router
     from app.api.become_telegram_ingress import router as become_router
     from app.api.beta_telegram_ingress import router as beta_router
 
-    app.include_router(aqub_router)
     app.include_router(alpha_router)
     app.include_router(beta_router)
     app.include_router(become_router)
@@ -259,3 +257,4 @@ def include_legacy_telegram_ingress(app: FastAPI) -> None:
 
     for router in LEGACY_TELEGRAM_INGRESS_ROUTERS:
         app.include_router(router)
+

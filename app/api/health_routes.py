@@ -21,10 +21,6 @@ from app.application.worker_health import (
 )
 from app.core.config import Settings, get_settings
 from app.infrastructure.reply_cutover import observe_reply_cutover
-from app.services.telegram_aqub_webhook import (
-    AQUBProviderErrorCode,
-    AQUBProviderReadinessState,
-)
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -60,20 +56,6 @@ class WorkerHealthResponse(BaseModel):
     last_failure_age_seconds: float | None
 
 
-class AQUBProviderHealthResponse(BaseModel):
-    """Owner-only provider readiness without credentials or provider data."""
-
-    model_config = ConfigDict(extra="forbid")
-    enabled: bool
-    configured: bool
-    identity_verified: bool
-    can_join_groups: bool
-    privacy_mode_enabled: bool
-    webhook_configured: bool
-    ready: bool
-    error_code: AQUBProviderErrorCode | Literal["provider_state_unavailable"] | None
-
-
 class OperationsHealthResponse(BaseModel):
     """Owner-only aggregate worker health."""
 
@@ -91,17 +73,6 @@ def _get_readiness_service(request: Request) -> CheckReadinessService | None:
 def _get_worker_health_registry(request: Request) -> WorkerHealthRegistry | None:
     registry = getattr(request.app.state, "worker_health_registry", None)
     return registry if isinstance(registry, WorkerHealthRegistry) else None
-
-
-def _get_aqub_provider_readiness(
-    request: Request,
-) -> AQUBProviderReadinessState | None:
-    readiness = getattr(request.app.state, "aqub_provider_readiness", None)
-    return (
-        readiness
-        if isinstance(readiness, AQUBProviderReadinessState)
-        else None
-    )
 
 
 @router.get("/live")
@@ -144,60 +115,6 @@ async def ready(request: Request) -> JSONResponse:
         headers={"Cache-Control": "no-store"},
     )
 
-
-@router.get(
-    "/admin/ops/aqub-provider",
-    response_model=AQUBProviderHealthResponse,
-    responses={
-        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": AQUBProviderHealthResponse},
-    },
-)
-async def aqub_provider_health(
-    request: Request,
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
-    settings: Settings = settings_dependency,
-) -> JSONResponse:
-    """Return only bounded AQUB provider readiness booleans and a safe code."""
-
-    require_admin_bearer(authorization=authorization, settings=settings)
-    state = _get_aqub_provider_readiness(request)
-    if state is None:
-        payload = AQUBProviderHealthResponse(
-            enabled=False,
-            configured=False,
-            identity_verified=False,
-            can_join_groups=False,
-            privacy_mode_enabled=False,
-            webhook_configured=False,
-            ready=False,
-            error_code="provider_state_unavailable",
-        )
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content=payload.model_dump(mode="json"),
-            headers={"Cache-Control": "no-store"},
-        )
-
-    snapshot = state.snapshot()
-    payload = AQUBProviderHealthResponse(
-        enabled=snapshot.enabled,
-        configured=snapshot.configured,
-        identity_verified=snapshot.identity_verified,
-        can_join_groups=snapshot.can_join_groups,
-        privacy_mode_enabled=snapshot.privacy_mode_enabled,
-        webhook_configured=snapshot.webhook_configured,
-        ready=snapshot.ready,
-        error_code=snapshot.error_code,
-    )
-    return JSONResponse(
-        status_code=(
-            status.HTTP_503_SERVICE_UNAVAILABLE
-            if snapshot.enabled and not snapshot.ready
-            else status.HTTP_200_OK
-        ),
-        content=payload.model_dump(mode="json"),
-        headers={"Cache-Control": "no-store"},
-    )
 
 
 @router.get(

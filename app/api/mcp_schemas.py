@@ -2552,5 +2552,3 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
-
-

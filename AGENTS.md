@@ -17,15 +17,31 @@ limit fails closed. Credentials remain server-side, provider calls remain
 default-off, and real provider smoke requires the exact owner gate recorded by
 the current Work.
 
+### AQUB frozen; independent Gate
+
+Owner decision [Center #152](https://github.com/AlphaCenter/center/issues/152) activates `aqub.frozen.gate-independent.v1`
+([boundary](docs/aqub-boundary.v1.json)).
+AQUB is frozen historical source. Gate must not use its repository as a routine
+dependency, forward messages/media to it, initialize its provider, run its
+worker or product acceptance, or request any operation through AQUB issues,
+workflows or credentials. Old routes/grants, including Gate745, are superseded.
+Historical contracts and migrations do not authorize reactivation.
+
 ### Production deploy route
 
-For a direct owner request to deploy Gate's current Production code, use the registered short Ops lane:
+Gate owns `.github/workflows/ops-deploy.yml` and control issue #751.
+After the exact owner Gate-only release gate and exact-head checks, post only:
 
-`/ops-deploy production target=gate`
+`/ops-deploy production target=gate expected-source-sha=<reviewed full current main SHA>`
 
-For the paired AQUB and Gate publication, use `target=all`. The requester is centralized in `AlphaCenter/aqub/.github/workflows/ops-deploy.yml` and its control issue `#72`; Gate does not need a duplicate workflow. The route accepts only Mark's allowlisted GitHub identity and exact current `main`, invokes the pinned Ops fast-deploy action, and returns a receipt.
-
-This is the default current-main publication route. Do not replace it with a Railway login, provider plugin, the frozen Routine Release workflow, or a new Gate deployment workflow. Other infrastructure operations still follow their pinned contract and safety boundaries.
+The requester accepts only Mark's immutable identity, the exact control issue
+and reviewed current main; it invokes the pinned Ops Gate-only executor.
+AQUB/all and an AQUB caller are forbidden. Existing protected Gate credentials
+must validate against the fixed target. Missing/mismatched credentials stop
+before mutation: never copy AQUB secrets or use a provider UI/API fallback.
+This grants no migration, source drift, credential provisioning or AQUB action.
+Other Gate operations, including Gate745, need a reviewed independent
+Gate-owned Ops contract; this short route does not authorize cutover.
 
 On the first turn of every newly opened Gate Work:
 
@@ -109,3 +125,4 @@ mutation requires an explicit owner decision or accepted project-to-project
 handoff. If the local pointer conflicts with Center's registry, stop
 cross-repository mutation and reconcile the pointers first.
 <!-- WORK-HIERARCHY:END -->
+

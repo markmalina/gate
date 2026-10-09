@@ -65,6 +65,35 @@ the same admission path.
 
 ## Release and verification
 
+### Independent Gate release boundary (9 October 2026)
+
+Owner decision [Center #152](https://github.com/AlphaCenter/center/issues/152)
+freezes AQUB and supersedes the earlier AQUB-based #745 release route.
+Do not use AQUB issue #72, its archived workflows, its credentials, or the
+historical `aqub-c1c-production` requester to perform this cutover. Historical
+source and review receipts remain evidence of those exact revisions only.
+
+Gate owns its requester and control issue #751. The current Gate-only simple
+deploy action does **not** implement the snapshot cutover below: it does not
+prove automatic deployment disabled, freeze/drain the entire fleet, create the
+bound backup, or perform the two verified deployments of one guarded SHA.
+Do not substitute it for these requirements. Before merging this migration,
+obtain a reviewed, independently verified Gate-owned Ops cutover contract and
+a protected observation proving automatic deployment disabled. Its fixed
+caller, target, credential scope, source binding, receipt verifier, disposable
+fixture, rollback and recovery requirements must be established independently
+of AQUB. Missing credentials or target evidence are blockers, not permission
+to copy secrets, re-enable AQUB, or use a provider dashboard.
+
+The source integration retains Gate's frozen-AQUB startup/routes/CI and its
+own requester while retaining the bounded `reply_cutover` predeploy helper.
+A merged source or successful CI does not prove this boundary is deployed.
+The independent Gate release observed on 9 October failed before provider
+access with `E_GITHUB_AUTH / github-app-key`; exact Gate-owned protected
+credential provisioning is an operator prerequisite and is outside this
+source change. Re-observe current source/runtime and prerequisites before
+any release, rather than repeating that unchanged failed request.
+
 Apply migration `0116_reply_dialog_versions` after `0115_watch_voice_post_payment`.
 Disable sends while migrating and replacing all Business ingress and send
 processes; enable only after every process uses the guarded code. A mixed fleet

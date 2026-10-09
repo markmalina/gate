@@ -364,3 +364,4 @@ def _serialize_datetime(value: Any) -> str | None:
 
 def _commit(settings: Settings) -> str:
     return settings.deployment_sha[:12] if settings.deployment_sha != "unknown" else "unknown"
+

@@ -1,0 +1,99 @@
+name: Gate Independent Ops Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected-source-sha:
+        description: Exact reviewed current Gate main SHA
+        required: true
+        type: string
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  deploy:
+    if: >-
+      ${{
+        github.run_attempt == 1 &&
+        github.ref == 'refs/heads/main' &&
+        github.actor == 'markmalina' &&
+        github.actor_id == '23397294' &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          (
+            github.event_name == 'issue_comment' &&
+            github.event.issue.number == 751 &&
+            !github.event.issue.pull_request &&
+            startsWith(github.event.comment.body, '/ops-deploy production target=')
+          )
+        )
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    concurrency:
+      group: gate-production-deploy
+      cancel-in-progress: false
+    environment: gate-production
+    steps:
+      - name: Resolve exact owner command
+        id: request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          INPUT_SOURCE_SHA: ${{ inputs.expected-source-sha }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          set -euo pipefail
+          test "$ACTOR" = markmalina
+          test "$ACTOR_ID" = 23397294
+          if test "$EVENT_NAME" = workflow_dispatch; then
+            source_sha="$INPUT_SOURCE_SHA"
+          elif [[ "$COMMENT_BODY" =~ ^/ops-deploy\ production\ target=gate\ expected-source-sha=([0-9a-f]{40})$ ]]; then
+            source_sha="${BASH_REMATCH[1]}"
+          else
+            exit 1
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - id: deploy
+        name: Deploy through Ops
+        continue-on-error: true
+        uses: AlphaCenter/ops/agent-ops/actions/gate-deploy@990f4cfd7f2a41089f9e93aca9891f504484705b
+        with:
+          target: gate
+          expected-source-sha: ${{ steps.request.outputs.source_sha }}
+        env:
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          AGENT_OPS_REVIEWER_PRIVATE_KEY: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+
+      - name: Save receipt
+        if: ${{ always() && steps.deploy.outputs.receipt-path != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ops-fast-deploy-${{ github.run_id }}
+          path: |
+            ops-fast-deploy-receipt.json
+            ops-fast-deploy-receipt.sha256
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+
+      - name: Accept terminal result
+        if: ${{ always() }}
+        shell: bash
+        env:
+          RESULT: ${{ steps.deploy.outputs.result }}
+          RECEIPT: ${{ steps.deploy.outputs.receipt-digest }}
+        run: |
+          set -euo pipefail
+          printf 'result=%s receipt=%s\n' "${RESULT:-missing}" "${RECEIPT:-missing}"
+          test "$RESULT" = SUCCEEDED
+
