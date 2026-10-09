@@ -233,7 +233,11 @@ jobs:
         run: |
           ruff check .
           mypy app
-          pytest
+          # A stalled test must leave its node ID and thread stacks, rather
+          # than consuming the entire job without a diagnosable failure.
+          timeout --signal=ABRT --kill-after=10s 8m \
+            python -u -X faulthandler -m pytest -vv \
+            -o faulthandler_timeout=60 --durations=25
 
       - name: Full migration and restore proof
         env:
