@@ -67,6 +67,14 @@ the same admission path.
 
 ### Independent Gate release boundary (9 October 2026)
 
+The default-disabled independent route is now prepared in
+[Ops364](https://github.com/AlphaCenter/ops/pull/364) and the own workflow/lock in
+this candidate. [Control and bootstrap prerequisites](GATE745-OPS-CONTROL.md)
+distinguish preparation, observation, apply and acceptance. No source/fixture
+acceptance or runtime installation is inferred. Before guard merge, install
+the runtime-unchanged requester bootstrap through its independently reviewed
+infrastructure lane; never merge the migration merely to obtain its preflight.
+
 Owner decision [Center #152](https://github.com/AlphaCenter/center/issues/152)
 freezes AQUB and supersedes the earlier AQUB-based #745 release route.
 Do not use AQUB issue #72, its archived workflows, its credentials, or the
@@ -88,11 +96,13 @@ to copy secrets, re-enable AQUB, or use a provider dashboard.
 The source integration retains Gate's frozen-AQUB startup/routes/CI and its
 own requester while retaining the bounded `reply_cutover` predeploy helper.
 A merged source or successful CI does not prove this boundary is deployed.
-The independent Gate release observed on 9 October failed before provider
-access with `E_GITHUB_AUTH / github-app-key`; exact Gate-owned protected
-credential provisioning is an operator prerequisite and is outside this
-source change. Re-observe current source/runtime and prerequisites before
-any release, rather than repeating that unchanged failed request.
+The earlier ordinary Gate release failed before provider access with
+`E_GITHUB_AUTH / github-app-key`. Ops363 subsequently repaired that ordinary
+source read to use Gate's ephemeral workflow token; Gate751 owns its client
+repin and actual release. The separate snapshot executor still authenticates
+private Ops checks and its distinct requester through protected Gate bindings.
+Re-observe each exact route and its current prerequisites; do not infer that
+the ordinary repair accepts or authorizes snapshot migration/cutover.
 
 Apply migration `0116_reply_dialog_versions` after `0115_watch_voice_post_payment`.
 Disable sends while migrating and replacing all Business ingress and send
