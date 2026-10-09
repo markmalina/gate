@@ -163,9 +163,9 @@ async def test_postgres_sent_document_retrieval_preserves_all_scope_fences(
                         account_type="telegram"),
                 Account(id=other_account, alias="synthetic_denied", owner="synthetic",
                         account_type="telegram"),
-                Project(id=PROJECT, alias="synthetic_allowed", name="Synthetic",
+                Project(id=PROJECT, alias="synthetic_allowed", name="Synthetic allowed",
                         adapter_type="test"),
-                Project(id=other_project, alias="synthetic_denied", name="Synthetic",
+                Project(id=other_project, alias="synthetic_denied", name="Synthetic denied",
                         adapter_type="test"),
             ])
             await session.flush()
