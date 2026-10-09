@@ -82,3 +82,35 @@ These tests require `DATABASE_URL`; skips are not database race evidence.
 Code/CI verification does not constitute deployment or live acceptance. Joint
 acceptance should cover both a stale text answer and an original Office/image
 document after another incoming/outgoing message, plus an unchanged-context send.
+
+### Fixed migration admission and redacted observations
+
+The #745 Railway predeploy command is `python -m app.worker.reply_cutover`.
+It reads only Alembic revisions and aggregate `send_attempts.status` counts,
+works on the pre-guard schema, and permits only the single baseline
+`0115_watch_voice_post_payment` or already-applied `0116_reply_dialog_versions`.
+Any other or multiple revision heads, an unavailable database, or any
+`reserved` / `sending` attempt stops deployment before migration. It runs only
+`upgrade 0116_reply_dialog_versions` and verifies the resulting revision and
+active counts. A future migration must deliberately update this bounded
+admission command; an unknown future head never passes by default.
+
+This observation does **not** prove the old deployment is stopped, that there
+are no requests in flight, or that Telegram delivered an uncertain attempt.
+Ops must prove all old instances/processes are stopped before invoking the new
+predeploy command and bind the backup and migration to the exact Gate database.
+A zero count before shutdown is not a fleet freeze. Preserve attempt journals:
+`unknown` is reported unchanged and is never relabeled, retried, or erased by
+this command. Existing stale recovery is an explicit, default-disabled one-shot
+operation; it is not automatic redelivery. Active attempts require a separate
+reviewed resolution and another observation, never forged zero counts.
+
+After deployment, authenticated `GET /admin/ops/reply-cutover` reports only the
+process deployment SHA, schema revisions, `reserved` / `sending` / `unknown`
+counts, the process's configured send flag, and the `dialog-v1` guard contract.
+It returns 503 with a safe code if observation is unavailable. This endpoint
+does not enable delivery and cannot attest other instances. Ops must correlate
+it with exact new deployment identities and the absence of old instances before
+acceptance or enabling reviewed sends. If a two-stage frozen/enabled rollout is
+used, the same fixed predeploy check accepts 0116 idempotently on activation;
+it does not infer freeze from a mutable settings flag.

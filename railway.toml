@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-preDeployCommand = "alembic upgrade head"
+preDeployCommand = "python -m app.worker.reply_cutover"
 startCommand = "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; export GATE_AQUB_MEDIA_FORWARD_ENABLED=true; export GATE_AQUB_FOOD_MEDIA_PROCESSING_ENABLED=true; export GATE_AQUB_FOOD_MEDIA_DATA_GATE_APPROVED=true; export TELEGRAM_AQUB_BOT_TOKEN=\"${TELEGRAM_AQUB_BOT_TOKEN:-$TELEGRAM_AQUBAGENTBOT_TOKEN}\"; GATE_AQUB_RUNTIME_URL=https://aqub-production.up.railway.app exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 healthcheckPath = "/ready"
 healthcheckTimeout = 30

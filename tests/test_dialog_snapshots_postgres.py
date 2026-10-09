@@ -461,22 +461,56 @@ async def test_ingress_commit_racing_dispatch_serializes_on_the_actual_version_r
                     )
                 )
 
-        receiver = asyncio.create_task(ingress())
-        telegram = _LiteralRecordingTelegram()
-        await asyncio.wait_for(committing.wait(), 10)
-        async with sessions() as session:
-            pid = await session.scalar(text("SELECT pg_backend_pid()"))
-            await session.rollback()
-            sender = asyncio.create_task(SqlTelegramReplySender(
-                session=session, telegram=telegram, settings=_settings(),
-            ).send(_command(seed, seed.draft_ids[0])))
-            try:
-                await _wait_for_backend_lock(sessions, backend_pid=pid)
-                assert telegram.plain_calls == []
-            finally:
-                release.set()
-                await asyncio.wait_for(receiver, 10)
-            with pytest.raises(ReplySendError) as error:
-                await asyncio.wait_for(sender, 10)
-            assert error.value.code == "context_changed"
-        assert telegram.plain_calls == []
+        # Preflight rolls back before the provider probe. Bind an explicit
+        # connection so this rollback cannot return the observed backend to
+        # the pool, where a competing observer could borrow its PID.
+        engine = sessions.kw["bind"]
+        async with engine.connect() as pinned, sessions() as pool_observer:
+            async with AsyncSession(bind=pinned, expire_on_commit=False) as session:
+                observer_pid: int | None = None
+                probe_visited = asyncio.Event()
+
+                class PoolChurnTelegram(_LiteralRecordingTelegram):
+                    async def get_business_connection(
+                        self, *, business_connection_id: str,
+                    ) -> dict[str, object]:
+                        nonlocal observer_pid
+                        # Deliberately borrow a pool connection in the gap
+                        # between preflight rollback and sender reservation.
+                        observer_pid = await pool_observer.scalar(text("SELECT pg_backend_pid()"))
+                        probe_visited.set()
+                        return await super().get_business_connection(
+                            business_connection_id=business_connection_id,
+                        )
+
+                receiver = asyncio.create_task(ingress())
+                sender: asyncio.Task[Any] | None = None
+                telegram = PoolChurnTelegram()
+                try:
+                    await asyncio.wait_for(committing.wait(), 10)
+                    pid = await session.scalar(text("SELECT pg_backend_pid()"))
+                    await session.rollback()
+                    sender = asyncio.create_task(SqlTelegramReplySender(
+                        session=session, telegram=telegram, settings=_settings(),
+                    ).send(_command(seed, seed.draft_ids[0])))
+                    try:
+                        await asyncio.wait_for(probe_visited.wait(), 10)
+                        await _wait_for_backend_lock(sessions, backend_pid=pid)
+                        assert observer_pid is not None and observer_pid != pid
+                        assert telegram.plain_calls == []
+                    finally:
+                        release.set()
+                        await asyncio.wait_for(receiver, 10)
+                    with pytest.raises(ReplySendError) as error:
+                        await asyncio.wait_for(sender, 10)
+                    assert error.value.code == "context_changed"
+                    assert telegram.plain_calls == []
+                finally:
+                    # Join every task before closing its session or dropping
+                    # the fixture schema, including an observer assertion failure.
+                    release.set()
+                    tasks = [receiver] + ([sender] if sender is not None else [])
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 10)
