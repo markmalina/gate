@@ -173,6 +173,41 @@ def validated_telegram_receipt_payload(
     return payload
 
 
+def validated_telegram_sent_document_payload(
+    payload: JsonObject | None,
+    *,
+    telegram_message_id: int | None,
+    chat_id: str,
+    business_connection_id: str | None,
+) -> JsonObject | None:
+    """Return only the document acknowledged for this persisted outbound message."""
+
+    if (
+        not isinstance(payload, dict)
+        or payload.get("ok") is not True
+        or type(telegram_message_id) is not int
+    ):
+        return None
+    message = payload.get("result")
+    if not isinstance(message, dict) or not isinstance(message.get("document"), dict):
+        return None
+    chat = message.get("chat")
+    raw_chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if (
+        type(message.get("message_id")) is not int
+        or message.get("message_id") != telegram_message_id
+        or type(raw_chat_id) not in {int, str}
+        or str(raw_chat_id) != chat_id
+    ):
+        return None
+    # Telegram may omit this field from a sendDocument acknowledgement.
+    # A present value must still match the persisted Business connection.
+    raw_connection_id = message.get("business_connection_id")
+    if raw_connection_id is not None and raw_connection_id != business_connection_id:
+        return None
+    return {"document": message["document"]}
+
+
 def _telegram_messages(payload: JsonObject | None) -> tuple[JsonObject, ...]:
     if not isinstance(payload, dict):
         return ()

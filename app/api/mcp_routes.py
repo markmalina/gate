@@ -196,6 +196,7 @@ from app.application.telegram_attachments import (
     TelegramAttachmentReference,
     extract_telegram_attachments,
     validated_telegram_receipt_payload,
+    validated_telegram_sent_document_payload,
 )
 from app.application.telegram_voice_update import extract_telegram_voice
 from app.application.telegram_replies import format_telegram_reply
@@ -1560,7 +1561,14 @@ async def _attachment_reply_context_tool_result(
             Message.business_connection_id.is_not_distinct_from(
                 conversation["business_connection_id"]
             ),
-            Message.source == "telegram",
+            (
+                (Message.source == "telegram")
+                | (
+                    (Message.source == "gate-approved-document")
+                    & (Message.direction == MessageDirection.OUTBOUND.value)
+                    & (Message.event_type == "telegram_business_document")
+                )
+            ),
         )
     )
     row = result.one_or_none()
@@ -1584,12 +1592,21 @@ async def _attachment_reply_context_tool_result(
         if telegram_receipt is not None
         else None
     )
-    attachments = extract_telegram_attachments(
-        telegram_update.payload if telegram_update is not None else None,
-        gate_event.payload if gate_event is not None else None,
-        message.payload,
-        receipt_payload,
-    )
+    if message.source == "gate-approved-document":
+        sent_payload = validated_telegram_sent_document_payload(
+            message.payload,
+            telegram_message_id=message.telegram_message_id,
+            chat_id=message.chat_id,
+            business_connection_id=message.business_connection_id,
+        )
+        attachments = extract_telegram_attachments(sent_payload)
+    else:
+        attachments = extract_telegram_attachments(
+            telegram_update.payload if telegram_update is not None else None,
+            gate_event.payload if gate_event is not None else None,
+            message.payload,
+            receipt_payload,
+        )
     if attachment_index >= len(attachments):
         return _tool_error_result(
             request_id=request_id,
