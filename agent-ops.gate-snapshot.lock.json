@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "agent-ops.gate-snapshot-lock/v1",
+  "repository": "AlphaCenter/ops",
+  "actionPath": "agent-ops/actions/gate-snapshot-cutover",
+  "commit": "c45da06123cf4cec72459c26c9eaf9b27949ad0d",
+  "profilePath": "agent-ops/actions/gate-snapshot-cutover/profile.json",
+  "profileSha256": "sha256:6df45d551b0df67c51aa35c1a642fc6b1ad667397a4143fe40813fb590da8d6a",
+  "workflowSha256": "sha256:50f00b13713e058741eb565397a3ca5bd919b6147b83f6597a6a2bba1591579c"
+}
