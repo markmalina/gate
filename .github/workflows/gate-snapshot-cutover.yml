@@ -1,0 +1,248 @@
+name: Gate Snapshot Cutover
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: gate-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  snapshot-requester:
+    if: >-
+      ${{ github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
+          github.event_name == 'issue_comment' && github.event.action == 'created' &&
+          github.event.issue.number == 745 && !github.event.issue.pull_request &&
+          github.actor == 'markmalina' && github.actor_id == '23397294' &&
+          github.event.sender.id == 23397294 && github.event.sender.login == 'markmalina' &&
+          startsWith(github.event.comment.body, '/ops-gate745 request-plan expected-client-sha=') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: gate-production
+    steps:
+      - name: Validate exact source-bound owner request
+        shell: bash
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          CLIENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$COMMENT_BODY" =~ ^/ops-gate745\ request-plan\ expected-client-sha=([0-9a-f]{40})$ ]]
+          test "${BASH_REMATCH[1]}" = "$CLIENT_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Request exact plan as distinct App identity
+        uses: AlphaCenter/ops/agent-ops/actions/github-app-requester@c45da06123cf4cec72459c26c9eaf9b27949ad0d
+        with:
+          app-id: '4578389'
+          private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+          target-id: gate-production
+          control-issue: '745'
+          operation: gate-snapshot-cutover
+  snapshot-cutover:
+    if: >-
+      ${{
+        github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
+        github.event_name == 'issue_comment' && github.event.action == 'created' &&
+        github.event.issue.number == 745 && !github.event.issue.pull_request &&
+        (
+          (github.event.sender.id == 23397294 && github.event.sender.login == 'markmalina' &&
+           github.event.comment.body == '/ops-gate745 observe') ||
+          (github.event.sender.id == 316468440 && github.event.sender.login == 'alphacenter-ops-reviewer[bot]' &&
+           github.event.comment.body == '/agent-ops v1 plan operation=gate-snapshot-cutover target=gate-production') ||
+          (github.event.sender.id == 23397294 && github.event.sender.login == 'markmalina' &&
+           startsWith(github.event.comment.body, '/agent-ops v1 apply operation=gate-snapshot-cutover target=gate-production '))
+        )
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    environment: gate-production
+    outputs:
+      result: ${{ steps.cutover.outputs.result }}
+      receipt-digest: ${{ steps.cutover.outputs.receipt-digest }}
+      receipt-artifact-id: ${{ steps.snapshot-receipt.outputs.artifact-id }}
+      plan-digest: ${{ steps.cutover.outputs.plan-digest }}
+      plan-artifact-id: ${{ steps.snapshot-plan.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - id: snapshot-transport
+        shell: bash
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          if test "$COMMENT_BODY" = '/ops-gate745 observe'; then
+            echo 'phase=observe' >> "$GITHUB_OUTPUT"
+          elif test "$COMMENT_BODY" = '/agent-ops v1 plan operation=gate-snapshot-cutover target=gate-production'; then
+            echo 'phase=plan' >> "$GITHUB_OUTPUT"
+          elif [[ "$COMMENT_BODY" =~ ^/agent-ops\ v1\ apply\ operation=gate-snapshot-cutover\ target=gate-production\ plan-run=([1-9][0-9]{0,19})\ plan-artifact=([1-9][0-9]{0,19})\ plan-digest=(sha256:[0-9a-f]{64})$ ]]; then
+            {
+              echo 'phase=apply'
+              echo "plan-run-id=${BASH_REMATCH[1]}"
+              echo "plan-artifact-id=${BASH_REMATCH[2]}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
+      - if: ${{ steps.snapshot-transport.outputs.phase == 'apply' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ github.token }}
+          repository: AlphaCenter/gate
+          run-id: ${{ steps.snapshot-transport.outputs.plan-run-id }}
+          artifact-ids: ${{ steps.snapshot-transport.outputs.plan-artifact-id }}
+          path: .agent-ops/input/snapshot-plan
+          skip-decompress: true
+          digest-mismatch: error
+      - id: cutover
+        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-cutover@c45da06123cf4cec72459c26c9eaf9b27949ad0d
+        env:
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          AGENT_OPS_REVIEWER_PRIVATE_KEY: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+          GITHUB_READ_TOKEN: ${{ github.token }}
+      - name: Save stable failed admission/preflight receipt
+        if: ${{ always() && hashFiles('.agent-ops/out/gate-snapshot-failure.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate-snapshot-failure
+          path: .agent-ops/out/gate-snapshot-failure.json
+          archive: false
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - id: snapshot-plan
+        if: ${{ success() && steps.snapshot-transport.outputs.phase == 'plan' && steps.cutover.outputs.result == 'PLANNED' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate-snapshot-plan
+          path: .agent-ops/out/gate-snapshot-plan.json
+          archive: false
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
+      - id: snapshot-preflight
+        if: ${{ success() && steps.cutover.outputs.result == 'OBSERVED_NOT_RELEASED' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate-snapshot-preflight
+          path: .agent-ops/out/gate-snapshot-preflight.json
+          archive: false
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - id: snapshot-receipt
+        if: ${{ always() && steps.snapshot-transport.outputs.phase == 'apply' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate-snapshot-receipt
+          path: .agent-ops/out/gate-snapshot-receipt.json
+          archive: false
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+  snapshot-verify:
+    needs: snapshot-cutover
+    if: ${{ needs.snapshot-cutover.result == 'success' && needs.snapshot-cutover.outputs.result == 'SUCCEEDED' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: gate-production
+    outputs:
+      result: ${{ steps.verify.outputs.result }}
+      live-digest: ${{ steps.verify.outputs.live-digest }}
+      live-artifact-id: ${{ steps.snapshot-live.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ github.token }}
+          repository: AlphaCenter/gate
+          run-id: ${{ github.run_id }}
+          artifact-ids: ${{ needs.snapshot-cutover.outputs.receipt-artifact-id }}
+          path: .agent-ops/input/snapshot-receipt
+          skip-decompress: true
+          digest-mismatch: error
+      - id: verify
+        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-cutover@c45da06123cf4cec72459c26c9eaf9b27949ad0d
+        with:
+          mode: verify
+        env:
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          AGENT_OPS_REVIEWER_PRIVATE_KEY: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+          GITHUB_READ_TOKEN: ${{ github.token }}
+          AGENT_OPS_RECEIPT_ARTIFACT_ID: ${{ needs.snapshot-cutover.outputs.receipt-artifact-id }}
+          AGENT_OPS_RECEIPT_DIGEST: ${{ needs.snapshot-cutover.outputs.receipt-digest }}
+      - id: snapshot-live
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ success() && steps.verify.outputs.result == 'OBSERVED' }}
+        with:
+          name: gate-snapshot-live
+          path: .agent-ops/out/gate-snapshot-live.json
+          archive: false
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+  snapshot-final-verify:
+    needs:
+      - snapshot-cutover
+      - snapshot-verify
+    if: ${{ needs.snapshot-cutover.result == 'success' && needs.snapshot-cutover.outputs.result == 'SUCCEEDED' && needs.snapshot-verify.result == 'success' && needs.snapshot-verify.outputs.result == 'OBSERVED' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ github.token }}
+          repository: AlphaCenter/gate
+          run-id: ${{ github.run_id }}
+          artifact-ids: ${{ needs.snapshot-cutover.outputs.receipt-artifact-id }}
+          path: .agent-ops/input/snapshot-receipt
+          skip-decompress: true
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ github.token }}
+          repository: AlphaCenter/gate
+          run-id: ${{ github.run_id }}
+          artifact-ids: ${{ needs.snapshot-verify.outputs.live-artifact-id }}
+          path: .agent-ops/input/snapshot-live
+          skip-decompress: true
+          digest-mismatch: error
+      - id: final-verifier
+        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-artifact-verifier@c45da06123cf4cec72459c26c9eaf9b27949ad0d
+        with:
+          receipt-artifact-id: ${{ needs.snapshot-cutover.outputs.receipt-artifact-id }}
+          receipt-digest: ${{ needs.snapshot-cutover.outputs.receipt-digest }}
+          live-artifact-id: ${{ needs.snapshot-verify.outputs.live-artifact-id }}
+          live-digest: ${{ needs.snapshot-verify.outputs.live-digest }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ success() && steps.final-verifier.outputs.result == 'VERIFIED' }}
+        with:
+          name: gate-snapshot-verification
+          path: .agent-ops/out/gate-snapshot-verification.json
+          archive: false
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
