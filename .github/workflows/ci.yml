@@ -65,6 +65,19 @@ jobs:
         run: ruff check .
       - name: Mypy
         run: mypy app
+      - name: Build provider-free RU MTProto contract evidence
+        run: |
+          python scripts/personal_telegram_contract_inventory.py --output personal-telegram-contract-inventory.json
+          python scripts/personal_telegram_writer_inventory.py > personal-telegram-writer-candidates.json
+      - name: Upload RU MTProto contract evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: personal-telegram-contract-evidence
+          path: |
+            personal-telegram-contract-inventory.json
+            personal-telegram-writer-candidates.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Ensure real audio regression tools
         run: |
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
