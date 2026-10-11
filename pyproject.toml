@@ -124,3 +124,5 @@ include = ["app*"]
 exclude = ["tests*", "alembic*", "docs*"]
 
 
+[tool.setuptools.data-files]
+"share/gate745-fixture/alembic/versions" = ["alembic/versions/*.py"]

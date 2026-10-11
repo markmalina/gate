@@ -176,3 +176,26 @@ and reset, then drops only the test DB it created. It skips before reading any
 DB binding outside CI. A local skip or simulated bindings never prove native
 fixture ACCEPT. Necessary exact-head CI will run only after Gate owner publication
 GO; remote publication/merge and physical operations are separate gates.
+
+
+## Fixed migration artifact packaging
+
+The helper authenticates the exact 119 canonical migration files through 0115
+with a checked-in filename/SHA256 inventory before migration DDL. Source and
+Docker artifacts locate these files relative to the authenticated helper module
+and repository `pyproject.toml`; the existing Dockerfile copies that layout to
+`/app`. Installed wheels carry the same canonical files, without source copies,
+under the fixed `sys.prefix/share/gate745-fixture/alembic/versions` data directory.
+Installed Gate distribution metadata must identify the executing helper module.
+Missing, extra, substituted or symlinked migration files deny; no cwd, environment
+variable, caller path or arbitrary migration-root fallback is accepted.
+
+A hermetic packaging regression builds and installs the real wheel in a fresh
+local venv away from the repository, verifies installed-module/resource discovery
+and the 119-revision baseline chain, then reconstructs the existing Docker COPY
+artifact and checks its bytes/discovery and three corruption denials. This checks
+the Docker source layout; it does not claim a local Docker container build or
+native fixture run. The original rejected AAA CI failed before seed/reset because
+its installed wheel lacked migration resources. The corrected head needs its own
+actual disposable PG17 drill and full original CI, then a new independent Delta
+attempt; simulated bindings/local PG skips remain NOT_PROVEN.

@@ -486,3 +486,129 @@ def test_actual_async_deadline_cancels_before_db_and_disposes_engine(
     with pytest.raises(TimeoutError):
         asyncio.run(helper._execute_admitted(binding, SyntheticExecutor(), evidence))
     assert disposed == [True]
+
+
+def test_reviewed_migration_bundle_survives_installed_wheel_and_docker_layout(
+    tmp_path: Any,
+) -> None:
+    """Build/install the actual wheel away from cwd; reconstruct Docker COPY artifact."""
+    import hashlib
+    import importlib.util
+    import os
+    import shutil
+    import subprocess
+    import venv
+    from pathlib import Path
+
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).resolve().parents[1]
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    environment = {"PATH": os.environ.get("PATH", ""), "PIP_NO_INDEX": "1"}
+    if "SystemRoot" in os.environ:
+        environment["SystemRoot"] = os.environ["SystemRoot"]
+    environment["PYTHONPATH"] = os.pathsep.join(
+        str(Path(p).resolve())
+        for p in os.environ.get("PYTHONPATH", "").split(os.pathsep)
+        if p and Path(p).resolve() != root
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--no-build-isolation",
+            "--no-index",
+            "--wheel-dir",
+            str(wheels),
+            str(root),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    (wheel,) = wheels.glob("gate-*.whl")
+    installed = tmp_path / "installed"
+    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(installed)
+    python = installed / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    subprocess.run(
+        [str(python), "-m", "pip", "install", "--no-deps", "--no-index", str(wheel)],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    probe = """
+import json, sys
+from pathlib import Path
+from app.worker import gate745_fixture_bootstrap as h
+from alembic.script import ScriptDirectory
+assert Path(h.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
+versions = h._migration_versions()
+assert versions == Path(sys.prefix) / 'share/gate745-fixture/alembic/versions'
+script = ScriptDirectory.from_config(h._migration_config())
+assert script.get_revision(h.BASELINE).revision == h.BASELINE
+assert len(list(script.walk_revisions(base='base', head=h.BASELINE))) == 119
+print(json.dumps({'files': len(h.MIGRATION_SHA256), 'baseline': h.BASELINE}))
+"""
+    actual = subprocess.run(
+        [str(python), "-c", probe],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert json.loads(actual.stdout) == {"files": 119, "baseline": BASELINE}
+    # Actual existing Dockerfile copies these canonical paths to /app. No
+    # Docker daemon/network/container privilege is needed to test discovery.
+    dockerfile = (root / "Dockerfile").read_text()
+    assert "WORKDIR /app" in dockerfile
+    assert "COPY app ./app" in dockerfile
+    assert "COPY alembic ./alembic" in dockerfile
+    assert "COPY pyproject.toml alembic.ini ./" in dockerfile
+    artifact = tmp_path / "docker" / "app"
+    worker = artifact / "app" / "worker"
+    worker.mkdir(parents=True)
+    shutil.copy(root / "pyproject.toml", artifact)
+    shutil.copy(root / "app/worker/gate745_fixture_bootstrap.py", worker)
+    shutil.copytree(root / "app/worker/gate745_fixture_alembic", worker / "gate745_fixture_alembic")
+    shutil.copytree(root / "alembic/versions", artifact / "alembic/versions")
+    spec = importlib.util.spec_from_file_location(
+        "fixture_docker_artifact", worker / "gate745_fixture_bootstrap.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module._migration_versions() == artifact / "alembic/versions"
+    script = ScriptDirectory.from_config(module._migration_config())
+    assert script.get_revision(BASELINE).revision == BASELINE
+    for name, expected in helper.MIGRATION_SHA256.items():
+        assert (
+            hashlib.sha256((artifact / "alembic/versions" / name).read_bytes()).hexdigest()
+            == expected
+        )
+    # Missing/substituted/extended artifacts DENY before any migration/DB work.
+    baseline = artifact / "alembic/versions/0115_watch_voice_post_payment.py"
+    original = baseline.read_bytes()
+    baseline.write_bytes(original + b"\n# substituted artifact\n")
+    with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
+        module._migration_config()
+    baseline.write_bytes(original)
+    extra = artifact / "alembic/versions/unreviewed.py"
+    extra.write_text("revision='unreviewed'\n")
+    with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
+        module._migration_config()
+    extra.unlink()
+    baseline.unlink()
+    with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
+        module._migration_config()
