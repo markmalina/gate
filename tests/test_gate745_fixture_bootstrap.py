@@ -513,7 +513,27 @@ def test_reviewed_migration_bundle_survives_installed_wheel_and_docker_layout(
         for p in os.environ.get("PYTHONPATH", "").split(os.pathsep)
         if p and Path(p).resolve() != root
     )
-    subprocess.run(
+
+    def checked(args: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            args,
+            cwd=tmp_path,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        # These fixed offline commands inherit only the allowlisted
+        # environment above; no credential/provider environment is passed.
+        if result.returncode != 0:
+            pytest.fail(
+                f"Offline fixture subprocess exit {result.returncode}: {result.stderr[-3000:]}",
+                pytrace=False,
+            )
+        return result
+
+    checked(
         [
             sys.executable,
             "-m",
@@ -526,49 +546,81 @@ def test_reviewed_migration_bundle_survives_installed_wheel_and_docker_layout(
             str(wheels),
             str(root),
         ],
-        cwd=tmp_path,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
         timeout=90,
     )
     (wheel,) = wheels.glob("gate-*.whl")
     installed = tmp_path / "installed"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(installed)
     python = installed / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-    subprocess.run(
+    checked(
         [str(python), "-m", "pip", "install", "--no-deps", "--no-index", str(wheel)],
-        cwd=tmp_path,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
         timeout=60,
     )
     probe = """
-import json, sys
+import importlib, json, shutil, sys
+from importlib.metadata import distribution
 from pathlib import Path
 from app.worker import gate745_fixture_bootstrap as h
+from app.worker.gate745_fixture_policy import FixtureDenied
 from alembic.script import ScriptDirectory
-assert Path(h.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
+executing = Path(h.__file__).resolve()
+assert executing.is_relative_to(Path(sys.prefix).resolve())
 versions = h._migration_versions()
 assert versions == Path(sys.prefix) / 'share/gate745-fixture/alembic/versions'
 script = ScriptDirectory.from_config(h._migration_config())
 assert script.get_revision(h.BASELINE).revision == h.BASELINE
 assert len(list(script.walk_revisions(base='base', head=h.BASELINE))) == 119
-print(json.dumps({'files': len(h.MIGRATION_SHA256), 'baseline': h.BASELINE}))
+# Load the actual installed module first, then expose real checkout egg-info.
+# Unrestricted distribution('gate') now chooses the wrong source artifact.
+sys.path.insert(0, sys.argv[1])
+assert Path(distribution('gate').locate_file(
+    'app/worker/gate745_fixture_bootstrap.py'
+)).resolve() != executing
+assert h._migration_versions() == versions
+sys.path.pop(0)
+installation = executing.parents[2]
+
+def denied():
+    try:
+        h._migration_versions()
+    except FixtureDenied as exc:
+        assert str(exc) == 'E_FIXTURE_MIGRATION_ARTIFACT'
+    else:
+        raise AssertionError('Unproven distribution metadata must deny')
+
+duplicate = installation / 'gate-9.9.9.dist-info'
+duplicate.mkdir()
+(duplicate / 'METADATA').write_text('Metadata-Version: 2.1\\nName: gate\\nVersion: 9.9.9\\n')
+try:
+    importlib.invalidate_caches()
+    denied()
+finally:
+    shutil.rmtree(duplicate)
+(metadata,) = installation.glob('gate-*.dist-info')
+hidden = Path(sys.prefix) / 'withheld-gate-metadata'
+metadata.rename(hidden)
+try:
+    importlib.invalidate_caches()
+    denied()
+finally:
+    hidden.rename(metadata)
+importlib.invalidate_caches()
+assert h._migration_versions() == versions
+print(json.dumps({'files': len(h.MIGRATION_SHA256), 'baseline': h.BASELINE,
+                 'checkoutShadow': 'PASS', 'missingMetadata': 'DENIED',
+                 'ambiguousMetadata': 'DENIED'}))
 """
-    actual = subprocess.run(
-        [str(python), "-c", probe],
-        cwd=tmp_path,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
+    actual = checked(
+        [str(python), "-c", probe, str(root)],
         timeout=30,
     )
-    assert json.loads(actual.stdout) == {"files": 119, "baseline": BASELINE}
+    assert json.loads(actual.stdout) == {
+        "files": 119,
+        "baseline": BASELINE,
+        "checkoutShadow": "PASS",
+        "missingMetadata": "DENIED",
+        "ambiguousMetadata": "DENIED",
+    }
     # Actual existing Dockerfile copies these canonical paths to /app. No
     # Docker daemon/network/container privilege is needed to test discovery.
     dockerfile = (root / "Dockerfile").read_text()

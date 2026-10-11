@@ -35,6 +35,8 @@ dev = [
   "mypy>=1.11.0",
   "pytest>=8.3.0",
   "ruff>=0.6.0",
+  "setuptools>=69",
+  "wheel",
 ]
 
 [project.scripts]

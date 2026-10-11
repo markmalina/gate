@@ -187,15 +187,25 @@ and repository `pyproject.toml`; the existing Dockerfile copies that layout to
 `/app`. Installed wheels carry the same canonical files, without source copies,
 under the fixed `sys.prefix/share/gate745-fixture/alembic/versions` data directory.
 Installed Gate distribution metadata must identify the executing helper module.
+Discovery is restricted to that module's own installation root and requires
+exactly one matching distribution. Checkout/cwd egg-info cannot shadow it;
+missing, ambiguous or foreign-module metadata denies before migration.
 Missing, extra, substituted or symlinked migration files deny; no cwd, environment
 variable, caller path or arbitrary migration-root fallback is accepted.
 
 A hermetic packaging regression builds and installs the real wheel in a fresh
 local venv away from the repository, verifies installed-module/resource discovery
-and the 119-revision baseline chain, then reconstructs the existing Docker COPY
+and the 119-revision baseline chain, exposes real checkout egg-info after loading
+the installed module, and proves missing/duplicate installed metadata denies.
+It then reconstructs the existing Docker COPY
 artifact and checks its bytes/discovery and three corruption denials. This checks
 the Docker source layout; it does not claim a local Docker container build or
 native fixture run. The original rejected AAA CI failed before seed/reset because
 its installed wheel lacked migration resources. The corrected head needs its own
 actual disposable PG17 drill and full original CI, then a new independent Delta
 attempt; simulated bindings/local PG skips remain NOT_PROVEN.
+
+The dev extra installs the same setuptools/wheel prerequisites declared by the
+build system so the regression's no-index/no-build-isolation wheel command has
+its backend without a network fallback. Its fixed subprocesses inherit only
+allowlisted environment fields; failures expose bounded stderr for diagnosis.

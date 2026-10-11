@@ -12,7 +12,7 @@ import os
 import re
 import sys
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError, distribution
+from importlib.metadata import Distribution
 from pathlib import Path
 from typing import Any, cast
 
@@ -460,12 +460,16 @@ def _migration_versions() -> Path:
     if (source_root / "pyproject.toml").is_file():
         versions = source_root / "alembic" / "versions"
     else:
-        try:
-            installed_module = Path(str(distribution("gate").locate_file(
-                "app/worker/gate745_fixture_bootstrap.py"
-            ))).resolve()
-        except PackageNotFoundError as exc:
-            raise FixtureDenied("E_FIXTURE_MIGRATION_ARTIFACT") from exc
+        # A checkout's egg-info may precede the installed distribution on
+        # sys.path even though this module was loaded from site-packages.
+        # Search only the executing module's installation root, and never
+        # select arbitrarily between multiple matching distribution records.
+        candidates = list(Distribution.discover(name="gate", path=[str(source_root)]))
+        if len(candidates) != 1:
+            raise FixtureDenied("E_FIXTURE_MIGRATION_ARTIFACT")
+        installed_module = Path(
+            str(candidates[0].locate_file("app/worker/gate745_fixture_bootstrap.py"))
+        ).resolve()
         if installed_module != module:
             raise FixtureDenied("E_FIXTURE_MIGRATION_ARTIFACT")
         versions = Path(sys.prefix) / "share" / "gate745-fixture" / "alembic" / "versions"
