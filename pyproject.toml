@@ -42,6 +42,7 @@ gate-contact-sync = "app.contact_sync.cli:main"
 gate-personal-telegram-enroll = "app.personal_telegram.cli:main"
 gate-personal-telegram-preflight = "app.personal_telegram.preflight_cli:main"
 gate-personal-telegram-check-auth = "app.personal_telegram.auth_check_cli:main"
+gate-personal-telegram-cloud-check = "app.personal_telegram.cloud_check_cli:main"
 gate-reply-send-recovery = "app.worker.reply_send_recovery:main"
 gate-telegram-worker = "app.worker.telegram_processing:main"
 gate-become-preflight = "app.become.runtime_preflight:main"
@@ -121,4 +122,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["app*"]
 exclude = ["tests*", "alembic*", "docs*"]
+
 

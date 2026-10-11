@@ -80,9 +80,9 @@ and digests. A green workflow, logs, source merge or CI is not provider/runtime
 or product readiness. Keep stable admission/preflight failure codes; stop on
 FAILED, UNKNOWN, drift or missing bindings rather than retrying unchanged state.
 
-## Unresolved protected bindings
+## Historical protected bindings at initial preparation
 
-Observed prerequisite state at preparation (10 October 2026):
+Historical prerequisite state at preparation (10 October 2026); the dated successor below supersedes credential and diagnostic status, without implying release readiness:
 
 | Dependency | Evidence and required resolution |
 | --- | --- |
@@ -114,3 +114,114 @@ new independent Delta attempt and exact-head verification. This bootstrap's
 runbook is separate from PR747's `GATE745-OPS-CONTROL.md`; the old prepared pin
 in that document must not be mistaken for the installed contract. Main source
 movement and source acceptance remain distinct from actual runtime release.
+
+## Diagnostic client admission successor — 11 October 2026
+
+This separate client source stage under existing Gate745 succeeds bootstrap754.
+It keeps guard PR747 frozen at `5991635d53af96ec97819d5bec75a543c8ac55f6`.
+Only this runbook, the four immutable Ops action references in the control
+workflow, and the client lock commit/workflow-byte digest change.
+Installed source and guard source remain distinct; root alone may merge this
+client stage after independent acceptance and exact-head checks.
+
+The locked Ops observation release is
+`739a9e1c5703e0806d774bed824a50bebf8d40f2`, admitted by
+[Delta292](https://github.com/AlphaCenter/delta/issues/292#issuecomment-6109087052).
+Its independently reviewed executor source is
+`6ba1bdb71b438ea85ecb097eb9c405cb08db6ef0`.
+The exact profile bytes, fixed target, original owner745 body digest, caller,
+distinct App/owner identities, command grammar, protected environment and
+shared production concurrency remain unchanged. Mutation remains
+`enabled=false`, `fixtureAcceptance=PENDING`, `allocationPolicy=null`.
+Require successful original exact-source Ops CI/Security and actual merged-push
+checks, plus independent Gate client acceptance and installed main, before
+ONE changed-source protected observation. Never execute an unreviewed branch.
+
+[Protected run38137606030](https://github.com/AlphaCenter/gate/actions/runs/38137606030)
+authenticated the App/source and fixed Railway credentials on 11 October.
+Its original authenticated failure receipt
+[Gate745 proof](https://github.com/AlphaCenter/gate/issues/745#issuecomment-6108877537)
+stopped at `E_PREFLIGHT_FLEET_PENDING_COUNT_SHAPE`; the raw276-byte digest is
+`sha256:2fbbd27b65e3d19d2ae3636687007ef44e576538b51cde40730dceca99d7b387`.
+The field concerns unapplied environment configuration, not queued processes.
+That receipt does not disclose the actual value or distinguish unavailable
+from invalid shape. The successor returns stable denials
+`E_PREFLIGHT_FLEET_PENDING_COUNT_MISSING` for an absent field and
+`E_PREFLIGHT_FLEET_PENDING_COUNT_NULL` for a null field; other invalid shapes
+remain `E_PREFLIGHT_FLEET_PENDING_COUNT_SHAPE`.
+It exports no provider value, type, payload or credential, grants no new query
+and never interprets missing/null as zero. The actual cause remains UNKNOWN
+until a fresh authenticated original receipt proves it. No unchanged retry.
+
+Scoped status at 11 October12:08Z reported Production `afe0c6b85193`,
+`send_enabled=true`; separately verified LKG is
+`afe0c6b8519381a0007c0dcc1c145207b5d54a3f`/schema0115.
+This proves only the returned Gate workspace/service, not global users,
+fleet, deployment/source policy or `autoDeploy=false`.
+Actual full active/latest fleet, autoDeploy, DB binding, volume and allocation
+proof remain required. A source-only main merge may auto-deploy its source;
+root must freshly observe exact revision/redacted health before and after
+installation rather than claim zero runtime effect.
+
+Native full isolated fixture identities, exact effect/cost/operator authority,
+real whole-cutover fixture ACCEPT, writer/allocation policy and adjacent
+baseline/candidate refresh remain pending. Historical8e6/303 release values
+do not authorize the current LKG/candidate. No usable plan, apply, backup,
+migration, configuration, deployment, credential provisioning or AQUB action
+is authorized by this client stage. Guard747 may merge only after its separate
+source and fresh whole-fleet `autoDeploy=false` gates pass.
+
+## Empty staged-proof client successor — 11 October 2026
+
+This separate three-path client successor to completed PR755 admits only
+reviewed observation source; it leaves guard PR747 and the current main696
+default-off cloud foundation unchanged. The previous client and initial
+shape-only diagnosis above are historical predecessor records.
+
+Actual [protected observation38141990253](https://github.com/AlphaCenter/gate/actions/runs/38141990253)
+on installed Gate65/pinnedOps739 returned
+`E_PREFLIGHT_FLEET_PENDING_COUNT_NULL`.
+[Authenticated original proof](https://github.com/AlphaCenter/gate/issues/745#issuecomment-6109376464)
+binds original artifact11703423084/raw275-byte JSON with SHA256
+`b23c29f56687e834c05107b948595dc18920e523b3b13b64fc0b710b4e0cef52`.
+NULL is now proved for that observation; it proves neither pending changes
+nor absence of staged changes, whole-fleet readiness or release acceptance.
+
+The immutable Ops release admitted by this client is
+`b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85`, with independently reviewed executor
+`6957e465b905f3b26771db32fce48e83d12354a2`.
+Code-source [Delta295 ACCEPT](https://github.com/AlphaCenter/delta/issues/295#issuecomment-6109435443)
+and separate [Delta296 release-only ACCEPT](https://github.com/AlphaCenter/delta/issues/296#issuecomment-6109536930)
+remain source evidence. Require actual code and executor merged PUSH CI/Security
+SUCCESS, independently accepted Gate client exact-head checks and installed
+current main before ONE changed-source protected observation.
+
+The same fixed fleet HTTP document adds only
+`environmentStagedChanges(environmentId:$environment){environmentId status patch(decryptVariables:false)}`.
+No HTTP request, retry, credential, target, selector or mutation is added.
+Both fleet capture and every mutation observation use the same strict pending
+predicate. Missing/invalid counts remain denied; positive integers remain
+pending. Numeric zero and explicit NULL require independent own-field proof
+bound to the exact environment, exact STAGED status and a literal plain
+empty object `{}` with zero own keys. Absent, foreign, nonempty, inherited,
+conflicting, APPLYING, COMMITTED or otherwise unknown proof fails closed.
+NULL is never converted/defaulted to zero. Neither raw patch/status/count nor
+provider payload/types/credentials enter normalized preflight or failure
+receipts. Observed provider evidence, not CLI comments or synthetic tests,
+must establish any later no-pending conclusion.
+
+Profile bytes/hash, caller and distinct requester/approver identities, owner745
+body digest, fixed physical target, command grammar, protected environment,
+shared production concurrency, budgets and all source/fleet/DB/volume/backup/
+recovery/artifact gates remain unchanged. `enabled=false`,
+`fixtureAcceptance=PENDING`, `allocationPolicy=null`; no usable apply plan.
+Full native isolated fixture/operator/cost/effect authority, writer exclusions,
+allocation policy and current baseline/candidate refresh remain pending.
+Source/CI/client merge is not native fixture or product acceptance.
+
+Root alone may install after fresh conflict/lease/main checks and independent
+client acceptance. A source-only main merge can autoDeploy; observe the exact
+scoped runtime revision/redacted health before and after. Guard747 cannot
+merge before its separate fresh whole-fleet `autoDeploy=false` and acceptance
+gates. No provider UI/direct API/AQUB operation, credential provisioning,
+private dialogue/model/Telegram action or mutable cutover is authorized here.
