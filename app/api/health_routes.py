@@ -170,3 +170,25 @@ async def operations_health(
         headers={"Cache-Control": "no-store"},
     )
 
+
+@router.get("/admin/ops/gate745-fixture-proof")
+async def gate745_fixture_proof(
+    request: Request,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> JSONResponse:
+    """Default-off synthetic-only journal proof; UNBOUND accesses no DB/secret."""
+    from app.worker.gate745_fixture_bootstrap import fixture_proof
+
+    try:
+        payload = await fixture_proof(request, authorization)
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Not Found"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK, content=payload,
+        headers={"Cache-Control": "no-store"},
+    )
+
