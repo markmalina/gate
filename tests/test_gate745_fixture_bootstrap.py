@@ -488,6 +488,64 @@ def test_actual_async_deadline_cancels_before_db_and_disposes_engine(
     assert disposed == [True]
 
 
+@pytest.mark.parametrize(
+    "kind,nullable,accepted",
+    [("double", True, True), ("real", True, False), ("double", False, False),
+     ("integer", True, False)],
+)
+def test_fixture_schema_uses_exact_postgres_float_storage_and_nullability(
+    monkeypatch: pytest.MonkeyPatch, kind: str, nullable: bool, accepted: bool,
+) -> None:
+    import sqlalchemy
+    from app.models.domain import Base
+    from sqlalchemy import Column, Float, Integer, MetaData, String, Table
+    from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, REAL, dialect
+
+    expected = Table(
+        "gate745_type_probe", Base.metadata,
+        Column("id", Integer(), primary_key=True),
+        Column("confidence", Float(), nullable=True),
+    )
+
+    def reflect(metadata: MetaData, **kwargs: Any) -> None:
+        observed = expected.to_metadata(metadata, schema="public")
+        observed.c.confidence.type = {
+            "double": DOUBLE_PRECISION(), "real": REAL(), "integer": Integer(),
+        }[kind]
+        observed.c.confidence.nullable = nullable
+        Table(
+            "alembic_version", metadata,
+            Column("version_num", String(32), primary_key=True), schema="public",
+        )
+
+    inspector = SimpleNamespace(
+        get_table_names=lambda **kwargs: ["gate745_type_probe", "alembic_version"],
+        get_view_names=lambda **kwargs: [],
+        get_materialized_view_names=lambda **kwargs: [],
+        get_foreign_table_names=lambda **kwargs: [],
+    )
+
+    def no_public_functions(statement: Any) -> Any:
+        assert "FROM pg_proc p" in str(statement)
+        return SimpleNamespace(scalar_one=lambda: 0)
+
+    connection = SimpleNamespace(dialect=dialect(), execute=no_public_functions)
+    monkeypatch.setattr(helper, "_known_tables", lambda: {"gate745_type_probe"})
+    monkeypatch.setattr(sqlalchemy, "inspect", lambda connection: inspector)
+    monkeypatch.setattr(MetaData, "reflect", reflect)
+    try:
+        if accepted:
+            actual = helper._tables(connection, BASELINE)
+            assert str(actual.tables["public.gate745_type_probe"].c.confidence.type) == (
+                "DOUBLE PRECISION"
+            )
+        else:
+            with pytest.raises(FixtureDenied, match="E_FIXTURE_SCHEMA"):
+                helper._tables(connection, BASELINE)
+    finally:
+        Base.metadata.remove(expected)
+
+
 def test_reviewed_migration_bundle_survives_installed_wheel_and_docker_layout(
     tmp_path: Any,
 ) -> None:
@@ -498,6 +556,7 @@ def test_reviewed_migration_bundle_survives_installed_wheel_and_docker_layout(
     import shutil
     import subprocess
     import venv
+    import zipfile
     from pathlib import Path
 
     from alembic.script import ScriptDirectory
@@ -549,11 +608,24 @@ def test_reviewed_migration_bundle_survives_installed_wheel_and_docker_layout(
         timeout=90,
     )
     (wheel,) = wheels.glob("gate-*.whl")
+    # Represent the same-version distribution inherited in hosted CI, even
+    # when this local parent has no Gate installation. It contains metadata
+    # only, so it cannot supply the executing helper if wheel install skips.
+    inherited = tmp_path / "inherited"
+    with zipfile.ZipFile(wheel) as archive:
+        (metadata_name,) = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
+        metadata_path = inherited / metadata_name
+        metadata_path.parent.mkdir(parents=True)
+        metadata_path.write_bytes(archive.read(metadata_name))
+    environment["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(inherited), environment["PYTHONPATH"]) if p
+    )
     installed = tmp_path / "installed"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(installed)
     python = installed / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
     checked(
-        [str(python), "-m", "pip", "install", "--no-deps", "--no-index", str(wheel)],
+        [str(python), "-m", "pip", "install", "--ignore-installed", "--no-deps", "--no-index",
+         str(wheel)],
         timeout=60,
     )
     probe = """

@@ -93,6 +93,30 @@ async def _drill() -> None:
                 == 0
             )
         async with engine.begin() as connection:
+            # Canonical unqualified FLOAT is physically DOUBLE PRECISION.
+            # Wrong precision and nullability must still deny before reset.
+            await connection.execute(text(
+                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence TYPE REAL"
+            ))
+        async with engine.begin() as connection:
+            with pytest.raises(FixtureDenied, match="E_FIXTURE_SCHEMA"):
+                await connection.run_sync(lambda c: helper._operate(c, binding, proof()))
+        async with engine.begin() as connection:
+            await connection.execute(text(
+                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence "
+                "TYPE DOUBLE PRECISION"
+            ))
+            await connection.execute(text(
+                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence SET NOT NULL"
+            ))
+        async with engine.begin() as connection:
+            with pytest.raises(FixtureDenied, match="E_FIXTURE_SCHEMA"):
+                await connection.run_sync(lambda c: helper._operate(c, binding, proof()))
+        async with engine.begin() as connection:
+            await connection.execute(text(
+                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence DROP NOT NULL"
+            ))
+        async with engine.begin() as connection:
             with pytest.raises(FixtureDenied, match="E_FIXTURE_BOOTSTRAP_NOT_EMPTY"):
                 await connection.run_sync(lambda c: helper._operate(c, binding, proof("bootstrap")))
         async with engine.begin() as connection:

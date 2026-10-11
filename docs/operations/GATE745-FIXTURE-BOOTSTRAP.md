@@ -209,3 +209,11 @@ The dev extra installs the same setuptools/wheel prerequisites declared by the
 build system so the regression's no-index/no-build-isolation wheel command has
 its backend without a network fallback. Its fixed subprocesses inherit only
 allowlisted environment fields; failures expose bounded stderr for diagnosis.
+The wheel install ignores inherited same-version distribution metadata inside
+its disposable venv; an explicit inherited-metadata fixture proves the reviewed
+wheel, not a parent's installed package, supplies the executing helper.
+
+Schema admission compares the physical PostgreSQL spelling of canonical
+unqualified Float (DOUBLE PRECISION); every other type/precision and nullability
+remains exact. Hermetic schema probes and the real disposable PG drill reject
+REAL and changed nullability. Canonical migrations themselves are unchanged.

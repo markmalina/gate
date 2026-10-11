@@ -565,7 +565,8 @@ def _identity(connection: Any, binding: Binding) -> None:
 
 
 def _tables(connection: Any, revision: str) -> Any:
-    from sqlalchemy import BigInteger, Column, MetaData, String, Table, inspect, text
+    from sqlalchemy import BigInteger, Column, Float, MetaData, String, Table, inspect, text
+    from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 
     expected = _known_tables() | {"alembic_version"}
     if revision == GUARDED:
@@ -613,9 +614,15 @@ def _tables(connection: Any, revision: str) -> Any:
             raise FixtureDenied("E_FIXTURE_SCHEMA")
         for column in table.columns:
             expected_column = expected_table.columns[column.name]
+            expected_type = expected_column.type
+            # PostgreSQL stores unqualified FLOAT as DOUBLE PRECISION.
+            # Normalize that one canonical spelling, never REAL or other
+            # type/precision differences, and keep nullability exact.
+            if type(expected_type) is Float and expected_type.precision is None:
+                expected_type = DOUBLE_PRECISION()
             if column.nullable != expected_column.nullable or str(
                 column.type.compile(dialect=connection.dialect)
-            ) != str(expected_column.type.compile(dialect=connection.dialect)):
+            ) != str(expected_type.compile(dialect=connection.dialect)):
                 raise FixtureDenied("E_FIXTURE_SCHEMA")
         if table.name == "reply_dialog_versions":
             checks = inspector.get_check_constraints(table.name, schema="public")
