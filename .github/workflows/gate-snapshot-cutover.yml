@@ -41,7 +41,7 @@ jobs:
           check-latest: false
           package-manager-cache: false
       - name: Request exact plan as distinct App identity
-        uses: AlphaCenter/ops/agent-ops/actions/github-app-requester@739a9e1c5703e0806d774bed824a50bebf8d40f2
+        uses: AlphaCenter/ops/agent-ops/actions/github-app-requester@b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85
         with:
           app-id: '4578389'
           private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
@@ -107,7 +107,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - id: cutover
-        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-cutover@739a9e1c5703e0806d774bed824a50bebf8d40f2
+        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-cutover@b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85
         env:
           RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           AGENT_OPS_REVIEWER_PRIVATE_KEY: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
@@ -177,7 +177,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - id: verify
-        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-cutover@739a9e1c5703e0806d774bed824a50bebf8d40f2
+        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-cutover@b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85
         with:
           mode: verify
         env:
@@ -231,7 +231,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - id: final-verifier
-        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-artifact-verifier@739a9e1c5703e0806d774bed824a50bebf8d40f2
+        uses: AlphaCenter/ops/agent-ops/actions/gate-snapshot-artifact-verifier@b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85
         with:
           receipt-artifact-id: ${{ needs.snapshot-cutover.outputs.receipt-artifact-id }}
           receipt-digest: ${{ needs.snapshot-cutover.outputs.receipt-digest }}
