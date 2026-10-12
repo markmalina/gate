@@ -16,6 +16,7 @@ from app.personal_telegram.command_scope import (
     CommandRuntimeError,
     PeerIdentity,
     RuCommandScope,
+    personal_client_namespace,
 )
 from app.personal_telegram.command_store import (
     CommandPayloadCipher,
@@ -25,6 +26,7 @@ from app.personal_telegram.command_store import (
     RuntimeBindingRow,
     SqlCommandStore,
 )
+from app.personal_telegram.grant_registry import SqlGrantRegistry
 from app.personal_telegram.session_persistence import SessionCipher
 from cryptography.fernet import Fernet
 from sqlalchemy import func, select, text
@@ -69,22 +71,33 @@ async def pg_runtime():
                     custody_state="prepared",
                 )
             )
-        store = SqlCommandStore(
-            sessions, scope=scope, payload_cipher=CommandPayloadCipher(Fernet.generate_key())
-        )
         principal = Principal(
             "owner",
             "oauth2",
-            frozenset({"gate:personal:send_text"}),
+            frozenset(
+                {"gate:personal:send_text", "gate:personal:jobs:read", "gate:personal:jobs:cancel"}
+            ),
             AccessScope(scope.workspace, frozenset({scope.account_id}), frozenset()),
+            "https://auth.gate.example/",
+            "work-client",
         )
         delegation = CommandDelegation(
             uuid4(),
             scope,
-            "work-client",
+            personal_client_namespace(principal),
             frozenset({"send_text"}),
             frozenset({"user:42"}),
             NOW + timedelta(hours=1),
+        )
+        grants = SqlGrantRegistry(
+            sessions, scope=scope, policy_key=Fernet.generate_key(), key_version="grant-v1"
+        )
+        await grants.install_approved_grant(delegation, approval_ref="synthetic-approval", now=NOW)
+        store = SqlCommandStore(
+            sessions,
+            scope=scope,
+            payload_cipher=CommandPayloadCipher(Fernet.generate_key()),
+            grants=grants,
         )
         yield SimpleNamespace(
             scope=scope,
@@ -93,6 +106,7 @@ async def pg_runtime():
             sessions=sessions,
             principal=principal,
             delegation=delegation,
+            grants=grants,
         )
     finally:
         await engine.dispose()

@@ -84,12 +84,32 @@ class CommandDelegation:
             or self.scope.account_id not in principal.access_scope.account_ids
         ):
             raise CommandRuntimeError("ru_scope_denied")
+        if self.client_namespace != personal_client_namespace(principal):
+            raise CommandRuntimeError("client_scope_denied")
         if (
             capability not in self.capabilities
             or f"gate:personal:{capability}" not in principal.scopes
             or peer.key not in self.peer_keys
         ):
             raise CommandRuntimeError("command_scope_denied")
+
+
+def personal_client_namespace(principal: Principal) -> str:
+    """Namespace comes exclusively from validated OAuth issuer/client claims."""
+    issuer, client = principal.oauth_issuer, principal.oauth_client_id
+    if (
+        principal.auth_method != "oauth2"
+        or not isinstance(issuer, str)
+        or not issuer
+        or len(issuer) > 2048
+        or not isinstance(client, str)
+        or not client
+        or len(client) > 256
+        or client != client.strip()
+    ):
+        raise CommandRuntimeError("oauth_client_required")
+    content = json.dumps([issuer, client], ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(content.encode()).hexdigest()
 
 
 def command_fingerprint(

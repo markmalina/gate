@@ -128,11 +128,27 @@ def _principal_from_claims(
             claim_name=settings.mcp_oauth_project_ids_claim,
         ),
     )
+    issuer = claims.get("iss")
+    client = claims.get("azp", claims.get("client_id"))
+    if required_scope.startswith("gate:personal:"):
+        if (
+            not isinstance(issuer, str)
+            or not issuer
+            or len(issuer) > 2048
+            or not isinstance(client, str)
+            or not client.strip()
+            or len(client) > 256
+            or client != client.strip()
+            or ("azp" in claims and "client_id" in claims and claims["azp"] != claims["client_id"])
+        ):
+            raise ValueError("OAuth personal client identity is missing or ambiguous")
     return Principal(
         subject=subject.strip(),
         auth_method="oauth2",
         scopes=scopes,
         access_scope=access_scope,
+        oauth_issuer=issuer if isinstance(issuer, str) else None,
+        oauth_client_id=client if isinstance(client, str) else None,
     )
 
 

@@ -35,6 +35,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gate
+      PERSONAL_COMMAND_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gate
       TELEGRAM_BOT_USERNAME: gate_m_bot
       GATE_ENV: ci
       GATE_DEFAULT_MODE: manual

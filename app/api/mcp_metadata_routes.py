@@ -10,6 +10,7 @@ from app.api.communication_feed_mcp import (
     router as communication_feed_router,
 )
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
+from app.api.personal_command_mcp import PERSONAL_COMMAND_SCOPES
 from app.core.config import Settings, get_settings
 
 MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"] = FEED_REPLY_CONTEXT_OUTPUT_SCHEMA
@@ -45,7 +46,7 @@ async def oauth_protected_resource_metadata(
     return {
         "resource": resource,
         "authorization_servers": _authorization_servers(settings),
-        "scopes_supported": MCP_RESOURCE_SCOPES,
+        "scopes_supported": _resource_scopes(settings),
         "bearer_methods_supported": ["header"],
         "resource_documentation": f"{_resource_origin(resource)}/docs",
         "mcp": _mcp_metadata(settings=settings),
@@ -63,7 +64,7 @@ async def oauth_protected_resource_mcp_metadata(
     return {
         "resource": resource,
         "authorization_servers": _authorization_servers(settings),
-        "scopes_supported": MCP_RESOURCE_SCOPES,
+        "scopes_supported": _resource_scopes(settings),
         "bearer_methods_supported": ["header"],
         "mcp": _mcp_metadata(settings=settings),
     }
@@ -92,8 +93,11 @@ async def mcp_metadata(
                 f"{_resource_origin(resource)}/.well-known/oauth-protected-resource/mcp"
             ),
             "authorization_servers": _authorization_servers(settings),
-            "scopes_supported": MCP_RESOURCE_SCOPES,
-            "current_read_only_scopes": MCP_READ_ONLY_SCOPES,
+            "scopes_supported": _resource_scopes(settings),
+            "current_read_only_scopes": MCP_READ_ONLY_SCOPES + (
+                ["gate:personal:jobs:read"]
+                if settings.gate_personal_command_tools_enabled else []
+            ),
         },
         "tools": {
             "read_only": [
@@ -123,6 +127,7 @@ async def mcp_metadata(
             ],
             "send_requires_explicit_confirmation": True,
         },
+        "personal_commands": _personal_commands(settings),
     }
 
 
@@ -165,8 +170,25 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_alpha_send_review",
         ],
         "send_requires_explicit_confirmation": True,
+        "personal_commands": _personal_commands(settings),
     }
 
+
+def _resource_scopes(settings: Settings) -> list[str]:
+    personal = list(dict.fromkeys(PERSONAL_COMMAND_SCOPES.values()))
+    if settings.gate_personal_command_tools_enabled:
+        return MCP_RESOURCE_SCOPES + personal
+    return list(MCP_RESOURCE_SCOPES)
+
+
+def _personal_commands(settings: Settings) -> JsonObject:
+    return {
+        "enabled": settings.gate_personal_command_tools_enabled,
+        "tools": list(PERSONAL_COMMAND_SCOPES)
+        if settings.gate_personal_command_tools_enabled else [],
+        "runtime_connected": False,
+        "execute_semantics": "durable_queue_only",
+    }
 
 
 def _reply_formats(settings: Settings) -> JsonObject:

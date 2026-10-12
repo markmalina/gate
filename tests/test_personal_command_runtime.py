@@ -17,6 +17,7 @@ from app.personal_telegram.command_scope import (
     CommandRuntimeError,
     PeerIdentity,
     RuCommandScope,
+    personal_client_namespace,
 )
 from app.personal_telegram.command_store import (
     CommandPayloadCipher,
@@ -25,6 +26,7 @@ from app.personal_telegram.command_store import (
     RuntimeBindingRow,
     SqlCommandStore,
 )
+from app.personal_telegram.grant_registry import SqlGrantRegistry
 from app.personal_telegram.session_persistence import (
     EncryptedSessionRecord,
     SessionCipher,
@@ -65,22 +67,33 @@ async def runtime(tmp_path):
                 custody_state="prepared",
             )
         )
-    store = SqlCommandStore(
-        sessions, scope=scope, payload_cipher=CommandPayloadCipher(Fernet.generate_key())
-    )
     principal = Principal(
         "owner",
         "oauth2",
-        frozenset({"gate:personal:send_text"}),
+        frozenset(
+            {"gate:personal:send_text", "gate:personal:jobs:read", "gate:personal:jobs:cancel"}
+        ),
         AccessScope(scope.workspace, frozenset({scope.account_id}), frozenset()),
+        "https://auth.gate.example/",
+        "work-client",
     )
     delegation = CommandDelegation(
         uuid4(),
         scope,
-        "work-client",
+        personal_client_namespace(principal),
         frozenset({"send_text"}),
         frozenset({"user:42", "channel:42"}),
         NOW + timedelta(hours=1),
+    )
+    grants = SqlGrantRegistry(
+        sessions, scope=scope, policy_key=Fernet.generate_key(), key_version="grant-v1"
+    )
+    await grants.install_approved_grant(delegation, approval_ref="synthetic-approval", now=NOW)
+    store = SqlCommandStore(
+        sessions,
+        scope=scope,
+        payload_cipher=CommandPayloadCipher(Fernet.generate_key()),
+        grants=grants,
     )
     yield SimpleNamespace(
         scope=scope,
@@ -89,6 +102,7 @@ async def runtime(tmp_path):
         sessions=sessions,
         principal=principal,
         delegation=delegation,
+        grants=grants,
     )
     await engine.dispose()
 
@@ -202,7 +216,9 @@ async def test_durable_attempt_unknown_quarantines_only_exact_typed_peer(runtime
         assert attempt is not None and attempt.state == "unknown"
         assert int(attempt.random_id) == command.random_id > 0
     await runtime.store.release_disconnected_owner(token)
-    assert (await runtime.store.status(first.operation_id)).state == "unknown"
+    assert (
+        await runtime.store.status(first.operation_id, principal=runtime.principal)
+    ).state == "unknown"
     replacement = await runtime.store.acquire_owner(now=NOW, ttl=TTL)
     await runtime.store.renew_owner(replacement, now=NOW, ttl=TTL, health="ready")
     independent = await runtime.store.claim(replacement, now=NOW)
@@ -238,7 +254,9 @@ async def test_cancel_after_dispatch_is_unknown_and_late_ack_is_preserved(runtim
     await runtime.store.renew_owner(token, now=NOW, ttl=TTL, health="ready")
     command = await runtime.store.claim(token, now=NOW)
     assert command is not None
-    assert (await runtime.store.cancel(operation.operation_id)).state == "unknown"
+    assert (
+        await runtime.store.cancel(operation.operation_id, principal=runtime.principal, now=NOW)
+    ).state == "unknown"
     assert (
         await runtime.store.finish(
             command, token, state="succeeded", now=NOW, receipt_ref="late-receipt"
@@ -249,7 +267,9 @@ async def test_cancel_after_dispatch_is_unknown_and_late_ack_is_preserved(runtim
 @pytest.mark.anyio
 async def test_cancel_before_dispatch_has_zero_attempts(runtime):
     operation = await enqueue(runtime, "intent-1")
-    assert (await runtime.store.cancel(operation.operation_id)).state == "cancelled"
+    assert (
+        await runtime.store.cancel(operation.operation_id, principal=runtime.principal, now=NOW)
+    ).state == "cancelled"
     token = await runtime.store.acquire_owner(now=NOW, ttl=TTL)
     await runtime.store.renew_owner(token, now=NOW, ttl=TTL, health="ready")
     assert await runtime.store.claim(token, now=NOW) is None
@@ -499,4 +519,75 @@ async def test_execute_rechecks_revocation_and_expiry_before_queueing(runtime):
             delegation=runtime.delegation,
             now=runtime.delegation.expires_at,
         )
-    assert (await runtime.store.status(operation.operation_id)).state == "prepared"
+    assert (
+        await runtime.store.status(operation.operation_id, principal=runtime.principal)
+    ).state == "prepared"
+
+
+@pytest.mark.anyio
+async def test_durable_revocation_denies_queue_and_worker_but_preserves_owner_receipt(runtime):
+    operation = await enqueue(runtime, "revocation-intent")
+    await runtime.grants.revoke(
+        principal=runtime.principal,
+        delegation_id=runtime.delegation.delegation_id,
+        expected_revision=0,
+        now=NOW,
+    )
+    with pytest.raises(CommandRuntimeError, match="delegation_inactive"):
+        await runtime.store.execute(operation.operation_id, principal=runtime.principal, now=NOW)
+    token = await runtime.store.acquire_owner(now=NOW, ttl=TTL)
+    await runtime.store.renew_owner(token, now=NOW, ttl=TTL, health="ready")
+    assert await runtime.store.claim(token, now=NOW) is None
+    status = await runtime.store.status(operation.operation_id, principal=runtime.principal)
+    assert status.state == "rejected" and status.error_code == "delegation_inactive"
+    async with runtime.sessions() as session:
+        assert not (await session.scalars(select(RuntimeAttemptRow))).all()
+
+
+@pytest.mark.anyio
+async def test_caller_modified_grant_policy_has_no_authority(runtime):
+    with pytest.raises(CommandRuntimeError, match="delegation_policy_conflict"):
+        await runtime.store.prepare(
+            principal=runtime.principal,
+            delegation=replace(runtime.delegation, expires_at=NOW + timedelta(days=1)),
+            capability="send_text",
+            peer=PeerIdentity("user", 42),
+            request_key="tampered-grant",
+            payload={"text": "synthetic"},
+            now=NOW,
+        )
+
+
+@pytest.mark.anyio
+async def test_operation_read_and_cancel_are_bound_to_verified_client(runtime):
+    operation = await enqueue(runtime, "client-bound-intent")
+    foreign = replace(runtime.principal, oauth_client_id="other-work-client")
+    for action in [
+        lambda: runtime.store.status(operation.operation_id, principal=foreign),
+        lambda: runtime.store.cancel(operation.operation_id, principal=foreign, now=NOW),
+        lambda: runtime.store.execute(operation.operation_id, principal=foreign, now=NOW),
+    ]:
+        with pytest.raises(CommandRuntimeError, match="client_scope_denied"):
+            await action()
+    assert (
+        await runtime.store.status(operation.operation_id, principal=runtime.principal)
+    ).state == "queued"
+
+
+@pytest.mark.anyio
+async def test_unbound_grant_registry_cannot_prepare(runtime):
+    store = SqlCommandStore(
+        runtime.sessions,
+        scope=runtime.scope,
+        payload_cipher=CommandPayloadCipher(Fernet.generate_key()),
+    )
+    with pytest.raises(CommandRuntimeError, match="delegation_registry_unbound"):
+        await store.prepare(
+            principal=runtime.principal,
+            delegation=runtime.delegation,
+            capability="send_text",
+            peer=PeerIdentity("user", 42),
+            request_key="unbound",
+            payload={"text": "synthetic"},
+            now=NOW,
+        )

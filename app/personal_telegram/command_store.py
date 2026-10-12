@@ -12,7 +12,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -41,9 +41,13 @@ from app.personal_telegram.command_scope import (
     PeerIdentity,
     RuCommandScope,
     command_fingerprint,
+    personal_client_namespace,
     require_request_key,
 )
 from app.personal_telegram.session_persistence import EncryptedSessionRecord
+
+if TYPE_CHECKING:
+    from app.personal_telegram.grant_registry import SqlGrantRegistry
 
 
 class PersonalRuntimeBase(DeclarativeBase):
@@ -201,11 +205,37 @@ class SqlCommandStore:
         *,
         scope: RuCommandScope,
         payload_cipher: CommandPayloadCipher,
+        grants: SqlGrantRegistry | None = None,
     ) -> None:
         scope.validate()
         self.sessions = sessions
         self.scope = scope
         self._cipher = payload_cipher
+        if grants is not None and (grants.scope != scope or grants.sessions is not sessions):
+            raise CommandRuntimeError("delegation_scope_mismatch")
+        self.grants = grants
+
+    def _grants(self) -> SqlGrantRegistry:
+        if self.grants is None:
+            raise CommandRuntimeError("delegation_registry_unbound")
+        return self.grants
+
+    def _principal(self, principal: Principal, required_scope: str) -> str:
+        if (
+            principal.subject != self.scope.owner_subject
+            or principal.auth_method != "oauth2"
+            or principal.access_scope.workspace_id != self.scope.workspace
+            or self.scope.account_id not in principal.access_scope.account_ids
+            or required_scope not in principal.scopes
+        ):
+            raise CommandRuntimeError("ru_scope_denied")
+        return personal_client_namespace(principal)
+
+    def _operation_principal(
+        self, row: RuntimeOperationRow, principal: Principal, scope: str
+    ) -> None:
+        if row.client_namespace != self._principal(principal, scope):
+            raise CommandRuntimeError("client_scope_denied")
 
     async def _binding(self, session: AsyncSession) -> RuntimeBindingRow:
         row = await session.scalar(
@@ -375,6 +405,16 @@ class SqlCommandStore:
         try:
             async with self.sessions.begin() as session:
                 await self._binding(session)
+                approved = await self._grants().require(
+                    session,
+                    principal=principal,
+                    delegation_id=delegation.delegation_id,
+                    capability=capability,
+                    peer=peer,
+                    now=now,
+                )
+                if approved != delegation:
+                    raise CommandRuntimeError("delegation_policy_conflict")
                 row = await session.scalar(
                     select(RuntimeOperationRow).where(
                         RuntimeOperationRow.binding_id == self.scope.binding_id,
@@ -412,6 +452,16 @@ class SqlCommandStore:
         except IntegrityError:
             async with self.sessions.begin() as session:
                 await self._binding(session)
+                approved = await self._grants().require(
+                    session,
+                    principal=principal,
+                    delegation_id=delegation.delegation_id,
+                    capability=capability,
+                    peer=peer,
+                    now=now,
+                )
+                if approved != delegation:
+                    raise CommandRuntimeError("delegation_policy_conflict") from None
                 row = await session.scalar(
                     select(RuntimeOperationRow).where(
                         RuntimeOperationRow.binding_id == self.scope.binding_id,
@@ -444,12 +494,24 @@ class SqlCommandStore:
         operation_id: UUID,
         *,
         principal: Principal,
-        delegation: CommandDelegation,
+        delegation: CommandDelegation | None = None,
         now: datetime,
     ) -> OperationStatus:
         async with self.sessions.begin() as session:
             row = await self._operation(session, operation_id)
             peer_type, provider_id = row.peer_key.split(":")
+            self._operation_principal(row, principal, f"gate:personal:{row.capability}")
+            peer = PeerIdentity(peer_type, int(provider_id))
+            approved = await self._grants().require(
+                session,
+                principal=principal,
+                delegation_id=row.delegation_id,
+                capability=row.capability,
+                peer=peer,
+                now=now,
+            )
+            if delegation is None:
+                delegation = approved
             if delegation.scope != self.scope or delegation.delegation_id != row.delegation_id:
                 raise CommandRuntimeError("delegation_scope_mismatch")
             delegation.admit(
@@ -458,19 +520,28 @@ class SqlCommandStore:
                 peer=PeerIdentity(peer_type, int(provider_id)),
                 now=now,
             )
+            if delegation != approved:
+                raise CommandRuntimeError("delegation_policy_conflict")
             if _utc(row.expires_at) <= now:
                 raise CommandRuntimeError("command_expired")
             if row.state == "prepared":
                 row.state = "queued"
             return _status(row)
 
-    async def status(self, operation_id: UUID) -> OperationStatus:
-        async with self.sessions.begin() as session:
-            return _status(await self._operation(session, operation_id))
-
-    async def cancel(self, operation_id: UUID) -> OperationStatus:
+    async def status(self, operation_id: UUID, *, principal: Principal) -> OperationStatus:
         async with self.sessions.begin() as session:
             row = await self._operation(session, operation_id)
+            self._operation_principal(row, principal, "gate:personal:jobs:read")
+            return _status(row)
+
+    async def cancel(
+        self, operation_id: UUID, *, principal: Principal, now: datetime
+    ) -> OperationStatus:
+        if now.tzinfo is None:
+            raise CommandRuntimeError("timezone_required")
+        async with self.sessions.begin() as session:
+            row = await self._operation(session, operation_id)
+            self._operation_principal(row, principal, "gate:personal:jobs:cancel")
             if row.state in {"prepared", "queued"}:
                 row.state = "cancelled"
             elif row.state == "running":
@@ -512,6 +583,21 @@ class SqlCommandStore:
                 return None
             if _utc(row.expires_at) <= now:
                 row.state = "expired"
+                return None
+            peer_type, provider_id = row.peer_key.split(":")
+            try:
+                await self._grants().for_operation(
+                    session,
+                    owner_subject=row.owner_subject,
+                    client_namespace=row.client_namespace,
+                    delegation_id=row.delegation_id,
+                    capability=row.capability,
+                    peer=PeerIdentity(peer_type, int(provider_id)),
+                    now=now,
+                )
+            except CommandRuntimeError as exc:
+                row.state = "rejected"
+                row.error_code = str(exc)
                 return None
             # UNKNOWN quarantines only this typed peer, not unrelated chats.
             payload = self._cipher.unseal(self.scope, row.id, row.payload_ciphertext)
