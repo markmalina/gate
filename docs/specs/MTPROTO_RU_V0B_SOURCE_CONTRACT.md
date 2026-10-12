@@ -79,7 +79,7 @@ staged migration and service binding, an authorization-server contract issuing t
 personal scopes plus signed client identity, and exact deployed-head evidence. Then the
 actual Work host must prove catalog refresh, reauthorization, same-key retry after response
 loss and operation status/result/cancel. Record each host result and observed request key.
-No Telegram send is needed for this host-only acceptance; file transfer is a separate V0-F
+No Telegram send is needed for this host-only acceptance; file transfer is a separate V0-D
 proof. Sending still depends on V1 custody/runtime and V2 all-writer admission.
 
 Sequence after this source package: actual-host V0-B, independent custody/stop-proof V0-C,

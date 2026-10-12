@@ -87,6 +87,11 @@ jobs:
           fi
       - name: Pytest
         run: pytest
+      - name: Explicit RU command PostgreSQL contention evidence
+        run: >-
+          pytest -vv -o addopts=''
+          tests/test_personal_command_runtime_postgres.py
+          tests/test_personal_command_grants_postgres.py
       - name: Alpha delivery-free release rehearsal
         run: >-
           pytest
