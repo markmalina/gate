@@ -1,8 +1,12 @@
-# MTProto RU: пересмотренное техническое задание и спринты v2
+# MTProto RU: техническое задание и план выпуска v3
 
-Дата исследования: 11 октября 2026, Europe/Minsk. Каноническая задача: [Gate #696](https://github.com/AlphaCenter/gate/issues/696). Документационный PR: [#759](https://github.com/AlphaCenter/gate/pull/759).
+Актуализация: 12 октября 2026, Europe/Minsk. Каноническая задача: [Gate #696](https://github.com/AlphaCenter/gate/issues/696). Документационный [PR #759](https://github.com/AlphaCenter/gate/pull/759) переиспользуется.
 
-Статус: проектное решение после независимой ревизии; не реализованный и не принятый production. Документ заменяет прежний S0–S9-план из commit d29e73d199ed3c680912b42fa707f06959888c0d. Сравнение открытых проектов и доказательства — [MTPROTO_RU_OSS_REVIEW.md](MTPROTO_RU_OSS_REVIEW.md).
+Статус: **актуализированный план α; runtime и продукт не приняты**. Это поручение на ревизию ТЗ, а не запуск реализации или формальный независимый Delta ACCEPT. V3 уточняет v2 на основании текущего main, исходников и проверок PR #761, свежего scoped Gate status и смежных Gate/Ops-контрактов. История v2 сохраняется в commit `50792e3db48ee26084f6eeb839a5661b34ac16c4`; S0–S9 — в `d29e73d199ed3c680912b42fa707f06959888c0d`.
+
+Начать чтение с [ревизии и реестра находок](MTPROTO_RU_REVIEW_2026-10-12.md), затем с §11 этого ТЗ. [OSS review](MTPROTO_RU_OSS_REVIEW.md) остаётся датированным исследованием 11.10, а не свежей проверкой каждой библиотеки.
+
+Изменение v3: не повторять пройденные session/SQL proofs; разделить V0 на небольшие пакеты; обеспечить надёжность worker и сверку UNKNOWN; доказать привязку клиента/полномочий и реальную Work-поверхность; отдельно подключить runtime, первую отправку и выбранное чтение. Полный C01–C23 scope сохраняется. Файлы исследуются рано, но их отдельный frontend blocker не останавливает текстовый первый выпуск.
 
 ## 1. Решение
 
@@ -16,24 +20,33 @@
 
 Базовый режим — команды владельца. Непрерывное наблюдение, полный индекс и автоматические ответы от нового MTProto маршрута не включаются. Windows и Telegram Web для ежедневной работы не нужны. Разовый вход делается на защищённой поверхности Gate с обычным приложением Telegram, только если действующая сессия не найдена.
 
-## 2. Проверенная исходная точка
+## 2. Проверенная исходная точка на 12.10.2026
 
-| Предмет | Проверенный факт | Что это не доказывает |
+| Предмет | Прочитанный источник / факт | Практическая граница |
 | --- | --- | --- |
-| Gate main | 461088d68d047e4cd08c7a4f581300d591af241e | Наличие этого кода в production |
-| Production status, 11.10.2026 около 18:23 Минск | commit afe0c6b85193; personal runtime_connected=false; send/create_group=false; local_session_not_bound | Отсутствие API application или RU session в защищённой конфигурации |
-| PR #756 | Cloud session foundation merged; source tests/CI успешны по опубликованному receipt | Enrollment, работающий worker, новые Work tools или live Telegram |
-| Существующая библиотека | Telethon==1.44.0 в personal-telegram и contact-sync extras | Поддержку новых методов из документации более нового TL layer |
-| Текущий каталог MCP | Есть Business replies/documents, status и другие Gate инструменты | Полный пользовательский Telegram API |
-| Наличие RU app/session | Не установлено защищённой target-specific inspection | Нельзя просить создать приложение/войти заново по догадке |
+| Gate main | `461088d68d047e4cd08c7a4f581300d591af241e` | Не равен развёрнутой ревизии |
+| Scoped Gate status, 12.10 около 08:13 Минск | production `afe0c6b85193`; personal runtime_connected=false, send/create_group=false, configured/authenticated=null, local_session_not_bound | Это метаданные текущего API; не inspection защищённых RU credentials и не свежий Telegram probe |
+| Каталог того же статуса | Existing Business/status tools; личного MTProto маршрута нет | OAuth существующих tools не доказывает новые scopes, discovery, jobs или файлы |
+| PR #756 | Cloud source установлен в main | Source custody contract не означает найденную/валидную RU session |
+| PR #759 | Draft/open; v2 head `50792e3db48ee26084f6eeb839a5661b34ac16c4` | Документация, не implementation |
+| PR #761 | Open/unmerged; head `3955eb0539c1b30bd0816a958ffc7127f768fcb3`; 14 файлов | Staged source foundation; callable MCP, entrypoint, active migration, login и dispatcher отсутствуют |
+| CI #761 | [run38175506026](https://github.com/AlphaCenter/gate/actions/runs/38175506026), exact-head SUCCESS; logs: 2943 passed, 1 skipped, 12 subtests; Ruff/Mypy314 PASS | 25 новых provider-free и 4 PostgreSQL contention cases не являются live/session/Business parity/Work acceptance |
+| Telethon | 1.44.0 закреплён в обоих extras и constraints/runtime.txt | Stable docs1.45 — справка, не доказательство совместимости pin1.44 |
+| Dockerfile main | Устанавливает `.[personal-telegram]` | Установка библиотеки больше не blocker; dedicated worker/run path ещё нет |
+| PR #747 / #745 | Open; head `9723382ba37fd3b3d15430d7e1ba436217d0d72b`; snapshot source/CI подготовлены | Не установлен в main/runtime; ревизии Business connection/chat не готовы как универсальный typed-peer guard |
+| PR #744 / #742 | Open; head `08c499b943b432ab1ceca78c2d6df6bba57174c1` | Stale base; media0115 и main watch0115 ветвятся от0114. Интеграция без согласования создаёт multi-head; не готовая зависимость V4 |
+| Ops main | `b2ca3677ec5f664d9ac0eca2359b4cbcceed605e` | Есть Gate-only deploy и отдельный Gate745 cutover source; ни один не является MTProto authority |
+| Последний execution #696 | [receipt6113926523](https://github.com/AlphaCenter/gate/issues/696#issuecomment-6113926523): bounded source package done, lease released | Непрерывный implementation worker не подтверждён; утренняя automation — report-only |
 
-Историческую цепочку переиспользовать: #263/PR264 — transport/intent/random_id; #269–271 — enrollment/custody; #279–282 — read contracts; PR697 — offline preflight; PR699 — реальный text sender; PR701 — PostgreSQL fence; PR702 — private supergroup; PR703 — auth probe; PR756 — cloud source/status.
+Наличие RU app/session остаётся неизвестным. `local_session_not_bound` при выключенном cloud flag задаётся статической веткой status: оно не доказывает отсутствия credentials. Scope результата — RU; общий status содержит соседние блоки, но их данные не используются и не копируются в доказательства MTProto.
 
-Нынешний sender уже правильно выставляет request_retries=0, connection_retries=0, auto_reconnect=False, flood_sleep_threshold=0. Это сохраняем. Проблема будущего постоянного worker — не потерять эти настройки и не спутать reconnect с безопасностью повтора.
+Историческая цепочка: #263/264 intent/random_id; #269–271 enrollment/custody; #279–282 read contracts; #697 preflight; #699 text sender; #701 draft-bound fence; #702 private group; #703 auth probe; #756 cloud source. Переиспользовать исходники после compatibility checks, без повторной авторизации или копирования чужой session.
+
+Параметры retry проверяются отдельно: старый sender request_retries=0, connection_retries=0, auto_reconnect=False, flood_sleep_threshold=0; новый worker connection_retries=1. Это явное отклонение, не доказанная duplicate send: перед выпуском закрепить ограниченный connect policy; mutation RPC retries остаются выключенными.
 
 ## 3. Ревизия прежнего плана
 
-| Находка | Изменение v2 |
+| Находка | Сохранённое решение v2/v3 |
 | --- | --- |
 | Верно выбраны RU-only, cloud, Telethon, один владелец сессии, standalone action, unknown | Сохраняются |
 | Собственный полный Session backend и checkpoints до первой команды | Заменены built-in StringSession и тонким сохранением encrypted auth/DC в PostgreSQL |
@@ -50,7 +63,7 @@
 
 ## 4. Что брать готовым
 
-Основной transport — Telethon 1.x. Для V0 рекомендуемый кандидат обновления: 1.45.0, опубликованный 10.09.2026, TL layer229; current Gate baseline1.44.0/layer227 остаётся до проверки. Обновлять оба extras одновременно, закрепить distribution hashes и compatibility evidence. Не ставить плавающий Codeberg HEAD/layer230 или v2 alpha.
+Основной transport — Telethon 1.x. Для первого выпуска **сохранить доказанный pin1.44.0/layer227**: его Session hooks и основной method inventory уже проверены в #761. Кандидат1.45.0/layer229 из исследования не является обязательной предварительной миграцией. Обновление выполнять отдельным compatibility пакетом только при конкретной недостающей функции/исправлении, закрепляя оба extras, constraints, distribution evidence и source/runtime compatibility. Не использовать floating HEAD или v2 alpha.
 
 TDLib — сильная резервная архитектура, если появится обоснованная необходимость полноценного offline client, непрерывной синхронизации или функций, которые Telethon не покрывает. Для текущего Python Gate переход добавляет native build, JSON bridge, отдельное управление БД/сессией и переписывание готового адаптера. Смена сейчас не обоснована.
 
@@ -98,7 +111,7 @@ QR login может временно требовать updateLoginToken/receive
 
 Тонкую обёртку проверить на реальной pinned версии: awaitable save/close/delete hooks; сериализация через StringSession.save(instance); изменения auth/DC; исключение временных media/DC clones из записи основной сессии; failure/cancel/crash. Нельзя вызывать asyncio.run внутри действующего loop или считать все Session методы строго синхронными: Telethon1.44 уже использует maybe_async в ряде hooks.
 
-Async Session support upstream помечен experimental. Поэтому adapter изолируется и закрепляется версией; compatibility suite обязательна перед обновлением Telethon. Provider-free эксперимент на 1.44 проверил save/reload, реальный auth-key callback, transient clone и failure propagation, но не PostgreSQL, настоящий DC migration или production restart. V0 превращает этот узкий результат в воспроизводимый контракт и повторяет его на выбранном pin.
+Async Session support upstream помечен experimental. Поэтому adapter изолируется и закрепляется версией; compatibility suite обязательна перед обновлением Telethon. Исторический provider-free эксперимент1.44 проверил callback/serialization/clone/failure. Теперь #761 содержит воспроизводимые tests actual Telethon hooks и отдельно четыре PostgreSQL contention checks. Их не повторять как несуществующие; объединённый Session→PG reload/new process, настоящий DC migration и production restart ещё требуют evidence.
 
 Это не новая реализация криптографии, протокола или session cache. Если потребуется непрерывный ingest, добавить отдельное ADR: полноценный стандартный SQLiteSession на защищённом persistent volume либо доказанный совместимый adapter, вместе с update recovery. Не выдавать StringSession-only за такой режим.
 
@@ -108,7 +121,7 @@ Async Session support upstream помечен experimental. Поэтому adapt
 
 Основной durable объект: encrypted session bundle в Gate PostgreSQL; encryption key только в защищённой конфигурации worker. В bundle допустимы необходимые app credentials и auth/DC, если они не остаются в worker-only protected environment. Нельзя хранить encryption key рядом с ciphertext в БД.
 
-Существующий cloud source #756 — источник импорта, а не второй активный session owner. Импорт атомарно связывает expected RU account, app, owner, session generation, key version и checksum. Wrong owner не исправляется автоматической перепривязкой.
+Существующий cloud source #756 — источник импорта, а не второй активный session owner. Импорт атомарно связывает expected RU account, app, owner, session generation, key version и checksum. Старые CLIs/auth-check/contact-sync/enrollment не получают права открыть тот же primary auth key мимо ownership; до импорта доказать их остановку либо запрет соответствующего пути. Вход, временный probe и постоянный worker — один эксклюзивный lifecycle. Wrong owner не исправляется автоматической перепривязкой.
 
 Web setup удостоверяет владельца через существующий IdP, использует short-lived server-side session, state/nonce/PKCE, CSRF/origin checks, fixed redirect allowlist, Secure/HttpOnly cookie. Общий admin bearer не попадает в страницу или URL. Login code/2FA password не сохраняются, не передаются AI и не попадают в analytics, traces или request logs. API hash не возвращается после ввода.
 
@@ -130,6 +143,8 @@ Web setup удостоверяет владельца через существ�
 | MessageIdentity/Observation | workspace + owner Account + typed peer + provider message ID; source refs Business/RPC/history; revisions/tombstone, optional legacy/canonical links |
 | MediaObject | С V4: operation/account/source message, private object ref, actual size/hash/MIME, expiry, transfer state |
 
+Staged модели #761 — отправная точка, не законченная active schema. До activation добавить durable grant/client binding/revocation, provider-owner pin, worker instance/boot/source/session generation, payload key version и receipt reconciliation evidence. Не привязывать идентичность Telegram к Business connection; `self`/Saved Messages нормализовать в физический `user:<actual_owner_id>`, сохраняя presentation kind отдельно. Grant и opaque refs выдает сервер, не DTO клиента.
+
 Очередь и operation journal — один durable lifecycle, не две независимые копии статуса. Operation может существовать до Dialog/Conversation/ReplyDraft. Для первой отправки не создавать фиктивного входящего, бота или reply task.
 
 Legacy Message.bot_id не превращать массово в nullable. Общая identity mapping присоединяет существующие canonical/legacy записи; personal result может существовать самостоятельно. Не выполнять полный historical backfill RU/BY для запуска выбранного RU маршрута.
@@ -142,7 +157,7 @@ Business connection ID — маршрут/поколение соединени�
 
 Для Business updates используется пространство message IDs подключённого пользователя, поэтому связь с MTProto допустима по account/peer/message ID. Совпавший текст, время или название — не доказательство одной операции.
 
-Текущая canonical модель не включает account в Dialog/CanonicalMessage uniqueness. Простое добавление нового connector создаст два представления; использование старого connector без account binding может смешать аккаунты. Поэтому v2 использует additive identity/observation mapping и scoped read facade. Полная перестройка canonical storage не является prerequisite.
+Текущая canonical модель не включает account в Dialog/CanonicalMessage uniqueness. Простое добавление нового connector создаст два представления; использование старого connector без account binding может смешать аккаунты. Поэтому v3 сохраняет additive identity/observation mapping и scoped read facade. Полная перестройка canonical storage не является prerequisite.
 
 ### 6.2 Admission всех отправителей
 
@@ -245,6 +260,12 @@ Telethon transport reconnect может повторно поставить pend
 
 Один mutation одновременно на RU peer; первоначально один общий mutation executor на RU с малым ограниченным параллелизмом safe reads/media. Rate limits берутся из реальных RPC ответов, а не из обещания фиксированных «N сообщений в секунду». Дедлайны/срок grant ограничивают суммарное ожидание. Повторные ошибки session/protocol переводят worker в pause.
 
+Подтверждение результата и полномочие на отправку различаются. Текущий `finish()` #761 требует живой старый lease: после expiry/смены owner поздний ACK записать через него нельзя. Нужен отдельный идемпотентный `record_receipt/reconcile_attempt`: exact operation+attempt+binding+session generation+provider identity и authentic receipt proof, без нового provider effect; конфликт receipts не разрешается перезаписью. Разрешение на новые действия при этом проверяется независимо.
+
+Нельзя назвать один SQL `claim` доказательством начала provider I/O. Различать reservation, dispatch boundary, confirmed rejection/no effect и ambiguous effect. Первый текстовый выпуск не делает автоматических повторов mutation, включая FloodWait; сообщает retry_after и существующий receipt. Расширенный safe retry позже требует отдельных attempt rules, поскольку текущая staged schema разрешает один attempt на operation.
+
+Worker/БД: локальные deadlines для acquisition/heartbeat/CAS/claim/finish и pool/lock/statement waits; отмена не доказывает rollback commit. Зависший renewal после startup должен прервать readiness и привести к bounded disconnect, сохраняя latch при неподтверждённой остановке. Poisoned payload/key/corrupted head-of-queue изолируется как integrity blocker без provider attempt и без удаления доказательств; другие допустимые peers не должны вечно голодать.
+
 Журнал обязателен, но expired lease не доказывает смерть процесса: новый owner ждёт подтверждённый drain/termination. После него можно обслуживать независимые peers; исторический unknown сохраняет карантин действия/peer, а не автоматически всего аккаунта. Новый worker не получает право повторить неизвестную попытку.
 
 Native scheduled send — уже поручение Telegram выполнить будущий effect. Локальная отмена job после scheduling и отзыв Gate grant сами не удаляют его на сервере Telegram; отдельная cancel-scheduled operation должна подтвердить remote cancellation.
@@ -264,6 +285,16 @@ Read-state — отдельный явно описанный effect. getHistory
 Минимизация: сохранять нужные peer pins/operation facts, не зеркалировать весь аккаунт. Предлагаемые ограничения пилота: provider page≤100, Work response≤50 сообщений и отдельный byte/token cap; batch budgets всегда явны. Временный content/media cache — до24ч только при необходимости, redacted receipts90дней; unresolved/idempotency evidence хранить по отдельной политике. Это проектные defaults, не изменение действующего retention Gate и не обещание удалить уже показанные данные из Work.
 
 Telegram API Terms и Content Licensing содержат широкие ограничения AI-use и контекстные условия возможных исключений; документация Business одновременно прямо упоминает AI assistants. Из этих текстов нельзя самостоятельно вывести ни безусловное разрешение любого owner assistant, ни запрет всей интеграции. До live AI-read зафиксировать конкретный допустимый режим/контекст. Согласие владельца аккаунта не заменяет права других авторов; synthetic fixtures вне платформы не блокируются. Для channel content отдельно учесть sponsored-message требования. Ответственность за проверку применимости остаётся у исполнителя/владельца продукта, а не у произвольного checkbox «согласен».
+
+### 9.1 Контекст, наблюдаемость и допустимая передача AI
+
+Для live AI-read запись основания содержит выбранный RU peer/context window, purpose, перечень разрешённых источников/участников, применимые согласия, срок/отзыв и retention. Одного OAuth владельца либо публичности чата недостаточно для объявления соответствия Telegram AI terms. [API Terms §1.5](https://core.telegram.org/api/terms) и [Content Licensing, AI](https://telegram.org/tos/content-licensing) прочитаны 12.10: документированное исключение требует явного, информированного и продолжающегося согласия всех относящихся пользователей в конкретном ограниченном контексте. Это platform constraint, не заключение о законности любой имеющейся переписки. Начальные fixtures и собственный synthetic контент не требуют чтения случайных чужих данных.
+
+Метаданные поиска не должны автоматически включать snippets/последние сообщения недопущенных чатов. Grants metadata discovery и content read различаются. Для channel view проверить применимость sponsored-messages требования API Terms§3.3 до заявления полноценной поддержки каналов.
+
+Command-driven receive_updates=False не даёт полной живой картины личного Telegram. Snapshot фиксирует наблюдаемый Gate frontier и coverage, а не обещает отсутствие любого ещё недоставленного Telegram события. Контекстный reply требует source/read_ref+expected revision и общего final admission; unsupported/unobserved context fail closed с конкретной причиной. Самостоятельный точный текст без прежнего inbound остаётся отдельным явно разрешённым action; его нельзя использовать для автоматического обхода отклонённого stale reply. Сохранить честную границу #745: принятые Gate до dispatch изменения блокируют старый ответ; событие, ещё не поступившее Gate, не считается наблюдаемым.
+
+Read-state policy объявляется до чтения; pure fetch не маскирует mark-read/mark-unread и не рекламируется как ghost mode. Мутация read state требует собственного разрешения и общего guard.
 
 ## 10. Конечный каталог обязательного выпуска
 
@@ -297,134 +328,91 @@ Telegram API Terms и Content Licensing содержат широкие огра
 
 Обязательная медиа-приёмка: document byte-for-byte; photo/video/voice — правильные native semantics/attributes и проверенная передача, с учётом разрешённой преобразующей обработки. Нельзя обещать одинаковый hash оригинала и Telegram-compressed photo. Transcription/AI analysis — отдельный существующий model route с его pinned policy, не новый поставщик в MTProto worker.
 
-Не включены в v2: Secret Chats, звонки, Stories/live streams, платежи/Stars/paid reactions, полный экспорт аккаунта, смена телефона/2FA, удаление аккаунта, mass-invite/broadcast campaigns, произвольный bot callback/raw RPC. Video notes/GIF/contact/location cards/block-unblock и новые Telegram features получают explicit backlog/unsupported status, пока не включены отдельной ревизией. Это не отменяет обязательные строки таблицы.
+Не включены в v3: Secret Chats, звонки, Stories/live streams, платежи/Stars/paid reactions, полный экспорт аккаунта, смена телефона/2FA, удаление аккаунта, mass-invite/broadcast campaigns, произвольный bot callback/raw RPC. Video notes/GIF/contact/location cards/block-unblock и новые Telegram features получают explicit backlog/unsupported status, пока не включены отдельной ревизией. Это не отменяет обязательные строки таблицы.
 
 Первое исходящее возможно только в пределах privacy/anti-spam/прав получателя; API не гарантирует доставку любому человеку. Платные сообщения/join не включают allow_paid_stars или paid floodskip автоматически.
 
-## 11. Пересобранные спринты V0–V7
+## 11. План исполнения v3: небольшие пакеты и продуктовые рубежи
 
-Нумерация V отделяет новое ТЗ от старого S-плана. Это результаты, не обещания недель. Каждый функциональный этап включает backend, scopes/schema, зарегистрированный Work tool, tests и реальный user flow. Надёжность внедряется до живого effect.
+V0–V7 — функциональные этапы. Пакеты ниже — ограниченные проверяемые результаты, а не календарные недели. Код, CI, merge, runtime и Work имеют разные evidence states. На каждом выпуске проверяются source/schema/config, admission/replay, restart/rollback и фактический каталог Work.
 
-### V0 — Закрыть неизвестные интерфейсы до большой разработки
+### 11.1 Состояние и минимальные рубежи
 
-Зависимость: эта ревизия. Исследовательский документ и узкий provider-free Session experiment подготовлены; полный набор исполняемых proofs V0 ещё не выполнен.
-
-- Зафиксировать capability records C01–C23, decisions и method/layer inventory.
-- Проверить Telethon1.44→1.45 adapter compatibility, digest distributions; выбрать окончательный pin.
-- Provider-free proof session save/reload/DC/clone/failure; no update-mirror.
-- Synthetic Work discovery/auth/delegation preview/job/result и file upload/download spike, включая текущий Android/front.
-- Зафиксировать все Business RU writers/admission и echo race fixtures.
-- Подготовить reviewed Gate-owned MTProto inspect/configure/enroll/worker/migrate/drain/rollback contract, cost proposal и schema.
-- Не заменять отсутствующий Ops контракт provider UI или Gate745 credentials.
-
-Выход: executable contracts/proofs и понятный первый deploy package. Приёмка: каждый неопределённый интерфейс имеет подтверждённый путь либо конкретный blocker; нет выдуманного user-intent proof. От Марка сейчас ничего не требуется.
-
-### V1 — Подключить устойчивый RU command runtime
-
-Зависимость: V0 contracts; synthetic работа не ждёт login.
-
-- Additive binding/session/lease/operation/attempt/delegation schema и worker CLI.
-- Protected redacted inspection; импорт подходящей существующей RU session, иначе готовый owner login.
-- Реальная проверка владельца, encrypted persistence, restart, single owner, stale lease/drain и redacted status.
-- Minimal Work status/job/cancel; permission controls.
-- Exact approved source/config/schema deployment и rollback без потери журнала.
-
-Приёмка: тот же RU после restart; второй worker не подключается; key/missing/revoked/wrong-owner/DB loss различаются; optional MTProto не ломает Business/API health. Конкретные новые расходы показаны до provisioning.
-От Марка: условно login/2FA/app parameters через setup, только если действительно не найдены; решение по конкретной новой стоимости, если она есть.
-
-### V2 — Первое личное исходящее с Business совместимостью
-
-Зависимость: V1 + minimal resolver. Не зависит от полного V3, AI-read чужой переписки или large media.
-
-- Standalone immutable plain-text command, exact RU/user/Saved Messages peer pin.
-- Общая reservation/logical-action key и coverage всех активных RU Business writers.
-- Historical unknown bridge, connection rotation, per-peer ownership/snapshot admission.
-- ACK/echo identity reconciliation и причинное закрытие только covered tasks.
-- Typed errors, same operation replay, actual sent receipt; no implicit fallback.
-- Work prepare/execute/result и optional exact reconciliation после доказанного provider contract.
-
-Приёмка: первый исходящий без inbound/task, один фактический effect выбранному target; T05–T15 и T28 ниже проходят до первого live-send; второй транспорт не создаёт вторую попытку. Новая команда с тем же текстом не подавляется навсегда.
-От Марка: точный recipient/text для живого внешнего теста, если не были заданы; сначала собственные disposable test objects в принятом режиме.
-
-### V3 — Найти группу и прочитать выбранное
-
-Зависимость: V1/resolver; разработка возможна параллельно V2. Выпуск не включает отправку или управление сообщениями. Явно авторизованный read-state effect допускается через тот же operation journal и mutation admission; чтение не маскирует mark-read/mark-unread как отсутствие изменений.
-
-- Свои dialogs/public resolve/invite preview, disambiguation.
-- Bounded history/search/threads, cursors, доступный диапазон и partial_reason.
-- On-demand personal read facade, без создания Business задач и global ingest.
-- Read-state и permitted AI content path; typed read tools реально видны в Work.
-
-Приёмка: выбранная группа/период, несколько страниц с устойчивой границей, ссылки/ref и даты; недоступные данные названы; истёкший/другой peer/account cursor отвергнут. После V2+V3 оба первоначальных сценария работают.
-От Марка: конкретный чат и период перед live-read, если не известны. Применимость условий AI-use должна быть установлена для этого контекста.
-
-### V4 — Форматирование и файлы
-
-Зависимость: V2/V3 interfaces и ранний file spike.
-
-- Переиспользовать Gate text compiler, Unicode/entity validation; адаптировать Bot API entities к MTProto.
-- Reply/quote/topic, immutable chunk plan с отдельным receipt каждого фрагмента.
-- Private staging и независимые от ReplyTask медиа операции; streaming, limits, MIME/hash, TTL.
-- Telethon upload/download, native photo/video/audio/voice/albums; expired file_reference refresh только в том же grant.
-- Upload file parts отделены от единственного разрешённого final send; partial album receipts сохраняются.
-- Практический baseline8MiB использует текущие ограничения Gate; расширение размера требует доказанного transport/storage и стоимости, не догадки по максимуму Telegram.
-
-Приёмка: файл действительно прикрепляется/скачивается из Work; документы сохраняют bytes/hash, медиа корректный тип/caption/order; разрыв upload не вызывает повтор final send. Без публичных секретных ссылок и unbounded base64.
-От Марка: optional типичные размеры файлов; при новом ресурсе конкретный budget choice.
-
-### V5 — Управлять выбранными сообщениями
-
-Зависимость: V2 operation core; media-specific функции после V4.
-
-- Edit/forward/delete с expected revision и explicit revoke scope.
-- Reactions/pins/stickers/polls, native scheduled send/list/cancel.
-- Методы без provider idempotency имеют отдельную retry/reconcile policy.
-- Schedule не называется sent; cancel подтверждается отдельно.
-
-Приёмка: disposable выбранные сообщения, конфликт revision/rights, protected forwarding rejection, scheduled/cancel truth, unknown без второго эффекта; отсутствие paid side effects.
-От Марка: только недостающий scope для конкретных тестовых объектов/действий за пределами делегирования.
-
-### V6 — Группы, контакты и организация
-
-Зависимость: V1–V3 command/peer contracts; отдельные семьи можно готовить параллельно V4/V5.
-
-- Перенести готовый private-group executor/journal в cloud operation core.
-- Channel/group settings, selected invitations/admin/join requests/invite links; existing/new forum topics.
-- Contacts selected operations через того же owner; отдельный contact-sync не открывает ту же RU session.
-- Folders/archive/drafts/mute/read states с effect previews.
-- Одно создание private group не подразумевает приглашения или публикацию.
-
-Приёмка: private/creator/rights доказаны; неизвестное создание не повторяется; участники меняются только по выбранному действию; контакты не импортируются при обычном поиске.
-От Марка: имя тестовой группы и конкретные участники лишь для проверки соответствующих действий.
-
-### V7 — Полная приёмка и эксплуатация
-
-Зависимость: mandatory capabilities V1–V6; не первый момент публикации tools или recovery.
-
-- Завершить evidence matrix C01–C23: code/tests/deployed runtime/actual Work.
-- Compound commands через typed tools, limits, partial success, progress/cancel и injection tests.
-- Проверить old/new Work, refresh scopes/catalog, mobile file/result display.
-- Crash/restart/drain, backup restore, key/session revoke, rollback, journal retention, resource caps и измеренная стоимость.
-- Исправить user-facing descriptions, runbook и короткую инструкцию восстановления.
-- Устранить missing mandatory evidence до закрытия #696.
-
-Приёмка владельцем — на конкретных выполненных сценариях; CI/merge сами по себе не закрывают задачу. Если внешнее ограничение делает обязательную функцию недоступной, явно согласовать изменение каталога, а не молча объявить полный выпуск.
-
-### Связь со старым S0–S9
-
-| Старый | Куда перенесён | Причина |
+| Рубеж | Результат для Марка | Состояние 12.10 |
 | --- | --- | --- |
-| S0 | Эта ревизия + executable V0 | Исследование не заменяет proofs |
-| S1 + S2 | V0 contracts + V1 runtime | Убрать круговую зависимость persistence/login |
-| S3 | V3; minimal resolver раньше в V2 | First send не ждёт всей истории |
-| S4 | V2 + rich/replies V4 | Раньше получить исходный результат |
-| S5 | V0 file spike + V4 | Найти frontend blocker заранее |
-| S6 | V5 | Независимые typed message mutations |
-| S7 | V6 | Переиспользовать group/contact foundation |
-| S8 | В каждом V + итог V7 | MCP не откладывается в конец; без нового orchestration engine |
-| S9 | В каждом live release + V7 | Надёжность обязательна с первой отправки |
+| M0 | RU подключён в облаке, подтверждён owner; честный статус в Work, restart/recovery | Не достигнут |
+| M1 | Из Work отправлен один точный standalone текст без inbound/ReplyDraft; receipt, replay без второго эффекта | Не достигнут |
+| M2 | Из Work найден допустимый чат и прочитан выбранный диапазон с источниками/полнотой | Не достигнут |
+| M3 | Из Work реально передан и получен выбранный файл в объявленном лимите | Не достигнут |
+| Full | Все обязательные C01–C23 и T01–T38 имеют source/test/runtime/Work evidence или явно принятую scope revision | Не достигнут |
 
-Критический путь: V0 → V1 → V2/V3 → V4/V5/V6 → V7. Параллельная подготовка допустима на раздельных файлах/контрактах; одна RU session всё равно имеет одного владельца. Срок оценивается после V0 по доказанным blockers и bounded PR packages. Число спринтов не переводится автоматически в недели.
+Путь к M1: V0-B + V0-C + V1-S/V1-A + V2-S/V2-A. V0-D file spike проводится рано, но file-only blocker задерживает M3, не M0/M1. V3 можно готовить рядом с V2 после общего scope/worker/resolver; content live gate относится к M2, а не автоматически к standalone send. Полный V4–V6 не нужен для первого текста.
+
+### 11.2 Пакеты V0: закончить неизвестные границы
+
+| Пакет / владелец | Реальное состояние | Следующий результат | Приёмка / blocker |
+| --- | --- | --- | --- |
+| V0-A Session/SQL foundation · α Gate / исполнитель Gate | #761 source+CI подготовлены; unmerged, частично | Сверить exact head, findingsF01–F09 и release-safe subset; сохранить полезные 29 новых проверок | Нет повторного исследования с нуля; CI не означает activation |
+| V0-B Work/auth/jobs boundary · Gate | Не реализован | Durable grant/client namespace, typed refs/payload/result/status/cancel, metadata/scopes и synthetic tools | Клиент/issuer/audience/account/context containment, revoke/expiry, stable request-key на host retry; actual new-session Work discovery перед live |
+| V0-C Minimal Ops package · α Gate → α Ops | [Предложение #761](https://github.com/AlphaCenter/gate/blob/3955eb0539c1b30bd0816a958ffc7127f768fcb3/docs/specs/MTPROTO_RU_RUNTIME_ACTIVATION_CONTRACT.md), не accepted | Сначала bounded inspect/inventory и known-owner termination contract; затем отдельно migrate/deploy-disabled/import/verify/rollback | Reviewed Gate-owned operations, target/cost/fleet/custody/source binding и durable receipts; существующий Gate745 profile не переименовывается в MTProto grant |
+| V0-D Work files · Gate | Есть task-bound base64 bridge; personal roundtrip не доказан | Один synthetic файл: получить bytes из текущего Work и вернуть private download | Actual Android/current front byte hash, MIME/limit/TTL; конкретный host путь, не assumption local path. Отдельный blocker не задерживает M1 |
+| V0-E Writers/identity · Gate | 42 AST candidates/31 files; guard отсутствует | Reachability table всех RU sink paths, journals, canonical peer/identity и tests ACK/echo | Dynamic HTTP/raw RPC/CLIs включены; каждому reachable writer общий guard либо доказанный deny; dead/frozen classification с source evidence |
+| V0-F Integration/release plan · Gate | #747/#744/#720 separate unmerged candidates | Pin актуальных dependencies, порядок migration/metadata/source integration и LKG | Не применять вместе stale0115/0116 по номеру; один Alembic head, compatible rollback, no AQUB |
+
+V0-B/E, source части V1-S/V2-S и подготовка V3 не ждут provider provisioning/login. Protected Ops work выполняет только accepted самостоятельный executor в своём домене. В этой ревизии handoff подготовлен в [аудите §7](MTPROTO_RU_REVIEW_2026-10-12.md#7-пакет-для-передачи-ops); доставка/принятие не заявляются.
+
+### 11.3 V1 — устойчивый RU runtime
+
+**V1-S source integration.** Доработать #761 с explicit deadlines и cancellation, связыванием process/source/schema/session owner, key-version retention/rotation, canonical self alias, poison-command handling, late receipt reconciliation. Добавить dedicated CLI/image/start command и active additive migration по текущему Alembic head. Worker не запускается из каждой ASGI replica; web не получает auth key. Protected setup/status UI uses existing IdP; no raw secrets/OTP in MCP/logs.
+
+Приёмка source: PG real interleavings с reload/restart и foreign refs; hung heartbeat after READY/DB commit ambiguity; expired/revoked owner; poison queue; updated metadata. Initial implementation can remain default-off while Ops dependency закрывается. FakeClient restart не обозначается живым restart.
+
+**V1-A protected activation, M0.** Reviewed Ops сначала inspect существующих RU app/session; offline import if eligible, иначе подготовленный login/code/2FA на owner surface. Доказать остановку всех прежних main auth-key users, bound backup/schema migration, deploy worker disabled; затем bounded verify actual RU owner и persistence/restart. Health contains observed_at, stale TTL, exact source/config/schema/session generation, ownership state и причины ошибок. API health отделено от personal capability readiness.
+
+Приёмка: из Work новый status tool; тот же owner после restart; second main owner не создаётся; controlled stop/DB failure/recovery, exact deployed fingerprints и rollback receipt. No history/send in M0 probe. Human action только для действительно отсутствующей session/secret или конкретного нового расхода. Повторное создание API application не требуется по предположению.
+
+### 11.4 V2 — первое исходящее
+
+**V2-S source.** Минимальный server-issued resolver и immutable plain text command; common RU peer admission для Business/MTProto; journals reserved/sending/unknown bridge, connection rotation и self/user normalization. ACK→echo/echo→ACK/replay дают один provider message identity; только covered task IDs могут закрываться. Late proof accepted после смены worker без нового send. Contextual replies сохраняют §9.1/#745; exact standalone action не требует fake ReplyTask.
+
+Переиспользовать #747 guard через явно проверенный адаптер к account+typed-peer model; не просто скопировать connection/chat keys. Если #747 release удерживается своим fixture dependency, допускается отдельный совместимый default-off source adapter для MTProto с полной regression evidence; это не takeover #745 и не основание ослабить его guard.
+
+**V2-A M1.** Перед live — T01–T16,T28–T34,T36 и all-writer closure, Work new tool/OAuth proof, accepted runtime+scope. Сначала exact owner-approved self/disposable text с cap1; затем выбранный recipient/text только в уже данном exact scope. Квитанция Telegram API означает подтверждённое создание сообщения, не прочтение человеком. Execute/host timeout/status/replay не создают второй attempt. Честные privacy/rights/FloodWait/errors; no paid Stars flags и no Business→MT hidden fallback.
+
+Mutation dispatcher не включается при неизвестном writer или unresolved conflict. Unrelated read/metadata/source packages продолжаются.
+
+### 11.5 V3 — выбранное чтение, M2
+
+V3-S готовит bounded metadata resolution, server-scoped cursor, selected history/search/thread; limits/count/bytes/time, continuation, source IDs/dates, partial_reason/coverage. StringSession не является durable peer cache: account-specific access_hash хранится в защищённом разрешённом facade либо заново разрешается безопасным методом. Первый исходящий требует лишь минимального resolver.
+
+V3-A требует selected RU chat/window/purpose/retention и допустимого AI context (§9.1), показывает real content только этого контекста. New Work sees tools/results/cursors. Unavailable/private/protected/deleted data явно обозначены. Metadata search не выгружает все последние сообщения; никакого global mirror или Business reply task по прочитанной истории. M2 не зависит от V4/admin; read-state mutation зависит от shared mutation guard.
+
+### 11.6 V4 — текстовые ответы, форматирование и файлы, M3
+
+Пакеты V4-T: entities/Unicode/replies/quotes/topic/chunks; V4-D: document upload/download; V4-M: native photo/video/audio/voice/albums. Каждый immutable chunk/album part имеет planned identity и receipt; upload part повтор и final send повтор имеют разные правила. Pinned file_reference refresh остаётся в исходном grant.
+
+Начальный лимит документа —8MiB как product cap Gate, не Telegram platform maximum. Host file schema проверяется по [OpenAI reference](https://developers.openai.com/plugins/reference): fileParams, download_url/file_id обязательны, mime_type/file_name объявлены optional; private URL validation, redirect/DNS/size/checksum/TTL/SSRF controls и no token/URL logs. Если native host transport недоступен, использовать только доказанный безопасный bridge; не объявлять передачу local path на remote server.
+
+Приёмка M3: файл доступен человеку в текущем Work. Document bytes/hash совпадают; Telegram-compressed native photo не обязана совпадать с original hash. Media744 reuse после свежей integration/guard/migration/source acceptance; не блокировать personal document path на stale media package. Transcription/AI uses existing model policy; MTProto не добавляет LLM.
+
+### 11.7 V5–V6 — управление и организация
+
+V5: selected edit/delete/forward, reactions/pins/stickers/polls, native schedule/list/cancel. Для каждого effect отдельные rights/revision/unknown/reconciliation правила; local job cancel/revoke не отменяют уже native scheduled send. Одно remote cancellation proof требуется для обещания отмены.
+
+V6: private group/channel/settings/participants/invite/topic, selected contacts, folders/archive/drafts/mute/read state. Одно создание не разрешает приглашения/публикацию; create UNKNOWN не повторять. Contact sync только через тот же session owner, no separate parallel RU auth key use. Нет mass invites, payments или global address-book ingestion.
+
+### 11.8 V7 — полная продуктовая приёмка
+
+Matrix C01–C23 / T01–T38 с exact code/tests/deployed revision/Work evidence и freshness. Capabilities не становятся supported по числу TL constructors. Partial and unsupported visible; обязательный scope уменьшает только явно принятое решение владельца. Эксплуатация: real restore/rotation/drain/rollback, journal/unknown retention, actual file handling, revoke/cancel, cost/backpressure и user acceptance. #696 открыт до Full.
+
+### 11.9 Движение при блокере и интеграционный порядок
+
+1. Разработка следует текущему #696 execution/lease и existing PR, без duplicate worker/branch/issue. #761 исправляется его исполнителем; #759 — документы.
+2. Source review → exact-head CI → release gate; ни один шаг не выдаёт runtime proof. Docs v3 не даёт formal Delta ACCEPT и не переносит acceptance старого head.
+3. Перед merge перечитать main/active migrations/PR/owner-only evidence/LKG; до защищённых effects использовать точный принятый Ops contract. Текущий owner task — планирование, merge/deploy не выполняются.
+4. Если blocked только Ops, files, consent выбранного read context или login, отметить конкретный blocker/owner и продолжить независимый source package. Не считать waiting-dependency работающим background executor.
+5. Runtime freshness отдельно от lease: прекращение execution не означает остановку Telegram session; runtime stop не означает завершение продуктовой задачи.
+6. Estimate задаётся после bounded source+Ops inventory, с отдельными implementation и human/dependency waiting. Не выдавать спринты за недели и не обещать дату без resource evidence.
 
 ## 12. Матрица обязательной приёмки
 
@@ -458,6 +446,17 @@ Telegram API Terms и Content Licensing содержат широкие огра
 | T26 | Retention/log redaction/cost/load/backpressure | Проверенные TTL/caps/метрики, отсутствуют secrets/content leaks |
 | T27 | Все capabilities: source/runtime/Work | Ни один обязательный planned пункт не назван supported без evidence |
 | T28 | Concurrent prepare и timeout после commit до ответа | Same request key/binding возвращает ту же operation; changed binding даёт conflict; Work retry сохраняет key |
+| T29 | READY worker renewal завис/DB pool-lock wait; stop/SIGTERM/repeated cancel | Bounded loss of readiness/disconnect; uncertain cleanup latches owner; fake/source и настоящий process checks различаются |
+| T30 | Session saved → SQL reload/new process → Telegram owner probe | Actual Telethon hooks + PG persistence; real restart отдельным bounded proof, не FakeClient |
+| T31 | Late ACK/echo после lease expiry/owner restart | Exact old attempt receipt retained idempotently, conflicts blocked; no new dispatch |
+| T32 | Saved Messages/self и user(actual_owner) alias; peer IDs equal across kinds | Same physical self peer uses one quarantine/admission key; user/chat/channel numeric collision не сливается |
+| T33 | Forged DTO/client namespace, revoked grant между queue и I/O | Durable issuer/client/owner/context grant revalidated; caller fields не являются authority |
+| T34 | Poisoned payload/key/head-of-queue, expired reads, paused grants | No provider attempt for integrity failure; no silent deletion/retry; unrelated eligible peers make bounded progress |
+| T35 | Union main +747 +744 + runtime schema; populated data and rollback | One accepted Alembic head, no implicit rebase of deployed migrations; preserved journal/compatible binary |
+| T36 | Old CLI/contact-sync/auth-check/setup opens same primary session | Common ownership or denied path before connect; no overlapping enrollment/probe/runtime |
+| T37 | Key rotation/restore + pending UNKNOWN/expired grant | All required key versions retained/readable; receipts survive; restored grants not revived |
+| T38 | Actual new Work scopes/status/jobs/text/files, stale catalog | Versioned supported surface; file-only blocker separated; host retry binding and partial states visible |
+
 
 Tests используют fake transport, synthetic accounts и существующие PostgreSQL integration fixtures. Не писать сотни тестов, повторяющих implementation; проверять реальные boundary/race/failure invariants. Telegram test server допустим как отдельный явно разрешённый эксперимент, но не доказывает production privacy/Business parity и не должен использовать RU auth key.
 
@@ -480,7 +479,7 @@ Live checks сначала ограничены disposable собственны�
 
 ## 14. Release, стоимость и rollback
 
-- Проверить current Gate-only Operations contract. Basic ops-deploy #751 не разрешает новую custody/worker/migration; нужен отдельный reviewed target contract.
+- Проверить current Gate-only Operations contract. Basic ops-deploy #751 не разрешает новую custody/worker/migration; нужен отдельный reviewed target contract. В Ops main есть отдельный Gate745 cutover source/profile, но он привязан к #745/schema0116/fixed service; его PENDING/default-off release не даёт MTProto полномочий. Можно переиспользовать reviewed infrastructure primitives через accepted handoff, не его target/grant.
 - Один migration owner/phase. Нынешний railway.toml запускает alembic upgrade head перед deploy; worker service не должен запускать его второй раз неявно.
 - Enable stages: synthetic/disabled → protected auth/status → selected RU send/read → declared media/manage capabilities. Global enable-all отсутствует.
 - Release receipt: exact API/worker source/image, configuration version, schema head, old owner drain/termination, session generation, supported catalog, current checks.
@@ -522,5 +521,6 @@ Live checks сначала ограничены disposable собственны�
 11. Полномочия, prompt injection, paid effects, logs/retention/cost controls проверены.
 12. Пользовательская приёмка подтверждена конкретными результатами. До этого #696 открыт.
 
-Исследование не выполняло Telegram login/чтение/отправку, не меняло config/секреты/БД и не разворачивало production. Следующий практический пакет — V0 proofs/контракты и подготовка V1, а не немедленная live-активация всей матрицы.
+Эта актуализация прочитала source/PR/CI/контракты и scoped status, выполнила один provider-free probe exact worker body. Не выполняла Telegram login/историю/отправку, прямые provider inventory/secret/DB calls, production changes, merge/deploy или независимую приёмку.
 
+**Следующий implementation pointer:** V0-B durable Work/grant/job contract + V0-C minimal Ops handoff, с независимой V1-S доработкой source. Вопросов Марку для подготовки этих source-пакетов нет. Runtime activation и M1/M2 требуют конкретных уже описанных gates, а не повторного общего выбора архитектуры.
