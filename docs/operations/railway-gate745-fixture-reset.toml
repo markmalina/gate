@@ -1,0 +1,10 @@
+# SOURCE ONLY; separate fresh authenticated reset grant and quiescence required.
+# No ordinary app startup, predeploy migration, automatic retry or provider call.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+preDeployCommand = ""
+startCommand = "python -m app.worker.gate745_fixture_bootstrap reset"
+restartPolicyType = "NEVER"
