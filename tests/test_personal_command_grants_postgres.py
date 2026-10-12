@@ -13,7 +13,8 @@ from app.personal_telegram.grant_registry import RuntimeGrantRow
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
-from tests.test_personal_command_grants import NOW, PEER, make_runtime, require
+
+from test_personal_command_grants import NOW, PEER, make_runtime, require
 
 
 @pytest.fixture
