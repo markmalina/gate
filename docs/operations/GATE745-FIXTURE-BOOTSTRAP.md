@@ -1,5 +1,75 @@
 # Gate745 isolated synthetic bootstrap source
 
+## Preparation source contract — 12 October 2026
+
+The next preparation seam is implemented as two pure, disconnected modules:
+`gate745_fixture_identity` and `gate745_fixture_readiness`. They are **SOURCE
+foundations**, not the authenticated collector or a runnable allocation driver.
+They add no route, database connector, credential, provider adapter, deploy,
+resource creation/deletion, scheduler or enabling switch. `identity.run()`
+unconditionally denies with `E_FIXTURE_IDENTITY_UNBOUND` before inputs or effects.
+The existing H2/native protocol and its barriers remain unchanged.
+
+The identity recipe pins one SQL statement, one read-only connection/transaction/
+row/invocation, 5-second connect and statement ceilings, 10-second total ceiling,
+131072-byte request/response ceilings, and zero SQL connections from metadata GET.
+An authenticated durable one-use reservation must be consumed before connection;
+its adapter is absent and explicitly `null`. A future adapter requires its own
+bounded source change and independent review. This source does not implement
+process-local replay protection and mislabel it as durable reservation.
+
+`candidate_observation()` accepts only the closed four-field allocation tuple and
+the closed actual-query row shape, rejects known Production IDs in every tuple
+slot, mismatched database/port, null/noncanonical address and invalid PostgreSQL
+uint64 identity, and computes the exact existing H2 canonical physical digest.
+Its `UNAUTHENTICATED_CALLER_INPUT` discriminator, false effect authority and false
+launch authority prevent it being mistaken for `fixture-db-identity.json`.
+This pure result does not prove a DB read, SQL permission, original artifact,
+volume attachment, actor, signature or source/run/allocation provenance.
+
+`check_source_contract()` validates only the closed UNBOUND proposal protocol
+`gate745.fixture-preparation-source/v1`. It accounts for the maximum two Gate
+physical instances during handoff: at 500 milli-vCPU/512MiB each, Gate remains
+within 1vCPU/1024MiB; with one PG instance the project remains within
+2vCPU/2048MiB. Provider setters, units, effective limits and fleet observations
+are still unproven. Caller JSON cannot bind an allocation, grant, selector or
+invoice cap. Its result is `SOURCE_CONTRACT_CONSISTENT`, never native readiness.
+
+The proposal models a write deadline no later than original ARM+120minutes or
+the earlier owner write expiry, and a separate read-only observation deadline no
+later than ARM+72hours or the earlier owner read expiry. These are **proposed
+contract ceilings**, not approved lifecycle changes, fresh clock evidence,
+cleanup execution, renewed counters or a promised terminal purge time. The
+actual original ARM and all earlier expiries still require authenticated evidence.
+All preparation, overlap, retention, observer and egress cost categories must be
+included; billing authority remains `NOT_PROVEN`. Consistency grants no spend.
+
+### Closed order and evidence required before any physical preparation
+
+| Stage | Required evidence | Current boundary |
+|---|---|---|
+| Compatible source | Exact Gate/Ops/C0/H2 heads/trees, original checks and independent source receipts; compatible new schema/producer/readsets | Pure source foundations only; old readers must reject the new protocol |
+| Readiness | Supported caps-before-start, units, complete physical fleet, effective configuration, isolated variables and exact least-scope rights | NOT_PROVEN; no allocation or limits setter permitted |
+| Cleanup/lifecycle | Exact default-off cleanup source exception and independently accepted finite driver/observer contract | Proposed; current Ops delete prohibition remains unchanged |
+| Preparation grant | Exact closed graph, accepted pins, owner expiry/cost/cleanup authority; unknown IDs are not fabricated | Not issued by a source report |
+| Durable ARM | Authenticated cleanup driver and original one-use allocation lineage before first paid dispatch | No driver or original ARM receipt exists here |
+| Allocation | Original attributed resource IDs/results and proven caps, dedicated synthetic DB and first Hbootstrap | No resources allocated; no scan/name-based adoption |
+| Identity read | Distinct preparation audience/JTI, owner/run/source/allocation binding, private DB binding, original durable one-use reservation | No authenticated route/adapter; public effect entry UNBOUND |
+| Original identity artifact | Actual read counters/times/read-only fact, exact physical tuple/digest, source/run/owner/A0/allocation lineage; no secrets | Caller candidate is ineligible as this receipt |
+| Final B/native grant | Bind the actual original allocation/identity evidence without resetting helper/call/lifetime budgets | Original native acceptance remains pending |
+| Terminal reconciliation | Supported affirmative retained exact-ID authority; requested/queued deletion is not DELETED; storage cost accounted for | Separate proof and owner decision still needed |
+
+Production additionally requires accepted native evidence, actual protected
+autoDeploy=false, exact target/source/fleet/DB/locked-backup/cutover authority and
+connected client/live product acceptance. Passing this source checker, local
+tests, PostgreSQL CI, merge or deploy substitutes for none of those facts.
+
+The source unit tests use only synthetic rows and proposals. They prove digest
+compatibility, strict scope, bounded overlap/time/read/cost invariants and the
+absence of an enabling/effect path. They claim no new real SQL collection or
+physical fixture. The existing unchanged hosted CI PostgreSQL drill remains
+separate evidence for the old H2/guard contract.
+
 This is source preparation under existing Gate745, not a physical fixture,
 effect grant, full-native ACCEPT, Production apply admission or runnable hosted
 recipe. `app/worker/gate745_fixture_manifest.py` ships immutable `UNBOUND` bytes.
