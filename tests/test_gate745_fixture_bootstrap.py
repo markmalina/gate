@@ -716,8 +716,19 @@ print(json.dumps({'files': len(h.MIGRATION_SHA256), 'baseline': h.BASELINE,
     # This is the REAL candidate Docker COPY layout: it has the guard's
     # ordinary 120 migrations. CONTROL must keep rejecting that artifact.
     assert len(list((artifact / "alembic/versions").glob("*.py"))) == 120
+    # pytest's entry point may import the freshly installed wheel119. Load
+    # the actual checkout explicitly instead of assuming global module origin.
+    checkout_path = root / "app/worker/gate745_fixture_bootstrap.py"
+    assert checkout_path.read_bytes() == Path(helper.__file__).read_bytes()
+    checkout_spec = importlib.util.spec_from_file_location(
+        "fixture_checkout_candidate", checkout_path
+    )
+    assert checkout_spec is not None and checkout_spec.loader is not None
+    checkout = importlib.util.module_from_spec(checkout_spec)
+    checkout_spec.loader.exec_module(checkout)
+    assert Path(checkout.__file__).resolve() == checkout_path.resolve()
     with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
-        helper._migration_versions()
+        checkout._migration_versions()
     with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
         module._migration_versions()
 
@@ -748,6 +759,8 @@ print(json.dumps({'files': len(h.MIGRATION_SHA256), 'baseline': h.BASELINE,
     assert module._migration_versions() == versions
     with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
         actual_docker_module._migration_versions()
+    with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
+        checkout._migration_versions()
     script = ScriptDirectory.from_config(module._migration_config())
     assert script.get_revision(BASELINE).revision == BASELINE
     for name, expected in helper.MIGRATION_SHA256.items():

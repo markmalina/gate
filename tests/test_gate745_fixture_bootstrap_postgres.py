@@ -30,13 +30,28 @@ CI_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/gate"
 TEST_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/gate745_synthetic"
 
 
+def _checkout_candidate_helper() -> ModuleType:
+    """Fixed real checkout identity even when pytest imports the wheel119."""
+    path = Path(__file__).resolve().parents[1] / "app/worker/gate745_fixture_bootstrap.py"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        "1aa8a92d2b95336eeb22f857b241c829e554ef0ecae57c4404cbf54cdc676a5d"
+    )
+    assert path.read_bytes() == Path(helper.__file__).read_bytes()
+    spec = importlib.util.spec_from_file_location("fixture_ci_candidate_checkout", path)
+    assert spec is not None and spec.loader is not None
+    candidate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(candidate)
+    assert Path(candidate.__file__).resolve() == path.resolve()
+    return candidate
+
+
 @contextmanager
-def _sealed_control_helper() -> Iterator[ModuleType]:
+def _sealed_control_helper(candidate: ModuleType) -> Iterator[ModuleType]:
     """Test-only H119 artifact; never relabel the actual candidate120 as H."""
     root = Path(__file__).resolve().parents[1]
     source = root / "app/worker/gate745_fixture_bootstrap.py"
     with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
-        helper._migration_versions()
+        candidate._migration_versions()
     with TemporaryDirectory(prefix="gate745-ci-h119-") as directory:
         artifact = Path(directory)
         worker = artifact / "app/worker"
@@ -48,8 +63,8 @@ def _sealed_control_helper() -> Iterator[ModuleType]:
                         worker / "gate745_fixture_alembic")
         versions = artifact / "alembic/versions"
         versions.mkdir(parents=True)
-        assert len(helper.MIGRATION_SHA256) == 119
-        for name, expected in helper.MIGRATION_SHA256.items():
+        assert len(candidate.MIGRATION_SHA256) == 119
+        for name, expected in candidate.MIGRATION_SHA256.items():
             raw = (root / "alembic/versions" / name).read_bytes()
             assert hashlib.sha256(raw).hexdigest() == expected
             (versions / name).write_bytes(raw)
@@ -59,17 +74,17 @@ def _sealed_control_helper() -> Iterator[ModuleType]:
         control = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(control)
         assert control._migration_versions() == versions
-        assert control.MIGRATION_SHA256 == helper.MIGRATION_SHA256
+        assert control.MIGRATION_SHA256 == candidate.MIGRATION_SHA256
         yield control
     with pytest.raises(FixtureDenied, match="E_FIXTURE_MIGRATION_ARTIFACT"):
-        helper._migration_versions()
+        candidate._migration_versions()
 
 
-def _phase_helper(index: int, control: ModuleType) -> ModuleType:
+def _phase_helper(index: int, control: ModuleType, candidate: ModuleType) -> ModuleType:
     """Only lower-layer test source selection; not a runtime role assertion."""
     assert index in (1, 2, 3, 4, 5, 6)
-    selected = helper if index in (2, 3, 5) else control
-    assert (selected is helper) == (index in (2, 3, 5))
+    selected = candidate if index in (2, 3, 5) else control
+    assert (selected is candidate) == (index in (2, 3, 5))
     return selected
 
 
@@ -97,11 +112,12 @@ def test_real_pg_bootstrap_journal_denial_reset_and_0116_readonly() -> None:
         pytest.skip("Requires existing isolated CI PostgreSQL service; no hosted DB access")
     if os.environ.get("DATABASE_URL") != CI_URL:
         pytest.skip("Exact checked-in disposable CI DB binding required")
-    with _sealed_control_helper() as control:
-        asyncio.run(_drill(control))
+    candidate = _checkout_candidate_helper()
+    with _sealed_control_helper(candidate) as control:
+        asyncio.run(_drill(control, candidate))
 
 
-async def _drill(control_helper: ModuleType) -> None:
+async def _drill(control_helper: ModuleType, candidate_helper: ModuleType) -> None:
     admin = create_async_engine(CI_URL, poolclass=NullPool, isolation_level="AUTOCOMMIT")
     created = False
     engine = create_async_engine(TEST_URL, poolclass=NullPool)
@@ -271,7 +287,7 @@ async def _drill(control_helper: ModuleType) -> None:
                 == restored["unknownJournalDigest"]
                 == JOURNAL_DIGEST
             )
-        await _hosted_ledger_drill(engine, binding, control_helper)
+        await _hosted_ledger_drill(engine, binding, control_helper, candidate_helper)
     finally:
         await engine.dispose()
         if created:
@@ -281,7 +297,7 @@ async def _drill(control_helper: ModuleType) -> None:
 
 
 async def _hosted_ledger_drill(
-    engine: Any, physical_binding: Any, control_helper: ModuleType
+    engine: Any, physical_binding: Any, control_helper: ModuleType, candidate_helper: ModuleType
 ) -> None:
     """Continue the SAME disposable CI DB; no second DB or hosted route.
 
@@ -307,7 +323,7 @@ async def _hosted_ledger_drill(
     prior = None
     final_operation = None
     for index in range(1, 7):
-        phase_helper = _phase_helper(index, control_helper)
+        phase_helper = _phase_helper(index, control_helper, candidate_helper)
         if index in (2, 5):
             async with engine.begin() as connection:
                 await connection.run_sync(_upgrade_guarded_schema)
@@ -373,7 +389,9 @@ async def _hosted_ledger_drill(
     async with engine.begin() as connection:
         # The old v1 path still rejects even this exact reviewed control schema.
         with pytest.raises(FixtureDenied, match="E_FIXTURE_FOREIGN_SCHEMA"):
-            await connection.run_sync(lambda c: helper._operate(c, physical_binding, proof()))
+            await connection.run_sync(
+                lambda c: candidate_helper._operate(c, physical_binding, proof())
+            )
         await connection.execute(
             text(
                 "ALTER TABLE gate745_fixture_control.operation_ledger ADD COLUMN foreign_value text"
