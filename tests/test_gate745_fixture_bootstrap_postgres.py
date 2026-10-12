@@ -95,27 +95,34 @@ async def _drill() -> None:
         async with engine.begin() as connection:
             # Canonical unqualified FLOAT is physically DOUBLE PRECISION.
             # Wrong precision and nullability must still deny before reset.
-            await connection.execute(text(
-                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence TYPE REAL"
-            ))
+            await connection.execute(
+                text("ALTER TABLE conversation_context_bindings ALTER COLUMN confidence TYPE REAL")
+            )
         async with engine.begin() as connection:
             with pytest.raises(FixtureDenied, match="E_FIXTURE_SCHEMA"):
                 await connection.run_sync(lambda c: helper._operate(c, binding, proof()))
         async with engine.begin() as connection:
-            await connection.execute(text(
-                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence "
-                "TYPE DOUBLE PRECISION"
-            ))
-            await connection.execute(text(
-                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence SET NOT NULL"
-            ))
+            await connection.execute(
+                text(
+                    "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence "
+                    "TYPE DOUBLE PRECISION"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence SET NOT NULL"
+                )
+            )
         async with engine.begin() as connection:
             with pytest.raises(FixtureDenied, match="E_FIXTURE_SCHEMA"):
                 await connection.run_sync(lambda c: helper._operate(c, binding, proof()))
         async with engine.begin() as connection:
-            await connection.execute(text(
-                "ALTER TABLE conversation_context_bindings ALTER COLUMN confidence DROP NOT NULL"
-            ))
+            await connection.execute(
+                text(
+                    "ALTER TABLE conversation_context_bindings "
+                    "ALTER COLUMN confidence DROP NOT NULL"
+                )
+            )
         async with engine.begin() as connection:
             with pytest.raises(FixtureDenied, match="E_FIXTURE_BOOTSTRAP_NOT_EMPTY"):
                 await connection.run_sync(lambda c: helper._operate(c, binding, proof("bootstrap")))
@@ -197,9 +204,177 @@ async def _drill() -> None:
                 == restored["unknownJournalDigest"]
                 == JOURNAL_DIGEST
             )
+        await _hosted_ledger_drill(engine, binding)
     finally:
         await engine.dispose()
         if created:
             async with admin.connect() as connection:
                 await connection.execute(text("DROP DATABASE gate745_synthetic"))
         await admin.dispose()
+
+
+async def _hosted_ledger_drill(engine: Any, physical_binding: Any) -> None:
+    """Continue the SAME disposable CI DB; no second DB or hosted route.
+
+    Synthetic RSA admission is intentionally separate from authentic C0/native
+    acceptance. This exercise verifies actual PG commits, locks, schema, lineage,
+    public reset and consumption on failure; it never issues a real GH token.
+    """
+    import json
+
+    from app.worker import gate745_fixture_hosted as hosted
+    from app.worker import gate745_fixture_ledger as ledger
+    from tests.test_gate745_fixture_hosted import admitted, bundle
+
+    b = bundle()
+    m = json.loads(b["manifestRaw"])
+    m["binding"]["seed"]["databaseIdentityDigest"] = physical_binding.seed["databaseIdentityDigest"]
+    m["binding"]["seed"]["helperManifestDigest"] = hosted.source_scope_digest(m["binding"])
+    b["manifestRaw"] = hosted.wire_json(m)
+    b["manifestRawDigest"] = hosted.raw_digest(b["manifestRaw"])
+    async with engine.begin() as connection:
+        await connection.execute(text("DROP SCHEMA public CASCADE"))
+        await connection.execute(text("CREATE SCHEMA public"))
+    prior = None
+    final_operation = None
+    for index in range(1, 7):
+        if index in (2, 5):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "CREATE TABLE reply_dialog_versions "
+                        "(business_connection_id varchar(255) NOT NULL, "
+                        "chat_id varchar(255) NOT NULL, revision bigint NOT NULL, "
+                        "CONSTRAINT ck_reply_dialog_version_nonnegative CHECK(revision>=0), "
+                        "PRIMARY KEY(business_connection_id,chat_id))"
+                    )
+                )
+                await connection.execute(
+                    text("UPDATE alembic_version SET version_num='0116_reply_dialog_versions'")
+                )
+        operation = admitted(index, b=b, prior=prior)
+        async with engine.connect() as connection:
+            async with connection.begin():
+                assert await connection.scalar(text("SELECT pg_try_advisory_lock(7457452026)"))
+                await connection.run_sync(lambda c, op=operation: ledger.reserve(c, op))
+            # Another connection observes the committed RESERVED claim and
+            # cannot obtain the effect lock, proving cross-session exclusion.
+            async with engine.connect() as concurrent:
+                assert not await concurrent.scalar(text("SELECT pg_try_advisory_lock(7457452026)"))
+                assert (
+                    await concurrent.scalar(
+                        text(
+                            "SELECT state FROM gate745_fixture_control.operation_ledger "
+                            "WHERE operation_index=:index"
+                        ),
+                        {"index": index},
+                    )
+                    == "RESERVED"
+                )
+            async with connection.begin():
+                if operation.proof.mode == "unknown-proof":
+                    await connection.execute(text("SET TRANSACTION READ ONLY"))
+                state = await connection.run_sync(
+                    lambda c, op=operation: helper._operate(c, op.binding, op.proof, hosted=op)
+                )
+                assert state["unknownCount"] == 1
+                assert state["unknownJournalDigest"] == JOURNAL_DIGEST
+                assert state["schemaRevision"] == (BASELINE if index in (1, 4) else GUARDED)
+                assert (
+                    await connection.scalar(
+                        text("SELECT count(*) FROM gate745_fixture_control.operation_ledger")
+                    )
+                    == index
+                )  # public reset retained the durable control schema.
+            receipt = ledger.receipt_for(
+                operation,
+                state,
+                execution_role=(
+                    "CONTROL" if index in (1, 4) else "PROOF_ONLY" if index == 6 else "GUARDED"
+                ),
+            )
+            async with connection.begin():
+                await connection.run_sync(
+                    lambda c, op=operation, r=receipt: ledger.finish(c, op, r)
+                )
+                prior = await connection.scalar(
+                    text(
+                        "SELECT completion_digest FROM gate745_fixture_control.operation_ledger "
+                        "WHERE operation_index=:index"
+                    ),
+                    {"index": index},
+                )
+            async with connection.begin():
+                with pytest.raises(FixtureDenied):
+                    await connection.run_sync(lambda c, op=operation: ledger.reserve(c, op))
+            final_operation = operation
+    assert final_operation is not None
+    async with engine.begin() as connection:
+        # The old v1 path still rejects even this exact reviewed control schema.
+        with pytest.raises(FixtureDenied, match="E_FIXTURE_FOREIGN_SCHEMA"):
+            await connection.run_sync(lambda c: helper._operate(c, physical_binding, proof()))
+        await connection.execute(
+            text(
+                "ALTER TABLE gate745_fixture_control.operation_ledger ADD COLUMN foreign_value text"
+            )
+        )
+    async with engine.begin() as connection:
+        with pytest.raises(FixtureDenied, match="E_FIXTURE_V2_CONTROL_SCHEMA"):
+            await connection.run_sync(lambda c: ledger.validate_control_schema(c))
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("ALTER TABLE gate745_fixture_control.operation_ledger DROP COLUMN foreign_value")
+        )
+    for change, restore in (
+        ("ENABLE ROW LEVEL SECURITY", "DISABLE ROW LEVEL SECURITY"),
+        ("SET UNLOGGED", "SET LOGGED"),
+    ):
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("ALTER TABLE gate745_fixture_control.operation_ledger " + change)
+            )
+            with pytest.raises(FixtureDenied, match="E_FIXTURE_V2_CONTROL_SCHEMA"):
+                await connection.run_sync(lambda c: ledger.validate_control_schema(c))
+            await connection.execute(
+                text("ALTER TABLE gate745_fixture_control.operation_ledger " + restore)
+            )
+    async with engine.begin() as connection:
+        await connection.execute(text("CREATE DOMAIN gate745_fixture_control.foreign_type AS text"))
+        with pytest.raises(FixtureDenied, match="E_FIXTURE_V2_CONTROL_SCHEMA"):
+            await connection.run_sync(lambda c: ledger.validate_control_schema(c))
+        await connection.execute(text("DROP DOMAIN gate745_fixture_control.foreign_type"))
+        await connection.run_sync(lambda c: ledger.validate_control_schema(c))
+        # Model a committed reservation whose effect rolled back. UNKNOWN is
+        # durably retained even though the failed write itself is absent.
+        await connection.execute(
+            text(
+                "UPDATE gate745_fixture_control.operation_ledger "
+                "SET state='RESERVED',"
+                "receipt_digest=NULL,completion_digest=NULL WHERE operation_index=6"
+            )
+        )
+    with pytest.raises(RuntimeError, match="synthetic rollback"):
+        async with engine.begin() as connection:
+            await connection.execute(text("UPDATE send_attempts SET status='sending'"))
+            raise RuntimeError("synthetic rollback")
+    async with engine.begin() as connection:
+        await connection.run_sync(lambda c: ledger.finish(c, final_operation, None))
+    async with engine.begin() as connection:
+        assert (
+            await connection.scalar(
+                text(
+                    "SELECT state FROM gate745_fixture_control.operation_ledger "
+                    "WHERE operation_index=6"
+                )
+            )
+            == "UNKNOWN"
+        )
+        assert await connection.scalar(text("SELECT status FROM send_attempts")) == "unknown"
+        with pytest.raises(FixtureDenied):
+            await connection.run_sync(lambda c: ledger.reserve(c, final_operation))
+        assert (
+            await connection.scalar(
+                text("SELECT count(*) FROM gate745_fixture_control.operation_ledger")
+            )
+            == 6
+        )

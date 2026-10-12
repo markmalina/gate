@@ -504,7 +504,7 @@ def _migrate(connection: Any) -> None:
     command.upgrade(config, BASELINE)
 
 
-def _identity(connection: Any, binding: Binding) -> None:
+def _identity(connection: Any, binding: Binding, *, hosted: object = None) -> None:
     from sqlalchemy import text
 
     if any(
@@ -552,12 +552,24 @@ def _identity(connection: Any, binding: Binding) -> None:
         or digest(physical) != binding.seed["databaseIdentityDigest"]
     ):
         raise FixtureDenied("E_FIXTURE_PHYSICAL_DATABASE")
+    allowed_control = False
+    if hosted is not None:
+        from app.worker.gate745_fixture_hosted import HostedOperation, assert_admitted
+        from app.worker.gate745_fixture_ledger import validate_control_schema
+
+        if not isinstance(hosted, HostedOperation) or hosted.binding != binding:
+            raise FixtureDenied("E_FIXTURE_V2_AUTHENTICATED_BINDING")
+        assert_admitted(hosted)
+        validate_control_schema(connection, allow_missing=hosted.proof.total_invocations == 1)
+        allowed_control = True
     if (
         connection.execute(
             text(
                 "SELECT count(*) FROM pg_namespace WHERE nspname NOT IN "
-                "('public','pg_catalog','information_schema') AND nspname !~ '^pg_'"
-            )
+                "('public','pg_catalog','information_schema') AND nspname !~ '^pg_' "
+                "AND (:allowed_control = false OR nspname <> 'gate745_fixture_control')"
+            ),
+            {"allowed_control": allowed_control},
         ).scalar_one()
         != 0
     ):
@@ -735,10 +747,12 @@ def _bootstrap_empty(connection: Any) -> None:
     _seed_empty(connection)
 
 
-def _operate(connection: Any, binding: Binding, proof: ExecutionProof) -> dict[str, object]:
+def _operate(
+    connection: Any, binding: Binding, proof: ExecutionProof, *, hosted: object = None
+) -> dict[str, object]:
     from sqlalchemy import text
 
-    _identity(connection, binding)
+    _identity(connection, binding, hosted=hosted)
     if (
         binding.seed["recipeDigest"] != RECIPE_DIGEST
         or binding.seed["unknownJournalDigest"] != JOURNAL_DIGEST

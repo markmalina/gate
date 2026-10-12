@@ -114,7 +114,6 @@ async def ready(request: Request) -> JSONResponse:
     )
 
 
-
 @router.get(
     "/admin/ops/health",
     response_model=OperationsHealthResponse,
@@ -188,7 +187,22 @@ async def gate745_fixture_proof(
             headers={"Cache-Control": "no-store"},
         )
     return JSONResponse(
-        status_code=status.HTTP_200_OK, content=payload,
+        status_code=status.HTTP_200_OK,
+        content=payload,
         headers={"Cache-Control": "no-store"},
     )
 
+
+@router.post("/admin/ops/gate745-fixture-proof")
+@router.post("/admin/ops/gate745-fixture-operation")
+async def gate745_fixture_hosted_operation(request: Request) -> JSONResponse:
+    """Fixed authenticated v2 route; ordinary UNBOUND/Production deny."""
+    from app.worker.gate745_fixture_hosted import hosted_request
+
+    try:
+        payload = await hosted_request(request)
+    except Exception:
+        return JSONResponse(
+            status_code=404, content={"detail": "Not Found"}, headers={"Cache-Control": "no-store"}
+        )
+    return JSONResponse(content=payload, headers={"Cache-Control": "no-store"})
