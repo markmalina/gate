@@ -499,7 +499,9 @@ def test_foreign_status_does_not_read_journal():
 def test_owner_writer_preflight_is_presence_only_without_io(configured):
     from unittest.mock import AsyncMock
 
+    from app.api.mcp_schemas import GATE_STATUS_OUTPUT_SCHEMA
     from app.infrastructure.watch_voice_actions import operational_status
+    from jsonschema import validate
     from pydantic import SecretStr
 
     token = "synthetic-private-writer-token"
@@ -522,6 +524,9 @@ def test_owner_writer_preflight_is_presence_only_without_io(configured):
     denied = asyncio.run(operational_status(session, config, scope_allowed=False))
     assert denied["server_writer_configuration"] is None
     assert token not in json.dumps(denied) and writer not in json.dumps(denied)
+    schema = GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"]
+    validate(payload, schema)
+    validate(denied, schema)
     session.execute.assert_not_called()
     session.scalar.assert_not_called()
 

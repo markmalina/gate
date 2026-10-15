@@ -22,7 +22,13 @@ Use this minimal preflight after the reviewed Gate-owned release to select a
 reliable autonomous driver with existing credentials. If the writer is absent,
 record the exact remaining credential boundary; do not provision it silently.
 
-Validation:160 watch tests passed/3 explicit PostgreSQL skips locally; targeted
+Delta317 rejected the first candidate because the new field was absent from the
+strict MCP output schema. The corrected candidate adds the nullable, closed
+presence-only schema with verified constrained to false, and validates both
+actual owner and foreign outputs against it. The original verdict remains at
+https://github.com/AlphaCenter/delta/issues/317 .
+
+Validation:161 watch/surface tests passed/3 explicit PostgreSQL skips locally; targeted
 owner/foreign/redaction tests3passed; Ruff and Mypy passed. No model/endpoint,
 budget, retention, retry, cursor, journal, binding, workflow pin, migration or
 processing behavior changes. Hosted exact-head CI and independent source review
