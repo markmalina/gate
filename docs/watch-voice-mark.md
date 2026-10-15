@@ -1,5 +1,35 @@
 # Owner watch voice → private Mark inbox
 
+## Continuation — 15 October 2026, 18:19 UTC
+
+Owner renewed continuation with «Делай». The existing AlphaCenter/delta review
+repository was unarchived, preserving visibility/membership. API archived=false
+and new [canonical Delta316](https://github.com/AlphaCenter/delta/issues/316)
+prove the review route works again. Its terminal BLOCKED verdict preserves the
+unmet autonomous-product criteria; it does not accept a future implementation.
+
+Ops private-action Access was freshly observed as Not accessible. GitHub offers
+only access from ALL private repositories owned by markmalina, with no Gate-only
+selector. The broader option is prepared but NOT saved, pending action-time owner
+confirmation required by the browser permission-change policy.
+
+This candidate adds read-only server_writer_configuration to the existing
+owner-scoped watch status: token_present and writer_present Booleans, plus
+verified=false. Neither secret values nor writer identity are returned. Foreign
+scope returns null; the check makes no HTTP/provider/database calls itself and
+does not enable a worker, change a credential or claim writer validity.
+Use this minimal preflight after the reviewed Gate-owned release to select a
+reliable autonomous driver with existing credentials. If the writer is absent,
+record the exact remaining credential boundary; do not provision it silently.
+
+Validation:160 watch tests passed/3 explicit PostgreSQL skips locally; targeted
+owner/foreign/redaction tests3passed; Ruff and Mypy passed. No model/endpoint,
+budget, retention, retry, cursor, journal, binding, workflow pin, migration or
+processing behavior changes. Hosted exact-head CI and independent source review
+are required before release. The preceding checkpoint below remains historical
+where it says Delta is archived.
+
+
 ## Current checkpoint — 15 October 2026 10:30 UTC
 
 Task Gate #736 continues parent #731 under the exact owner request

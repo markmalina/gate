@@ -490,6 +490,38 @@ def test_foreign_status_does_not_read_journal():
     session = AsyncMock()
     payload = asyncio.run(operational_status(session, action_settings(), scope_allowed=False))
     assert payload["run_claim_count"] == 0 and payload["delivery_counts"] == {}
+    assert payload["server_writer_configuration"] is None
+    session.execute.assert_not_called()
+    session.scalar.assert_not_called()
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_owner_writer_preflight_is_presence_only_without_io(configured):
+    from unittest.mock import AsyncMock
+
+    from app.infrastructure.watch_voice_actions import operational_status
+    from pydantic import SecretStr
+
+    token = "synthetic-private-writer-token"
+    writer = "synthetic-private-writer-identity"
+    config = action_settings().model_copy(
+        update={
+            "gate_watch_voice_actions_enabled": False,
+            "gate_mark_github_token": SecretStr(token if configured else ""),
+            "gate_mark_github_writer": writer if configured else "",
+        }
+    )
+    session = AsyncMock()
+    payload = asyncio.run(operational_status(session, config, scope_allowed=True))
+    assert payload["server_writer_configuration"] == {
+        "token_present": configured,
+        "writer_present": configured,
+        "verified": False,
+    }
+    assert token not in json.dumps(payload) and writer not in json.dumps(payload)
+    denied = asyncio.run(operational_status(session, config, scope_allowed=False))
+    assert denied["server_writer_configuration"] is None
+    assert token not in json.dumps(denied) and writer not in json.dumps(denied)
     session.execute.assert_not_called()
     session.scalar.assert_not_called()
 

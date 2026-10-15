@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -520,6 +521,18 @@ async def operational_status(
             re.fullmatch(r"[a-f0-9]{64}", settings.gate_watch_voice_actions_workflow_sha256)
         ),
         "ordinary_worker_enabled": settings.gate_watch_voice_enabled,
+        # Presence is not validity or permission to enable the ordinary worker.
+        # Never reveal the credential or configured writer identity, even here.
+        "server_writer_configuration": (
+            {
+                "token_present": isinstance(settings.gate_mark_github_token, SecretStr)
+                and bool(settings.gate_mark_github_token.get_secret_value()),
+                "writer_present": bool(settings.gate_mark_github_writer),
+                "verified": False,
+            }
+            if scope_allowed
+            else None
+        ),
         "scope_allowed": scope_allowed,
         "run_claim_count": runs,
         "delivery_counts": delivery_counts,
