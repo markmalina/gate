@@ -66,7 +66,7 @@ jobs:
       - id: deploy
         name: Deploy through Ops
         continue-on-error: true
-        uses: AlphaCenter/ops/agent-ops/actions/gate-deploy@7bd47fe1c646f30c87207dc513cd1e5990d23a78
+        uses: markmalina/ops/agent-ops/actions/gate-deploy@512decbbd81d1d824563af995fc0df435fbf2429
         with:
           target: gate
           expected-source-sha: ${{ steps.request.outputs.source_sha }}
