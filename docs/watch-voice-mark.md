@@ -1,5 +1,76 @@
 # Owner watch voice → private Mark inbox
 
+## Current checkpoint — 15 October 2026 10:30 UTC
+
+Task Gate #736 continues parent #731 under the exact owner request
+[15 October handoff](https://github.com/markmalina/gate/issues/736#issuecomment-6189801263).
+[Receipt and accepted execution](https://github.com/markmalina/gate/issues/736#issuecomment-6189869154).
+Status: blocked_release_and_formal_review; full product NOT accepted.
+
+Two actual owner notes today have protected originals and complete transcripts,
+each linked to exactly one private Mark issue. First delivery was scheduled;
+second required one owner-command run. Three fresh owner-command replays ended
+idle with zero effect counters; protected receipts and shared budget were unchanged.
+The current watch queue is empty, but this was achieved with manual intervention.
+Private source identifiers, audio and transcript text remain outside Gate git.
+[Private current evidence](https://github.com/markmalina/mark/blob/337cf4a988346adc78a0ad18988254a02e85653e/data/receipts/2026-10-15-galaxy-watch-autonomy-checkpoint.json).
+
+Observed Gate main:86dbc0f429dce089bf733fc422f20f556535895b.
+Observed live/LKG:afe0c6b8519381a0007c0dcc1c145207b5d54a3f,
+schema0115_watch_voice_post_payment; readiness/database/migrations OK.
+No runtime code/configuration/credential change or deployment in this execution.
+
+### Diagnosed boundary and minimal repair
+
+- The active private Actions caller has cron2-59/5 and one note/publication part
+  per authenticated run. Actual schedule events are separated by hours.
+  created_at equals run_started_at; execution takes seconds. Delay is located
+  before scheduled-run creation. The internal GitHub scheduler cause is unproven;
+  quota/limits/outage are not asserted. Editing cron alone cannot prove recovery.
+- Prefer a Gate-owned persistent queue driver, reusing an already-authorized
+  existing writer only after a safe presence/identity/private-target preflight.
+  Existing permanent Mark writer presence is UNKNOWN. This task does not authorize
+  provisioning or changing credentials/OAuth/billing, nor a paid 24/7 Actions
+  runner. If no suitable existing writer is available, record the exact blocker.
+- Do not merely enable the ordinary worker: its current process_watch_voice path
+  does not apply future_cutover_at when scanning stored notes. The repair must
+  share/enforce the existing durable future-only cutover before downloading and
+  selecting queued rows, preserve its timestamp/cursor/journals, bound each queue
+  cycle, and retain all source/provider/publication idempotency and unknown states.
+- Fixed source /Alpha/Voice, mark-personal and private markmalina/mark; no old
+  backlog, foreign repository routing or Telegram. Model-access lock/policy
+  remains unchanged (shared USD3/month, one provider attempt/part,60s,zero retries).
+- Necessary verification: several new future notes drain without Work/manual
+  commands, original/transcript/one issue each, measured stage times; restart and
+  temporary unavailability preserve progress; repeated source discovery creates
+  no extra STT or publication; unknown outcomes are never blindly retried.
+  Ask Mark for new physical Watch notes only after the corrected system is ready.
+
+### Exact blockers and owners
+
+[Gate764](https://github.com/markmalina/gate/issues/764) /
+[Ops375](https://github.com/markmalina/ops/issues/375): latest existing receipt
+records private Ops action Access=Not accessible and unsaved sharing. The source
+namespace/pin fix is merged; production route usability is not established.
+Owner Mark / existing Ops375 Work must resolve its exact sharing gate.
+Missing Public App private key is a separate Public blocker, not a Gate requirement.
+No AQUB route or provider dashboard fallback is allowed.
+
+AlphaCenter/delta is archived; required new review issue creation returned403.
+An independent read-only audit exists at
+[delta-watch-runtime-2026-10-15.md](reviews/delta-watch-runtime-2026-10-15.md),
+but it is not a canonical Delta ACCEPT. Owner/review-route authority must restore
+or designate the permitted canonical route; no repository is silently unarchived.
+
+Continue this same Gate736 execution outcome/branch, without a duplicate task.
+After dependencies are resolved, verify fresh lease/main/source and writer,
+prepare one bounded candidate/PR, exact-head checks and independent review,
+deploy only Gate-owned Ops, verify exact live revision and real acceptance.
+Do not close736/731 from this checkpoint.
+
+## Historical implementation runbook
+
+
 Gate #731. Feature defaults off. Code/CI evidence is not live acceptance.
 
 ## Route
