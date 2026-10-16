@@ -54,8 +54,21 @@ applying its head-bound label.
 
 Null pending state is not zero. Null configuration remains UNVERIFIED.
 Configured predeploy is not effective predeploy; the latter stays
-UNKNOWN_NO_EXECUTION_PROOF. No observation result waives Gate745 native,
-backup, schema or cutover gates. Source0116/live0115 remain a release boundary.
+UNKNOWN_NO_EXECUTION_PROOF. No observation result waives the separate Gate745
+snapshot cutover's native, backup or schema gates.
+
+Correction after canonical-tree verification on 16 October: Gate main86dbc and
+this candidate contain the same 119 migration blobs, with the unique graph head
+0115_watch_voice_post_payment, matching the observed live schema. There is no
+0116 in either immutable source tree. An untracked local file from the separate
+unmerged Gate745/PR747 investigation caused the earlier incorrect 0116-source
+assumption. Only canonical Git objects establish the deployed source graph;
+never build from that mixed local directory or infer its Alembic head is main.
+The current application therefore has no 0115-to-0116 migration dependency.
+Ordinary release still requires fresh source/CI/review, target/credential and
+actual runtime/configuration evidence; matching migration heads alone prove
+neither effective predeploy behavior nor successful deployment. Gate745's
+separate cutover remains unapproved and is not activated by this work.
 The Gate server writer presence preflight is still an unshipped presence-only
 candidate, not proof of credentials or a suitable writer.
 
@@ -66,7 +79,8 @@ started at the same timestamps, separated by approximately160–312 minutes.
 The failure is before run creation; its internal GitHub cause is unproven.
 Cron changes or processing more work in one run alone cannot establish a
 reliable trigger. Prefer the existing persistent worker only after its
-existing writer is factually validated and future-only protections are shared.
+existing writer is factually validated. This candidate now shares the durable
+future-only protections across both drivers; activation remains off.
 
 The source audit also found that an oldest unresolved unknown publication can
 block later actionable notes, and an old note's received month can select the
@@ -76,11 +90,26 @@ tests; they do not enable the worker, rearm a claim, reset history or add retry.
 The one-note/one-publication-part Actions cap remains until separately reviewed
 driver changes. No current overspend is asserted.
 
-α independently reviewed the queue/budget changes and ran 172 watch, MCP
+The ordinary worker now requires an existing nonempty cursor and admitted
+future_cutover_at before any HTTP. It never creates or advances the admission
+watermark. Shared predicates exclude old Dropbox entries before download and
+historical queued rows before quarantine, STT or publication. The existing
+Actions admission can install the watermark only after delivered initial proof
+and an existing cursor. Exact-source recovery remains separately authorized.
+Synthetic tests cover missing admission, unchanged historical row journals,
+12 future notes draining in batches of 10+2 after a temporary outage, and
+duplicate discovery/restart without extra STT or issues. Production activation
+still needs verified writer/configuration and one driver only; the forced-off
+worker and existing Actions mode in railway.toml are unchanged.
+
+α independently reviewed the queue/budget/future-only changes and ran 183 watch, MCP
 surface and caller-contract tests successfully; three PostgreSQL-only checks
 were explicitly skipped locally and remain required in hosted exact-head CI.
 The month-boundary tests use the actual SQL budget adapter and synthetic audio;
 no production provider request or publication was made by these tests.
+Delta322 rejected the previous head's incorrect current-source 0116 assertion;
+that terminal verdict is preserved. The corrected source and guard require a
+new independent attempt, not reuse of the previous acceptance or rejected head.
 
 Official model/request/pricing/data-control documents were rechecked on
 16 October; the pinned models, endpoint, 25 MB part limit, no training/retention
@@ -170,7 +199,7 @@ No runtime code/configuration/credential change or deployment in this execution.
   Existing permanent Mark writer presence is UNKNOWN. This task does not authorize
   provisioning or changing credentials/OAuth/billing, nor a paid 24/7 Actions
   runner. If no suitable existing writer is available, record the exact blocker.
-- Do not merely enable the ordinary worker: its current process_watch_voice path
+- Historical diagnosis, repaired in the 16 October candidate above: the then-current process_watch_voice path
   does not apply future_cutover_at when scanning stored notes. The repair must
   share/enforce the existing durable future-only cutover before downloading and
   selecting queued rows, preserve its timestamp/cursor/journals, bound each queue

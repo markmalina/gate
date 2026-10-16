@@ -26,7 +26,6 @@ from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceErr
 from app.infrastructure.watch_voice_post_payment import continue_note
 from app.infrastructure.watch_voice_recovery import (
     RECOVERY_ERRORS,
-    _utc,
     authorized_at,
     recover_note,
 )
@@ -345,6 +344,7 @@ async def drain(
         )
         if state is None:
             return result("deferred")
+        cutover = worker.future_cutover(state) if binding["scope"] == "future-only" else None
         token = await _refresh_access_token(scoped, http)
         await _verify_account_id(scoped, http, token)
         cursor = state.cursor
@@ -396,11 +396,8 @@ async def drain(
                     or entry["rev"] != scoped.gate_watch_voice_revision
                 ):
                     continue
-                if binding["scope"] == "future-only":
-                    if state.future_cutover_at is None:
-                        raise WatchVoiceError("watch_voice_actions_cutover_required")
-                    if worker.timestamp(entry["server_modified"]) <= _utc(state.future_cutover_at):
-                        continue
+                if cutover is not None and not worker.future_entry(entry, cutover):
+                    continue
                 await worker.store_entry(scoped, factory, http, token, entry)
             state.cursor = cursor = delta["cursor"]
             if not delta["has_more"]:
@@ -408,13 +405,8 @@ async def drain(
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
         scope = worker.note_scope(scoped)
-        if binding["scope"] == "future-only":
-            if state.future_cutover_at is None:
-                raise WatchVoiceError("watch_voice_actions_cutover_required")
-            scope += (
-                WatchVoiceNote.received_at >= state.future_cutover_at,
-                WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
-            )
+        if cutover is not None:
+            scope += worker.future_note_scope(cutover)
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:
             for field, active, error in (

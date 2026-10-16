@@ -479,6 +479,57 @@ def test_future_mode_requires_delivered_initial_proof(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("missing", ["note", "transcript", "delivery", "issue", "cursor"])
+def test_future_admission_cannot_install_watermark_without_initial_acceptance(
+    tmp_path, monkeypatch, missing
+):
+    world = ActionsWorld()
+    world.patches(monkeypatch)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http,
+        ):
+            initial = queued_note(
+                world, "id:initial-acceptance", datetime.now(UTC),
+                transcription_state="received" if missing == "transcript" else "transcribed",
+                transcript="Synthetic initial receipt",
+                delivery_state="pending" if missing == "delivery" else "delivered",
+                issue_url=None if missing == "issue" else "https://github.com/markmalina/mark/issues/1",
+            )
+            world.binding = {
+                "schema": "watch-voice-binding.v1", "enabled": True,
+                "workspace_key": "mark-personal", "scope": "future-only",
+                "accepted_initial_event_id": initial.id,
+            }
+            async with factory() as session:
+                await session.run_sync(
+                    lambda s: WatchVoiceDrainRun.__table__.create(s.connection())
+                )
+                if missing != "note":
+                    session.add(initial)
+                session.add(WatchVoiceCursor(
+                    workspace_key="mark-personal", account_id="synthetic-owner",
+                    cursor=None if missing == "cursor" else "kept-initial-cursor",
+                ))
+                await session.commit()
+            with pytest.raises(WatchVoiceError, match="initial_acceptance_required"):
+                await drain(
+                    settings=action_settings(), factory=factory, http=http,
+                    claims=claims(), job_token="synthetic-job-token",
+                )
+            assert world.provider_calls == world.posts == 0
+            assert not any("dropbox" in url for _, url in world.calls)
+            async with factory() as session:
+                state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert state.future_cutover_at is None
+                assert state.cursor == (None if missing == "cursor" else "kept-initial-cursor")
+                assert not (await session.scalars(select(WatchVoiceDrainRun))).all()
+
+    asyncio.run(run())
+
+
 def test_same_run_or_jti_replay_is_durable(tmp_path):
     async def run():
         async with database(tmp_path) as factory:

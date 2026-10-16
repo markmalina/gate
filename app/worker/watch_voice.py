@@ -140,6 +140,27 @@ def note_scope(settings: Settings) -> tuple[Any, ...]:
     return scope
 
 
+def future_cutover(state: WatchVoiceCursor | None) -> datetime:
+    """Reuse durable Actions admission; the ordinary worker never creates it."""
+    if state is None or not state.cursor or state.future_cutover_at is None:
+        raise WatchVoiceError("watch_voice_future_cutover_required")
+    value = state.future_cutover_at
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def future_entry(entry: dict[str, Any], cutover: datetime) -> bool:
+    """Exclude Dropbox history before downloading or probing original audio."""
+    return timestamp(entry["server_modified"]) > cutover
+
+
+def future_note_scope(cutover: datetime) -> tuple[Any, ...]:
+    """A late archived historical source is not a newly admitted recording."""
+    return (
+        WatchVoiceNote.received_at >= cutover,
+        WatchVoiceNote.dropbox_modified_at > cutover,
+    )
+
+
 def issue_body(note: WatchVoiceNote, part: int) -> str:
     parts = transcript_parts(note.transcript or "")
     transcribed = note.transcribed_at.isoformat() if note.transcribed_at else "неизвестно"
@@ -538,8 +559,10 @@ async def process_watch_voice(
     client = MarkInboxClient(
         http, settings.gate_mark_github_token.get_secret_value(), settings.gate_mark_github_writer
     )
-    await client.preflight()
-    await ensure_cursor(settings, factory)
+    if settings.gate_watch_voice_file_id:
+        # Only an already authorized exact source may bootstrap its cursor.
+        await client.preflight()
+        await ensure_cursor(settings, factory)
     # PostgreSQL row lock serializes the source across all web processes.
     # Originals and per-effect claims commit in separate short transactions.
     async with factory() as coordinator:
@@ -551,8 +574,11 @@ async def process_watch_voice(
             )
             .with_for_update(skip_locked=True)
         )
+        cutover = None if settings.gate_watch_voice_file_id else future_cutover(state)
         if state is None:
             return
+        if cutover is not None:
+            await client.preflight()
         token = await _refresh_access_token(settings, http)
         await _verify_account_id(settings, http, token)
         cursor = state.cursor
@@ -594,12 +620,16 @@ async def process_watch_voice(
                 ):
                     continue
                 if entry is not None:
+                    if cutover is not None and not future_entry(entry, cutover):
+                        continue
                     await store_entry(settings, factory, http, token, entry)
             cursor = delta["cursor"]
             state.cursor = cursor
             if not delta["has_more"]:
                 break
         scope = note_scope(settings)
+        if cutover is not None:
+            scope += future_note_scope(cutover)
         # Crashed effect claims are quarantined, never blindly retried.
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:

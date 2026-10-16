@@ -41,6 +41,24 @@ def settings(**extra):
     )
 
 
+def exact_settings():
+    """Legacy acceptance cases authorize only their one synthetic source revision."""
+    return settings(
+        GATE_WATCH_VOICE_FILE_ID="id:synthetic",
+        GATE_WATCH_VOICE_REVISION="synthetic-revision",
+    )
+
+
+async def admitted_future_cursor(factory, cutover, *, cursor="synthetic-cursor"):
+    """Fixture for a cutover already admitted by the separate Actions binding."""
+    async with factory() as session:
+        session.add(WatchVoiceCursor(
+            workspace_key="mark-personal", account_id="synthetic-owner",
+            cursor=cursor, future_cutover_at=cutover,
+        ))
+        await session.commit()
+
+
 @asynccontextmanager
 async def database(tmp_path):
     url = os.getenv("DATABASE_URL")
@@ -262,7 +280,7 @@ def test_full_cycle_preserves_original_transcript_times_and_deduplicates(tmp_pat
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
                 for _ in range(3):
-                    await worker.process_watch_voice(settings(), factory, http)
+                    await worker.process_watch_voice(exact_settings(), factory, http)
             rows = await notes(factory)
             assert len(rows) == 1
             note = rows[0]
@@ -280,6 +298,172 @@ def test_full_cycle_preserves_original_transcript_times_and_deduplicates(tmp_pat
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("missing", ["row", "cursor", "cutover", "both"])
+def test_future_worker_missing_admission_has_no_effects(tmp_path, monkeypatch, missing):
+    world = World()
+    world.patches(monkeypatch)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http,
+        ):
+            cutover = datetime.now(UTC) - timedelta(hours=1)
+            if missing != "row":
+                await admitted_future_cursor(
+                    factory,
+                    None if missing in {"cutover", "both"} else cutover,
+                    cursor=None if missing in {"cursor", "both"} else "kept-cursor",
+                )
+            queued = queued_note(world, "id:already-queued", datetime.now(UTC))
+            async with factory() as session:
+                session.add(queued)
+                await session.commit()
+            with pytest.raises(WatchVoiceError, match="future_cutover_required"):
+                await worker.process_watch_voice(settings(), factory, http)
+            assert world.calls == []
+            assert world.provider_calls == world.posts == 0
+            assert (await notes(factory))[0].transcription_state == "received"
+            async with factory() as session:
+                state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                if missing == "row":
+                    assert state is None  # no implicit bootstrap or watermark installation
+                else:
+                    assert state.cursor == (
+                        None if missing in {"cursor", "both"} else "kept-cursor"
+                    )
+                    assert (state.future_cutover_at is None) == (missing in {"cutover", "both"})
+
+    asyncio.run(run())
+
+
+def test_future_worker_excludes_old_dropbox_and_all_old_queue_effects(tmp_path, monkeypatch):
+    world = World()
+    world.patches(monkeypatch)
+    cutover = datetime.now(UTC) - timedelta(hours=2)
+    before = cutover - timedelta(seconds=1)
+    after = cutover + timedelta(seconds=1)
+
+    def handle(request):
+        if "/files/list_folder" in request.url.path:
+            assert request.url.path.endswith("/continue")
+            assert json.loads(request.content)["cursor"] == "kept-cursor"
+            return httpx.Response(200, json={
+                "entries": [
+                    {**world.entry, "id": "id:old-delta", "server_modified": before.isoformat()},
+                    {**world.entry, "id": "id:equal-delta", "server_modified": cutover.isoformat()},
+                ],
+                "cursor": "advanced-cursor", "has_more": False,
+            })
+        return world.handle(request)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http,
+        ):
+            await admitted_future_cursor(factory, cutover, cursor="kept-cursor")
+            historical = []
+            for i, (received, modified) in enumerate(
+                ((before, after), (after, before), (after, cutover))
+            ):
+                for transcription, delivery in (
+                    ("received", "pending"), ("transcribed", "pending"),
+                    ("processing", "pending"), ("transcribed", "sending"),
+                    ("transcribed", "unknown"),
+                ):
+                    historical.append(queued_note(
+                        world, f"id:old-{i}-{transcription}-{delivery}", received,
+                        dropbox_modified_at=modified, transcription_state=transcription,
+                        delivery_state=delivery, attempted_at=before,
+                        transcript=(
+                            "Synthetic prior transcript" if transcription == "transcribed" else None
+                        ),
+                        last_error="synthetic-retained-journal",
+                    ))
+            async with factory() as session:
+                session.add_all(historical)
+                await session.commit()
+            original = {
+                note.id: {c.key: getattr(note, c.key) for c in WatchVoiceNote.__table__.columns}
+                for note in await notes(factory)
+            }
+            await worker.process_watch_voice(settings(), factory, http)
+            assert world.provider_calls == world.posts == 0
+            assert not any(url.endswith("/files/download") for _, url in world.calls)
+            assert {
+                note.id: {c.key: getattr(note, c.key) for c in WatchVoiceNote.__table__.columns}
+                for note in await notes(factory)
+            } == original  # no quarantine, retry, claim reset or publication of history
+            async with factory() as session:
+                state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert state.cursor == "advanced-cursor"
+                assert state.future_cutover_at.replace(tzinfo=UTC) == cutover
+
+    asyncio.run(run())
+
+
+def test_future_worker_recovers_and_drains_batches_without_replay(tmp_path, monkeypatch):
+    world = World()
+    world.patches(monkeypatch)
+    cutover = datetime.now(UTC) - timedelta(minutes=1)
+    entries = [
+        {**world.entry, "id": f"id:future-{i}", "rev": f"future-revision-{i}",
+         "server_modified": (cutover + timedelta(seconds=1)).isoformat()}
+        for i in range(12)
+    ]
+    cursors = []
+    fail_delta = True
+
+    def handle(request):
+        nonlocal fail_delta
+        if "/files/list_folder" in request.url.path:
+            assert request.url.path.endswith("/continue")
+            cursors.append(json.loads(request.content)["cursor"])
+            if fail_delta:
+                fail_delta = False
+                raise httpx.ConnectError("synthetic temporary outage", request=request)
+            return httpx.Response(200, json={
+                "entries": entries + entries[:2], "cursor": "next-future-cursor", "has_more": False,
+            })
+        response = world.handle(request)
+        if request.method == "POST" and request.url.path == "/repos/markmalina/mark/issues":
+            issue = world.issues[-1]
+            issue["number"] = 100 + world.posts
+            issue["html_url"] = f'https://github.com/markmalina/mark/issues/{issue["number"]}'
+            return httpx.Response(201, json=issue)
+        return response
+
+    async def run():
+        async with database(tmp_path) as factory:
+            await admitted_future_cursor(factory, cutover, cursor="original-future-cursor")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+                with pytest.raises(WatchVoiceError, match="delta_unavailable"):
+                    await worker.process_watch_voice(settings(), factory, http)
+            assert not await notes(factory)
+            async with factory() as session:
+                state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert state.cursor == "original-future-cursor"
+                assert state.future_cutover_at.replace(tzinfo=UTC) == cutover
+            for expected in (10, 12, 12):
+                # A fresh process/client uses only persisted admission and cursor.
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+                    await worker.process_watch_voice(settings(), factory, http)
+                assert world.provider_calls == world.posts == expected
+            rows = await notes(factory)
+            assert len(rows) == len({row.issue_url for row in rows}) == 12
+            assert all(row.delivery_state == "delivered" for row in rows)
+            assert sum(url.endswith("/files/download") for _, url in world.calls) == 12
+            assert cursors == ["original-future-cursor", "original-future-cursor",
+                               "next-future-cursor", "next-future-cursor"]
+            async with factory() as session:
+                state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert state.cursor == "next-future-cursor"
+                assert state.future_cutover_at.replace(tzinfo=UTC) == cutover
+
+    asyncio.run(run())
+
+
 def test_lost_github_ack_recovers_one_issue_without_repost(tmp_path, monkeypatch):
     world = World()
     world.fail_post = "lost_ack"
@@ -288,9 +472,9 @@ def test_lost_github_ack_recovers_one_issue_without_repost(tmp_path, monkeypatch
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
                 assert (await notes(factory))[0].delivery_state == "unknown"
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             assert (await notes(factory))[0].delivery_state == "delivered"
             assert world.posts == 1 and world.provider_calls == 1
 
@@ -305,9 +489,9 @@ def test_unknown_not_found_never_blindly_posts(tmp_path, monkeypatch):
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
                 world.issues = []
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             assert (await notes(factory))[0].delivery_state == "unknown"
             assert world.posts == 1
 
@@ -324,9 +508,9 @@ def test_offline_reconnect_retains_queue_and_delivers_once(tmp_path, monkeypatch
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
                 with pytest.raises((WatchVoiceError, DropboxCallWorkerError)):
-                    await worker.process_watch_voice(settings(), factory, http)
+                    await worker.process_watch_voice(exact_settings(), factory, http)
                 world.offline = False
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             assert len(await notes(factory)) == 1
             assert world.posts == 1 and world.provider_calls == 1
 
@@ -341,8 +525,8 @@ def test_unknown_provider_is_not_repeated(tmp_path, monkeypatch):
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             assert (await notes(factory))[0].transcription_state == "unknown"
             assert world.provider_calls == 1 and world.posts == 0
 
@@ -366,6 +550,7 @@ def test_pending_publication_progresses_past_full_batch_of_unknowns(tmp_path, mo
             httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http,
         ):
             now = datetime.now(UTC)
+            await admitted_future_cursor(factory, now - timedelta(hours=1))
             unknowns = [
                 queued_note(
                     world,
@@ -682,7 +867,7 @@ def test_private_target_preflight_precedes_audio_processing(tmp_path, monkeypatc
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
                 with pytest.raises(WatchVoiceError, match="mismatch"):
-                    await worker.process_watch_voice(settings(), factory, http)
+                    await worker.process_watch_voice(exact_settings(), factory, http)
             assert not await notes(factory)
             assert world.provider_calls == 0 and world.posts == 0
 
@@ -707,7 +892,7 @@ def test_long_transcript_all_parts_and_lost_comment_ack(tmp_path, monkeypatch):
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
                 for _ in range(3):
-                    await worker.process_watch_voice(settings(), factory, http)
+                    await worker.process_watch_voice(exact_settings(), factory, http)
             assert (await notes(factory))[0].delivery_state == "delivered"
             assert world.posts == len(transcript_parts(world.transcript))
             bodies = [world.issues[0]["body"]] + [c["body"] for c in world.comments]
@@ -726,8 +911,8 @@ def test_rejected_issue_keeps_original_and_requires_permission_fix(tmp_path, mon
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             row = (await notes(factory))[0]
             assert row.delivery_state == "blocked" and row.data == world.audio
             assert world.posts == 1 and world.provider_calls == 1
@@ -752,7 +937,7 @@ def test_postgres_parallel_workers_one_provider_one_issue(tmp_path, monkeypatch)
             await worker.ensure_cursor(settings(), factory)
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
                 await asyncio.gather(
-                    *(worker.process_watch_voice(settings(), factory, http) for _ in range(4))
+                    *(worker.process_watch_voice(exact_settings(), factory, http) for _ in range(4))
                 )
             assert len(await notes(factory)) == 1
             assert world.provider_calls == 1 and world.posts == 1
@@ -783,14 +968,14 @@ def test_stale_claim_quarantined_and_reconciled_without_repost(tmp_path, monkeyp
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
                 async with factory() as session:
                     note = (await session.scalars(select(WatchVoiceNote))).one()
                     note.delivery_state = "sending"
                     note.next_part = 0
                     note.attempted_at = datetime.now(UTC) - timedelta(hours=2)
                     await session.commit()
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             assert (await notes(factory))[0].delivery_state == "delivered"
             assert world.posts == 1
 
@@ -805,12 +990,12 @@ def test_definite_rejection_resumed_once_without_retranscription(tmp_path, monke
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
                 row = (await notes(factory))[0]
                 assert await worker.resume_rejected_delivery(settings(), factory, row.id)
                 assert not await worker.resume_rejected_delivery(settings(), factory, row.id)
                 world.fail_post = None
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
                 assert not await worker.resume_rejected_delivery(settings(), factory, row.id)
             assert (await notes(factory))[0].delivery_state == "delivered"
             assert len(world.issues) == 1
@@ -896,7 +1081,7 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                await worker.process_watch_voice(settings(), factory, http)
+                await worker.process_watch_voice(exact_settings(), factory, http)
             row = (await notes(factory))[0]
             principal = SimpleNamespace(
                 access_scope=SimpleNamespace(
