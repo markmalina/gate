@@ -29,7 +29,7 @@ jobs:
       admitted: ${{ steps.admission.outputs.admitted }}
     steps:
       - id: admission
-        uses: markmalina/ops/agent-ops/actions/gate-runtime-observer@1311819b4ecbba291e244c177922fd194f6b880d
+        uses: markmalina/ops/agent-ops/actions/gate-runtime-observer@45e60c3d93d09c978633ac80b73e0a281d5ccea6
         with:
           phase: admission
         env:
@@ -47,7 +47,7 @@ jobs:
       detached-artifact-id: ${{ steps.detached.outputs.artifact-id }}
     steps:
       - id: observe
-        uses: markmalina/ops/agent-ops/actions/gate-runtime-observer@1311819b4ecbba291e244c177922fd194f6b880d
+        uses: markmalina/ops/agent-ops/actions/gate-runtime-observer@45e60c3d93d09c978633ac80b73e0a281d5ccea6
         with:
           phase: observe
         env:
@@ -82,7 +82,7 @@ jobs:
           merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
-      - uses: markmalina/ops/agent-ops/actions/gate-runtime-observer@1311819b4ecbba291e244c177922fd194f6b880d
+      - uses: markmalina/ops/agent-ops/actions/gate-runtime-observer@45e60c3d93d09c978633ac80b73e0a281d5ccea6
         with:
           phase: verify
           expected-digest: ${{ needs.observe.outputs.receipt-digest }}

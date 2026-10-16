@@ -12,8 +12,9 @@ Private Ops sharing was saved on 16 October under the owner's exact confirmation
 Canonical Delta review is restored. Historical access/archive blockers below
 are superseded; neither restoration proves runtime readiness.
 
-β prepared the fixed Gate-only read-only runtime observer; α reviewed it and
-repeated its tests. [Delta320 SOURCE acceptance](https://github.com/AlphaCenter/delta/issues/320#issuecomment-6220355323)
+The first fixed Gate-only runtime observer remains historical source evidence.
+α reviewed β's implementation and repeated its tests.
+[Delta320 SOURCE acceptance](https://github.com/AlphaCenter/delta/issues/320#issuecomment-6220355323)
 covers C8103370c6a34d09eb9d839d9dd95104bb3a3a740.
 [Delta321 release acceptance](https://github.com/AlphaCenter/delta/issues/321#issuecomment-6220452084)
 covers release-only R1311819b4ecbba291e244c177922fd194f6b880d.
@@ -21,12 +22,64 @@ covers release-only R1311819b4ecbba291e244c177922fd194f6b880d.
 e3b492dd5497a8dc0e054ba5e34b4f1ef9b24542; its complete tree equals R.
 Original exact C, exact R and merged-push CI/Security passed, including
 1213 Node tests, two property tests and the existing security/reproducibility
-checks. The Gate lock pins the accepted immutable R, whose code and release
-bytes are identical to the installed merge.
+checks. That original R and its accepted historical objects are preserved.
+
+### Actual first observation and diagnostic successor
+
+The original Gate head17ef47bdc7a6a869e35c5d61970087628a326970 consumed its
+one-use admission in [run38941076898](https://github.com/markmalina/gate/actions/runs/38941076898).
+Admission, the existing environment gate and private Ops action fetch succeeded.
+The observer stopped after exactly one Railway scope read with
+`E_PENDING_CHANGES`; facts were null and releaseAuthorized remained false.
+The separate terminal verifier was SKIPPED because observation failed; receipt
+artifacts were saved. The original raw receipt SHA256 is
+304dccfea170cb3446494f57247e367c191a716a0b1b6f5d7488b9f65b803ca5.
+[Delta324 BLOCKED](https://github.com/AlphaCenter/delta/issues/324#issuecomment-6221252584)
+preserves that result. There was no provider mutation or runtime release.
+
+The old diagnostic intentionally conflated positive and unknown pending counts;
+it does not prove which one occurred. It proves neither clean configuration nor
+actual pending changes. Head17ef stays consumed and must never be rerun,
+replenished with a no-change head, or treated as an accepted runtime observation.
+
+The substantive successor keeps every query, target, credential, cap and
+one-use rule unchanged. Only numeric zero permits continuation. A valid
+positive GraphQL Int32 count now yields `E_PENDING_CHANGES`; null, absent,
+negative, noninteger or out-of-range values yield `E_PENDING_UNKNOWN`.
+Both initial STOPs retain null facts and releaseAuthorized=false after one
+scope read, without service or auto-deploy reads. Neither authorizes applying
+or discarding a changeset. The primary Railway CLI schema declares the field
+nullable Int; null is never interpreted as zero.
+
+[Delta325 SOURCE acceptance](https://github.com/AlphaCenter/delta/issues/325)
+covers C3a9d4c764548794ada31b68b580dda5b64943fad; exact candidate
+[CI38942579755](https://github.com/markmalina/ops/actions/runs/38942579755) and
+[Security38942579682](https://github.com/markmalina/ops/actions/runs/38942579682)
+passed, including1215 Node tests with zero skips and two property tests.
+[Delta326 release-source acceptance](https://github.com/AlphaCenter/delta/issues/326#issuecomment-6221556044)
+covers release-only R45e60c3d93d09c978633ac80b73e0a281d5ccea6.
+[Ops PR378](https://github.com/markmalina/ops/pull/378) merged as
+a49e76b483a2df1aba5175cb5a41c18dec1c2a90, with complete tree
+ff67482bf6b3be0beb8b7cfbab7bfe5b4391715e exactly equal to R.
+Merged-push [CI38943751973](https://github.com/markmalina/ops/actions/runs/38943751973)
+and [Security38943751777](https://github.com/markmalina/ops/actions/runs/38943751777)
+finished SUCCESS on the original attempt, including all five CI jobs,
+1215 Node tests with zero skips and two property tests. α independently verified
+the literal merged-source test job and complete M=R tree.
+[Installed-source receipt](https://github.com/markmalina/ops/issues/375#issuecomment-6221610021)
+records the Ops dependency complete and lease released at2026-10-16T18:00:28Z.
+The prepared Gate lock pins R45e60, not the merge commit. Its raw workflow hash
+is recomputed from the exact accepted template. The code bundle is
+sha256:af7f93ef7e68eea7310fa068aaa20d02a1102dd5ce897d03fea1ad5c2178c26a;
+the fixed profile digest remains unchanged.
+
+This prepared Gate client is not source acceptance, a live grant
+or autonomous repair. It needs its own exact-head CI and independent client
+attempt15, followed by a separate protected live attempt16 only after admission.
 
 ### Read-only observation caller
 
-The candidate adds `.github/workflows/ops-runtime-observer.yml` and
+The candidate contains `.github/workflows/ops-runtime-observer.yml` and
 `agent-ops.runtime-observer.lock.json`. It runs only from a new exact owner
 label on the same Gate PR766 after that whole candidate's CI and a NEW
 independent review. No Gate main merge is needed for this bootstrap.
@@ -107,9 +160,9 @@ surface and caller-contract tests successfully; three PostgreSQL-only checks
 were explicitly skipped locally and remain required in hosted exact-head CI.
 The month-boundary tests use the actual SQL budget adapter and synthetic audio;
 no production provider request or publication was made by these tests.
-Delta322 rejected the previous head's incorrect current-source 0116 assertion;
-that terminal verdict is preserved. The corrected source and guard require a
-new independent attempt, not reuse of the previous acceptance or rejected head.
+Delta322 rejected the earlier incorrect current-source 0116 assertion; that
+terminal verdict is preserved. This corrected schema evidence remains valid;
+the changed diagnostic client needs its own new independent attempt.
 
 Official model/request/pricing/data-control documents were rechecked on
 16 October; the pinned models, endpoint, 25 MB part limit, no training/retention
@@ -126,8 +179,14 @@ afe0c6b8519381a0007c0dcc1c145207b5d54a3f/schema0115 were unchanged at this
 checkpoint. Mark-personal watch counts remain seven transcribed/delivered,
 without pending states; this scoped status is not a global user census.
 Both 15 October notes are already delivered; never retranscribe them.
-Next: separately accepted Gate client, one bounded actual observation, safe
-driver/release, then new physical notes and several-note/outage/replay tests
+The ordinary worker remains forced false and Actions mode true. Existing server
+writer presence and legacy exact file/revision selectors remain UNKNOWN; Actions
+clears selectors only in request-local bound settings. No credential or mode
+change is included. A later persistent-driver stage would need verified existing
+writer/configuration, explicitly cleared selectors and one active driver.
+Next: accepted successor client and separately admitted bounded diagnostic,
+resolve its actual blocker without an unknown mutation, then safe ordinary0115
+release/driver selection and new physical notes and several-note/outage/replay tests
 with exact stage timings. Ask for physical notes only when the system is ready.
 Keep #736/#731 open until proven product acceptance.
 

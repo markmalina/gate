@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OPS_PIN = "1311819b4ecbba291e244c177922fd194f6b880d"
+OPS_PIN = "45e60c3d93d09c978633ac80b73e0a281d5ccea6"
 PROFILE_DIGEST = "sha256:7808485398176a79fcc05c2934ac311cf4763b4dce56508b1af77d243ffd7f56"
 WORKFLOW = ROOT / ".github/workflows/ops-runtime-observer.yml"
 
