@@ -186,6 +186,32 @@ async def notes(factory):
         return list((await session.scalars(select(WatchVoiceNote))).all())
 
 
+def queued_note(world, file_id, received_at, **state):
+    values = {
+        "id": str(uuid.uuid4()),
+        "workspace_key": "mark-personal",
+        "account_id": "synthetic-owner",
+        "file_id": file_id,
+        "revision": "abcdef1234",
+        "source_path": "/Alpha/Voice/Synthetic.m4a",
+        "filename": "Synthetic.m4a",
+        "media_type": "audio/mp4",
+        "size_bytes": len(world.audio),
+        "sha256": hashlib.sha256(world.audio).hexdigest(),
+        "data": world.audio,
+        "duration_seconds": 5,
+        "recorded_at": None,
+        "dropbox_modified_at": received_at,
+        "received_at": received_at,
+        "transcription_state": "received",
+        "transcript": None,
+        "delivery_state": "pending",
+        "next_part": 0,
+    }
+    values.update(state)
+    return WatchVoiceNote(**values)
+
+
 def test_default_off_and_independent_calls_path():
     s = Settings()
     assert not s.gate_watch_voice_enabled
@@ -321,6 +347,329 @@ def test_unknown_provider_is_not_repeated(tmp_path, monkeypatch):
             assert world.provider_calls == 1 and world.posts == 0
 
     asyncio.run(run())
+
+
+def test_pending_publication_progresses_past_full_batch_of_unknowns(tmp_path, monkeypatch):
+    world = World()
+    world.patches(monkeypatch)
+
+    def handle(request):
+        if "/files/list_folder" in request.url.path:
+            return httpx.Response(
+                200, json={"entries": [], "cursor": "synthetic-cursor", "has_more": False}
+            )
+        return world.handle(request)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http,
+        ):
+            now = datetime.now(UTC)
+            unknowns = [
+                queued_note(
+                    world,
+                    f"id:unknown-{i}",
+                    now - timedelta(minutes=20 - i),
+                    transcription_state="transcribed",
+                    transcript=f"Synthetic unresolved {i}",
+                    delivery_state="unknown",
+                    attempted_at=now - timedelta(minutes=5),
+                    last_error="github_post_unknown",
+                )
+                for i in range(10)
+            ]
+            pending = queued_note(
+                world,
+                "id:pending-after-unknowns",
+                now,
+                transcription_state="transcribed",
+                transcript="Synthetic actionable publication",
+            )
+            async with factory() as session:
+                session.add_all([*unknowns, pending])
+                await session.commit()
+            before = {
+                note.id: tuple(
+                    getattr(note, key) for key in ("data", "sha256", "next_part", "last_error")
+                )
+                for note in await notes(factory)
+                if note.delivery_state == "unknown"
+            }
+            await worker.process_watch_voice(settings(), factory, http)
+            rows = await notes(factory)
+            assert (
+                next(note for note in rows if note.id == pending.id).delivery_state == "delivered"
+            )
+            assert world.posts == 1 and world.provider_calls == 0
+            for note in rows:
+                if note.id in before:
+                    assert note.delivery_state == "unknown"
+                    assert (
+                        tuple(
+                            getattr(note, key)
+                            for key in ("data", "sha256", "next_part", "last_error")
+                        )
+                        == before[note.id]
+                    )
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("exhausted", [True, False])
+def test_normalization_crossing_month_uses_current_processing_budget(
+    tmp_path, monkeypatch, exhausted
+):
+    from app.application.telegram_voice_transcription import NormalizedVoice, ProviderTranscript
+    from app.models.billing import (
+        BillingBudgetReservationModel,
+        BillingEntitlementModel,
+        BillingLedgerEntryModel,
+        BillingUsageEventModel,
+    )
+    from app.models.canonical import Workspace
+
+    world = World()
+    received = datetime(2026, 10, 31, 23, 59, 59, tzinfo=UTC)
+    november = datetime(2026, 11, 1, tzinfo=UTC)
+    clock = [received]
+
+    class ProcessingClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0]
+
+    class Normalizer:
+        async def normalize(self, voice):
+            clock[0] = november
+            return NormalizedVoice(b"synthetic-normalized", "Synthetic.mp3", "audio/mpeg")
+
+    class Provider:
+        ready = True
+
+        def __init__(self, **kwargs):
+            pass
+
+        async def transcribe(self, voice, *, language):
+            world.provider_calls += 1
+            clock[0] = november + timedelta(seconds=1)
+            return ProviderTranscript("Synthetic transcript", billed_quantity=1, actual_microusd=10)
+
+    monkeypatch.setattr(worker, "datetime", ProcessingClock)
+    monkeypatch.setattr(worker, "TelegramVoiceNormalizer", Normalizer)
+    monkeypatch.setattr(worker, "OpenAITranscriptionClient", Provider)
+
+    async def run():
+        async with database(tmp_path) as factory:
+            workspace_id = uuid.uuid4()
+            held_id = uuid.uuid4()
+            note = queued_note(world, "id:october-source", received)
+            async with factory() as session:
+                for table in (
+                    Workspace.__table__,
+                    BillingEntitlementModel.__table__,
+                    BillingBudgetReservationModel.__table__,
+                    BillingUsageEventModel.__table__,
+                    BillingLedgerEntryModel.__table__,
+                ):
+                    await session.run_sync(lambda s, table=table: table.create(s.connection()))
+                session.add(
+                    Workspace(
+                        id=workspace_id,
+                        key="mark-personal",
+                        display_name="Synthetic owner",
+                        is_active=True,
+                    )
+                )
+                await session.flush()
+                session.add(
+                    BillingEntitlementModel(
+                        workspace_id=workspace_id,
+                        entitlement_key="synthetic-budget",
+                        product="gate",
+                        scope_kind="telegram_connector",
+                        scope_ref="telegram_business",
+                        plan_key="synthetic",
+                        state="active",
+                        valid_from=received - timedelta(days=1),
+                        hard_limit_microusd=3_000_000,
+                    )
+                )
+                if exhausted:
+                    session.add(
+                        BillingBudgetReservationModel(
+                            id=held_id,
+                            workspace_id=workspace_id,
+                            reservation_key="synthetic-other-november-usage",
+                            product="gate",
+                            operation="transcription",
+                            scope_kind="telegram_connector",
+                            scope_ref="telegram_business",
+                            period_key="2026-11",
+                            reserved_microusd=3_000_000,
+                            settled_microusd=3_000_000,
+                            state="settled",
+                            created_at=november,
+                            updated_at=november,
+                        )
+                    )
+                session.add(note)
+                await session.commit()
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                await worker.transcribe_note(settings(), factory, http, note.id)
+                # The rejected/transcribed claim is never rearmed by another cycle.
+                await worker.transcribe_note(settings(), factory, http, note.id)
+            stored = (await notes(factory))[0]
+            assert stored.received_at.replace(tzinfo=UTC) == received
+            assert world.provider_calls == (0 if exhausted else 1)
+            async with factory() as session:
+                reservations = list(
+                    (await session.scalars(select(BillingBudgetReservationModel))).all()
+                )
+                assert len(reservations) == 1
+                reservation = reservations[0]
+                assert reservation.period_key == "2026-11"
+                assert reservation.state == "settled"
+                if exhausted:
+                    assert reservation.id == held_id and reservation.settled_microusd == 3_000_000
+                    assert (
+                        stored.transcription_state == "rejected"
+                        and stored.last_error == "billing_hard_limit_exceeded"
+                    )
+                else:
+                    assert stored.transcription_state == "transcribed"
+                    assert reservation.reservation_key == f"watch-voice:{note.id}"
+                    assert reservation.created_at.replace(tzinfo=UTC) == november
+                    assert reservation.updated_at.replace(tzinfo=UTC) == november + timedelta(
+                        seconds=1
+                    )
+                    assert reservation.settled_microusd == 10
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("suffix", ["recovery1", "postpayment1"])
+def test_recovery_normalization_cannot_move_its_accepted_month(monkeypatch, suffix):
+    from app.application.telegram_voice_transcription import (
+        DownloadedVoice,
+        NormalizedVoice,
+        TelegramVoiceReference,
+        TelegramVoiceTranscriptionService,
+        TranscribeTelegramVoiceCommand,
+    )
+
+    october = datetime(2026, 10, 31, 23, 59, 59, tzinfo=UTC)
+    clock = [october]
+    attempts = []
+
+    class ProcessingClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0]
+
+    class Downloader:
+        async def download(self, voice):
+            return DownloadedVoice(b"synthetic-source", "Synthetic.m4a", "audio/mp4", 5)
+
+    class Normalizer:
+        async def normalize(self, voice):
+            clock[0] = datetime(2026, 11, 1, tzinfo=UTC)
+            return NormalizedVoice(b"synthetic-normalized", "Synthetic.mp3", "audio/mpeg")
+
+    class Provider:
+        ready = True
+        transcribe = AsyncMock()
+
+    def no_database():
+        attempts.append("database")
+        raise AssertionError("expired recovery must stop before SQL")
+
+    monkeypatch.setattr(worker, "datetime", ProcessingClock)
+    provider = Provider()
+    service = TelegramVoiceTranscriptionService(
+        downloader=Downloader(),
+        normalizer=Normalizer(),
+        speech_to_text=provider,
+        budget=worker.WatchVoiceProcessingBudget(no_database, recovery_period="2026-10"),
+    )
+    command = TranscribeTelegramVoiceCommand(
+        voice=TelegramVoiceReference("id:synthetic", "abc123", 16, 5),
+        workspace_key="mark-personal",
+        connector_ref="telegram_business",
+        reservation_key=f"watch-voice:synthetic:{suffix}",
+        period_key="2026-10",
+        requested_microusd=5000,
+        occurred_at=october,
+        language="ru",
+        enabled=True,
+    )
+    result = asyncio.run(service.transcribe(command))
+    assert result.outcome == TelegramVoiceOutcome.REJECTED
+    assert result.reason_code == "watch_voice_recovery_period_changed"
+    assert command.reservation_key == f"watch-voice:synthetic:{suffix}"
+    provider.transcribe.assert_not_awaited()
+    assert attempts == []
+
+
+def test_month_change_while_budget_reserves_releases_only_its_new_unspent_claim(monkeypatch):
+    from app.application.billing import (
+        BillingProduct,
+        BudgetAdmission,
+        BudgetReservation,
+        BudgetReservationState,
+        ReserveBudgetCommand,
+        UsageAttribution,
+        UsageOperation,
+    )
+
+    october = datetime(2026, 10, 31, 23, 59, 59, tzinfo=UTC)
+    november = datetime(2026, 11, 1, tzinfo=UTC)
+    clock = [october]
+    attribution = UsageAttribution(
+        "mark-personal", BillingProduct.GATE, "telegram_connector", "telegram_business"
+    )
+    command = ReserveBudgetCommand(
+        "watch-voice:synthetic", attribution, UsageOperation.TRANSCRIPTION, 5000, october
+    )
+    reservation = BudgetReservation(
+        command.reservation_key,
+        attribution,
+        UsageOperation.TRANSCRIPTION,
+        "2026-10",
+        5000,
+        BudgetReservationState.RESERVED,
+        october,
+        october,
+    )
+
+    class ProcessingClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0]
+
+    async def reserve(*args, **kwargs):
+        clock[0] = november
+        return BudgetAdmission(True, "billing_reserved", reservation)
+
+    release = AsyncMock()
+    monkeypatch.setattr(worker, "datetime", ProcessingClock)
+    monkeypatch.setattr(worker.SqlBillingBudgetService, "reserve", reserve)
+    monkeypatch.setattr(worker.SqlBillingBudgetService, "release", release)
+    budget = worker.WatchVoiceProcessingBudget(None, recovery_period=None)
+    result = asyncio.run(budget.reserve(command, period_key="2026-10"))
+    assert not result.allowed and result.reason_code == "watch_voice_processing_period_changed"
+    release.assert_awaited_once_with(reservation, occurred_at=november)
+
+    async def replay(*args, **kwargs):
+        clock[0] = november
+        return BudgetAdmission(False, "billing_reservation_replayed")
+
+    clock[0] = october
+    release.reset_mock()
+    monkeypatch.setattr(worker.SqlBillingBudgetService, "reserve", replay)
+    repeated = asyncio.run(budget.reserve(command, period_key="2026-10"))
+    assert not repeated.allowed and repeated.reason_code == "billing_reservation_replayed"
+    release.assert_not_awaited()
 
 
 @pytest.mark.parametrize("flag", ["public_repo", "foreign_repo"])

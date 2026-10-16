@@ -6,15 +6,22 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.billing import (
+    BudgetAdmission,
+    BudgetReservation,
+    ReserveBudgetCommand,
+    UsageUnit,
+)
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
     NormalizedVoice,
@@ -265,6 +272,74 @@ class RecoveryVoiceNormalizer(TelegramVoiceNormalizer):
         return normalized
 
 
+class WatchVoiceProcessingBudget(SqlBillingBudgetService):
+    """Use the actual watch processing period without changing shared billing."""
+
+    def __init__(
+        self, sessions: async_sessionmaker[AsyncSession], *, recovery_period: str | None
+    ) -> None:
+        super().__init__(sessions)
+        self.recovery_period = recovery_period
+
+    async def reserve(self, command: ReserveBudgetCommand, *, period_key: str) -> BudgetAdmission:
+        # Normalization can cross midnight/month end after the source command
+        # was constructed. Neither an archived timestamp nor that older command
+        # can select the entitlement/budget period of a new provider attempt.
+        now = datetime.now(UTC)
+        period = now.strftime("%Y-%m")
+        if self.recovery_period is not None and period != self.recovery_period:
+            return BudgetAdmission(allowed=False, reason_code="watch_voice_recovery_period_changed")
+        admission = await super().reserve(replace(command, occurred_at=now), period_key=period)
+        finished = datetime.now(UTC)
+        if admission.allowed and finished.strftime("%Y-%m") != period:
+            # A database lock may also span month end. This is our new, known
+            # zero-provider reservation, never a historical or unknown claim.
+            if admission.reservation is not None:
+                await super().release(admission.reservation, occurred_at=finished)
+            return BudgetAdmission(
+                allowed=False, reason_code="watch_voice_processing_period_changed"
+            )
+        return admission
+
+    async def settle(
+        self,
+        reservation: BudgetReservation,
+        *,
+        actual_microusd: int,
+        quantity: int,
+        unit: UsageUnit,
+        provider_operation_ref: str | None,
+        occurred_at: datetime,
+    ) -> None:
+        await super().settle(
+            reservation,
+            actual_microusd=actual_microusd,
+            quantity=quantity,
+            unit=unit,
+            provider_operation_ref=provider_operation_ref,
+            occurred_at=datetime.now(UTC),
+        )
+
+    async def release(self, reservation: BudgetReservation, *, occurred_at: datetime) -> None:
+        await super().release(reservation, occurred_at=datetime.now(UTC))
+
+    async def mark_unknown(
+        self, reservation: BudgetReservation, *, occurred_at: datetime, error_code: str
+    ) -> None:
+        await super().mark_unknown(
+            reservation, occurred_at=datetime.now(UTC), error_code=error_code
+        )
+
+
+def delivery_order() -> tuple[Any, ...]:
+    """An unresolved publication must not block known actionable notes."""
+    return (
+        case((WatchVoiceNote.delivery_state == "unknown", 1), else_=0),
+        WatchVoiceNote.received_at,
+        WatchVoiceNote.id,
+    )
+
+
 async def transcribe_claimed_note(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
@@ -279,13 +354,14 @@ async def transcribe_claimed_note(
     if post_payment and not recovery:
         raise ValueError("watch_voice_post_payment_recovery_required")
     model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
-    received = note.received_at
-    if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
-        received = received.replace(tzinfo=UTC)
+    processing_at = datetime.now(UTC)
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
         normalizer=RecoveryVoiceNormalizer() if recovery else TelegramVoiceNormalizer(),
-        budget=SqlBillingBudgetService(factory),
+        budget=WatchVoiceProcessingBudget(
+            factory,
+            recovery_period=note.received_at.strftime("%Y-%m") if recovery else None,
+        ),
         speech_to_text=OpenAITranscriptionClient(
             config=OpenAITranscriptionConfig(
                 api_key=settings.openai_api_key.get_secret_value(),
@@ -309,13 +385,13 @@ async def transcribe_claimed_note(
                 connector_ref="telegram_business",
                 reservation_key=f"watch-voice:{note.id}"
                 + (":postpayment1" if post_payment else ":recovery1" if recovery else ""),
-                period_key=received.strftime("%Y-%m"),
+                period_key=processing_at.strftime("%Y-%m"),
                 requested_microusd=max(
                     100,
                     note.duration_seconds
                     * settings.gate_telegram_voice_reserve_microusd_per_second,
                 ),
-                occurred_at=received,
+                occurred_at=processing_at,
                 language="ru",
                 enabled=True,
             )
@@ -551,6 +627,7 @@ async def process_watch_voice(
                     await session.scalars(
                         select(WatchVoiceNote.id)
                         .where(*scope, WatchVoiceNote.transcription_state == "received")
+                        .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
                         .limit(10)
                     )
                 ).all()
@@ -567,6 +644,7 @@ async def process_watch_voice(
                             WatchVoiceNote.transcription_state == "transcribed",
                             WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
                         )
+                        .order_by(*delivery_order())
                         .limit(10)
                     )
                 ).all()

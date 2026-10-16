@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "agent-ops.gate-runtime-observer-lock/v1",
+  "repository": "markmalina/ops",
+  "commit": "1311819b4ecbba291e244c177922fd194f6b880d",
+  "actionPath": "agent-ops/actions/gate-runtime-observer",
+  "workflowSha256": "sha256:b7cd408e4446cc6734cc240e2365103f343e806a2158a2689c3be42f1ce4a215",
+  "profileSha256": "sha256:7808485398176a79fcc05c2934ac311cf4763b4dce56508b1af77d243ffd7f56"
+}

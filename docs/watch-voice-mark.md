@@ -1,6 +1,108 @@
 # Owner watch voice → private Mark inbox
 
-## Continuation — 15 October 2026, 18:19 UTC
+## Current continuation — 16 October 2026
+
+Status: source preparation; autonomous product NOT accepted. This continues
+Gate #736/#731 and the existing Gate PR766. The owner explicitly instructed α
+to execute through a subagent, check its work and continue without a manual
+handoff. Ops375 is the bounded accepted infrastructure dependency.
+
+Private Ops sharing was saved on 16 October under the owner's exact confirmation:
+[receipt](https://github.com/markmalina/ops/issues/375#issuecomment-6215668819).
+Canonical Delta review is restored. Historical access/archive blockers below
+are superseded; neither restoration proves runtime readiness.
+
+β prepared the fixed Gate-only read-only runtime observer; α reviewed it and
+repeated its tests. [Delta320 SOURCE acceptance](https://github.com/AlphaCenter/delta/issues/320#issuecomment-6220355323)
+covers C8103370c6a34d09eb9d839d9dd95104bb3a3a740.
+[Delta321 release acceptance](https://github.com/AlphaCenter/delta/issues/321#issuecomment-6220452084)
+covers release-only R1311819b4ecbba291e244c177922fd194f6b880d.
+[Ops PR377](https://github.com/markmalina/ops/pull/377) merged as
+e3b492dd5497a8dc0e054ba5e34b4f1ef9b24542; its complete tree equals R.
+Original exact C, exact R and merged-push CI/Security passed, including
+1213 Node tests, two property tests and the existing security/reproducibility
+checks. The Gate lock pins the accepted immutable R, whose code and release
+bytes are identical to the installed merge.
+
+### Read-only observation caller
+
+The candidate adds `.github/workflows/ops-runtime-observer.yml` and
+`agent-ops.runtime-observer.lock.json`. It runs only from a new exact owner
+label on the same Gate PR766 after that whole candidate's CI and a NEW
+independent review. No Gate main merge is needed for this bootstrap.
+Admission binds exact head/base, owner23397294, repository1293746267, immutable
+workflow/lock/Ops pin, unedited owner request and 15-minute expiry, first
+original run and complete run history. Previous failed/cancelled/unknown runs
+consume that head; never rerun or create a no-change head to replenish it.
+
+The protected job calls only the accepted immutable Ops action with the
+existing gate-production credential. There is no PR checkout, dependency
+installation, provider mutation, variables/SQL, STT or messages. Six fixed
+Railway queries at most, zero retries, bounded responses/time, expiry before
+each fetch and source/state brackets. A separate job without the protected
+environment/provider credential verifies both raw artifacts and their
+provenance/digests. Result remains observation-only, never a release grant.
+
+This bootstrap assumes an owner-controlled leased branch. It does not protect
+against a malicious repository writer replacing the workflow. Live use needs
+the independently accepted exact Gate head, frozen branch/no conflicting
+writer and successful admission by the existing environment policy. Never
+weaken that policy or provision credentials to pass. The exact command and
+label construction are in the pinned Ops action README; construct them only
+after final review from fresh UTC, then read back the owner comment before
+applying its head-bound label.
+
+Null pending state is not zero. Null configuration remains UNVERIFIED.
+Configured predeploy is not effective predeploy; the latter stays
+UNKNOWN_NO_EXECUTION_PROOF. No observation result waives Gate745 native,
+backup, schema or cutover gates. Source0116/live0115 remain a release boundary.
+The Gate server writer presence preflight is still an unshipped presence-only
+candidate, not proof of credentials or a suitable writer.
+
+### Queue correctness and remaining acceptance
+
+Actual scheduled runs38902268760/38867530352/38840830162 were created and
+started at the same timestamps, separated by approximately160–312 minutes.
+The failure is before run creation; its internal GitHub cause is unproven.
+Cron changes or processing more work in one run alone cannot establish a
+reliable trigger. Prefer the existing persistent worker only after its
+existing writer is factually validated and future-only protections are shared.
+
+The source audit also found that an oldest unresolved unknown publication can
+block later actionable notes, and an old note's received month can select the
+wrong budget period after an outage. Their bounded correctness changes remain
+in this same candidate, with synthetic unknown/fairness and month-boundary
+tests; they do not enable the worker, rearm a claim, reset history or add retry.
+The one-note/one-publication-part Actions cap remains until separately reviewed
+driver changes. No current overspend is asserted.
+
+α independently reviewed the queue/budget changes and ran 172 watch, MCP
+surface and caller-contract tests successfully; three PostgreSQL-only checks
+were explicitly skipped locally and remain required in hosted exact-head CI.
+The month-boundary tests use the actual SQL budget adapter and synthetic audio;
+no production provider request or publication was made by these tests.
+
+Official model/request/pricing/data-control documents were rechecked on
+16 October; the pinned models, endpoint, 25 MB part limit, no training/retention
+terms and shared USD3 cap remain unchanged. The skill bytes match the accepted
+lock. The official deprecation page lists 26 February 2027 removal for these
+models; this work does not switch models or expand access.
+Sources: https://developers.openai.com/api/docs/guides/speech-to-text ,
+https://developers.openai.com/api/docs/guides/your-data ,
+https://developers.openai.com/api/docs/pricing ,
+https://developers.openai.com/api/docs/deprecations .
+
+Gate main86dbc0f429dce089bf733fc422f20f556535895b and live/LKG
+afe0c6b8519381a0007c0dcc1c145207b5d54a3f/schema0115 were unchanged at this
+checkpoint. Mark-personal watch counts remain seven transcribed/delivered,
+without pending states; this scoped status is not a global user census.
+Both 15 October notes are already delivered; never retranscribe them.
+Next: separately accepted Gate client, one bounded actual observation, safe
+driver/release, then new physical notes and several-note/outage/replay tests
+with exact stage timings. Ask for physical notes only when the system is ready.
+Keep #736/#731 open until proven product acceptance.
+
+## Historical continuation — 15 October 2026, 18:19 UTC
 
 Owner renewed continuation with «Делай». The existing AlphaCenter/delta review
 repository was unarchived, preserving visibility/membership. API archived=false
@@ -36,7 +138,7 @@ are required before release. The preceding checkpoint below remains historical
 where it says Delta is archived.
 
 
-## Current checkpoint — 15 October 2026 10:30 UTC
+## Historical checkpoint — 15 October 2026 10:30 UTC
 
 Task Gate #736 continues parent #731 under the exact owner request
 [15 October handoff](https://github.com/markmalina/gate/issues/736#issuecomment-6189801263).

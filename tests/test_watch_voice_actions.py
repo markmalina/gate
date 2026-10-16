@@ -4,7 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -20,10 +20,10 @@ from app.infrastructure.watch_voice_actions import (
     validate_binding,
 )
 from app.infrastructure.watch_voice_github import WatchVoiceError
-from app.models.watch_voice import WatchVoiceDrainRun
+from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
 from sqlalchemy import select
 
-from test_watch_voice import World, database, notes, settings
+from test_watch_voice import World, database, notes, queued_note, settings
 
 WORKFLOW = b"synthetic-reviewed-workflow"
 PIN = hashlib.sha256(WORKFLOW).hexdigest()
@@ -320,6 +320,124 @@ def test_one_run_one_part_full_transcript_next_fresh_run_and_no_retranscription(
             assert joined == world.transcript
             assert world.provider_calls == 1
             assert all(url != "https://api.github.com/user" for _, url in world.calls)
+
+    asyncio.run(run())
+
+
+def test_unknown_publication_does_not_block_new_notes_or_reset_claims(tmp_path, monkeypatch):
+    world = ActionsWorld()
+    world.patches(monkeypatch)
+
+    def handle(request):
+        response = world.handle(request)
+        if request.method == "POST" and request.url.path == "/repos/markmalina/mark/issues":
+            obj = world.issues[-1]
+            obj["number"] = 100 + len(world.issues)
+            obj["html_url"] = f"https://github.com/markmalina/mark/issues/{obj['number']}"
+            return httpx.Response(201, json=obj)
+        return response
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http,
+        ):
+            now = datetime.now(UTC)
+            cutover = now - timedelta(hours=1)
+            accepted = queued_note(
+                world,
+                "id:accepted",
+                now - timedelta(hours=2),
+                transcription_state="transcribed",
+                transcript="Synthetic accepted source",
+                delivery_state="delivered",
+                issue_number=99,
+                issue_url="https://github.com/markmalina/mark/issues/99",
+                next_part=1,
+            )
+            unknown = queued_note(
+                world,
+                "id:unresolved-a",
+                now - timedelta(minutes=10),
+                transcription_state="transcribed",
+                transcript="Synthetic unresolved A",
+                delivery_state="unknown",
+                attempted_at=now - timedelta(minutes=5),
+                last_error="github_post_unknown",
+            )
+            received = queued_note(world, "id:actionable-b", now - timedelta(minutes=9))
+            pending = queued_note(
+                world,
+                "id:actionable-c",
+                now - timedelta(minutes=8),
+                transcription_state="transcribed",
+                transcript="Synthetic pending C",
+            )
+            async with factory() as session:
+                await session.run_sync(
+                    lambda s: WatchVoiceDrainRun.__table__.create(s.connection())
+                )
+                session.add_all(
+                    [
+                        accepted,
+                        unknown,
+                        received,
+                        pending,
+                        WatchVoiceCursor(
+                            workspace_key="mark-personal",
+                            account_id="synthetic-owner",
+                            cursor="synthetic-cursor",
+                            future_cutover_at=cutover,
+                        ),
+                    ]
+                )
+                await session.commit()
+            world.binding = {
+                "schema": "watch-voice-binding.v1",
+                "enabled": True,
+                "workspace_key": "mark-personal",
+                "scope": "future-only",
+                "accepted_initial_event_id": accepted.id,
+            }
+            async with factory() as session:
+                before = await session.get(WatchVoiceNote, unknown.id)
+                original = {
+                    column.key: getattr(before, column.key)
+                    for column in WatchVoiceNote.__table__.columns
+                }
+            for i in range(3):
+                world.current_run = str(321 + i)
+                result = await drain(
+                    settings=action_settings(),
+                    factory=factory,
+                    http=http,
+                    claims=claims(run_id=world.current_run, jti=f"queue-{i}"),
+                    job_token="synthetic-job-token",
+                )
+                assert result["considered"] == 1 and result["published_parts"] <= 1
+                assert result["published_parts"] == (1 if i < 2 else 0)
+            assert world.provider_calls == 1 and world.posts == 2
+            assert len({issue["number"] for issue in world.issues}) == 2
+            rows = {note.id: note for note in await notes(factory)}
+            assert (
+                rows[received.id].delivery_state == rows[pending.id].delivery_state == "delivered"
+            )
+            assert {
+                column.key: getattr(rows[unknown.id], column.key)
+                for column in WatchVoiceNote.__table__.columns
+            } == original
+            replay = await drain(
+                settings=action_settings(),
+                factory=factory,
+                http=http,
+                claims=claims(run_id=world.current_run, jti="new-jti-same-consumed-run"),
+                job_token="synthetic-job-token",
+            )
+            assert replay["result"] == "replayed" and world.provider_calls == 1 and world.posts == 2
+            async with factory() as session:
+                assert len((await session.scalars(select(WatchVoiceDrainRun))).all()) == 3
+                cursor = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert cursor.future_cutover_at.replace(tzinfo=UTC) == cutover
 
     asyncio.run(run())
 

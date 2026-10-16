@@ -445,7 +445,7 @@ async def drain(
                         & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
                     ),
                 )
-                .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
+                .order_by(*worker.delivery_order())
                 .limit(1)
             )
         if note is None:
