@@ -1,6 +1,58 @@
 # Owner watch voice → private Mark inbox
 
-## Current continuation — 16 October 2026
+## Current continuation — 18 October 2026
+
+Autonomous delivery is still NOT accepted. This continues the same Gate
+#736/#731, execution `watch-voice-autonomous-20261015T1023Z` and PR #766.
+The owner's [new exact approval](https://github.com/markmalina/gate/issues/736#issuecomment-6252332426)
+permits ONE fixed undecrypted staged-patch read in protected Ops memory:
+one query, 10 seconds, 65,536 response bytes, zero retries, no mutation or
+decryption, and only closed safe output categories. Source/CI work does not
+use that read. Do not infer a live invocation from the presence of this client.
+
+The isolated Ops source C `b5a1fbf337f69f86bfd2977bbead3f9b67664ce3`
+was independently accepted in [Delta330](https://github.com/AlphaCenter/delta/issues/330#issuecomment-6252471463).
+Release-only R `86718a1f67ad7a26b7ab402debea1bd5d0bbbaad` binds C and
+that exact verdict; its separate release review is [Delta331](https://github.com/AlphaCenter/delta/issues/331).
+The new `agent-ops.staged-state-observer.lock.json` pins R, the raw client
+workflow digest and the fixed profile. The caller's exact bytes come from
+R's `caller-workflow.template.txt`; it does not replace the old observer.
+
+`.github/workflows/ops-staged-state-observer.yml` runs only on a new exact
+owner label for this same PR after whole-head CI and independent client
+acceptance. The operation requires an additional fresh 15-minute unedited
+owner request on #736, bound to exact head/base/executor/workflow and the
+fixed approval. Its dedicated workflow's complete history must contain only
+the current original attempt, across ALL heads and outcomes. A failed or
+cancelled attempt therefore blocks later use conservatively; never delete
+history, recreate workflow identity, rerun, or use a new head/nonce to bypass it.
+The old spent heads, labels and receipts remain untouched.
+
+Admission and verification have no Railway credential. Only the protected
+observe job uses the existing credential; no caller checkout, dependency
+installation, scripts or shared cache execute with it. The whole response
+may contain sensitive configuration material and stays in process memory;
+immediate string zeroization is not guaranteed. Only closed safe receipts
+and their digests are persisted. Counters distinguish an opaque patch read
+from decrypted variable access.
+
+Results stay `overallAssessment: UNKNOWN` and `releaseAuthorized: false`.
+Null is not zero, an opaque nonempty prefix is not a validated changeset,
+and a literal empty patch observation does not establish clean state or
+authorize a Gate application release. A separate credential-free job verifies
+the safe receipt's two raw artifacts, digests, run/head provenance and times.
+
+This client changes no watch processing code, migrations, model policy,
+credential, runtime flags, cursor, claim or journal. The ordinary worker
+remains forced off; the Actions driver remains the existing mode. The fresh
+18 October scoped Gate status reports production `afe0c6b85193`, eight
+transcribed and eight delivered, with ordinary worker false. These aggregate
+counters do not prove latency, a particular note's receipt or autonomy.
+After the admitted diagnostic, continue only from its actual evidence through
+the remaining release/writer/one-driver/device/outage/replay gates. Ask for new
+physical Watch notes only when the system is ready, and keep #736/#731 open.
+
+## Historical continuation — 16 October 2026
 
 Status: source preparation; autonomous product NOT accepted. This continues
 Gate #736/#731 and the existing Gate PR766. The owner explicitly instructed α

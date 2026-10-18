@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "agent-ops.gate-staged-state-observer-lock/v1",
+  "repository": "markmalina/ops",
+  "commit": "86718a1f67ad7a26b7ab402debea1bd5d0bbbaad",
+  "actionPath": "agent-ops/actions/gate-staged-state-observer",
+  "workflowSha256": "sha256:88f7485c4ec6730b4c024af4a0859a2e1cf9423d295f0b94c69c7a7df559c298",
+  "profileSha256": "sha256:3a1757a1b04cd4dda960a43774082a1499bdf16fd9c254966e690dd74f432542"
+}
