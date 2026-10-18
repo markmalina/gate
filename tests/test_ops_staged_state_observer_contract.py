@@ -36,7 +36,9 @@ def test_staged_state_caller_has_only_exact_owner_pr_label_trigger():
         "group: gate736-staged-state-observation\n  cancel-in-progress: false",
     ):
         assert required in text
-    for forbidden in ("pull_request_target", "issue_comment:", "push:", "schedule:", "workflow_dispatch:"):
+    for forbidden in (
+        "pull_request_target", "issue_comment:", "push:", "schedule:", "workflow_dispatch:"
+    ):
         assert forbidden not in text
 
 
@@ -71,7 +73,8 @@ def test_staged_state_artifacts_and_actions_have_fixed_provenance_paths():
         "path: ops-staged-state-observation.json",
         "path: ops-staged-state-observation.sha256",
         "path: ops-staged-state-verification.json",
-        "artifact-ids: ${{ needs.observe.outputs.receipt-artifact-id }},${{ needs.observe.outputs.detached-artifact-id }}",
+        "artifact-ids: ${{ needs.observe.outputs.receipt-artifact-id }},"
+        "${{ needs.observe.outputs.detached-artifact-id }}",
         "merge-multiple: true",
         "skip-decompress: true",
         "digest-mismatch: error",
