@@ -1,4 +1,53 @@
-# Gate745 S1 — проверенный пакет зависимости, S1 BLOCKED
+# Gate745 S1 — центральный SOURCE принят; transport BLOCKED
+
+Срез продолжения 19.10.2026. Координатор — α Gate. SAME execution
+`gate-745-snapshot-20261008T1458Z`, единственные #745 / PR747 /
+`agent/745-dialog-snapshot`. Поручение Марка — продолжить от
+[Ops handoff6265522437](https://github.com/markmalina/gate/issues/745#issuecomment-6265522437).
+
+## Текущее состояние после передачи Ops
+
+- Центральный код Ops принят только как SOURCE:
+  `a441e184c98732db49ad5e02b17efa42cb30a5ef`,
+  tree `4700a59e999a323ade1ba761bd1f55b4dffd50ad`.
+  [Canonical handoff](https://github.com/markmalina/ops/issues/375#issuecomment-6265513072);
+  [независимый δ348 SOURCE CODE ACCEPT](https://github.com/AlphaCenter/delta/issues/348#issuecomment-6265473225).
+  Старое «Ops не принял зависимость» больше не является текущим блокером.
+- PR381 OPEN / not merged; фактический Ops main
+  `b2d0587126488cebb0ff48e16ba397cd7e97e27f`.
+  Принятый C4 не установлен. Его release остаётся source PENDING /
+  reviewedExecutor null / enabled false / fixture PENDING / allocation null.
+- Существующий допустимый metadata transport для private Ops не подтверждён.
+  Семь workflow Gate main проверены: явной source-read привязки нет.
+  Состояние настроек secrets UNKNOWN; отсутствие секрета не утверждается.
+- Поддерживающий C0 всё ещё содержит исторический mint для owner AlphaCenter
+  с repositories gate/ops/delta и protected App key. Это не доказательство
+  доступа к нынешним markmalina/gate и markmalina/ops; AlphaCenter/delta
+  остаётся отдельным исходным репозиторием. До source admission App key
+  не используется для устранения этого разрыва.
+- Gate main проверен отдельно:
+  `86dbc0f429dce089bf733fc422f20f556535895b`.
+  У raw PR747 base.sha остаётся `461088d68d047e4cd08c7a4f581300d591af241e`;
+  эти разные наблюдения не подменяются.
+  Исходный head этого docs-этапа:
+  `650faddbc9ee0a4b48130ff8ff9396a6697622c1`.
+- Guard, workflows, client lock, H2 и source-policy этим docs-этапом не меняются.
+  Принятый код нельзя выдать за установленный release pin.
+  S1 / central removal criterion / live readonly остаются OPEN / BLOCKED /
+  NOT_RUN. S2 packet существует отдельно и не расширяется этим продолжением.
+
+Точный readset, ограничения доказательства, решение для владельца и порядок
+снятия блокера: [READ-TRANSPORT.md](READ-TRANSPORT.md).
+Машинный срез проверенных исходников: [read-transport-evidence.json](read-transport-evidence.json).
+Источник bootstrap/права чтения агентского GitHub connector не передаются
+в GitHub Actions и не считаются workflow credential.
+
+## Исторический пакет β S1 до принятия Ops
+
+Вся следующая часть — сохранённый авторский срез предшествующего этапа.
+Его формулировки «не принято», «не реализовано» и следующий шаг описывают
+то время, а не текущий Ops C4. Сохранённые proposed patch и tests не заменяют
+нынешний принятый центральный код и не предназначены для повторного применения.
 
 Срез 19.10.2026. Исполнитель β S1; координатор/следующий владелец — α Gate.
 Execution `gate-745-snapshot-20261008T1458Z`; существующие #745, PR747,
