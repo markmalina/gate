@@ -1,11 +1,10 @@
 """Offline S2 evidence audit and conditional cost arithmetic; no network or effects."""
 
-from decimal import Decimal as D
 import argparse
 import hashlib
 import json
+from decimal import Decimal as D
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -23,7 +22,12 @@ for item in json.loads((ROOT / "sources.json").read_text()):
 
 schema = json.loads((ROOT / "schema-excerpt.json").read_text())
 types = {item["name"]: item for item in schema["types"]}
-fields = lambda name, key="fields": {item["name"]: item for item in types[name][key]}
+
+
+def fields(name, key="fields"):
+    return {item["name"]: item for item in types[name][key]}
+
+
 assert "sizeMB" not in fields("VolumeCreateInput", "inputFields")
 assert "sizeMB" not in fields("VolumeUpdateInput", "inputFields")
 assert types["ServiceInstanceLimit"]["kind"] == "SCALAR"
@@ -63,7 +67,9 @@ out = {
         "storage_minutes_assumed": 4320, "egress_gb_example_only": 1,
         "compute_usd": str(compute), "storage_usd": str(storage),
         "egress_usd": str(egress_example),
-        "sum_before_github_subscription_tax_and_unknowns_usd": str(compute + storage + egress_example),
+        "sum_before_github_subscription_tax_and_unknowns_usd": str(
+            compute + storage + egress_example
+        ),
         "invoice_cap_proven": False,
         "billing_stops_at_observer_expiry_proven": False,
     },
@@ -88,4 +94,10 @@ out = {
 assert sum(v for k, v in out["polling"]["candidate_allocation_wide_wire_budget"].items()
            if k not in {"sum", "proposal_only"}) == 1800
 (ROOT / "analysis-results.json").write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n")
-print(json.dumps({k: v for k, v in out.items() if k != "source_verification"}, ensure_ascii=False, indent=2))
+print(
+    json.dumps(
+        {k: v for k, v in out.items() if k != "source_verification"},
+        ensure_ascii=False,
+        indent=2,
+    )
+)
