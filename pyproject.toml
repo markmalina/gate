@@ -35,6 +35,8 @@ dev = [
   "mypy>=1.11.0",
   "pytest>=8.3.0",
   "ruff>=0.6.0",
+  "setuptools>=69",
+  "wheel",
 ]
 
 [project.scripts]
@@ -124,3 +126,5 @@ include = ["app*"]
 exclude = ["tests*", "alembic*", "docs*"]
 
 
+[tool.setuptools.data-files]
+"share/gate745-fixture/alembic/versions" = ["alembic/versions/*.py"]
