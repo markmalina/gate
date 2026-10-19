@@ -49,6 +49,19 @@ def exact_settings():
     )
 
 
+def test_worker_rejects_dual_driver_before_any_io(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("conflicting driver reached GitHub client")
+
+    monkeypatch.setattr(worker, "MarkInboxClient", unexpected_client)
+    factory, http = AsyncMock(), AsyncMock()
+    conflicting = settings().model_copy(update={"gate_watch_voice_actions_enabled": True})
+    with pytest.raises(WatchVoiceError, match="^watch_voice_driver_conflict$"):
+        asyncio.run(worker.process_watch_voice(conflicting, factory, http))
+    factory.assert_not_called()
+    assert http.mock_calls == []
+
+
 async def admitted_future_cursor(factory, cutover, *, cursor="synthetic-cursor"):
     """Fixture for a cutover already admitted by the separate Actions binding."""
     async with factory() as session:

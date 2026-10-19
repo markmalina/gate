@@ -555,6 +555,8 @@ async def process_watch_voice(
 ) -> None:
     if not settings.gate_watch_voice_enabled:
         return
+    if settings.gate_watch_voice_actions_enabled:
+        raise WatchVoiceError("watch_voice_driver_conflict")
     validate_settings(settings)
     client = MarkInboxClient(
         http, settings.gate_mark_github_token.get_secret_value(), settings.gate_mark_github_writer

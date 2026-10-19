@@ -299,6 +299,8 @@ async def drain(
     claims: dict[str, Any],
     job_token: str,
 ) -> dict[str, Any]:
+    if settings.gate_watch_voice_enabled:
+        raise WatchVoiceError("watch_voice_driver_conflict")
     client = ActionsInboxClient(http, job_token)
     binding = await client.preflight_actions(
         claims, settings.gate_watch_voice_actions_workflow_sha256

@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -28,6 +29,24 @@ from test_watch_voice import World, database, notes, queued_note, settings
 WORKFLOW = b"synthetic-reviewed-workflow"
 PIN = hashlib.sha256(WORKFLOW).hexdigest()
 SHA = "a" * 40
+
+
+def test_actions_rejects_persistent_driver_before_any_io(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("conflicting driver reached GitHub client")
+
+    monkeypatch.setattr(
+        "app.infrastructure.watch_voice_actions.ActionsInboxClient", unexpected_client
+    )
+    factory, http = AsyncMock(), AsyncMock()
+    conflicting = settings().model_copy(update={"gate_watch_voice_actions_enabled": True})
+    with pytest.raises(WatchVoiceError, match="^watch_voice_driver_conflict$"):
+        asyncio.run(drain(
+            settings=conflicting, factory=factory, http=http,
+            claims={}, job_token="synthetic-unused-token",
+        ))
+    factory.assert_not_called()
+    assert http.mock_calls == []
 
 
 def claims(**extra):
