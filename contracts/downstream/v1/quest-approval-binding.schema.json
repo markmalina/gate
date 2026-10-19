@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-quest-approval-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approval_schema", "quest_ref", "approver_person_ref", "approver_role", "artifact", "approval_version", "approval_digest"],
+  "properties": {
+    "approval_schema": {"const": "become.quest-approval@1"},
+    "quest_ref": {"type": "string", "pattern": "^quest://[A-Za-z0-9._/-]+$"},
+    "approver_person_ref": {"type": "string", "pattern": "^(person|synthetic)://[A-Za-z0-9._/-]+$"},
+    "approver_role": {"const": "EXPERT"},
+    "artifact": {"$ref": "artifact-binding.schema.json"},
+    "approval_version": {"type": "integer", "minimum": 1},
+    "approval_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

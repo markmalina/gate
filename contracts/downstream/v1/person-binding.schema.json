@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-person-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "person_ref", "binding_version", "binding_digest"],
+  "properties": {
+    "role": {"enum": ["EXPERT", "LEARNER"]},
+    "person_ref": {"type": "string", "pattern": "^(person|synthetic)://[A-Za-z0-9._/-]+$"},
+    "binding_version": {"type": "integer", "minimum": 1},
+    "binding_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

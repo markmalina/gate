@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-receipt@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contract_version", "contract_digest", "service", "quest_ref", "correlation_ref", "operation", "operation_ref", "attempt_version", "idempotency_key", "request_digest", "outcome", "service_source_sha", "external_effects", "output", "receipt_digest"],
+  "properties": {
+    "schema": {"const": "become.role-aware-downstream-receipt@1"},
+    "contract_version": {"const": "become.role-aware-downstream@1"},
+    "contract_digest": {"const": "085e0f49660b9374be4718824a624b207344334e1fe0182ee2256aa1cf57e2f9"},
+    "service": {"enum": ["GATE", "RELATIONS", "MAYAKI", "OKO", "TAKE"]},
+    "quest_ref": {"type": "string"},
+    "correlation_ref": {"type": "string"},
+    "operation": {"enum": ["GATE_VALIDATE_CHAIN", "RELATIONS_VERIFY_EXPERT", "MAYAKI_CREATE_ARTIFACTS", "OKO_EVALUATE_SUBMISSION", "TAKE_CREATE_PRIVATE_RESULT"]},
+    "operation_ref": {"type": "string"},
+    "attempt_version": {"type": "integer", "minimum": 1},
+    "idempotency_key": {"type": "string"},
+    "request_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "outcome": {"enum": ["validated_default_off", "expert_verified", "artifacts_created", "result_created", "private_result_created"]},
+    "service_source_sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "external_effects": {"const": 0},
+    "output": {"type": "object"},
+    "receipt_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"service": {"const": "GATE"}}},
+      "then": {"properties": {"output": {"type": "object", "additionalProperties": false, "required": ["validation", "orchestration_enabled", "max_operations"], "properties": {"validation": {"const": "accepted"}, "orchestration_enabled": {"const": false}, "max_operations": {"const": 0}}}}}
+    },
+    {
+      "if": {"properties": {"service": {"const": "RELATIONS"}}},
+      "then": {"properties": {"output": {"type": "object", "additionalProperties": false, "required": ["eligibility_verified", "consent_verified", "verified_role"], "properties": {"eligibility_verified": {"const": true}, "consent_verified": {"const": true}, "verified_role": {"const": "EXPERT"}}}}}
+    },
+    {
+      "if": {"properties": {"service": {"const": "MAYAKI"}}},
+      "then": {"properties": {"output": {"type": "object", "additionalProperties": false, "required": ["artifacts", "human_approval_created", "learner_acceptance_created", "enrollment_state", "free_entitlement_issued"], "properties": {"artifacts": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "artifact-binding.schema.json"}}, "human_approval_created": {"const": false}, "learner_acceptance_created": {"const": false}, "enrollment_state": {"const": "NOT_ACTIVE"}, "free_entitlement_issued": {"const": true}}}}}
+    },
+    {
+      "if": {"properties": {"service": {"const": "OKO"}}},
+      "then": {"properties": {"output": {"type": "object", "additionalProperties": false, "required": ["result_state", "oko_result", "free_result_delivered"], "properties": {"result_state": {"const": "result_created"}, "oko_result": {"$ref": "oko-result-binding.schema.json"}, "free_result_delivered": {"const": false}}}}}
+    },
+    {
+      "if": {"properties": {"service": {"const": "TAKE"}}},
+      "then": {"properties": {"output": {"type": "object", "additionalProperties": false, "required": ["result_state", "private_result", "telegram_delivered", "published", "payment_created"], "properties": {"result_state": {"const": "private_result_created"}, "private_result": {"$ref": "take-private-result-binding.schema.json"}, "telegram_delivered": {"const": false}, "published": {"const": false}, "payment_created": {"const": false}}}}}
+    }
+  ]
+}
