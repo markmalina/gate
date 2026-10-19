@@ -1,0 +1,30 @@
+name: Gate745 Controller Source
+on:
+  push:
+    paths:
+      - scripts/gate745/**
+      - .github/workflows/gate745-fixture-controller.yml
+      - .github/workflows/gate745-controller-source-ci.yml
+  pull_request:
+    paths:
+      - scripts/gate745/**
+      - .github/workflows/gate745-fixture-controller.yml
+      - .github/workflows/gate745-controller-source-ci.yml
+permissions:
+  contents: read
+jobs:
+  controller-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Verify original artifact, OIDC, reservation and closed helper protocol
+        run: node --test scripts/gate745/*.test.mjs

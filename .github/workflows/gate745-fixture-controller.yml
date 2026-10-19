@@ -1,0 +1,277 @@
+name: Gate745 Trusted Fixture Controller
+
+on:
+  workflow_call:
+
+# The future P workflow uses this reusable workflow at an accepted literal C0
+# SHA. There is no dispatch trigger, arbitrary input or secrets: inherit port.
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: gate745-isolated-fixture-original-grant
+  cancel-in-progress: false
+
+jobs:
+  fixture-source-admission:
+    name: fixture-source-admission
+    if: >-
+      ${{ github.repository == 'AlphaCenter/gate' && github.repository_id == '1293746267' &&
+          github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
+          github.event_name == 'issue_comment' && github.event.action == 'created' &&
+          github.event.issue.number == 745 && !github.event.issue.pull_request &&
+          github.actor == 'markmalina' && github.actor_id == '23397294' &&
+          github.triggering_actor == 'markmalina' && github.event.sender.id == 23397294 &&
+          github.event.sender.login == 'markmalina' &&
+          github.event.comment.body == '/ops-gate745 fixture run=complete' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: gate-production
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      id-token: write
+    outputs:
+      controller-sha: ${{ steps.controller-identity.outputs.controller-sha }}
+      controller-tree: ${{ steps.source-metadata.outputs.controller-tree }}
+      ops-sha: ${{ steps.source-lock.outputs.ops-sha }}
+      certificate-artifact-id: ${{ steps.certificate.outputs.artifact-id }}
+      certificate-raw-digest: ${{ steps.source-metadata.outputs.certificate-raw-digest }}
+      binding-artifact-id: ${{ steps.binding.outputs.artifact-id }}
+      binding-raw-digest: ${{ steps.produce-binding.outputs.binding-raw-digest }}
+      reservation-body-digest: ${{ steps.produce-binding.outputs.reservation-body-digest }}
+      ops-source-artifact-id: ${{ steps.ops-source.outputs.artifact-id }}
+      ops-source-raw-digest: ${{ steps.ops-source-packet.outputs.ops-source-raw-digest }}
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Authenticate reusable C0 identity before checkout
+        id: controller-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {createPublicKey,verify} from 'node:crypto';
+          import {appendFileSync} from 'node:fs';
+          const stop=()=>{throw new Error('E_CONTROLLER_BOOTSTRAP_IDENTITY');};
+          const audience='gate745-fixture-source-bootstrap/v2';
+          let u;try{u=new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);}catch{stop();}
+          if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash||!/(^|\.)actions\.githubusercontent\.com$/u.test(u.hostname))stop();
+          u.searchParams.set('audience',audience);
+          const r=await fetch(u,{redirect:'error',headers:{Authorization:'Bearer '+process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN},signal:AbortSignal.timeout(10000)});
+          if(!r.ok)stop();const p=(await r.json()).value;if(typeof p!=='string'||p.length>32768)stop();
+          const parts=p.split('.');if(parts.length!==3)stop();
+          const h=JSON.parse(Buffer.from(parts[0],'base64url')),c=JSON.parse(Buffer.from(parts[1],'base64url'));
+          const thumbprint=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{27}$/u.test(v)&&Buffer.from(v,'base64url').length===20&&Buffer.from(v,'base64url').toString('base64url')===v;
+          const hasThumbprint=Object.hasOwn(h,'x5t'),headerKeys=hasThumbprint?['alg','kid','typ','x5t']:['alg','kid','typ'];
+          if(!h||Object.getPrototypeOf(h)!==Object.prototype||Object.keys(h).length!==headerKeys.length||Object.keys(h).some(k=>!headerKeys.includes(k))||
+             typeof h.kid!=='string'||!/^[A-Za-z0-9._-]{1,128}$/u.test(h.kid)||(hasThumbprint&&!thumbprint(h.x5t)))stop();
+          const jr=await fetch('https://token.actions.githubusercontent.com/.well-known/jwks',{redirect:'error',signal:AbortSignal.timeout(10000)});
+          if(!jr.ok)stop();const keys=(await jr.json()).keys?.filter(k=>k.kid===h.kid);
+          if(h.alg!=='RS256'||h.typ!=='JWT'||keys?.length!==1||keys[0].kty!=='RSA'||keys[0].alg!=='RS256'||keys[0].use!=='sig')stop();
+          if(hasThumbprint&&(!thumbprint(keys[0].x5t)||h.x5t!==keys[0].x5t))stop();
+          const key=createPublicKey({key:keys[0],format:'jwk'});
+          if(key.asymmetricKeyDetails.modulusLength<2048||!verify('RSA-SHA256',Buffer.from(parts[0]+'.'+parts[1]),key,Buffer.from(parts[2],'base64url')))stop();
+          const now=Math.floor(Date.now()/1000),sha=c.job_workflow_sha;
+          const subjects=['repo:AlphaCenter/gate:environment:gate-production','repo:AlphaCenter@310893851/gate@1293746267:environment:gate-production'];
+          if(!/^[0-9a-f]{40}$/u.test(sha??'')||c.iss!=='https://token.actions.githubusercontent.com'||c.aud!==audience||!subjects.includes(c.sub)||
+             c.repository!=='AlphaCenter/gate'||c.repository_id!=='1293746267'||c.repository_owner!=='AlphaCenter'||c.repository_owner_id!=='310893851'||
+             c.actor!=='markmalina'||c.actor_id!=='23397294'||c.run_id!==process.env.GITHUB_RUN_ID||c.run_attempt!=='1'||
+             c.event_name!=='issue_comment'||c.ref!=='refs/heads/main'||c.sha!==process.env.GITHUB_SHA||c.environment!=='gate-production'||
+             c.runner_environment!=='github-hosted'||c.workflow_ref!=='AlphaCenter/gate/.github/workflows/gate745-native-fixture.yml@refs/heads/main'||
+             c.job_workflow_ref!=='AlphaCenter/gate/.github/workflows/gate745-fixture-controller.yml@'+sha||
+             ![c.iat,c.nbf,c.exp].every(Number.isSafeInteger)||c.iat>now+5||now-c.iat>600||c.nbf>now+5||c.nbf>=c.exp||c.exp<=now||c.exp-c.iat>600||c.exp<=c.iat)stop();
+          appendFileSync(process.env.GITHUB_OUTPUT,'controller-sha='+sha+'\n');
+          NODE
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          repository: AlphaCenter/gate
+          ref: ${{ steps.controller-identity.outputs.controller-sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Admit literal O source lock
+        id: source-lock
+        run: node scripts/gate745/fixture-hosted.mjs guard-source
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          repository: AlphaCenter/gate
+          ref: ${{ github.sha }}
+          path: .agent-ops/client
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Load only the original P proposal
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .agent-ops/client/.agent-ops/input/fixture-proposal.json
+          mkdir -p .agent-ops/input
+          cp .agent-ops/client/.agent-ops/input/fixture-proposal.json .agent-ops/input/fixture-proposal.json
+      - name: Mint existing App source read token
+        id: source-reader
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: '4578389'
+          private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+          owner: AlphaCenter
+          repositories: |
+            gate
+            ops
+            delta
+          permission-contents: read
+          permission-actions: read
+          permission-issues: read
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          repository: AlphaCenter/ops
+          ref: ${{ steps.source-lock.outputs.ops-sha }}
+          token: ${{ steps.source-reader.outputs.token }}
+          path: .agent-ops/executor
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify accepted Ops checkout before source import
+        id: ops-source-packet
+        run: node scripts/gate745/fixture-ops-source.mjs produce
+      - name: Admit exact source and owner
+        env:
+          GATE745_SOURCE_READ_TOKEN: ${{ steps.source-reader.outputs.token }}
+        run: node .agent-ops/executor/agent-ops/actions/gate745-fixture-controller/entry.mjs source-admission
+      - name: Calculate original certificate raw digest
+        id: source-metadata
+        run: node scripts/gate745/fixture-hosted.mjs source-metadata
+      - name: Upload accepted Ops source
+        id: ops-source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-ops-source
+          path: .agent-ops/output/fixture-ops-source.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload source certificate
+        id: certificate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-source-certificate
+          path: .agent-ops/output/fixture-source-certificate.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - name: Reserve original grant and construct immutable B
+        id: produce-binding
+        env:
+          GATE745_RESERVATION_TOKEN: ${{ github.token }}
+          INPUT_SOURCE_CERTIFICATE_ARTIFACT_ID: ${{ steps.certificate.outputs.artifact-id }}
+        run: node scripts/gate745/fixture-hosted.mjs produce-binding
+      - name: Upload immutable original run binding
+        id: binding
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-binding
+          path: .agent-ops/output/fixture-binding.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+
+  fixture-native:
+    name: fixture-native
+    needs: fixture-source-admission
+    if: ${{ needs.fixture-source-admission.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: gate745-isolated-fixture
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          repository: AlphaCenter/gate
+          ref: ${{ needs.fixture-source-admission.outputs.controller-sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install accepted Ops source without App credentials
+        env:
+          INPUT_OPS_SOURCE_ARTIFACT_ID: ${{ needs.fixture-source-admission.outputs.ops-source-artifact-id }}
+          INPUT_OPS_SOURCE_RAW_DIGEST: ${{ needs.fixture-source-admission.outputs.ops-source-raw-digest }}
+          GATE745_ORIGINAL_READ_TOKEN: ${{ github.token }}
+        run: node scripts/gate745/fixture-ops-source.mjs install
+      - name: Execute only the authenticated original complete fixture
+        env:
+          INPUT_BINDING_ARTIFACT_ID: ${{ needs.fixture-source-admission.outputs.binding-artifact-id }}
+          INPUT_BINDING_RAW_DIGEST: ${{ needs.fixture-source-admission.outputs.binding-raw-digest }}
+          INPUT_SOURCE_CERTIFICATE_ARTIFACT_ID: ${{ needs.fixture-source-admission.outputs.certificate-artifact-id }}
+          INPUT_SOURCE_CERTIFICATE_RAW_DIGEST: ${{ needs.fixture-source-admission.outputs.certificate-raw-digest }}
+          INPUT_CONTROLLER_SHA: ${{ needs.fixture-source-admission.outputs.controller-sha }}
+          INPUT_CONTROLLER_TREE: ${{ needs.fixture-source-admission.outputs.controller-tree }}
+          INPUT_RESERVATION_BODY_DIGEST: ${{ needs.fixture-source-admission.outputs.reservation-body-digest }}
+          GATE745_ORIGINAL_READ_TOKEN: ${{ github.token }}
+          GATE745_FIXTURE_PROJECT_TOKEN: ${{ secrets.GATE745_FIXTURE_PROJECT_TOKEN }}
+          GATE745_FIXTURE_ADMIN_TOKEN: ${{ secrets.GATE745_FIXTURE_ADMIN_TOKEN }}
+          GATE745_FIXTURE_HEALTH_TOKEN: ${{ secrets.GATE745_FIXTURE_HEALTH_TOKEN }}
+        run: node .agent-ops/executor/agent-ops/actions/gate745-fixture-controller/entry.mjs fixture
+      - name: Save original success evidence
+        if: ${{ always() && hashFiles('.agent-ops/output/fixture-success.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-success
+          path: .agent-ops/output/fixture-success.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+      - name: Save original controlled recovery evidence
+        if: ${{ always() && hashFiles('.agent-ops/output/fixture-controlled-recovery.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-controlled-recovery
+          path: .agent-ops/output/fixture-controlled-recovery.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+      - name: Save original live evidence
+        if: ${{ always() && hashFiles('.agent-ops/output/fixture-live.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-live
+          path: .agent-ops/output/fixture-live.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+      - name: Save original cleanup evidence
+        if: ${{ always() && hashFiles('.agent-ops/output/fixture-cleanup.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-cleanup
+          path: .agent-ops/output/fixture-cleanup.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+      - name: Save original consumed operation ledger
+        if: ${{ always() && hashFiles('.agent-ops/output/fixture-operation-ledger.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-fixture-operation-ledger
+          path: .agent-ops/output/fixture-operation-ledger.json
+          archive: true
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
