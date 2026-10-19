@@ -23,6 +23,11 @@ from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
+from app.api.personal_command_mcp import (
+    PERSONAL_COMMAND_SCOPES,
+    personal_command_call,
+    personal_command_tools,
+)
 from app.api.health_routes import _get_worker_health_registry
 from app.api.routes import get_telegram_client
 from app.application.alpha_group import AlphaInstallationState
@@ -321,7 +326,7 @@ async def mcp_endpoint(
                     _gate_alpha_verify_review_replay_tool(settings),
                     _gate_beta_export_space_checkpoint_tool(settings),
                     _gate_beta_get_provider_probe_tool(settings),
-                ]
+                ] + personal_command_tools(settings)
             },
         )
     if method == "tools/call":
@@ -329,7 +334,16 @@ async def mcp_endpoint(
         if not isinstance(params, dict):
             return _jsonrpc_error(request_id=request_id, code=-32602, message="Invalid params")
         tool_name = params.get("name")
-        arguments = params.get("arguments")
+        arguments = params.get("arguments", {})
+        if isinstance(tool_name, str) and tool_name in PERSONAL_COMMAND_SCOPES:
+            return await personal_command_call(
+                request=request,
+                request_id=request_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                authorization=authorization,
+                settings=settings,
+            )
         if not isinstance(arguments, dict):
             arguments = {}
         if tool_name not in MCP_TOOL_SCOPES:
