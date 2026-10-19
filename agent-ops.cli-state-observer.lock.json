@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "agent-ops.gate-cli-state-observer-lock/v1",
+  "repository": "markmalina/ops",
+  "commit": "7f9167075bc6e1b60be7490b8454133eb8132058",
+  "actionPath": "agent-ops/actions/gate-cli-state-observer",
+  "workflowSha256": "sha256:3685df433b2bb3298d4e30cb5095abf41e57b073876cb1c1300fc30cdce2d359",
+  "profileSha256": "sha256:c8a4a0d4723e5922ef512998edfa448ee46afb503b29dcfac7a16fb19b70e4e6"
+}
