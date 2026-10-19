@@ -1,5 +1,7 @@
 # Gate
 
+> **Current source audit / Актуальный аудит — 19.10.2026:** [Начать здесь](docs/audit/2026-10-19/README.md). Назначение, фактическая архитектура и спецификация, API/MCP, данные, конфигурация, 16 находок, полный срез 34 задач / 14 PR и [старт для ИИ](docs/audit/2026-10-19/AI-START.md). Основа source: `86dbc0f429dce089bf733fc422f20f556535895b`; dated snapshots ниже сохраняются как история. Текущий owner scope и root AGENTS определяют разрешения; audit не активирует функции и не заменяет runtime приёмку.
+
 > [!IMPORTANT]
 > **Current ecosystem boundary — 2026-08-25:** Gate is external communication
 > transport and delivery infrastructure. It does not own OMARK, AQUB product meaning,

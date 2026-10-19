@@ -1,0 +1,3193 @@
+{
+  "schema_version": "gate.audit.snapshot.v1",
+  "repository": "markmalina/gate",
+  "repository_id": 1293746267,
+  "source_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "source_tree": "7b5ddc0e6317fc475e2256953a69a07b109463dc",
+  "captured_on": "2026-10-19",
+  "audit_issue": 767,
+  "snapshot_excludes_own_audit_issue": true,
+  "implementation_claimed_by_audit": false,
+  "domain_issue_count": 34,
+  "open_pr_count": 14,
+  "issues": [
+    {
+      "number": 745,
+      "url": "https://github.com/markmalina/gate/issues/745",
+      "title": "Защита ответа снимком диалога",
+      "github_state": "open",
+      "updated_at": "2026-10-19T12:57:45Z",
+      "classification": "release_blocked",
+      "current_state": "Источник в PR747; source-этапы приняты для отдельных ревизий, защиты в main нет. Последний docs этап завершён, lease освобождена; S1 заблокирован внешним metadata transport.",
+      "next_action": "Допустить отдельный readonly source/readset transport через существующий Ops375 либо доказать existing binding; затем продолжить текущую цепочку S1/native/cutover, сохраняя exact gates.",
+      "related_prs": [
+        747,
+        758,
+        760,
+        762
+      ],
+      "next_owner": "α Gate #745 → принявший α Ops / Марк для отсутствующего точного допуска",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/745",
+        "latest_comment": "https://github.com/markmalina/gate/issues/745#issuecomment-6267718741",
+        "latest_comment_updated_at": "2026-10-19T12:57:45Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 736,
+      "url": "https://github.com/markmalina/gate/issues/736",
+      "title": "Автономный Watch → Gate → private Mark",
+      "github_state": "open",
+      "updated_at": "2026-10-19T12:43:38Z",
+      "classification": "release_blocked",
+      "current_state": "Диагностика принята только как observation; PR766 открыт. Persistent worker выключен в main start command; продуктовая автономная доставка не выпущена и не принята. Прямой scoped status аудита: Actions18transcribed/18delivered, ordinary worker off; отдельные доставки не закрывают автономную цель.",
+      "next_action": "Завершить допущенный runtime/config/predeploy/writer preflight, выпустить один driver mode и подтвердить настоящую новую запись, delivery/replay и восстановление.",
+      "related_prs": [
+        766
+      ],
+      "next_owner": "α Gate #736 и существующий α Ops",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/736",
+        "latest_comment": "https://github.com/markmalina/gate/issues/736#issuecomment-6264607138",
+        "latest_comment_updated_at": "2026-10-19T09:59:48Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 731,
+      "url": "https://github.com/markmalina/gate/issues/731",
+      "title": "Исходный pointer голосового Inbox Mark",
+      "github_state": "open",
+      "updated_at": "2026-10-19T10:00:14Z",
+      "classification": "linked_outcome",
+      "current_state": "Реализация базового архивирования/Actions пути в main есть; текущая автономная доставка продолжается через #736. Это не второй независимый продуктовый запуск.",
+      "next_action": "Использовать #736 как текущее исполнение; закрытие только после принятой автономной доставки и ссылок на доказательства.",
+      "related_prs": [
+        766
+      ],
+      "next_owner": "α Gate #736",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/731",
+        "latest_comment": "https://github.com/markmalina/gate/issues/731#issuecomment-6264614897",
+        "latest_comment_updated_at": "2026-10-19T10:00:14Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 764,
+      "url": "https://github.com/markmalina/gate/issues/764",
+      "title": "Восстановление Ops caller после transfer",
+      "github_state": "open",
+      "updated_at": "2026-10-16T18:22:46Z",
+      "classification": "source_change_landed_runtime_unproven",
+      "current_state": "Repin внесён PR765 в текущий main. Задача остаётся открытой: успешный production deploy этой цепочки не доказан; есть provider-state blocker.",
+      "next_action": "Сверить существующий #736/Ops receipt и завершить точный deploy/config этап без повторного создания credentials.",
+      "related_prs": [],
+      "next_owner": "α Gate / существующий α Ops",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/764",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 696,
+      "url": "https://github.com/markmalina/gate/issues/696",
+      "title": "Облачный MTProto российского аккаунта",
+      "github_state": "open",
+      "updated_at": "2026-10-12T06:45:03Z",
+      "classification": "source_unreleased",
+      "current_state": "PR761 с durable commands/grants и default-off cloud foundation открыт; планv3 в draftPR759. M0 connection/M1 text/M2 selected reading/M3 files не приняты. BY исключён.",
+      "next_action": "Продолжить V0-B/V0-C и V1-S source prerequisites из существующего плана; current main/release/schema/host admission проверить до live.",
+      "related_prs": [
+        761,
+        759
+      ],
+      "next_owner": "α Gate #696 → принявший α Ops для protected host stage",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/696",
+        "latest_comment": "https://github.com/markmalina/gate/issues/696#issuecomment-6119183379",
+        "latest_comment_updated_at": "2026-10-12T06:45:03Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 735,
+      "url": "https://github.com/markmalina/gate/issues/735",
+      "title": "Rich Messages: общий продуктовый план",
+      "github_state": "open",
+      "updated_at": "2026-10-08T09:07:51Z",
+      "classification": "umbrella_partly_delivered",
+      "current_state": "Sprint1 native Rich принят для RU по исторической квитанции #737; BY отложен. Полный parent остаётся открыт, Sprint2 ведётся отдельно #742.",
+      "next_action": "Сохранять RU/BY и source/runtime/client acceptance отдельно; продолжать только текущий Sprint2 scope.",
+      "related_prs": [
+        744
+      ],
+      "next_owner": "α Gate #742",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/735",
+        "latest_comment": "https://github.com/markmalina/gate/issues/735#issuecomment-6034143312",
+        "latest_comment_updated_at": "2026-10-07T08:33:01Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 742,
+      "url": "https://github.com/markmalina/gate/issues/742",
+      "title": "Rich Sprint2: изображения, альбомы, native media",
+      "github_state": "open",
+      "updated_at": "2026-10-07T15:01:02Z",
+      "classification": "source_failed_checks",
+      "current_state": "PR744 открыт; на exact08c499b оба просмотренных обязательных run — failure. Последний checkpoint сообщает о migration-head assertions и незавершённых decoder resource bounds.",
+      "next_action": "В существующем PR устранить ограничения decoder и migration integration, получить новый exact-head CI и отдельную приёмку. Не выпускать по старым green subset.",
+      "related_prs": [
+        744
+      ],
+      "next_owner": "α Gate #742",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/742",
+        "latest_comment": "https://github.com/markmalina/gate/issues/742#issuecomment-6040733987",
+        "latest_comment_updated_at": "2026-10-07T15:01:02Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 730,
+      "url": "https://github.com/markmalina/gate/issues/730",
+      "title": "Статусы AI-агента, анимации и Stop в Telegram",
+      "github_state": "open",
+      "updated_at": "2026-10-05T14:57:24Z",
+      "classification": "planned_not_started",
+      "current_state": "Только записанный по поручению план; execution и срок реализации не назначены.",
+      "next_action": "После отдельного принятия определить per-task progress/cancel/clarification contract, scope и bounded implementation.",
+      "related_prs": [],
+      "next_owner": "Марк / α Gate после принятия",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/730",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 300,
+      "url": "https://github.com/markmalina/gate/issues/300",
+      "title": "Oko Mayak в Telegram Business DM",
+      "github_state": "open",
+      "updated_at": "2026-10-04T20:15:31Z",
+      "classification": "paused_owner",
+      "current_state": "Есть runtime source; последняя предметная owner-квитанция04.10 фиксирует pause BY installation. Это датированная проверка, не свежий live status.",
+      "next_action": "Сохранять паузу; возобновление только по точному owner scope и актуальной установке. Аудит не активирует.",
+      "related_prs": [],
+      "next_owner": "Марк / α Gate соответствующего Work",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/300",
+        "latest_comment": "https://github.com/markmalina/gate/issues/300#issuecomment-5983969701",
+        "latest_comment_updated_at": "2026-10-04T20:15:31Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 722,
+      "url": "https://github.com/markmalina/gate/issues/722",
+      "title": "Выпуск личного Gate: серии, stop, постоянная работа",
+      "github_state": "open",
+      "updated_at": "2026-09-29T14:48:20Z",
+      "classification": "source_unreleased",
+      "current_state": "G1a PR724 имеет source ACCEPT в квитанции; combined predecessor был REJECT. Новый PR720 headaf929dd имеет green CI, но новый независимый terminal ACCEPT именно successor и runtime release здесь не установлены.",
+      "next_action": "Проверить successor acceptance для #726, объединённую schema/topology, G1/G2 admission и выпустить через существующий план.",
+      "related_prs": [
+        724,
+        720,
+        721,
+        719
+      ],
+      "next_owner": "α Gate #722",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/722",
+        "latest_comment": "https://github.com/markmalina/gate/issues/722#issuecomment-5892657992",
+        "latest_comment_updated_at": "2026-09-29T14:48:20Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 726,
+      "url": "https://github.com/markmalina/gate/issues/726",
+      "title": "Регрессионная fixture process-admission",
+      "github_state": "open",
+      "updated_at": "2026-09-29T14:47:56Z",
+      "classification": "corrected_pending_acceptance",
+      "current_state": "Ошибка fixture подтверждена на combined predecessor; исправление в PR720 successoraf929dd. Его exact CI green; независимая приёмка successor отдельно не установлена.",
+      "next_action": "Продолжить свежую независимую проверку точного successor по существующей цепочке, затем актуализировать #722 без переписывания REJECT.",
+      "related_prs": [
+        720
+      ],
+      "next_owner": "α Gate #722 / независимая δ после отдельного поручения",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/726",
+        "latest_comment": "https://github.com/markmalina/gate/issues/726#issuecomment-5892651523",
+        "latest_comment_updated_at": "2026-09-29T14:47:56Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 716,
+      "url": "https://github.com/markmalina/gate/issues/716",
+      "title": "Параллельные серии разным адресатам",
+      "github_state": "open",
+      "updated_at": "2026-09-29T14:36:55Z",
+      "classification": "source_unreleased",
+      "current_state": "Объединена с prerequisite#718 в PR720; main продолжает последовательный await по due сериям.",
+      "next_action": "Завершить combined acceptance/release #722; сохранить лимиты in-flight/account/bot и изоляцию получателей.",
+      "related_prs": [
+        720
+      ],
+      "next_owner": "α Gate #722",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/716",
+        "latest_comment": "https://github.com/markmalina/gate/issues/716#issuecomment-5892453375",
+        "latest_comment_updated_at": "2026-09-29T14:36:55Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 718,
+      "url": "https://github.com/markmalina/gate/issues/718",
+      "title": "Атомарная остановка серии при входящем",
+      "github_state": "open",
+      "updated_at": "2026-09-27T21:05:53Z",
+      "classification": "source_unreleased",
+      "current_state": "ТЗ в PR719, реализация вместе с #716 в PR720. В main только проверка newer reply task перед send; полный inbound stop не выпущен.",
+      "next_action": "Принять race cases всех типов inbound, sender barrier, durable stop/readback; выпускать с #722, без отдельной дублирующей реализации.",
+      "related_prs": [
+        719,
+        720
+      ],
+      "next_owner": "α Gate #722",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/718",
+        "latest_comment": "https://github.com/markmalina/gate/issues/718#issuecomment-5859188717",
+        "latest_comment_updated_at": "2026-09-27T21:05:53Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 712,
+      "url": "https://github.com/markmalina/gate/issues/712",
+      "title": "Русская транскрипция и говорящие",
+      "github_state": "open",
+      "updated_at": "2026-09-25T11:53:01Z",
+      "classification": "planned_research_recorded",
+      "current_state": "Текущие адаптеры возвращают обычный текст без diarization. В issue есть исследовательские варианты, но новое модельное/biometric действие не принято этим аудитом.",
+      "next_action": "Сначала согласовать structured speaker contract, источники, consent и новую pinned model/budget policy; цены/доступность перепроверить при реализации.",
+      "related_prs": [],
+      "next_owner": "Марк / α Gate после принятия",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/712",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 689,
+      "url": "https://github.com/markmalina/gate/issues/689",
+      "title": "Большие Telegram-вложения по запросу Work",
+      "github_state": "open",
+      "updated_at": "2026-09-21T09:15:23Z",
+      "classification": "handoff_not_accepted",
+      "current_state": "Подготовлена постановка для выбранных больших файлов; принятие адресатом и универсальный download route не подтверждены.",
+      "next_action": "Уточнить принимаемый exact target/лимиты/transport в существующем handoff; затем bounded source implementation без account mirror.",
+      "related_prs": [],
+      "next_owner": "α Gate после явного принятия поручения",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/689",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 663,
+      "url": "https://github.com/markmalina/gate/issues/663",
+      "title": "Food evidence envelopes",
+      "github_state": "open",
+      "updated_at": "2026-08-27T20:15:50Z",
+      "classification": "frozen_historical",
+      "current_state": "Связан с замороженным AQUB; старые implementation/live claims не разрешают продолжение после owner freeze09.10.",
+      "next_action": "Сохранить provenance; не запускать. Возможное новое назначение требует отдельного owner решения о домене и границах.",
+      "related_prs": [],
+      "next_owner": "Марк / α Gate по отдельному решению",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/663",
+        "latest_comment": "https://github.com/markmalina/gate/issues/663#issuecomment-5444711639",
+        "latest_comment_updated_at": "2026-08-27T20:15:50Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 629,
+      "url": "https://github.com/markmalina/gate/issues/629",
+      "title": "Исторический timeout Gate → AQUB",
+      "github_state": "open",
+      "updated_at": "2026-08-25T19:41:22Z",
+      "classification": "frozen_historical",
+      "current_state": "Исторический source CODE ACCEPT; provider smoke отложен. Текущий Gate от AQUB отключён; old grant superseded.",
+      "next_action": "Не активировать старый downstream. При cleanup лишь классифицировать историю и связи.",
+      "related_prs": [],
+      "next_owner": "α Gate: классификация; новое действие — Марк",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/629",
+        "latest_comment": "https://github.com/markmalina/gate/issues/629#issuecomment-5415765841",
+        "latest_comment_updated_at": "2026-08-25T19:41:22Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 625,
+      "url": "https://github.com/markmalina/gate/issues/625",
+      "title": "Историческая ошибка staging deploy",
+      "github_state": "open",
+      "updated_at": "2026-08-25T13:27:22Z",
+      "classification": "historical_needs_reconciliation",
+      "current_state": "Квитанца августа относит упавший Gate deploy к staging; это не доказанный production outage. Старый AQUB operational route отменён.",
+      "next_action": "Повторно классифицировать только через текущий Gate-owned readonly Ops контракт, если эта инфраструктура ещё нужна; не повторять старый staging workflow.",
+      "related_prs": [],
+      "next_owner": "α Gate → существующий α Ops при принятии",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/625",
+        "latest_comment": "https://github.com/markmalina/gate/issues/625#issuecomment-5411077611",
+        "latest_comment_updated_at": "2026-08-25T13:27:22Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 617,
+      "url": "https://github.com/markmalina/gate/issues/617",
+      "title": "Food export/delete lifecycle",
+      "github_state": "open",
+      "updated_at": "2026-08-23T09:13:41Z",
+      "classification": "frozen_handoff_not_accepted",
+      "current_state": "Старый AQUB producer/consumer handoff PREPARED/NOT ACCEPTED; не решение общего Gate data lifecycle.",
+      "next_action": "Сохранить как историю. Общую data-class matrix рассматривать отдельно по GATE-A14; старый AQUB не размораживать.",
+      "related_prs": [],
+      "next_owner": "Марк / α Gate после нового предметного принятия",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/617",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 614,
+      "url": "https://github.com/markmalina/gate/issues/614",
+      "title": "Версионированный Food receipt",
+      "github_state": "open",
+      "updated_at": "2026-08-23T06:29:07Z",
+      "classification": "frozen_handoff_not_accepted",
+      "current_state": "Старый AQUB handoff PREPARED/NOT ACCEPTED; production activation не разрешён.",
+      "next_action": "Не начинать; хранить contract provenance и отсутствие текущей runtime authority.",
+      "related_prs": [],
+      "next_owner": "Марк / α Gate по отдельному решению",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/614",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 592,
+      "url": "https://github.com/markmalina/gate/issues/592",
+      "title": "Исторический owner-photo byte archive",
+      "github_state": "open",
+      "updated_at": "2026-08-20T11:50:09Z",
+      "classification": "frozen_historical",
+      "current_state": "Source/CI этап завершён по старой квитанции; она ссылается на прежний PR593, которого нет среди текущих openPR. Нынешнее состояние того PR не выводится из комментария.",
+      "next_action": "Классифицировать историю по текущему freeze. Не объявлять old PR открытым/не слитым без отдельного запроса.",
+      "related_prs": [],
+      "next_owner": "α Gate: классификация без активации",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/592",
+        "latest_comment": "https://github.com/markmalina/gate/issues/592#issuecomment-5355458827",
+        "latest_comment_updated_at": "2026-08-20T11:50:09Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 577,
+      "url": "https://github.com/markmalina/gate/issues/577",
+      "title": "Food delivery v2 readiness",
+      "github_state": "open",
+      "updated_at": "2026-08-19T16:37:16Z",
+      "classification": "frozen_historical",
+      "current_state": "Есть старые source acceptance receipts и open draftPR578; последующий исторический endpoint slice ссылается на PR583. AQUB заморожен.",
+      "next_action": "Не выпускать и не продолжать old route; при любом новом решении перепроверить полную цепочку и актуальный домен.",
+      "related_prs": [
+        578
+      ],
+      "next_owner": "Марк / α Gate по отдельному решению",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/577",
+        "latest_comment": "https://github.com/markmalina/gate/issues/577#issuecomment-5345126473",
+        "latest_comment_updated_at": "2026-08-19T16:37:16Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 570,
+      "url": "https://github.com/markmalina/gate/issues/570",
+      "title": "Свести Gate к transport и укрепить delivery",
+      "github_state": "open",
+      "updated_at": "2026-08-10T14:44:29Z",
+      "classification": "frozen_predecessor_architecture",
+      "current_state": "Часть neutral contracts/parser сделана; программа исходила из консолидации AQUB, которая отменена freeze. Долг transport/product ownership остаётся самостоятельным наблюдением.",
+      "next_action": "Сохранить принятые нейтральные контракты; новую декомпозицию готовить из нынешней ownership map, без зависимости от AQUB.",
+      "related_prs": [],
+      "next_owner": "α Gate по отдельному архитектурному outcome",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/570",
+        "latest_comment": "https://github.com/markmalina/gate/issues/570#issuecomment-5241840734",
+        "latest_comment_updated_at": "2026-08-10T14:44:29Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 485,
+      "url": "https://github.com/markmalina/gate/issues/485",
+      "title": "Beta Space: точное согласие и активация",
+      "github_state": "open",
+      "updated_at": "2026-08-05T21:31:33Z",
+      "classification": "historical_consent_pending",
+      "current_state": "Последняя квитанция05.08: prompt sent, binding не создан до подтверждённого callback участника. Свежая согласованность callback/installation не проверялась.",
+      "next_action": "Не отправлять prompt повторно и не считать старое ожидание разрешением; сначала актуальная scoped receipt и отдельное consent scope.",
+      "related_prs": [],
+      "next_owner": "Владелец согласия / α Gate в принятом контуре",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/485",
+        "latest_comment": "https://github.com/markmalina/gate/issues/485#issuecomment-5197601815",
+        "latest_comment_updated_at": "2026-08-05T21:31:33Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 478,
+      "url": "https://github.com/markmalina/gate/issues/478",
+      "title": "Причина исторических missing reply tasks",
+      "github_state": "open",
+      "updated_at": "2026-08-04T12:51:33Z",
+      "classification": "historical_partially_proven",
+      "current_state": "Последний root-cause verdict: PARTIALLY PROVEN; общий кодовый механизм установлен, точный per-record join/ревизия отсутствуют.",
+      "next_action": "Сохранять степень доказанности; не восстанавливать задачи и не replay историю из этой диагностики.",
+      "related_prs": [],
+      "next_owner": "α Gate после отдельного диагностического поручения",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/478",
+        "latest_comment": "https://github.com/markmalina/gate/issues/478#issuecomment-5179330792",
+        "latest_comment_updated_at": "2026-08-04T12:51:33Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 476,
+      "url": "https://github.com/markmalina/gate/issues/476",
+      "title": "Исторический voice/parity debt",
+      "github_state": "open",
+      "updated_at": "2026-08-04T09:34:41Z",
+      "classification": "historical_residual_pointer",
+      "current_state": "Диагностическое исполнение закрыто, lease освобождена; issue открыт как residual pointer. Позднейший main содержит owner acceptance historical voice residual#710, но его влияние на каждый пункт#476 требует точного reconciliation.",
+      "next_action": "Сопоставить #710 и конкретные residual receipts без backfill/retranscription и не объявлять весь#476 выполненным.",
+      "related_prs": [],
+      "next_owner": "α Gate после отдельного bounded reconciliation",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/476",
+        "latest_comment": "https://github.com/markmalina/gate/issues/476#issuecomment-5177199133",
+        "latest_comment_updated_at": "2026-08-04T09:34:41Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 467,
+      "url": "https://github.com/markmalina/gate/issues/467",
+      "title": "Независимая приёмка Alfa transcription",
+      "github_state": "open",
+      "updated_at": "2026-08-03T12:43:26Z",
+      "classification": "acceptance_not_established",
+      "current_state": "Source#466 в main, исторические CI/deploy receipts есть; финальная независимая runtime/product приёмка не установлена. Аудит выявил A01–A04 в актуальном source.",
+      "next_action": "Сначала исправить или формально разрешить source/policy gaps; затем отдельная независимая приёмка HTTP discovery, reuse paid artifact и одной разрешённой записи.",
+      "related_prs": [],
+      "next_owner": "α Gate / отдельная независимая δ",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/467",
+        "latest_comment": "https://github.com/markmalina/gate/issues/467#issuecomment-5166444055",
+        "latest_comment_updated_at": "2026-08-03T12:43:26Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 431,
+      "url": "https://github.com/markmalina/gate/issues/431",
+      "title": "BECOME: durable intake receipts",
+      "github_state": "open",
+      "updated_at": "2026-08-02T03:08:15Z",
+      "classification": "source_present_runtime_unproven",
+      "current_state": "Controlled intake/consent modules и модели присутствуют в main; issue без последней terminal receipt. Это не доказательство их живой активации или завершения всей цели.",
+      "next_action": "Сверить current connector binding/contract/terminal receipt до решения о завершении или продолжении; no provider/delivery effects в старом scope.",
+      "related_prs": [],
+      "next_owner": "α Gate / принявший BECOME Work",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/431",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 376,
+      "url": "https://github.com/markmalina/gate/issues/376",
+      "title": "Изолированный Beta connector",
+      "github_state": "open",
+      "updated_at": "2026-07-30T09:28:39Z",
+      "classification": "implementation_delivered_pointer_stale",
+      "current_state": "Последний технический receipt30.07 сообщает merged/deployed bounded connector change; issue остаётся открыт. Текущее runtime состояние не наблюдалось.",
+      "next_action": "Уточнить остаточный критерий и обновить тот же pointer после отдельного принятия; не создавать новый bot.",
+      "related_prs": [],
+      "next_owner": "α Gate соответствующего Work",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/376",
+        "latest_comment": "https://github.com/markmalina/gate/issues/376#issuecomment-5129048834",
+        "latest_comment_updated_at": "2026-07-30T09:28:39Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 365,
+      "url": "https://github.com/markmalina/gate/issues/365",
+      "title": "OIDC encrypted checkpoints Beta",
+      "github_state": "open",
+      "updated_at": "2026-07-26T15:19:23Z",
+      "classification": "source_present_receipt_stale",
+      "current_state": "Checkpoint routes, OIDC и encrypted batch store присутствуют в main. Последний issue claim26.07 давно истёк; нового terminal product receipt здесь нет.",
+      "next_action": "Сверить существующий Beta paired flow, exact ACK/cursor/readiness и свежую authority; не выдавать старый running за работу в фоне.",
+      "related_prs": [],
+      "next_owner": "α Gate / принявший Beta Work",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/365",
+        "latest_comment": "https://github.com/markmalina/gate/issues/365#issuecomment-5083969438",
+        "latest_comment_updated_at": "2026-07-26T14:43:46Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 261,
+      "url": "https://github.com/markmalina/gate/issues/261",
+      "title": "Первый Alpha group canary",
+      "github_state": "open",
+      "updated_at": "2026-07-26T12:19:55Z",
+      "classification": "historical_acceptance_incomplete",
+      "current_state": "Есть исторические canary/replay incident и последующие source improvements. Issue body и latest receipt июля не являются свежей full product приёмкой.",
+      "next_action": "Сначала reconcile последнюю принятую цель и visibility/duplicate receipts; никакого слепого resend/resume.",
+      "related_prs": [],
+      "next_owner": "α Gate в существующем owner canary scope",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/261",
+        "latest_comment": "https://github.com/markmalina/gate/issues/261#issuecomment-5083432459",
+        "latest_comment_updated_at": "2026-07-26T12:19:55Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 260,
+      "url": "https://github.com/markmalina/gate/issues/260",
+      "title": "Gate → TAKE private media canary",
+      "github_state": "open",
+      "updated_at": "2026-07-25T16:18:32Z",
+      "classification": "contract_only_unwired",
+      "current_state": "Последняя содержательная корректировка: TAKE adapter synthetic и не подключён к durable live ingress. Selector-only PR не закроет задачу.",
+      "next_action": "Нужны default-off durable media receipt, approved installation binding и scoped readback; только затем отдельная разрешённая canary.",
+      "related_prs": [],
+      "next_owner": "α Gate → принявший α TAKE",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/260",
+        "latest_comment": "https://github.com/markmalina/gate/issues/260#issuecomment-5079228050",
+        "latest_comment_updated_at": "2026-07-25T16:18:32Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 277,
+      "url": "https://github.com/markmalina/gate/issues/277",
+      "title": "Продуктовая платформа Gate",
+      "github_state": "open",
+      "updated_at": "2026-07-25T04:59:10Z",
+      "classification": "umbrella_P0_done_future_program",
+      "current_state": "P0 product truth/registry отмечен done, но issue открыт как master pointer. P1–P7 — программа, не одновременно принятые реализации.",
+      "next_action": "Обновлять master pointer по текущим фактами; новые продуктовые этапы принимать отдельно. Не запускать всю программу автоматически.",
+      "related_prs": [],
+      "next_owner": "α Gate / Марк для приоритетов",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/277",
+        "latest_comment": "https://github.com/markmalina/gate/issues/277#issuecomment-5077031952",
+        "latest_comment_updated_at": "2026-07-25T04:59:10Z"
+      },
+      "accepted_for_implementation_by_this_audit": false
+    },
+    {
+      "number": 272,
+      "url": "https://github.com/markmalina/gate/issues/272",
+      "title": "Center cutover pointer",
+      "github_state": "open",
+      "updated_at": "2026-07-21T20:13:40Z",
+      "classification": "coordination_pointer",
+      "current_state": "Открытый coordination pointer, не невыполненная feature. Не даёт cross-repository mutation authority.",
+      "next_action": "Сохранять ссылку; namespace/hierarchy reconcile отдельно с Center, не копировать payload или общий task manager в Gate.",
+      "related_prs": [],
+      "next_owner": "α Gate → α Center",
+      "evidence": {
+        "issue": "https://github.com/markmalina/gate/issues/272",
+        "latest_comment": null,
+        "latest_comment_updated_at": null
+      },
+      "accepted_for_implementation_by_this_audit": false
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 766,
+      "url": "https://github.com/markmalina/gate/pull/766",
+      "title": "fix(watch): prepare persistent delivery with explicit driver mode",
+      "head_sha": "4aa388b722f48e85d0f0e01c811b8d947c3d34fc",
+      "branch": "agent/736-autonomous-watch-queue",
+      "draft": false,
+      "updated_at": "2026-10-19T10:00:15Z",
+      "description": "Watch explicit driver + diagnostics; отдельные observations приняты, runtime/product release не завершён",
+      "changed_files": [
+        {
+          "filename": ".github/workflows/ops-cli-state-observer.yml",
+          "status": "added",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/ops-runtime-observer.yml",
+          "status": "added",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/ops-staged-state-observer.yml",
+          "status": "added",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "filename": "agent-ops.cli-state-observer.lock.json",
+          "status": "added",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "filename": "agent-ops.runtime-observer.lock.json",
+          "status": "added",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "filename": "agent-ops.staged-state-observer.lock.json",
+          "status": "added",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_schemas.py",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/watch_voice_actions.py",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 14
+        },
+        {
+          "filename": "app/worker/watch_voice.py",
+          "status": "modified",
+          "additions": 119,
+          "deletions": 9
+        },
+        {
+          "filename": "docs/reviews/delta-watch-runtime-2026-10-15.md",
+          "status": "added",
+          "additions": 54,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/watch-voice-driver-mode.md",
+          "status": "added",
+          "additions": 44,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/watch-voice-mark.md",
+          "status": "modified",
+          "additions": 349,
+          "deletions": 0
+        },
+        {
+          "filename": "railway.toml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_ops_cli_state_observer_contract.py",
+          "status": "added",
+          "additions": 84,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_ops_runtime_observer_contract.py",
+          "status": "added",
+          "additions": 73,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_ops_staged_state_observer_contract.py",
+          "status": "added",
+          "additions": 84,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_watch_voice.py",
+          "status": "modified",
+          "additions": 566,
+          "deletions": 19
+        },
+        {
+          "filename": "tests/test_watch_voice_actions.py",
+          "status": "modified",
+          "additions": 228,
+          "deletions": 3
+        },
+        {
+          "filename": "tests/test_watch_voice_start_command.py",
+          "status": "added",
+          "additions": 70,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 39233448583,
+          "name": "Gate bounded runtime observation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39233448583",
+          "created_at": "2026-10-19T09:53:39Z",
+          "head_sha": "4aa388b722f48e85d0f0e01c811b8d947c3d34fc"
+        },
+        {
+          "id": 39233448542,
+          "name": "Gate staged state observation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39233448542",
+          "created_at": "2026-10-19T09:53:39Z",
+          "head_sha": "4aa388b722f48e85d0f0e01c811b8d947c3d34fc"
+        },
+        {
+          "id": 39233448643,
+          "name": "Gate CLI state observation",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39233448643",
+          "created_at": "2026-10-19T09:53:39Z",
+          "head_sha": "4aa388b722f48e85d0f0e01c811b8d947c3d34fc"
+        },
+        {
+          "id": 39231843887,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39231843887",
+          "created_at": "2026-10-19T09:40:34Z",
+          "head_sha": "4aa388b722f48e85d0f0e01c811b8d947c3d34fc"
+        },
+        {
+          "id": 39231844024,
+          "name": "BECOME Quest exact-head CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39231844024",
+          "created_at": "2026-10-19T09:40:34Z",
+          "head_sha": "4aa388b722f48e85d0f0e01c811b8d947c3d34fc"
+        }
+      ],
+      "mergeable_observed": true,
+      "mergeable_state_observed": "clean",
+      "review_states": []
+    },
+    {
+      "number": 762,
+      "url": "https://github.com/markmalina/gate/pull/762",
+      "title": "Gate745: disabled fixed-source fixture caller",
+      "head_sha": "e28b1db0776d0dd1f2a20b2247d6179938e4627f",
+      "branch": "agent/745-fixture-caller-source",
+      "draft": true,
+      "updated_at": "2026-10-12T05:46:25Z",
+      "description": "Disabled fixture caller; поддержка #745, не живой стенд",
+      "changed_files": [
+        {
+          "filename": ".agent-ops/input/fixture-proposal.json",
+          "status": "added",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/gate745-caller-source-ci.yml",
+          "status": "added",
+          "additions": 33,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/gate745-native-fixture.yml",
+          "status": "added",
+          "additions": 54,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/GATE745-FIXTURE-CALLER.md",
+          "status": "added",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-caller.mjs",
+          "status": "added",
+          "additions": 69,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-caller.test.mjs",
+          "status": "added",
+          "additions": 77,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 38208773847,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38208773847",
+          "created_at": "2026-10-12T05:37:51Z",
+          "head_sha": "e28b1db0776d0dd1f2a20b2247d6179938e4627f"
+        },
+        {
+          "id": 38208773829,
+          "name": "Gate745 Caller Source",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38208773829",
+          "created_at": "2026-10-12T05:37:51Z",
+          "head_sha": "e28b1db0776d0dd1f2a20b2247d6179938e4627f"
+        }
+      ],
+      "mergeable_observed": true,
+      "mergeable_state_observed": "clean",
+      "review_states": []
+    },
+    {
+      "number": 761,
+      "url": "https://github.com/markmalina/gate/pull/761",
+      "title": "MTProto RU: durable Work commands and default-off cloud foundation",
+      "head_sha": "cc874f16f328bdbe0143f8ff175e1bb941cbbbc6",
+      "branch": "agent/696-ru-cloud-runtime",
+      "draft": false,
+      "updated_at": "2026-10-12T06:50:45Z",
+      "description": "MTProto RU commands/grants/cloud foundation; default-off, не M0/M1",
+      "changed_files": [
+        {
+          "filename": ".github/workflows/ci.yml",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_metadata_routes.py",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 4
+        },
+        {
+          "filename": "app/api/mcp_routes.py",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 2
+        },
+        {
+          "filename": "app/api/personal_command_mcp.py",
+          "status": "added",
+          "additions": 237,
+          "deletions": 0
+        },
+        {
+          "filename": "app/core/config.py",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "filename": "app/core/mcp_oauth.py",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "filename": "app/core/mcp_security.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/capability_catalog.py",
+          "status": "added",
+          "additions": 739,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/cloud_worker.py",
+          "status": "added",
+          "additions": 203,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/command_scope.py",
+          "status": "added",
+          "additions": 153,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/command_service.py",
+          "status": "added",
+          "additions": 251,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/command_store.py",
+          "status": "added",
+          "additions": 691,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/grant_registry.py",
+          "status": "added",
+          "additions": 338,
+          "deletions": 0
+        },
+        {
+          "filename": "app/personal_telegram/session_persistence.py",
+          "status": "added",
+          "additions": 164,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/runbooks/MTPROTO_RU_SOURCE_FOUNDATION.md",
+          "status": "added",
+          "additions": 137,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/MTPROTO_RU_RUNTIME_ACTIVATION_CONTRACT.md",
+          "status": "added",
+          "additions": 95,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/MTPROTO_RU_V0B_SOURCE_CONTRACT.md",
+          "status": "added",
+          "additions": 86,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/personal_telegram_contract_inventory.py",
+          "status": "added",
+          "additions": 84,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/personal_telegram_writer_inventory.py",
+          "status": "added",
+          "additions": 81,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_oauth.py",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_command_grants.py",
+          "status": "added",
+          "additions": 337,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_command_grants_postgres.py",
+          "status": "added",
+          "additions": 157,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_command_mcp.py",
+          "status": "added",
+          "additions": 397,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_command_runtime.py",
+          "status": "added",
+          "additions": 593,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_command_runtime_postgres.py",
+          "status": "added",
+          "additions": 194,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_command_service.py",
+          "status": "added",
+          "additions": 279,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_telegram_capability_catalog.py",
+          "status": "added",
+          "additions": 44,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_personal_telegram_writer_inventory.py",
+          "status": "added",
+          "additions": 18,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 38214557601,
+          "name": "BECOME Quest exact-head CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38214557601",
+          "created_at": "2026-10-12T06:50:49Z",
+          "head_sha": "cc874f16f328bdbe0143f8ff175e1bb941cbbbc6"
+        },
+        {
+          "id": 38214557623,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38214557623",
+          "created_at": "2026-10-12T06:50:49Z",
+          "head_sha": "cc874f16f328bdbe0143f8ff175e1bb941cbbbc6"
+        }
+      ],
+      "mergeable_observed": true,
+      "mergeable_state_observed": "clean",
+      "review_states": []
+    },
+    {
+      "number": 760,
+      "url": "https://github.com/markmalina/gate/pull/760",
+      "title": "Gate745: default-off hosted fixture controller source",
+      "head_sha": "7ec459467b606ac67ec2110289e9018fa322b8fa",
+      "branch": "agent/745-fixture-controller-source",
+      "draft": true,
+      "updated_at": "2026-10-12T05:35:41Z",
+      "description": "Disabled fixture controller; C0/readset/namespace admission остаются отдельными",
+      "changed_files": [
+        {
+          "filename": ".github/workflows/gate745-controller-source-ci.yml",
+          "status": "added",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/gate745-fixture-controller.yml",
+          "status": "added",
+          "additions": 277,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-fixture-controller.md",
+          "status": "added",
+          "additions": 266,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-artifacts.mjs",
+          "status": "added",
+          "additions": 209,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-controller.mjs",
+          "status": "added",
+          "additions": 326,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-controller.test.mjs",
+          "status": "added",
+          "additions": 639,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-helper-transport.mjs",
+          "status": "added",
+          "additions": 82,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-hosted.mjs",
+          "status": "added",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-oidc.mjs",
+          "status": "added",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-ops-source.mjs",
+          "status": "added",
+          "additions": 153,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-reservation.mjs",
+          "status": "added",
+          "additions": 85,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-source.lock.json",
+          "status": "added",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/gate745/fixture-test-vector.json",
+          "status": "added",
+          "additions": 168,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 38173819173,
+          "name": "Gate745 Controller Source",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38173819173",
+          "created_at": "2026-10-11T20:49:30Z",
+          "head_sha": "7ec459467b606ac67ec2110289e9018fa322b8fa"
+        },
+        {
+          "id": 38173819148,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38173819148",
+          "created_at": "2026-10-11T20:49:30Z",
+          "head_sha": "7ec459467b606ac67ec2110289e9018fa322b8fa"
+        }
+      ],
+      "mergeable_observed": true,
+      "mergeable_state_observed": "clean",
+      "review_states": []
+    },
+    {
+      "number": 759,
+      "url": "https://github.com/markmalina/gate/pull/759",
+      "title": "docs: MTProto RU — ТЗ v3, ревизия исходников и план выпуска (#696)",
+      "head_sha": "d9a2866603d835983fd80e40688ce1c355e17a51",
+      "branch": "agent/696-ru-mtproto-plan",
+      "draft": true,
+      "updated_at": "2026-10-12T05:35:12Z",
+      "description": "План MTProto v3 и audit; документация, не runtime",
+      "changed_files": [
+        {
+          "filename": "docs/specs/MTPROTO_RU_ARCHITECTURE_AND_SPRINTS.md",
+          "status": "added",
+          "additions": 526,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/MTPROTO_RU_OSS_REVIEW.md",
+          "status": "added",
+          "additions": 271,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/MTPROTO_RU_PLAN_STATUS_2026-10-12.json",
+          "status": "added",
+          "additions": 159,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/MTPROTO_RU_REVIEW_2026-10-12.md",
+          "status": "added",
+          "additions": 221,
+          "deletions": 0
+        }
+      ],
+      "ci": [],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    },
+    {
+      "number": 758,
+      "url": "https://github.com/markmalina/gate/pull/758",
+      "title": "Gate745: authenticated hosted fixture helper and durable operation ledger",
+      "head_sha": "ac0e2dacefb258cff26095b1fdf58b85ee1c9169",
+      "branch": "agent/745-fixture-bootstrap-source",
+      "draft": false,
+      "updated_at": "2026-10-12T05:46:26Z",
+      "description": "Fixture helper/bootstrap/ledger; overlap/support для747, не самостоятельное разрешение установки",
+      "changed_files": [
+        {
+          "filename": "app/api/health_routes.py",
+          "status": "modified",
+          "additions": 37,
+          "deletions": 1
+        },
+        {
+          "filename": "app/worker/gate745_fixture_alembic/__init__.py",
+          "status": "added",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_alembic/env.py",
+          "status": "added",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_bootstrap.py",
+          "status": "added",
+          "additions": 949,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_controller_pin.py",
+          "status": "added",
+          "additions": 21,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_hosted.py",
+          "status": "added",
+          "additions": 868,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_ledger.py",
+          "status": "added",
+          "additions": 445,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_manifest.py",
+          "status": "added",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_policy.py",
+          "status": "added",
+          "additions": 369,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_recipe.py",
+          "status": "added",
+          "additions": 128,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/GATE745-FIXTURE-BOOTSTRAP.md",
+          "status": "added",
+          "additions": 342,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/railway-gate745-fixture-bootstrap.toml",
+          "status": "added",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/railway-gate745-fixture-helper-v2.toml",
+          "status": "added",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/railway-gate745-fixture-reset.toml",
+          "status": "added",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "filename": "pyproject.toml",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_bootstrap.py",
+          "status": "added",
+          "additions": 738,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_bootstrap_postgres.py",
+          "status": "added",
+          "additions": 380,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_hosted.py",
+          "status": "added",
+          "additions": 702,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 38207969683,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/38207969683",
+          "created_at": "2026-10-12T05:26:54Z",
+          "head_sha": "ac0e2dacefb258cff26095b1fdf58b85ee1c9169"
+        }
+      ],
+      "mergeable_observed": true,
+      "mergeable_state_observed": "clean",
+      "review_states": []
+    },
+    {
+      "number": 747,
+      "url": "https://github.com/markmalina/gate/pull/747",
+      "title": "Reject stale-dialog replies and prepare default-off fixture contracts (#745)",
+      "head_sha": "e5c2220cd8fc437e541595a41c14c0b80397c5c4",
+      "branch": "agent/745-dialog-snapshot",
+      "draft": false,
+      "updated_at": "2026-10-19T12:57:46Z",
+      "description": "Snapshot guard + fixture/readset preparation; existing#745 release blocked",
+      "changed_files": [
+        {
+          "filename": ".github/workflows/become-quest-exact-head.yml",
+          "status": "modified",
+          "additions": 31,
+          "deletions": 4
+        },
+        {
+          "filename": "Dockerfile.contact-sync",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "filename": "alembic/versions/0116_reply_dialog_versions.py",
+          "status": "added",
+          "additions": 26,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/health_routes.py",
+          "status": "modified",
+          "additions": 73,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_routes.py",
+          "status": "modified",
+          "additions": 70,
+          "deletions": 5
+        },
+        {
+          "filename": "app/api/mcp_schemas.py",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 1
+        },
+        {
+          "filename": "app/api/sprint10_routes.py",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 4
+        },
+        {
+          "filename": "app/api/sprint17_send_draft_routes.py",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 96
+        },
+        {
+          "filename": "app/api/sprint9_routes.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 101
+        },
+        {
+          "filename": "app/application/dialog_snapshots.py",
+          "status": "added",
+          "additions": 37,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/mcp_inbox.py",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/reply_documents.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/reply_drafts.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/dialog_snapshots.py",
+          "status": "added",
+          "additions": 221,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_cutover.py",
+          "status": "added",
+          "additions": 55,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_documents.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_drafts.py",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 2
+        },
+        {
+          "filename": "app/infrastructure/reply_sends.py",
+          "status": "modified",
+          "additions": 109,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequences.py",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/telegram_processing.py",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "filename": "app/models/domain.py",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_alembic/__init__.py",
+          "status": "added",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_alembic/env.py",
+          "status": "added",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_bootstrap.py",
+          "status": "added",
+          "additions": 949,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_controller_pin.py",
+          "status": "added",
+          "additions": 21,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_hosted.py",
+          "status": "added",
+          "additions": 868,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_identity.py",
+          "status": "added",
+          "additions": 118,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_ledger.py",
+          "status": "added",
+          "additions": 445,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_manifest.py",
+          "status": "added",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_policy.py",
+          "status": "added",
+          "additions": 369,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_readiness.py",
+          "status": "added",
+          "additions": 151,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/gate745_fixture_recipe.py",
+          "status": "added",
+          "additions": 128,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_cutover.py",
+          "status": "added",
+          "additions": 54,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/TELEGRAM_BUSINESS_DOCUMENT_SEND.md",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 1
+        },
+        {
+          "filename": "docs/operations/DIALOG-SNAPSHOT-GUARD.md",
+          "status": "added",
+          "additions": 166,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/GATE745-FIXTURE-BOOTSTRAP.md",
+          "status": "added",
+          "additions": 412,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/GATE745-OPS-CONTROL.md",
+          "status": "added",
+          "additions": 121,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/READ-TRANSPORT.md",
+          "status": "added",
+          "additions": 146,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/README.md",
+          "status": "added",
+          "additions": 242,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/ops-proposal.patch",
+          "status": "added",
+          "additions": 234,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/read-transport-evidence.json",
+          "status": "added",
+          "additions": 143,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/route-inventory.json",
+          "status": "added",
+          "additions": 321,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/s1-source-tests.mjs",
+          "status": "added",
+          "additions": 113,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/source-manifest.json",
+          "status": "added",
+          "additions": 767,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s1/test-results.json",
+          "status": "added",
+          "additions": 26,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s2/FEASIBILITY.md",
+          "status": "added",
+          "additions": 196,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s2/analysis-results.json",
+          "status": "added",
+          "additions": 173,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s2/analyze_feasibility.py",
+          "status": "added",
+          "additions": 103,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s2/schema-excerpt.json",
+          "status": "added",
+          "additions": 1411,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/gate745-s2/sources.json",
+          "status": "added",
+          "additions": 128,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/railway-gate745-fixture-bootstrap.toml",
+          "status": "added",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/railway-gate745-fixture-helper-v2.toml",
+          "status": "added",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/railway-gate745-fixture-reset.toml",
+          "status": "added",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/ISSUE-737-RICH-OPERATOR-EXAMPLE.json",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "filename": "docs/specs/ISSUE-745-SPRINT-SPEC.md",
+          "status": "added",
+          "additions": 602,
+          "deletions": 0
+        },
+        {
+          "filename": "pyproject.toml",
+          "status": "modified",
+          "additions": 126,
+          "deletions": 0
+        },
+        {
+          "filename": "railway.toml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "scripts/gate_document_upload.py",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_become_i4_service.py",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_become_learner_invitation_postgres.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_become_quest_migration.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_become_transcript_review_postgres.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_dialog_snapshots.py",
+          "status": "added",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_dialog_snapshots_postgres.py",
+          "status": "added",
+          "additions": 516,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_document_upload_bridge.py",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 2
+        },
+        {
+          "filename": "tests/test_gate745_fixture_bootstrap.py",
+          "status": "added",
+          "additions": 785,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_bootstrap_postgres.py",
+          "status": "added",
+          "additions": 459,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_hosted.py",
+          "status": "added",
+          "additions": 702,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_identity.py",
+          "status": "added",
+          "additions": 150,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_gate745_fixture_readiness.py",
+          "status": "added",
+          "additions": 201,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_contacts.py",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_mcp_postgres_isolation.py",
+          "status": "modified",
+          "additions": 42,
+          "deletions": 31
+        },
+        {
+          "filename": "tests/test_mcp_reply_context.py",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_mcp_routes.py",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_voice_reply_context.py",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_railway_readiness.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_reply_cutover.py",
+          "status": "added",
+          "additions": 204,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_cutover_postgres.py",
+          "status": "added",
+          "additions": 172,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_formatting_mcp_transport.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_formatting_send.py",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 3
+        },
+        {
+          "filename": "tests/test_reply_formatting_sequences_documents.py",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "filename": "tests/test_reply_rich_mcp_transport.py",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "filename": "tests/test_reply_sends_postgres.py",
+          "status": "modified",
+          "additions": 33,
+          "deletions": 10
+        }
+      ],
+      "ci": [
+        {
+          "id": 39254953108,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39254953108",
+          "created_at": "2026-10-19T12:48:34Z",
+          "head_sha": "e5c2220cd8fc437e541595a41c14c0b80397c5c4"
+        },
+        {
+          "id": 39254953136,
+          "name": "BECOME Quest exact-head CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39254953136",
+          "created_at": "2026-10-19T12:48:34Z",
+          "head_sha": "e5c2220cd8fc437e541595a41c14c0b80397c5c4"
+        },
+        {
+          "id": 39254953058,
+          "name": "BECOME I4 internal service",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/39254953058",
+          "created_at": "2026-10-19T12:48:34Z",
+          "head_sha": "e5c2220cd8fc437e541595a41c14c0b80397c5c4"
+        }
+      ],
+      "mergeable_observed": true,
+      "mergeable_state_observed": "clean",
+      "review_states": []
+    },
+    {
+      "number": 744,
+      "url": "https://github.com/markmalina/gate/pull/744",
+      "title": "Work image upload, albums and native Rich media (#742)",
+      "head_sha": "08c499b943b432ab1ceca78c2d6df6bba57174c1",
+      "branch": "agent/742-media-sprint-2",
+      "draft": false,
+      "updated_at": "2026-10-07T14:52:51Z",
+      "description": "Rich media Sprint2; redCI и decoder/migration blockers",
+      "changed_files": [
+        {
+          "filename": "alembic/versions/0115_reply_media_packages.py",
+          "status": "added",
+          "additions": 163,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_media.py",
+          "status": "added",
+          "additions": 249,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_metadata_routes.py",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_routes.py",
+          "status": "modified",
+          "additions": 67,
+          "deletions": 1
+        },
+        {
+          "filename": "app/api/mcp_schemas.py",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "filename": "app/api/sprint10_routes.py",
+          "status": "modified",
+          "additions": 52,
+          "deletions": 13
+        },
+        {
+          "filename": "app/api/sprint17_send_draft_routes.py",
+          "status": "modified",
+          "additions": 71,
+          "deletions": 14
+        },
+        {
+          "filename": "app/api/sprint9_routes.py",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 3
+        },
+        {
+          "filename": "app/application/reply_media.py",
+          "status": "added",
+          "additions": 437,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/reply_sends.py",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 1
+        },
+        {
+          "filename": "app/application/telegram_rich_media.py",
+          "status": "added",
+          "additions": 230,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_media.py",
+          "status": "added",
+          "additions": 508,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sends.py",
+          "status": "modified",
+          "additions": 764,
+          "deletions": 74
+        },
+        {
+          "filename": "app/infrastructure/reply_sequences.py",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "filename": "app/models/__init__.py",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "filename": "app/models/reply_media.py",
+          "status": "added",
+          "additions": 141,
+          "deletions": 0
+        },
+        {
+          "filename": "app/services/telegram.py",
+          "status": "modified",
+          "additions": 156,
+          "deletions": 8
+        },
+        {
+          "filename": "app/worker/reply_documents.py",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/ISSUE-742-MEDIA-OPERATOR-EXAMPLES.json",
+          "status": "added",
+          "additions": 454,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/ISSUE-742-MEDIA-SPRINT-2.md",
+          "status": "added",
+          "additions": 586,
+          "deletions": 0
+        },
+        {
+          "filename": "pyproject.toml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/generate_media_sprint2_fixtures.py",
+          "status": "added",
+          "additions": 315,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/fixtures/gate_media_sprint2/image-1.png",
+          "status": "added",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/fixtures/gate_media_sprint2/image-2.png",
+          "status": "added",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/fixtures/gate_media_sprint2/image-3.png",
+          "status": "added",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/fixtures/gate_media_sprint2/image-4.png",
+          "status": "added",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/fixtures/gate_media_sprint2/manifest.json",
+          "status": "added",
+          "additions": 73,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_become_quest_migration.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "tests/test_mcp_chatgpt_oauth_discovery.py",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_metadata_routes.py",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_routes.py",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_surface_consistency.py",
+          "status": "modified",
+          "additions": 27,
+          "deletions": 17
+        },
+        {
+          "filename": "tests/test_reply_media_assets.py",
+          "status": "added",
+          "additions": 289,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_media_assets_postgres.py",
+          "status": "added",
+          "additions": 320,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_media_mcp.py",
+          "status": "added",
+          "additions": 219,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_media_transport.py",
+          "status": "added",
+          "additions": 742,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 37640432959,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "failure",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/37640432959",
+          "created_at": "2026-10-07T14:52:55Z",
+          "head_sha": "08c499b943b432ab1ceca78c2d6df6bba57174c1"
+        },
+        {
+          "id": 37640433041,
+          "name": "BECOME Quest exact-head CI",
+          "status": "completed",
+          "conclusion": "failure",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/37640433041",
+          "created_at": "2026-10-07T14:52:55Z",
+          "head_sha": "08c499b943b432ab1ceca78c2d6df6bba57174c1"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    },
+    {
+      "number": 724,
+      "url": "https://github.com/markmalina/gate/pull/724",
+      "title": "feat: baseline process observation and legacy freeze before schema migration (#722)",
+      "head_sha": "e1cb39dc7ae49b364787ccdb0a84303d7d9719ff",
+      "branch": "agent/722-baseline-bootstrap",
+      "draft": false,
+      "updated_at": "2026-09-29T14:35:35Z",
+      "description": "Baseline observation/freeze prerequisite#722; исторический sourceACCEPT, не deploy",
+      "changed_files": [
+        {
+          "filename": "app/infrastructure/baseline_observation.py",
+          "status": "added",
+          "additions": 355,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequences.py",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 0
+        },
+        {
+          "filename": "app/main.py",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "filename": "app/services/process_send_fence.py",
+          "status": "added",
+          "additions": 60,
+          "deletions": 0
+        },
+        {
+          "filename": "app/services/telegram.py",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 9
+        },
+        {
+          "filename": "app/worker/reply_sequences.py",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/telegram_processing.py",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 1
+        },
+        {
+          "filename": "contracts/baseline-observation/fixture.json",
+          "status": "added",
+          "additions": 38,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/BASELINE-BOOTSTRAP.md",
+          "status": "added",
+          "additions": 139,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_baseline_observation.py",
+          "status": "added",
+          "additions": 318,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_baseline_observation_postgres.py",
+          "status": "added",
+          "additions": 132,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 36582971917,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36582971917",
+          "created_at": "2026-09-29T14:28:47Z",
+          "head_sha": "e1cb39dc7ae49b364787ccdb0a84303d7d9719ff"
+        },
+        {
+          "id": 36582972007,
+          "name": "BECOME Quest exact-head CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36582972007",
+          "created_at": "2026-09-29T14:28:47Z",
+          "head_sha": "e1cb39dc7ae49b364787ccdb0a84303d7d9719ff"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    },
+    {
+      "number": 721,
+      "url": "https://github.com/markmalina/gate/pull/721",
+      "title": "docs: полное ТЗ выпуска личного Gate (#716, #718)",
+      "head_sha": "460c27288de20d3a3b9199c816855ebde5b526de",
+      "branch": "docs/personal-gate-sequence-release-spec-20260928",
+      "draft": false,
+      "updated_at": "2026-09-28T20:06:45Z",
+      "description": "Personal sequence release specification; не заменяет runtime implementation",
+      "changed_files": [
+        {
+          "filename": "docs/specs/GATE-PERSONAL-SEQUENCES-END-TO-END.md",
+          "status": "added",
+          "additions": 502,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 36476886841,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36476886841",
+          "created_at": "2026-09-28T20:06:48Z",
+          "head_sha": "460c27288de20d3a3b9199c816855ebde5b526de"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    },
+    {
+      "number": 720,
+      "url": "https://github.com/markmalina/gate/pull/720",
+      "title": "feat: durable inbound stop and bounded parallel reply sequences (#718, #716)",
+      "head_sha": "af929dd6dd0bf28a9ff29f6945d1265600161c67",
+      "branch": "agent/716-parallel-sequences-spec",
+      "draft": false,
+      "updated_at": "2026-09-29T14:48:41Z",
+      "description": "Atomic inbound stop + parallel sequences; successorCIgreen, exact successor independent acceptance отдельно",
+      "changed_files": [
+        {
+          "filename": ".env.example",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/reply-sequence-review.yml",
+          "status": "added",
+          "additions": 78,
+          "deletions": 0
+        },
+        {
+          "filename": "README.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "filename": "alembic/versions/0112_reply_sequence_control.py",
+          "status": "added",
+          "additions": 333,
+          "deletions": 0
+        },
+        {
+          "filename": "alembic/versions/0113_reply_canary_budget.py",
+          "status": "added",
+          "additions": 77,
+          "deletions": 0
+        },
+        {
+          "filename": "alembic/versions/0114_reply_continuity_epoch.py",
+          "status": "added",
+          "additions": 80,
+          "deletions": 0
+        },
+        {
+          "filename": "alembic/versions/0115_reply_canary_binding.py",
+          "status": "added",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_metadata_routes.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "app/api/mcp_routes.py",
+          "status": "modified",
+          "additions": 275,
+          "deletions": 296
+        },
+        {
+          "filename": "app/api/mcp_schemas.py",
+          "status": "modified",
+          "additions": 186,
+          "deletions": 77
+        },
+        {
+          "filename": "app/application/reply_sequence_cooldown.py",
+          "status": "added",
+          "additions": 46,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/reply_sequence_policy.py",
+          "status": "added",
+          "additions": 105,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/reply_sequences.py",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "filename": "app/core/config.py",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 16
+        },
+        {
+          "filename": "app/infrastructure/baseline_observation.py",
+          "status": "added",
+          "additions": 355,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/database.py",
+          "status": "modified",
+          "additions": 81,
+          "deletions": 3
+        },
+        {
+          "filename": "app/infrastructure/process_admission.py",
+          "status": "added",
+          "additions": 102,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_canary_startup_fence.py",
+          "status": "added",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sends.py",
+          "status": "modified",
+          "additions": 157,
+          "deletions": 7
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_canary.py",
+          "status": "added",
+          "additions": 101,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_context.py",
+          "status": "added",
+          "additions": 149,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_epoch.py",
+          "status": "added",
+          "additions": 374,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_guard.py",
+          "status": "added",
+          "additions": 122,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_migration.py",
+          "status": "added",
+          "additions": 317,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_operations.py",
+          "status": "added",
+          "additions": 375,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_owner_route.py",
+          "status": "added",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_process_health.py",
+          "status": "added",
+          "additions": 174,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_recipient.py",
+          "status": "added",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequence_runtime.py",
+          "status": "added",
+          "additions": 1590,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/reply_sequences.py",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 4
+        },
+        {
+          "filename": "app/infrastructure/reply_transport_budget.py",
+          "status": "added",
+          "additions": 166,
+          "deletions": 0
+        },
+        {
+          "filename": "app/infrastructure/telegram_processing.py",
+          "status": "modified",
+          "additions": 36,
+          "deletions": 10
+        },
+        {
+          "filename": "app/main.py",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 2
+        },
+        {
+          "filename": "app/models/__init__.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "app/models/reply_sequences.py",
+          "status": "added",
+          "additions": 307,
+          "deletions": 0
+        },
+        {
+          "filename": "app/services/process_send_fence.py",
+          "status": "added",
+          "additions": 99,
+          "deletions": 0
+        },
+        {
+          "filename": "app/services/telegram.py",
+          "status": "modified",
+          "additions": 113,
+          "deletions": 15
+        },
+        {
+          "filename": "app/services/telegram_delivery_gate.py",
+          "status": "added",
+          "additions": 128,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/become_pilot_maintenance.py",
+          "status": "modified",
+          "additions": 164,
+          "deletions": 153
+        },
+        {
+          "filename": "app/worker/reply_sequence_baseline_probe.py",
+          "status": "added",
+          "additions": 134,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_sequence_continuity.py",
+          "status": "added",
+          "additions": 128,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_sequence_control.py",
+          "status": "added",
+          "additions": 400,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_sequence_dispatch.py",
+          "status": "added",
+          "additions": 160,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_sequence_notifications.py",
+          "status": "added",
+          "additions": 198,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_sequence_supervisor.py",
+          "status": "added",
+          "additions": 118,
+          "deletions": 0
+        },
+        {
+          "filename": "app/worker/reply_sequences.py",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 3
+        },
+        {
+          "filename": "app/worker/telegram_processing.py",
+          "status": "modified",
+          "additions": 706,
+          "deletions": 691
+        },
+        {
+          "filename": "contracts/baseline-observation/fixture.json",
+          "status": "added",
+          "additions": 38,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/BASELINE-BOOTSTRAP.md",
+          "status": "added",
+          "additions": 139,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/PROCESS-ADMISSION-HANDOFF.md",
+          "status": "added",
+          "additions": 87,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/REPLY-SEQUENCE-CANARY-ADMISSION.md",
+          "status": "added",
+          "additions": 116,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/REPLY-SEQUENCE-CUTOVER.md",
+          "status": "added",
+          "additions": 217,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/REPLY-SEQUENCE-INDEPENDENT-REVIEW.md",
+          "status": "added",
+          "additions": 125,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/REPLY-SEQUENCE-M-CLIENT.md",
+          "status": "added",
+          "additions": 35,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/REPLY-SEQUENCE-PARALLEL-IMPLEMENTATION.md",
+          "status": "added",
+          "additions": 82,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/operations/REPLY-SEQUENCE-REVIEW-5332137616.md",
+          "status": "added",
+          "additions": 65,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/ISSUE-716-PARALLEL-REPLY-SEQUENCES.md",
+          "status": "added",
+          "additions": 723,
+          "deletions": 0
+        },
+        {
+          "filename": "docs/specs/ISSUE-718-STOP-ON-INBOUND.md",
+          "status": "added",
+          "additions": 501,
+          "deletions": 0
+        },
+        {
+          "filename": "pyproject.toml",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "scripts/reply_sequence_review.py",
+          "status": "added",
+          "additions": 199,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_baseline_observation.py",
+          "status": "added",
+          "additions": 340,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_baseline_observation_postgres.py",
+          "status": "added",
+          "additions": 132,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_become_learner_invitation_postgres.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "filename": "tests/test_become_quest_migration.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "filename": "tests/test_become_transcript_review_postgres.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "filename": "tests/test_main_database_lifespan.py",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_chatgpt_oauth_discovery.py",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 5
+        },
+        {
+          "filename": "tests/test_mcp_metadata_routes.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_mcp_routes.py",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 8
+        },
+        {
+          "filename": "tests/test_mcp_surface_consistency.py",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "filename": "tests/test_process_admission.py",
+          "status": "added",
+          "additions": 220,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_process_admission_postgres.py",
+          "status": "added",
+          "additions": 146,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_process_lifecycle_integration.py",
+          "status": "added",
+          "additions": 203,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_acceptance_postgres.py",
+          "status": "added",
+          "additions": 847,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_baseline_probe.py",
+          "status": "added",
+          "additions": 88,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_canary_control_postgres.py",
+          "status": "added",
+          "additions": 304,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_canary_postgres.py",
+          "status": "added",
+          "additions": 235,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_context.py",
+          "status": "added",
+          "additions": 81,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_continuity_postgres.py",
+          "status": "added",
+          "additions": 75,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_control_contract.py",
+          "status": "added",
+          "additions": 394,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_cooldown.py",
+          "status": "added",
+          "additions": 63,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_dispatch_postgres.py",
+          "status": "added",
+          "additions": 479,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_epoch.py",
+          "status": "added",
+          "additions": 118,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_epoch_postgres.py",
+          "status": "added",
+          "additions": 258,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_mcp_client_contract.py",
+          "status": "added",
+          "additions": 27,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_process_health_postgres.py",
+          "status": "added",
+          "additions": 248,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_review_postgres.py",
+          "status": "added",
+          "additions": 371,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_review_runner.py",
+          "status": "added",
+          "additions": 176,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_reply_sequence_supervisor.py",
+          "status": "added",
+          "additions": 213,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_telegram_client.py",
+          "status": "modified",
+          "additions": 65,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_telegram_retry_after.py",
+          "status": "added",
+          "additions": 96,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 36585379834,
+          "name": "Reply sequence review",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36585379834",
+          "created_at": "2026-09-29T14:48:03Z",
+          "head_sha": "af929dd6dd0bf28a9ff29f6945d1265600161c67"
+        },
+        {
+          "id": 36585379540,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36585379540",
+          "created_at": "2026-09-29T14:48:03Z",
+          "head_sha": "af929dd6dd0bf28a9ff29f6945d1265600161c67"
+        },
+        {
+          "id": 36585379668,
+          "name": "BECOME Quest exact-head CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36585379668",
+          "created_at": "2026-09-29T14:48:03Z",
+          "head_sha": "af929dd6dd0bf28a9ff29f6945d1265600161c67"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": [
+        {
+          "state": "COMMENTED",
+          "submitted_at": "2026-09-27T21:17:53Z"
+        },
+        {
+          "state": "COMMENTED",
+          "submitted_at": "2026-09-28T08:22:55Z"
+        }
+      ]
+    },
+    {
+      "number": 719,
+      "url": "https://github.com/markmalina/gate/pull/719",
+      "title": "docs(#718): полное ТЗ остановки серии при входящем сообщении",
+      "head_sha": "a05f13658b25ae953c6c852baa7d0ea54eb95703",
+      "branch": "agent/gate-718-stop-on-inbound-spec",
+      "draft": true,
+      "updated_at": "2026-09-27T18:40:09Z",
+      "description": "Исходное ТЗ inbound stop; реализация объединена в720",
+      "changed_files": [
+        {
+          "filename": "docs/specs/ISSUE-718-STOP-ON-INBOUND.md",
+          "status": "added",
+          "additions": 500,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 36341497754,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/36341497754",
+          "created_at": "2026-09-27T18:40:12Z",
+          "head_sha": "a05f13658b25ae953c6c852baa7d0ea54eb95703"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    },
+    {
+      "number": 578,
+      "url": "https://github.com/markmalina/gate/pull/578",
+      "title": "Add default-off AQUB food v2 acceptance readiness",
+      "head_sha": "8b1b1fa4f82edc03586898b4b6615da4855f0f51",
+      "branch": "agent/aqub-food-v2-delivery-readiness-2026-08-15",
+      "draft": true,
+      "updated_at": "2026-08-15T20:16:44Z",
+      "description": "Frozen AQUB Food readiness; не выпускать по старомуgrant",
+      "changed_files": [
+        {
+          "filename": ".github/workflows/ci.yml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "filename": "app/application/aqub_food_delivery_v2.py",
+          "status": "added",
+          "additions": 63,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/aqub/v2/fixtures/delivery-command.food-reply.json",
+          "status": "added",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_aqub_food_delivery_v2.py",
+          "status": "added",
+          "additions": 99,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 31905737776,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/31905737776",
+          "created_at": "2026-08-15T20:05:24Z",
+          "head_sha": "8b1b1fa4f82edc03586898b4b6615da4855f0f51"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    },
+    {
+      "number": 468,
+      "url": "https://github.com/markmalina/gate/pull/468",
+      "title": "Sprint 2A: add default-off Gate downstream adapter",
+      "head_sha": "ee09145a00030f70dfc93ce51ff5c32b214b5116",
+      "branch": "agent/sprint-2a-role-aware-downstream",
+      "draft": true,
+      "updated_at": "2026-08-03T14:02:52Z",
+      "description": "Старый default-off BECOME downstream adapter; отдельное принятие/актуализация до продолжения",
+      "changed_files": [
+        {
+          "filename": ".github/workflows/sprint-2a-exact-head.yml",
+          "status": "added",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "filename": ".github/workflows/sprint-2a-merge-ref.yml",
+          "status": "added",
+          "additions": 23,
+          "deletions": 0
+        },
+        {
+          "filename": "app/become/role_aware_contract.py",
+          "status": "added",
+          "additions": 306,
+          "deletions": 0
+        },
+        {
+          "filename": "app/become/role_aware_downstream.py",
+          "status": "added",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/artifact-binding.schema.json",
+          "status": "added",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/fixtures/negative-cases.json",
+          "status": "added",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/fixtures/positive-chain.json",
+          "status": "added",
+          "additions": 151,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/invitation-acceptance-binding.schema.json",
+          "status": "added",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/learner-submission-binding.schema.json",
+          "status": "added",
+          "additions": 14,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/manifest.json",
+          "status": "added",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/oko-result-binding.schema.json",
+          "status": "added",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/operation-matrix.json",
+          "status": "added",
+          "additions": 38,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/person-binding.schema.json",
+          "status": "added",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/quest-approval-binding.schema.json",
+          "status": "added",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/receipt.schema.json",
+          "status": "added",
+          "additions": 47,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/request.schema.json",
+          "status": "added",
+          "additions": 130,
+          "deletions": 0
+        },
+        {
+          "filename": "contracts/downstream/v1/take-private-result-binding.schema.json",
+          "status": "added",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "filename": "tests/test_role_aware_downstream.py",
+          "status": "added",
+          "additions": 57,
+          "deletions": 0
+        }
+      ],
+      "ci": [
+        {
+          "id": 30820441368,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/30820441368",
+          "created_at": "2026-08-03T13:58:19Z",
+          "head_sha": "ee09145a00030f70dfc93ce51ff5c32b214b5116"
+        },
+        {
+          "id": 30820175801,
+          "name": "Sprint 2A merge ref",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/30820175801",
+          "created_at": "2026-08-03T13:54:59Z",
+          "head_sha": "ee09145a00030f70dfc93ce51ff5c32b214b5116"
+        },
+        {
+          "id": 30820175786,
+          "name": "Sprint 2A exact head",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/30820175786",
+          "created_at": "2026-08-03T13:54:59Z",
+          "head_sha": "ee09145a00030f70dfc93ce51ff5c32b214b5116"
+        },
+        {
+          "id": 30820175805,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "event": "pull_request",
+          "url": "https://github.com/markmalina/gate/actions/runs/30820175805",
+          "created_at": "2026-08-03T13:54:59Z",
+          "head_sha": "ee09145a00030f70dfc93ce51ff5c32b214b5116"
+        }
+      ],
+      "mergeable_observed": null,
+      "mergeable_state_observed": "unknown",
+      "review_states": []
+    }
+  ]
+}
