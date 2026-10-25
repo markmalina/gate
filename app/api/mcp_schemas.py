@@ -11,6 +11,7 @@ from app.application.owner_reply_readiness import (
 )
 from app.application.reply_sequences import MAX_SEQUENCE_DRAFTS, MIN_SEQUENCE_DRAFTS
 from app.infrastructure.watch_voice_inventory import INVENTORY_SCHEMA
+from app.infrastructure.watch_voice_metrics import METRICS_SCHEMA
 
 JsonObject = dict[str, Any]
 
@@ -2533,6 +2534,7 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice"] = _object({
     "transcription_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_metrics"] = METRICS_SCHEMA
 
 
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({

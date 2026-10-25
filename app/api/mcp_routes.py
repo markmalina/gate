@@ -82,6 +82,7 @@ from app.application.reply_sequences import (
 )
 from app.models.watch_voice import WatchVoiceNote
 from app.infrastructure.watch_voice_inventory import protected_inventory
+from app.infrastructure.watch_voice_metrics import snapshot as watch_voice_metrics
 from app.infrastructure.watch_voice_actions import operational_status as watch_voice_actions_status
 from app.worker.watch_voice import operational_status as watch_voice_operational_status
 from app.core.config import Settings, get_settings
@@ -391,6 +392,10 @@ async def mcp_endpoint(
                     scope_allowed=(principal.access_scope.workspace_id == settings.gate_workspace_id
                                    and UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids),
                 )
+            if ((settings.gate_watch_voice_enabled or settings.gate_watch_voice_actions_enabled)
+                    and principal.access_scope.workspace_id == settings.gate_workspace_id
+                    and UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids):
+                snapshot["watch_voice_metrics"] = await watch_voice_metrics(session, settings)
             snapshot["alpha_canary"] = await _build_alpha_canary_status(
                 session=session,
                 settings=settings,

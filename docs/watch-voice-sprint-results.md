@@ -72,3 +72,37 @@ budget/model/claim/outbox changes in this sprint.
 Next: independent source verification and release prerequisites, plus safe
 monitoring/worker improvements on this same PR. Do not mark product accepted
 from local tests, green CI or a successful deploy alone.
+
+## Sprint 2 — measured status source, alert acceptance still open
+
+Added payload-free `gate_get_status.watch_voice_metrics`, through the existing
+owner scope. SQL supplies queue depth/age, latest completed publication, the
+last24h nearest-rank P50/P95/max with n/preliminary/sample cap, and month-to-date
+exact Voice normal/recovery settled charges and unresolved reserves. Shared
+speech budget/remaining remains in the existing `telegram_voice` status;
+infrastructure charges are explicitly unattributed, not zero.
+
+Cycle/scan observations instrument BOTH existing drivers, but are labelled
+current-api-process-only/not-durable and reset on restart. They do not prove a
+cluster-wide active driver. Missing historical STT start/request durations have
+n=0, never fabricated from archive-to-finish time. Existing root status commit
+is the deployment version; expected driver is computed separately from live
+configuration. No `HTTP200=worker healthy` assertion is made.
+
+Synthetic checks cover quiet idle, Actions-versus-persistent thresholds,
+queue-without-progress, unknown effects, cycle failure/recovery, safe error codes,
+quantiles and exact owner Voice charge attribution. Local bounded Watch suites:
+194PASS/3PostgreSQLskips; Ruff and new-module mypy PASS.
+
+**Incomplete:** no deployed durable cycle/scan timeline or cross-process
+liveness; no configured external notification adapter is proven by current
+source. Existing Telegram incident classes are not wired to a runtime observer
+and their single-active-stream database index must not be silently reused for
+Voice. This commit does not claim deduplicated fault/recovery delivery or Sprint2
+acceptance. Do not open a new notification channel to hide that gap. Continue
+through the existing Gate monitoring route after a reviewed durable integration.
+
+Effect: observable queue/completed-phase/Voice cost in existing status after
+release; bounded metadata queries, zero provider cost. No model/budget/schema/
+driver activation or outgoing alert added. Rollback: revert metrics module,
+status/schema additions and instrumentation; original receipts remain intact.

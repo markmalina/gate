@@ -23,6 +23,7 @@ from app.core.watch_voice_actions_oidc import (
     WORKFLOW_PATH,
 )
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
+from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
 from app.infrastructure.watch_voice_post_payment import continue_note
 from app.infrastructure.watch_voice_recovery import (
     RECOVERY_ERRORS,
@@ -291,6 +292,7 @@ async def claim_run(factory: async_sessionmaker[AsyncSession], claims: dict[str,
             return False
 
 
+@observed_cycle
 async def drain(
     *,
     settings: Settings,
@@ -406,6 +408,7 @@ async def drain(
                 break
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
+        OBSERVATION.scanned_at = datetime.now(UTC)
         scope = worker.note_scope(scoped)
         if cutover is not None:
             scope += worker.future_note_scope(cutover)
@@ -534,3 +537,4 @@ async def operational_status(
         "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }
+

@@ -45,6 +45,7 @@ from app.infrastructure.watch_voice_github import (
     marker,
     transcript_parts,
 )
+from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
 from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
 from app.worker.dropbox_calls import (
     _audio_media_type,
@@ -550,6 +551,7 @@ async def ensure_cursor(settings: Settings, factory: async_sessionmaker[AsyncSes
                     raise
 
 
+@observed_cycle
 async def process_watch_voice(
     settings: Settings, factory: async_sessionmaker[AsyncSession], http: httpx.AsyncClient
 ) -> None:
@@ -629,6 +631,7 @@ async def process_watch_voice(
             state.cursor = cursor
             if not delta["has_more"]:
                 break
+        OBSERVATION.scanned_at = datetime.now(UTC)
         scope = note_scope(settings)
         if cutover is not None:
             scope += future_note_scope(cutover)
@@ -763,3 +766,4 @@ async def resume_rejected_delivery(
         )
         await session.commit()
         return bool(result.rowcount)  # type: ignore[attr-defined]
+
