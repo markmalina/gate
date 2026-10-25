@@ -50,8 +50,13 @@ CI results are recorded in the PR receipt for this immutable candidate.
 
 Read-only production observation at18:40UTC: source prefixafe0c6b85193, old Actions
 enabled, persistent disabled, Calls enabled,47delivered/7received. These are scoped
-aggregates, not a new every-record/full-text acceptance result. The earlier43exact
-full-text matches remain the independently checked cohort. The candidate is NOT
+aggregates, not a new every-record/full-text acceptance result. Subsequent read-only
+verification of four more bot-authored single-part issues matched their complete
+Gate text and current Dropbox ID/revision/size/headerhash, bringing the checked
+cohort to47. No duplicate source revision found in the47matching issues. Today's
+completed cohort n22/preliminary: P50=2504s, P95=9786s, max=10710s, based on actual
+Dropbox server_modified and issue created_at; unfinished records are excluded.
+These are old Actions backlog delays, not candidate performance. The candidate is NOT
 deployed; no measured latency improvement or24h/restart acceptance is claimed.
 
 Release remains blocked on independent new-head review and the registered Gate/Ops
