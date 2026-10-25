@@ -23,6 +23,7 @@ from app.core.watch_voice_actions_oidc import (
     WORKFLOW_PATH,
 )
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
+from app.infrastructure.watch_voice_journal import pulse
 from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
 from app.infrastructure.watch_voice_post_payment import continue_note
 from app.infrastructure.watch_voice_recovery import (
@@ -30,6 +31,8 @@ from app.infrastructure.watch_voice_recovery import (
     authorized_at,
     recover_note,
 )
+from app.infrastructure.watch_voice_sources import archive_source, drain_sources
+from app.infrastructure.watch_voice_sources import discover as discover_source
 from app.models.watch_voice import (
     WatchVoiceCursor,
     WatchVoiceDrainRun,
@@ -62,6 +65,7 @@ class ActionsInboxClient(MarkInboxClient):
         super().__init__(http, token, BOT_WRITER)
 
     async def _get(self, path: str) -> Any:
+        await pulse("github_read", seconds=90)
         try:
             response = await self.http.get(
                 "https://api.github.com" + path,
@@ -292,7 +296,6 @@ async def claim_run(factory: async_sessionmaker[AsyncSession], claims: dict[str,
             return False
 
 
-@observed_cycle
 async def drain(
     *,
     settings: Settings,
@@ -308,6 +311,36 @@ async def drain(
         claims, settings.gate_watch_voice_actions_workflow_sha256
     )
     scoped = await bound_settings(settings, binding, factory, job_token=job_token)
+    # Start durable observation only after the existing private binding has
+    # authorized this run. The runtime flag need not carry its data grant.
+    observed_settings = settings.model_copy(
+        update={
+            "gate_watch_voice_data_gate_approved": True,
+            "gate_watch_voice_workspace_key": scoped.gate_workspace_id,
+        }
+    )
+    return await _drain_bound(
+        settings=observed_settings,
+        scoped=scoped,
+        factory=factory,
+        http=http,
+        claims=claims,
+        client=client,
+        binding=binding,
+    )
+
+
+@observed_cycle
+async def _drain_bound(
+    *,
+    settings: Settings,
+    scoped: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    claims: dict[str, Any],
+    client: ActionsInboxClient,
+    binding: dict[str, Any],
+) -> dict[str, Any]:
     if not await claim_run(factory, claims):
         return result("replayed")
     if binding["scope"] == "initial-quota-probe":
@@ -349,10 +382,13 @@ async def drain(
         if state is None:
             return result("deferred")
         cutover = worker.future_cutover(state) if binding["scope"] == "future-only" else None
+        await pulse("cursor_claimed", owns_cursor=True)
+        await pulse("dropbox_scan", scan_started_at=datetime.now(UTC))
         token = await _refresh_access_token(scoped, http)
         await _verify_account_id(scoped, http, token)
         cursor = state.cursor
         for _ in range(100):
+            await pulse("dropbox_delta")
             endpoint = "list_folder/continue" if cursor else "list_folder"
             body = (
                 {"cursor": cursor}
@@ -383,32 +419,17 @@ async def drain(
             ):
                 raise WatchVoiceError("watch_voice_delta_invalid")
             for item in delta["entries"]:
-                if (
-                    scoped.gate_watch_voice_file_id
-                    and isinstance(item, dict)
-                    and (
-                        item.get("id") != scoped.gate_watch_voice_file_id
-                        or item.get("rev") != scoped.gate_watch_voice_revision
-                    )
-                ):
-                    continue
-                entry = worker.source_entry(item)
-                if entry is None:
-                    continue
-                if scoped.gate_watch_voice_file_id and (
-                    entry["id"] != scoped.gate_watch_voice_file_id
-                    or entry["rev"] != scoped.gate_watch_voice_revision
-                ):
-                    continue
-                if cutover is not None and not worker.future_entry(entry, cutover):
-                    continue
-                await worker.store_entry(scoped, factory, http, token, entry)
+                key = await discover_source(scoped, factory, item, cutover)
+                if key is not None:
+                    await archive_source(scoped, factory, http, token, key)
             state.cursor = cursor = delta["cursor"]
             if not delta["has_more"]:
                 break
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
+        await drain_sources(scoped, factory, http, token, cutover)
         OBSERVATION.scanned_at = datetime.now(UTC)
+        await pulse("dropbox_scanned", scan_finished_at=datetime.now(UTC), scan_error=None)
         scope = worker.note_scope(scoped)
         if cutover is not None:
             scope += worker.future_note_scope(cutover)
@@ -537,4 +558,3 @@ async def operational_status(
         "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }
-

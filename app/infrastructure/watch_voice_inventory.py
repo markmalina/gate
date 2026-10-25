@@ -24,6 +24,9 @@ FIELDS = (
     "dropbox_modified_at", "received_at", "transcription_state", "transcript",
     "model", "transcribed_at", "delivery_state", "next_part", "issue_url",
     "github_received_at", "delivered_at", "last_error",
+    "detected_at", "processing_started_at", "processing_finished_at", "processing_attempt_count",
+    "provider_started_at", "provider_finished_at", "provider_request_count", "provider_elapsed_ms",
+    "provider_finished_count",
 )
 
 
@@ -48,9 +51,11 @@ INVENTORY_SCHEMA = _object({
             "recording_finished_at", "detected_at", "queued_at", "dropbox_modified_at",
             "archived_at", "transcription_started_at", "transcription_finished_at",
             "first_publication_at", "full_publication_confirmed_at",
+            "provider_started_at", "provider_finished_at",
         )}),
         "attempts": _object({"job_attempt_count": _NULL_INT,
             "provider_request_count": _NULL_INT, "budget_reservation_count": _INT,
+            "provider_finished_count": _NULL_INT, "provider_timing_complete": _BOOL,
             "basis": _STRING}),
         "last_error": _NULL_STRING, "waiting_reason": _NULL_STRING,
         "publication": _object({"issue_url": _NULL_STRING, "expected_parts": _NULL_INT,
@@ -131,18 +136,27 @@ def card(row: Any, reservations: list[Any]) -> dict[str, Any]:
         "size_bytes": row.size_bytes, "duration_seconds": row.duration_seconds,
         "transcription_state": row.transcription_state, "delivery_state": row.delivery_state,
         "times": {
-            "recording_finished_at": None, "detected_at": None, "queued_at": None,
+            "recording_finished_at": None, "detected_at": iso(getattr(row, "detected_at", None)),
+            "queued_at": iso(row.received_at) if getattr(row, "detected_at", None) else None,
             "dropbox_modified_at": iso(row.dropbox_modified_at),
             "archived_at": iso(row.received_at),
-            "transcription_started_at": None,
-            "transcription_finished_at": iso(row.transcribed_at),
+            "transcription_started_at": iso(getattr(row, "processing_started_at", None)),
+            "transcription_finished_at": iso(
+                getattr(row, "processing_finished_at", None) or row.transcribed_at),
+            "provider_started_at": iso(getattr(row, "provider_started_at", None)),
+            "provider_finished_at": iso(getattr(row, "provider_finished_at", None)),
             "first_publication_at": iso(row.github_received_at),
             "full_publication_confirmed_at": iso(row.delivered_at),
         },
         "attempts": {
-            "job_attempt_count": None, "provider_request_count": None,
+            "job_attempt_count": getattr(row, "processing_attempt_count", None),
+            "provider_request_count": getattr(row, "provider_request_count", None),
+            "provider_finished_count": getattr(row, "provider_finished_count", None),
+            "provider_timing_complete": (getattr(row, "provider_request_count", None) is not None
+                and getattr(row, "provider_request_count", None)
+                == getattr(row, "provider_finished_count", None)),
             "budget_reservation_count": len(reservations),
-            "basis": "reservation_is_not_a_provider_request_or_job_attempt",
+            "basis": "durable_observed_counters_legacy_unknown_reservations_separate",
         },
         "last_error": row.last_error,
         "waiting_reason": waiting_reason(row, complete=complete),
@@ -160,7 +174,7 @@ def card(row: Any, reservations: list[Any]) -> dict[str, Any]:
                                            for r in reservations),
             "basis": "exact_normal_and_authorized_recovery_reservations",
         },
-        "unknown_fields_reason": "not_recorded_by_legacy_schema_no_backfill_inference",
+        "unknown_fields_reason": "device_stop_unobserved_legacy_missing_values_not_inferred",
     }
 
 

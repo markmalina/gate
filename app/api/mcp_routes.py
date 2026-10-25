@@ -82,6 +82,7 @@ from app.application.reply_sequences import (
 )
 from app.models.watch_voice import WatchVoiceNote
 from app.infrastructure.watch_voice_inventory import protected_inventory
+from app.infrastructure.watch_voice_source_inventory import source_inventory
 from app.infrastructure.watch_voice_metrics import snapshot as watch_voice_metrics
 from app.infrastructure.watch_voice_actions import operational_status as watch_voice_actions_status
 from app.worker.watch_voice import operational_status as watch_voice_operational_status
@@ -980,9 +981,10 @@ async def _watch_voice_tool_result(
             message="Watch voice is outside the allowed owner scope",
         )
     prefix, ref = selector.split(":", 1)
-    if prefix == "watch-voice" and ref == "list":
+    if prefix == "watch-voice" and ref in {"list", "sources"}:
         try:
-            inventory = await protected_inventory(
+            listing = protected_inventory if ref == "list" else source_inventory
+            inventory = await listing(
                 session, settings, limit=(arguments or {}).get("limit", 20),
                 cursor=(arguments or {}).get("cursor"),
             )
@@ -3073,7 +3075,7 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
                             "pattern": "^watch-voice(-file)?:(latest|[0-9a-fA-F-]{36})$",
                         },
                         {
-                            "type": "string", "enum": ["watch-voice:list"],
+                            "type": "string", "enum": ["watch-voice:list", "watch-voice:sources"],
                         },
                         {
                             "type": "string",

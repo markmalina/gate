@@ -18,10 +18,16 @@ from app.infrastructure.watch_voice_github import (
     WatchVoiceError,
     transcript_parts,
 )
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
+from app.models.watch_voice import (
+    WatchVoiceCursor,
+    WatchVoiceCycle,
+    WatchVoiceIncident,
+    WatchVoiceNote,
+    WatchVoiceSource,
+)
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import DropboxCallWorkerError
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
@@ -85,7 +91,9 @@ async def database(tmp_path):
         admin = None
         engine = create_async_engine("sqlite+aiosqlite:///" + str(tmp_path / "watch.sqlite"))
     async with engine.begin() as connection:
-        for table in (WatchVoiceCursor.__table__, WatchVoiceNote.__table__):
+        for table in (WatchVoiceCursor.__table__, WatchVoiceNote.__table__,
+                      WatchVoiceCycle.__table__, WatchVoiceSource.__table__,
+                      WatchVoiceIncident.__table__):
             await connection.run_sync(table.create)
     try:
         yield async_sessionmaker(engine, expire_on_commit=False)
@@ -526,8 +534,15 @@ def test_offline_reconnect_retains_queue_and_delivers_once(tmp_path, monkeypatch
                         await worker.process_watch_voice(exact_settings(), factory, http)
                 else:
                     assert not await worker.process_watch_voice(exact_settings(), factory, http)
-                    assert worker.OBSERVATION.scan_error_code == (
-                        "dropbox_call_download_transport_failed")
+                    async with factory() as session:
+                        source = await session.scalar(select(WatchVoiceSource))
+                        assert source.state == "retry"
+                        assert source.last_error == "dropbox_call_download_transport_failed"
+                        assert source.next_attempt_at is not None
+                        # Advance the retry clock without waiting in the test.
+                        await session.execute(update(WatchVoiceSource).values(
+                            next_attempt_at=datetime.now(UTC) - timedelta(seconds=1)))
+                        await session.commit()
                     assert not await notes(factory)
                 world.offline = False
                 await worker.process_watch_voice(exact_settings(), factory, http)

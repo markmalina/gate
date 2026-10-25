@@ -45,7 +45,10 @@ from app.infrastructure.watch_voice_github import (
     marker,
     transcript_parts,
 )
+from app.infrastructure.watch_voice_journal import processing_started, provider_observation, pulse
 from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
+from app.infrastructure.watch_voice_sources import archive_source, drain_sources
+from app.infrastructure.watch_voice_sources import discover as discover_source
 from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
 from app.worker.dropbox_calls import (
     DropboxCallWorkerError,
@@ -193,7 +196,10 @@ async def store_entry(
     http: httpx.AsyncClient,
     token: str,
     entry: dict[str, Any],
+    *,
+    detected_at: datetime | None = None,
 ) -> None:
+    detected_at = detected_at or datetime.now(UTC)
     file_id, revision = entry["id"], entry["rev"]
     scope = (settings.gate_workspace_id, settings.dropbox_call_account_id)
     event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, repr((*scope, file_id, revision))))
@@ -229,6 +235,11 @@ async def store_entry(
         transcription_state="received",
         delivery_state="pending",
         next_part=0,
+        detected_at=detected_at,
+        processing_attempt_count=0,
+        provider_request_count=0,
+        provider_finished_count=0,
+        provider_elapsed_ms=0,
     )
     if duration is None or duration > MAX_DURATION:
         row.transcription_state = "rejected"
@@ -378,6 +389,13 @@ async def transcribe_claimed_note(
         raise ValueError("watch_voice_post_payment_recovery_required")
     model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
     processing_at = datetime.now(UTC)
+    await processing_started(
+        factory, note.id, note.duration_seconds, first_normal_claim=not recovery
+    )
+
+    async def observe_part(phase: str, elapsed_ms: int) -> None:
+        await provider_observation(factory, note.id, phase, elapsed_ms)
+
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
         normalizer=RecoveryVoiceNormalizer() if recovery else TelegramVoiceNormalizer(),
@@ -393,6 +411,7 @@ async def transcribe_claimed_note(
                 base_url=settings.openai_api_base_url,
             ),
             http=http,
+            part_observer=observe_part,
         ),
     )
     try:
@@ -428,7 +447,9 @@ async def transcribe_claimed_note(
                 update(WatchVoiceNote)
                 .where(WatchVoiceNote.id == note.id)
                 .values(
-                    transcription_state="unknown", last_error="watch_voice_transcription_unknown"
+                    transcription_state="unknown",
+                    last_error="watch_voice_transcription_unknown",
+                    processing_finished_at=datetime.now(UTC),
                 )
             )
             await session.commit()
@@ -442,6 +463,7 @@ async def transcribe_claimed_note(
                 transcript=result.alpha_input_text,
                 model=model,
                 transcribed_at=datetime.now(UTC),
+                processing_finished_at=datetime.now(UTC),
                 last_error=result.reason_code,
             )
         )
@@ -457,12 +479,14 @@ async def publish_note(
 ) -> None:
     if note.transcription_state != TelegramVoiceOutcome.TRANSCRIBED.value or not note.transcript:
         return
+    await pulse("publishing", seconds=180)
     completed_parts = 0
     while note.delivery_state in {"pending", "unknown"}:
         if max_parts is not None and completed_parts >= max_parts:
             return
         part, body = note.next_part, issue_body(note, note.next_part)
         if note.delivery_state == "unknown":
+            await pulse("publication_reconcile", seconds=180)
             # No absence-of-search-result is allowed to authorize a second POST.
             receipt = await client.reconcile(part=part, issue_number=note.issue_number, body=body)
             if receipt is None:
@@ -553,13 +577,18 @@ async def ensure_cursor(settings: Settings, factory: async_sessionmaker[AsyncSes
 
 
 async def scan_voice_source(
-    settings: Settings, factory: async_sessionmaker[AsyncSession], http: httpx.AsyncClient,
-    state: WatchVoiceCursor, cutover: datetime | None,
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    state: WatchVoiceCursor,
+    cutover: datetime | None,
 ) -> None:
+    await pulse("dropbox_scan", scan_started_at=datetime.now(UTC))
     token = await _refresh_access_token(settings, http)
     await _verify_account_id(settings, http, token)
     cursor = state.cursor
     while True:
+        await pulse("dropbox_delta")
         endpoint = "list_folder/continue" if cursor else "list_folder"
         body: dict[str, Any] = (
             {"cursor": cursor}
@@ -586,25 +615,16 @@ async def scan_voice_source(
         ):
             raise WatchVoiceError("watch_voice_delta_invalid")
         for item in delta["entries"]:
-            entry = source_entry(item)
-            if (
-                entry is not None
-                and settings.gate_watch_voice_file_id
-                and (
-                    entry["id"] != settings.gate_watch_voice_file_id
-                    or entry["rev"] != settings.gate_watch_voice_revision
-                )
-            ):
-                continue
-            if entry is not None:
-                if cutover is not None and not future_entry(entry, cutover):
-                    continue
-                await store_entry(settings, factory, http, token, entry)
+            key = await discover_source(settings, factory, item, cutover)
+            if key is not None:
+                await archive_source(settings, factory, http, token, key)
         cursor = delta["cursor"]
         state.cursor = cursor
         if not delta["has_more"]:
             break
+    await drain_sources(settings, factory, http, token, cutover)
     OBSERVATION.scanned_at = datetime.now(UTC)
+    await pulse("dropbox_scanned", scan_finished_at=datetime.now(UTC), scan_error=None)
 
 
 @observed_cycle
@@ -634,9 +654,20 @@ async def process_watch_voice(
             )
             .with_for_update(skip_locked=True)
         )
-        cutover = None if settings.gate_watch_voice_file_id else future_cutover(state)
         if state is None:
+            if not settings.gate_watch_voice_file_id:
+                existing = await coordinator.get(
+                    WatchVoiceCursor,
+                    (
+                        settings.gate_workspace_id,
+                        settings.dropbox_call_account_id,
+                    ),
+                )
+                if existing is None:
+                    future_cutover(None)  # missing admission is not an idle locked cursor
             return False
+        cutover = None if settings.gate_watch_voice_file_id else future_cutover(state)
+        await pulse("cursor_claimed", owns_cursor=True)
         if cutover is not None:
             await client.preflight()
         try:
@@ -645,13 +676,18 @@ async def process_watch_voice(
             # Source availability may defer discovery while draining archived work.
             # Scope, metadata, identity mismatch and integrity failures still stop.
             if exc.code not in {
-                "dropbox_call_oauth_transport_failed", "dropbox_call_oauth_rejected",
-                "dropbox_call_identity_transport_failed", "dropbox_call_identity_rejected",
-                "dropbox_call_download_transport_failed", "dropbox_call_download_rejected",
-                "watch_voice_delta_rejected", "watch_voice_delta_unavailable",
+                "dropbox_call_oauth_transport_failed",
+                "dropbox_call_oauth_rejected",
+                "dropbox_call_identity_transport_failed",
+                "dropbox_call_identity_rejected",
+                "dropbox_call_download_transport_failed",
+                "dropbox_call_download_rejected",
+                "watch_voice_delta_rejected",
+                "watch_voice_delta_unavailable",
             }:
                 raise
             OBSERVATION.scan_error_code = exc.code
+            await pulse("dropbox_deferred", scan_error=exc.code)
         else:
             OBSERVATION.scan_error_code = None
         scope = note_scope(settings)
@@ -800,4 +836,3 @@ async def resume_rejected_delivery(
         )
         await session.commit()
         return bool(result.rowcount)  # type: ignore[attr-defined]
-

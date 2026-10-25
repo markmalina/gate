@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from app.infrastructure.watch_voice_journal import pulse
+
 REPOSITORY = "markmalina/mark"
 API = "https://api.github.com"
 MAX_BODY_BYTES = 24_000
@@ -60,6 +62,7 @@ class MarkInboxClient:
         }
 
     async def _get(self, path: str) -> Any:
+        await pulse("github_read", seconds=90)
         try:
             response = await self.http.get(API + path, headers=self.headers, follow_redirects=False)
         except httpx.HTTPError:
@@ -90,6 +93,7 @@ class MarkInboxClient:
     async def post(
         self, *, part: int, issue_number: int | None, title: str, body: str
     ) -> GithubReceipt:
+        await pulse("github_write", seconds=90)
         path = f"/repos/{REPOSITORY}/issues"
         payload: dict[str, str] = {"title": title, "body": body}
         if part:
@@ -172,3 +176,4 @@ class MarkInboxClient:
 
 def body_digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+

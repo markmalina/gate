@@ -6,14 +6,18 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -33,6 +37,7 @@ class WatchVoiceCursor(Base):
 class WatchVoiceNote(Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
+        Index("ix_watch_voice_note_scope_time", "workspace_key", "account_id", "received_at", "id"),
         UniqueConstraint(
             "workspace_key",
             "account_id",
@@ -78,6 +83,95 @@ class WatchVoiceNote(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+    detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_attempt_count: Mapped[int | None] = mapped_column(Integer)
+    provider_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_request_count: Mapped[int | None] = mapped_column(Integer)
+    provider_finished_count: Mapped[int | None] = mapped_column(Integer)
+    provider_elapsed_ms: Mapped[int | None] = mapped_column(Integer)
+
+
+class WatchVoiceCycle(Base):
+    """Durable, payload-free cycle evidence shared by all API/worker processes."""
+
+    __tablename__ = "watch_voice_cycles"
+    __table_args__ = (
+        Index("ix_watch_voice_cycle_scope_time", "workspace_key", "account_id", "started_at"),
+        CheckConstraint("driver IN ('actions','persistent')", name="ck_watch_voice_cycle_driver"),
+        CheckConstraint("outcome IN ('running','success','failure','cancelled')",
+                        name="ck_watch_voice_cycle_outcome"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_key: Mapped[str] = mapped_column(String(128))
+    account_id: Mapped[str] = mapped_column(String(255))
+    driver: Mapped[str] = mapped_column(String(16))
+    source_sha: Mapped[str | None] = mapped_column(String(40))
+    owns_cursor: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    phase: Mapped[str] = mapped_column(String(32))
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    scan_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scan_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scan_error: Mapped[str | None] = mapped_column(String(128))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str] = mapped_column(String(16), default="running")
+    error_code: Mapped[str | None] = mapped_column(String(128))
+
+
+class WatchVoiceSource(Base):
+    """Durable discovery/download queue, including files outside audio bounds."""
+
+    __tablename__ = "watch_voice_sources"
+    __table_args__ = (
+        UniqueConstraint("workspace_key", "account_id", "file_id", "revision",
+                         name="uq_watch_voice_discovered_revision"),
+        Index("ix_watch_voice_source_scope_state", "workspace_key", "account_id", "state"),
+        CheckConstraint("state IN ('pending','downloading','retry','archived','rejected')",
+                        name="ck_watch_voice_source_state"),
+        CheckConstraint("attempt_count >= 0", name="ck_watch_voice_source_attempt_count"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_key: Mapped[str] = mapped_column(String(128))
+    account_id: Mapped[str] = mapped_column(String(255))
+    file_id: Mapped[str] = mapped_column(String(255))
+    revision: Mapped[str] = mapped_column(String(255))
+    filename: Mapped[str] = mapped_column(String(255))
+    source_path: Mapped[str] = mapped_column(String(1024))
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    dropbox_modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    state: Mapped[str] = mapped_column(String(16), default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(128))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_id: Mapped[str | None] = mapped_column(String(36))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WatchVoiceIncident(Base):
+    """One durable incident episode; the existing Gate log/status carries signals."""
+
+    __tablename__ = "watch_voice_incidents"
+    __table_args__ = (
+        Index("uq_watch_voice_incident_open", "workspace_key", "account_id", unique=True,
+              postgresql_where=text("recovered_at IS NULL"),
+              sqlite_where=text("recovered_at IS NULL")),
+        Index("ix_watch_voice_incident_scope_time", "workspace_key", "account_id", "opened_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_key: Mapped[str] = mapped_column(String(128))
+    account_id: Mapped[str] = mapped_column(String(255))
+    codes_json: Mapped[str] = mapped_column(Text)
+    attempted_codes_json: Mapped[str] = mapped_column(Text)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    log_attempt_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class WatchVoiceDrainRun(Base):
@@ -145,3 +239,4 @@ class WatchVoicePostPaymentClaim(Base):
     outcome: Mapped[str] = mapped_column(String(16))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+

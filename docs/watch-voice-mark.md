@@ -22,12 +22,37 @@ before the next STT. Transient Dropbox availability failure does not hold alread
 archived authorized work; identity/scope/integrity errors still fail closed.
 No worker has been enabled or second driver installed by these changes.
 
-Read-only metrics are on the existing Gate status surface, with explicit
-current-process telemetry limits. The legacy schema does not prove individual
-request-start timestamps, request counts, durable scan history or global worker
-liveness; missing fields remain unknown. Shared speech budget/remaining is
-separate from the new exact Voice charge attribution. Do not mistake normal
-empty-queue idle, API200, or a green Actions run for useful processing evidence.
+The candidate adds migration0116: durable scoped cycles, source download leases,
+incident episodes and nullable note measurements. Historical timestamps and
+attempt counters remain unknown. New normal claims record processing starts,
+per-part HTTP attempts/completions and elapsed time; an incomplete timing pair
+is excluded from timing percentiles. This does not change provider policy.
+
+After release, inspect `gate_get_status.watch_voice_metrics`: expected/observed
+driver, exact deployment SHA, cursor ownership, phase deadline, scan/progress,
+queue/age, source retry/rejection counts, sample sizes and incident recovery.
+`running_driver_proven` requires fresh durable evidence from the expected driver
+and the same full SHA. HTTP200 and empty-queue idle are not failure evidence.
+`watch-voice:sources` pages discovered revisions and download errors, including
+oversize files with no archived note. `watch-voice:list` remains the note and
+full-publication inventory. Join them by event_id; neither read invokes STT.
+
+The existing Dropbox Calls loop observes Voice and the shared speech budget;
+`monitor_host_enabled` must be true for automatic incident/log observation.
+No new task, schedule, message sender or credentials are introduced. One durable
+incident suppresses repeated fault codes across processes/restarts, records new
+codes once and records recovery once. Logs are best-effort at-most-once attempts,
+not guaranteed push delivery; status retains the incident if a log is lost.
+Confirm actual routing/receipt in the existing monitoring channel after release.
+Shared speech budget/remaining is distinct from Voice-only charges, provider
+account balance and unknown infrastructure costs. Unknown values are not zero.
+
+Release requires explicit migration0116 approval and an exact-head source review,
+in addition to the existing startup/private writer/one-driver Ops gates. Never
+execute a direct provider deployment fallback. Source rollback uses the reviewed
+LKG application with both Voice drivers disabled through the authorized setter,
+retains additive schema0116/journals/originals/cursor/claims/outbox and never
+rearms an unknown provider/publication claim. No live schema downgrade or purge.
 
 ### Device measurement protocol (not executed)
 

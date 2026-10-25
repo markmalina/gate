@@ -155,6 +155,17 @@ async def run_dropbox_call_worker_loop(
                     code="dropbox_call_worker_failed",
                 )
                 logger.exception("Dropbox call intake failed")
+            if settings.gate_watch_voice_enabled or settings.gate_watch_voice_actions_enabled:
+                try:
+                    from app.infrastructure.watch_voice_monitor import observe_watch_voice
+
+                    await observe_watch_voice(settings, session_factory)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Keep Calls independent of Voice diagnostics and never log
+                    # a database exception containing private identifiers.
+                    logger.warning("Watch Voice monitoring deferred")
             await asyncio.sleep(settings.gate_dropbox_call_poll_seconds)
 
 
@@ -1280,3 +1291,4 @@ def _required_string(
     ):
         raise DropboxCallWorkerError(code)
     return value
+

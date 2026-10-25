@@ -13,7 +13,12 @@ from app.infrastructure.watch_voice_metrics import (
 )
 from app.models.billing import BillingBudgetReservationModel as Reservation
 from app.models.canonical import Workspace
-from app.models.watch_voice import WatchVoiceNote
+from app.models.watch_voice import (
+    WatchVoiceCycle,
+    WatchVoiceIncident,
+    WatchVoiceNote,
+    WatchVoiceSource,
+)
 from jsonschema import validate
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from tests.test_watch_voice_inventory import note
@@ -32,24 +37,28 @@ def test_idle_and_legacy_actions_do_not_raise_persistent_worker_alarm():
     assert signals(expected="persistent", queue=0, **args) == []
     assert signals(expected="actions", queue=12, **args) == []
     assert signals(expected="persistent", queue=12, **args) == [
-        "watch_voice_cycle_stale", "watch_voice_queue_no_progress"]
+        "watch_voice_cycle_stale",
+        "watch_voice_queue_no_progress",
+    ]
     args.update(progress_age=None, unknown=1)
-    assert "watch_voice_reconciliation_required" in signals(
-        expected="persistent", queue=1, **args)
+    assert "watch_voice_reconciliation_required" in signals(expected="persistent", queue=1, **args)
 
 
 def test_error_telemetry_never_copies_provider_exception_text():
     @observed_cycle
     async def cycle():
         raise RuntimeError("synthetic-secret https://example.invalid/private")
+
     try:
         asyncio.run(cycle())
     except RuntimeError:
         pass
     assert OBSERVATION.error_code == "watch_voice_cycle_failed"
+
     @observed_cycle
     async def recovered():
         return 3
+
     assert asyncio.run(recovered()) == 3
     assert OBSERVATION.error_code is None and OBSERVATION.completed_at is not None
 
@@ -58,7 +67,14 @@ def test_metrics_join_only_exact_owner_voice_charges_and_exclude_audio(tmp_path)
     async def scenario():
         engine = create_async_engine("sqlite+aiosqlite:///" + str(tmp_path / "metrics.db"))
         async with engine.begin() as conn:
-            for table in (Workspace.__table__, WatchVoiceNote.__table__, Reservation.__table__):
+            for table in (
+                Workspace.__table__,
+                WatchVoiceNote.__table__,
+                Reservation.__table__,
+                WatchVoiceCycle.__table__,
+                WatchVoiceSource.__table__,
+                WatchVoiceIncident.__table__,
+            ):
                 await conn.run_sync(table.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         workspace = uuid.uuid4()
@@ -67,11 +83,23 @@ def test_metrics_join_only_exact_owner_voice_charges_and_exclude_audio(tmp_path)
             session.add(Workspace(id=workspace, key="mark-personal", display_name="synthetic"))
             session.add(WatchVoiceNote(**note(1)))
             for index, key in enumerate((f"watch-voice:{uuid.UUID(int=1)}", "telegram:foreign")):
-                session.add(Reservation(id=uuid.uuid4(), workspace_id=workspace,
-                    reservation_key=key, product="gate", scope_kind="telegram_connector",
-                    scope_ref="telegram_business", operation="transcription",
-                    period_key=now.strftime("%Y-%m"), state="settled", reserved_microusd=100,
-                    settled_microusd=10 + index, created_at=now, updated_at=now))
+                session.add(
+                    Reservation(
+                        id=uuid.uuid4(),
+                        workspace_id=workspace,
+                        reservation_key=key,
+                        product="gate",
+                        scope_kind="telegram_connector",
+                        scope_ref="telegram_business",
+                        operation="transcription",
+                        period_key=now.strftime("%Y-%m"),
+                        state="settled",
+                        reserved_microusd=100,
+                        settled_microusd=10 + index,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
             await session.commit()
         async with factory() as session:
             result = await snapshot(session, Settings(DROPBOX_CALL_ACCOUNT_ID="owner"))
@@ -82,5 +110,22 @@ def test_metrics_join_only_exact_owner_voice_charges_and_exclude_audio(tmp_path)
             assert result["running_driver_proven"] is False
             assert result["latency"]["phases"]["provider_request"]["n"] == 0
             assert "synthetic.m4a" not in str(result)
+        async with factory() as session:
+            row = await session.get(WatchVoiceNote, str(uuid.UUID(int=1)))
+            row.transcription_state, row.delivery_state = "transcribed", "delivered"
+            row.delivered_at = row.transcribed_at = now
+            row.provider_request_count, row.provider_finished_count = 2, 1
+            row.provider_finished_at, row.provider_elapsed_ms = now, 1000
+            await session.commit()
+            # A missing finish observation is not a complete provider timing.
+            assert (await snapshot(session, Settings(DROPBOX_CALL_ACCOUNT_ID="owner")))["latency"][
+                "phases"
+            ]["provider_request"]["n"] == 0
+            row.provider_finished_count = 2
+            await session.commit()
+            assert (await snapshot(session, Settings(DROPBOX_CALL_ACCOUNT_ID="owner")))["latency"][
+                "phases"
+            ]["provider_request"]["n"] == 1
         await engine.dispose()
+
     asyncio.run(scenario())

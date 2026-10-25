@@ -4,6 +4,64 @@ Continues #736/#731 and the single implementation PR #766. The five-sprint
 owner request of 25 October supersedes planning-only scope; it does not turn
 historical spent Ops grants into reusable credentials or acceptance.
 
+## Durable continuation — 25 October 2026, source only
+
+This section supersedes the process-local monitoring limitation in the earlier
+dated Sprint2 evidence below. It does not supersede its production boundary.
+
+- Migration0116 adds durable scoped cycle/phase/scan evidence, discovery/download
+  records with CAS leases and bounded retry, incident episodes and nine nullable
+  note measurements. No historical values are guessed or backfilled. Audio,
+  transcripts, cursor/watermark and existing effect claims are preserved.
+- Both existing drivers write cycle evidence; Actions starts its journal after
+  the existing protected private binding is verified. Invalid/conflicting driver
+  admission does not create a journal or reach an external effect.
+- Discovery commits each admitted source revision before downloading. An oversize
+  file is visible as rejected; a temporary download failure is retryable. Neither
+  holds unrelated records or cursor advancement. Expired download leases recover
+  safely; a saved archive after an acknowledgement loss is not downloaded again.
+  Historical watermark, exact-source and workspace/account boundaries still apply.
+- Protected `watch-voice:sources` pages those source states without audio/text.
+  Existing `watch-voice:list` adds observed processing/provider start/finish,
+  attempt counters and incomplete-timing disclosure. Legacy counters stay null.
+- Existing Gate status reads SQL across API/worker processes, showing expected
+  and observed driver, full SHA, bounded phase deadline, last successful scan,
+  queue, sources and incident status. Fresh cursor-owner evidence from the exact
+  deployment is required for running_driver_proven. Timing samples omit unknown,
+  negative and incomplete values; all percentiles carry n, period and preliminary.
+- Existing Calls loop observes stale/deadline/queue/source/budget signals and
+  records one durable incident episode. Codes, escalation and recovery have
+  at-most-once log attempts across restarts and concurrent observers. No new
+  loop, schedule, credentials or outbound message mechanism. Actual push receipt
+  is not claimed. Disabled monitoring host is explicit in status; production must
+  retain the existing Calls loop or approve an existing-monitor integration.
+- Speech model, endpoint, no-retry policy, timeout/part limits and shared $3
+  hard cap are unchanged. No real provider or publication call was made by this
+  Work. Each observed part adds bounded SQL metadata writes. At a quiet30s poll
+  the journal grows by approximately2880cycles/day; actual DB storage/latency and
+  infrastructure attribution remain unmeasured. History is not automatically purged.
+
+Synthetic checks cover migration preservation/unknown legacy values, independent
+readers/restarts, phase deadlines, stuck-worker recovery, incident dedup, concurrent
+PostgreSQL observers, download retry/lease recovery, historical/foreign exclusion,
+bad-file batch isolation, monitor failure isolation, shared speech charges/reserves,
+multipart provider counters and missing-finish timing exclusion. Local and exact-head
+CI results are recorded in the PR receipt for this immutable candidate.
+
+Read-only production observation at18:40UTC: source prefixafe0c6b85193, old Actions
+enabled, persistent disabled, Calls enabled,47delivered/7received. These are scoped
+aggregates, not a new every-record/full-text acceptance result. The earlier43exact
+full-text matches remain the independently checked cohort. The candidate is NOT
+deployed; no measured latency improvement or24h/restart acceptance is claimed.
+
+Release remains blocked on independent new-head review and the registered Gate/Ops
+startup/predeploy/migration/private writer/narrow setter/one-driver prerequisites.
+Old spent grants must not be rearmed. Safe rollback disables Voice through the
+authorized setter and restores reviewed LKG applicationafe0c6b8519381a0007c0dcc1c145207b5d54a3f
+while retaining additive schema0116, journals, originals, cursor and claims;
+never downgrade live schema or blindly repeat an uncertain effect. Device trials,
+poll-versus-webhook measurement and24h observation remain dependent on release.
+
 ## Sprint 1 — source implementation, live acceptance incomplete
 
 Observation window: 25 October 2026, 17:05–17:30 UTC (20:05–20:30 Moscow).

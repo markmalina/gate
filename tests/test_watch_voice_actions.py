@@ -21,7 +21,12 @@ from app.infrastructure.watch_voice_actions import (
     validate_binding,
 )
 from app.infrastructure.watch_voice_github import WatchVoiceError
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+from app.models.watch_voice import (
+    WatchVoiceCursor,
+    WatchVoiceCycle,
+    WatchVoiceDrainRun,
+    WatchVoiceNote,
+)
 from sqlalchemy import select
 
 from test_watch_voice import World, database, notes, queued_note, settings
@@ -41,10 +46,15 @@ def test_actions_rejects_persistent_driver_before_any_io(monkeypatch):
     factory, http = AsyncMock(), AsyncMock()
     conflicting = settings().model_copy(update={"gate_watch_voice_actions_enabled": True})
     with pytest.raises(WatchVoiceError, match="^watch_voice_driver_conflict$"):
-        asyncio.run(drain(
-            settings=conflicting, factory=factory, http=http,
-            claims={}, job_token="synthetic-unused-token",
-        ))
+        asyncio.run(
+            drain(
+                settings=conflicting,
+                factory=factory,
+                http=http,
+                claims={},
+                job_token="synthetic-unused-token",
+            )
+        )
     factory.assert_not_called()
     assert http.mock_calls == []
 
@@ -221,7 +231,9 @@ def test_owner_comment_fresh_runs_keep_exact_receipt_and_no_duplicate_effects(
                 )
                 authorize_claims(claim)
                 receipt = await drain(
-                    settings=action_settings(),
+                    settings=action_settings().model_copy(
+                        update={"gate_watch_voice_data_gate_approved": False}
+                    ),
                     factory=factory,
                     http=http,
                     claims=claim,
@@ -239,6 +251,10 @@ def test_owner_comment_fresh_runs_keep_exact_receipt_and_no_duplicate_effects(
                 assert receipt["delivered"] == int(index == 0)
             assert world.posts == world.provider_calls == 1
             assert (await notes(factory))[0].delivery_state == "delivered"
+            async with factory() as session:
+                cycles = list((await session.scalars(select(WatchVoiceCycle))).all())
+                assert len(cycles) == 4
+                assert all(c.driver == "actions" and c.outcome == "success" for c in cycles)
 
     asyncio.run(run())
 
@@ -511,15 +527,21 @@ def test_future_admission_cannot_install_watermark_without_initial_acceptance(
             httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http,
         ):
             initial = queued_note(
-                world, "id:initial-acceptance", datetime.now(UTC),
+                world,
+                "id:initial-acceptance",
+                datetime.now(UTC),
                 transcription_state="received" if missing == "transcript" else "transcribed",
                 transcript="Synthetic initial receipt",
                 delivery_state="pending" if missing == "delivery" else "delivered",
-                issue_url=None if missing == "issue" else "https://github.com/markmalina/mark/issues/1",
+                issue_url=None
+                if missing == "issue"
+                else "https://github.com/markmalina/mark/issues/1",
             )
             world.binding = {
-                "schema": "watch-voice-binding.v1", "enabled": True,
-                "workspace_key": "mark-personal", "scope": "future-only",
+                "schema": "watch-voice-binding.v1",
+                "enabled": True,
+                "workspace_key": "mark-personal",
+                "scope": "future-only",
                 "accepted_initial_event_id": initial.id,
             }
             async with factory() as session:
@@ -528,15 +550,21 @@ def test_future_admission_cannot_install_watermark_without_initial_acceptance(
                 )
                 if missing != "note":
                     session.add(initial)
-                session.add(WatchVoiceCursor(
-                    workspace_key="mark-personal", account_id="synthetic-owner",
-                    cursor=None if missing == "cursor" else "kept-initial-cursor",
-                ))
+                session.add(
+                    WatchVoiceCursor(
+                        workspace_key="mark-personal",
+                        account_id="synthetic-owner",
+                        cursor=None if missing == "cursor" else "kept-initial-cursor",
+                    )
+                )
                 await session.commit()
             with pytest.raises(WatchVoiceError, match="initial_acceptance_required"):
                 await drain(
-                    settings=action_settings(), factory=factory, http=http,
-                    claims=claims(), job_token="synthetic-job-token",
+                    settings=action_settings(),
+                    factory=factory,
+                    http=http,
+                    claims=claims(),
+                    job_token="synthetic-job-token",
                 )
             assert world.provider_calls == world.posts == 0
             assert not any("dropbox" in url for _, url in world.calls)
