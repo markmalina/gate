@@ -451,8 +451,8 @@ def test_future_worker_recovers_and_drains_batches_without_replay(tmp_path, monk
         async with database(tmp_path) as factory:
             await admitted_future_cursor(factory, cutover, cursor="original-future-cursor")
             async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
-                with pytest.raises(WatchVoiceError, match="delta_unavailable"):
-                    await worker.process_watch_voice(settings(), factory, http)
+                assert not await worker.process_watch_voice(settings(), factory, http)
+                assert worker.OBSERVATION.scan_error_code == "watch_voice_delta_unavailable"
             assert not await notes(factory)
             async with factory() as session:
                 state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
@@ -520,8 +520,15 @@ def test_offline_reconnect_retains_queue_and_delivers_once(tmp_path, monkeypatch
     async def run():
         async with database(tmp_path) as factory:
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                with pytest.raises((WatchVoiceError, DropboxCallWorkerError)):
-                    await worker.process_watch_voice(exact_settings(), factory, http)
+                if fault == "offline":
+                    # GitHub private-target preflight remains a mandatory fence.
+                    with pytest.raises((WatchVoiceError, DropboxCallWorkerError)):
+                        await worker.process_watch_voice(exact_settings(), factory, http)
+                else:
+                    assert not await worker.process_watch_voice(exact_settings(), factory, http)
+                    assert worker.OBSERVATION.scan_error_code == (
+                        "dropbox_call_download_transport_failed")
+                    assert not await notes(factory)
                 world.offline = False
                 await worker.process_watch_voice(exact_settings(), factory, http)
             assert len(await notes(factory)) == 1
@@ -1136,3 +1143,4 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
             session.scalar.assert_not_awaited()
 
     asyncio.run(run())
+

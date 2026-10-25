@@ -1,6 +1,96 @@
 # Owner watch voice → private Mark inbox
 
-## Current continuation — 18 October 2026
+## Current continuation — 25 October 2026
+
+Continue #736/#731 in PR766, branch `agent/736-autonomous-watch-queue`, existing
+execution `watch-voice-autonomous-20261015T1023Z`. The current owner instruction
+authorizes implementation of the five sprints; the old planning-only limitation
+is superseded. Production/cutover prerequisites and spent one-use grants remain.
+
+See [sprint evidence and outstanding acceptance](watch-voice-sprint-results.md).
+The new protected inventory and metrics are SOURCE ONLY until a verified release.
+Use `gate_get_reply_context(task_id="watch-voice:list", limit=20)` and every
+returned cursor after release; do not put private metadata into shared evidence.
+Retrieve exact full text through the returned watch-voice selector and follow
+the Mark issue including all continuation comments. `journal_complete` is not
+independent verification of GitHub content. Reconcile exact source ID/revision,
+writer, full text, all expected parts and receipt times before accepting delivery.
+
+Existing source-only persistent worker changes drain successive bounded batches
+without a polling pause after progress and publish each newly transcribed note
+before the next STT. Transient Dropbox availability failure does not hold already
+archived authorized work; identity/scope/integrity errors still fail closed.
+No worker has been enabled or second driver installed by these changes.
+
+Read-only metrics are on the existing Gate status surface, with explicit
+current-process telemetry limits. The legacy schema does not prove individual
+request-start timestamps, request counts, durable scan history or global worker
+liveness; missing fields remain unknown. Shared speech budget/remaining is
+separate from the new exact Voice charge attribution. Do not mistake normal
+empty-queue idle, API200, or a green Actions run for useful processing evidence.
+
+### Device measurement protocol (not executed)
+
+Run only after server release, writer and single-driver readiness are proven.
+Use short synthetic spoken identifiers, no third-party or sensitive content.
+Five10-second recordings on normal network, three with phone locked, two offline
+followed by network restoration. Do not manufacture a Production server outage.
+For each trial record timezone-aware clock time and observation method for:
+
+| Event | Evidence |
+| --- | --- |
+| Stop pressed on Watch | Human/device event, not filename |
+| File first visible on phone | Recorder/local file observation |
+| Upload accepted by Dropbox | Server_modified of exact ID/revision |
+| Gate archive complete | protected inventory archived_at |
+| STT starts/finishes | exact telemetry if available; otherwise unknown |
+| Full Inbox confirmed | all bot-authored issue/comment parts, exact text |
+
+Record Watch/phone model, firmware, network, battery-saving state, Samsung sync
+and Dropsync restrictions. Keep Stop→phone, phone→Dropbox, Dropbox→Gate and
+Gate→fullInbox separate. Report n and excluded/unfinished trials; n<30 remains
+preliminary. Offline time belongs before Dropbox. File visibility time observed
+by polling is an upper bound, not exact arrival. No extrapolated device times.
+
+Do not disable Bluetooth/background Samsung or Dropsync sync merely to save
+battery: first compare measured locked/offline recovery. Change one setting at a
+time and repeat; select the least battery-intensive configuration meeting the
+measured sync requirement. No Samsung/Dropsync setting was changed or verified
+in this Work. Physical trials require Mark's devices; server work does not.
+
+### Cost and retention
+
+Official price checked25October: mini-transcribe estimated $0.003/minute:
+https://developers.openai.com/api/docs/pricing . At30/60/120minutes daily for
+30days, STT forecast is $2.70/$5.40/$10.80. Actual token usage can differ. Add
+separately measured Actions, Railway CPU/DB and storage, currently unattributed.
+The existing $3 monthly ceiling is shared speech, not a dedicated Voice budget;
+it is unchanged and must never be bypassed. Reserved/unknown is not settled spend.
+
+No audio/history/receipt deleted and no new retention purge scheduled. Originals
+remain Dropbox plus protected Gate archive; retrieval verifies hash/size. A real
+backup/restore or original download was not performed by the new source stage.
+Keep all original cursor/watermark/claims and publication journals during rollback.
+
+### Release and rollback
+
+The last-known-good observed application is
+`afe0c6b8519381a0007c0dcc1c145207b5d54a3f`/schema0115. Recheck actual main,
+effective startup/predeploy/schema and current Ops contract, then exact-head
+checks and independent source acceptance. Verify server writer identity/private
+Mark/Issues-write, narrow mode setter and old/new overlap exclusion. Do not
+disable Actions before the verified one-driver transition; restore the reviewed
+old driver only through that same controlled route. Application rollback keeps
+schema and all journals. No old observer grant may be rerun or rearmed.
+
+Webhook remains Calls-only. Reliable Voice wake-up requires durable pending
+generation on the same cursor/queue and a supported single-driver release;
+an in-memory event alone is insufficient. No new webhook consumer was activated.
+Measure30-second polling first, then decide webhook benefit; initial fallback
+target60seconds. Server restart, duplicate/lost/out-of-order events and24h
+observation are still pending live acceptance. No24h monitoring is claimed.
+
+## Historical continuation — 18 October 2026
 
 Autonomous delivery is still NOT accepted. This continues the same Gate
 #736/#731, execution `watch-voice-autonomous-20261015T1023Z` and PR #766.
@@ -522,3 +612,4 @@ download and excludes stored backlog whose Dropbox timestamp is not later.
 Both comparisons retain full UTC precision. A skipped delta still advances the
 existing cursor; retries/restarts never move the durable cutover. A new actual
 recording after that watermark remains a separate required product receipt.
+

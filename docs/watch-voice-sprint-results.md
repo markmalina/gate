@@ -28,6 +28,11 @@ Observed Production prefix: `afe0c6b85193`; constant worker disabled.
   without an error. The other pending rows are NOT individually observable
   through the current deployed exact-ID/latest interface. Aggregate equality
   does not prove their individual state or absence of a hidden error.
+- Ten older Dropbox files also have no matched publication among the40verified
+  current source revisions. The deployed interface does not prove whether each
+  was intentionally excluded by the historical watermark, superseded or not
+  admitted. They remain explicit older-source reconciliation gaps; do not silently
+  backfill them or infer exclusion from their names/aggregate counts.
 - Completed-cohort Dropbox server_modified → full issue created_at, nearest-rank:
   n=15, P50=1311s, P95=5278s, max=5278s. Preliminary, n<30; unfinished records
   excluded, not treated as zero latency. This is the old Actions baseline,
@@ -106,3 +111,72 @@ Effect: observable queue/completed-phase/Voice cost in existing status after
 release; bounded metadata queries, zero provider cost. No model/budget/schema/
 driver activation or outgoing alert added. Rollback: revert metrics module,
 status/schema additions and instrumentation; original receipts remain intact.
+
+## Sprint 3 — additional persistent-worker source fixes
+
+The existing worker now continues immediately after useful bounded-batch
+progress, yields to the event loop, and returns to the configured polling delay
+when idle. It publishes each fresh transcript before starting the next STT,
+instead of holding all new results until ten transcriptions finish. Fresh rows
+are excluded from the second publication sweep, so a lost acknowledgement is
+still reconciled in a later cycle and never blindly reposted.
+
+Source scanning is isolated from processing already archived authorized work.
+Explicit transient Dropbox OAuth/identity-transport/delta availability errors
+record a safe scan error and allow archived work to continue; scope/identity
+mismatch, malformed metadata and integrity errors still stop. Cursor is not
+advanced past an unsuccessful page. No lease/claim/watermark/budget/model changed,
+no STT parallelism added, and Actions admission/caps are unchanged.
+
+Local final bounded Watch suites:198PASS/3explicit PostgreSQLskips. New fixtures
+prove archived delivery through a Dropbox outage, no repeat provider/publication
+on replay, identity-mismatch fail-closed, and loop delays0/0/30after progress/
+progress/idle. Existing12-note restart/batch, watermark, lost-ACK, continuation,
+quarantine, budget and recovery tests remain green. New modules/worker mypy and
+all changed-code Ruff pass. PostgreSQL multi-process execution and actual restart
+are not newly proven by SQLite fixtures.
+
+Production re-observation during work: sameafe0c6b85193, Actions-only,42delivered,
+12received/pending,64Dropbox files. Shared speech settled753052µUSD,
+reserved166800µUSD,remaining2080148µUSD. Those2new deliveries and speech charges
+belong to the unchanged production Actions flow, not this source implementation.
+
+**Acceptance OPEN:** no controlled driver switch/restart, verified server writer,
+effective startup/predeploy/config or24h observation. A per-source durable
+diagnostic for metadata/download failures is still required before claiming a
+problem file cannot block discovery of others. No old Actions mechanism disabled.
+Effect after release: less queue and publication waiting, same STT rates/caps;
+additional infrastructure cost unmeasured. Rollback restores the prior worker
+source, preserving every source/claim/cursor and publication receipt.
+
+## Sprints 4 and 5 — actual disposition
+
+Webhook Voice wiring is not implemented/activated. Current webhook only marks
+Calls pending. Durable pending generation, crash/reorder tests and same-worker
+wake-up require a reviewed source slice; an in-memory-only shortcut is rejected.
+Polling has not yet been released/measured, so no webhook speedup is claimed.
+
+The single runbook now includes current source/production separation, exact
+inventory/status/recovery procedures, one-driver release/rollback requirements,
+device trial protocol and separate30/60/120-minute cost forecasts. Device work,
+per-note actual-cost live reading, original retrieval/backup/restore acceptance
+and24h observation remain outstanding. No device setting, schedule, audio,
+history or retention policy was changed or deleted.
+
+## Next bounded work and blockers
+
+1. Complete durable/cross-process Voice cycle/start/attempt telemetry and integrate
+   fault/recovery into the existing monitoring channel with incident deduplication.
+   Process-local timestamps in the current source are explicitly insufficient.
+2. Add durable source-problem inventory so a bad entry is diagnosed while other
+   entries/archived jobs proceed without cursor loss. Extend fault fixtures.
+3. Obtain independent exact-head source acceptance and fresh admissible Ops
+   evidence for effective startup/predeploy/schema, private-Mark server writer,
+   mode setter and one-driver overlap. The old diagnostic grants remain SPENT;
+   current generic implementation instruction does not rearm them. No direct
+   Railway UI/API fallback or secret provisioning performed.
+4. Controlled release, exact runtime fingerprint and bounded real acceptance;
+   then webhook decision and device trials, followed by at least24h observation.
+
+This is a saved, tested partial implementation, NOT completion of all five
+sprints. #736/#731 and release/monitoring/product acceptance stay OPEN.

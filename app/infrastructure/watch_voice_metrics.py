@@ -30,6 +30,7 @@ class CycleObservation:
     completed_at: datetime | None = None
     scanned_at: datetime | None = None
     error_code: str | None = None
+    scan_error_code: str | None = None
 
 
 OBSERVATION = CycleObservation()
@@ -46,7 +47,8 @@ METRICS_SCHEMA = schema_object({
     "expected_driver": {"enum": ["actions", "persistent", "disabled", "conflict"]},
     "running_driver_proven": {"const": False}, "cycle_observation_scope": _S,
     **{key: _NS for key in ("last_cycle_started_at", "last_cycle_completed_at",
-        "last_successful_scan_at", "last_cycle_error", "last_useful_progress_at")},
+        "last_successful_scan_at", "last_cycle_error", "last_scan_error",
+        "last_useful_progress_at")},
     "queue_size": _I, "oldest_waiting_age_seconds": _N, "unknown_count": _I,
     "latency": schema_object({"period_start": _S, "period_end": _S,
         "sample_cap": _I, "truncated": _B, "basis": _S,
@@ -155,6 +157,8 @@ async def snapshot(session: AsyncSession, settings: Settings) -> dict[str, Any]:
     reasons = signals(expected=expected, queue=queue, oldest_age=age(oldest),
         progress_age=age(progress), cycle_age=age(OBSERVATION.completed_at),
         scan_age=age(OBSERVATION.scanned_at), unknown=unknown)
+    if OBSERVATION.scan_error_code is not None:
+        reasons.append("watch_voice_scan_failed")
     return {
         "schema": "watch-voice-metrics.v1", "observed_at": now.isoformat(),
         "expected_driver": expected, "running_driver_proven": False,
@@ -163,6 +167,7 @@ async def snapshot(session: AsyncSession, settings: Settings) -> dict[str, Any]:
         "last_cycle_completed_at": iso(OBSERVATION.completed_at),
         "last_successful_scan_at": iso(OBSERVATION.scanned_at),
         "last_cycle_error": OBSERVATION.error_code,
+        "last_scan_error": OBSERVATION.scan_error_code,
         "last_useful_progress_at": iso(progress), "queue_size": queue,
         "oldest_waiting_age_seconds": age(oldest), "unknown_count": unknown,
         "latency": {"period_start": start.isoformat(), "period_end": now.isoformat(),

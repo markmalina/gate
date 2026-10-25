@@ -48,6 +48,7 @@ from app.infrastructure.watch_voice_github import (
 from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
 from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
 from app.worker.dropbox_calls import (
+    DropboxCallWorkerError,
     _audio_media_type,
     _download_revision,
     _probe_duration_seconds,
@@ -551,12 +552,67 @@ async def ensure_cursor(settings: Settings, factory: async_sessionmaker[AsyncSes
                     raise
 
 
+async def scan_voice_source(
+    settings: Settings, factory: async_sessionmaker[AsyncSession], http: httpx.AsyncClient,
+    state: WatchVoiceCursor, cutover: datetime | None,
+) -> None:
+    token = await _refresh_access_token(settings, http)
+    await _verify_account_id(settings, http, token)
+    cursor = state.cursor
+    while True:
+        endpoint = "list_folder/continue" if cursor else "list_folder"
+        body: dict[str, Any] = (
+            {"cursor": cursor}
+            if cursor
+            else {"path": PATH, "recursive": False, "include_deleted": False}
+        )
+        try:
+            response = await http.post(
+                "https://api.dropboxapi.com/2/files/" + endpoint,
+                headers={"Authorization": f"Bearer {token}"},
+                json=body,
+            )
+            if response.status_code != 200:
+                raise WatchVoiceError("watch_voice_delta_rejected")
+            delta = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise WatchVoiceError("watch_voice_delta_unavailable") from None
+        if (
+            not isinstance(delta, dict)
+            or not isinstance(delta.get("entries"), list)
+            or not isinstance(delta.get("cursor"), str)
+            or not delta["cursor"]
+            or type(delta.get("has_more")) is not bool
+        ):
+            raise WatchVoiceError("watch_voice_delta_invalid")
+        for item in delta["entries"]:
+            entry = source_entry(item)
+            if (
+                entry is not None
+                and settings.gate_watch_voice_file_id
+                and (
+                    entry["id"] != settings.gate_watch_voice_file_id
+                    or entry["rev"] != settings.gate_watch_voice_revision
+                )
+            ):
+                continue
+            if entry is not None:
+                if cutover is not None and not future_entry(entry, cutover):
+                    continue
+                await store_entry(settings, factory, http, token, entry)
+        cursor = delta["cursor"]
+        state.cursor = cursor
+        if not delta["has_more"]:
+            break
+    OBSERVATION.scanned_at = datetime.now(UTC)
+
+
 @observed_cycle
 async def process_watch_voice(
     settings: Settings, factory: async_sessionmaker[AsyncSession], http: httpx.AsyncClient
-) -> None:
+) -> bool:
     if not settings.gate_watch_voice_enabled:
-        return
+        return False
     if settings.gate_watch_voice_actions_enabled:
         raise WatchVoiceError("watch_voice_driver_conflict")
     validate_settings(settings)
@@ -580,58 +636,24 @@ async def process_watch_voice(
         )
         cutover = None if settings.gate_watch_voice_file_id else future_cutover(state)
         if state is None:
-            return
+            return False
         if cutover is not None:
             await client.preflight()
-        token = await _refresh_access_token(settings, http)
-        await _verify_account_id(settings, http, token)
-        cursor = state.cursor
-        while True:
-            endpoint = "list_folder/continue" if cursor else "list_folder"
-            body: dict[str, Any] = (
-                {"cursor": cursor}
-                if cursor
-                else {"path": PATH, "recursive": False, "include_deleted": False}
-            )
-            try:
-                response = await http.post(
-                    "https://api.dropboxapi.com/2/files/" + endpoint,
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=body,
-                )
-                if response.status_code != 200:
-                    raise WatchVoiceError("watch_voice_delta_rejected")
-                delta = response.json()
-            except (httpx.HTTPError, ValueError):
-                raise WatchVoiceError("watch_voice_delta_unavailable") from None
-            if (
-                not isinstance(delta, dict)
-                or not isinstance(delta.get("entries"), list)
-                or not isinstance(delta.get("cursor"), str)
-                or not delta["cursor"]
-                or type(delta.get("has_more")) is not bool
-            ):
-                raise WatchVoiceError("watch_voice_delta_invalid")
-            for item in delta["entries"]:
-                entry = source_entry(item)
-                if (
-                    entry is not None
-                    and settings.gate_watch_voice_file_id
-                    and (
-                        entry["id"] != settings.gate_watch_voice_file_id
-                        or entry["rev"] != settings.gate_watch_voice_revision
-                    )
-                ):
-                    continue
-                if entry is not None:
-                    if cutover is not None and not future_entry(entry, cutover):
-                        continue
-                    await store_entry(settings, factory, http, token, entry)
-            cursor = delta["cursor"]
-            state.cursor = cursor
-            if not delta["has_more"]:
-                break
-        OBSERVATION.scanned_at = datetime.now(UTC)
+        try:
+            await scan_voice_source(settings, factory, http, state, cutover)
+        except (DropboxCallWorkerError, WatchVoiceError) as exc:
+            # Source availability may defer discovery while draining archived work.
+            # Scope, metadata, identity mismatch and integrity failures still stop.
+            if exc.code not in {
+                "dropbox_call_oauth_transport_failed", "dropbox_call_oauth_rejected",
+                "dropbox_call_identity_transport_failed", "dropbox_call_identity_rejected",
+                "dropbox_call_download_transport_failed", "dropbox_call_download_rejected",
+                "watch_voice_delta_rejected", "watch_voice_delta_unavailable",
+            }:
+                raise
+            OBSERVATION.scan_error_code = exc.code
+        else:
+            OBSERVATION.scan_error_code = None
         scope = note_scope(settings)
         if cutover is not None:
             scope += future_note_scope(cutover)
@@ -669,6 +691,11 @@ async def process_watch_voice(
             )
         for note_id in ids:
             await transcribe_note(settings, factory, http, note_id)
+            # Publish each completed note before starting the next transcription.
+            async with factory() as session:
+                ready = await session.get(WatchVoiceNote, note_id)
+            if ready is not None:
+                await publish_note(factory, client, ready)
         async with factory() as session:
             notes = list(
                 (
@@ -678,15 +705,21 @@ async def process_watch_voice(
                             *scope,
                             WatchVoiceNote.transcription_state == "transcribed",
                             WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
+                            WatchVoiceNote.id.not_in(ids),
                         )
                         .order_by(*delivery_order())
                         .limit(10)
                     )
                 ).all()
             )
+        made_publication_progress = False
         for note in notes:
+            previous_part = note.next_part
             await publish_note(factory, client, note)
+            if note.next_part > previous_part:
+                made_publication_progress = True
         await coordinator.commit()
+        return bool(ids) or made_publication_progress
 
 
 async def run_watch_voice_worker_loop(
@@ -696,14 +729,15 @@ async def run_watch_voice_worker_loop(
         return
     async with httpx.AsyncClient(timeout=60, follow_redirects=False) as http:
         while True:
+            progressed = False
             try:
-                await process_watch_voice(settings, session_factory, http)
+                progressed = await process_watch_voice(settings, session_factory, http)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 # Never log HTTP exception URLs, credentials, filenames or audio/text.
                 logger.warning("Watch voice cycle deferred")
-            await asyncio.sleep(settings.gate_watch_voice_poll_seconds)
+            await asyncio.sleep(0 if progressed else settings.gate_watch_voice_poll_seconds)
 
 
 async def operational_status(
