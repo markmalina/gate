@@ -70,12 +70,16 @@ class CheckReadinessService:
         self._probe = probe
         self._timeout_seconds = timeout_seconds
 
+    async def observe_heads(self) -> ReadinessSnapshot:
+        """Return bounded read-only schema evidence for the authenticated Ops route."""
+        async with asyncio.timeout(self._timeout_seconds):
+            return await self._probe.inspect()
+
     async def execute(self) -> ReadinessResult:
         """Return readiness without retries or sensitive exception details."""
 
         try:
-            async with asyncio.timeout(self._timeout_seconds):
-                snapshot = await self._probe.inspect()
+            snapshot = await self.observe_heads()
         except TimeoutError:
             return ReadinessResult(
                 ready=False,
@@ -130,3 +134,4 @@ class CheckReadinessService:
             migrations=ReadinessComponentStatus.OK,
             reason=None,
         )
+

@@ -180,4 +180,12 @@ async def observe_watch_voice(
         for percent in (70, 90, 100):
             if consumed * 100 >= hard * percent:
                 codes.append(f"watch_voice_shared_budget_{percent}")
+    if (
+        not codes
+        and metrics["expected_driver"] in {"persistent", "actions"}
+        and not metrics["running_driver_proven"]
+    ):
+        # Startup grace is not recovery. Preserve an existing incident until
+        # the expected cursor owner supplies positive, current-source evidence.
+        return
     await reconcile_incident(factory, settings, codes)

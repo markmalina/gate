@@ -4,6 +4,46 @@ Continues #736/#731 and the single implementation PR #766. The five-sprint
 owner request of 25 October supersedes planning-only scope; it does not turn
 historical spent Ops grants into reusable credentials or acceptance.
 
+## Independent defect769 remediation and release facts — source only
+
+Independent [Delta349](https://github.com/AlphaCenter/delta/issues/349) REJECTED
+head4da7445 for false recovery and liveness suppression. The terminal verdict
+is preserved. Fixes continue in the existing PR766, with a new independent
+attempt required for the successor; prior green CI is not acceptance of it.
+
+- A matching full deployment SHA, expected driver and recorded cursor ownership
+  are required before a bounded phase can suppress stale/progress signals.
+  Different drivers/revisions cannot lend their heartbeat to this deployment.
+- Source-only pending/retry/downloading work now contributes to queue size/age;
+  archive acknowledgement loss does not count one source twice. Unresolved
+  download leases and cancelled/no-first-scan cycles remain visible.
+- The existing application lifespan records an expectation before scheduling
+  its existing persistent worker. Startup has180seconds grace and is explicitly
+  not proof that the worker runs. Missing evidence after grace raises a fault;
+  matching healthy idle cycles remain quiet. No new loop or heartbeat is added.
+- Empty codes during startup or unproven Actions idle cannot close an existing
+  incident. Recovery requires a fresh matching cursor-owner observation; repeated
+  observations still produce one durable recovery event.
+- GET `/admin/ops/watch-voice` uses the existing admin bearer before database
+  access. It returns a closed, payload-free runtime fingerprint: sanitized fixed
+  Railway identity fields, full process source SHA, actual loaded driver flags,
+  bounded read-only current/expected Alembic heads and journal worker proof.
+  It performs no writes/provider calls and creates no release authority.
+- The endpoint deliberately leaves effective start/predeploy command values and
+  historical predeploy execution unknown. A ready schema or source TOML is not
+  evidence of that execution. It is absent on the old production revision and
+  cannot bootstrap authorization merely by being deployed for observation.
+
+Effect: remove false recovery, account for pre-archive backlog and provide
+authenticated facts for the separately reviewed Gate-owned Ops preflight.
+Cost: zero real STT/publications in this source slice; one metadata expectation
+row per approved persistent application start and bounded read-only SQL per
+explicit authenticated preflight request. Actual infrastructure cost unknown.
+Validation and exact successor SHA/CI are recorded in the latest PR/769 receipt.
+Rollback: restore the reviewed application while retaining additive schema and
+journals; these fixes do not alter audio, model/budget, cursor, effect claims or
+the existing worker count. Production migration/deploy/cutover are not performed.
+
 ## Durable continuation — 25 October 2026, source only
 
 This section supersedes the process-local monitoring limitation in the earlier

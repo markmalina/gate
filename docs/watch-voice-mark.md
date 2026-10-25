@@ -8,6 +8,20 @@ authorizes implementation of the five sprints; the old planning-only limitation
 is superseded. Production/cutover prerequisites and spent one-use grants remain.
 
 See [sprint evidence and outstanding acceptance](watch-voice-sprint-results.md).
+Delta349 rejected the earlier4da7445 monitoring source; follow defect769 and
+the new immutable successor review before release. Startup grace is expectation,
+not running-worker proof. Source-only backlog/expired leases remain visible;
+wrong driver/SHA observations cannot suppress faults or close an incident.
+
+The candidate's authenticated GET `/admin/ops/watch-voice` uses the existing
+admin bearer and returns only sanitized runtime IDs/SHA, loaded driver flags,
+actual Alembic head equality and current scoped journal proof. No-store, bounded
+SQL reads, no writes or provider calls. A200 OBSERVED means facts were collected,
+not release readiness. Unknown identity/schema/journal values remain explicit;
+start/predeploy commands and historical predeploy execution are not inferred.
+The old production revision lacks this endpoint; its absence is an explicit
+preflight gap and does not authorize a bootstrap deployment.
+
 The new protected inventory and metrics are SOURCE ONLY until a verified release.
 Use `gate_get_reply_context(task_id="watch-voice:list", limit=20)` and every
 returned cursor after release; do not put private metadata into shared evidence.

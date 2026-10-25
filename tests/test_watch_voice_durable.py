@@ -479,6 +479,7 @@ def test_shared_budget_includes_other_speech_and_open_reserves(tmp_path):
                 assert json.loads(incident.codes_json) == [
                     "watch_voice_shared_budget_70",
                     "watch_voice_shared_budget_90",
+                    "watch_voice_worker_unobserved",
                 ]
                 assert incident.log_attempt_count == 1
 

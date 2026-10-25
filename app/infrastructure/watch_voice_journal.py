@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,6 +17,58 @@ from app.models.watch_voice import WatchVoiceCycle, WatchVoiceNote
 
 CycleBinding = tuple[async_sessionmaker[AsyncSession], str]
 CURRENT_CYCLE: ContextVar[CycleBinding | None] = ContextVar("watch_voice_cycle", default=None)
+
+
+@dataclass(frozen=True, slots=True)
+class CycleEvidence:
+    identity: bool
+    active: bool
+    starting: bool
+    fresh: bool
+
+
+def cycle_evidence(
+    cycle: WatchVoiceCycle | None, settings: Settings, *, now: datetime
+) -> CycleEvidence:
+    """One shared identity/deadline predicate; no note, billing or provider reads."""
+    expected = (
+        "conflict"
+        if settings.gate_watch_voice_enabled and settings.gate_watch_voice_actions_enabled
+        else "persistent"
+        if settings.gate_watch_voice_enabled
+        else "actions"
+        if settings.gate_watch_voice_actions_enabled
+        else "disabled"
+    )
+    identity = bool(
+        cycle
+        and cycle.driver == expected
+        and cycle.workspace_key == settings.gate_workspace_id
+        and cycle.account_id == settings.dropbox_call_account_id
+        and re.fullmatch(r"[a-f0-9]{40}", settings.deployment_sha)
+        and cycle.source_sha == settings.deployment_sha
+    )
+    if cycle is None:
+        return CycleEvidence(False, False, False, False)
+    deadline = (
+        cycle.deadline_at.replace(tzinfo=UTC)
+        if cycle.deadline_at.tzinfo is None
+        else cycle.deadline_at.astimezone(UTC)
+    )
+    active = bool(identity and cycle.owns_cursor and cycle.outcome == "running" and deadline > now)
+    starting = bool(
+        identity
+        and not cycle.owns_cursor
+        and cycle.outcome == "running"
+        and cycle.phase in {"awaiting_worker", "admission", "github_read"}
+        and deadline > now
+    )
+    fresh = bool(
+        identity
+        and cycle.owns_cursor
+        and (active or (cycle.outcome == "success" and deadline > now))
+    )
+    return CycleEvidence(identity, active, starting, fresh)
 
 
 def safe_code(value: object) -> str:
@@ -31,6 +84,7 @@ async def start_cycle(
     settings: Settings,
     *,
     driver: str,
+    phase: str = "admission",
 ) -> str:
     now = datetime.now(UTC)
     cycle_id = str(uuid.uuid4())
@@ -46,13 +100,32 @@ async def start_cycle(
                 owns_cursor=False,
                 started_at=now,
                 heartbeat_at=now,
-                phase="admission",
+                phase=phase,
                 deadline_at=now + timedelta(seconds=180),
                 outcome="running",
             )
         )
         await session.commit()
     return cycle_id
+
+
+async def expect_worker(
+    factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """Record startup grace before scheduling the existing persistent task.
+
+    This is expectation evidence only: it never owns the cursor or proves that
+    processing works. A real cycle must replace it within the bounded deadline.
+    """
+    if (
+        not settings.gate_watch_voice_enabled
+        or settings.gate_watch_voice_actions_enabled
+        or not settings.gate_watch_voice_data_gate_approved
+        or settings.gate_workspace_id != settings.gate_watch_voice_workspace_key
+    ):
+        return
+    await start_cycle(factory, settings, driver="persistent", phase="awaiting_worker")
 
 
 async def pulse(phase: str, *, seconds: int = 90, **fields: Any) -> None:
@@ -178,7 +251,10 @@ async def latest_cycle(
         .where(
             WatchVoiceCycle.workspace_key == settings.gate_workspace_id,
             WatchVoiceCycle.account_id == settings.dropbox_call_account_id,
-            or_(WatchVoiceCycle.owns_cursor.is_(True), WatchVoiceCycle.outcome == "failure"),
+            or_(
+                WatchVoiceCycle.owns_cursor.is_(True),
+                WatchVoiceCycle.outcome.in_(("running", "failure", "cancelled")),
+            ),
         )
         .order_by(WatchVoiceCycle.started_at.desc(), WatchVoiceCycle.id.desc())
         .limit(1)

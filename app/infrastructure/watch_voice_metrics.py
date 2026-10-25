@@ -25,6 +25,7 @@ from app.infrastructure.watch_voice_inventory import _object as schema_object
 from app.infrastructure.watch_voice_inventory import iso, utc
 from app.infrastructure.watch_voice_journal import (
     CURRENT_CYCLE,
+    cycle_evidence,
     finish_cycle,
     latest_cycle,
     start_cycle,
@@ -67,6 +68,7 @@ METRICS_SCHEMA = schema_object(
         "observed_at": _S,
         "expected_driver": {"enum": ["actions", "persistent", "disabled", "conflict"]},
         "running_driver_proven": _B,
+        "liveness_state": {"enum": ["starting", "running", "unobserved", "disabled", "conflict"]},
         "cycle_observation_scope": _S,
         "monitor_host": {"const": "existing_dropbox_calls_loop"},
         "monitor_host_enabled": _B,
@@ -77,6 +79,8 @@ METRICS_SCHEMA = schema_object(
         "cycle_outcome": _NS,
         "liveness_evidence_valid_until": _NS,
         "source_counts": {"type": "object", "additionalProperties": _I},
+        "archived_queue_size": _I,
+        "source_queue_size": _I,
         "incident": {
             "anyOf": [
                 {"type": "null"},
@@ -355,37 +359,76 @@ async def snapshot(session: AsyncSession, settings: Settings) -> dict[str, Any]:
         select(func.max(WatchVoiceCycle.scan_finished_at)).where(
             WatchVoiceCycle.workspace_key == settings.gate_workspace_id,
             WatchVoiceCycle.account_id == settings.dropbox_call_account_id,
+            WatchVoiceCycle.driver == expected,
+            WatchVoiceCycle.source_sha == settings.deployment_sha,
+            WatchVoiceCycle.owns_cursor.is_(True),
         )
+    )
+    source_scope = (
+        WatchVoiceSource.workspace_key == settings.gate_workspace_id,
+        WatchVoiceSource.account_id == settings.dropbox_call_account_id,
     )
     source_rows = await session.execute(
         select(WatchVoiceSource.state, func.count())
         .where(
-            WatchVoiceSource.workspace_key == settings.gate_workspace_id,
-            WatchVoiceSource.account_id == settings.dropbox_call_account_id,
+            *source_scope,
         )
         .group_by(WatchVoiceSource.state)
     )
     source_counts = {str(state): count for state, count in source_rows}
-    active = bool(cycle and cycle.outcome == "running" and utc(cycle.deadline_at) > now)
+    # An archive acknowledgement can be lost after Note commits. Count the same
+    # source identity only once, while retaining its unresolved lease signal.
+    note_exists = (
+        select(Note.id)
+        .where(
+            Note.id == WatchVoiceSource.id,
+            *scope,
+        )
+        .exists()
+    )
+    unarchived_count, source_oldest = (
+        await session.execute(
+            select(
+                func.count(),
+                func.min(WatchVoiceSource.detected_at),
+            ).where(
+                *source_scope,
+                WatchVoiceSource.state.in_(("pending", "retry", "downloading")),
+                ~note_exists,
+            )
+        )
+    ).one()
+    expired_leases = await session.scalar(
+        select(func.count()).where(
+            *source_scope,
+            WatchVoiceSource.state == "downloading",
+            or_(
+                WatchVoiceSource.lease_expires_at.is_(None),
+                WatchVoiceSource.lease_expires_at <= now,
+            ),
+        )
+    )
+    archived_queue = queue
+    queue += unarchived_count
+    if source_oldest is not None:
+        oldest = min(x for x in (oldest, utc(source_oldest)) if x is not None)
+    evidence = cycle_evidence(cycle, settings, now=now)
+    identity, active, starting, fresh = (
+        evidence.identity,
+        evidence.active,
+        evidence.starting,
+        evidence.fresh,
+    )
     cycle_age = age(cycle.heartbeat_at) if cycle else None
-    if active:
+    if active or starting:
         cycle_age = 0.0  # a bounded active phase is not an idle heartbeat gap
     reasons = signals(
         expected=expected,
         queue=queue,
         oldest_age=age(oldest),
-        progress_age=0.0 if active else age(progress),
+        progress_age=0.0 if active or starting else age(progress),
         cycle_age=cycle_age,
-        scan_age=0.0
-        if active
-        and cycle
-        and cycle.phase
-        in {
-            "dropbox_scan",
-            "dropbox_delta",
-            "source_download",
-        }
-        else age(scans),
+        scan_age=0.0 if active or starting else age(scans),
         unknown=unknown,
     )
     if cycle and cycle.scan_error:
@@ -394,15 +437,25 @@ async def snapshot(session: AsyncSession, settings: Settings) -> dict[str, Any]:
         reasons.append("watch_voice_cycle_failed")
     if cycle and cycle.outcome == "running" and utc(cycle.deadline_at) < now:
         reasons.append("watch_voice_phase_deadline_exceeded")
+    if (
+        expected == "persistent"
+        and cycle
+        and cycle.outcome == "cancelled"
+        and utc(cycle.deadline_at) <= now
+    ):
+        reasons.append("watch_voice_cycle_cancelled")
     if source_counts.get("retry", 0) or source_counts.get("rejected", 0):
         reasons.append("watch_voice_source_attention")
-    if expected == "persistent" and queue and cycle is None:
-        reasons.append("watch_voice_worker_unobserved")
-    fresh = (
-        cycle is not None
-        and cycle.owns_cursor
-        and (active or (cycle.outcome == "success" and utc(cycle.deadline_at) > now))
-    )
+    if expired_leases:
+        reasons.append("watch_voice_source_lease_expired")
+    if expected == "persistent":
+        if not fresh and not starting:
+            reasons.append("watch_voice_worker_unobserved")
+    if expected in {"persistent", "actions"}:
+        if cycle and cycle.driver != expected:
+            reasons.append("watch_voice_driver_mismatch")
+        if cycle and not identity and cycle.driver == expected:
+            reasons.append("watch_voice_source_mismatch")
     incident = await session.scalar(
         select(WatchVoiceIncident)
         .where(
@@ -418,12 +471,15 @@ async def snapshot(session: AsyncSession, settings: Settings) -> dict[str, Any]:
         "expected_driver": expected,
         "monitor_host": "existing_dropbox_calls_loop",
         "monitor_host_enabled": settings.gate_dropbox_call_intake_enabled,
-        "running_driver_proven": bool(
-            fresh
-            and cycle
-            and cycle.driver == expected
-            and cycle.source_sha
-            and cycle.source_sha == settings.deployment_sha
+        "running_driver_proven": fresh,
+        "liveness_state": (
+            expected
+            if expected in {"disabled", "conflict"}
+            else "running"
+            if fresh
+            else "starting"
+            if starting
+            else "unobserved"
         ),
         "cycle_observation_scope": "durable_shared_database_bounded_liveness_evidence",
         "observed_driver": cycle.driver if cycle else None,
@@ -433,6 +489,8 @@ async def snapshot(session: AsyncSession, settings: Settings) -> dict[str, Any]:
         "cycle_outcome": cycle.outcome if cycle else None,
         "liveness_evidence_valid_until": iso(cycle.deadline_at) if cycle else None,
         "source_counts": source_counts,
+        "archived_queue_size": archived_queue,
+        "source_queue_size": unarchived_count,
         "incident": (
             {
                 "id": incident.id,
