@@ -64,6 +64,7 @@ async def db(tmp_path):
                 BillingEntitlementModel.__table__,
             ):
                 await session.run_sync(lambda s, t=table: t.create(s.connection()))
+            await session.commit()
         yield factory
 
 
