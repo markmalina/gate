@@ -43,6 +43,8 @@ No new task, schedule, message sender or credentials are introduced. One durable
 incident suppresses repeated fault codes across processes/restarts, records new
 codes once and records recovery once. Logs are best-effort at-most-once attempts,
 not guaranteed push delivery; status retains the incident if a log is lost.
+Observation has a5second timeout; conflicting driver flags are a fault even
+with an empty queue. Calls continues after a diagnostic failure or timeout.
 Confirm actual routing/receipt in the existing monitoring channel after release.
 Shared speech budget/remaining is distinct from Voice-only charges, provider
 account balance and unknown infrastructure costs. Unknown values are not zero.

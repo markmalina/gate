@@ -92,11 +92,12 @@ def test_backlog_continues_without_poll_sleep_and_idle_returns_to_poll(monkeypat
     assert delays == [0, 0, 30]
 
 
-def test_voice_monitor_failure_does_not_stop_existing_calls_loop(monkeypatch):
+@pytest.mark.parametrize("failure", [RuntimeError("synthetic private exception"), TimeoutError()])
+def test_voice_monitor_failure_does_not_stop_existing_calls_loop(monkeypatch, failure):
     from app.worker import dropbox_calls as calls
 
     process = AsyncMock()
-    monitor = AsyncMock(side_effect=RuntimeError("synthetic private exception"))
+    monitor = AsyncMock(side_effect=failure)
     sleeps = []
     original_client = httpx.AsyncClient
 

@@ -36,6 +36,7 @@ def test_idle_and_legacy_actions_do_not_raise_persistent_worker_alarm():
     args = dict(oldest_age=1000, progress_age=1000, cycle_age=1000, scan_age=0, unknown=0)
     assert signals(expected="persistent", queue=0, **args) == []
     assert signals(expected="actions", queue=12, **args) == []
+    assert signals(expected="conflict", queue=0, **args) == ["watch_voice_driver_conflict"]
     assert signals(expected="persistent", queue=12, **args) == [
         "watch_voice_cycle_stale",
         "watch_voice_queue_no_progress",

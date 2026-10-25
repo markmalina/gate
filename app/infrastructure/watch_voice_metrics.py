@@ -220,6 +220,8 @@ def signals(
     unknown: int,
 ) -> list[str]:
     reasons = []
+    if expected == "conflict":
+        reasons.append("watch_voice_driver_conflict")
     if expected == "persistent" and queue:
         if cycle_age is not None and cycle_age > 120:
             reasons.append("watch_voice_cycle_stale")

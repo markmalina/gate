@@ -35,6 +35,8 @@ dated Sprint2 evidence below. It does not supersede its production boundary.
   loop, schedule, credentials or outbound message mechanism. Actual push receipt
   is not claimed. Disabled monitoring host is explicit in status; production must
   retain the existing Calls loop or approve an existing-monitor integration.
+  Conflicting driver flags produce an explicit fault even with an empty queue.
+  Each observation is bounded to5seconds so slow diagnostics do not hold Calls.
 - Speech model, endpoint, no-retry policy, timeout/part limits and shared $3
   hard cap are unchanged. No real provider or publication call was made by this
   Work. Each observed part adds bounded SQL metadata writes. At a quiet30s poll
@@ -58,6 +60,12 @@ completed cohort n22/preliminary: P50=2504s, P95=9786s, max=10710s, based on act
 Dropbox server_modified and issue created_at; unfinished records are excluded.
 These are old Actions backlog delays, not candidate performance. The candidate is NOT
 deployed; no measured latency improvement or24h/restart acceptance is claimed.
+
+Fresh complete non-recursive Dropbox listing at18:53UTC contains65files, one
+new supported audio revision beyond the initial64. Its exact protected receipt
+matches current metadata: received/pending, no last error, archived at18:49:37Z
+after Dropbox server_modified18:47:51Z. This unfinished record is excluded from
+completed-delivery percentiles. No recording/device timestamp is inferred.
 
 Release remains blocked on independent new-head review and the registered Gate/Ops
 startup/predeploy/migration/private writer/narrow setter/one-driver prerequisites.

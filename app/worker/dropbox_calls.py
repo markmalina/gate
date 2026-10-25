@@ -159,7 +159,8 @@ async def run_dropbox_call_worker_loop(
                 try:
                     from app.infrastructure.watch_voice_monitor import observe_watch_voice
 
-                    await observe_watch_voice(settings, session_factory)
+                    async with asyncio.timeout(5):
+                        await observe_watch_voice(settings, session_factory)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
