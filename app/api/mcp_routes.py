@@ -81,6 +81,7 @@ from app.application.reply_sequences import (
     ReplySequenceError,
 )
 from app.models.watch_voice import WatchVoiceNote
+from app.infrastructure.watch_voice_inventory import protected_inventory
 from app.infrastructure.watch_voice_actions import operational_status as watch_voice_actions_status
 from app.worker.watch_voice import operational_status as watch_voice_operational_status
 from app.core.config import Settings, get_settings
@@ -805,7 +806,7 @@ async def _get_reply_context_tool_result(
     if raw_task_id.startswith("watch-voice:") or raw_task_id.startswith("watch-voice-file:"):
         return await _watch_voice_tool_result(
             request_id=request_id, selector=raw_task_id, principal=principal,
-            session=session, settings=settings,
+            session=session, settings=settings, arguments=arguments,
         )
     try:
         call_selector = _parse_latest_call_selector(raw_task_id)
@@ -962,6 +963,7 @@ async def _watch_voice_tool_result(
     principal: Principal,
     session: AsyncSession,
     settings: Settings,
+    arguments: JsonObject | None = None,
 ) -> JsonObject:
     if (
         principal.access_scope.workspace_id != settings.gate_workspace_id
@@ -973,6 +975,21 @@ async def _watch_voice_tool_result(
             message="Watch voice is outside the allowed owner scope",
         )
     prefix, ref = selector.split(":", 1)
+    if prefix == "watch-voice" and ref == "list":
+        try:
+            inventory = await protected_inventory(
+                session, settings, limit=(arguments or {}).get("limit", 20),
+                cursor=(arguments or {}).get("cursor"),
+            )
+        except (ValueError, TypeError):
+            return _tool_error_result(
+                request_id=request_id, code="invalid_arguments",
+                message="Watch inventory limit or cursor is invalid",
+            )
+        return _jsonrpc_result(request_id=request_id, result={
+            "content": [{"type": "text", "text": json.dumps(inventory, ensure_ascii=False)}],
+            "structuredContent": inventory, "isError": False,
+        })
     try:
         note_id = None if ref == "latest" else str(UUID(ref))
     except ValueError:
@@ -3051,6 +3068,9 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
                             "pattern": "^watch-voice(-file)?:(latest|[0-9a-fA-F-]{36})$",
                         },
                         {
+                            "type": "string", "enum": ["watch-voice:list"],
+                        },
+                        {
                             "type": "string",
                             "pattern": (
                                 "^[0-9a-fA-F-]{36}:voice:[0-9a-fA-F-]{36}$"
@@ -4389,6 +4409,7 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
 
 
 
