@@ -173,7 +173,7 @@ async def latest_cycle(
     session: AsyncSession,
     settings: Settings,
 ) -> WatchVoiceCycle | None:
-    return await session.scalar(
+    cycle = await session.scalar(
         select(WatchVoiceCycle)
         .where(
             WatchVoiceCycle.workspace_key == settings.gate_workspace_id,
@@ -183,3 +183,4 @@ async def latest_cycle(
         .order_by(WatchVoiceCycle.started_at.desc(), WatchVoiceCycle.id.desc())
         .limit(1)
     )
+    return cycle if isinstance(cycle, WatchVoiceCycle) else None
