@@ -12,7 +12,6 @@ from app.application.reply_drafts import (
     ReplyDraftError,
     ReplyTaskClosedError,
     ReplyTaskNotFoundError,
-    ReplyTaskSupersededError,
     SavedReplyDraft,
     SaveReplyDraftCommand,
 )
@@ -92,21 +91,9 @@ class SqlReplyDraftWriter:
         is_follow_up = task.status == ReplyTaskStatus.REPLIED.value and command.follow_up
         if task.status != ReplyTaskStatus.NEEDS_REPLY.value and not is_follow_up:
             raise ReplyTaskClosedError()
-        if is_follow_up:
-            newer_task_id = await self._session.scalar(
-                select(ReplyTask.id)
-                .where(
-                    ReplyTask.conversation_id == task.conversation_id,
-                    ReplyTask.account_id == task.account_id,
-                    ReplyTask.project_id == task.project_id,
-                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-                    ReplyTask.id != task.id,
-                )
-                .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
-                .limit(1)
-            )
-            if newer_task_id is not None:
-                raise ReplyTaskSupersededError()
+        # A follow-up may review other pending tasks in the same dialog.
+        # The required snapshot above, rather than sibling task status,
+        # proves that the owner reviewed the current message state.
 
         label = account_label(alias=account.alias, country_code=account.country_code)
         recipient_chat_id = trigger_message.sender_id

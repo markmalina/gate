@@ -635,14 +635,9 @@ class SqlTelegramReplySender:
                 code="task_closed",
                 message="Reply task no longer needs a reply",
             )
-        if current.task_status == ReplyTaskStatus.REPLIED.value and covered_task_ids:
-            raise ReplySendError(
-                code="task_superseded",
-                message=(
-                    "A newer inbound reply task exists; review that context and "
-                    "confirm a draft for the current task"
-                ),
-            )
+        # Pending tasks already covered by the reviewed dialog do not
+        # supersede a follow-up. Snapshot admission and the stable locked
+        # coverage check above reject changes, including new inbound events.
 
         now = datetime.now(UTC)
         await bump_dialog_version(

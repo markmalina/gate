@@ -156,23 +156,9 @@ class SqlReplySequenceWriter:
                 message="A sequence cannot include a draft with a delivery attempt",
             )
 
-        newer_task = await self._session.scalar(
-            select(ReplyTask.id)
-            .where(
-                ReplyTask.conversation_id == first_conversation.id,
-                ReplyTask.account_id == first_draft.account_id,
-                ReplyTask.project_id == first_draft.project_id,
-                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-                ReplyTask.id != first_task.id,
-            )
-            .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
-            .limit(1)
-        )
-        if newer_task is not None:
-            raise ReplySequenceError(
-                code="task_superseded",
-                message="A newer inbound reply task must be reviewed before queueing",
-            )
+        # The mandatory reviewed snapshot above decides freshness. A pending
+        # sibling may predate that review; its existence is not a new event.
+        # Dispatch rechecks the snapshot at the shared sender boundary.
 
         label = account_label(alias=account.alias, country_code=account.country_code)
         recipient_chat_id = first_message.sender_id
