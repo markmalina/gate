@@ -3383,6 +3383,10 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
         "description": (
             "Include expected_payload_sha256s in draft order from each displayed formatting preview; "
             "required for explicit-mode drafts. A legacy-only sequence may omit digests. "
+            "Drafts must retain the context_snapshot reviewed at preparation. "
+            "A freshness refusal returns sent=false and scoped current_context when "
+            "gate:inbox:read is granted; review changes, prepare new drafts and obtain "
+            "a new exact approval. Never refresh stale drafts automatically. "
             "Never split or reformat during delivery. "
             f"Queue {MIN_SEQUENCE_DRAFTS} to {MAX_SEQUENCE_DRAFTS} saved drafts "
             "for the same RU/BY recipient. "
@@ -3950,6 +3954,11 @@ async def _queue_approved_reply_sequence_tool_result(
             )
         )
     except ReplySequenceError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            return await _dialog_context_error_result(
+                request_id=request_id, code=exc.code, message=exc.message,
+                principal=principal, session=session, draft_id=draft_ids[0],
+            )
         await session.rollback()
         return _tool_error_result(
             request_id=request_id,
