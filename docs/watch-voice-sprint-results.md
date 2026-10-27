@@ -1,5 +1,57 @@
 # Watch Voice implementation and acceptance
 
+## Release admission and CI prerequisite repair — 27 October 2026
+
+This dated section supersedes earlier current-head/release-pending prose below.
+Gate736/731 and the same PR766 remain OPEN; production is not switched.
+
+Ops391 installed M `b3a465eac8563d22eedcca69aad1952f948a4dba`, with tree exactly
+equal to reviewed R `6cb884d671e31854bc58845dfa3224c254bf2dcf`.
+Independent SOURCE352 and RELEASE353 accepted; original C/R/M checks passed
+(M:1343Node+2Vitest). This is source installation, not application deployment.
+
+Old final caller B `8f815dbf4486ffd4cbb8be31916a5f1367ce9f50` was a sole child
+of AppA08a with exactly2client additions. Delta355 verified its pins/workflow but
+terminal result is BLOCKED_REQUIRED_EXACT_HEAD_CI:
+https://github.com/AlphaCenter/delta/issues/355#issuecomment-6441585196 .
+
+Original CI40499725572/backend122174081315 was CANCELLED during installing
+ffmpeg. Its log shows99new packages/94.1MB and long download gaps at the Azure
+Ubuntu mirror. Pytest and later literal checks did not run. Actual cancellation
+cause is unknown; timing matches the source15minute job limit. Do not infer
+provider billing, model failure or a product-client defect.
+Quest40499725970 succeeded (synthetic3006PASS/8explicitSKIP/12subtests,
+migration/drift/restore) and Windows1+3PASS; neither replaces literal CI.
+OldB/CI/355 remain immutable and are not rearmed or reclassified as successful.
+
+The repair changes only the audio-tool CI bootstrap:4minute step deadline,
+APT retries0, HTTP/HTTPS20second and lock60second limits,
+no recommended packages, explicit ffmpeg/ffprobe version checks.
+All app/PostgreSQL/migration/backup/restore/container checks, signed APT
+verification and the15minute whole-job bound remain. Local YAML/Bash validation
+passed; actual new-source checks must be collected separately.
+Runtime/application bytes and migration0116 remain exact AppA08a; only CI and
+this dated explanation change. This is substantive CI repair, not a no-change
+head to replenish an attempt. No provider/model/runtime/cursor/claim change.
+
+The installed Ops profile fixes AppA08a and its exact two-client-file child.
+This new application-evidence source MUST NOT be passed as that old B.
+Updated immutable profile/source/client and exact owner admission are required
+before changed-profile protected access. Grant6440794356 remains NOT_SPENT;
+no requester, label or protected read has run. Retaining an old fixture would
+not authorize an updated profile.
+
+Full operational history was read:41pages/4038unique runs/allheads+events+
+outcomes/0matching dedicated preflight workflow. Fresh history remains required.
+Known production remains afe0c6b85193/schema0115/Actions=true/persistent=false;
+no Watch release, migration, cutover or24h acceptance is claimed.
+
+Primary APT option references consulted27October:
+https://manpages.ubuntu.com/manpages/jammy/man1/apt-transport-http.1.html
+https://manpages.ubuntu.com/manpages/jammy/man5/apt.conf.5.html
+Specific job facts derive from its actual log and Delta355, not an assumed outage.
+
+
 Continues #736/#731 and the single implementation PR #766. The five-sprint
 owner request of 25 October supersedes planning-only scope; it does not turn
 historical spent Ops grants into reusable credentials or acceptance.
