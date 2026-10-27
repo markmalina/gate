@@ -1,0 +1,52 @@
+name: Gate745 metadata bootstrap
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  id-token: write
+
+concurrency:
+  group: gate745-metadata-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: >-
+      ${{ github.repository == 'markmalina/gate' && github.repository_id == '1293746267' &&
+          github.event.issue.number == 745 && !github.event.issue.pull_request &&
+          github.event.sender.id == 23397294 && github.event.sender.type == 'User' &&
+          github.actor_id == '23397294' && github.run_attempt == 1 &&
+          startsWith(github.event.comment.body, '/ops-gate745 metadata-bootstrap client=') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: gate-production
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Refuse stale output
+        shell: bash
+        run: test ! -e .agent-ops/output/gate745-metadata-bootstrap.json
+      - name: Verify only metadata and revoke transient tokens
+        id: bootstrap
+        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap@c56f2eb39a9d94b93b811fcbd63d7497cd8c4286
+        with:
+          gate-token: ${{ github.token }}
+          private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+      - name: Save sanitized metadata receipt
+        if: ${{ always() && steps.bootstrap.outcome != 'skipped' && hashFiles('.agent-ops/output/gate745-metadata-bootstrap.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-metadata-bootstrap
+          path: |
+            .agent-ops/output/gate745-metadata-bootstrap.json
+            .agent-ops/output/gate745-metadata-bootstrap.sha256
+          retention-days: 7
+          if-no-files-found: error
