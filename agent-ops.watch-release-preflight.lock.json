@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "agent-ops.gate-watch-release-preflight-lock/v1",
+  "repository": "markmalina/ops",
+  "commit": "30d1e1914eb21aa12f0f4897bc5b5e4aa8c1f382",
+  "actionPath": "agent-ops/actions/gate-watch-release-preflight",
+  "workflowSha256": "sha256:e14c496197e62fe66fcf271b2c808237675b6e4391a978061c9af9ff1136f4a7",
+  "profileSha256": "sha256:15988389700c74895a1e87e2ee076eb94d427f2f3cc8656e4a66cef24eb06ec1"
+}
