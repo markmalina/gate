@@ -1,13 +1,14 @@
 name: Gate745 metadata bootstrap
 
 on:
-  issue_comment:
-    types: [created]
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
   actions: read
   issues: read
+  pull-requests: read
   id-token: write
 
 concurrency:
@@ -18,10 +19,12 @@ jobs:
   bootstrap:
     if: >-
       ${{ github.repository == 'markmalina/gate' && github.repository_id == '1293746267' &&
-          github.event.issue.number == 745 && !github.event.issue.pull_request &&
+          github.event.number == 771 && github.event.pull_request.state == 'open' &&
+          github.event.pull_request.head.repo.id == 1293746267 &&
+          github.event.pull_request.head.ref == 'agent/745-metadata-bootstrap-client' &&
           github.event.sender.id == 23397294 && github.event.sender.type == 'User' &&
           github.actor_id == '23397294' && github.run_attempt == 1 &&
-          startsWith(github.event.comment.body, '/ops-gate745 metadata-bootstrap client=') }}
+          startsWith(github.event.label.name, 'm') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: gate-production
@@ -34,9 +37,15 @@ jobs:
       - name: Refuse stale output
         shell: bash
         run: test ! -e .agent-ops/output/gate745-metadata-bootstrap.json
+      - name: Admit exact human command using only scoped Gate metadata
+        id: admission
+        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap/pre-key@bdf6ff040539ad9fc84ff120f3f90074d5573481
+        with:
+          gate-token: ${{ github.token }}
       - name: Verify only metadata and revoke transient tokens
         id: bootstrap
-        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap@c56f2eb39a9d94b93b811fcbd63d7497cd8c4286
+        if: ${{ success() && steps.admission.outputs.admitted == 'true' }}
+        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap@bdf6ff040539ad9fc84ff120f3f90074d5573481
         with:
           gate-token: ${{ github.token }}
           private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}

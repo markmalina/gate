@@ -2,9 +2,9 @@
   "schemaVersion": "agent-ops.gate745-metadata-lock/v1",
   "repository": "markmalina/ops",
   "actionPath": "agent-ops/actions/gate745-metadata-bootstrap",
-  "commit": "c56f2eb39a9d94b93b811fcbd63d7497cd8c4286",
-  "reviewedCodeSha": "56c6c602d44c7a73ea0d48296566c97287035ea5",
-  "sourceManifestDigest": "sha256:71dbc60b6193cf036bff244ae303b4dff0d28f1ae1b395de68d5b73defa571ec",
-  "releaseDigest": "sha256:0a6f67ff8feeb6ddc619ff49995cd37b0187a137cb80b2802502a60945d23a9f",
-  "policyDigest": "sha256:2eb92e80a7e6f45242746d81949a4666551dce056b5615c133ec18f292ed1b9a"
+  "commit": "bdf6ff040539ad9fc84ff120f3f90074d5573481",
+  "reviewedCodeSha": "aef3eecd4b039520cdc4e3e0b39fc87b632e2447",
+  "sourceManifestDigest": "sha256:c5b27358b30c752eaf76d4dfe85fc634c91de76cbfcbdbcb38b22e9fb8ab1bd6",
+  "releaseDigest": "sha256:2dcf3956e768425838e8de307d3703f22faaba529f1d201ce26dfa02b952536a",
+  "policyDigest": "sha256:507e20c63e97dfe3779d468267dff83fd65e4a2645a45f07351270dad7a221f8"
 }
