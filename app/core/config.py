@@ -573,6 +573,9 @@ class Settings(BaseSettings):
     gate_watch_voice_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_ENABLED"
     )
+    gate_watch_voice_early_inbox_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_EARLY_INBOX_ENABLED"
+    )
     gate_watch_voice_data_gate_approved: bool = Field(
         default=False,
         validation_alias="GATE_WATCH_VOICE_DATA_GATE_APPROVED",

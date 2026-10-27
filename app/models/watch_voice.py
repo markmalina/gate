@@ -76,6 +76,7 @@ class WatchVoiceNote(Base):
     model: Mapped[str | None] = mapped_column(String(64))
     transcribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivery_state: Mapped[str] = mapped_column(String(16), default="pending")
+    delivery_writer: Mapped[str | None] = mapped_column(String(128))
     next_part: Mapped[int] = mapped_column(Integer, default=0)
     issue_number: Mapped[int | None] = mapped_column(Integer)
     issue_url: Mapped[str | None] = mapped_column(String(512))
@@ -133,6 +134,11 @@ class WatchVoiceSource(Base):
         CheckConstraint("state IN ('pending','downloading','retry','archived','rejected')",
                         name="ck_watch_voice_source_state"),
         CheckConstraint("attempt_count >= 0", name="ck_watch_voice_source_attempt_count"),
+        CheckConstraint(
+            "card_state IN ('legacy','pending','sending','unknown','saved','blocked')",
+            name="ck_watch_voice_source_card_state",
+        ),
+        Index("ix_watch_voice_source_card", "workspace_key", "account_id", "card_state"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     workspace_key: Mapped[str] = mapped_column(String(128))
@@ -151,6 +157,18 @@ class WatchVoiceSource(Base):
     claim_id: Mapped[str | None] = mapped_column(String(36))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Historical sources stay legacy: rollout never backfills extra Inbox cards.
+    card_state: Mapped[str] = mapped_column(String(16), default="legacy", server_default="legacy")
+    card_body: Mapped[str | None] = mapped_column(Text)
+    card_body_sha256: Mapped[str | None] = mapped_column(String(64))
+    card_title: Mapped[str | None] = mapped_column(String(256))
+    card_claim_id: Mapped[str | None] = mapped_column(String(36))
+    card_writer: Mapped[str | None] = mapped_column(String(128))
+    card_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    card_issue_number: Mapped[int | None] = mapped_column(Integer)
+    card_issue_url: Mapped[str | None] = mapped_column(String(512))
+    card_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    card_error: Mapped[str | None] = mapped_column(String(128))
 
 
 class WatchVoiceIncident(Base):

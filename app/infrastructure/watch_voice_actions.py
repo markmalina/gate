@@ -22,6 +22,7 @@ from app.core.watch_voice_actions_oidc import (
     REPOSITORY_ID,
     WORKFLOW_PATH,
 )
+from app.infrastructure.watch_voice_cards import card_status, drain_cards, publish_source_card
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
 from app.infrastructure.watch_voice_journal import pulse
 from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
@@ -421,12 +422,17 @@ async def _drain_bound(
             for item in delta["entries"]:
                 key = await discover_source(scoped, factory, item, cutover)
                 if key is not None:
-                    await archive_source(scoped, factory, http, token, key)
+                    if scoped.gate_watch_voice_early_inbox_enabled:
+                        await publish_source_card(scoped, factory, client, key)
+                    else:
+                        await archive_source(scoped, factory, http, token, key)
             state.cursor = cursor = delta["cursor"]
             if not delta["has_more"]:
                 break
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
+        if scoped.gate_watch_voice_early_inbox_enabled:
+            await drain_cards(scoped, factory, client, cutover)
         await drain_sources(scoped, factory, http, token, cutover)
         OBSERVATION.scanned_at = datetime.now(UTC)
         await pulse("dropbox_scanned", scan_finished_at=datetime.now(UTC), scan_error=None)
@@ -533,7 +539,7 @@ async def operational_status(
             .group_by(WatchVoiceRecoveryClaim.outcome)
         )
         recovery_counts.update({str(state): count for state, count in rows})
-    return {
+    result = {
         "enabled": settings.gate_watch_voice_actions_enabled,
         "workflow_pin_configured": bool(
             re.fullmatch(r"[a-f0-9]{64}", settings.gate_watch_voice_actions_workflow_sha256)
@@ -558,3 +564,7 @@ async def operational_status(
         "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }
+    if (scope_allowed and settings.gate_watch_voice_actions_enabled
+            and settings.gate_watch_voice_early_inbox_enabled):
+        result["early_inbox"] = await card_status(session, settings)
+    return result

@@ -27,7 +27,7 @@ from sqlalchemy import event, text
 from tests.test_watch_voice import settings
 from tests.test_watch_voice_durable import db
 
-HEAD = "0116_watch_voice_observability"
+HEAD = "0117_watch_voice_early_inbox"
 SECRET = "synthetic-admin-private-secret"
 
 
@@ -232,3 +232,4 @@ def test_foreign_workspace_is_denied_before_probe_or_journal():
         probe.inspect.assert_not_awaited()
 
     asyncio.run(scenario())
+

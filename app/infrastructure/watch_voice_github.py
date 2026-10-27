@@ -119,7 +119,8 @@ class MarkInboxClient:
             raise WatchVoiceError("github_receipt_unknown", unknown=True) from None
 
     def receipt(
-        self, obj: dict[str, Any], *, part: int, issue_number: int | None, expected_body: str
+        self, obj: dict[str, Any], *, part: int, issue_number: int | None, expected_body: str,
+        expected_writer: str | None = None,
     ) -> GithubReceipt:
         number = issue_number if part else obj["number"]
         expected_url = f"https://github.com/{REPOSITORY}/issues/{number}"
@@ -133,7 +134,9 @@ class MarkInboxClient:
             type(number) is not int
             or number <= 0
             or not valid_url
-            or obj.get("user", {}).get("login") != self.writer
+            or obj.get("user", {}).get("login") != (
+                self.writer if expected_writer is None else expected_writer
+            )
             or obj.get("body") != expected_body
             or "pull_request" in obj
         ):
@@ -144,7 +147,8 @@ class MarkInboxClient:
         return GithubReceipt(number, expected_url, received_at)
 
     async def reconcile(
-        self, *, part: int, issue_number: int | None, body: str
+        self, *, part: int, issue_number: int | None, body: str,
+        expected_writer: str | None = None,
     ) -> GithubReceipt | None:
         path = f"/repos/{REPOSITORY}/issues?state=all&per_page=100"
         if part:
@@ -161,7 +165,8 @@ class MarkInboxClient:
                     continue
                 try:
                     found.append(
-                        self.receipt(obj, part=part, issue_number=issue_number, expected_body=body)
+                        self.receipt(obj, part=part, issue_number=issue_number, expected_body=body,
+                                     expected_writer=expected_writer)
                     )
                 except (ValueError, KeyError, TypeError, AttributeError):
                     continue

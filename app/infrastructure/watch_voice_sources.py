@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
 from app.infrastructure.watch_voice_journal import pulse, safe_code
-from app.models.watch_voice import WatchVoiceSource
+from app.models.watch_voice import WatchVoiceNote, WatchVoiceSource
 
 
 def source_id(settings: Settings, file_id: str, revision: str) -> str:
@@ -106,6 +106,8 @@ async def discover(
     async with factory() as session:
         if await session.get(WatchVoiceSource, key) is not None:
             return key
+        # Never backfill a second card for a preexisting archived/queued note.
+        old_note = await session.get(WatchVoiceNote, key)
         row = WatchVoiceSource(
             id=key,
             workspace_key=settings.gate_workspace_id,
@@ -122,6 +124,9 @@ async def discover(
             state="rejected" if error else "pending",
             attempt_count=0,
             last_error=error,
+            card_state="pending"
+            if settings.gate_watch_voice_early_inbox_enabled and old_note is None
+            else "legacy",
         )
         session.add(row)
         try:
@@ -234,6 +239,14 @@ async def archive_source(
             )
         )
         await session.commit()
+
+    if state == "archived":
+        from app.infrastructure.watch_voice_cards import transcript_card_offset
+
+        async with factory() as session:
+            note = await session.get(WatchVoiceNote, key)
+        if note is not None:
+            await transcript_card_offset(factory, note)
 
 
 async def drain_sources(
