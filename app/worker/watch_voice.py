@@ -769,12 +769,14 @@ async def process_watch_voice(
                     )
                 ).all()
             )
+        made_transcription_progress = False
         for note_id in ids:
             await transcribe_note(settings, factory, http, note_id)
             # Publish each completed note before starting the next transcription.
             async with factory() as session:
                 ready = await session.get(WatchVoiceNote, note_id)
             if ready is not None:
+                made_transcription_progress |= ready.transcription_state != "received"
                 await publish_note(factory, client, ready)
         async with factory() as session:
             notes = list(
@@ -799,7 +801,7 @@ async def process_watch_voice(
             if note.next_part > previous_part:
                 made_publication_progress = True
         await coordinator.commit()
-        return bool(ids) or made_publication_progress
+        return made_transcription_progress or made_publication_progress
 
 
 async def run_watch_voice_worker_loop(

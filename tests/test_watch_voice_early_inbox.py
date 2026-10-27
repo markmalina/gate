@@ -218,7 +218,8 @@ def test_no_stt_key_still_creates_card_and_preserves_original(tmp_path, monkeypa
         cfg = early_settings().model_copy(update={"openai_api_key": SecretStr("")})
         async with (database(tmp_path) as factory,
                     httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http):
-            await worker.process_watch_voice(cfg, factory, http)
+            outcomes = [await worker.process_watch_voice(cfg, factory, http) for _ in range(3)]
+            assert outcomes == [False, False, False]  # worker must use its normal poll delay
             note, = await notes(factory)
             assert note.data == world.audio and note.issue_number == 101
             assert note.transcription_state == "received" and note.attempted_at is None
