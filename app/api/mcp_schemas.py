@@ -13,6 +13,7 @@ from app.application.reply_sequences import MAX_SEQUENCE_DRAFTS, MIN_SEQUENCE_DR
 from app.infrastructure.watch_voice_inventory import INVENTORY_SCHEMA
 from app.infrastructure.watch_voice_metrics import METRICS_SCHEMA
 from app.infrastructure.watch_voice_source_inventory import SOURCE_INVENTORY_SCHEMA
+from app.infrastructure.watch_voice_status import STATUS_SCHEMA
 
 JsonObject = dict[str, Any]
 
@@ -1838,6 +1839,7 @@ GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
 )
 GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"].append(INVENTORY_SCHEMA)
 GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"].append(SOURCE_INVENTORY_SCHEMA)
+GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"].append(STATUS_SCHEMA)
 
 
 TELEGRAM_ENTITY_SCHEMA = _object(

@@ -47,3 +47,42 @@ Acceptance still requires an exact new commit and CI, independent source review,
 then separately admitted runtime checks: one early real private Mark card,
 complete text in that same card, measured delays and restart/duplicate recovery.
 Synthetic tests are implementation evidence only.
+
+## Protected current status for Work
+
+`gate_get_reply_context(task_id="watch-voice-status:<event_id>")` observes the
+current source and note journals in one scoped SQL statement. It accepts one
+exact UUID, including before a Note exists. It keeps the existing owner
+workspace and Unclassified-project authorization; it cannot choose a foreign
+Dropbox account or fall back to another recording. A missing source is an
+explicit scoped not-found error. Legacy archived notes without a discovery
+row remain readable. Conflicting source/revision/size or issue receipts fail
+closed instead of combining evidence from different recordings/cards.
+
+The `watch-voice-status.v1` response separates source/download, early-card,
+original, transcription, text publication, and their timestamps/errors. The
+legacy Note has one shared error for STT and text delivery; `note_last_error`
+preserves that distinction rather than guessing the phase. The response
+includes complete stored-text UTF-8 length, character count, SHA-256 and exact
+wire part count, without returning text. Part completeness requires the durable
+delivered state, issue receipt, timestamp and all expected text parts. This is
+journal evidence; `external_content_verified=false` does not claim fresh
+GitHub readback or accepted Work text. Initial metadata-card receipts are not
+counted as transcript parts. The frozen issue body remains an initial snapshot;
+this selector provides current status on demand rather than editing that body.
+
+This read performs no external calls, claims, retries, downloads or writes. It
+does not select original audio bytes or the frozen issue body. It reads stored
+text internally to compute the exact UTF-8 digest and parts. Original byte
+length is checked in SQL; matching length and the stored hash do not prove
+integrity. `archived_unverified` supplies the existing protected file selector,
+whose retrieval separately verifies the original hash/size. Before archive or
+on a size mismatch that selector is absent. No public URL is produced.
+
+`coordination.work_claim_submit=not_implemented`, `accepted_result=null`,
+`retry_authorized=false` and `instruction_execution=not_observed` are explicit.
+This source slice establishes the read contract; it does not implement Work
+claim/STT/submit/accepted CAS, live issue refresh, a waiting threshold, or runtime
+acceptance. Those remain the next bounded stages in #770. Existing full-text,
+file, list and sources selectors retain their contracts.
+

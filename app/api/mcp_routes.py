@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
+from app.infrastructure.watch_voice_status import protected_status
+from app.infrastructure.watch_voice_github import WatchVoiceError
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.health_routes import _get_worker_health_registry
@@ -809,7 +811,7 @@ async def _get_reply_context_tool_result(
             code="invalid_arguments",
             message="task_id is required",
         )
-    if raw_task_id.startswith("watch-voice:") or raw_task_id.startswith("watch-voice-file:"):
+    if raw_task_id.startswith(("watch-voice:", "watch-voice-file:", "watch-voice-status:")):
         return await _watch_voice_tool_result(
             request_id=request_id, selector=raw_task_id, principal=principal,
             session=session, settings=settings, arguments=arguments,
@@ -981,6 +983,28 @@ async def _watch_voice_tool_result(
             message="Watch voice is outside the allowed owner scope",
         )
     prefix, ref = selector.split(":", 1)
+    if prefix == "watch-voice-status":
+        try:
+            snapshot = await protected_status(session, settings, ref)
+        except ValueError:
+            return _tool_error_result(
+                request_id=request_id, code="invalid_arguments",
+                message="Exact watch voice status UUID is required",
+            )
+        except WatchVoiceError as exc:
+            return _tool_error_result(
+                request_id=request_id, code=exc.code,
+                message="Watch voice journals conflict; reconciliation is required",
+            )
+        if snapshot is None:
+            return _tool_error_result(
+                request_id=request_id, code="watch_voice_source_not_found",
+                message="No such watch voice source exists in this owner scope",
+            )
+        return _jsonrpc_result(request_id=request_id, result={
+            "content": [{"type": "text", "text": json.dumps(snapshot, ensure_ascii=False)}],
+            "structuredContent": snapshot, "isError": False,
+        })
     if prefix == "watch-voice" and ref in {"list", "sources"}:
         try:
             listing = protected_inventory if ref == "list" else source_inventory
@@ -3062,17 +3086,27 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
             "Unavailable reply sources are explicit. Attachment metadata needs no "
             "provider call; an exact task:attachment:message:index selector retrieves "
             "one file on explicit request. Existing exact voice and latest call/voice "
-            "selectors remain available for compatibility."
+            "selectors remain available for compatibility. Use watch-voice-status:UUID "
+            "for current private source/card/archive/transcription/publication journal "
+            "status, including before archival. It returns no audio or transcript and "
+            "does not claim an accepted Work result or authorize a retry."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "task_id": {
                     "oneOf": [
-                        {"type": "string", "format": "uuid"},
+                        {
+                            "type": "string", "format": "uuid",
+                            "pattern": "^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+                        },
                         {
                             "type": "string",
                             "pattern": "^watch-voice(-file)?:(latest|[0-9a-fA-F-]{36})$",
+                        },
+                        {
+                            "type": "string",
+                            "pattern": "^watch-voice-status:[0-9a-fA-F-]{36}$",
                         },
                         {
                             "type": "string", "enum": ["watch-voice:list", "watch-voice:sources"],
