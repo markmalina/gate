@@ -175,6 +175,33 @@ async def _candidate(session: AsyncSession, note: WatchVoiceNote,
     return validate_work_candidate(note, result, claim)
 
 
+def validate_work_ledger(note: Any, parts: list[Any]) -> list[tuple[Any, ...]]:
+    """Bind logical parts to exact comment identities in strict creation order."""
+    from datetime import datetime as datetime_type
+
+    from app.worker.watch_voice import issue_body
+
+    expected_parts = len(transcript_parts(note.transcript or ""))
+    if [p.part for p in parts] != list(range(expected_parts)):
+        raise WatchVoiceError("watch_voice_work_receipts_incomplete")
+    previous_id = 0
+    previous_time: datetime | None = None
+    snapshot: list[tuple[Any, ...]] = []
+    for part in parts:
+        if (type(part.comment_id) is not int or not previous_id < part.comment_id <= 2**63 - 1
+                or not isinstance(part.received_at, datetime_type)
+                or not isinstance(part.writer, str) or not part.writer
+                or (part.issue_number, part.issue_url) != (note.issue_number, note.issue_url)
+                or body_digest(issue_body(note, part.part, publication_part=part.part + 1))
+                != part.body_sha256
+                or (previous_time is not None and utc(part.received_at) < previous_time)):
+            raise WatchVoiceError("watch_voice_work_publication_conflict")
+        previous_id, previous_time = part.comment_id, utc(part.received_at)
+        snapshot.append((part.part, part.comment_id, part.writer, part.body_sha256,
+                         part.issue_number, part.issue_url, iso(part.received_at)))
+    return snapshot
+
+
 def _receipt(result: WatchVoiceWorkResult, claim: WatchVoiceWorkClaim) -> dict[str, Any]:
     return {"schema": "watch-voice-work-result.v1", "event_id": result.note_id,
             "claim_id": claim.id, "epoch": result.epoch, "state": result.state,
@@ -432,18 +459,21 @@ async def record_text_receipt(
     _pin(note, result)
     if (result.state != "prepared" or not note.transcript or not note.delivery_writer
             or body_digest(note.transcript) != result.transcript_sha256
-            or (note.issue_number, note.issue_url) != (receipt.number, receipt.url)):
+            or (note.issue_number, note.issue_url) != (receipt.number, receipt.url)
+            or type(receipt.comment_id) is not int or not 0 < receipt.comment_id <= 2**63 - 1):
         raise WatchVoiceError("watch_voice_work_publication_conflict")
     existing = await session.get(WatchVoiceTextReceipt, (note.id, note.next_part))
-    expected = (note.delivery_writer, body_digest(body), receipt.number, receipt.url)
+    expected = (note.delivery_writer, body_digest(body), receipt.number, receipt.url,
+                receipt.comment_id)
     if existing is not None:
         if (existing.writer, existing.body_sha256, existing.issue_number,
-                existing.issue_url) != expected:
+                existing.issue_url, existing.comment_id) != expected:
             raise WatchVoiceError("watch_voice_work_publication_conflict")
         return
     session.add(WatchVoiceTextReceipt(
         note_id=note.id, part=note.next_part, writer=expected[0], body_sha256=expected[1],
         issue_number=receipt.number, issue_url=receipt.url, received_at=receipt.received_at,
+        comment_id=receipt.comment_id,
     ))
 
 
@@ -503,6 +533,12 @@ async def accept_work_result(factory: Factory, client: MarkInboxClient, key: str
             result.last_error = "watch_voice_work_receipts_incomplete"
             await session.commit()
             return False
+        try:
+            ledger_snapshot = validate_work_ledger(note, parts)
+        except WatchVoiceError as exc:
+            result.last_error = exc.code
+            await session.commit()
+            return False
         epoch, digest = result.epoch, result.transcript_sha256
         await session.execute(update(WatchVoiceWorkResult).where(
             WatchVoiceWorkResult.note_id == key, WatchVoiceWorkResult.epoch == epoch,
@@ -520,7 +556,8 @@ async def accept_work_result(factory: Factory, client: MarkInboxClient, key: str
             receipt = await client.reconcile(part=part.part + 1, issue_number=note.issue_number,
                                              body=body, expected_writer=part.writer)
             if (receipt is None
-                    or (receipt.number, receipt.url) != (note.issue_number, note.issue_url)):
+                    or (receipt.number, receipt.url) != (note.issue_number, note.issue_url)
+                    or receipt.comment_id != part.comment_id):
                 raise WatchVoiceError("watch_voice_work_readback_incomplete")
             if (utc(receipt.received_at) != utc(part.received_at)
                     or (previous_received is not None
@@ -558,11 +595,7 @@ async def accept_work_result(factory: Factory, client: MarkInboxClient, key: str
         final_parts = list((await session.scalars(select(WatchVoiceTextReceipt).where(
             WatchVoiceTextReceipt.note_id == key).order_by(WatchVoiceTextReceipt.part)
             .with_for_update())).all())
-        def ledger(rows: list[WatchVoiceTextReceipt]) -> list[tuple[Any, ...]]:
-            return [(p.part, p.writer, p.body_sha256, p.issue_number, p.issue_url,
-                     iso(p.received_at)) for p in rows]
-
-        if ledger(final_parts) != ledger(parts):
+        if validate_work_ledger(current, final_parts) != ledger_snapshot:
             raise WatchVoiceError("watch_voice_work_candidate_conflict")
         changed = await session.execute(update(WatchVoiceWorkResult).where(
             WatchVoiceWorkResult.note_id == key, WatchVoiceWorkResult.epoch == epoch,

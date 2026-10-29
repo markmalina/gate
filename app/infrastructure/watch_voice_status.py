@@ -19,10 +19,15 @@ from app.core.config import Settings
 from app.infrastructure.watch_voice_github import WatchVoiceError, transcript_parts
 from app.infrastructure.watch_voice_inventory import _object, iso
 from app.infrastructure.watch_voice_journal import safe_code
-from app.infrastructure.watch_voice_work import TERMINAL_TEXT, validate_work_candidate
+from app.infrastructure.watch_voice_work import (
+    TERMINAL_TEXT,
+    validate_work_candidate,
+    validate_work_ledger,
+)
 from app.models.watch_voice import (
     WatchVoiceNote,
     WatchVoiceSource,
+    WatchVoiceTextReceipt,
     WatchVoiceWorkClaim,
     WatchVoiceWorkResult,
 )
@@ -49,6 +54,8 @@ RESULT_FIELDS = (
 )
 CLAIM_FIELDS = ("id", "note_id", "epoch", "state", "created_at", "expires_at",
                 "started_at", "submitted_at")
+PART_FIELDS = ("part", "comment_id", "writer", "body_sha256", "issue_number", "issue_url",
+               "received_at")
 
 _S = {"type": "string"}
 _NS = {"type": ["string", "null"]}
@@ -122,21 +129,28 @@ async def protected_status(
         WatchVoiceWorkResult.note_id == key).subquery("scoped_result")
     claim = select(*(getattr(WatchVoiceWorkClaim, k) for k in CLAIM_FIELDS)).where(
         WatchVoiceWorkClaim.note_id == key).subquery("scoped_claim")
+    receipts = select(WatchVoiceTextReceipt.note_id,
+                      *(getattr(WatchVoiceTextReceipt, k) for k in PART_FIELDS)).where(
+        WatchVoiceTextReceipt.note_id == key).subquery("scoped_receipts")
     query = select(
         *(source.c[k].label("source_" + k) for k in SOURCE_FIELDS),
         *(note.c[k].label("note_" + k) for k in NOTE_FIELDS),
         note.c.archive_bytes,
         *(journal.c[k].label("result_" + k) for k in RESULT_FIELDS),
         *(claim.c[k].label("claim_" + k) for k in CLAIM_FIELDS),
+        *(receipts.c[k].label("part_" + k) for k in PART_FIELDS),
     ).select_from(source.join(note, source.c.id == note.c.id, full=True).outerjoin(
         journal, note.c.id == journal.c.note_id,
-    ).outerjoin(claim, journal.c.claim_id == claim.c.id))
+    ).outerjoin(claim, journal.c.claim_id == claim.c.id).outerjoin(
+        receipts, journal.c.note_id == receipts.c.note_id,
+    )).order_by(receipts.c.part)
     # This session belongs to the caller. A read must neither flush their
     # pending writes nor take ownership by committing/rolling back them.
     with session.no_autoflush:
-        row = (await session.execute(query)).mappings().one_or_none()
-    if row is None:
+        rows = (await session.execute(query)).mappings().all()
+    if not rows:
         return None
+    row = rows[0]
     s = SimpleNamespace(**{k: row["source_" + k] for k in SOURCE_FIELDS}) \
         if row["source_id"] is not None else None
     n = SimpleNamespace(**{k: row["note_" + k] for k in NOTE_FIELDS}) \
@@ -175,6 +189,9 @@ async def protected_status(
                     or n.delivery_state != "delivered" or not n.delivered_at
                     or n.next_part != parts):
                 raise WatchVoiceError("watch_voice_status_result_conflict")
+            parts_ledger = [SimpleNamespace(**{k: p["part_" + k] for k in PART_FIELDS})
+                            for p in rows if p["part_part"] is not None]
+            validate_work_ledger(n, parts_ledger)
             accepted = {"origin": "work", "sha256": row["result_transcript_sha256"],
                         "accepted_at": iso(row["result_accepted_at"])}
     complete = bool(n is not None and n.transcription_state == "transcribed"

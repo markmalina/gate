@@ -161,6 +161,9 @@ class WatchVoiceTextReceipt(Base):
     __tablename__ = "watch_voice_text_receipts"
     __table_args__ = (
         CheckConstraint("part >= 0", name="ck_watch_voice_text_receipt_part"),
+        CheckConstraint("comment_id IS NULL OR comment_id > 0",
+                        name="ck_watch_voice_text_receipt_comment_id"),
+        UniqueConstraint("note_id", "comment_id", name="uq_watch_voice_text_receipt_comment"),
     )
     note_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("watch_voice_notes.id"), primary_key=True
@@ -171,6 +174,7 @@ class WatchVoiceTextReceipt(Base):
     issue_number: Mapped[int] = mapped_column(Integer)
     issue_url: Mapped[str] = mapped_column(String(512))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    comment_id: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class WatchVoiceCycle(Base):

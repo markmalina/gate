@@ -39,7 +39,7 @@ Historical rows default to legacy, without backfill. Downgrade refuses to drop
 active card/publication receipts. It is not an automatic live rollback route.
 
 PR747 has its separate unchanged `0116_reply_dialog_versions`. Integration must
-preserve both0116 IDs/bytes, join the latest Watch0118 and reply0116 with one
+preserve both0116 IDs/bytes, join the latest Watch0119 and reply0116 with one
 merge revision, update reply migration ceiling/helper/tests and common API and
 Railway configuration together, then use one serial reviewed release. This PR
 does not mutate PR747 or execute any deployment/config/migration operation.
@@ -131,7 +131,13 @@ external recognition time remains unconfirmed. Issue text, full-text receipts
 and V2 status identify that time basis explicitly.
 
 Every acknowledged text-part advance atomically records its writer, exact body
-digest, issue target and receipt time. A stale/tampered selected payload is
+digest, issue target, immutable GitHub comment ID and receipt time. Exact readback
+must find the original ID for each part, with strictly increasing IDs and
+nondecreasing times. Equal timestamps are valid; moved/replaced/swapped bodies
+are rejected. Reversing an API array alone does not change comment identity.
+GitHub documents ascending comment IDs as the default order in its
+[issue-comments API](https://docs.github.com/en/rest/issues/comments).
+A stale/tampered selected payload is
 rejected before publication I/O. Lost ACK is reconciled by the existing exact
 body/writer rule; absence never authorizes repost. Serial driver/writer switches
 retain each part's original writer. Metadata is not a text part.
@@ -142,7 +148,8 @@ Note lock/epoch/digest CAS. The complete candidate text/digest/UTF8 lengths,
 submitted claim identity/epoch and lifecycle times must agree before any
 publication and acceptance. After readback the Note, result, claim and part
 ledger are locked and re-read; the immutable snapshot must still match.
-Status applies the same pure validation in its one no-autoflush SELECT and
+Status applies the same pure candidate/accepted-ledger validation in its one
+scoped no-autoflush SELECT (joined part rows are never returned) and
 returns a conflict for damaged journals instead of trusted accepted data.
 Submitted candidates remain valid after their original lease expires; expiry
 does not authorize another STT. Missing, forged, duplicate or changed receipts keep
@@ -154,6 +161,10 @@ per fresh authorized run. It never adds a second processing path or schedule.
 Additive `0118_watch_voice_work_results` follows unchanged0117. It adds three
 empty journals and `transcript_origin=gate` for existing Notes, preserves old
 media/text/cursor and refuses downgrade with any journal/provenance to lose.
+Additive `0119_watch_voice_comment_ids` follows unchanged0118 and adds a nullable
+64-bit comment ID with positive/unique-per-Note constraints. Existing receipts
+stay unidentified and cannot authorize accepted or blind repost; there is no
+inferred backfill. Downgrade refuses any stored identity before changing schema.
 No existing source is admitted or backfilled. Schema installation requires a
 separate reviewed release with the latest integration/profile; old preflight
 acceptance and spent grants do not cover this source.

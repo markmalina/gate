@@ -28,6 +28,7 @@ class GithubReceipt:
     number: int
     url: str
     received_at: datetime
+    comment_id: int | None = None
 
 
 def transcript_parts(text: str) -> list[str]:
@@ -124,6 +125,18 @@ class MarkInboxClient:
     ) -> GithubReceipt:
         number = issue_number if part else obj["number"]
         expected_url = f"https://github.com/{REPOSITORY}/issues/{number}"
+        comment_id = None
+        if part:
+            prefix = expected_url + "#issuecomment-"
+            suffix = obj["html_url"].removeprefix(prefix)
+            if (not obj["html_url"].startswith(prefix) or not suffix.isascii()
+                    or not suffix.isdecimal() or len(suffix) > 19):
+                raise ValueError("receipt comment identity missing")
+            comment_id = int(suffix)
+            if (not 0 < comment_id <= 2**63 - 1 or str(comment_id) != suffix
+                    or ("id" in obj and (type(obj["id"]) is not int
+                                         or obj["id"] != comment_id))):
+                raise ValueError("receipt comment identity mismatch")
         valid_url = (
             obj["html_url"].startswith(expected_url + "#issuecomment-")
             if part
@@ -144,7 +157,7 @@ class MarkInboxClient:
         received_at = datetime.fromisoformat(obj["created_at"].replace("Z", "+00:00"))
         if received_at.tzinfo is None:
             raise ValueError("receipt time missing")
-        return GithubReceipt(number, expected_url, received_at)
+        return GithubReceipt(number, expected_url, received_at, comment_id)
 
     async def reconcile(
         self, *, part: int, issue_number: int | None, body: str,

@@ -94,6 +94,155 @@ class WorkWorld(World):
         return response
 
 
+class WholeSecondWorld(WorkWorld):
+    def __init__(self):
+        super().__init__()
+        self.second = datetime.now(UTC).replace(microsecond=0).isoformat()
+
+    def handle(self, request):
+        response = super().handle(request)
+        if request.method == "POST" and request.url.path.endswith("/comments"):
+            obj = response.json()
+            obj["created_at"] = self.second
+            self.comments[-1] = obj
+            return httpx.Response(201, json=obj)
+        return response
+
+
+@pytest.mark.parametrize("change", ("none", "reverse_api", "swap_bodies", "replace_id"))
+def test_equal_second_parts_require_original_comment_identity_and_order(tmp_path, change):
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WholeSecondWorld()
+            await seed(factory)
+            await prepare(factory, "я" * 12001)
+            world.hide_comments = True
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                await worker.publish_note(factory, client(http), row)
+                assert (await current(factory))[1].state == "saved"
+                assert len(world.comments) == 2
+                assert world.comments[0]["created_at"] == world.comments[1]["created_at"]
+                if change == "swap_bodies":
+                    first, second = world.comments
+                    first["body"], second["body"] = second["body"], first["body"]
+                elif change == "replace_id":
+                    world.comments[0]["html_url"] = URL + "#issuecomment-999"
+                elif change == "reverse_api":
+                    world.comments.reverse()
+                world.hide_comments = False
+                accepted = await accept_work_result(factory, client(http), KEY)
+                assert accepted == (change in {"none", "reverse_api"})
+                assert world.posts == 2
+                result = (await current(factory))[1]
+                assert (result.state == "accepted") == accepted
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("comment_id", (True, 0, -1, 2**63, "1", 2))
+def test_comment_receipt_requires_canonical_matching_immutable_id(comment_id):
+    mark = MarkInboxClient(None, "synthetic", "synthetic-writer")
+    obj = {"id": comment_id, "html_url": URL + "#issuecomment-1", "body": "text",
+           "created_at": datetime.now(UTC).isoformat(),
+           "user": {"login": "synthetic-writer"}}
+    with pytest.raises(ValueError, match="identity"):
+        mark.receipt(obj, part=1, issue_number=101, expected_body="text")
+
+
+@pytest.mark.parametrize("fragment", ("0", "01", "-1", "1/trailing", "1?x=2", "text"))
+def test_comment_receipt_rejects_noncanonical_identity_url(fragment):
+    mark = MarkInboxClient(None, "synthetic", "synthetic-writer")
+    obj = {"html_url": URL + "#issuecomment-" + fragment, "body": "text",
+           "created_at": datetime.now(UTC).isoformat(),
+           "user": {"login": "synthetic-writer"}}
+    with pytest.raises(ValueError, match="identity"):
+        mark.receipt(obj, part=1, issue_number=101, expected_body="text")
+
+
+@pytest.mark.parametrize("corruption", ("missing_id", "reverse_ids", "body_digest"))
+def test_damaged_durable_part_identity_never_confirms_accepted_status(tmp_path, corruption):
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WholeSecondWorld()
+            await seed(factory)
+            await prepare(factory, "я" * 12001)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                await worker.publish_note(factory, client(http), row)
+            assert (await current(factory))[1].state == "accepted"
+            async with factory() as session:
+                part = await session.get(WatchVoiceTextReceipt, (KEY, 0))
+                if corruption == "missing_id":
+                    part.comment_id = None
+                elif corruption == "reverse_ids":
+                    part.comment_id = 999
+                else:
+                    part.body_sha256 = "a" * 64
+                await session.commit()
+            async with factory() as session:
+                with pytest.raises(WatchVoiceError, match="publication_conflict"):
+                    await protected_status(session, cfg(), KEY)
+
+    asyncio.run(run())
+
+
+def test_unidentified_saved_receipt_stays_pending_without_repost(tmp_path):
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WholeSecondWorld()
+            await seed(factory)
+            await prepare(factory)
+            world.hide_comments = True
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                await worker.publish_note(factory, client(http), row)
+                async with factory() as session:
+                    part = await session.get(WatchVoiceTextReceipt, (KEY, 0))
+                    part.comment_id = None
+                    await session.commit()
+                world.hide_comments = False
+                for _ in range(2):
+                    assert not await accept_work_result(factory, client(http), KEY)
+            assert world.posts == 1
+            result = (await current(factory))[1]
+            assert result.state == "saved" and result.accepted_at is None
+
+    asyncio.run(run())
+
+
+def test_part_identity_changed_during_actual_readback_fails_final_snapshot(tmp_path):
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WholeSecondWorld()
+            await seed(factory)
+            await prepare(factory)
+            world.hide_comments = True
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                mark = client(http)
+                row, _ = await current(factory)
+                await worker.publish_note(factory, mark, row)
+                world.hide_comments = False
+                original = mark.reconcile
+
+                async def change_after_read(**kwargs):
+                    receipt = await original(**kwargs)
+                    assert receipt is not None
+                    async with factory() as session:
+                        part = await session.get(WatchVoiceTextReceipt, (KEY, 0))
+                        part.comment_id += 1
+                        await session.commit()
+                    return receipt
+
+                mark.reconcile = change_after_read
+                with pytest.raises(WatchVoiceError, match="candidate_conflict"):
+                    await accept_work_result(factory, mark, KEY)
+            assert (await current(factory))[1].accepted_at is None
+            assert world.posts == 1
+
+    asyncio.run(run())
+
+
 def client(http, writer="synthetic-writer"):
     value = MarkInboxClient(http, "synthetic-github", writer)
     value.headers["X-Test-Writer"] = writer
@@ -850,3 +999,39 @@ def test_additive_work_migration_preserves_originals_and_refuses_journal_loss():
             b"original\x00bytes",
             "полный текст",
         )
+
+
+def test_comment_identity_migration_preserves_unidentified_receipts_and_refuses_identity_loss():
+    path = Path("alembic/versions/0119_watch_voice_comment_ids.py")
+    spec = importlib.util.spec_from_file_location("identity_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.down_revision == "0118_watch_voice_work_results"
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE watch_voice_text_receipts "
+            "(note_id VARCHAR(36),part INTEGER,body_sha256 VARCHAR(64),"
+            "PRIMARY KEY(note_id,part))"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO watch_voice_text_receipts VALUES ('old',0,?)", ("b" * 64,)
+        )
+        with Operations.context(MigrationContext.configure(conn)):
+            migration.upgrade()
+        assert conn.exec_driver_sql(
+            "SELECT body_sha256,comment_id FROM watch_voice_text_receipts"
+        ).one() == ("b" * 64, None)
+        conn.exec_driver_sql("UPDATE watch_voice_text_receipts SET comment_id=6493515845")
+        with Operations.context(MigrationContext.configure(conn)):
+            with pytest.raises(RuntimeError, match="would_lose_identity"):
+                migration.downgrade()
+        assert conn.exec_driver_sql(
+            "SELECT comment_id FROM watch_voice_text_receipts"
+        ).scalar_one() == 6493515845
+        conn.exec_driver_sql("UPDATE watch_voice_text_receipts SET comment_id=NULL")
+        with Operations.context(MigrationContext.configure(conn)):
+            migration.downgrade()
+        assert conn.exec_driver_sql(
+            "SELECT body_sha256 FROM watch_voice_text_receipts"
+        ).scalar_one() == "b" * 64

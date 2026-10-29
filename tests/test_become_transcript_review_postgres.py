@@ -3199,7 +3199,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert [head.split()[0] for head in heads] == ["0118_watch_voice_work_results"]
+    assert [head.split()[0] for head in heads] == ["0119_watch_voice_comment_ids"]
 
 
 
