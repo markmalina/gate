@@ -23,6 +23,7 @@ from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
 from app.infrastructure.watch_voice_status import protected_status
 from app.infrastructure.watch_voice_github import WatchVoiceError
+from app.api import mcp_watch_voice_work
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.health_routes import _get_worker_health_registry
@@ -326,6 +327,7 @@ async def mcp_endpoint(
                     _gate_alpha_verify_review_replay_tool(settings),
                     _gate_beta_export_space_checkpoint_tool(settings),
                     _gate_beta_get_provider_probe_tool(settings),
+                    *mcp_watch_voice_work.tool_definitions(settings),
                 ]
             },
         )
@@ -335,6 +337,30 @@ async def mcp_endpoint(
             return _jsonrpc_error(request_id=request_id, code=-32602, message="Invalid params")
         tool_name = params.get("name")
         arguments = params.get("arguments")
+        if tool_name in mcp_watch_voice_work.TOOL_NAMES:
+            try:
+                principal = await _require_mcp_principal(
+                    authorization=authorization, settings=settings,
+                    required_scope=mcp_watch_voice_work.SCOPE, session=session,
+                )
+                receipt = await mcp_watch_voice_work.call_tool(
+                    tool_name, arguments, principal, session, settings,
+                )
+            except McpOAuthError as exc:
+                return _oauth_required_tool_result(
+                    request_id=request_id, settings=settings,
+                    scope=mcp_watch_voice_work.SCOPE, error=exc.error,
+                    description=exc.description,
+                )
+            except WatchVoiceError as exc:
+                return _tool_error_result(
+                    request_id=request_id, code=exc.code,
+                    message="Watch Work operation was not accepted; inspect current status",
+                )
+            return _jsonrpc_result(request_id=request_id, result={
+                "content": [{"type": "text", "text": json.dumps(receipt)}],
+                "structuredContent": receipt, "isError": False,
+            })
         if not isinstance(arguments, dict):
             arguments = {}
         if tool_name not in MCP_TOOL_SCOPES:

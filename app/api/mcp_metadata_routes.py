@@ -11,6 +11,7 @@ from app.api.communication_feed_mcp import (
 )
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.core.config import Settings, get_settings
+from app.api import mcp_watch_voice_work
 
 MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"] = FEED_REPLY_CONTEXT_OUTPUT_SCHEMA
 
@@ -114,6 +115,7 @@ async def mcp_metadata(
                 "gate_alpha_run_model_preflight",
                 "gate_alpha_get_test_group_presence",
                 "gate_beta_get_provider_probe",
+                *[t["name"] for t in mcp_watch_voice_work.tool_definitions(settings)],
             ],
             "send": [
                 "gate_send_approved_reply",
@@ -156,6 +158,7 @@ def _mcp_metadata(*, settings: Settings) -> JsonObject:
             "gate_alpha_run_model_preflight",
             "gate_alpha_get_test_group_presence",
             "gate_beta_get_provider_probe",
+            *[t["name"] for t in mcp_watch_voice_work.tool_definitions(settings)],
         ],
         "send_tools_enabled": settings.gate_send_enabled,
         "send_tools": [

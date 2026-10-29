@@ -27,8 +27,9 @@ Metadata receipt time is separate from first/full text publication time.
 Scoped operational status exposes card states, safe error counts and measured
 detection-to-card aggregate latency. Metadata issue text is a frozen historical
 snapshot; later full-text comments contain transcription times. Automatic issue
-status/error refresh, a public Work claim/submit tool and actual Work STT
-remain subsequent stages. Internal result coordination is described below;
+status/error refresh and actual Work STT remain subsequent stages. The protected
+Work MCP adapter is implemented but remains default-off source only.
+Internal result coordination is described below;
 its source tests do not establish live private Mark acceptance. The proposed120s
 Work waiting threshold is not approved, configured or enabled.
 
@@ -113,9 +114,9 @@ Lease lifetime defaults to1800s (range60..1800s), below the existing1h stale
 processing quarantine. It is engineering fencing time, not the unapproved120s
 waiting threshold or authority for an external provider call.
 
-`claim_work`, `start_work` and `submit_work` are internal application services,
-not HTTP/MCP endpoints. Their trusted adapter must supply the authenticated
-actor and a cryptographically random opaque nonce. The DB stores actor/token
+`claim_work`, `start_work` and `submit_work` are internal application services.
+Their protected MCP adapter supplies the authenticated actor; the caller supplies
+a random opaque nonce. The DB stores actor/token
 hashes, immutable epoch identities and current phase. Repeated nonce/start/
 same-text submission is idempotent; stale actor/token/epoch or changed source
 fails closed. Text remains exact UTF-8 (up to100000characters/400000bytes).
