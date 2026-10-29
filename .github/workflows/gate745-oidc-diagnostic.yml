@@ -1,4 +1,4 @@
-name: Gate745 metadata bootstrap
+name: Gate745 key-free OIDC diagnostic
 
 on:
   pull_request:
@@ -12,11 +12,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: gate745-metadata-bootstrap
+  group: gate745-oidc-diagnostic
   cancel-in-progress: false
 
 jobs:
-  bootstrap:
+  diagnostic:
     if: >-
       ${{ github.repository == 'markmalina/gate' && github.repository_id == '1293746267' &&
           github.event.number == 771 && github.event.pull_request.state == 'open' &&
@@ -24,7 +24,7 @@ jobs:
           github.event.pull_request.head.ref == 'agent/745-metadata-bootstrap-client' &&
           github.event.sender.id == 23397294 && github.event.sender.type == 'User' &&
           github.actor_id == '23397294' && github.run_attempt == 1 &&
-          startsWith(github.event.label.name, 'm') }}
+          startsWith(github.event.label.name, 'o') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: gate-production
@@ -34,28 +34,21 @@ jobs:
           node-version: 24.19.0
           check-latest: false
           package-manager-cache: false
-      - name: Refuse stale output
+      - name: Refuse stale diagnostic output
         shell: bash
-        run: test ! -e .agent-ops/output/gate745-metadata-bootstrap.json
-      - name: Admit exact human command using only scoped Gate metadata
-        id: admission
-        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap/pre-key@bdf6ff040539ad9fc84ff120f3f90074d5573481
+        run: test ! -e .agent-ops/output/gate745-oidc-diagnostic.json
+      - name: Observe fixed OIDC predicates without an App key
+        id: diagnostic
+        uses: markmalina/ops/agent-ops/actions/gate745-oidc-diagnostic@92d177a1a0ba600b37ad466da757eacda6f9106c
         with:
           gate-token: ${{ github.token }}
-      - name: Verify only metadata and revoke transient tokens
-        id: bootstrap
-        if: ${{ success() && steps.admission.outputs.admitted == 'true' }}
-        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap@bdf6ff040539ad9fc84ff120f3f90074d5573481
-        with:
-          gate-token: ${{ github.token }}
-          private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
-      - name: Save sanitized metadata receipt
-        if: ${{ always() && steps.bootstrap.outcome != 'skipped' && hashFiles('.agent-ops/output/gate745-metadata-bootstrap.json') != '' }}
+      - name: Save redacted non-authorizing diagnostic
+        if: ${{ always() && hashFiles('.agent-ops/output/gate745-oidc-diagnostic.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: gate745-metadata-bootstrap
+          name: gate745-oidc-diagnostic
           path: |
-            .agent-ops/output/gate745-metadata-bootstrap.json
-            .agent-ops/output/gate745-metadata-bootstrap.sha256
+            .agent-ops/output/gate745-oidc-diagnostic.json
+            .agent-ops/output/gate745-oidc-diagnostic.sha256
           retention-days: 7
           if-no-files-found: error

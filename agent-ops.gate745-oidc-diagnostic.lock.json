@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "agent-ops.gate745-oidc-diagnostic-lock/v1",
+  "repository": "markmalina/ops",
+  "actionPath": "agent-ops/actions/gate745-oidc-diagnostic",
+  "commit": "92d177a1a0ba600b37ad466da757eacda6f9106c",
+  "reviewedCodeSha": "8d18747c957369738a1826845daab68436407122",
+  "sourceManifestDigest": "sha256:9a286dbaaa34e4ae24b127196e7c9caa9e2f3888505e6e1353d1170efd1d69ce",
+  "releaseDigest": "sha256:16f7c93e6b972f09f23eeb89d8c723488cc13518481f234eb071f6accf1d24ed",
+  "policyDigest": "sha256:076b9ae1c7b35fd9ac05321609f289e6a77c557fb446ec5b1dd3b785b5f7622c"
+}
