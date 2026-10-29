@@ -71,7 +71,10 @@ GitHub readback or accepted Work text. Initial metadata-card receipts are not
 counted as transcript parts. The frozen issue body remains an initial snapshot;
 this selector provides current status on demand rather than editing that body.
 
-This read performs no external calls, claims, retries, downloads or writes. It
+This read temporarily suppresses session autoflush and leaves pending, dirty
+and deleted ORM objects and transaction ownership with the caller, on success
+and on conflict. It never flushes, commits or rolls back that session. It
+performs no external calls, claims, retries, downloads or writes. It
 does not select original audio bytes or the frozen issue body. It reads stored
 text internally to compute the exact UTF-8 digest and parts. Original byte
 length is checked in SQL; matching length and the stored hash do not prove

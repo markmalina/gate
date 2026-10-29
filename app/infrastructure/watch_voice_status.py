@@ -104,7 +104,10 @@ async def protected_status(
         *(note.c[k].label("note_" + k) for k in NOTE_FIELDS),
         note.c.archive_bytes,
     ).select_from(source.join(note, source.c.id == note.c.id, full=True))
-    row = (await session.execute(query)).mappings().one_or_none()
+    # This session belongs to the caller. A read must neither flush their
+    # pending writes nor take ownership by committing/rolling back them.
+    with session.no_autoflush:
+        row = (await session.execute(query)).mappings().one_or_none()
     if row is None:
         return None
     s = SimpleNamespace(**{k: row["source_" + k] for k in SOURCE_FIELDS}) \

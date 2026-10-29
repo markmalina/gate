@@ -264,3 +264,74 @@ def test_missing_source_is_explicit_and_does_not_select_latest(tmp_path):
             assert result["result"]["isError"]
             assert "watch_voice_source_not_found" in json.dumps(result)
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("pending", ["update", "insert", "delete", "invalid_insert"])
+def test_status_never_flushes_caller_pending_changes(tmp_path, monkeypatch, pending):
+    async def run():
+        async with database(tmp_path) as (factory, engine):
+            async with factory() as session:
+                session.add(source())
+                await session.commit()
+            async with factory() as session:
+                original = await session.get(WatchVoiceSource, KEY)
+                transaction = session.get_transaction()
+                if pending == "update":
+                    original.filename = "unflushed-change.m4a"
+                elif pending == "delete":
+                    await session.delete(original)
+                else:
+                    session.add(WatchVoiceNote(**note(
+                        1, **({"size_bytes": 0} if pending == "invalid_insert" else {}))))
+                before = (set(session.dirty), set(session.new), set(session.deleted))
+                queries = []
+                event.listen(engine.sync_engine, "before_cursor_execute",
+                             lambda conn, cursor, statement, params, context, many:
+                             queries.append(statement))
+                for method in ("commit", "rollback", "flush"):
+                    monkeypatch.setattr(session, method, AsyncMock(
+                        side_effect=AssertionError("status must not own caller transaction")))
+                assert session.autoflush
+                response = await mcp_routes._get_reply_context_tool_result(
+                    request_id=1, arguments={"task_id": "watch-voice-status:" + KEY},
+                    principal=principal(), session=session, settings=CFG)
+                result = response["result"]["structuredContent"]
+                assert result["mutations"] == 0
+                assert result["filename"] == "synthetic.m4a"
+                assert result["original"]["state"] == "not_archived"
+                assert (set(session.dirty), set(session.new), set(session.deleted)) == before
+                assert session.get_transaction() is transaction and transaction.is_active
+                assert session.autoflush  # temporary suppression must not reconfigure the caller
+                assert len(queries) == 1 and queries[0].lstrip().startswith("SELECT")
+                for method in (session.commit, session.rollback, session.flush):
+                    method.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_status_conflict_does_not_flush_or_rollback_caller_changes(tmp_path, monkeypatch):
+    async def run():
+        async with database(tmp_path) as (factory, engine):
+            async with factory() as session:
+                session.add(source())
+                session.add(WatchVoiceNote(**note(1, revision="conflicting-revision")))
+                await session.commit()
+            async with factory() as session:
+                original = await session.get(WatchVoiceSource, KEY)
+                original.filename = "unflushed-change.m4a"
+                transaction = session.get_transaction()
+                queries = []
+                event.listen(engine.sync_engine, "before_cursor_execute",
+                             lambda conn, cursor, statement, params, context, many:
+                             queries.append(statement))
+                for method in ("commit", "rollback", "flush"):
+                    monkeypatch.setattr(session, method, AsyncMock(
+                        side_effect=AssertionError("status must not own caller transaction")))
+                with pytest.raises(WatchVoiceError, match="watch_voice_status_source_conflict"):
+                    await protected_status(session, CFG, KEY)
+                assert original in session.dirty and original.filename == "unflushed-change.m4a"
+                assert session.get_transaction() is transaction and transaction.is_active
+                assert session.autoflush
+                assert len(queries) == 1 and queries[0].lstrip().startswith("SELECT")
+                for method in (session.commit, session.rollback, session.flush):
+                    method.assert_not_awaited()
+    asyncio.run(run())
