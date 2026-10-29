@@ -54,6 +54,8 @@ class WatchVoiceNote(Base):
             "delivery_state IN ('pending','sending','unknown','delivered','blocked')",
             name="ck_watch_voice_delivery",
         ),
+        CheckConstraint("transcript_origin IN ('gate','work')",
+                        name="ck_watch_voice_transcript_origin"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -73,6 +75,9 @@ class WatchVoiceNote(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     transcription_state: Mapped[str] = mapped_column(String(16), default="received")
     transcript: Mapped[str | None] = mapped_column(Text)
+    transcript_origin: Mapped[str] = mapped_column(
+        String(16), default="gate", server_default="gate"
+    )
     model: Mapped[str | None] = mapped_column(String(64))
     transcribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivery_state: Mapped[str] = mapped_column(String(16), default="pending")
@@ -93,6 +98,79 @@ class WatchVoiceNote(Base):
     provider_request_count: Mapped[int | None] = mapped_column(Integer)
     provider_finished_count: Mapped[int | None] = mapped_column(Integer)
     provider_elapsed_ms: Mapped[int | None] = mapped_column(Integer)
+
+
+class WatchVoiceWorkResult(Base):
+    """One selected Work candidate; accepted only after exact private readback."""
+
+    __tablename__ = "watch_voice_work_results"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('idle','claimed','started','unknown','prepared','saved','accepted')",
+            name="ck_watch_voice_work_result_state",
+        ),
+        CheckConstraint("epoch >= 0", name="ck_watch_voice_work_result_epoch"),
+    )
+    note_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("watch_voice_notes.id"), primary_key=True
+    )
+    state: Mapped[str] = mapped_column(String(16), default="idle", server_default="idle")
+    epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    claim_id: Mapped[str | None] = mapped_column(String(36))
+    revision: Mapped[str] = mapped_column(String(255))
+    audio_sha256: Mapped[str] = mapped_column(String(64))
+    issue_number: Mapped[int] = mapped_column(Integer)
+    issue_url: Mapped[str] = mapped_column(String(512))
+    transcript: Mapped[str | None] = mapped_column(Text)
+    transcript_sha256: Mapped[str | None] = mapped_column(String(64))
+    characters: Mapped[int | None] = mapped_column(Integer)
+    utf8_bytes: Mapped[int | None] = mapped_column(Integer)
+    prepared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    readback_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(128))
+
+
+class WatchVoiceWorkClaim(Base):
+    """Append-only epoch identity; tokens/actor identities are stored as hashes."""
+
+    __tablename__ = "watch_voice_work_claims"
+    __table_args__ = (
+        UniqueConstraint("note_id", "epoch", name="uq_watch_voice_work_claim_epoch"),
+        UniqueConstraint("note_id", "token_sha256", name="uq_watch_voice_work_claim_token"),
+        CheckConstraint("state IN ('claimed','started','expired','unknown','submitted')",
+                        name="ck_watch_voice_work_claim_state"),
+        CheckConstraint("epoch > 0", name="ck_watch_voice_work_claim_epoch"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    note_id: Mapped[str] = mapped_column(String(36), ForeignKey("watch_voice_notes.id"))
+    epoch: Mapped[int] = mapped_column(Integer)
+    actor_sha256: Mapped[str] = mapped_column(String(64))
+    token_sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WatchVoiceTextReceipt(Base):
+    """Exact writer/body/target for each acknowledged Work transcript part."""
+
+    __tablename__ = "watch_voice_text_receipts"
+    __table_args__ = (
+        CheckConstraint("part >= 0", name="ck_watch_voice_text_receipt_part"),
+    )
+    note_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("watch_voice_notes.id"), primary_key=True
+    )
+    part: Mapped[int] = mapped_column(Integer, primary_key=True)
+    writer: Mapped[str] = mapped_column(String(128))
+    body_sha256: Mapped[str] = mapped_column(String(64))
+    issue_number: Mapped[int] = mapped_column(Integer)
+    issue_url: Mapped[str] = mapped_column(String(512))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class WatchVoiceCycle(Base):

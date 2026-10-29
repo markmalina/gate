@@ -1088,6 +1088,9 @@ async def _watch_voice_tool_result(
         "gate_received_at": row.received_at.isoformat(),
         "transcribed_at": row.transcribed_at.isoformat() if row.transcribed_at else None,
         "transcript": row.transcript,
+        "transcript_origin": row.transcript_origin if row.transcript else None,
+        "transcribed_at_basis": ("gate_received_work_text" if row.transcript_origin == "work"
+                                 else "gate_stt_finished") if row.transcript else "unobserved",
         "transcription_state": row.transcription_state,
         "delivery_state": row.delivery_state,
         "issue_url": row.issue_url,
@@ -3089,7 +3092,8 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
             "selectors remain available for compatibility. Use watch-voice-status:UUID "
             "for current private source/card/archive/transcription/publication journal "
             "status, including before archival. It returns no audio or transcript and "
-            "does not claim an accepted Work result or authorize a retry."
+            "distinguishes prepared/saved/accepted Work results and never authorizes a retry. "
+            "Internal claim/submit is not exposed as a public MCP write tool."
         ),
         "inputSchema": {
             "type": "object",

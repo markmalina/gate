@@ -27,7 +27,7 @@ from sqlalchemy import event, text
 from tests.test_watch_voice import settings
 from tests.test_watch_voice_durable import db
 
-HEAD = "0117_watch_voice_early_inbox"
+HEAD = "0118_watch_voice_work_results"
 SECRET = "synthetic-admin-private-secret"
 
 

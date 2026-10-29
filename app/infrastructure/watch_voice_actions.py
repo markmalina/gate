@@ -39,6 +39,7 @@ from app.models.watch_voice import (
     WatchVoiceDrainRun,
     WatchVoiceNote,
     WatchVoiceRecoveryClaim,
+    WatchVoiceWorkResult,
 )
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import _refresh_access_token, _verify_account_id
@@ -439,6 +440,9 @@ async def _drain_bound(
         scope = worker.note_scope(scoped)
         if cutover is not None:
             scope += worker.future_note_scope(cutover)
+        from app.infrastructure.watch_voice_work import accept_work_result, expire_work_claims
+
+        await expire_work_claims(scoped, factory)
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:
             for field, active, error in (
@@ -461,20 +465,30 @@ async def _drain_bound(
             await session.commit()
             note = await session.scalar(
                 select(WatchVoiceNote)
+                .outerjoin(WatchVoiceWorkResult,
+                           WatchVoiceWorkResult.note_id == WatchVoiceNote.id)
                 .where(
                     *scope,
                     or_(
                         WatchVoiceNote.transcription_state == "received",
                         (WatchVoiceNote.transcription_state == "transcribed")
                         & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
+                        (WatchVoiceNote.delivery_state == "delivered")
+                        & WatchVoiceWorkResult.state.in_(("prepared", "saved")),
                     ),
                 )
-                .order_by(*worker.delivery_order())
+                .order_by(worker.delivery_order()[0],
+                          func.coalesce(WatchVoiceWorkResult.readback_attempted_at,
+                                        WatchVoiceNote.received_at), WatchVoiceNote.id)
                 .limit(1)
             )
         if note is None:
             await coordinator.commit()
             return result("idle")
+        if note.delivery_state == "delivered":
+            await accept_work_result(factory, client, note.id)
+            await coordinator.commit()
+            return result("processed", considered=1)
         if note.transcription_state == "received":
             await worker.transcribe_note(scoped, factory, http, note.id)
             async with factory() as session:

@@ -24,6 +24,9 @@ from app.models.watch_voice import (
     WatchVoiceIncident,
     WatchVoiceNote,
     WatchVoiceSource,
+    WatchVoiceTextReceipt,
+    WatchVoiceWorkClaim,
+    WatchVoiceWorkResult,
 )
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import DropboxCallWorkerError
@@ -93,7 +96,8 @@ async def database(tmp_path):
     async with engine.begin() as connection:
         for table in (WatchVoiceCursor.__table__, WatchVoiceNote.__table__,
                       WatchVoiceCycle.__table__, WatchVoiceSource.__table__,
-                      WatchVoiceIncident.__table__):
+                      WatchVoiceIncident.__table__, WatchVoiceWorkResult.__table__,
+                      WatchVoiceWorkClaim.__table__, WatchVoiceTextReceipt.__table__):
             await connection.run_sync(table.create)
     try:
         yield async_sessionmaker(engine, expire_on_commit=False)

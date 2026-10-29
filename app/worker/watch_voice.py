@@ -55,6 +55,14 @@ from app.infrastructure.watch_voice_journal import processing_started, provider_
 from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
 from app.infrastructure.watch_voice_sources import archive_source, drain_sources
 from app.infrastructure.watch_voice_sources import discover as discover_source
+from app.infrastructure.watch_voice_work import (
+    accept_work_result,
+    claim_gate_dispatch,
+    drain_work_receipts,
+    expire_work_claims,
+    record_text_receipt,
+    validate_work_publication,
+)
 from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
 from app.worker.dropbox_calls import (
     DropboxCallWorkerError,
@@ -179,8 +187,18 @@ def issue_body(note: WatchVoiceNote, part: int, *, publication_part: int | None 
     start = marker(note.id, part if publication_part is None else publication_part)
     if part:
         return f"{start}\n\nРасшифровка, часть {part + 1}/{len(parts)}:\n\n{parts[part]}"
+    origin = (
+        "Происхождение текста: Work; внешний способ, модель и стоимость не подтверждены Gate.\n"
+        if getattr(note, "transcript_origin", "gate") == "work" else ""
+    )
+    time_line = (
+        f"Текст Work получен Gate: {transcribed}. Время внешнего распознавания не подтверждено.\n"
+        if getattr(note, "transcript_origin", "gate") == "work"
+        else f"Расшифровано: {transcribed}.\n"
+    )
     return (
         f"{start}\n\nАвтор: Марк Малиновский. Доставщик: Gate.\n"
+        f"{origin}"
         "Канал: Galaxy Watch → Samsung Звукозапись → Dropsync → Dropbox Voice.\n\n"
         f"Gate receipt / event_id: `{note.id}`\n"
         f"Оригинал: `watch-voice:{note.id}` (защищённый архив Gate).\n"
@@ -190,7 +208,7 @@ def issue_body(note: WatchVoiceNote, part: int, *, publication_part: int | None 
         "Время начала записи: не подтверждено.\n"
         f"Dropbox server_modified: {note.dropbox_modified_at.isoformat()}.\n"
         f"Получено Gate: {note.received_at.isoformat()}.\n"
-        f"Расшифровано: {transcribed}.\n"
+        f"{time_line}"
         "Назначение: private markmalina/mark, Inbox.\n"
         "Статус: входящая запись; исполнение задачи отдельно от получения.\n\n"
         f"Расшифровка, часть 1/{len(parts)}:\n\n{parts[0]}"
@@ -298,21 +316,9 @@ async def transcribe_note(
             )
             await session.commit()
         return
-    async with factory() as session:
-        claimed = await session.execute(
-            update(WatchVoiceNote)
-            .where(
-                WatchVoiceNote.id == note_id,
-                *note_scope(settings),
-                WatchVoiceNote.transcription_state == "received",
-            )
-            .values(transcription_state="processing", attempted_at=datetime.now(UTC))
-        )
-        await session.commit()
-        if not claimed.rowcount:  # type: ignore[attr-defined]
-            return
-        note = await session.get(WatchVoiceNote, note_id)
-        assert note is not None
+    note = await claim_gate_dispatch(settings, factory, note_id)
+    if note is None:
+        return
     await transcribe_claimed_note(settings, factory, http, note)
 
 
@@ -505,6 +511,8 @@ async def publish_note(
     while note.delivery_state in {"pending", "unknown"}:
         if max_parts is not None and completed_parts >= max_parts:
             return
+        if note.transcript_origin == "work":
+            await validate_work_publication(factory, note)
         part = note.next_part
         publication_part = part + offset
         body = issue_body(note, part, publication_part=publication_part)
@@ -558,17 +566,20 @@ async def publish_note(
                     )
                     await session.commit()
                 return
-        await save_receipt(factory, note, receipt)
+        await save_receipt(factory, note, receipt, body=body)
         completed_parts += 1
+    if note.delivery_state == "delivered":
+        await accept_work_result(factory, client, note.id)
 
 
 async def save_receipt(
-    factory: async_sessionmaker[AsyncSession], note: WatchVoiceNote, receipt: GithubReceipt
+    factory: async_sessionmaker[AsyncSession], note: WatchVoiceNote, receipt: GithubReceipt,
+    *, body: str | None = None,
 ) -> None:
     next_part = note.next_part + 1
     finished = next_part >= len(transcript_parts(note.transcript or ""))
     async with factory() as session:
-        await session.execute(
+        changed = await session.execute(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note.id,
@@ -585,6 +596,10 @@ async def save_receipt(
                 last_error=None,
             )
         )
+        if changed.rowcount and note.transcript_origin == "work":  # type: ignore[attr-defined]
+            if body is None:
+                raise WatchVoiceError("watch_voice_work_publication_body_missing")
+            await record_text_receipt(session, note, receipt, body)
         await session.commit()
     note.next_part, note.issue_number, note.issue_url = next_part, receipt.number, receipt.url
     note.github_received_at = note.github_received_at or receipt.received_at
@@ -734,6 +749,8 @@ async def process_watch_voice(
             OBSERVATION.scan_error_code = None
         if settings.gate_watch_voice_early_inbox_enabled:
             await drain_cards(settings, factory, client, cutover)
+        await expire_work_claims(settings, factory)
+        await drain_work_receipts(settings, factory, client, cutover)
         scope = note_scope(settings)
         if cutover is not None:
             scope += future_note_scope(cutover)
