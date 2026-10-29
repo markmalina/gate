@@ -84,8 +84,10 @@ integrity. `archived_unverified` supplies the existing protected file selector,
 whose retrieval separately verifies the original hash/size. Before archive or
 on a size mismatch that selector is absent. No public URL is produced.
 
-`coordination.work_claim_submit=internal_only_not_exposed` distinguishes the
-internal service from an available public Work tool. Status includes the result
+`coordination.work_claim_submit` distinguishes the internal service from the
+configured protected MCP adapter using the same predicate as tool discovery:
+`internal_only_not_exposed` or `protected_owner_mcp_available`. The latter does
+not attest current connector refresh or Work STT capability. Status includes the result
 phase, epoch, expiry/start/prepared/saved times and safe error. `accepted_result`
 is present only after recorded full readback/CAS and consistent current Note
 identity/text/parts. Its timestamp proves past acceptance; status performs no

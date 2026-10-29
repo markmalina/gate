@@ -48,6 +48,19 @@ The existing outbox later advances the same issue; replay can observe its phase.
 must not use start/replay as a provider grant or repeat an uncertain started STT.
 Source/current status remains available through `watch-voice-status:<UUID>`.
 
+Claim and submit replay revalidate the current candidate/claim and, for saved
+or accepted text, the Note's complete publication progress and every stored
+part receipt under the same Note lock. Missing or malformed receipts return
+a redacted conflict instead of a trusted saved/accepted reply. This preserves
+the historical acceptance timestamp without another Mark GET or POST. Prepared
+partial publication remains replayable and recoverable. An unidentified old
+saved receipt stays stored and pending; replay cannot attest it or invent an ID.
+
+Status and discovery share the same pure availability predicate. Coordination
+reports `protected_owner_mcp_available` only for the configured enabled server;
+otherwise it reports `internal_only_not_exposed`. This does not establish
+connector refresh, provider authority or standalone Work STT availability.
+
 Journal writes use independent sessions on the process AsyncEngine, preserving
 the caller session's pending/dirty objects and transaction. A connection-bound or
 unavailable session fails closed. No new migrations, dependencies, model/policy

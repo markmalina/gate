@@ -18,9 +18,11 @@ from app.core.mcp_security import AccessScope, Principal
 from app.infrastructure.watch_voice_github import WatchVoiceError, body_digest
 from app.main import app
 from app.models.domain import UNCLASSIFIED_PROJECT_ID
-from app.models.watch_voice import WatchVoiceWorkClaim
+from app.models.watch_voice import WatchVoiceNote, WatchVoiceTextReceipt, WatchVoiceWorkClaim
 from app.worker import watch_voice as worker
 from jsonschema import Draft202012Validator, validate
+from sqlalchemy import delete, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from tests.test_watch_voice import database
 from tests.test_watch_voice_work import KEY, REV, SHA, TOKEN, WorkWorld, cfg, client, current, seed
 
@@ -232,4 +234,128 @@ def test_caller_pending_state_is_not_flushed_committed_or_rolled_back(tmp_path):
                 assert pending in session.new and receipt["state"] == "claimed"
                 async with factory() as other:
                     assert await other.get(WatchVoiceWorkClaim, "not-persisted") is None
+    asyncio.run(run())
+
+
+async def _prepare_adapter_text(factory, text):
+    submission = arguments(text=text, transcript_sha256=body_digest(text))
+    async with factory() as session:
+        await adapter.call_tool(adapter.TOOL_NAMES[0], arguments(), principal(),
+                                session, configuration())
+        await adapter.call_tool(adapter.TOOL_NAMES[1], {"event_id": KEY, "token": TOKEN},
+                                principal(), session, configuration())
+        await adapter.call_tool(adapter.TOOL_NAMES[2], submission, principal(),
+                                session, configuration())
+    return submission
+
+
+async def _replay_adapter(factory, operation, submission):
+    name, values = ((adapter.TOOL_NAMES[0], arguments()) if operation == "claim"
+                    else (adapter.TOOL_NAMES[2], submission))
+    async with factory() as session:
+        return await adapter.call_tool(name, values, principal(), session, configuration())
+
+
+@pytest.mark.parametrize("phase", ["saved", "accepted"])
+@pytest.mark.parametrize("operation", ["claim", "submit"])
+@pytest.mark.parametrize("damage", [
+    "delete", "body_digest", "issue", "missing_identity",
+    "next_part", "delivery_state", "delivered_at",
+])
+def test_published_replay_rejects_damaged_ledger_or_note_progress(
+    tmp_path, phase, operation, damage,
+):
+    async def run():
+        async with database(tmp_path) as factory:
+            await seed(factory)
+            submission = await _prepare_adapter_text(factory, "Синтетический полный текст 🥣")
+            world = WorkWorld()
+            world.hide_comments = phase == "saved"
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                await worker.publish_note(factory, client(http), row)
+            intact = await _replay_adapter(factory, operation, submission)
+            assert intact["state"] == phase
+            original_accepted_at = (await current(factory))[1].accepted_at
+            async with factory() as session:
+                if damage == "delete":
+                    await session.execute(delete(WatchVoiceTextReceipt).where(
+                        WatchVoiceTextReceipt.note_id == KEY))
+                elif damage in {"body_digest", "issue", "missing_identity"}:
+                    changes = {"body_digest": {"body_sha256": "0" * 64},
+                               "issue": {"issue_number": 999},
+                               "missing_identity": {"comment_id": None}}[damage]
+                    await session.execute(update(WatchVoiceTextReceipt).where(
+                        WatchVoiceTextReceipt.note_id == KEY).values(**changes))
+                else:
+                    changes = {"next_part": {"next_part": 0},
+                               "delivery_state": {"delivery_state": "pending"},
+                               "delivered_at": {"delivered_at": None}}[damage]
+                    await session.execute(update(WatchVoiceNote).where(
+                        WatchVoiceNote.id == KEY).values(**changes))
+                await session.commit()
+            with pytest.raises(WatchVoiceError, match="receipts_incomplete|publication_conflict"):
+                await _replay_adapter(factory, operation, submission)
+            note, result = await current(factory)
+            assert result.state == phase and result.accepted_at == original_accepted_at
+            assert bool(result.accepted_at) == (phase == "accepted")
+            assert result.transcript == submission["text"] == note.transcript
+            assert world.posts == 1 and world.provider_calls == 0
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("operation", ["claim", "submit"])
+def test_prepared_partial_replay_keeps_multipart_recovery_and_exact_acceptance(tmp_path, operation):
+    async def run():
+        async with database(tmp_path) as factory:
+            await seed(factory)
+            text = "я" * 12000 + "🙂" * 6001
+            submission = await _prepare_adapter_text(factory, text)
+            world = WorkWorld()
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                await worker.publish_note(factory, client(http), row, max_parts=1)
+                assert (await current(factory))[0].next_part == 1
+                partial = await _replay_adapter(factory, operation, submission)
+                assert partial["state"] == "prepared" and world.posts == 1
+                for _ in range(2):
+                    row, _ = await current(factory)
+                    await worker.publish_note(factory, client(http), row, max_parts=1)
+            final = await _replay_adapter(factory, operation, submission)
+            assert final["state"] == "accepted" and final["accepted_at"]
+            again = await _replay_adapter(factory, operation, submission)
+            assert again == final
+            assert world.posts == 3 and world.provider_calls == 0
+            assert (await current(factory))[0].transcript == text
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_status_reports_same_configured_mcp_capability_as_discovery(tmp_path, enabled):
+    from app.infrastructure.watch_voice_status import STATUS_SCHEMA, protected_status
+
+    async def run():
+        async with database(tmp_path) as factory:
+            await seed(factory)
+            settings = configuration(gate_watch_voice_work_mcp_enabled=enabled)
+            async with factory() as session:
+                status = await protected_status(session, settings, KEY)
+            validate(status, STATUS_SCHEMA)
+            expected = "protected_owner_mcp_available" if enabled else "internal_only_not_exposed"
+            assert status["coordination"]["work_claim_submit"] == expected
+            assert bool(adapter.tool_definitions(settings)) == enabled
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("missing", ["session", "bind"])
+def test_missing_database_binding_is_typed_and_redacted(missing):
+    async def run():
+        session = None if missing == "session" else AsyncSession()
+        try:
+            with pytest.raises(WatchVoiceError, match="watch_voice_work_database_unavailable"):
+                await adapter.call_tool(adapter.TOOL_NAMES[0], arguments(), principal(),
+                                        session, configuration())
+        finally:
+            if session is not None:
+                await session.close()
     asyncio.run(run())

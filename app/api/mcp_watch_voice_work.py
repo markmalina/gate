@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.core.mcp_security import Principal
 from app.infrastructure.watch_voice_github import WatchVoiceError
-from app.infrastructure.watch_voice_work import claim_work, start_work, submit_work
+from app.infrastructure.watch_voice_work import (
+    claim_work,
+    start_work,
+    submit_work,
+    work_mcp_available,
+)
 from app.models.domain import UNCLASSIFIED_PROJECT_ID
 
 SCOPE = "gate:agents:manage"
@@ -71,17 +76,7 @@ OUTPUT_SCHEMA: dict[str, Any] = {"type": "object", "oneOf": [
 
 def advertised(settings: Settings) -> bool:
     """Discovery grants no authority; expose only with the complete owner binding."""
-    return bool(
-        settings.gate_mcp_enabled and settings.mcp_auth_mode == "oauth"
-        and settings.gate_watch_voice_work_mcp_enabled
-        and settings.gate_watch_voice_work_reserve_enabled
-        and settings.gate_watch_voice_early_inbox_enabled
-        and settings.gate_watch_voice_data_gate_approved
-        and settings.gate_watch_voice_work_owner_subject.strip()
-        and settings.gate_watch_voice_workspace_key == settings.gate_workspace_id
-        and settings.gate_workspace_id
-        and settings.dropbox_call_account_id.strip()
-    )
+    return work_mcp_available(settings)
 
 
 def tool_definitions(settings: Settings) -> list[dict[str, Any]]:
@@ -129,13 +124,14 @@ async def call_tool(
     except (KeyError, ValidationError, ValueError, TypeError):
         # Never include validation details: inputs can contain private transcript/token.
         raise WatchVoiceError("watch_voice_work_arguments_invalid") from None
-    if not isinstance(session.bind, AsyncEngine):
+    bind = getattr(session, "bind", None)
+    if not isinstance(bind, AsyncEngine):
         raise WatchVoiceError("watch_voice_work_database_unavailable")
     actor = "watch-work-oauth-v1:" + hashlib.sha256(json.dumps([
         settings.mcp_authorization_server, settings.mcp_public_resource_url,
         principal.auth_method, principal.access_scope.workspace_id, principal.subject,
     ], separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
-    factory = async_sessionmaker(session.bind, expire_on_commit=False)
+    factory = async_sessionmaker(bind, expire_on_commit=False)
     values = model.model_dump()
     key = values.pop("event_id")
     operations: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = dict(

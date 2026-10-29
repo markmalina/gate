@@ -1,4 +1,4 @@
-"""Default-off internal Work coordination; no STT, scheduling or public write tool.
+"""Default-off Work coordination shared with the protected MCP adapter; no STT.
 
 The existing received->processing Note CAS is the shared Gate/Work dispatch
 barrier. Work cannot take over a Gate attempt in this initial implementation.
@@ -59,6 +59,21 @@ async def claim_gate_dispatch(
         ).values(transcription_state="processing", attempted_at=datetime.now(UTC)))
         await session.commit()
         return note if changed.rowcount else None  # type: ignore[attr-defined]
+
+
+def work_mcp_available(settings: Settings) -> bool:
+    """Configured server capability only, not connector discovery or STT authority."""
+    return bool(
+        settings.gate_mcp_enabled and settings.mcp_auth_mode == "oauth"
+        and settings.gate_watch_voice_work_mcp_enabled
+        and settings.gate_watch_voice_work_reserve_enabled
+        and settings.gate_watch_voice_early_inbox_enabled
+        and settings.gate_watch_voice_data_gate_approved
+        and settings.gate_watch_voice_work_owner_subject.strip()
+        and settings.gate_watch_voice_workspace_key == settings.gate_workspace_id
+        and settings.gate_workspace_id
+        and settings.dropbox_call_account_id.strip()
+    )
 
 
 def _enabled(settings: Settings) -> None:
@@ -213,6 +228,29 @@ def _receipt(result: WatchVoiceWorkResult, claim: WatchVoiceWorkClaim) -> dict[s
             "provider_authority": False}
 
 
+async def _replay_receipt(
+    session: AsyncSession, note: WatchVoiceNote, result: WatchVoiceWorkResult,
+    claim: WatchVoiceWorkClaim,
+) -> dict[str, Any]:
+    """Check durable evidence under the caller's Note lock before a trusted replay.
+
+    Prepared/partial publication remains recoverable. Saved/accepted must retain
+    the complete local ledger; this is not a fresh external Mark verification.
+    """
+    if result.state in TERMINAL_TEXT:
+        validate_work_candidate(note, result, claim)
+    if result.state in {"saved", "accepted"}:
+        if (note.delivery_state != "delivered" or not note.delivered_at
+                or not note.issue_number or not note.issue_url
+                or note.next_part != len(transcript_parts(note.transcript or ""))):
+            raise WatchVoiceError("watch_voice_work_publication_conflict")
+        parts = list((await session.scalars(select(WatchVoiceTextReceipt).where(
+            WatchVoiceTextReceipt.note_id == note.id,
+        ).order_by(WatchVoiceTextReceipt.part).with_for_update())).all())
+        validate_work_ledger(note, parts)
+    return _receipt(result, claim)
+
+
 async def _current(
     session: AsyncSession, note: WatchVoiceNote, actor_hash: str, token_hash: str,
 ) -> tuple[WatchVoiceWorkResult, WatchVoiceWorkClaim]:
@@ -277,9 +315,7 @@ async def claim_work(
                 raise WatchVoiceError("watch_voice_work_claim_expired")
             if previous.state in {"expired", "unknown"}:
                 raise WatchVoiceError("watch_voice_work_claim_expired")
-            if result.state in TERMINAL_TEXT:
-                validate_work_candidate(note, result, previous)
-            return _receipt(result, previous)
+            return await _replay_receipt(session, note, result, previous)
         if result is not None:
             _pin(note, result)
             if result.state in {"claimed", "started"} and result.claim_id:
@@ -396,7 +432,7 @@ async def submit_work(
                 raise WatchVoiceError("watch_voice_work_candidate_immutable")
             if note.transcript_origin != "work" or note.transcript != text:
                 raise WatchVoiceError("watch_voice_work_publication_conflict")
-            return _receipt(result, claim)
+            return await _replay_receipt(session, note, result, claim)
         now = datetime.now(UTC)
         if await _expire(session, note, result, claim, now):
             await session.commit()

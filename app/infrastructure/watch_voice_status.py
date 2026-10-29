@@ -23,6 +23,7 @@ from app.infrastructure.watch_voice_work import (
     TERMINAL_TEXT,
     validate_work_candidate,
     validate_work_ledger,
+    work_mcp_available,
 )
 from app.models.watch_voice import (
     WatchVoiceNote,
@@ -87,7 +88,9 @@ STATUS_SCHEMA = _object({
         "transcribed_at", "first_text_received_at", "full_text_delivered_at",
     )}),
     "coordination": _object({
-        "work_claim_submit": {"const": "internal_only_not_exposed"},
+        "work_claim_submit": {"enum": [
+            "internal_only_not_exposed", "protected_owner_mcp_available",
+        ]},
         "result_state": _S, "epoch": _NI, "last_error": _NS,
         "claim_expires_at": _NS, "started_at": _NS, "prepared_at": _NS, "saved_at": _NS,
         "accepted_result": {"oneOf": [{"type": "null"}, _object({
@@ -256,7 +259,9 @@ async def protected_status(
             "full_text_delivered_at": iso(n.delivered_at) if n else None,
         },
         "coordination": {
-            "work_claim_submit": "internal_only_not_exposed", "accepted_result": accepted,
+            "work_claim_submit": ("protected_owner_mcp_available" if work_mcp_available(settings)
+                                  else "internal_only_not_exposed"),
+            "accepted_result": accepted,
             "result_state": row["result_state"] or "not_admitted",
             "epoch": row["result_epoch"], "last_error": _error(row["result_last_error"]),
             "claim_expires_at": iso(row["claim_expires_at"]),
