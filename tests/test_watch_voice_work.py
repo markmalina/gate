@@ -168,6 +168,143 @@ async def current(factory):
         return await session.get(WatchVoiceNote, KEY), await session.get(WatchVoiceWorkResult, KEY)
 
 
+JOURNAL_CORRUPTIONS = (
+    "epoch", "claim_id", "claim_state", "candidate_text", "candidate_lengths",
+    "prepared_time", "started_time", "submitted_time",
+)
+
+
+async def corrupt_candidate(factory, corruption):
+    async with factory() as session:
+        result = await session.get(WatchVoiceWorkResult, KEY)
+        claim = await session.get(WatchVoiceWorkClaim, result.claim_id)
+        if corruption == "epoch":
+            result.epoch += 1
+        elif corruption == "claim_id":
+            result.claim_id = str(uuid.uuid4())
+        elif corruption == "claim_state":
+            claim.state = "unknown"
+        elif corruption == "candidate_text":
+            result.transcript = "forged candidate, unchanged digest"
+        elif corruption == "candidate_lengths":
+            result.characters = result.utf8_bytes = 1
+        elif corruption == "prepared_time":
+            result.prepared_at = None
+        elif corruption == "started_time":
+            claim.started_at = None
+        elif corruption == "submitted_time":
+            claim.submitted_at = claim.expires_at + timedelta(seconds=1)
+        await session.commit()
+
+
+@pytest.mark.parametrize("corruption", JOURNAL_CORRUPTIONS)
+@pytest.mark.parametrize("phase", ("before_readback", "during_readback", "after_accept"))
+def test_candidate_and_claim_corruption_never_yields_trusted_acceptance(
+    tmp_path, corruption, phase,
+):
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WorkWorld()
+            await seed(factory)
+            await prepare(factory)
+            world.hide_comments = phase != "after_accept"
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                mark = client(http)
+                row, _ = await current(factory)
+                await worker.publish_note(factory, mark, row)
+                assert (await current(factory))[1].state == (
+                    "accepted" if phase == "after_accept" else "saved"
+                )
+                world.hide_comments = False
+                if phase == "during_readback":
+                    reconcile = mark.reconcile
+
+                    async def mutate_after_actual_read(**kwargs):
+                        receipt = await reconcile(**kwargs)
+                        assert receipt is not None
+                        await corrupt_candidate(factory, corruption)
+                        return receipt
+
+                    mark.reconcile = mutate_after_actual_read
+                else:
+                    await corrupt_candidate(factory, corruption)
+                if phase != "after_accept":
+                    try:
+                        accepted = await accept_work_result(factory, mark, KEY)
+                    except WatchVoiceError as exc:
+                        assert exc.code == "watch_voice_work_candidate_conflict"
+                    else:
+                        assert not accepted
+                    result = (await current(factory))[1]
+                    assert result.state == "saved" and result.accepted_at is None
+                async with factory() as session:
+                    with pytest.raises(WatchVoiceError, match="candidate_conflict"):
+                        await protected_status(session, cfg(), KEY)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("corruption", JOURNAL_CORRUPTIONS)
+def test_candidate_corruption_is_rejected_before_any_publication_post(tmp_path, corruption):
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WorkWorld()
+            await seed(factory)
+            await prepare(factory)
+            await corrupt_candidate(factory, corruption)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                with pytest.raises(WatchVoiceError, match="candidate_conflict"):
+                    await worker.publish_note(factory, client(http), row)
+            assert not world.comments
+            assert (await current(factory))[0].next_part == 0
+
+    asyncio.run(run())
+
+
+def test_submitted_candidate_recovers_after_lease_expiry_without_new_authority(
+    tmp_path, monkeypatch,
+):
+    from app.infrastructure import watch_voice_work as work
+
+    async def run():
+        async with database(tmp_path) as factory:
+            world = WorkWorld()
+            await seed(factory)
+            await prepare(factory)
+            async with factory() as session:
+                result = await session.get(WatchVoiceWorkResult, KEY)
+                claim_row = await session.get(WatchVoiceWorkClaim, result.claim_id)
+                future = claim_row.expires_at.replace(tzinfo=UTC) + timedelta(seconds=1)
+
+            class Later(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return future if tz else future.replace(tzinfo=None)
+
+            monkeypatch.setattr(work, "datetime", Later)
+            await expire_work_claims(cfg(), factory)
+            with pytest.raises(WatchVoiceError, match="work_busy"):
+                await claim_work(cfg(), factory, KEY, actor=ACTOR, token="b" * 48,
+                                 revision=REV, audio_sha256=SHA)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                row, _ = await current(factory)
+                await worker.publish_note(factory, client(http), row)
+            result = (await current(factory))[1]
+            assert result.state == "accepted"
+            assert result.epoch == 1
+            assert len(world.comments) == 1
+            replay = await submit_work(
+                cfg(), factory, KEY, actor=ACTOR, token=TOKEN, revision=REV,
+                audio_sha256=SHA, text=result.transcript,
+                transcript_sha256=result.transcript_sha256,
+            )
+            assert replay["provider_authority"] is False
+            assert replay["start_recorded_now"] is False
+
+    asyncio.run(run())
+
+
 def test_default_off_denies_before_database_and_stt_authority_is_absent():
     factory = AsyncMock()
     with pytest.raises(WatchVoiceError, match="work_disabled"):
@@ -529,7 +666,7 @@ def test_tampered_selected_text_is_rejected_before_any_post(tmp_path):
                 await session.commit()
             row, _ = await current(factory)
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
-                with pytest.raises(WatchVoiceError, match="publication_conflict"):
+                with pytest.raises(WatchVoiceError, match="candidate_conflict"):
                     await worker.publish_note(factory, client(http), row)
             assert not world.posts and not world.comments
 

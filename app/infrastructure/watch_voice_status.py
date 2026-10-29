@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.infrastructure.watch_voice_github import WatchVoiceError, transcript_parts
 from app.infrastructure.watch_voice_inventory import _object, iso
 from app.infrastructure.watch_voice_journal import safe_code
+from app.infrastructure.watch_voice_work import TERMINAL_TEXT, validate_work_candidate
 from app.models.watch_voice import (
     WatchVoiceNote,
     WatchVoiceSource,
@@ -40,6 +41,14 @@ NOTE_FIELDS = (
     "processing_started_at", "processing_finished_at", "provider_request_count",
     "provider_finished_count", "github_received_at",
 )
+
+RESULT_FIELDS = (
+    "note_id", "state", "epoch", "revision", "audio_sha256", "issue_number", "issue_url",
+    "transcript", "transcript_sha256", "characters", "utf8_bytes", "accepted_at",
+    "last_error", "prepared_at", "saved_at", "claim_id",
+)
+CLAIM_FIELDS = ("id", "note_id", "epoch", "state", "created_at", "expires_at",
+                "started_at", "submitted_at")
 
 _S = {"type": "string"}
 _NS = {"type": ["string", "null"]}
@@ -109,28 +118,16 @@ async def protected_status(
         WatchVoiceNote.workspace_key == settings.gate_workspace_id,
         WatchVoiceNote.account_id == settings.dropbox_call_account_id,
     ).subquery("scoped_note")
-    journal = select(
-        WatchVoiceWorkResult.note_id, WatchVoiceWorkResult.state, WatchVoiceWorkResult.epoch,
-        WatchVoiceWorkResult.revision, WatchVoiceWorkResult.audio_sha256,
-        WatchVoiceWorkResult.issue_number, WatchVoiceWorkResult.issue_url,
-        WatchVoiceWorkResult.transcript_sha256, WatchVoiceWorkResult.accepted_at,
-        WatchVoiceWorkResult.last_error, WatchVoiceWorkResult.prepared_at,
-        WatchVoiceWorkResult.saved_at, WatchVoiceWorkResult.claim_id,
-    ).where(WatchVoiceWorkResult.note_id == key).subquery("scoped_result")
-    claim = select(WatchVoiceWorkClaim.id, WatchVoiceWorkClaim.expires_at,
-                   WatchVoiceWorkClaim.started_at).where(
+    journal = select(*(getattr(WatchVoiceWorkResult, k) for k in RESULT_FIELDS)).where(
+        WatchVoiceWorkResult.note_id == key).subquery("scoped_result")
+    claim = select(*(getattr(WatchVoiceWorkClaim, k) for k in CLAIM_FIELDS)).where(
         WatchVoiceWorkClaim.note_id == key).subquery("scoped_claim")
     query = select(
         *(source.c[k].label("source_" + k) for k in SOURCE_FIELDS),
         *(note.c[k].label("note_" + k) for k in NOTE_FIELDS),
         note.c.archive_bytes,
-        *(journal.c[k].label("result_" + k) for k in (
-            "state", "epoch", "revision", "audio_sha256", "issue_number", "issue_url",
-            "transcript_sha256", "accepted_at", "last_error",
-            "prepared_at", "saved_at",
-        )),
-        claim.c.expires_at.label("claim_expires_at"),
-        claim.c.started_at.label("claim_started_at"),
+        *(journal.c[k].label("result_" + k) for k in RESULT_FIELDS),
+        *(claim.c[k].label("claim_" + k) for k in CLAIM_FIELDS),
     ).select_from(source.join(note, source.c.id == note.c.id, full=True).outerjoin(
         journal, note.c.id == journal.c.note_id,
     ).outerjoin(claim, journal.c.claim_id == claim.c.id))
@@ -158,6 +155,11 @@ async def protected_status(
     parts = len(transcript_parts(text)) if text else None
     accepted: dict[str, Any] | None = None
     if row["result_state"] is not None:
+        if row["result_state"] in TERMINAL_TEXT:
+            result = SimpleNamespace(**{k: row["result_" + k] for k in RESULT_FIELDS})
+            work_claim = SimpleNamespace(**{k: row["claim_" + k] for k in CLAIM_FIELDS}) \
+                if row["claim_id"] is not None else None
+            validate_work_candidate(n, result, work_claim)
         if n is None or (n.revision, n.sha256, n.issue_number, n.issue_url) != (
             row["result_revision"], row["result_audio_sha256"], row["result_issue_number"],
             row["result_issue_url"],

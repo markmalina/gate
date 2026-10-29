@@ -115,6 +115,66 @@ def _pin(note: WatchVoiceNote, result: WatchVoiceWorkResult) -> None:
         raise WatchVoiceError("watch_voice_work_source_conflict")
 
 
+def validate_work_candidate(note: Any, result: Any, claim: Any) -> tuple[Any, ...]:
+    """Validate the entire submitted candidate; expiry never revokes submitted text.
+
+    Pure so protected status can use its one caller-owned, no-autoflush SELECT.
+    The returned immutable fingerprint must also survive external readback.
+    """
+    def conflict() -> None:
+        raise WatchVoiceError("watch_voice_work_candidate_conflict")
+
+    if (claim is None or result.state not in TERMINAL_TEXT
+            or result.note_id != note.id or result.claim_id != claim.id
+            or claim.note_id != note.id or result.epoch != claim.epoch or result.epoch < 1
+            or claim.state != "submitted" or note.transcription_state != "transcribed"
+            or note.transcript_origin != "work" or note.model is not None
+            or (note.revision, note.sha256, note.issue_number, note.issue_url)
+            != (result.revision, result.audio_sha256, result.issue_number, result.issue_url)
+            or not isinstance(result.transcript, str) or not result.transcript.strip()
+            or note.transcript != result.transcript):
+        conflict()
+    try:
+        encoded = result.transcript.encode("utf-8")
+    except UnicodeEncodeError:
+        conflict()
+        raise AssertionError("unreachable") from None
+    if (not 1 <= len(result.transcript) <= 100_000 or len(encoded) > 400_000
+            or result.characters != len(result.transcript) or result.utf8_bytes != len(encoded)
+            or result.transcript_sha256 != hashlib.sha256(encoded).hexdigest()):
+        conflict()
+    times = (claim.created_at, claim.started_at, claim.submitted_at, claim.expires_at,
+             result.prepared_at, note.transcribed_at, note.processing_finished_at)
+    if any(value is None for value in times):
+        conflict()
+    created, started, submitted, expires, prepared, transcribed, finished = map(utc, times)
+    if not (created <= started <= submitted < expires
+            and submitted == prepared == transcribed == finished):
+        conflict()
+    if result.state == "prepared":
+        if result.saved_at is not None or result.accepted_at is not None:
+            conflict()
+    elif result.saved_at is None or utc(result.saved_at) < prepared:
+        conflict()
+    if result.state == "saved" and result.accepted_at is not None:
+        conflict()
+    if result.state == "accepted" and (
+        result.accepted_at is None or utc(result.accepted_at) < utc(result.saved_at)
+    ):
+        conflict()
+    return (result.note_id, result.claim_id, result.epoch, result.revision,
+            result.audio_sha256, result.issue_number, result.issue_url,
+            result.transcript, result.transcript_sha256, result.characters, result.utf8_bytes,
+            *(iso(value) for value in times), claim.id, claim.note_id, claim.epoch, claim.state,
+            note.file_id, note.size_bytes, iso(note.dropbox_modified_at), iso(note.received_at))
+
+
+async def _candidate(session: AsyncSession, note: WatchVoiceNote,
+                     result: WatchVoiceWorkResult) -> tuple[Any, ...]:
+    claim = await session.get(WatchVoiceWorkClaim, result.claim_id) if result.claim_id else None
+    return validate_work_candidate(note, result, claim)
+
+
 def _receipt(result: WatchVoiceWorkResult, claim: WatchVoiceWorkClaim) -> dict[str, Any]:
     return {"schema": "watch-voice-work-result.v1", "event_id": result.note_id,
             "claim_id": claim.id, "epoch": result.epoch, "state": result.state,
@@ -190,6 +250,8 @@ async def claim_work(
                 raise WatchVoiceError("watch_voice_work_claim_expired")
             if previous.state in {"expired", "unknown"}:
                 raise WatchVoiceError("watch_voice_work_claim_expired")
+            if result.state in TERMINAL_TEXT:
+                validate_work_candidate(note, result, previous)
             return _receipt(result, previous)
         if result is not None:
             _pin(note, result)
@@ -302,6 +364,7 @@ async def submit_work(
         if (revision, audio_sha256) != (result.revision, result.audio_sha256):
             raise WatchVoiceError("watch_voice_work_source_conflict")
         if result.state in TERMINAL_TEXT:
+            validate_work_candidate(note, result, claim)
             if result.transcript_sha256 != transcript_sha256 or result.transcript != text:
                 raise WatchVoiceError("watch_voice_work_candidate_immutable")
             if note.transcript_origin != "work" or note.transcript != text:
@@ -365,6 +428,7 @@ async def record_text_receipt(
     result = await session.get(WatchVoiceWorkResult, note.id)
     if result is None:
         raise WatchVoiceError("watch_voice_work_publication_conflict")
+    await _candidate(session, note, result)
     _pin(note, result)
     if (result.state != "prepared" or not note.transcript or not note.delivery_writer
             or body_digest(note.transcript) != result.transcript_sha256
@@ -391,6 +455,8 @@ async def validate_work_publication(factory: Factory, note: WatchVoiceNote) -> N
                                        .where(WatchVoiceNote.id == note.id))
         if result is None or current is None:
             raise WatchVoiceError("watch_voice_work_publication_conflict")
+        await _candidate(session, current, result)
+        await _candidate(session, note, result)
         _pin(current, result)
         _pin(note, result)
         if (result.state != "prepared" or not result.transcript
@@ -416,6 +482,7 @@ async def accept_work_result(factory: Factory, client: MarkInboxClient, key: str
         if note is None:
             return False
         _pin(note, result)
+        fingerprint = await _candidate(session, note, result)
         await session.execute(update(WatchVoiceWorkResult).where(
             WatchVoiceWorkResult.note_id == key,
             WatchVoiceWorkResult.epoch == result.epoch,
@@ -441,6 +508,7 @@ async def accept_work_result(factory: Factory, client: MarkInboxClient, key: str
             WatchVoiceWorkResult.note_id == key, WatchVoiceWorkResult.epoch == epoch,
             WatchVoiceWorkResult.state.in_(("prepared", "saved")),
         ).values(state="saved", saved_at=result.saved_at or datetime.now(UTC)))
+        saved_at = iso(result.saved_at)
         await session.commit()
     try:
         previous_received: datetime | None = None
@@ -478,6 +546,24 @@ async def accept_work_result(factory: Factory, client: MarkInboxClient, key: str
                 or (current.revision, current.sha256, current.issue_number, current.issue_url)
                 != (note.revision, note.sha256, note.issue_number, note.issue_url)):
             return False
+        fresh = await session.scalar(select(WatchVoiceWorkResult).where(
+            WatchVoiceWorkResult.note_id == key).with_for_update())
+        if fresh is None or fresh.state != "saved":
+            return False
+        claim = await session.scalar(select(WatchVoiceWorkClaim).where(
+            WatchVoiceWorkClaim.id == fresh.claim_id).with_for_update())
+        if (validate_work_candidate(current, fresh, claim) != fingerprint
+                or iso(fresh.saved_at) != saved_at):
+            raise WatchVoiceError("watch_voice_work_candidate_conflict")
+        final_parts = list((await session.scalars(select(WatchVoiceTextReceipt).where(
+            WatchVoiceTextReceipt.note_id == key).order_by(WatchVoiceTextReceipt.part)
+            .with_for_update())).all())
+        def ledger(rows: list[WatchVoiceTextReceipt]) -> list[tuple[Any, ...]]:
+            return [(p.part, p.writer, p.body_sha256, p.issue_number, p.issue_url,
+                     iso(p.received_at)) for p in rows]
+
+        if ledger(final_parts) != ledger(parts):
+            raise WatchVoiceError("watch_voice_work_candidate_conflict")
         changed = await session.execute(update(WatchVoiceWorkResult).where(
             WatchVoiceWorkResult.note_id == key, WatchVoiceWorkResult.epoch == epoch,
             WatchVoiceWorkResult.transcript_sha256 == digest,

@@ -138,7 +138,14 @@ retain each part's original writer. Metadata is not a text part.
 
 `prepared` means durable candidate, `saved` means complete outbox receipts,
 and `accepted` requires full same-issue exact readback followed by a fresh
-Note lock/epoch/digest CAS. Missing, forged, duplicate or changed receipts keep
+Note lock/epoch/digest CAS. The complete candidate text/digest/UTF8 lengths,
+submitted claim identity/epoch and lifecycle times must agree before any
+publication and acceptance. After readback the Note, result, claim and part
+ledger are locked and re-read; the immutable snapshot must still match.
+Status applies the same pure validation in its one no-autoflush SELECT and
+returns a conflict for damaged journals instead of trusted accepted data.
+Submitted candidates remain valid after their original lease expires; expiry
+does not authorize another STT. Missing, forged, duplicate or changed receipts keep
 acceptance pending without starting STT. Persistent receipt recovery is bounded
 to10notes/cycle and rotates by last attempt. Actions includes receipt recovery
 in its ordinary one-note selection and still publishes at most one text part
