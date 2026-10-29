@@ -39,7 +39,7 @@ jobs:
         run: test ! -e .agent-ops/output/gate745-oidc-diagnostic.json
       - name: Observe fixed OIDC predicates without an App key
         id: diagnostic
-        uses: markmalina/ops/agent-ops/actions/gate745-oidc-diagnostic@92d177a1a0ba600b37ad466da757eacda6f9106c
+        uses: markmalina/ops/agent-ops/actions/gate745-oidc-diagnostic@a1bab0a4657c30154be27e4bd2d6bdad7c5f9d7d
         with:
           gate-token: ${{ github.token }}
       - name: Save redacted non-authorizing diagnostic
