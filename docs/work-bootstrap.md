@@ -76,12 +76,17 @@ external effect. Exact owner authorization is required before:
 - processing or exposing real-person data;
 - any other irreversible or externally visible action.
 
-The repository-local pre-user standing authorization in `AGENTS.md` is the
-only exception. A worker may use it only after the current Work records and
+The repository-local owner-only standing authorization in `AGENTS.md` is the
+only exception. Telegram contacts and counterparties are not automatically
+non-Mark product users; third-party payload in the execution scope remains a
+separate restriction under `AGENTS.md`. A worker may use this authorization only
+after the current Work records and
 fresh redacted evidence prove all activation conditions. The execution claim
 must include:
 
-- `pre_user_mode: true` and `external_users: 0`;
+- `owner_only_mode: true` and `non_mark_product_users: 0`, supported by the
+  current owner attestation and fresh redacted evidence for the exact target
+  workspace/installations as required by `AGENTS.md`;
 - the exact repository outcome and Production rollback revision;
 - for an owner-only live check, one exact installation plus hard provider and
   delivery caps;
@@ -90,7 +95,11 @@ must include:
 
 When those facts are proven, repository work, exact-head CI, merge, Production
 deployment, verification and rollback proceed without repeated confirmation.
-If any activation fact is absent or stale, set `waiting_user` and fail closed.
+If any activation fact is absent or stale, fail closed for the protected effect
+and record the specific blocker. Continue independently authorized read-only,
+documentation or default-off repository work; missing runtime proof does not
+by itself require another general permission request. Set `waiting_user` only
+when the missing fact actually requires an owner decision or action.
 
 Credentials, secrets, OAuth, payments, legal actions, publication, destructive
 history/data changes, external-user processing and effects beyond the recorded
