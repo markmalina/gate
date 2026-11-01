@@ -29,7 +29,7 @@ jobs:
       admitted: ${{ steps.admission.outputs.admitted }}
     steps:
       - id: admission
-        uses: markmalina/ops/agent-ops/actions/gate-watch-release-preflight-v2@9dfb7d98bc3b39ec0688b89dd33872e3617d139a
+        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@c8add259924d9046794b37623599263c797ee520
         with:
           phase: admission
         env:
@@ -47,7 +47,7 @@ jobs:
       detached-artifact-id: ${{ steps.detached.outputs.artifact-id }}
     steps:
       - id: observe
-        uses: markmalina/ops/agent-ops/actions/gate-watch-release-preflight-v2@9dfb7d98bc3b39ec0688b89dd33872e3617d139a
+        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@c8add259924d9046794b37623599263c797ee520
         with:
           phase: observe
         env:
@@ -57,7 +57,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          path: ops-watch-release-observation.json
+          path: ops-watch-scope-observation.json
           archive: false
           if-no-files-found: error
           retention-days: 3
@@ -65,14 +65,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          path: ops-watch-release-observation.sha256
+          path: ops-watch-scope-observation.sha256
           archive: false
           if-no-files-found: error
           retention-days: 3
 
   verify:
-    needs: observe
-    if: always() && needs.observe.result == 'success'
+    needs: [admission, observe]
+    if: >-
+      always() && needs.admission.outputs.admitted == 'true' &&
+      needs.observe.outputs.receipt-digest != '' &&
+      needs.observe.outputs.receipt-artifact-id != '' &&
+      needs.observe.outputs.detached-artifact-id != ''
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -82,7 +86,7 @@ jobs:
           merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
-      - uses: markmalina/ops/agent-ops/actions/gate-watch-release-preflight-v2@9dfb7d98bc3b39ec0688b89dd33872e3617d139a
+      - uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@c8add259924d9046794b37623599263c797ee520
         with:
           phase: verify
           expected-digest: ${{ needs.observe.outputs.receipt-digest }}
@@ -92,7 +96,14 @@ jobs:
           AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          path: ops-watch-release-verification.json
+          path: ops-watch-scope-verification.json
           archive: false
           if-no-files-found: error
           retention-days: 3
+      - name: Require verified scope for successful workflow
+        shell: bash
+        run: >-
+          node --input-type=module -e
+          "import { readFileSync } from 'node:fs';
+          const receipt = JSON.parse(readFileSync('ops-watch-scope-verification.json'));
+          if (receipt.result !== 'VERIFIED_SCOPE_ONLY' || receipt.releaseAuthorized !== false) process.exitCode = 1;"

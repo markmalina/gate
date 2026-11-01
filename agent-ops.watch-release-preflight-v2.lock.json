@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "agent-ops.gate-watch-release-preflight-lock/v2",
+  "schemaVersion": "agent-ops.gate-watch-scope-diagnostic-lock/v2",
   "repository": "markmalina/ops",
-  "commit": "9dfb7d98bc3b39ec0688b89dd33872e3617d139a",
-  "actionPath": "agent-ops/actions/gate-watch-release-preflight-v2",
-  "workflowSha256": "sha256:557513185098d5913db2b1da1e7113638f2f969b58c62a98360ec52c9968299f",
-  "profileSha256": "sha256:067c5750d86f27d621c3b44739bbed29040535c50f2a7f08ee76eb59a8870fc6"
+  "commit": "c8add259924d9046794b37623599263c797ee520",
+  "actionPath": "agent-ops/actions/gate-watch-scope-diagnostic-v2",
+  "workflowSha256": "sha256:a27342dcf12ae6fab94e5393a299fb1ec6f1647f56dbfc314137907c7f8cdfd0",
+  "profileSha256": "sha256:827c9a562039271da6104bd475bbd503dbe0269b92db2b1ec90693bc32c44c80"
 }
