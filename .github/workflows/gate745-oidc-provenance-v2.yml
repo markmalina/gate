@@ -1,4 +1,4 @@
-name: Gate745 key-free OIDC diagnostic
+name: Gate745 key-free OIDC provenance
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
           github.event.pull_request.head.ref == 'agent/745-metadata-bootstrap-client' &&
           github.event.sender.id == 23397294 && github.event.sender.type == 'User' &&
           github.actor_id == '23397294' && github.run_attempt == 1 &&
-          startsWith(github.event.label.name, 'o') }}
+          startsWith(github.event.label.name, 'q') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: gate-production
@@ -36,19 +36,19 @@ jobs:
           package-manager-cache: false
       - name: Refuse stale diagnostic output
         shell: bash
-        run: test ! -e .agent-ops/output/gate745-oidc-diagnostic.json
+        run: test ! -e .agent-ops/output/gate745-oidc-provenance-v2.json
       - name: Observe fixed OIDC predicates without an App key
         id: diagnostic
-        uses: markmalina/ops/agent-ops/actions/gate745-oidc-diagnostic@a1bab0a4657c30154be27e4bd2d6bdad7c5f9d7d
+        uses: markmalina/ops/agent-ops/actions/gate745-oidc-provenance-v2@ee15734c415f22a2f56efc534119f442531f246a
         with:
           gate-token: ${{ github.token }}
       - name: Save redacted non-authorizing diagnostic
-        if: ${{ always() && hashFiles('.agent-ops/output/gate745-oidc-diagnostic.json') != '' }}
+        if: ${{ always() && hashFiles('.agent-ops/output/gate745-oidc-provenance-v2.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: gate745-oidc-diagnostic
+          name: gate745-oidc-provenance-v2
           path: |
-            .agent-ops/output/gate745-oidc-diagnostic.json
-            .agent-ops/output/gate745-oidc-diagnostic.sha256
+            .agent-ops/output/gate745-oidc-provenance-v2.json
+            .agent-ops/output/gate745-oidc-provenance-v2.sha256
           retention-days: 7
           if-no-files-found: error

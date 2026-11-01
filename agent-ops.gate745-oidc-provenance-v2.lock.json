@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "agent-ops.gate745-oidc-provenance-v2-lock/v1",
+  "repository": "markmalina/ops",
+  "actionPath": "agent-ops/actions/gate745-oidc-provenance-v2",
+  "commit": "ee15734c415f22a2f56efc534119f442531f246a",
+  "reviewedCodeSha": "2ea84967db3a8579532aec2c11aa6473598c2c01",
+  "sourceManifestDigest": "sha256:aba9b5703cf9daa6db15950a5b5d0b623eb4378a4270bb9f69feee5ae047b112",
+  "releaseDigest": "sha256:63d06c408c324765c33d4d8e736be8ffa088db75af5147e7ab151e03538cfb1e",
+  "policyDigest": "sha256:2d04a194fc84a0f2e4bf3e9ecdf7db9e53ce1ba3f94d587fb7ec51467b70518e"
+}
