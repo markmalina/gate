@@ -43,14 +43,14 @@ NOTE_IDS = {
 )
 def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
     import httpx
-    from fastapi import FastAPI
-    from sqlalchemy import select, text
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
     from app.api.health_routes import router
     from app.infrastructure.readiness import build_readiness_service
     from app.infrastructure.watch_voice_actions import drain
     from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+    from fastapi import FastAPI
+    from sqlalchemy import select, text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
     from test_watch_voice_actions import ActionsWorld, action_settings, claims
 
     root = Path(__file__).resolve().parents[1]
