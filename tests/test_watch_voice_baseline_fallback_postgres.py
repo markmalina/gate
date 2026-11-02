@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import subprocess
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +23,18 @@ MIGRATIONS = {
     "alembic/versions/0118_watch_voice_work_results.py": "2a4cf2406860e264093b44e61692abc348b79f40",
     "alembic/versions/0119_watch_voice_comment_ids.py": "6c78523a6243f1d2c7c26e57a80ce8f5910171cb",
 }
+NOTE_IDS = {
+    index: str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            repr(("mark-personal", "synthetic-owner", file_id, revision)),
+        )
+    )
+    for index, file_id, revision in (
+        (1, "id:synthetic", "abcdef1234"),
+        (2, "id:synthetic-unknown", "abcdef5678"),
+    )
+}
 
 
 @pytest.mark.skipif(
@@ -30,13 +43,14 @@ MIGRATIONS = {
 )
 def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
     import httpx
+    from fastapi import FastAPI
+    from sqlalchemy import select, text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
     from app.api.health_routes import router
     from app.infrastructure.readiness import build_readiness_service
     from app.infrastructure.watch_voice_actions import drain
     from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
-    from fastapi import FastAPI
-    from sqlalchemy import select, text
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from test_watch_voice_actions import ActionsWorld, action_settings, claims
 
     root = Path(__file__).resolve().parents[1]
@@ -108,7 +122,7 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                     ).all()
                 )
                 old_run = await session.get(WatchVoiceDrainRun, "1" * 64)
-                unknown = next(n for n in notes if n.id == "00000000-0000-0000-0000-000000000002")
+                unknown = next(n for n in notes if n.id == NOTE_IDS[2])
                 return (
                     cursor.cursor,
                     cursor.future_cutover_at,
@@ -140,7 +154,7 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                     for index, state in ((1, "transcribed"), (2, "unknown")):
                         session.add(
                             WatchVoiceNote(
-                                id=f"00000000-0000-0000-0000-{index:012d}",
+                                id=NOTE_IDS[index],
                                 workspace_key="mark-personal",
                                 account_id="synthetic-owner",
                                 file_id="id:synthetic" if index == 1 else "id:synthetic-unknown",
@@ -205,6 +219,29 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                     "synthetic_unknown",
                     now,
                 )
+                # Restored journals must still suppress effects, including a
+                # fresh admitted run encountering the original UNKNOWN note.
+                async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                    replay = await drain(
+                        settings=settings,
+                        factory=factory,
+                        http=http,
+                        claims=claims(),
+                        job_token="synthetic-job-token",
+                    )
+                    assert replay["result"] == "replayed"
+                    world.current_run = "323"
+                    world.entry.update(id="id:synthetic-unknown", rev="abcdef5678")
+                    world.binding.update(file_id="id:synthetic-unknown", revision="abcdef5678")
+                    await drain(
+                        settings=settings,
+                        factory=factory,
+                        http=http,
+                        claims=claims(run_id="323", jti="synthetic-restored-run"),
+                        job_token="synthetic-job-token",
+                    )
+                    assert world.posts == 0 and world.provider_calls == 0
+                assert await snapshot() == after
 
             assert after[0] == "synthetic-cursor"
             assert (await ready(200))["status"] == "ready"
@@ -220,14 +257,15 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                         await session.scalars(select(WatchVoiceNote).order_by(WatchVoiceNote.id))
                     ).all()
                 )
-                assert len(notes) == 2 and notes[0].delivery_state == "delivered"
+                assert len(notes) == 2
+                assert next(n for n in notes if n.id == NOTE_IDS[1]).delivery_state == "delivered"
                 assert all(
                     n.data == world.audio and n.sha256 == hashlib.sha256(world.audio).hexdigest()
                     for n in notes
                 )
                 assert (
                     await session.execute(text("SELECT count(*) FROM watch_voice_drain_runs"))
-                ).scalar_one() == 3
+                ).scalar_one() == (4 if restored else 3)
                 assert (
                     await session.execute(
                         text(
@@ -248,7 +286,8 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                 "old_actions_app": True,
                 "real_database_ready_http": True,
                 "restore_checked": restored,
-                "real_drain_with_http_stubs": not restored,
+                "real_drain_with_http_stubs": True,
+                "restored_replay_and_unknown_no_effects": restored,
                 "external_provider_calls": 0,
                 "originals_cursor_unknown_and_replay_preserved": True,
                 "production_authorized": False,
