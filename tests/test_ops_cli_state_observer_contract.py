@@ -33,9 +33,27 @@ def test_cli_state_caller_has_only_exact_owner_pr_label_trigger():
         "github.event.pull_request.head.repo.full_name == 'markmalina/gate'",
         "github.event.pull_request.head.ref == 'agent/736-autonomous-watch-queue'",
         "format('c{0}-', github.event.pull_request.head.sha)",
-        "group: gate736-cli-state-observation\n  cancel-in-progress: false",
+        "cancel-in-progress: false",
     ):
         assert required in text
+    predicate = (
+        "github.event.pull_request.number == 766 && "
+        "github.event.sender.id == 23397294 && "
+        "startsWith(github.event.label.name, "
+        "format('c{0}-', github.event.pull_request.head.sha)) && "
+        "github.event.pull_request.head.repo.full_name == 'markmalina/gate' && "
+        "github.event.pull_request.head.ref == 'agent/736-autonomous-watch-queue'"
+    )
+    group = (
+        "concurrency:\n  group: >-\n    ${{ " + predicate
+        + " && 'gate736-cli-state-observation'"
+        + " || format('gate736-inactive-{0}', github.run_id) }}\n"
+        + "  cancel-in-progress: false\n"
+    )
+    assert group in text
+    admission_if = text.split("  admission:\n    if: >-\n", 1)[1]
+    admission_if = admission_if.split("    runs-on:", 1)[0]
+    assert " ".join(admission_if.split()) == predicate
     for forbidden in (
         "pull_request_target", "issue_comment:", "push:", "schedule:", "workflow_dispatch:"
     ):
