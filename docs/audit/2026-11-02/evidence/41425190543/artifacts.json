@@ -1,0 +1,65 @@
+{
+  "total_count": 3,
+  "artifacts": [
+    {
+      "id": 13132410251,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzMjQxMDI1MQ==",
+      "name": "ops-watch-scope-observation.sha256",
+      "size_in_bytes": 72,
+      "url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13132410251",
+      "archive_download_url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13132410251/zip",
+      "expired": false,
+      "digest": "sha256:f30f60d97882878ab8c5b0bd0a45dd4500f1956326de741454784a2eb7f6ce19",
+      "created_at": "2026-11-02T10:00:40Z",
+      "updated_at": "2026-11-02T10:00:40Z",
+      "expires_at": "2026-11-05T10:00:40Z",
+      "workflow_run": {
+        "id": 41425190543,
+        "repository_id": 1293746267,
+        "head_repository_id": 1293746267,
+        "head_branch": "agent/736-autonomous-watch-queue",
+        "head_sha": "b83eeffa04926343a9bbc5b2374444e1737a2b11"
+      }
+    },
+    {
+      "id": 13132280776,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzMjI4MDc3Ng==",
+      "name": "ops-watch-scope-verification.json",
+      "size_in_bytes": 676,
+      "url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13132280776",
+      "archive_download_url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13132280776/zip",
+      "expired": false,
+      "digest": "sha256:415184516725cc0c287f07a7acdcb82b2c44f51287480d82e633f6eb2f3d3199",
+      "created_at": "2026-11-02T10:01:07Z",
+      "updated_at": "2026-11-02T10:01:07Z",
+      "expires_at": "2026-11-05T10:01:06Z",
+      "workflow_run": {
+        "id": 41425190543,
+        "repository_id": 1293746267,
+        "head_repository_id": 1293746267,
+        "head_branch": "agent/736-autonomous-watch-queue",
+        "head_sha": "b83eeffa04926343a9bbc5b2374444e1737a2b11"
+      }
+    },
+    {
+      "id": 13131642447,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzMTY0MjQ0Nw==",
+      "name": "ops-watch-scope-observation.json",
+      "size_in_bytes": 1121,
+      "url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13131642447",
+      "archive_download_url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13131642447/zip",
+      "expired": false,
+      "digest": "sha256:b16587ced0cfc1430e194318a954cedc3114d674bdf829dcc999e2d372eb79c3",
+      "created_at": "2026-11-02T10:00:39Z",
+      "updated_at": "2026-11-02T10:00:39Z",
+      "expires_at": "2026-11-05T10:00:39Z",
+      "workflow_run": {
+        "id": 41425190543,
+        "repository_id": 1293746267,
+        "head_repository_id": 1293746267,
+        "head_branch": "agent/736-autonomous-watch-queue",
+        "head_sha": "b83eeffa04926343a9bbc5b2374444e1737a2b11"
+      }
+    }
+  ]
+}

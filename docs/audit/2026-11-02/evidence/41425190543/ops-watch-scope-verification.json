@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "agent-ops.gate-watch-scope-diagnostic-verification/v2",
+  "result": "VERIFIED_STOP_ONLY",
+  "error": "E_PROVIDER",
+  "railwayReads": 1,
+  "runId": "41425190543",
+  "runAttempt": 1,
+  "callerHeadSha": "b83eeffa04926343a9bbc5b2374444e1737a2b11",
+  "executorSha": "f676942a22d1e35544b4463b0674281ea2673c52",
+  "requestCommentId": "6574273127",
+  "ownerApprovalCommentId": "6572700446",
+  "historicalRunId": "41318810046",
+  "artifactId": 13131642447,
+  "detachedArtifactId": 13132410251,
+  "receiptDigest": "sha256:b16587ced0cfc1430e194318a954cedc3114d674bdf829dcc999e2d372eb79c3",
+  "verifiedAt": "2026-11-02T10:01:06.609Z",
+  "releaseAuthorized": false
+}
