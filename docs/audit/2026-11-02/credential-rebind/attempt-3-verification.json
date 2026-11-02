@@ -1,0 +1,8 @@
+{
+  "result": "VERIFIED_PROJECT_ENVIRONMENT_AUTH_ONLY",
+  "error": null,
+  "railwayReads": 1,
+  "receiptDigest": "sha256:2a50af12a9c293fdb99dcd97aaf90a44fa85486dfee0a4057199e1feba15b569",
+  "runId": "41502647517",
+  "releaseAuthorized": false
+}
