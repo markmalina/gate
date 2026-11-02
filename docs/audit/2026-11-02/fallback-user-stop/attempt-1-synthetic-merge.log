@@ -1,0 +1,1250 @@
+﻿2026-11-02T19:40:43.0384206Z Current runner version: '2.338.2'
+2026-11-02T19:40:43.0406268Z ##[group]Runner Image Provisioner
+2026-11-02T19:40:43.0407003Z Hosted Compute Agent
+2026-11-02T19:40:43.0407596Z Version: 20261021.618
+2026-11-02T19:40:43.0408415Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T19:40:43.0409091Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T19:40:43.0409689Z Worker ID: {d5699eea-aebe-440f-b08e-83e34c3d80da}
+2026-11-02T19:40:43.0410326Z Region: eastus
+2026-11-02T19:40:43.0410880Z Cloud: Azure
+2026-11-02T19:40:43.0411365Z ##[endgroup]
+2026-11-02T19:40:43.0412607Z ##[group]Operating System
+2026-11-02T19:40:43.0413165Z Ubuntu
+2026-11-02T19:40:43.0413648Z 24.04.5
+2026-11-02T19:40:43.0414133Z LTS
+2026-11-02T19:40:43.0414589Z ##[endgroup]
+2026-11-02T19:40:43.0415066Z ##[group]Runner Image
+2026-11-02T19:40:43.0415624Z Image: ubuntu-24.04
+2026-11-02T19:40:43.0416139Z Version: 20261025.353.1
+2026-11-02T19:40:43.0417282Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T19:40:43.0418740Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T19:40:43.0419609Z ##[endgroup]
+2026-11-02T19:40:43.0420579Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T19:40:43.0422342Z Contents: read
+2026-11-02T19:40:43.0422863Z Metadata: read
+2026-11-02T19:40:43.0423429Z ##[endgroup]
+2026-11-02T19:40:43.0425491Z Secret source: Actions
+2026-11-02T19:40:43.0426320Z Cache mode: write
+2026-11-02T19:40:43.0427097Z Prepare workflow directory
+2026-11-02T19:40:43.0872828Z Prepare all required actions
+2026-11-02T19:40:43.0927278Z Getting action download info
+2026-11-02T19:40:43.3030479Z Download action repository 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-11-02T19:40:43.4123147Z Download action repository 'actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-11-02T19:40:43.6017608Z Download action repository 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-02T19:40:43.9360933Z Complete job name: Mandatory full synthetic-merge CI
+2026-11-02T19:40:43.9874914Z ##[group]Checking docker version
+2026-11-02T19:40:43.9885755Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-11-02T19:40:44.0599944Z '1.48'
+2026-11-02T19:40:44.0609032Z Docker daemon API version: '1.48'
+2026-11-02T19:40:44.0610168Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-11-02T19:40:44.0835208Z '1.48'
+2026-11-02T19:40:44.0843407Z Docker client API version: '1.48'
+2026-11-02T19:40:44.0848796Z ##[endgroup]
+2026-11-02T19:40:44.0852689Z ##[group]Clean up resources from previous jobs
+2026-11-02T19:40:44.0858527Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=ddd008"
+2026-11-02T19:40:44.1088444Z ##[command]/usr/bin/docker network prune --force --filter "label=ddd008"
+2026-11-02T19:40:44.1314700Z ##[endgroup]
+2026-11-02T19:40:44.1315590Z ##[group]Create local container network
+2026-11-02T19:40:44.1327421Z ##[command]/usr/bin/docker network create --label ddd008 github_network_e5bf7c2cab104d79af849661af6085a9
+2026-11-02T19:40:44.2202502Z 26d6538c9f02fa364c50d68bcc613e15e4d571d2272acfefff1db44b6186c61b
+2026-11-02T19:40:44.2222883Z ##[endgroup]
+2026-11-02T19:40:44.2243536Z ##[group]Starting postgres service container
+2026-11-02T19:40:44.2261984Z ##[command]/usr/bin/docker pull postgres:17
+2026-11-02T19:40:44.4782132Z 17: Pulling from library/postgres
+2026-11-02T19:40:44.5519657Z 6fc242d221a6: Pulling fs layer
+2026-11-02T19:40:44.5526454Z e6095e4c4fdd: Pulling fs layer
+2026-11-02T19:40:44.5527632Z bad9dce990ef: Pulling fs layer
+2026-11-02T19:40:44.5528873Z 904defe665c0: Pulling fs layer
+2026-11-02T19:40:44.5530000Z 455e5ed72fb1: Pulling fs layer
+2026-11-02T19:40:44.5531009Z 55f036305357: Pulling fs layer
+2026-11-02T19:40:44.5533654Z db07174d12aa: Pulling fs layer
+2026-11-02T19:40:44.5541550Z 03f2ecc50d4c: Pulling fs layer
+2026-11-02T19:40:44.5542709Z ff7cbe54dfda: Pulling fs layer
+2026-11-02T19:40:44.5543394Z 0a26f79bdef8: Pulling fs layer
+2026-11-02T19:40:44.5544067Z 1f1fbc5e4aa5: Pulling fs layer
+2026-11-02T19:40:44.5544748Z 7f824adc2669: Pulling fs layer
+2026-11-02T19:40:44.5545423Z 3cecd013db3b: Pulling fs layer
+2026-11-02T19:40:44.5546146Z 7f0980702fb2: Pulling fs layer
+2026-11-02T19:40:44.5546876Z 904defe665c0: Waiting
+2026-11-02T19:40:44.5547568Z 455e5ed72fb1: Waiting
+2026-11-02T19:40:44.5548511Z 55f036305357: Waiting
+2026-11-02T19:40:44.5549164Z db07174d12aa: Waiting
+2026-11-02T19:40:44.5549781Z ff7cbe54dfda: Waiting
+2026-11-02T19:40:44.5550386Z 0a26f79bdef8: Waiting
+2026-11-02T19:40:44.5550981Z 1f1fbc5e4aa5: Waiting
+2026-11-02T19:40:44.5551594Z 7f824adc2669: Waiting
+2026-11-02T19:40:44.5552301Z 03f2ecc50d4c: Waiting
+2026-11-02T19:40:44.5553295Z 3cecd013db3b: Waiting
+2026-11-02T19:40:44.5554019Z 7f0980702fb2: Waiting
+2026-11-02T19:40:44.5863493Z e6095e4c4fdd: Verifying Checksum
+2026-11-02T19:40:44.5864935Z e6095e4c4fdd: Download complete
+2026-11-02T19:40:44.6117293Z bad9dce990ef: Verifying Checksum
+2026-11-02T19:40:44.6119050Z bad9dce990ef: Download complete
+2026-11-02T19:40:44.6311498Z 904defe665c0: Verifying Checksum
+2026-11-02T19:40:44.6754193Z 904defe665c0: Download complete
+2026-11-02T19:40:44.6755096Z 6fc242d221a6: Verifying Checksum
+2026-11-02T19:40:44.6756023Z 455e5ed72fb1: Verifying Checksum
+2026-11-02T19:40:44.6757323Z 455e5ed72fb1: Download complete
+2026-11-02T19:40:44.6758481Z 6fc242d221a6: Download complete
+2026-11-02T19:40:44.6997345Z 55f036305357: Verifying Checksum
+2026-11-02T19:40:44.6999016Z 55f036305357: Download complete
+2026-11-02T19:40:44.7110886Z db07174d12aa: Verifying Checksum
+2026-11-02T19:40:44.7115199Z db07174d12aa: Download complete
+2026-11-02T19:40:44.7129251Z 03f2ecc50d4c: Verifying Checksum
+2026-11-02T19:40:44.7130757Z 03f2ecc50d4c: Download complete
+2026-11-02T19:40:44.7390575Z 0a26f79bdef8: Verifying Checksum
+2026-11-02T19:40:44.7393756Z 0a26f79bdef8: Download complete
+2026-11-02T19:40:44.7527605Z 1f1fbc5e4aa5: Verifying Checksum
+2026-11-02T19:40:44.7542913Z 1f1fbc5e4aa5: Download complete
+2026-11-02T19:40:44.7884056Z 7f824adc2669: Verifying Checksum
+2026-11-02T19:40:44.7888335Z 7f824adc2669: Download complete
+2026-11-02T19:40:44.7939012Z 3cecd013db3b: Verifying Checksum
+2026-11-02T19:40:44.7940901Z 3cecd013db3b: Download complete
+2026-11-02T19:40:44.8324593Z 7f0980702fb2: Verifying Checksum
+2026-11-02T19:40:44.8339247Z 7f0980702fb2: Download complete
+2026-11-02T19:40:45.3724745Z ff7cbe54dfda: Verifying Checksum
+2026-11-02T19:40:45.3726061Z ff7cbe54dfda: Download complete
+2026-11-02T19:40:46.1815450Z 6fc242d221a6: Pull complete
+2026-11-02T19:40:47.5525671Z e6095e4c4fdd: Pull complete
+2026-11-02T19:40:50.2545758Z bad9dce990ef: Pull complete
+2026-11-02T19:40:51.0783799Z 904defe665c0: Pull complete
+2026-11-02T19:40:51.9229589Z 455e5ed72fb1: Pull complete
+2026-11-02T19:40:52.0424413Z 55f036305357: Pull complete
+2026-11-02T19:40:52.0747731Z db07174d12aa: Pull complete
+2026-11-02T19:40:52.1140182Z 03f2ecc50d4c: Pull complete
+2026-11-02T19:40:57.9981641Z ff7cbe54dfda: Pull complete
+2026-11-02T19:40:58.0366273Z 0a26f79bdef8: Pull complete
+2026-11-02T19:40:58.1180809Z 1f1fbc5e4aa5: Pull complete
+2026-11-02T19:40:58.2170406Z 7f824adc2669: Pull complete
+2026-11-02T19:40:58.2284715Z 3cecd013db3b: Pull complete
+2026-11-02T19:40:58.2395605Z 7f0980702fb2: Pull complete
+2026-11-02T19:40:58.3416718Z Digest: sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+2026-11-02T19:40:58.3428294Z Status: Downloaded newer image for postgres:17
+2026-11-02T19:40:58.3439889Z docker.io/library/postgres:17
+2026-11-02T19:40:58.3493826Z ##[command]/usr/bin/docker create --name 469feea1b3ad48109b2552a26a7b1c45_postgres17_3ab3de --label ddd008 --network github_network_e5bf7c2cab104d79af849661af6085a9 --network-alias postgres -p 5432:5432 --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=gate" -e GITHUB_ACTIONS=true -e CI=true postgres:17
+2026-11-02T19:40:58.3797623Z cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:40:58.3818601Z ##[command]/usr/bin/docker start cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:40:58.5894656Z cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:40:58.5916029Z ##[command]/usr/bin/docker ps --all --filter id=cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-11-02T19:40:58.6090749Z cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b Up Less than a second (health: starting)
+2026-11-02T19:40:58.6192903Z ##[command]/usr/bin/docker port cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:40:58.6386567Z 5432/tcp -> 0.0.0.0:5432
+2026-11-02T19:40:58.6387189Z 5432/tcp -> [::]:5432
+2026-11-02T19:40:58.6444040Z ##[endgroup]
+2026-11-02T19:40:58.6454612Z ##[group]Waiting for all services to be ready
+2026-11-02T19:40:58.6469809Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:40:58.6664143Z starting
+2026-11-02T19:40:58.6691831Z postgres service is starting, waiting 2 seconds before checking again.
+2026-11-02T19:41:00.6694328Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:41:00.6830662Z starting
+2026-11-02T19:41:00.6844523Z postgres service is starting, waiting 4 seconds before checking again.
+2026-11-02T19:41:05.0681343Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:41:05.0823396Z starting
+2026-11-02T19:41:05.0830336Z postgres service is starting, waiting 6 seconds before checking again.
+2026-11-02T19:41:11.9852294Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:41:11.9993579Z healthy
+2026-11-02T19:41:12.0011491Z postgres service is healthy.
+2026-11-02T19:41:12.0012128Z ##[endgroup]
+2026-11-02T19:41:12.0267777Z ##[group]Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+2026-11-02T19:41:12.0268455Z with:
+2026-11-02T19:41:12.0268635Z   ref: refs/pull/766/merge
+2026-11-02T19:41:12.0268840Z   fetch-depth: 0
+2026-11-02T19:41:12.0269034Z   repository: markmalina/gate
+2026-11-02T19:41:12.0270963Z   token: ***
+2026-11-02T19:41:12.0271157Z   ssh-strict: true
+2026-11-02T19:41:12.0271339Z   ssh-user: git
+2026-11-02T19:41:12.0271524Z   persist-credentials: true
+2026-11-02T19:41:12.0271723Z   clean: true
+2026-11-02T19:41:12.0271908Z   sparse-checkout-cone-mode: true
+2026-11-02T19:41:12.0272122Z   fetch-tags: false
+2026-11-02T19:41:12.0272324Z   show-progress: true
+2026-11-02T19:41:12.0272503Z   lfs: false
+2026-11-02T19:41:12.0272664Z   submodules: false
+2026-11-02T19:41:12.0272843Z   set-safe-directory: true
+2026-11-02T19:41:12.0273181Z env:
+2026-11-02T19:41:12.0273579Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:41:12.0273801Z   GATE_ENV: ci
+2026-11-02T19:41:12.0274030Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:41:12.0274253Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:41:12.0274444Z ##[endgroup]
+2026-11-02T19:41:12.3659267Z Syncing repository: markmalina/gate
+2026-11-02T19:41:12.3708865Z ##[group]Getting Git version info
+2026-11-02T19:41:12.3709425Z Working directory is '/home/runner/work/gate/gate'
+2026-11-02T19:41:12.3848309Z [command]/usr/bin/git version
+2026-11-02T19:41:12.3872042Z git version 2.56.0
+2026-11-02T19:41:12.3910679Z ##[endgroup]
+2026-11-02T19:41:12.3921242Z Temporarily overriding HOME='/home/runner/work/_temp/d860ed5b-7d95-4999-93c6-584effffefff' before making global git config changes
+2026-11-02T19:41:12.3923196Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:41:12.3924550Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate
+2026-11-02T19:41:12.3926338Z Deleting the contents of '/home/runner/work/gate/gate'
+2026-11-02T19:41:12.3927086Z ##[group]Initializing the repository
+2026-11-02T19:41:12.3927539Z [command]/usr/bin/git init /home/runner/work/gate/gate
+2026-11-02T19:41:12.3975305Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T19:41:12.3975956Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T19:41:12.3976567Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T19:41:12.3977072Z hint: call:
+2026-11-02T19:41:12.3977312Z hint:
+2026-11-02T19:41:12.3977693Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T19:41:12.3978302Z hint:
+2026-11-02T19:41:12.3978683Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T19:41:12.3979339Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T19:41:12.3979804Z hint:
+2026-11-02T19:41:12.3980058Z hint: 	git branch -m <name>
+2026-11-02T19:41:12.3980348Z hint:
+2026-11-02T19:41:12.3980756Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T19:41:12.4009426Z Initialized empty Git repository in /home/runner/work/gate/gate/.git/
+2026-11-02T19:41:12.4040079Z [command]/usr/bin/git remote add origin https://github.com/markmalina/gate
+2026-11-02T19:41:12.4129961Z ##[endgroup]
+2026-11-02T19:41:12.4149269Z ##[group]Disabling automatic garbage collection
+2026-11-02T19:41:12.4150216Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T19:41:12.4324823Z ##[endgroup]
+2026-11-02T19:41:12.4325504Z ##[group]Setting up auth
+2026-11-02T19:41:12.4348552Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:41:12.4419771Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:41:12.4858250Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:41:12.4869279Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:41:12.5099311Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:41:12.5159844Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:41:12.5379376Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T19:41:12.5431357Z ##[endgroup]
+2026-11-02T19:41:12.5432253Z ##[group]Fetching the repository
+2026-11-02T19:41:12.5458064Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +refs/pull/766/merge:refs/remotes/pull/766/merge
+2026-11-02T19:41:13.6079262Z From https://github.com/markmalina/gate
+2026-11-02T19:41:13.6083720Z  * [new branch]        admin-read-only-inspection-v1 -> origin/admin-read-only-inspection-v1
+2026-11-02T19:41:13.6098463Z  * [new branch]        agent/273-food-context-envelope -> origin/agent/273-food-context-envelope
+2026-11-02T19:41:13.6103649Z  * [new branch]        agent/273-food-context-route-scope -> origin/agent/273-food-context-route-scope
+2026-11-02T19:41:13.6105596Z  * [new branch]        agent/300-mayak-business-delivery-binding -> origin/agent/300-mayak-business-delivery-binding
+2026-11-02T19:41:13.6106668Z  * [new branch]        agent/300-mayak-once-only-disclosure -> origin/agent/300-mayak-once-only-disclosure
+2026-11-02T19:41:13.6108781Z  * [new branch]        agent/300-mayak-once-only-disclosure-current -> origin/agent/300-mayak-once-only-disclosure-current
+2026-11-02T19:41:13.6110141Z  * [new branch]        agent/300-mayak-provider-free-delivery-recovery -> origin/agent/300-mayak-provider-free-delivery-recovery
+2026-11-02T19:41:13.6111838Z  * [new branch]        agent/300-mayak-v2-owner-resume -> origin/agent/300-mayak-v2-owner-resume
+2026-11-02T19:41:13.6112766Z  * [new branch]        agent/300-oko-lms-copy  -> origin/agent/300-oko-lms-copy
+2026-11-02T19:41:13.6114927Z  * [new branch]        agent/626-exact-food-route -> origin/agent/626-exact-food-route
+2026-11-02T19:41:13.6116354Z  * [new branch]        agent/696-cloud-mtproto-foundation -> origin/agent/696-cloud-mtproto-foundation
+2026-11-02T19:41:13.6117552Z  * [new branch]        agent/696-ru-cloud-runtime -> origin/agent/696-ru-cloud-runtime
+2026-11-02T19:41:13.6119581Z  * [new branch]        agent/696-ru-mtproto-plan -> origin/agent/696-ru-mtproto-plan
+2026-11-02T19:41:13.6120369Z  * [new branch]        agent/700-office-documents -> origin/agent/700-office-documents
+2026-11-02T19:41:13.6121098Z  * [new branch]        agent/700-outgoing-download -> origin/agent/700-outgoing-download
+2026-11-02T19:41:13.6121896Z  * [new branch]        agent/716-parallel-sequences-spec -> origin/agent/716-parallel-sequences-spec
+2026-11-02T19:41:13.6122750Z  * [new branch]        agent/722-baseline-bootstrap -> origin/agent/722-baseline-bootstrap
+2026-11-02T19:41:13.6123549Z  * [new branch]        agent/736-autonomous-watch-queue -> origin/agent/736-autonomous-watch-queue
+2026-11-02T19:41:13.6124359Z  * [new branch]        agent/737-rich-sprint-1 -> origin/agent/737-rich-sprint-1
+2026-11-02T19:41:13.6125070Z  * [new branch]        agent/742-media-sprint-2 -> origin/agent/742-media-sprint-2
+2026-11-02T19:41:13.6125915Z  * [new branch]        agent/745-control-bootstrap -> origin/agent/745-control-bootstrap
+2026-11-02T19:41:13.6126657Z  * [new branch]        agent/745-dialog-snapshot -> origin/agent/745-dialog-snapshot
+2026-11-02T19:41:13.6127519Z  * [new branch]        agent/745-fixture-bootstrap-source -> origin/agent/745-fixture-bootstrap-source
+2026-11-02T19:41:13.6131960Z  * [new branch]        agent/745-fixture-caller-source -> origin/agent/745-fixture-caller-source
+2026-11-02T19:41:13.6141707Z  * [new branch]        agent/745-fixture-controller-source -> origin/agent/745-fixture-controller-source
+2026-11-02T19:41:13.6153965Z  * [new branch]        agent/745-metadata-bootstrap-client -> origin/agent/745-metadata-bootstrap-client
+2026-11-02T19:41:13.6154807Z  * [new branch]        agent/745-pending-count-admission -> origin/agent/745-pending-count-admission
+2026-11-02T19:41:13.6155615Z  * [new branch]        agent/745-staged-proof-admission -> origin/agent/745-staged-proof-admission
+2026-11-02T19:41:13.6156473Z  * [new branch]        agent/ac-i1-packaged-transport-runtime -> origin/agent/ac-i1-packaged-transport-runtime
+2026-11-02T19:41:13.6157185Z  * [new branch]        agent/ac-i4-gate-service -> origin/agent/ac-i4-gate-service
+2026-11-02T19:41:13.6157809Z  * [new branch]        agent/ac-w0-transport-media -> origin/agent/ac-w0-transport-media
+2026-11-02T19:41:13.6158681Z  * [new branch]        agent/ac-w1-transport-media -> origin/agent/ac-w1-transport-media
+2026-11-02T19:41:13.6159289Z  * [new branch]        agent/ac-w2-transport   -> origin/agent/ac-w2-transport
+2026-11-02T19:41:13.6159847Z  * [new branch]        agent/ac-w3-transport   -> origin/agent/ac-w3-transport
+2026-11-02T19:41:13.6160409Z  * [new branch]        agent/ac-w5-transport   -> origin/agent/ac-w5-transport
+2026-11-02T19:41:13.6160964Z  * [new branch]        agent/ac-w6-transport   -> origin/agent/ac-w6-transport
+2026-11-02T19:41:13.6161563Z  * [new branch]        agent/ac-w7-transport   -> origin/agent/ac-w7-transport
+2026-11-02T19:41:13.6162148Z  * [new branch]        agent/ac-w8-transport   -> origin/agent/ac-w8-transport
+2026-11-02T19:41:13.6162959Z  * [new branch]        agent/ac-w9-gate-reconciliation-hardening -> origin/agent/ac-w9-gate-reconciliation-hardening
+2026-11-02T19:41:13.6164052Z  * [new branch]        agent/ac-w9-transport   -> origin/agent/ac-w9-transport
+2026-11-02T19:41:13.6164737Z  * [new branch]        agent/add-voice-queue-diagnostics -> origin/agent/add-voice-queue-diagnostics
+2026-11-02T19:41:13.6165578Z  * [new branch]        agent/akuba-food-albums-2026-08-23 -> origin/agent/akuba-food-albums-2026-08-23
+2026-11-02T19:41:13.6166459Z  * [new branch]        agent/akuba-terminal-retry-fix-2026-08-23 -> origin/agent/akuba-terminal-retry-fix-2026-08-23
+2026-11-02T19:41:13.6167255Z  * [new branch]        agent/alexander-context-5 -> origin/agent/alexander-context-5
+2026-11-02T19:41:13.6168087Z  * [new branch]        agent/alexander-exact-ref-5 -> origin/agent/alexander-exact-ref-5
+2026-11-02T19:41:13.6168758Z  * [new branch]        agent/alexander-model-live-5 -> origin/agent/alexander-model-live-5
+2026-11-02T19:41:13.6169582Z  * [new branch]        agent/alfa-transcription-product-20260803 -> origin/agent/alfa-transcription-product-20260803
+2026-11-02T19:41:13.6170645Z  * [new branch]        agent/alfa-transcription-product-rebased-20260803 -> origin/agent/alfa-transcription-product-rebased-20260803
+2026-11-02T19:41:13.6171611Z  * [new branch]        agent/allow-explicit-reply-series -> origin/agent/allow-explicit-reply-series
+2026-11-02T19:41:13.6172518Z  * [new branch]        agent/allow-explicit-reply-series-rebased -> origin/agent/allow-explicit-reply-series-rebased
+2026-11-02T19:41:13.6173501Z  * [new branch]        agent/alpha-active-model-telemetry-261 -> origin/agent/alpha-active-model-telemetry-261
+2026-11-02T19:41:13.6174329Z  * [new branch]        agent/alpha-auto-discovery -> origin/agent/alpha-auto-discovery
+2026-11-02T19:41:13.6175058Z  * [new branch]        agent/alpha-billing-admission -> origin/agent/alpha-billing-admission
+2026-11-02T19:41:13.6175815Z  * [new branch]        agent/alpha-bounded-live-261 -> origin/agent/alpha-bounded-live-261
+2026-11-02T19:41:13.6176741Z  * [new branch]        agent/alpha-bounded-live-active-selection-261 -> origin/agent/alpha-bounded-live-active-selection-261
+2026-11-02T19:41:13.6177704Z  * [new branch]        agent/alpha-canary-reconciliation -> origin/agent/alpha-canary-reconciliation
+2026-11-02T19:41:13.6178742Z  * [new branch]        agent/alpha-delivery-adapter -> origin/agent/alpha-delivery-adapter
+2026-11-02T19:41:13.6179773Z  * [new branch]        agent/alpha-dormant-discovery-worker -> origin/agent/alpha-dormant-discovery-worker
+2026-11-02T19:41:13.6180661Z  * [new branch]        agent/alpha-durable-replay-hotfix -> origin/agent/alpha-durable-replay-hotfix
+2026-11-02T19:41:13.6181433Z  * [new branch]        agent/alpha-incident-drills -> origin/agent/alpha-incident-drills
+2026-11-02T19:41:13.6182215Z  * [new branch]        agent/alpha-limited-canary-control -> origin/agent/alpha-limited-canary-control
+2026-11-02T19:41:13.6182946Z  * [new branch]        agent/alpha-model-bundle-v1 -> origin/agent/alpha-model-bundle-v1
+2026-11-02T19:41:13.6183655Z  * [new branch]        agent/alpha-model-v2-activate-261 -> origin/agent/alpha-model-v2-activate-261
+2026-11-02T19:41:13.6185624Z  * [new branch]        agent/alpha-multigroup-release-readiness-261 -> origin/agent/alpha-multigroup-release-readiness-261
+2026-11-02T19:41:13.6186523Z  * [new branch]        agent/alpha-openai-runtime-gate -> origin/agent/alpha-openai-runtime-gate
+2026-11-02T19:41:13.6187410Z  * [new branch]        agent/alpha-owner-private-recovery-410 -> origin/agent/alpha-owner-private-recovery-410
+2026-11-02T19:41:13.6188464Z  * [new branch]        agent/alpha-owner-test-runtime -> origin/agent/alpha-owner-test-runtime
+2026-11-02T19:41:13.6189274Z  * [new branch]        agent/alpha-paused-delivery-barrier -> origin/agent/alpha-paused-delivery-barrier
+2026-11-02T19:41:13.6190149Z  * [new branch]        agent/alpha-persistent-binding-261 -> origin/agent/alpha-persistent-binding-261
+2026-11-02T19:41:13.6191019Z  * [new branch]        agent/alpha-phase-aware-telemetry-261 -> origin/agent/alpha-phase-aware-telemetry-261
+2026-11-02T19:41:13.6192019Z  * [new branch]        agent/alpha-release-evidence -> origin/agent/alpha-release-evidence
+2026-11-02T19:41:13.6192757Z  * [new branch]        agent/alpha-replay-proof -> origin/agent/alpha-replay-proof
+2026-11-02T19:41:13.6193445Z  * [new branch]        agent/alpha-retention-restore -> origin/agent/alpha-retention-restore
+2026-11-02T19:41:13.6194262Z  * [new branch]        agent/alpha-shadow-release-admission -> origin/agent/alpha-shadow-release-admission
+2026-11-02T19:41:13.6195041Z  * [new branch]        agent/alpha-shadow-worker -> origin/agent/alpha-shadow-worker
+2026-11-02T19:41:13.6195753Z  * [new branch]        agent/alpha-stateless-context-261 -> origin/agent/alpha-stateless-context-261
+2026-11-02T19:41:13.6196550Z  * [new branch]        agent/alpha-supply-chain-hardening -> origin/agent/alpha-supply-chain-hardening
+2026-11-02T19:41:13.6197334Z  * [new branch]        agent/aqub-alpha-release-binding -> origin/agent/aqub-alpha-release-binding
+2026-11-02T19:41:13.6198288Z  * [new branch]        agent/aqub-bootstrap-discovery -> origin/agent/aqub-bootstrap-discovery
+2026-11-02T19:41:13.6198990Z  * [new branch]        agent/aqub-fixed-endpoints -> origin/agent/aqub-fixed-endpoints
+2026-11-02T19:41:13.6199711Z  * [new branch]        agent/aqub-food-async-2026-08-22 -> origin/agent/aqub-food-async-2026-08-22
+2026-11-02T19:41:13.6200640Z  * [new branch]        agent/aqub-food-media-activation-2026-08-21 -> origin/agent/aqub-food-media-activation-2026-08-21
+2026-11-02T19:41:13.6201609Z  * [new branch]        agent/aqub-food-media-mvp-2026-08-21 -> origin/agent/aqub-food-media-mvp-2026-08-21
+2026-11-02T19:41:13.6202572Z  * [new branch]        agent/aqub-food-media-no-reasoning-2026-08-22 -> origin/agent/aqub-food-media-no-reasoning-2026-08-22
+2026-11-02T19:41:13.6203562Z  * [new branch]        agent/aqub-food-safe-error-code-2026-08-22 -> origin/agent/aqub-food-safe-error-code-2026-08-22
+2026-11-02T19:41:13.6204490Z  * [new branch]        agent/aqub-food-schema-compat-2026-08-22 -> origin/agent/aqub-food-schema-compat-2026-08-22
+2026-11-02T19:41:13.6205556Z  * [new branch]        agent/aqub-food-synthetic-integration-2026-08-19 -> origin/agent/aqub-food-synthetic-integration-2026-08-19
+2026-11-02T19:41:13.6215875Z  * [new branch]        agent/aqub-food-v2-delivery-endpoint-2026-08-19 -> origin/agent/aqub-food-v2-delivery-endpoint-2026-08-19
+2026-11-02T19:41:13.6217183Z  * [new branch]        agent/aqub-food-v2-delivery-readiness-2026-08-15 -> origin/agent/aqub-food-v2-delivery-readiness-2026-08-15
+2026-11-02T19:41:13.6218447Z  * [new branch]        agent/aqub-food-voice-normalization-2026-08-22 -> origin/agent/aqub-food-voice-normalization-2026-08-22
+2026-11-02T19:41:13.6219419Z  * [new branch]        agent/aqub-general-release-replay -> origin/agent/aqub-general-release-replay
+2026-11-02T19:41:13.6220345Z  * [new branch]        agent/aqub-general-release-replay-route-fix -> origin/agent/aqub-general-release-replay-route-fix
+2026-11-02T19:41:13.6221363Z  * [new branch]        agent/aqub-general-replay-message-date -> origin/agent/aqub-general-replay-message-date
+2026-11-02T19:41:13.6222211Z  * [new branch]        agent/aqub-live-receipt-reply -> origin/agent/aqub-live-receipt-reply
+2026-11-02T19:41:13.6222904Z  * [new branch]        agent/aqub-live-runtime -> origin/agent/aqub-live-runtime
+2026-11-02T19:41:13.6223748Z  * [new branch]        agent/aqub-multi-installation-route-fence -> origin/agent/aqub-multi-installation-route-fence
+2026-11-02T19:41:13.6224715Z  * [new branch]        agent/aqub-owner-multigroup-ingress -> origin/agent/aqub-owner-multigroup-ingress
+2026-11-02T19:41:13.6225675Z  * [new branch]        agent/aqub-owner-photo-reference-capture -> origin/agent/aqub-owner-photo-reference-capture
+2026-11-02T19:41:13.6226605Z  * [new branch]        agent/aqub-owner-text-capture-ack -> origin/agent/aqub-owner-text-capture-ack
+2026-11-02T19:41:13.6227387Z  * [new branch]        agent/aqub-permanent-config -> origin/agent/aqub-permanent-config
+2026-11-02T19:41:13.6229972Z  * [new branch]        agent/aqub-photo-byte-archive -> origin/agent/aqub-photo-byte-archive
+2026-11-02T19:41:13.6230675Z  * [new branch]        agent/aqub-privacy-off  -> origin/agent/aqub-privacy-off
+2026-11-02T19:41:13.6231314Z  * [new branch]        agent/aqub-s0-gate-adapter -> origin/agent/aqub-s0-gate-adapter
+2026-11-02T19:41:13.6231931Z  * [new branch]        agent/aqub-s0-provider-preflight -> origin/agent/aqub-s0-provider-preflight
+2026-11-02T19:41:13.6232514Z  * [new branch]        agent/aqub-v2-data-lifecycle-2026-08-19 -> origin/agent/aqub-v2-data-lifecycle-2026-08-19
+2026-11-02T19:41:13.6233097Z  * [new branch]        agent/architecture-audit-release-roadmap -> origin/agent/architecture-audit-release-roadmap
+2026-11-02T19:41:13.6233640Z  * [new branch]        agent/archive-recovery-685-20260921 -> origin/agent/archive-recovery-685-20260921
+2026-11-02T19:41:13.6234130Z  * [new branch]        agent/audio-beta-migration-merge -> origin/agent/audio-beta-migration-merge
+2026-11-02T19:41:13.6234551Z  * [new branch]        agent/audio-closeout    -> origin/agent/audio-closeout
+2026-11-02T19:41:13.6234991Z  * [new branch]        agent/audio-processing-status -> origin/agent/audio-processing-status
+2026-11-02T19:41:13.6235461Z  * [new branch]        agent/audio-reason-observability -> origin/agent/audio-reason-observability
+2026-11-02T19:41:13.6235981Z  * [new branch]        agent/become-controlled-consent-intake -> origin/agent/become-controlled-consent-intake
+2026-11-02T19:41:13.6236540Z  * [new branch]        agent/become-controlled-intake-receipts -> origin/agent/become-controlled-intake-receipts
+2026-11-02T19:41:13.6237079Z  * [new branch]        agent/become-controlled-intake-runtime -> origin/agent/become-controlled-intake-runtime
+2026-11-02T19:41:13.6237640Z  * [new branch]        agent/become-controlled-intake-status -> origin/agent/become-controlled-intake-status
+2026-11-02T19:41:13.6249127Z  * [new branch]        agent/become-controlled-media-prompt -> origin/agent/become-controlled-media-prompt
+2026-11-02T19:41:13.6249771Z  * [new branch]        agent/become-db-authoritative-installation -> origin/agent/become-db-authoritative-installation
+2026-11-02T19:41:13.6250316Z  * [new branch]        agent/become-free-result-core -> origin/agent/become-free-result-core
+2026-11-02T19:41:13.6250927Z  * [new branch]        agent/become-i4-all-connectivity -> origin/agent/become-i4-all-connectivity
+2026-11-02T19:41:13.6251412Z  * [new branch]        agent/become-i4-chain-activation -> origin/agent/become-i4-chain-activation
+2026-11-02T19:41:13.6251863Z  * [new branch]        agent/become-i4-chain-rollback -> origin/agent/become-i4-chain-rollback
+2026-11-02T19:41:13.6252298Z  * [new branch]        agent/become-i4-chain-runtime -> origin/agent/become-i4-chain-runtime
+2026-11-02T19:41:13.6252725Z  * [new branch]        agent/become-i4-core-executor -> origin/agent/become-i4-core-executor
+2026-11-02T19:41:13.6253227Z  * [new branch]        agent/become-i4-failure-observability -> origin/agent/become-i4-failure-observability
+2026-11-02T19:41:13.6253761Z  * [new branch]        agent/become-i4-recovery-v2-activate -> origin/agent/become-i4-recovery-v2-activate
+2026-11-02T19:41:13.6254248Z  * [new branch]        agent/become-i4-recovery-v2-core -> origin/agent/become-i4-recovery-v2-core
+2026-11-02T19:41:13.6254732Z  * [new branch]        agent/become-i4-recovery-v2-rollback -> origin/agent/become-i4-recovery-v2-rollback
+2026-11-02T19:41:13.6255189Z  * [new branch]        agent/become-i4-ruff-closure -> origin/agent/become-i4-ruff-closure
+2026-11-02T19:41:13.6255692Z  * [new branch]        agent/become-mayaki-connectivity-recovery -> origin/agent/become-mayaki-connectivity-recovery
+2026-11-02T19:41:13.6256244Z  * [new branch]        agent/become-media-intake-retention -> origin/agent/become-media-intake-retention
+2026-11-02T19:41:13.6256825Z  * [new branch]        agent/become-membership-before-shadow-gate -> origin/agent/become-membership-before-shadow-gate
+2026-11-02T19:41:13.6257456Z  * [new branch]        agent/become-one-shot-transcription-activation -> origin/agent/become-one-shot-transcription-activation
+2026-11-02T19:41:13.6258636Z  * [new branch]        agent/become-one-shot-transcription-rollback -> origin/agent/become-one-shot-transcription-rollback
+2026-11-02T19:41:13.6259461Z  * [new branch]        agent/become-owner-presence -> origin/agent/become-owner-presence
+2026-11-02T19:41:13.6260304Z  * [new branch]        agent/become-pilot-slice1-transcript-review -> origin/agent/become-pilot-slice1-transcript-review
+2026-11-02T19:41:13.6261121Z  * [new branch]        agent/become-pilot-slice2-program-draft -> origin/agent/become-pilot-slice2-program-draft
+2026-11-02T19:41:13.6261913Z  * [new branch]        agent/become-register-bootstrap -> origin/agent/become-register-bootstrap
+2026-11-02T19:41:13.6262760Z  * [new branch]        agent/become-relations-consent-executed -> origin/agent/become-relations-consent-executed
+2026-11-02T19:41:13.6263687Z  * [new branch]        agent/become-relations-consent-handoff -> origin/agent/become-relations-consent-handoff
+2026-11-02T19:41:13.6264540Z  * [new branch]        agent/become-relations-delivery -> origin/agent/become-relations-delivery
+2026-11-02T19:41:13.6265359Z  * [new branch]        agent/become-relations-private-port -> origin/agent/become-relations-private-port
+2026-11-02T19:41:13.6266168Z  * [new branch]        agent/become-role-correct-quest -> origin/agent/become-role-correct-quest
+2026-11-02T19:41:13.6267007Z  * [new branch]        agent/become-slice3-learner-invitation -> origin/agent/become-slice3-learner-invitation
+2026-11-02T19:41:13.6268116Z  * [new branch]        agent/become-slice3-production-evidence -> origin/agent/become-slice3-production-evidence
+2026-11-02T19:41:13.6269037Z  * [new branch]        agent/become-telegram-connector-418 -> origin/agent/become-telegram-connector-418
+2026-11-02T19:41:13.6269878Z  * [new branch]        agent/become-voice-correlation-chain -> origin/agent/become-voice-correlation-chain
+2026-11-02T19:41:13.6270661Z  * [new branch]        agent/become-voice-transcription -> origin/agent/become-voice-transcription
+2026-11-02T19:41:13.6271475Z  * [new branch]        agent/beta-binding-callback-20260808 -> origin/agent/beta-binding-callback-20260808
+2026-11-02T19:41:13.6272425Z  * [new branch]        agent/beta-binding-provenance-b001 -> origin/agent/beta-binding-provenance-b001
+2026-11-02T19:41:13.6273318Z  * [new branch]        agent/beta-bot-376      -> origin/agent/beta-bot-376
+2026-11-02T19:41:13.6273977Z  * [new branch]        agent/beta-checkpoint-compat-v1 -> origin/agent/beta-checkpoint-compat-v1
+2026-11-02T19:41:13.6274782Z  * [new branch]        agent/beta-checkpoint-dispatch-wiring -> origin/agent/beta-checkpoint-dispatch-wiring
+2026-11-02T19:41:13.6275647Z  * [new branch]        agent/beta-checkpoint-merge-head-365 -> origin/agent/beta-checkpoint-merge-head-365
+2026-11-02T19:41:13.6276387Z  * [new branch]        agent/beta-checkpoint-oidc-365 -> origin/agent/beta-checkpoint-oidc-365
+2026-11-02T19:41:13.6277172Z  * [new branch]        agent/beta-checkpoint-oidc-legacy-env -> origin/agent/beta-checkpoint-oidc-legacy-env
+2026-11-02T19:41:13.6281164Z  * [new branch]        agent/beta-checkpoint-oidc-subject -> origin/agent/beta-checkpoint-oidc-subject
+2026-11-02T19:41:13.6282072Z  * [new branch]        agent/beta-checkpoint-oidc-transfer -> origin/agent/beta-checkpoint-oidc-transfer
+2026-11-02T19:41:13.6282946Z  * [new branch]        agent/beta-checkpoint-proof-b011-b012 -> origin/agent/beta-checkpoint-proof-b011-b012
+2026-11-02T19:41:13.6283814Z  * [new branch]        agent/beta-checkpoint-sender-port-536 -> origin/agent/beta-checkpoint-sender-port-536
+2026-11-02T19:41:13.6284596Z  * [new branch]        agent/beta-config-docs-b017 -> origin/agent/beta-config-docs-b017
+2026-11-02T19:41:13.6285290Z  * [new branch]        agent/beta-dispatch-schema-b015 -> origin/agent/beta-dispatch-schema-b015
+2026-11-02T19:41:13.6286021Z  * [new branch]        agent/beta-durable-workers-v1 -> origin/agent/beta-durable-workers-v1
+2026-11-02T19:41:13.6286815Z  * [new branch]        agent/beta-exact-scope-b005 -> origin/agent/beta-exact-scope-b005
+2026-11-02T19:41:13.6287277Z  * [new branch]        agent/beta-full-retrieval-b010 -> origin/agent/beta-full-retrieval-b010
+2026-11-02T19:41:13.6288228Z  * [new branch]        agent/beta-full-space-retrieval-534 -> origin/agent/beta-full-space-retrieval-534
+2026-11-02T19:41:13.6289030Z  * [new branch]        agent/beta-group-admission-340 -> origin/agent/beta-group-admission-340
+2026-11-02T19:41:13.6289794Z  * [new branch]        agent/beta-katya-activation-485 -> origin/agent/beta-katya-activation-485
+2026-11-02T19:41:13.6290572Z  * [new branch]        agent/beta-katya-callback-owner-485 -> origin/agent/beta-katya-callback-owner-485
+2026-11-02T19:41:13.6291319Z  * [new branch]        agent/beta-katya-first-name-485 -> origin/agent/beta-katya-first-name-485
+2026-11-02T19:41:13.6292138Z  * [new branch]        agent/beta-katya-inline-consent-485 -> origin/agent/beta-katya-inline-consent-485
+2026-11-02T19:41:13.6292984Z  * [new branch]        agent/beta-katya-live-membership-485 -> origin/agent/beta-katya-live-membership-485
+2026-11-02T19:41:13.6293749Z  * [new branch]        agent/beta-katya-newest-live-485 -> origin/agent/beta-katya-newest-live-485
+2026-11-02T19:41:13.6294479Z  * [new branch]        agent/beta-katya-owner-buttons-485 -> origin/agent/beta-katya-owner-buttons-485
+2026-11-02T19:41:13.6295297Z  * [new branch]        agent/beta-katya-preclaim-membership-485 -> origin/agent/beta-katya-preclaim-membership-485
+2026-11-02T19:41:13.6296181Z  * [new branch]        agent/beta-katya-private-control-485 -> origin/agent/beta-katya-private-control-485
+2026-11-02T19:41:13.6297050Z  * [new branch]        agent/beta-material-observability-531 -> origin/agent/beta-material-observability-531
+2026-11-02T19:41:13.6298178Z  * [new branch]        agent/beta-material-structurer-recovery -> origin/agent/beta-material-structurer-recovery
+2026-11-02T19:41:13.6299112Z  * [new branch]        agent/beta-membership-webhook-recovery-376 -> origin/agent/beta-membership-webhook-recovery-376
+2026-11-02T19:41:13.6300054Z  * [new branch]        agent/beta-observability-retention-b019 -> origin/agent/beta-observability-retention-b019
+2026-11-02T19:41:13.6300872Z  * [new branch]        agent/beta-production-by-code -> origin/agent/beta-production-by-code
+2026-11-02T19:41:13.6302065Z  * [new branch]        agent/beta-remove-repeated-disclosure-376 -> origin/agent/beta-remove-repeated-disclosure-376
+2026-11-02T19:41:13.6302963Z  * [new branch]        agent/beta-runtime-invocation-376 -> origin/agent/beta-runtime-invocation-376
+2026-11-02T19:41:13.6303730Z  * [new branch]        agent/beta-short-command-383 -> origin/agent/beta-short-command-383
+2026-11-02T19:41:13.6304487Z  * [new branch]        agent/beta-terminal-checkpoint-v1 -> origin/agent/beta-terminal-checkpoint-v1
+2026-11-02T19:41:13.6305270Z  * [new branch]        agent/beta-universal-material-v1 -> origin/agent/beta-universal-material-v1
+2026-11-02T19:41:13.6306074Z  * [new branch]        agent/beta-webhook-diagnostic-376 -> origin/agent/beta-webhook-diagnostic-376
+2026-11-02T19:41:13.6306873Z  * [new branch]        agent/beta-webhook-poison-drain -> origin/agent/beta-webhook-poison-drain
+2026-11-02T19:41:13.6307656Z  * [new branch]        agent/beta-wedding-checkpoint-s1 -> origin/agent/beta-wedding-checkpoint-s1
+2026-11-02T19:41:13.6308692Z  * [new branch]        agent/beta-wedding-conversation-496 -> origin/agent/beta-wedding-conversation-496
+2026-11-02T19:41:13.6309601Z  * [new branch]        agent/beta-wedding-discovery-hotfix-496 -> origin/agent/beta-wedding-discovery-hotfix-496
+2026-11-02T19:41:13.6310603Z  * [new branch]        agent/beta-wedding-existing-binding-members -> origin/agent/beta-wedding-existing-binding-members
+2026-11-02T19:41:13.6311571Z  * [new branch]        agent/beta-wedding-group-collaboration-496 -> origin/agent/beta-wedding-group-collaboration-496
+2026-11-02T19:41:13.6312537Z  * [new branch]        agent/beta-wedding-minsk-496 -> origin/agent/beta-wedding-minsk-496
+2026-11-02T19:41:13.6313609Z  * [new branch]        agent/beta-wedding-source-message-hotfix-496 -> origin/agent/beta-wedding-source-message-hotfix-496
+2026-11-02T19:41:13.6314455Z  * [new branch]        agent/beta-wedding-structured-voice -> origin/agent/beta-wedding-structured-voice
+2026-11-02T19:41:13.6315200Z  * [new branch]        agent/beta-wedding-voice-handoff -> origin/agent/beta-wedding-voice-handoff
+2026-11-02T19:41:13.6315729Z  * [new branch]        agent/billing-synthetic-reconciliation -> origin/agent/billing-synthetic-reconciliation
+2026-11-02T19:41:13.6316254Z  * [new branch]        agent/billing-transactional-budget -> origin/agent/billing-transactional-budget
+2026-11-02T19:41:13.6316854Z  * [new branch]        agent/business-contact-readback -> origin/agent/business-contact-readback
+2026-11-02T19:41:13.6317392Z  * [new branch]        agent/business-text-canonical-cutover -> origin/agent/business-text-canonical-cutover
+2026-11-02T19:41:13.6318177Z  * [new branch]        agent/business-text-cutover-evidence -> origin/agent/business-text-cutover-evidence
+2026-11-02T19:41:13.6319004Z  * [new branch]        agent/call-recovery-354-20260921 -> origin/agent/call-recovery-354-20260921
+2026-11-02T19:41:13.6319795Z  * [new branch]        agent/call-schema-repair-354-20260921 -> origin/agent/call-schema-repair-354-20260921
+2026-11-02T19:41:13.6320579Z  * [new branch]        agent/canonical-ingress-shadow -> origin/agent/canonical-ingress-shadow
+2026-11-02T19:41:13.6321296Z  * [new branch]        agent/center69-instruction-drift-20260823 -> origin/agent/center69-instruction-drift-20260823
+2026-11-02T19:41:13.6322169Z  * [new branch]        agent/center69-pin-actions-20260823 -> origin/agent/center69-pin-actions-20260823
+2026-11-02T19:41:13.6322997Z  * [new branch]        agent/ci-linear-alembic-head-b010 -> origin/agent/ci-linear-alembic-head-b010
+2026-11-02T19:41:13.6323835Z  * [new branch]        agent/contact-import-observability -> origin/agent/contact-import-observability
+2026-11-02T19:41:13.6324643Z  * [new branch]        agent/contact-name-read-cutover -> origin/agent/contact-name-read-cutover
+2026-11-02T19:41:13.6325372Z  * [new branch]        agent/cubes-11-aqub-timeout -> origin/agent/cubes-11-aqub-timeout
+2026-11-02T19:41:13.6326173Z  * [new branch]        agent/current-contact-name-precedence -> origin/agent/current-contact-name-precedence
+2026-11-02T19:41:13.6327511Z  * [new branch]        agent/database-readiness -> origin/agent/database-readiness
+2026-11-02T19:41:13.6328352Z  * [new branch]        agent/defer-alpha-rate-limited -> origin/agent/defer-alpha-rate-limited
+2026-11-02T19:41:13.6329133Z  * [new branch]        agent/deploy-safe-long-call-claim -> origin/agent/deploy-safe-long-call-claim
+2026-11-02T19:41:13.6329974Z  * [new branch]        agent/dropbox-long-call-transcription -> origin/agent/dropbox-long-call-transcription
+2026-11-02T19:41:13.6330877Z  * [new branch]        agent/durable-telegram-processing-contract -> origin/agent/durable-telegram-processing-contract
+2026-11-02T19:41:13.6331780Z  * [new branch]        agent/eco-2026-001-contract-boundary -> origin/agent/eco-2026-001-contract-boundary
+2026-11-02T19:41:13.6332623Z  * [new branch]        agent/enable-verified-alpha-model-shadow -> origin/agent/enable-verified-alpha-model-shadow
+2026-11-02T19:41:13.6333485Z  * [new branch]        agent/explicit-mcp-output-schemas -> origin/agent/explicit-mcp-output-schemas
+2026-11-02T19:41:13.6334374Z  * [new branch]        agent/expose-alpha-canary-status -> origin/agent/expose-alpha-canary-status
+2026-11-02T19:41:13.6335199Z  * [new branch]        agent/fix-beta-wedding-voice-response -> origin/agent/fix-beta-wedding-voice-response
+2026-11-02T19:41:13.6336083Z  * [new branch]        agent/fix-cross-account-voice-direction -> origin/agent/fix-cross-account-voice-direction
+2026-11-02T19:41:13.6336964Z  * [new branch]        agent/fix-wedding-voice-receipt-flush -> origin/agent/fix-wedding-voice-receipt-flush
+2026-11-02T19:41:13.6337806Z  * [new branch]        agent/food-itemized-media-2026-08-22 -> origin/agent/food-itemized-media-2026-08-22
+2026-11-02T19:41:13.6339091Z  * [new branch]        agent/food-mvp-gate-media-2026-08-20 -> origin/agent/food-mvp-gate-media-2026-08-20
+2026-11-02T19:41:13.6339862Z  * [new branch]        agent/food-voice-runtime-timeout -> origin/agent/food-voice-runtime-timeout
+2026-11-02T19:41:13.6340686Z  * [new branch]        agent/foodcube-g3-staging-db-contract -> origin/agent/foodcube-g3-staging-db-contract
+2026-11-02T19:41:13.6341530Z  * [new branch]        agent/foodcube-g4-gate31-preflight -> origin/agent/foodcube-g4-gate31-preflight
+2026-11-02T19:41:13.6342424Z  * [new branch]        agent/freeze-telegram-ingress-architecture -> origin/agent/freeze-telegram-ingress-architecture
+2026-11-02T19:41:13.6343299Z  * [new branch]        agent/g1-r00-work-parent-revision -> origin/agent/g1-r00-work-parent-revision
+2026-11-02T19:41:13.6344166Z  * [new branch]        agent/gate-471-scoped-voice-reply-context -> origin/agent/gate-471-scoped-voice-reply-context
+2026-11-02T19:41:13.6345102Z  * [new branch]        agent/gate-476-historical-voice-parity-debt -> origin/agent/gate-476-historical-voice-parity-debt
+2026-11-02T19:41:13.6345941Z  * [new branch]        agent/gate-479-mayak-text-parity -> origin/agent/gate-479-mayak-text-parity
+2026-11-02T19:41:13.6346670Z  * [new branch]        agent/gate-679-cube-today-route -> origin/agent/gate-679-cube-today-route
+2026-11-02T19:41:13.6347346Z  * [new branch]        agent/gate-700-document-send -> origin/agent/gate-700-document-send
+2026-11-02T19:41:13.6348477Z  * [new branch]        agent/gate-700-owner-canary-activation-2026-09-25 -> origin/agent/gate-700-owner-canary-activation-2026-09-25
+2026-11-02T19:41:13.6349376Z  * [new branch]        agent/gate-700-real-zip-magic-2026-09-25 -> origin/agent/gate-700-real-zip-magic-2026-09-25
+2026-11-02T19:41:13.6349885Z  * [new branch]        agent/gate-704-duration-budget -> origin/agent/gate-704-duration-budget
+2026-11-02T19:41:13.6350325Z  * [new branch]        agent/gate-704-long-boundary -> origin/agent/gate-704-long-boundary
+2026-11-02T19:41:13.6350825Z  * [new branch]        agent/gate-704-media-fallback -> origin/agent/gate-704-media-fallback
+2026-11-02T19:41:13.6351509Z  * [new branch]        agent/gate-704-status-constraint-hotfix -> origin/agent/gate-704-status-constraint-hotfix
+2026-11-02T19:41:13.6352191Z  * [new branch]        agent/gate-704-superseded-revisions -> origin/agent/gate-704-superseded-revisions
+2026-11-02T19:41:13.6352688Z  * [new branch]        agent/gate-715-sequence-limit-50 -> origin/agent/gate-715-sequence-limit-50
+2026-11-02T19:41:13.6353349Z  * [new branch]        agent/gate-718-stop-on-inbound-spec -> origin/agent/gate-718-stop-on-inbound-spec
+2026-11-02T19:41:13.6353851Z  * [new branch]        agent/gate-727-telegram-formatting -> origin/agent/gate-727-telegram-formatting
+2026-11-02T19:41:13.6354520Z  * [new branch]        agent/gate-aqub-boundary-20261009 -> origin/agent/gate-aqub-boundary-20261009
+2026-11-02T19:41:13.6355335Z  * [new branch]        agent/gate-aqub-contract-v2-adapter -> origin/agent/gate-aqub-contract-v2-adapter
+2026-11-02T19:41:13.6356159Z  * [new branch]        agent/gate-attachment-on-demand -> origin/agent/gate-attachment-on-demand
+2026-11-02T19:41:13.6357031Z  * [new branch]        agent/gate-audit-documentation-20261019 -> origin/agent/gate-audit-documentation-20261019
+2026-11-02T19:41:13.6358178Z  * [new branch]        agent/gate-ci-isolate-migration-roundtrip -> origin/agent/gate-ci-isolate-migration-roundtrip
+2026-11-02T19:41:13.6359054Z  * [new branch]        agent/gate-full-technical-spec -> origin/agent/gate-full-technical-spec
+2026-11-02T19:41:13.6359822Z  * [new branch]        agent/gate-generic-stale-recovery -> origin/agent/gate-generic-stale-recovery
+2026-11-02T19:41:13.6360518Z  * [new branch]        agent/gate-handoff-265  -> origin/agent/gate-handoff-265
+2026-11-02T19:41:13.6361320Z  * [new branch]        agent/gate-p3-memory-projection-contract -> origin/agent/gate-p3-memory-projection-contract
+2026-11-02T19:41:13.6362293Z  * [new branch]        agent/gate-p4-mayak-installation-contract -> origin/agent/gate-p4-mayak-installation-contract
+2026-11-02T19:41:13.6363422Z  * [new branch]        agent/gate-pre-user-autonomy-handoff -> origin/agent/gate-pre-user-autonomy-handoff
+2026-11-02T19:41:13.6364346Z  * [new branch]        agent/gate-readme-transfer-entrypoint -> origin/agent/gate-readme-transfer-entrypoint
+2026-11-02T19:41:13.6365160Z  * [new branch]        agent/gate-runtime-recovery-spec -> origin/agent/gate-runtime-recovery-spec
+2026-11-02T19:41:13.6365911Z  * [new branch]        agent/gate-self-token-20261009 -> origin/agent/gate-self-token-20261009
+2026-11-02T19:41:13.6366549Z  * [new branch]        agent/gate-shadow-intake -> origin/agent/gate-shadow-intake
+2026-11-02T19:41:13.6367372Z  * [new branch]        agent/gate-staging-config-isolation-20260825 -> origin/agent/gate-staging-config-isolation-20260825
+2026-11-02T19:41:13.6368457Z  * [new branch]        agent/gate-unfreeze-product-truth -> origin/agent/gate-unfreeze-product-truth
+2026-11-02T19:41:13.6369408Z  * [new branch]        agent/gate-voice-accepted-residual-20260924 -> origin/agent/gate-voice-accepted-residual-20260924
+2026-11-02T19:41:13.6370307Z  * [new branch]        agent/general-cube-media-20260827 -> origin/agent/general-cube-media-20260827
+2026-11-02T19:41:13.6371148Z  * [new branch]        agent/general-document-mime-20260828 -> origin/agent/general-document-mime-20260828
+2026-11-02T19:41:13.6372081Z  * [new branch]        agent/hotfix-activate-business-assignment -> origin/agent/hotfix-activate-business-assignment
+2026-11-02T19:41:13.6373065Z  * [new branch]        agent/hotfix-admin-replies-commit-header -> origin/agent/hotfix-admin-replies-commit-header
+2026-11-02T19:41:13.6374026Z  * [new branch]        agent/hotfix-always-show-business-status -> origin/agent/hotfix-always-show-business-status
+2026-11-02T19:41:13.6374917Z  * [new branch]        agent/hotfix-business-admin-context -> origin/agent/hotfix-business-admin-context
+2026-11-02T19:41:13.6375867Z  * [new branch]        agent/hotfix-business-admin-db-context-clean -> origin/agent/hotfix-business-admin-db-context-clean
+2026-11-02T19:41:13.6376849Z  * [new branch]        agent/hotfix-business-admin-priority -> origin/agent/hotfix-business-admin-priority
+2026-11-02T19:41:13.6409295Z  * [new branch]        agent/hotfix-business-message-shape -> origin/agent/hotfix-business-message-shape
+2026-11-02T19:41:13.6410235Z  * [new branch]        agent/hotfix-draft-ux-dedupe-actions -> origin/agent/hotfix-draft-ux-dedupe-actions
+2026-11-02T19:41:13.6411176Z  * [new branch]        agent/hotfix-full-business-connection-ids -> origin/agent/hotfix-full-business-connection-ids
+2026-11-02T19:41:13.6412195Z  * [new branch]        agent/hotfix-production-safe-0005-migration -> origin/agent/hotfix-production-safe-0005-migration
+2026-11-02T19:41:13.6413028Z  * [new branch]        agent/hotfix-raw-updates -> origin/agent/hotfix-raw-updates
+2026-11-02T19:41:13.6413821Z  * [new branch]        agent/hotfix-send-draft-error-detail -> origin/agent/hotfix-send-draft-error-detail
+2026-11-02T19:41:13.6414790Z  * [new branch]        agent/hotfix-send-origin-business-connection -> origin/agent/hotfix-send-origin-business-connection
+2026-11-02T19:41:13.6415809Z  * [new branch]        agent/hotfix-telegram-events-diagnostics -> origin/agent/hotfix-telegram-events-diagnostics
+2026-11-02T19:41:13.6416845Z  * [new branch]        agent/hotfix-telegram-webhook-business-updates -> origin/agent/hotfix-telegram-webhook-business-updates
+2026-11-02T19:41:13.6418057Z  * [new branch]        agent/hotfix-telegram-webhook-diagnostics -> origin/agent/hotfix-telegram-webhook-diagnostics
+2026-11-02T19:41:13.6419000Z  * [new branch]        agent/hotfix-webhook-drop-pending -> origin/agent/hotfix-webhook-drop-pending
+2026-11-02T19:41:13.6419775Z  * [new branch]        agent/hotfix-webhook-never-500 -> origin/agent/hotfix-webhook-never-500
+2026-11-02T19:41:13.6420576Z  * [new branch]        agent/human-correction-review-copy -> origin/agent/human-correction-review-copy
+2026-11-02T19:41:13.6421662Z  * [new branch]        agent/ingress-shadow-identity-read-model -> origin/agent/ingress-shadow-identity-read-model
+2026-11-02T19:41:13.6422591Z  * [new branch]        agent/ingress-shadow-routing-context -> origin/agent/ingress-shadow-routing-context
+2026-11-02T19:41:13.6423411Z  * [new branch]        agent/instagram-eight-sprints -> origin/agent/instagram-eight-sprints
+2026-11-02T19:41:13.6424161Z  * [new branch]        agent/instagram-oauth-handoff -> origin/agent/instagram-oauth-handoff
+2026-11-02T19:41:13.6424959Z  * [new branch]        agent/issue-683-captioned-receipts -> origin/agent/issue-683-captioned-receipts
+2026-11-02T19:41:13.6425771Z  * [new branch]        agent/katya-dental-space-runtime -> origin/agent/katya-dental-space-runtime
+2026-11-02T19:41:13.6426605Z  * [new branch]        agent/long-audio-repair-685-20260921 -> origin/agent/long-audio-repair-685-20260921
+2026-11-02T19:41:13.6427472Z  * [new branch]        agent/make-durable-ingress-invariant -> origin/agent/make-durable-ingress-invariant
+2026-11-02T19:41:13.6429717Z  * [new branch]        agent/mayak-business-composition-300 -> origin/agent/mayak-business-composition-300
+2026-11-02T19:41:13.6430681Z  * [new branch]        agent/mayak-business-sql-composition-300 -> origin/agent/mayak-business-sql-composition-300
+2026-11-02T19:41:13.6431633Z  * [new branch]        agent/mayak-connector-activation-300 -> origin/agent/mayak-connector-activation-300
+2026-11-02T19:41:13.6432471Z  * [new branch]        agent/mayak-connector-binding-300 -> origin/agent/mayak-connector-binding-300
+2026-11-02T19:41:13.6433255Z  * [new branch]        agent/mayak-durable-runtime-300 -> origin/agent/mayak-durable-runtime-300
+2026-11-02T19:41:13.6434111Z  * [new branch]        agent/mayak-exact-identity-reconcile-300 -> origin/agent/mayak-exact-identity-reconcile-300
+2026-11-02T19:41:13.6435043Z  * [new branch]        agent/mayak-installation-reconcile-300 -> origin/agent/mayak-installation-reconcile-300
+2026-11-02T19:41:13.6436023Z  * [new branch]        agent/mayak-owner-release-300-20260725t1910z -> origin/agent/mayak-owner-release-300-20260725t1910z
+2026-11-02T19:41:13.6436992Z  * [new branch]        agent/mayak-owner-route-telemetry-300 -> origin/agent/mayak-owner-route-telemetry-300
+2026-11-02T19:41:13.6438197Z  * [new branch]        agent/mayak-redacted-route-probe-300 -> origin/agent/mayak-redacted-route-probe-300
+2026-11-02T19:41:13.6439118Z  * [new branch]        agent/mayaki-program-handoff-contracts -> origin/agent/mayaki-program-handoff-contracts
+2026-11-02T19:41:13.6439970Z  * [new branch]        agent/mayaki-program-transfer -> origin/agent/mayaki-program-transfer
+2026-11-02T19:41:13.6440688Z  * [new branch]        agent/mtproto-preflight-696 -> origin/agent/mtproto-preflight-696
+2026-11-02T19:41:13.6441377Z  * [new branch]        agent/mtproto-stage-a-263 -> origin/agent/mtproto-stage-a-263
+2026-11-02T19:41:13.6442160Z  * [new branch]        agent/no-speech-recovery-685-20260921 -> origin/agent/no-speech-recovery-685-20260921
+2026-11-02T19:41:13.6442991Z  * [new branch]        agent/oko-attribution-adapter -> origin/agent/oko-attribution-adapter
+2026-11-02T19:41:13.6443689Z  * [new branch]        agent/oko-fixture-runtime -> origin/agent/oko-fixture-runtime
+2026-11-02T19:41:13.6444472Z  * [new branch]        agent/owner-audio-export-exact-identity -> origin/agent/owner-audio-export-exact-identity
+2026-11-02T19:41:13.6445412Z  * [new branch]        agent/owner-audio-export-linked-event -> origin/agent/owner-audio-export-linked-event
+2026-11-02T19:41:13.6446323Z  * [new branch]        agent/owner-chunked-token-fix-20260803 -> origin/agent/owner-chunked-token-fix-20260803
+2026-11-02T19:41:13.6447284Z  * [new branch]        agent/owner-chunked-transcription-20260803 -> origin/agent/owner-chunked-transcription-20260803
+2026-11-02T19:41:13.6448435Z  * [new branch]        agent/owner-one-off-transcription-20260803 -> origin/agent/owner-one-off-transcription-20260803
+2026-11-02T19:41:13.6449364Z  * [new branch]        agent/owner-only-deploy-policy-696 -> origin/agent/owner-only-deploy-policy-696
+2026-11-02T19:41:13.6450419Z  * [new branch]        agent/owner-publication-namespace-20261015 -> origin/agent/owner-publication-namespace-20261015
+2026-11-02T19:41:13.6451247Z  * [new branch]        agent/owner-voice-export -> origin/agent/owner-voice-export
+2026-11-02T19:41:13.6452012Z  * [new branch]        agent/owner-voice-export-receipt-fix -> origin/agent/owner-voice-export-receipt-fix
+2026-11-02T19:41:13.6452825Z  * [new branch]        agent/pause-alpha-canary-drill -> origin/agent/pause-alpha-canary-drill
+2026-11-02T19:41:13.6454055Z  * [new branch]        agent/personal-telegram-local-auth-check-696 -> origin/agent/personal-telegram-local-auth-check-696
+2026-11-02T19:41:13.6455063Z  * [new branch]        agent/personal-telegram-local-runtime-696 -> origin/agent/personal-telegram-local-runtime-696
+2026-11-02T19:41:13.6456060Z  * [new branch]        agent/personal-telegram-private-group-696 -> origin/agent/personal-telegram-private-group-696
+2026-11-02T19:41:13.6457015Z  * [new branch]        agent/personal-telegram-read-contract -> origin/agent/personal-telegram-read-contract
+2026-11-02T19:41:13.6458095Z  * [new branch]        agent/personal-telegram-shared-fence-696 -> origin/agent/personal-telegram-shared-fence-696
+2026-11-02T19:41:13.6459002Z  * [new branch]        agent/pin-beta-telegram-origin-b020 -> origin/agent/pin-beta-telegram-origin-b020
+2026-11-02T19:41:13.6459898Z  * [new branch]        agent/portfolio-meta-transport-rehearsal -> origin/agent/portfolio-meta-transport-rehearsal
+2026-11-02T19:41:13.6460698Z  * [new branch]        agent/pr0-mcp-containment -> origin/agent/pr0-mcp-containment
+2026-11-02T19:41:13.6461379Z  * [new branch]        agent/pr80-active-mcp-scopes -> origin/agent/pr80-active-mcp-scopes
+2026-11-02T19:41:13.6462085Z  * [new branch]        agent/read-only-contact-sync -> origin/agent/read-only-contact-sync
+2026-11-02T19:41:13.6462880Z  * [new branch]        agent/record-alpha-preflight-success -> origin/agent/record-alpha-preflight-success
+2026-11-02T19:41:13.6463770Z  * [new branch]        agent/record-alpha-silence-evidence -> origin/agent/record-alpha-silence-evidence
+2026-11-02T19:41:13.6464529Z  * [new branch]        agent/refresh-gate-handoff -> origin/agent/refresh-gate-handoff
+2026-11-02T19:41:13.6465454Z  * [new branch]        agent/rejected-long-call-wav-recovery -> origin/agent/rejected-long-call-wav-recovery
+2026-11-02T19:41:13.6466267Z  * [new branch]        agent/relations-approval-267 -> origin/agent/relations-approval-267
+2026-11-02T19:41:13.6467108Z  * [new branch]        agent/relationship-crm-assist-contract -> origin/agent/relationship-crm-assist-contract
+2026-11-02T19:41:13.6468211Z  * [new branch]        agent/relationship-crm-owner-surface -> origin/agent/relationship-crm-owner-surface
+2026-11-02T19:41:13.6469151Z  * [new branch]        agent/relationship-crm-projection-dry-run -> origin/agent/relationship-crm-projection-dry-run
+2026-11-02T19:41:13.6470193Z  * [new branch]        agent/relationship-crm-repository-services -> origin/agent/relationship-crm-repository-services
+2026-11-02T19:41:13.6471169Z  * [new branch]        agent/remove-legacy-wedding-voice-b018 -> origin/agent/remove-legacy-wedding-voice-b018
+2026-11-02T19:41:13.6472101Z  * [new branch]        agent/remove-stale-readme-continuation -> origin/agent/remove-stale-readme-continuation
+2026-11-02T19:41:13.6472910Z  * [new branch]        agent/reply-sequence-60s -> origin/agent/reply-sequence-60s
+2026-11-02T19:41:13.6473691Z  * [new branch]        agent/revert-unneeded-oidc-legacy-shim -> origin/agent/revert-unneeded-oidc-legacy-shim
+2026-11-02T19:41:13.6474705Z  * [new branch]        agent/role-correct-quest-durability-corrective -> origin/agent/role-correct-quest-durability-corrective
+2026-11-02T19:41:13.6475644Z  * [new branch]        agent/rotate-alpha-preflight-v2 -> origin/agent/rotate-alpha-preflight-v2
+2026-11-02T19:41:13.6476432Z  * [new branch]        agent/ruff-import-spacing-0099 -> origin/agent/ruff-import-spacing-0099
+2026-11-02T19:41:13.6477381Z  * [new branch]        agent/runtime-database-readiness -> origin/agent/runtime-database-readiness
+2026-11-02T19:41:13.6478396Z  * [new branch]        agent/scoped-mcp-inbox-context-query -> origin/agent/scoped-mcp-inbox-context-query
+2026-11-02T19:41:13.6479234Z  * [new branch]        agent/scoped-mcp-status-query -> origin/agent/scoped-mcp-status-query
+2026-11-02T19:41:13.6479984Z  * [new branch]        agent/shadow-work-ownership -> origin/agent/shadow-work-ownership
+2026-11-02T19:41:13.6480794Z  * [new branch]        agent/short-voice-headroom-685-20260921 -> origin/agent/short-voice-headroom-685-20260921
+2026-11-02T19:41:13.6481546Z  * [new branch]        agent/slice3-head-compat -> origin/agent/slice3-head-compat
+2026-11-02T19:41:13.6482467Z  * [new branch]        agent/sprint-13-multi-account-routing-foundation -> origin/agent/sprint-13-multi-account-routing-foundation
+2026-11-02T19:41:13.6483544Z  * [new branch]        agent/sprint-14-two-business-connections -> origin/agent/sprint-14-two-business-connections
+2026-11-02T19:41:13.6484580Z  * [new branch]        agent/sprint-14b-status-business-connections -> origin/agent/sprint-14b-status-business-connections
+2026-11-02T19:41:13.6485635Z  * [new branch]        agent/sprint-15-account-scoped-admin-inbox -> origin/agent/sprint-15-account-scoped-admin-inbox
+2026-11-02T19:41:13.6486583Z  * [new branch]        agent/sprint-2a-role-aware-downstream -> origin/agent/sprint-2a-role-aware-downstream
+2026-11-02T19:41:13.6487489Z  * [new branch]        agent/sprint100-contact-identity-health -> origin/agent/sprint100-contact-identity-health
+2026-11-02T19:41:13.6488497Z  * [new branch]        agent/sprint16-raw-updates-router -> origin/agent/sprint16-raw-updates-router
+2026-11-02T19:41:13.6489448Z  * [new branch]        agent/sprint16b-cross-account-events -> origin/agent/sprint16b-cross-account-events
+2026-11-02T19:41:13.6490328Z  * [new branch]        agent/sprint16c-cross-account-inbox -> origin/agent/sprint16c-cross-account-inbox
+2026-11-02T19:41:13.6491177Z  * [new branch]        agent/sprint16d-clean-service-tasks -> origin/agent/sprint16d-clean-service-tasks
+2026-11-02T19:41:13.6492004Z  * [new branch]        agent/sprint16e-clean-inbox-tests -> origin/agent/sprint16e-clean-inbox-tests
+2026-11-02T19:41:13.6492836Z  * [new branch]        agent/sprint17-telegram-send-draft -> origin/agent/sprint17-telegram-send-draft
+2026-11-02T19:41:13.6493835Z  * [new branch]        agent/sprint18-inline-send-callback -> origin/agent/sprint18-inline-send-callback
+2026-11-02T19:41:13.6494689Z  * [new branch]        agent/sprint18b-draft-action-copy -> origin/agent/sprint18b-draft-action-copy
+2026-11-02T19:41:13.6495539Z  * [new branch]        agent/sprint18b-draft-action-links -> origin/agent/sprint18b-draft-action-links
+2026-11-02T19:41:13.6496418Z  * [new branch]        agent/sprint19-mcp-readonly-foundation -> origin/agent/sprint19-mcp-readonly-foundation
+2026-11-02T19:41:13.6497300Z  * [new branch]        agent/sprint20-mcp-list-unanswered -> origin/agent/sprint20-mcp-list-unanswered
+2026-11-02T19:41:13.6498508Z  * [new branch]        agent/sprint21-mcp-protected-resource-metadata -> origin/agent/sprint21-mcp-protected-resource-metadata
+2026-11-02T19:41:13.6499513Z  * [new branch]        agent/sprint22-chatgpt-oauth-discovery -> origin/agent/sprint22-chatgpt-oauth-discovery
+2026-11-02T19:41:13.6500430Z  * [new branch]        agent/sprint23-oauth-jwt-verification -> origin/agent/sprint23-oauth-jwt-verification
+2026-11-02T19:41:13.6501330Z  * [new branch]        agent/sprint24-mcp-save-reply-draft -> origin/agent/sprint24-mcp-save-reply-draft
+2026-11-02T19:41:13.6502220Z  * [new branch]        agent/sprint25-auth0-chatgpt-readiness -> origin/agent/sprint25-auth0-chatgpt-readiness
+2026-11-02T19:41:13.6503030Z  * [new branch]        agent/stage-alpha-model-v1 -> origin/agent/stage-alpha-model-v1
+2026-11-02T19:41:13.6503804Z  * [new branch]        agent/supervise-telegram-worker -> origin/agent/supervise-telegram-worker
+2026-11-02T19:41:13.6504606Z  * [new branch]        agent/sync-pr235-production-handoff -> origin/agent/sync-pr235-production-handoff
+2026-11-02T19:41:13.6505540Z  * [new branch]        agent/sync-voice-canary-handoff -> origin/agent/sync-voice-canary-handoff
+2026-11-02T19:41:13.6506253Z  * [new branch]        agent/system-audit-20260730 -> origin/agent/system-audit-20260730
+2026-11-02T19:41:13.6506969Z  * [new branch]        agent/take-transport-boundary -> origin/agent/take-transport-boundary
+2026-11-02T19:41:13.6507791Z  * [new branch]        agent/telegram-business-caption-intake -> origin/agent/telegram-business-caption-intake
+2026-11-02T19:41:13.6508852Z  * [new branch]        agent/telegram-business-voice-archive -> origin/agent/telegram-business-voice-archive
+2026-11-02T19:41:13.6509817Z  * [new branch]        agent/telegram-caption-historical-backfill -> origin/agent/telegram-caption-historical-backfill
+2026-11-02T19:41:13.6510718Z  * [new branch]        agent/telegram-desktop-import -> origin/agent/telegram-desktop-import
+2026-11-02T19:41:13.6511499Z  * [new branch]        agent/telegram-gpt-transcription -> origin/agent/telegram-gpt-transcription
+2026-11-02T19:41:13.6512326Z  * [new branch]        agent/telegram-personal-read-audit -> origin/agent/telegram-personal-read-audit
+2026-11-02T19:41:13.6513186Z  * [new branch]        agent/telegram-processing-sql-queue -> origin/agent/telegram-processing-sql-queue
+2026-11-02T19:41:13.6514113Z  * [new branch]        agent/telegram-processing-worker-contract -> origin/agent/telegram-processing-worker-contract
+2026-11-02T19:41:13.6515116Z  * [new branch]        agent/telegram-queue-alert-http-notifier -> origin/agent/telegram-queue-alert-http-notifier
+2026-11-02T19:41:13.6516011Z  * [new branch]        agent/telegram-queue-alerts-audit -> origin/agent/telegram-queue-alerts-audit
+2026-11-02T19:41:13.6516893Z  * [new branch]        agent/telegram-queue-incident-contract -> origin/agent/telegram-queue-incident-contract
+2026-11-02T19:41:13.6517794Z  * [new branch]        agent/telegram-queue-incident-store -> origin/agent/telegram-queue-incident-store
+2026-11-02T19:41:13.6518765Z  * [new branch]        agent/telegram-queue-maintenance -> origin/agent/telegram-queue-maintenance
+2026-11-02T19:41:13.6519609Z  * [new branch]        agent/telegram-receipt-outbox-schema -> origin/agent/telegram-receipt-outbox-schema
+2026-11-02T19:41:13.6520583Z  * [new branch]        agent/telegram-receipt-sql-store -> origin/agent/telegram-receipt-sql-store
+2026-11-02T19:41:13.6521423Z  * [new branch]        agent/telegram-reply-context-20261008 -> origin/agent/telegram-reply-context-20261008
+2026-11-02T19:41:13.6522296Z  * [new branch]        agent/telegram-voice-ffmpeg-runtime -> origin/agent/telegram-voice-ffmpeg-runtime
+2026-11-02T19:41:13.6523151Z  * [new branch]        agent/telegram-voice-orchestration -> origin/agent/telegram-voice-orchestration
+2026-11-02T19:41:13.6524019Z  * [new branch]        agent/telegram-voice-text-projection -> origin/agent/telegram-voice-text-projection
+2026-11-02T19:41:13.6524846Z  * [new branch]        agent/telegram-worker-runtime -> origin/agent/telegram-worker-runtime
+2026-11-02T19:41:13.6525700Z  * [new branch]        agent/transcribe-latest-archived-voice -> origin/agent/transcribe-latest-archived-voice
+2026-11-02T19:41:13.6526595Z  * [new branch]        agent/typed-telegram-connectors -> origin/agent/typed-telegram-connectors
+2026-11-02T19:41:13.6527416Z  * [new branch]        agent/universal-mayak-private-demo -> origin/agent/universal-mayak-private-demo
+2026-11-02T19:41:13.6528427Z  * [new branch]        agent/universal-mayak-private-runtime -> origin/agent/universal-mayak-private-runtime
+2026-11-02T19:41:13.6529295Z  * [new branch]        agent/voice-archive-file-export -> origin/agent/voice-archive-file-export
+2026-11-02T19:41:13.6530045Z  * [new branch]        agent/voice-billing-settlement -> origin/agent/voice-billing-settlement
+2026-11-02T19:41:13.6530831Z  * [new branch]        agent/voice-business-handoff-354 -> origin/agent/voice-business-handoff-354
+2026-11-02T19:41:13.6531697Z  * [new branch]        agent/voice-dead-letter-reconciliation -> origin/agent/voice-dead-letter-reconciliation
+2026-11-02T19:41:13.6532675Z  * [new branch]        agent/voice-handoff-20260729 -> origin/agent/voice-handoff-20260729
+2026-11-02T19:41:13.6533439Z  * [new branch]        agent/voice-long-call-five-minute -> origin/agent/voice-long-call-five-minute
+2026-11-02T19:41:13.6534617Z  * [new branch]        agent/voice-long-call-full-model-v12 -> origin/agent/voice-long-call-full-model-v12
+2026-11-02T19:41:13.6535498Z  * [new branch]        agent/voice-long-call-three-minute -> origin/agent/voice-long-call-three-minute
+2026-11-02T19:41:13.6536415Z  * [new branch]        agent/voice-long-call-three-minute-mp3-v11 -> origin/agent/voice-long-call-three-minute-mp3-v11
+2026-11-02T19:41:13.6537363Z  * [new branch]        agent/voice-missing-archive-recovery -> origin/agent/voice-missing-archive-recovery
+2026-11-02T19:41:13.6538344Z  * [new branch]        agent/voice-operational-status -> origin/agent/voice-operational-status
+2026-11-02T19:41:13.6539156Z  * [new branch]        agent/voice-owner-selector-scope -> origin/agent/voice-owner-selector-scope
+2026-11-02T19:41:13.6540088Z  * [new branch]        agent/voice-provider-request-telemetry-354 -> origin/agent/voice-provider-request-telemetry-354
+2026-11-02T19:41:13.6541040Z  * [new branch]        agent/voice-queue-state-observability -> origin/agent/voice-queue-state-observability
+2026-11-02T19:41:13.6541964Z  * [new branch]        agent/voice-recovery-status-constraint -> origin/agent/voice-recovery-status-constraint
+2026-11-02T19:41:13.6542831Z  * [new branch]        agent/voice-stale-transcript-reclaim -> origin/agent/voice-stale-transcript-reclaim
+2026-11-02T19:41:13.6543629Z  * [new branch]        agent/voice-transcript-store -> origin/agent/voice-transcript-store
+2026-11-02T19:41:13.6544484Z  * [new branch]        agent/voice-transport-unknown-exact-retry -> origin/agent/voice-transport-unknown-exact-retry
+2026-11-02T19:41:13.6545505Z  * [new branch]        agent/voice-transport-unknown-observability -> origin/agent/voice-transport-unknown-observability
+2026-11-02T19:41:13.6546521Z  * [new branch]        agent/watch-voice-actions-drain-2026-10-06 -> origin/agent/watch-voice-actions-drain-2026-10-06
+2026-11-02T19:41:13.6547416Z  * [new branch]        agent/watch-voice-mark-2026-10-05 -> origin/agent/watch-voice-mark-2026-10-05
+2026-11-02T19:41:13.6548713Z  * [new branch]        agent/watch-voice-post-payment-2026-10-07 -> origin/agent/watch-voice-post-payment-2026-10-07
+2026-11-02T19:41:13.6549697Z  * [new branch]        agent/watch-voice-quota-recovery-2026-10-06 -> origin/agent/watch-voice-quota-recovery-2026-10-06
+2026-11-02T19:41:13.6550595Z  * [new branch]        agent/work-bootstrap-heartbeat -> origin/agent/work-bootstrap-heartbeat
+2026-11-02T19:41:13.6551413Z  * [new branch]        agent/work-parent-rollout-20260822 -> origin/agent/work-parent-rollout-20260822
+2026-11-02T19:41:13.6552308Z  * [new branch]        agent/workflow-work-auto-merge-deploy -> origin/agent/workflow-work-auto-merge-deploy
+2026-11-02T19:41:13.6553277Z  * [new branch]        artifacts/gate-watch0119-fallback-20261102 -> origin/artifacts/gate-watch0119-fallback-20261102
+2026-11-02T19:41:13.6554105Z  * [new branch]        atlas/graphify-20260716 -> origin/atlas/graphify-20260716
+2026-11-02T19:41:13.6554695Z  * [new branch]        ci/manual-exact-main    -> origin/ci/manual-exact-main
+2026-11-02T19:41:13.6555350Z  * [new branch]        codex-no-pr-assumption-rule -> origin/codex-no-pr-assumption-rule
+2026-11-02T19:41:13.6556054Z  * [new branch]        codex-patch-output-contract -> origin/codex-patch-output-contract
+2026-11-02T19:41:13.6556901Z  * [new branch]        codex/account-relative-direction-parity -> origin/codex/account-relative-direction-parity
+2026-11-02T19:41:13.6557778Z  * [new branch]        codex/activate-alpha-canary-v1 -> origin/codex/activate-alpha-canary-v1
+2026-11-02T19:41:13.6558648Z  * [new branch]        codex/agent-kernel-contracts -> origin/codex/agent-kernel-contracts
+2026-11-02T19:41:13.6559485Z  * [new branch]        codex/agent-kernel-schema -> origin/codex/agent-kernel-schema
+2026-11-02T19:41:13.6560160Z  * [new branch]        codex/alpha-canary-bundle-v1 -> origin/codex/alpha-canary-bundle-v1
+2026-11-02T19:41:13.6561003Z  * [new branch]        codex/alpha-channel-policy-foundation -> origin/codex/alpha-channel-policy-foundation
+2026-11-02T19:41:13.6561941Z  * [new branch]        codex/alpha-delivered-context-continuity -> origin/codex/alpha-delivered-context-continuity
+2026-11-02T19:41:13.6562769Z  * [new branch]        codex/alpha-delivery-schema -> origin/codex/alpha-delivery-schema
+2026-11-02T19:41:13.6563479Z  * [new branch]        codex/alpha-group-canary-261 -> origin/codex/alpha-group-canary-261
+2026-11-02T19:41:13.6564265Z  * [new branch]        codex/alpha-group-safety-contracts -> origin/codex/alpha-group-safety-contracts
+2026-11-02T19:41:13.6565136Z  * [new branch]        codex/alpha-nontext-terminal-20260716 -> origin/codex/alpha-nontext-terminal-20260716
+2026-11-02T19:41:13.6565970Z  * [new branch]        codex/alpha-operator-lifecycle -> origin/codex/alpha-operator-lifecycle
+2026-11-02T19:41:13.6566781Z  * [new branch]        codex/alpha-pause-resume-evidence -> origin/codex/alpha-pause-resume-evidence
+2026-11-02T19:41:13.6567598Z  * [new branch]        codex/alpha-private-access-policy -> origin/codex/alpha-private-access-policy
+2026-11-02T19:41:13.6568601Z  * [new branch]        codex/alpha-separate-durable-ingress -> origin/codex/alpha-separate-durable-ingress
+2026-11-02T19:41:13.6569483Z  * [new branch]        codex/alpha-telegram-text-limit -> origin/codex/alpha-telegram-text-limit
+2026-11-02T19:41:13.6570305Z  * [new branch]        codex/alpha-voice-fixture-runner -> origin/codex/alpha-voice-fixture-runner
+2026-11-02T19:41:13.6571116Z  * [new branch]        codex/alpha-voice-intake-dormant -> origin/codex/alpha-voice-intake-dormant
+2026-11-02T19:41:13.6571907Z  * [new branch]        codex/alpha-webhook-status-261 -> origin/codex/alpha-webhook-status-261
+2026-11-02T19:41:13.6572795Z  * [new branch]        codex/apply-confirmed-account-corrections -> origin/codex/apply-confirmed-account-corrections
+2026-11-02T19:41:13.6573687Z  * [new branch]        codex/aqub-delivery-v2-slice4 -> origin/codex/aqub-delivery-v2-slice4
+2026-11-02T19:41:13.6574717Z  * [new branch]        codex/backfill-legacy-telegram-routing -> origin/codex/backfill-legacy-telegram-routing
+2026-11-02T19:41:13.6575679Z  * [new branch]        codex/beta-portable-checkpoint-export -> origin/codex/beta-portable-checkpoint-export
+2026-11-02T19:41:13.6576496Z  * [new branch]        codex/billing-ledger-domain -> origin/codex/billing-ledger-domain
+2026-11-02T19:41:13.6577258Z  * [new branch]        codex/billing-ledger-persistence -> origin/codex/billing-ledger-persistence
+2026-11-02T19:41:13.6578257Z  * [new branch]        codex/bootstrap-gate-as-fastapi-backend -> origin/codex/bootstrap-gate-as-fastapi-backend
+2026-11-02T19:41:13.6579293Z  * [new branch]        codex/bootstrap-gate-as-fastapi-backend-svsm85 -> origin/codex/bootstrap-gate-as-fastapi-backend-svsm85
+2026-11-02T19:41:13.6580305Z  * [new branch]        codex/business-text-parity-evidence -> origin/codex/business-text-parity-evidence
+2026-11-02T19:41:13.6581114Z  * [new branch]        codex/canonical-ingress-store -> origin/codex/canonical-ingress-store
+2026-11-02T19:41:13.6581925Z  * [new branch]        codex/canonical-messaging-contracts -> origin/codex/canonical-messaging-contracts
+2026-11-02T19:41:13.6582758Z  * [new branch]        codex/canonical-messaging-schema -> origin/codex/canonical-messaging-schema
+2026-11-02T19:41:13.6583584Z  * [new branch]        codex/canonical-worker-composition -> origin/codex/canonical-worker-composition
+2026-11-02T19:41:13.6584315Z  * [new branch]        codex/ci-cost-controls  -> origin/codex/ci-cost-controls
+2026-11-02T19:41:13.6585018Z  * [new branch]        codex/conversation-level-inbox -> origin/codex/conversation-level-inbox
+2026-11-02T19:41:13.6585892Z  * [new branch]        codex/current-handoff-relationship-crm -> origin/codex/current-handoff-relationship-crm
+2026-11-02T19:41:13.6586940Z  * [new branch]        codex/deployed-instruction-bundles -> origin/codex/deployed-instruction-bundles
+2026-11-02T19:41:13.6587826Z  * [new branch]        codex/durable-telegram-acceptance-seam -> origin/codex/durable-telegram-acceptance-seam
+2026-11-02T19:41:13.6588902Z  * [new branch]        codex/dynamic-workspace-access -> origin/codex/dynamic-workspace-access
+2026-11-02T19:41:13.6589734Z  * [new branch]        codex/enable-alpha-canary-connector -> origin/codex/enable-alpha-canary-connector
+2026-11-02T19:41:13.6590588Z  * [new branch]        codex/expose-alpha-pipeline-audit -> origin/codex/expose-alpha-pipeline-audit
+2026-11-02T19:41:13.6591510Z  * [new branch]        codex/fallback-active-account-connection -> origin/codex/fallback-active-account-connection
+2026-11-02T19:41:13.6592536Z  * [new branch]        codex/fix-account-routing-migration-collisions -> origin/codex/fix-account-routing-migration-collisions
+2026-11-02T19:41:13.6593568Z  * [new branch]        codex/fix-empty-conversation-migration -> origin/codex/fix-empty-conversation-migration
+2026-11-02T19:41:13.6594449Z  * [new branch]        codex/fix-telegram-account-routing -> origin/codex/fix-telegram-account-routing
+2026-11-02T19:41:13.6595295Z  * [new branch]        codex/gate-alpha-privacy-command-261 -> origin/codex/gate-alpha-privacy-command-261
+2026-11-02T19:41:13.6596130Z  * [new branch]        codex/guard-null-derived-account -> origin/codex/guard-null-derived-account
+2026-11-02T19:41:13.6596964Z  * [new branch]        codex/handoff-baseline-consistency -> origin/codex/handoff-baseline-consistency
+2026-11-02T19:41:13.6597723Z  * [new branch]        codex/handoff-current-clean -> origin/codex/handoff-current-clean
+2026-11-02T19:41:13.6598656Z  * [new branch]        codex/handoff-july16-release-train -> origin/codex/handoff-july16-release-train
+2026-11-02T19:41:13.6599543Z  * [new branch]        codex/literal-approved-replies-20260716 -> origin/codex/literal-approved-replies-20260716
+2026-11-02T19:41:13.6600457Z  * [new branch]        codex/live-business-connection-sync -> origin/codex/live-business-connection-sync
+2026-11-02T19:41:13.6601262Z  * [new branch]        codex/mcp-surface-consistency -> origin/codex/mcp-surface-consistency
+2026-11-02T19:41:13.6602197Z  * [new branch]        codex/normalize-mark-workspace-owner -> origin/codex/normalize-mark-workspace-owner
+2026-11-02T19:41:13.6602989Z  * [new branch]        codex/package-alpha-bundle -> origin/codex/package-alpha-bundle
+2026-11-02T19:41:13.6603759Z  * [new branch]        codex/personal-crm-domain-20260716 -> origin/codex/personal-crm-domain-20260716
+2026-11-02T19:41:13.6604698Z  * [new branch]        codex/process-owned-telegram-http-runtime -> origin/codex/process-owned-telegram-http-runtime
+2026-11-02T19:41:13.6605622Z  * [new branch]        codex/relationship-crm-architecture -> origin/codex/relationship-crm-architecture
+2026-11-02T19:41:13.6606488Z  * [new branch]        codex/relationship-crm-commercial -> origin/codex/relationship-crm-commercial
+2026-11-02T19:41:13.6607265Z  * [new branch]        codex/relationship-crm-domain -> origin/codex/relationship-crm-domain
+2026-11-02T19:41:13.6608252Z  * [new branch]        codex/relationship-crm-persistence-core -> origin/codex/relationship-crm-persistence-core
+2026-11-02T19:41:13.6609216Z  * [new branch]        codex/relationship-crm-personal-workflow -> origin/codex/relationship-crm-personal-workflow
+2026-11-02T19:41:13.6610155Z  * [new branch]        codex/relationship-crm-portability -> origin/codex/relationship-crm-portability
+2026-11-02T19:41:13.6610956Z  * [new branch]        codex/reply-draft-lock-order -> origin/codex/reply-draft-lock-order
+2026-11-02T19:41:13.6611717Z  * [new branch]        codex/reply-send-stale-recovery -> origin/codex/reply-send-stale-recovery
+2026-11-02T19:41:13.6612595Z  * [new branch]        codex/reply-send-transaction-boundaries -> origin/codex/reply-send-transaction-boundaries
+2026-11-02T19:41:13.6613559Z  * [new branch]        codex/sprint-canonical-message-content -> origin/codex/sprint-canonical-message-content
+2026-11-02T19:41:13.6614628Z  * [new branch]        codex/sprint-shadow-review-input-origin -> origin/codex/sprint-shadow-review-input-origin
+2026-11-02T19:41:13.6615557Z  * [new branch]        codex/sprint-voice-canonical-cutover -> origin/codex/sprint-voice-canonical-cutover
+2026-11-02T19:41:13.6616479Z  * [new branch]        codex/system-audit-roadmaps-20260716 -> origin/codex/system-audit-roadmaps-20260716
+2026-11-02T19:41:13.6617328Z  * [new branch]        codex/telegram-error-diagnostics -> origin/codex/telegram-error-diagnostics
+2026-11-02T19:41:13.6618322Z  * [new branch]        codex/telegram-identity-shadow-worker -> origin/codex/telegram-identity-shadow-worker
+2026-11-02T19:41:13.6619198Z  * [new branch]        codex/telegram-voice-worker-wiring -> origin/codex/telegram-voice-worker-wiring
+2026-11-02T19:41:13.6619939Z  * [new branch]        codex/voice-ffmpeg-clean -> origin/codex/voice-ffmpeg-clean
+2026-11-02T19:41:13.6620667Z  * [new branch]        codex/voice-orchestration-clean -> origin/codex/voice-orchestration-clean
+2026-11-02T19:41:13.6621436Z  * [new branch]        codex/voice-projection-clean -> origin/codex/voice-projection-clean
+2026-11-02T19:41:13.6622174Z  * [new branch]        codex/wedding-interactive-mvp -> origin/codex/wedding-interactive-mvp
+2026-11-02T19:41:13.6622992Z  * [new branch]        docs-powershell-json-verification -> origin/docs-powershell-json-verification
+2026-11-02T19:41:13.6623763Z  * [new branch]        docs-production-checklist -> origin/docs-production-checklist
+2026-11-02T19:41:13.6624499Z  * [new branch]        docs/chatgpt-pr-deploy-policy -> origin/docs/chatgpt-pr-deploy-policy
+2026-11-02T19:41:13.6625277Z  * [new branch]        docs/chatgpt-small-sprint-policy -> origin/docs/chatgpt-small-sprint-policy
+2026-11-02T19:41:13.6626088Z  * [new branch]        docs/clarify-frozen-code-baseline -> origin/docs/clarify-frozen-code-baseline
+2026-11-02T19:41:13.6626880Z  * [new branch]        docs/freeze-refactor-handoff -> origin/docs/freeze-refactor-handoff
+2026-11-02T19:41:13.6627618Z  * [new branch]        docs/gate-audit-plan-20261102 -> origin/docs/gate-audit-plan-20261102
+2026-11-02T19:41:13.6628570Z  * [new branch]        docs/gate736-credential-rebind-20261102 -> origin/docs/gate736-credential-rebind-20261102
+2026-11-02T19:41:13.6629587Z  * [new branch]        docs/handoff-after-pr208-draft-train -> origin/docs/handoff-after-pr208-draft-train
+2026-11-02T19:41:13.6630639Z  * [new branch]        docs/personal-gate-sequence-release-spec-20260928 -> origin/docs/personal-gate-sequence-release-spec-20260928
+2026-11-02T19:41:13.6631620Z  * [new branch]        docs/project-handoff-2026-07-15 -> origin/docs/project-handoff-2026-07-15
+2026-11-02T19:41:13.6632428Z  * [new branch]        docs/roadmap-review-corrections -> origin/docs/roadmap-review-corrections
+2026-11-02T19:41:13.6633245Z  * [new branch]        document-powershell-command-format -> origin/document-powershell-command-format
+2026-11-02T19:41:13.6634127Z  * [new branch]        ecosystem-sync/s3-gate-docs-20260825 -> origin/ecosystem-sync/s3-gate-docs-20260825
+2026-11-02T19:41:13.6634911Z  * [new branch]        enforce-next-action-owner -> origin/enforce-next-action-owner
+2026-11-02T19:41:13.6635595Z  * [new branch]        feat/dropbox-alpha-calls -> origin/feat/dropbox-alpha-calls
+2026-11-02T19:41:13.6636341Z  * [new branch]        feat/kakhovich-general-cube-binding -> origin/feat/kakhovich-general-cube-binding
+2026-11-02T19:41:13.6637117Z  * [new branch]        feat/mtproto-enrollment-270 -> origin/feat/mtproto-enrollment-270
+2026-11-02T19:41:13.6637837Z  * [new branch]        feat/phone-call-dropbox-intake -> origin/feat/phone-call-dropbox-intake
+2026-11-02T19:41:13.6638751Z  * [new branch]        feat/unified-communication-feed -> origin/feat/unified-communication-feed
+2026-11-02T19:41:13.6640340Z  * [new branch]        feat/unified-communication-feed-clean -> origin/feat/unified-communication-feed-clean
+2026-11-02T19:41:13.6641257Z  * [new branch]        fix/263-album-text-race -> origin/fix/263-album-text-race
+2026-11-02T19:41:13.6642012Z  * [new branch]        fix/632-link-text-to-pending-album -> origin/fix/632-link-text-to-pending-album
+2026-11-02T19:41:13.6642833Z  * [new branch]        fix/643-general-fallback-recovery -> origin/fix/643-general-fallback-recovery
+2026-11-02T19:41:13.6643732Z  * [new branch]        fix/aqub-general-pre-ready-telegram-ack -> origin/fix/aqub-general-pre-ready-telegram-ack
+2026-11-02T19:41:13.6644524Z  * [new branch]        fix/aqub-program-intake -> origin/fix/aqub-program-intake
+2026-11-02T19:41:13.6645219Z  * [new branch]        fix/aqub-retry-failed-delivery -> origin/fix/aqub-retry-failed-delivery
+2026-11-02T19:41:13.6645895Z  * [new branch]        fix/aqub-token-alias    -> origin/fix/aqub-token-alias
+2026-11-02T19:41:13.6646568Z  * [new branch]        fix/audio-provider-diagnostics -> origin/fix/audio-provider-diagnostics
+2026-11-02T19:41:13.6647304Z  * [new branch]        fix/audio-provider-headroom -> origin/fix/audio-provider-headroom
+2026-11-02T19:41:13.6648113Z  * [new branch]        fix/audio-provider-limit -> origin/fix/audio-provider-limit
+2026-11-02T19:41:13.6648896Z  * [new branch]        fix/become-connector-ci-import-order -> origin/fix/become-connector-ci-import-order
+2026-11-02T19:41:13.6649842Z  * [new branch]        fix/become-empty-installation-discovery -> origin/fix/become-empty-installation-discovery
+2026-11-02T19:41:13.6650812Z  * [new branch]        fix/become-transport-connector-bootstrap -> origin/fix/become-transport-connector-bootstrap
+2026-11-02T19:41:13.6651636Z  * [new branch]        fix/cube0-active-route-event -> origin/fix/cube0-active-route-event
+2026-11-02T19:41:13.6652452Z  * [new branch]        fix/cube0-complete-kind-diagnostic-661 -> origin/fix/cube0-complete-kind-diagnostic-661
+2026-11-02T19:41:13.6653442Z  * [new branch]        fix/cube0-downstream-kind-diagnostic-659 -> origin/fix/cube0-downstream-kind-diagnostic-659
+2026-11-02T19:41:13.6654304Z  * [new branch]        fix/cube0-exact-event-selector -> origin/fix/cube0-exact-event-selector
+2026-11-02T19:41:13.6655126Z  * [new branch]        fix/cube0-internal-runtime-probe-655 -> origin/fix/cube0-internal-runtime-probe-655
+2026-11-02T19:41:13.6655903Z  * [new branch]        fix/cube0-provider-epoch -> origin/fix/cube0-provider-epoch
+2026-11-02T19:41:13.6656824Z  * [new branch]        fix/cube0-result-shape-diagnostic-657 -> origin/fix/cube0-result-shape-diagnostic-657
+2026-11-02T19:41:13.6657674Z  * [new branch]        fix/cube0-runtime-diagnostic-651 -> origin/fix/cube0-runtime-diagnostic-651
+2026-11-02T19:41:13.6658625Z  * [new branch]        fix/cube0-runtime-unconfigured-653 -> origin/fix/cube0-runtime-unconfigured-653
+2026-11-02T19:41:13.6659460Z  * [new branch]        fix/dropbox-call-budget-binding -> origin/fix/dropbox-call-budget-binding
+2026-11-02T19:41:13.6660169Z  * [new branch]        fix/dropbox-call-claim  -> origin/fix/dropbox-call-claim
+2026-11-02T19:41:13.6660802Z  * [new branch]        fix/dropbox-call-recovery -> origin/fix/dropbox-call-recovery
+2026-11-02T19:41:13.6661595Z  * [new branch]        fix/general-cube-participant-replies -> origin/fix/general-cube-participant-replies
+2026-11-02T19:41:13.6662345Z  * [new branch]        fix/long-call-chunking  -> origin/fix/long-call-chunking
+2026-11-02T19:41:13.6663189Z  * [new branch]        fix/voice-processing-reconciliation-20260729 -> origin/fix/voice-processing-reconciliation-20260729
+2026-11-02T19:41:13.6664018Z  * [new branch]        gate-status-endpoint    -> origin/gate-status-endpoint
+2026-11-02T19:41:13.6664698Z  * [new branch]        gate/mayaki-inbound-forwarder -> origin/gate/mayaki-inbound-forwarder
+2026-11-02T19:41:13.6665566Z  * [new branch]        hotfix-ack-unsupported-telegram-updates -> origin/hotfix-ack-unsupported-telegram-updates
+2026-11-02T19:41:13.6666361Z  * [new branch]        hotfix-revert-sprint-11 -> origin/hotfix-revert-sprint-11
+2026-11-02T19:41:13.6667084Z  * [new branch]        hotfix-telegram-webhook-reconcile -> origin/hotfix-telegram-webhook-reconcile
+2026-11-02T19:41:13.6667847Z  * [new branch]        main                    -> origin/main
+2026-11-02T19:41:13.6668536Z  * [new branch]        markmalina-patch-1      -> origin/markmalina-patch-1
+2026-11-02T19:41:13.6669201Z  * [new branch]        ops/one-time-inna-transcription -> origin/ops/one-time-inna-transcription
+2026-11-02T19:41:13.6670168Z  * [new branch]        ops/railway-autodeploy-negative-test-2026-08-23 -> origin/ops/railway-autodeploy-negative-test-2026-08-23
+2026-11-02T19:41:13.6671228Z  * [new branch]        ops/remove-one-time-inna-transcription -> origin/ops/remove-one-time-inna-transcription
+2026-11-02T19:41:13.6672019Z  * [new branch]        refactor/aqub-pro-binding -> origin/refactor/aqub-pro-binding
+2026-11-02T19:41:13.6672747Z  * [new branch]        refactor/aqub-production-naming -> origin/refactor/aqub-production-naming
+2026-11-02T19:41:13.6673481Z  * [new branch]        s1/ace-candidate-forwarding -> origin/s1/ace-candidate-forwarding
+2026-11-02T19:41:13.6674267Z  * [new branch]        sprint-1-durable-message-storage -> origin/sprint-1-durable-message-storage
+2026-11-02T19:41:13.6674999Z  * [new branch]        sprint-10-draft-edit-link -> origin/sprint-10-draft-edit-link
+2026-11-02T19:41:13.6675721Z  * [new branch]        sprint-11-inline-draft-actions -> origin/sprint-11-inline-draft-actions
+2026-11-02T19:41:13.6676383Z  * [new branch]        sprint-11b-clean        -> origin/sprint-11b-clean
+2026-11-02T19:41:13.6676989Z  * [new branch]        sprint-11b-clean-replace -> origin/sprint-11b-clean-replace
+2026-11-02T19:41:13.6677630Z  * [new branch]        sprint-11b-inline-actions -> origin/sprint-11b-inline-actions
+2026-11-02T19:41:13.6678473Z  * [new branch]        sprint-11b-inline-draft-actions -> origin/sprint-11b-inline-draft-actions
+2026-11-02T19:41:13.6679260Z  * [new branch]        sprint-11c-edit-link-live-draft -> origin/sprint-11c-edit-link-live-draft
+2026-11-02T19:41:13.6680175Z  * [new branch]        sprint-12-draft-card-sync-and-direct-edit -> origin/sprint-12-draft-card-sync-and-direct-edit
+2026-11-02T19:41:13.6681179Z  * [new branch]        sprint-12-refresh-draft-card-after-edit -> origin/sprint-12-refresh-draft-card-after-edit
+2026-11-02T19:41:13.6682127Z  * [new branch]        sprint-2-conversations-unanswered-inbox -> origin/sprint-2-conversations-unanswered-inbox
+2026-11-02T19:41:13.6683251Z  * [new branch]        sprint-2-conversations-unanswered-inbox-v2 -> origin/sprint-2-conversations-unanswered-inbox-v2
+2026-11-02T19:41:13.6684179Z  * [new branch]        sprint-3-telegram-admin-console -> origin/sprint-3-telegram-admin-console
+2026-11-02T19:41:13.6684971Z  * [new branch]        sprint-4-telegram-inbox-actions -> origin/sprint-4-telegram-inbox-actions
+2026-11-02T19:41:13.6685747Z  * [new branch]        sprint-5-ai-draft-suggestions -> origin/sprint-5-ai-draft-suggestions
+2026-11-02T19:41:13.6686487Z  * [new branch]        sprint-6-telegram-test-guide -> origin/sprint-6-telegram-test-guide
+2026-11-02T19:41:13.6687164Z  * [new branch]        sprint-7-draft-history  -> origin/sprint-7-draft-history
+2026-11-02T19:41:13.6687834Z  * [new branch]        sprint-8-test-meta      -> origin/sprint-8-test-meta
+2026-11-02T19:41:13.6688606Z  * [new branch]        sprint-9-approved-draft-send -> origin/sprint-9-approved-draft-send
+2026-11-02T19:41:13.6689305Z  * [new branch]        telegram-diagnostics-v1 -> origin/telegram-diagnostics-v1
+2026-11-02T19:41:13.6689918Z  * [new branch]        telegram-ping-v1        -> origin/telegram-ping-v1
+2026-11-02T19:41:13.6690578Z  * [new branch]        work/alpha-model-budget-scope -> origin/work/alpha-model-budget-scope
+2026-11-02T19:41:13.6691331Z  * [new branch]        work/alpha-model-offline-evals -> origin/work/alpha-model-offline-evals
+2026-11-02T19:41:13.6692147Z  * [new branch]        work/alpha-model-offline-rehearsal -> origin/work/alpha-model-offline-rehearsal
+2026-11-02T19:41:13.6693031Z  * [new branch]        work/alpha-model-operational-readiness -> origin/work/alpha-model-operational-readiness
+2026-11-02T19:41:13.6694066Z  * [new branch]        work/alpha-model-promotion-dry-run -> origin/work/alpha-model-promotion-dry-run
+2026-11-02T19:41:13.6694899Z  * [new branch]        work/alpha-model-shadow-readiness -> origin/work/alpha-model-shadow-readiness
+2026-11-02T19:41:13.6695679Z  * [new branch]        work/alpha-model-v2-identity -> origin/work/alpha-model-v2-identity
+2026-11-02T19:41:13.6696458Z  * [new branch]        work/alpha-multigroup-isolation -> origin/work/alpha-multigroup-isolation
+2026-11-02T19:41:13.6697228Z  * [new branch]        work/alpha-operations-handoff -> origin/work/alpha-operations-handoff
+2026-11-02T19:41:13.6698113Z  * [new branch]        work/alpha-owner-control-plane -> origin/work/alpha-owner-control-plane
+2026-11-02T19:41:13.6698861Z  * [new branch]        work/alpha-product-quality-evals -> origin/work/alpha-product-quality-evals
+2026-11-02T19:41:13.6699645Z  * [new branch]        work/alpha-provider-preflight -> origin/work/alpha-provider-preflight
+2026-11-02T19:41:13.6700396Z  * [new branch]        work/alpha-shadow-review-room -> origin/work/alpha-shadow-review-room
+2026-11-02T19:41:13.6701103Z  * [new branch]        work/business-text-parity -> origin/work/business-text-parity
+2026-11-02T19:41:13.6701793Z  * [new branch]        work/contact-snapshot-boundary -> origin/work/contact-snapshot-boundary
+2026-11-02T19:41:13.6702570Z  * [new branch]        work/current-handoff-2026-07-13 -> origin/work/current-handoff-2026-07-13
+2026-11-02T19:41:13.6703304Z  * [new branch]        work/exclude-owner-self-chats -> origin/work/exclude-owner-self-chats
+2026-11-02T19:41:13.6704089Z  * [new branch]        work/filter-empty-answered-messages -> origin/work/filter-empty-answered-messages
+2026-11-02T19:41:13.6704966Z  * [new branch]        work/fix-business-message-direction -> origin/work/fix-business-message-direction
+2026-11-02T19:41:13.6705934Z  * [new branch]        work/fix-owner-identities-and-answered-filter -> origin/work/fix-owner-identities-and-answered-filter
+2026-11-02T19:41:13.6706835Z  * [new branch]        work/gate-alpha-recovery-001 -> origin/work/gate-alpha-recovery-001
+2026-11-02T19:41:13.6707583Z  * [new branch]        work/gate-alpha-recovery-legacy -> origin/work/gate-alpha-recovery-legacy
+2026-11-02T19:41:13.6708467Z  * [new branch]        work/mcp-explicit-reply-send -> origin/work/mcp-explicit-reply-send
+2026-11-02T19:41:13.6709269Z  * [new branch]        work/workgpt-terminology -> origin/work/workgpt-terminology
+2026-11-02T19:41:13.6710044Z  * [new branch]        workflow-chatgpt-default-development -> origin/workflow-chatgpt-default-development
+2026-11-02T19:41:13.6710987Z  * [new branch]        workflow-priority-check-before-action -> origin/workflow-priority-check-before-action
+2026-11-02T19:41:13.6711747Z  * [new branch]        workflow-rules-update   -> origin/workflow-rules-update
+2026-11-02T19:41:13.6712418Z  * [new branch]        workflow-single-merge-command -> origin/workflow-single-merge-command
+2026-11-02T19:41:13.6713033Z  * [new ref]           refs/pull/766/merge     -> pull/766/merge
+2026-11-02T19:41:13.6714396Z ##[endgroup]
+2026-11-02T19:41:13.6714857Z ##[group]Determining the checkout info
+2026-11-02T19:41:13.6715366Z ##[endgroup]
+2026-11-02T19:41:13.6715662Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T19:41:13.6719757Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T19:41:13.6722659Z ##[group]Checking out the ref
+2026-11-02T19:41:13.6723156Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/766/merge
+2026-11-02T19:41:13.7046570Z Note: switching to 'refs/remotes/pull/766/merge'.
+2026-11-02T19:41:13.7047215Z 
+2026-11-02T19:41:13.7058683Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-02T19:41:13.7059695Z changes and commit them, and you can discard any commits you make in this
+2026-11-02T19:41:13.7060779Z state without impacting any branches by switching back to a branch.
+2026-11-02T19:41:13.7062717Z 
+2026-11-02T19:41:13.7062982Z If you want to create a new branch to retain commits you create, you may
+2026-11-02T19:41:13.7063854Z do so (now or later) by using -c with the switch command. Example:
+2026-11-02T19:41:13.7064167Z 
+2026-11-02T19:41:13.7064297Z   git switch -c <new-branch-name>
+2026-11-02T19:41:13.7064516Z 
+2026-11-02T19:41:13.7064634Z Or undo this operation with:
+2026-11-02T19:41:13.7064838Z 
+2026-11-02T19:41:13.7064957Z   git switch -
+2026-11-02T19:41:13.7065117Z 
+2026-11-02T19:41:13.7065384Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-02T19:41:13.7065739Z 
+2026-11-02T19:41:13.7066142Z HEAD is now at e33c7ae7 Merge f06e2749e2d6e07a00a8554e7f47441a1f2ca729 into 86dbc0f429dce089bf733fc422f20f556535895b
+2026-11-02T19:41:13.7067572Z ##[endgroup]
+2026-11-02T19:41:13.7114887Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T19:41:13.7148737Z e33c7ae7bb235cc90c0d68be5f091e62c494f703
+2026-11-02T19:41:13.7343827Z ##[group]Run test "$(git rev-parse HEAD)" != "$EXPECTED_HEAD"
+2026-11-02T19:41:13.7344273Z [36;1mtest "$(git rev-parse HEAD)" != "$EXPECTED_HEAD"[0m
+2026-11-02T19:41:13.7344618Z [36;1mgit merge-base --is-ancestor "$EXPECTED_HEAD" HEAD[0m
+2026-11-02T19:41:13.7365252Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:41:13.7365482Z env:
+2026-11-02T19:41:13.7365920Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:41:13.7366155Z   GATE_ENV: ci
+2026-11-02T19:41:13.7366342Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:41:13.7366561Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:41:13.7366806Z   EXPECTED_HEAD: f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:41:13.7367065Z ##[endgroup]
+2026-11-02T19:41:13.7540060Z ##[group]Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+2026-11-02T19:41:13.7540399Z with:
+2026-11-02T19:41:13.7540573Z   python-version: 3.12
+2026-11-02T19:41:13.7540758Z   cache: pip
+2026-11-02T19:41:13.7540997Z   cache-dependency-path: pyproject.toml
+constraints/ci.txt
+
+2026-11-02T19:41:13.7541290Z   check-latest: false
+2026-11-02T19:41:13.7543195Z   token: ***
+2026-11-02T19:41:13.7543392Z   update-environment: true
+2026-11-02T19:41:13.7543596Z   allow-prereleases: false
+2026-11-02T19:41:13.7543789Z   freethreaded: false
+2026-11-02T19:41:13.7543970Z env:
+2026-11-02T19:41:13.7544307Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:41:13.7544521Z   GATE_ENV: ci
+2026-11-02T19:41:13.7544709Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:41:13.7544924Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:41:13.7545119Z ##[endgroup]
+2026-11-02T19:41:13.8865322Z ##[group]Installed versions
+2026-11-02T19:41:13.8906540Z (node:2399) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T19:41:13.8907790Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T19:41:13.8908513Z Successfully set up CPython (3.12.15)
+2026-11-02T19:41:13.8910021Z ##[endgroup]
+2026-11-02T19:41:13.9588299Z [command]/opt/hostedtoolcache/Python/3.12.15/x64/bin/pip cache dir
+2026-11-02T19:41:14.2561576Z /home/runner/.cache/pip
+2026-11-02T19:41:14.3580968Z Cache hit for: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.15-pip-b068aa210c8306e693e5e4dfe127bf3feab8e124a2b47a30c756d3528e772dc6
+2026-11-02T19:41:14.3675479Z (node:2399) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-02T19:41:14.8418278Z Received 77947220 of 77947220 (100.0%), 172.5 MBs/sec
+2026-11-02T19:41:14.8425108Z Cache Size: ~74 MB (77947220 B)
+2026-11-02T19:41:14.8539402Z [command]/usr/bin/tar -xf /home/runner/work/_temp/ec3e7e53-66ff-4a61-b075-77e854f5b5e5/cache.tzst -P -C /home/runner/work/gate/gate --use-compress-program unzstd
+2026-11-02T19:41:14.9922950Z Cache restored successfully
+2026-11-02T19:41:14.9929696Z Cache restored from key: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.15-pip-b068aa210c8306e693e5e4dfe127bf3feab8e124a2b47a30c756d3528e772dc6
+2026-11-02T19:41:15.0192511Z ##[group]Run python -m pip install --upgrade pip
+2026-11-02T19:41:15.0192862Z [36;1mpython -m pip install --upgrade pip[0m
+2026-11-02T19:41:15.0193202Z [36;1mpython -m pip install -c constraints/ci.txt ".[dev,contact-sync]"[0m
+2026-11-02T19:41:15.0193529Z [36;1mpython -m pip check[0m
+2026-11-02T19:41:15.0214174Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:41:15.0214410Z env:
+2026-11-02T19:41:15.0214839Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:41:15.0215085Z   GATE_ENV: ci
+2026-11-02T19:41:15.0215286Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:41:15.0215516Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:41:15.0215778Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:15.0216142Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:41:15.0216501Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:15.0216828Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:15.0217188Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:15.0217507Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:41:15.0217774Z ##[endgroup]
+2026-11-02T19:41:15.4936032Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages (26.2.2)
+2026-11-02T19:41:16.0308440Z Processing ./.
+2026-11-02T19:41:16.0327550Z   Installing build dependencies: started
+2026-11-02T19:41:16.8056424Z   Installing build dependencies: finished with status 'done'
+2026-11-02T19:41:16.8061889Z   Getting requirements to build wheel: started
+2026-11-02T19:41:17.2789623Z   Getting requirements to build wheel: finished with status 'done'
+2026-11-02T19:41:17.2797480Z   Preparing metadata (pyproject.toml): started
+2026-11-02T19:41:17.4569251Z   Preparing metadata (pyproject.toml): finished with status 'done'
+2026-11-02T19:41:17.5667098Z Collecting alembic==1.18.5 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:41:17.5678466Z   Using cached alembic-1.18.5-py3-none-any.whl.metadata (7.2 kB)
+2026-11-02T19:41:17.6117097Z Collecting asyncpg==0.31.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 2))
+2026-11-02T19:41:17.6128915Z   Using cached asyncpg-0.31.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (4.4 kB)
+2026-11-02T19:41:17.7607313Z Collecting cryptography==46.0.7 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 3))
+2026-11-02T19:41:17.7619837Z   Using cached cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+2026-11-02T19:41:17.8486245Z Collecting fastapi==0.139.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:17.8497766Z   Using cached fastapi-0.139.0-py3-none-any.whl.metadata (26 kB)
+2026-11-02T19:41:17.8773936Z Collecting httpx==0.28.1 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:41:17.8784910Z   Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+2026-11-02T19:41:17.9015837Z Collecting defusedxml==0.7.1 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 6))
+2026-11-02T19:41:17.9025347Z   Using cached defusedxml-0.7.1-py2.py3-none-any.whl.metadata (32 kB)
+2026-11-02T19:41:17.9248821Z Collecting olefile==0.47 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 7))
+2026-11-02T19:41:17.9258526Z   Using cached olefile-0.47-py2.py3-none-any.whl.metadata (9.7 kB)
+2026-11-02T19:41:18.0785288Z Collecting Pillow==12.3.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 8))
+2026-11-02T19:41:18.0797516Z   Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+2026-11-02T19:41:18.1060111Z Collecting PyJWT==2.13.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 9))
+2026-11-02T19:41:18.1070229Z   Using cached pyjwt-2.13.0-py3-none-any.whl.metadata (3.4 kB)
+2026-11-02T19:41:18.1361423Z Collecting pydantic-settings==2.14.2 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 10))
+2026-11-02T19:41:18.1371672Z   Using cached pydantic_settings-2.14.2-py3-none-any.whl.metadata (3.4 kB)
+2026-11-02T19:41:18.3950821Z Collecting SQLAlchemy==2.0.51 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 11))
+2026-11-02T19:41:18.3963311Z   Using cached sqlalchemy-2.0.51-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.5 kB)
+2026-11-02T19:41:18.4340875Z Collecting Telethon==1.44.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:41:18.4351622Z   Using cached telethon-1.44.0-py3-none-any.whl.metadata (4.0 kB)
+2026-11-02T19:41:18.4645670Z Collecting uvicorn==0.51.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 13))
+2026-11-02T19:41:18.4656037Z   Using cached uvicorn-0.51.0-py3-none-any.whl.metadata (6.6 kB)
+2026-11-02T19:41:18.4961052Z Collecting openpyxl<4.0.0,>=3.1.5 (from gate==0.1.0)
+2026-11-02T19:41:18.4973210Z   Using cached openpyxl-3.1.5-py2.py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:41:18.5290217Z Collecting pypdf<7.0.0,>=5.9.0 (from gate==0.1.0)
+2026-11-02T19:41:18.5829628Z   Downloading pypdf-6.21.4-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:41:18.6084256Z Collecting python-docx<2.0.0,>=1.2.0 (from gate==0.1.0)
+2026-11-02T19:41:18.6094275Z   Using cached python_docx-1.2.0-py3-none-any.whl.metadata (2.0 kB)
+2026-11-02T19:41:18.6364966Z Collecting aiosqlite<0.23,>=0.22.1 (from gate==0.1.0)
+2026-11-02T19:41:18.6375371Z   Using cached aiosqlite-0.22.1-py3-none-any.whl.metadata (4.3 kB)
+2026-11-02T19:41:18.6644342Z Collecting anyio>=4.4.0 (from gate==0.1.0)
+2026-11-02T19:41:18.6655115Z   Using cached anyio-4.14.2-py3-none-any.whl.metadata (4.6 kB)
+2026-11-02T19:41:18.7078887Z Collecting jsonschema>=4.23.0 (from gate==0.1.0)
+2026-11-02T19:41:18.7094442Z   Using cached jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:41:18.8244788Z Collecting mypy>=1.11.0 (from gate==0.1.0)
+2026-11-02T19:41:18.8257298Z   Using cached mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-11-02T19:41:18.8583852Z Collecting pytest>=8.3.0 (from gate==0.1.0)
+2026-11-02T19:41:18.8594432Z   Using cached pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:41:19.1102780Z Collecting ruff>=0.6.0 (from gate==0.1.0)
+2026-11-02T19:41:19.1115002Z   Using cached ruff-0.15.21-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (26 kB)
+2026-11-02T19:41:19.2180036Z Collecting cffi>=2.0.0 (from cryptography==46.0.7->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 3))
+2026-11-02T19:41:19.2192076Z   Using cached cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+2026-11-02T19:41:19.2462483Z Collecting Mako (from alembic==1.18.5->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:41:19.2478503Z   Using cached mako-1.4.3-py3-none-any.whl.metadata (2.9 kB)
+2026-11-02T19:41:19.2731101Z Collecting typing-extensions>=4.12 (from alembic==1.18.5->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:41:19.2737346Z   Using cached typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-11-02T19:41:19.3059563Z Collecting starlette>=0.46.0 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:19.3149185Z   Downloading starlette-1.10.0-py3-none-any.whl.metadata (6.6 kB)
+2026-11-02T19:41:19.4049509Z Collecting pydantic>=2.9.0 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:19.4135439Z   Downloading pydantic-2.14.2-py3-none-any.whl.metadata (137 kB)
+2026-11-02T19:41:19.4574789Z Collecting typing-inspection>=0.4.2 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:19.4584208Z   Using cached typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+2026-11-02T19:41:19.4794081Z Collecting annotated-doc>=0.0.2 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:19.4803336Z   Using cached annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+2026-11-02T19:41:19.5086075Z Collecting certifi (from httpx==0.28.1->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:41:19.5166589Z   Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:41:19.5428085Z Collecting httpcore==1.* (from httpx==0.28.1->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:41:19.5435426Z   Using cached httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+2026-11-02T19:41:19.5679650Z Collecting idna (from httpx==0.28.1->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:41:19.5698511Z   Using cached idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+2026-11-02T19:41:19.5981039Z Collecting python-dotenv>=0.21.0 (from pydantic-settings==2.14.2->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 10))
+2026-11-02T19:41:19.5991307Z   Using cached python_dotenv-1.2.4-py3-none-any.whl.metadata (29 kB)
+2026-11-02T19:41:19.7157072Z Collecting greenlet>=1 (from SQLAlchemy==2.0.51->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 11))
+2026-11-02T19:41:19.7168623Z   Using cached greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-11-02T19:41:19.7395152Z Collecting pyaes (from Telethon==1.44.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:41:19.7396116Z   Using cached pyaes-1.6.1-py3-none-any.whl
+2026-11-02T19:41:19.7658915Z Collecting rsa (from Telethon==1.44.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:41:19.7659946Z   Using cached rsa-4.9.1-py3-none-any.whl.metadata (5.6 kB)
+2026-11-02T19:41:19.7913604Z Collecting click>=7.0 (from uvicorn==0.51.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 13))
+2026-11-02T19:41:19.7926326Z   Using cached click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+2026-11-02T19:41:19.8138825Z Collecting h11>=0.8 (from uvicorn==0.51.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 13))
+2026-11-02T19:41:19.8145740Z   Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-11-02T19:41:19.8388969Z Collecting et-xmlfile (from openpyxl<4.0.0,>=3.1.5->gate==0.1.0)
+2026-11-02T19:41:19.8389855Z   Using cached et_xmlfile-2.0.0-py3-none-any.whl.metadata (2.7 kB)
+2026-11-02T19:41:20.0144549Z Collecting lxml>=3.1.0 (from python-docx<2.0.0,>=1.2.0->gate==0.1.0)
+2026-11-02T19:41:20.0155913Z   Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (3.3 kB)
+2026-11-02T19:41:20.0696851Z Collecting pycparser (from cffi>=2.0.0->cryptography==46.0.7->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 3))
+2026-11-02T19:41:20.0784993Z   Downloading pycparser-3.12-py3-none-any.whl.metadata (9.7 kB)
+2026-11-02T19:41:20.1052419Z Collecting attrs>=22.2.0 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:41:20.1062412Z   Using cached attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-11-02T19:41:20.1288814Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:41:20.1298804Z   Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+2026-11-02T19:41:20.1575745Z Collecting referencing>=0.28.4 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:41:20.1585515Z   Using cached referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+2026-11-02T19:41:20.3543105Z Collecting rpds-py>=0.25.0 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:41:20.3567551Z   Using cached rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+2026-11-02T19:41:20.3800732Z Collecting mypy_extensions>=1.0.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:41:20.3810385Z   Using cached mypy_extensions-1.1.0-py3-none-any.whl.metadata (1.1 kB)
+2026-11-02T19:41:20.4029351Z Collecting pathspec>=1.0.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:41:20.4038647Z   Using cached pathspec-1.1.1-py3-none-any.whl.metadata (14 kB)
+2026-11-02T19:41:20.5078219Z Collecting librt>=0.13.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:41:20.5089881Z   Using cached librt-0.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (1.3 kB)
+2026-11-02T19:41:20.5599199Z Collecting ast-serialize<1.0.0,>=0.6.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:41:20.5687431Z   Downloading ast_serialize-0.13.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.4 kB)
+2026-11-02T19:41:20.5936251Z Collecting annotated-types>=0.6.0 (from pydantic>=2.9.0->fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:20.5945546Z   Using cached annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+2026-11-02T19:41:21.1397475Z Collecting pydantic-core==2.50.2 (from pydantic>=2.9.0->fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:41:21.1482729Z   Downloading pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.5 kB)
+2026-11-02T19:41:21.1737518Z Collecting iniconfig>=1.0.1 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:41:21.1747057Z   Using cached iniconfig-2.3.1-py3-none-any.whl.metadata (2.8 kB)
+2026-11-02T19:41:21.1807660Z Collecting packaging>=22 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:41:21.1817013Z   Using cached packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+2026-11-02T19:41:21.2043616Z Collecting pluggy<2,>=1.5 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:41:21.2129501Z   Downloading pluggy-1.7.0-py3-none-any.whl.metadata (5.0 kB)
+2026-11-02T19:41:21.2402568Z Collecting pygments>=2.7.2 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:41:21.2412182Z   Using cached pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:41:21.3322853Z Collecting httptools>=0.8.0 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:41:21.3333651Z   Using cached httptools-0.9.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (3.5 kB)
+2026-11-02T19:41:21.3720894Z Collecting pyyaml>=5.1 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:41:21.3731304Z   Using cached pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-11-02T19:41:21.4128275Z Collecting uvloop>=0.15.1 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:41:21.4136622Z   Using cached uvloop-0.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.1 kB)
+2026-11-02T19:41:21.4778770Z Collecting watchfiles>=0.20 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:41:21.4789716Z   Using cached watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+2026-11-02T19:41:21.6272958Z Collecting websockets>=13.0 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:41:21.6368076Z   Downloading websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (6.3 kB)
+2026-11-02T19:41:21.6947338Z Collecting MarkupSafe>=2.0 (from Mako->alembic==1.18.5->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:41:21.6958652Z   Using cached markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-11-02T19:41:21.7306233Z Collecting pyasn1>=0.1.3 (from rsa->Telethon==1.44.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:41:21.7393997Z   Downloading pyasn1-0.6.5-py3-none-any.whl.metadata (8.4 kB)
+2026-11-02T19:41:21.7449918Z Using cached cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl (4.5 MB)
+2026-11-02T19:41:21.7473389Z Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (6.9 MB)
+2026-11-02T19:41:21.7503250Z Using cached pyjwt-2.13.0-py3-none-any.whl (31 kB)
+2026-11-02T19:41:21.7512759Z Using cached alembic-1.18.5-py3-none-any.whl (264 kB)
+2026-11-02T19:41:21.7522599Z Using cached asyncpg-0.31.0-cp312-cp312-manylinux_2_28_x86_64.whl (3.5 MB)
+2026-11-02T19:41:21.7542090Z Using cached defusedxml-0.7.1-py2.py3-none-any.whl (25 kB)
+2026-11-02T19:41:21.7551298Z Using cached fastapi-0.139.0-py3-none-any.whl (130 kB)
+2026-11-02T19:41:21.7560666Z Using cached httpx-0.28.1-py3-none-any.whl (73 kB)
+2026-11-02T19:41:21.7569665Z Using cached olefile-0.47-py2.py3-none-any.whl (114 kB)
+2026-11-02T19:41:21.7578869Z Using cached pydantic_settings-2.14.2-py3-none-any.whl (61 kB)
+2026-11-02T19:41:21.7588332Z Using cached sqlalchemy-2.0.51-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.4 MB)
+2026-11-02T19:41:21.7607207Z Using cached telethon-1.44.0-py3-none-any.whl (789 kB)
+2026-11-02T19:41:21.7618629Z Using cached uvicorn-0.51.0-py3-none-any.whl (73 kB)
+2026-11-02T19:41:21.7627651Z Using cached aiosqlite-0.22.1-py3-none-any.whl (17 kB)
+2026-11-02T19:41:21.7636634Z Using cached httpcore-1.0.9-py3-none-any.whl (78 kB)
+2026-11-02T19:41:21.7645762Z Using cached openpyxl-3.1.5-py2.py3-none-any.whl (250 kB)
+2026-11-02T19:41:21.7735661Z Downloading pypdf-6.21.4-py3-none-any.whl (410 kB)
+2026-11-02T19:41:21.7906170Z Using cached python_docx-1.2.0-py3-none-any.whl (252 kB)
+2026-11-02T19:41:21.7915891Z Using cached annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+2026-11-02T19:41:21.7924996Z Using cached anyio-4.14.2-py3-none-any.whl (125 kB)
+2026-11-02T19:41:21.7934874Z Using cached cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (221 kB)
+2026-11-02T19:41:21.7944618Z Using cached click-8.5.0-py3-none-any.whl (125 kB)
+2026-11-02T19:41:21.7954383Z Using cached greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (621 kB)
+2026-11-02T19:41:21.7965281Z Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+2026-11-02T19:41:21.7974216Z Using cached idna-3.20-py3-none-any.whl (69 kB)
+2026-11-02T19:41:21.7983508Z Using cached jsonschema-4.26.0-py3-none-any.whl (90 kB)
+2026-11-02T19:41:21.7992830Z Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-11-02T19:41:21.8002039Z Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+2026-11-02T19:41:21.8011206Z Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (5.2 MB)
+2026-11-02T19:41:21.8035347Z Using cached mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (15.3 MB)
+2026-11-02T19:41:21.8171884Z Downloading ast_serialize-0.13.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+2026-11-02T19:41:21.8411651Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 48.9 MB/s  0:00:00
+2026-11-02T19:41:21.8423294Z Using cached librt-0.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (531 kB)
+2026-11-02T19:41:21.8434778Z Using cached mypy_extensions-1.1.0-py3-none-any.whl (5.0 kB)
+2026-11-02T19:41:21.8444024Z Using cached pathspec-1.1.1-py3-none-any.whl (57 kB)
+2026-11-02T19:41:21.8542233Z Downloading pydantic-2.14.2-py3-none-any.whl (490 kB)
+2026-11-02T19:41:21.8698176Z Downloading pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.2 MB)
+2026-11-02T19:41:21.8992682Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 75.2 MB/s  0:00:00
+2026-11-02T19:41:21.9004040Z Using cached annotated_types-0.8.0-py3-none-any.whl (13 kB)
+2026-11-02T19:41:21.9014128Z Using cached pytest-9.1.1-py3-none-any.whl (386 kB)
+2026-11-02T19:41:21.9105230Z Downloading pluggy-1.7.0-py3-none-any.whl (27 kB)
+2026-11-02T19:41:21.9131392Z Using cached iniconfig-2.3.1-py3-none-any.whl (7.6 kB)
+2026-11-02T19:41:21.9140689Z Using cached packaging-26.3-py3-none-any.whl (129 kB)
+2026-11-02T19:41:21.9150518Z Using cached pygments-2.21.0-py3-none-any.whl (1.3 MB)
+2026-11-02T19:41:21.9163678Z Using cached python_dotenv-1.2.4-py3-none-any.whl (23 kB)
+2026-11-02T19:41:21.9172968Z Using cached referencing-0.37.0-py3-none-any.whl (26 kB)
+2026-11-02T19:41:21.9182810Z Using cached rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+2026-11-02T19:41:21.9192928Z Using cached ruff-0.15.21-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (11.5 MB)
+2026-11-02T19:41:21.9315446Z Downloading starlette-1.10.0-py3-none-any.whl (80 kB)
+2026-11-02T19:41:21.9346319Z Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-11-02T19:41:21.9355750Z Using cached typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+2026-11-02T19:41:21.9365592Z Using cached httptools-0.9.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (552 kB)
+2026-11-02T19:41:21.9376754Z Using cached pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+2026-11-02T19:41:21.9388583Z Using cached uvloop-0.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (4.5 MB)
+2026-11-02T19:41:21.9410790Z Using cached watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (458 kB)
+2026-11-02T19:41:21.9506230Z Downloading websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (226 kB)
+2026-11-02T19:41:21.9631246Z Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+2026-11-02T19:41:21.9668289Z Using cached et_xmlfile-2.0.0-py3-none-any.whl (18 kB)
+2026-11-02T19:41:21.9678670Z Using cached mako-1.4.3-py3-none-any.whl (80 kB)
+2026-11-02T19:41:21.9689468Z Using cached markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-11-02T19:41:21.9779054Z Downloading pycparser-3.12-py3-none-any.whl (62 kB)
+2026-11-02T19:41:21.9809258Z Using cached rsa-4.9.1-py3-none-any.whl (34 kB)
+2026-11-02T19:41:21.9902253Z Downloading pyasn1-0.6.5-py3-none-any.whl (84 kB)
+2026-11-02T19:41:22.1441208Z Building wheels for collected packages: gate
+2026-11-02T19:41:22.1449770Z   Building wheel for gate (pyproject.toml): started
+2026-11-02T19:41:22.5413741Z   Building wheel for gate (pyproject.toml): finished with status 'done'
+2026-11-02T19:41:22.5427346Z   Created wheel for gate: filename=gate-0.1.0-py3-none-any.whl size=933866 sha256=e219d208b81cbb9b0d1cba4e4feca7e369976dcaaa76d9ac6994cf41ec416150
+2026-11-02T19:41:22.5429076Z   Stored in directory: /tmp/pip-ephem-wheel-cache-mwnmxvdh/wheels/6e/3b/96/1824203046eca45327da46521e4d3b250e7f5f557cadea708b
+2026-11-02T19:41:22.5452439Z Successfully built gate
+2026-11-02T19:41:22.6305971Z Installing collected packages: pyaes, websockets, uvloop, typing-extensions, ruff, rpds-py, pyyaml, python-dotenv, pypdf, PyJWT, pygments, pycparser, pyasn1, pluggy, Pillow, pathspec, packaging, olefile, mypy_extensions, MarkupSafe, lxml, librt, iniconfig, idna, httptools, h11, greenlet, et-xmlfile, defusedxml, click, certifi, attrs, asyncpg, ast-serialize, annotated-types, annotated-doc, aiosqlite, uvicorn, typing-inspection, SQLAlchemy, rsa, referencing, python-docx, pytest, pydantic-core, openpyxl, mypy, Mako, httpcore, cffi, anyio, watchfiles, Telethon, starlette, pydantic, jsonschema-specifications, httpx, cryptography, alembic, pydantic-settings, jsonschema, fastapi, gate
+2026-11-02T19:41:30.9135244Z 
+2026-11-02T19:41:30.9176703Z Successfully installed Mako-1.4.3 MarkupSafe-3.0.4 Pillow-12.3.0 PyJWT-2.13.0 SQLAlchemy-2.0.51 Telethon-1.44.0 aiosqlite-0.22.1 alembic-1.18.5 annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.14.2 ast-serialize-0.13.1 asyncpg-0.31.0 attrs-26.1.0 certifi-2026.10.23 cffi-2.1.1 click-8.5.0 cryptography-46.0.7 defusedxml-0.7.1 et-xmlfile-2.0.0 fastapi-0.139.0 gate-0.1.0 greenlet-3.5.6 h11-0.16.0 httpcore-1.0.9 httptools-0.9.0 httpx-0.28.1 idna-3.20 iniconfig-2.3.1 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 librt-0.16.0 lxml-6.1.3 mypy-2.3.0 mypy_extensions-1.1.0 olefile-0.47 openpyxl-3.1.5 packaging-26.3 pathspec-1.1.1 pluggy-1.7.0 pyaes-1.6.1 pyasn1-0.6.5 pycparser-3.12 pydantic-2.14.2 pydantic-core-2.50.2 pydantic-settings-2.14.2 pygments-2.21.0 pypdf-6.21.4 pytest-9.1.1 python-docx-1.2.0 python-dotenv-1.2.4 pyyaml-6.0.3 referencing-0.37.0 rpds-py-2026.9.1 rsa-4.9.1 ruff-0.15.21 starlette-1.10.0 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.51.0 uvloop-0.23.0 watchfiles-1.3.0 websockets-17.4
+2026-11-02T19:41:31.4304918Z No broken requirements found.
+2026-11-02T19:41:31.4611648Z ##[group]Run ruff check .
+2026-11-02T19:41:31.4611917Z [36;1mruff check .[0m
+2026-11-02T19:41:31.4612114Z [36;1mmypy app[0m
+2026-11-02T19:41:31.4612284Z [36;1mpytest[0m
+2026-11-02T19:41:31.4629977Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:41:31.4630202Z env:
+2026-11-02T19:41:31.4630639Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:41:31.4630873Z   GATE_ENV: ci
+2026-11-02T19:41:31.4631065Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:41:31.4631287Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:41:31.4631543Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:31.4631898Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:41:31.4632243Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:31.4632547Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:31.4632888Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:41:31.4633238Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:41:31.4633509Z ##[endgroup]
+2026-11-02T19:41:31.6973498Z I001 [*] Import block is un-sorted or un-formatted
+2026-11-02T19:41:31.6977451Z   --> tests/test_watch_voice_baseline_fallback_postgres.py:32:5
+2026-11-02T19:41:31.6978595Z    |
+2026-11-02T19:41:31.6979008Z 30 |   )
+2026-11-02T19:41:31.6979849Z 31 |   def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
+2026-11-02T19:41:31.6980523Z 32 | /     import httpx
+2026-11-02T19:41:31.6981273Z 33 | |     from app.api.health_routes import router
+2026-11-02T19:41:31.6981970Z 34 | |     from app.infrastructure.readiness import build_readiness_service
+2026-11-02T19:41:31.6982971Z 35 | |     from app.infrastructure.watch_voice_actions import drain
+2026-11-02T19:41:31.6983806Z 36 | |     from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+2026-11-02T19:41:31.6984742Z 37 | |     from fastapi import FastAPI
+2026-11-02T19:41:31.6985123Z 38 | |     from sqlalchemy import select, text
+2026-11-02T19:41:31.6986140Z 39 | |     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+2026-11-02T19:41:31.6987226Z 40 | |     from test_watch_voice_actions import ActionsWorld, action_settings, claims
+2026-11-02T19:41:31.6988166Z    | |______________________________________________________________________________^
+2026-11-02T19:41:31.6988865Z 41 |
+2026-11-02T19:41:31.6989169Z 42 |       root = Path(__file__).resolve().parents[1]
+2026-11-02T19:41:31.6989550Z    |
+2026-11-02T19:41:31.6989831Z help: Organize imports
+2026-11-02T19:41:31.6990065Z 
+2026-11-02T19:41:31.6990257Z Found 1 error.
+2026-11-02T19:41:31.6990723Z [*] 1 fixable with the `--fix` option.
+2026-11-02T19:41:31.7001057Z ##[error]Process completed with exit code 1.
+2026-11-02T19:41:31.7105968Z Post job cleanup.
+2026-11-02T19:41:31.7989359Z [command]/usr/bin/git version
+2026-11-02T19:41:31.8069778Z git version 2.56.0
+2026-11-02T19:41:31.8074995Z Temporarily overriding HOME='/home/runner/work/_temp/12dc4d74-2a16-40f2-bf85-ca5476077731' before making global git config changes
+2026-11-02T19:41:31.8075924Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:41:31.8076659Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate
+2026-11-02T19:41:31.8133592Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:41:31.8181317Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:41:31.8632783Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:41:31.8633610Z http.https://github.com/.extraheader
+2026-11-02T19:41:31.8656213Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T19:41:31.8729252Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:41:31.9062921Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:41:31.9158935Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:41:31.9610838Z Print service container logs: 469feea1b3ad48109b2552a26a7b1c45_postgres17_3ab3de
+2026-11-02T19:41:31.9614650Z ##[command]/usr/bin/docker logs --details cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:41:31.9758206Z  The files belonging to this database system will be owned by user "postgres".
+2026-11-02T19:41:31.9760277Z  initdb: warning: enabling "trust" authentication for local connections
+2026-11-02T19:41:31.9761724Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-11-02T19:41:31.9762233Z  This user must also own the server process.
+2026-11-02T19:41:31.9762475Z  
+2026-11-02T19:41:31.9762723Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-11-02T19:41:31.9763088Z  The default database encoding has accordingly been set to "UTF8".
+2026-11-02T19:41:31.9763436Z  The default text search configuration will be set to "english".
+2026-11-02T19:41:31.9763754Z  
+2026-11-02T19:41:31.9763929Z  Data page checksums are disabled.
+2026-11-02T19:41:31.9764134Z  
+2026-11-02T19:41:31.9764382Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-11-02T19:41:31.9764703Z  creating subdirectories ... ok
+2026-11-02T19:41:31.9764970Z  selecting dynamic shared memory implementation ... posix
+2026-11-02T19:41:31.9765260Z  selecting default "max_connections" ... 100
+2026-11-02T19:41:31.9765532Z  selecting default "shared_buffers" ... 128MB
+2026-11-02T19:41:31.9765781Z  selecting default time zone ... Etc/UTC
+2026-11-02T19:41:31.9766018Z  creating configuration files ... ok
+2026-11-02T19:41:31.9766262Z  running bootstrap script ... ok
+2026-11-02T19:41:31.9766517Z  performing post-bootstrap initialization ... ok
+2026-11-02T19:41:31.9766771Z  syncing data to disk ... ok
+2026-11-02T19:41:31.9766970Z  
+2026-11-02T19:41:31.9767133Z  
+2026-11-02T19:41:31.9767336Z  Success. You can now start the database server using:
+2026-11-02T19:41:31.9767590Z  
+2026-11-02T19:41:31.9767801Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-11-02T19:41:31.9768317Z  
+2026-11-02T19:41:31.9768903Z  waiting for server to start....2026-11-02 19:40:59.905 UTC [48] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-11-02T19:41:31.9769594Z  2026-11-02 19:40:59.906 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-02T19:41:31.9770047Z  2026-11-02 19:40:59.991 UTC [51] LOG:  database system was shut down at 2026-11-02 19:40:59 UTC
+2026-11-02T19:41:31.9770447Z  2026-11-02 19:40:59.994 UTC [48] LOG:  database system is ready to accept connections
+2026-11-02T19:41:31.9770752Z   done
+2026-11-02T19:41:31.9770916Z  server started
+2026-11-02T19:41:31.9771093Z  CREATE DATABASE
+2026-11-02T19:41:31.9771261Z  
+2026-11-02T19:41:31.9771424Z  
+2026-11-02T19:41:31.9771686Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-11-02T19:41:31.9772005Z  
+2026-11-02T19:41:31.9772219Z  2026-11-02 19:41:00.211 UTC [48] LOG:  received fast shutdown request
+2026-11-02T19:41:31.9772634Z  waiting for server to shut down....2026-11-02 19:41:00.212 UTC [48] LOG:  aborting any active transactions
+2026-11-02T19:41:31.9773160Z  2026-11-02 19:41:00.215 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-11-02T19:41:31.9785154Z  2026-11-02 19:41:00.215 UTC [49] LOG:  shutting down
+2026-11-02T19:41:31.9785675Z  2026-11-02 19:41:00.216 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-11-02T19:41:31.9787077Z  2026-11-02 19:41:00.402 UTC [49] LOG:  checkpoint complete: wrote 925 buffers (5.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.140 s, sync=0.046 s, total=0.188 s; sync files=301, longest=0.043 s, average=0.001 s; distance=4256 kB, estimate=4256 kB; lsn=0/19179A8, redo lsn=0/19179A8
+2026-11-02T19:41:31.9789472Z  2026-11-02 19:41:00.409 UTC [48] LOG:  database system is shut down
+2026-11-02T19:41:31.9790066Z   done
+2026-11-02T19:41:31.9790287Z  server stopped
+2026-11-02T19:41:31.9790638Z  
+2026-11-02T19:41:31.9790913Z  PostgreSQL init process complete; ready for start up.
+2026-11-02T19:41:31.9791405Z  
+2026-11-02T19:41:31.9792393Z  2026-11-02 19:41:00.432 UTC [1] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-11-02T19:41:31.9793293Z  2026-11-02 19:41:00.432 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-11-02T19:41:31.9793979Z  2026-11-02 19:41:00.432 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-11-02T19:41:31.9794726Z  2026-11-02 19:41:00.433 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-02T19:41:31.9795446Z  2026-11-02 19:41:00.437 UTC [64] LOG:  database system was shut down at 2026-11-02 19:41:00 UTC
+2026-11-02T19:41:31.9796091Z  2026-11-02 19:41:00.443 UTC [1] LOG:  database system is ready to accept connections
+2026-11-02T19:41:31.9796586Z  2026-11-02 19:41:08.686 UTC [75] FATAL:  role "root" does not exist
+2026-11-02T19:41:31.9796914Z  2026-11-02 19:41:18.761 UTC [82] FATAL:  role "root" does not exist
+2026-11-02T19:41:31.9797216Z  2026-11-02 19:41:28.839 UTC [89] FATAL:  role "root" does not exist
+2026-11-02T19:41:31.9802727Z Stop and remove container: 469feea1b3ad48109b2552a26a7b1c45_postgres17_3ab3de
+2026-11-02T19:41:31.9807571Z ##[command]/usr/bin/docker rm --force cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:41:35.9242936Z cae5bb403240cfa8e90384ff566a8f29bc171b0935cbb7abfe6c82043c62cb1b
+2026-11-02T19:41:35.9273273Z Remove container network: github_network_e5bf7c2cab104d79af849661af6085a9
+2026-11-02T19:41:35.9277024Z ##[command]/usr/bin/docker network rm github_network_e5bf7c2cab104d79af849661af6085a9
+2026-11-02T19:41:36.0211225Z github_network_e5bf7c2cab104d79af849661af6085a9
+2026-11-02T19:41:36.0279582Z Cleaning up orphan processes
+2026-11-02T19:41:36.0591383Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5, actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

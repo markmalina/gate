@@ -1,0 +1,647 @@
+﻿2026-11-02T19:38:28.2420030Z Current runner version: '2.338.2'
+2026-11-02T19:38:28.2448447Z ##[group]Runner Image Provisioner
+2026-11-02T19:38:28.2449360Z Hosted Compute Agent
+2026-11-02T19:38:28.2450138Z Version: 20261021.618
+2026-11-02T19:38:28.2450834Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T19:38:28.2451648Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T19:38:28.2452410Z Worker ID: {04fe1fcb-dfef-4bb9-8966-0335dc0bf6b3}
+2026-11-02T19:38:28.2453169Z Region: westcentralus
+2026-11-02T19:38:28.2453840Z Cloud: Azure
+2026-11-02T19:38:28.2454933Z ##[endgroup]
+2026-11-02T19:38:28.2456697Z ##[group]Operating System
+2026-11-02T19:38:28.2457426Z Ubuntu
+2026-11-02T19:38:28.2457990Z 24.04.5
+2026-11-02T19:38:28.2458635Z LTS
+2026-11-02T19:38:28.2459200Z ##[endgroup]
+2026-11-02T19:38:28.2459813Z ##[group]Runner Image
+2026-11-02T19:38:28.2460536Z Image: ubuntu-24.04
+2026-11-02T19:38:28.2461147Z Version: 20261025.353.1
+2026-11-02T19:38:28.2462912Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T19:38:28.2464937Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T19:38:28.2466086Z ##[endgroup]
+2026-11-02T19:38:28.2467285Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T19:38:28.2469685Z Contents: read
+2026-11-02T19:38:28.2470340Z Metadata: read
+2026-11-02T19:38:28.2471068Z ##[endgroup]
+2026-11-02T19:38:28.2473328Z Secret source: Actions
+2026-11-02T19:38:28.2474811Z Cache mode: write
+2026-11-02T19:38:28.2475951Z Prepare workflow directory
+2026-11-02T19:38:28.3003458Z Prepare all required actions
+2026-11-02T19:38:28.3053268Z Getting action download info
+2026-11-02T19:38:28.6154920Z Download action repository 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-11-02T19:38:28.7355243Z Download action repository 'actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-11-02T19:38:28.8240203Z Download action repository 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-02T19:38:29.0746771Z Complete job name: backend
+2026-11-02T19:38:29.1602691Z ##[group]Checking docker version
+2026-11-02T19:38:29.1616624Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-11-02T19:38:29.2632695Z '1.48'
+2026-11-02T19:38:29.2647104Z Docker daemon API version: '1.48'
+2026-11-02T19:38:29.2648497Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-11-02T19:38:29.3065715Z '1.48'
+2026-11-02T19:38:29.3099223Z Docker client API version: '1.48'
+2026-11-02T19:38:29.3108267Z ##[endgroup]
+2026-11-02T19:38:29.3113431Z ##[group]Clean up resources from previous jobs
+2026-11-02T19:38:29.3122261Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=bc482d"
+2026-11-02T19:38:29.3512475Z ##[command]/usr/bin/docker network prune --force --filter "label=bc482d"
+2026-11-02T19:38:29.4118681Z ##[endgroup]
+2026-11-02T19:38:29.4119643Z ##[group]Create local container network
+2026-11-02T19:38:29.4175041Z ##[command]/usr/bin/docker network create --label bc482d github_network_526c5811613f40b48576527601cda891
+2026-11-02T19:38:29.5321183Z 952ee85997af703dc4fced5f42a7c1218e7466cae3bc51fc658070f66f89745d
+2026-11-02T19:38:29.5332569Z ##[endgroup]
+2026-11-02T19:38:29.5426988Z ##[group]Starting postgres service container
+2026-11-02T19:38:29.5482550Z ##[command]/usr/bin/docker pull postgres:17
+2026-11-02T19:38:30.3255024Z 17: Pulling from library/postgres
+2026-11-02T19:38:30.5335515Z 6fc242d221a6: Pulling fs layer
+2026-11-02T19:38:30.5337543Z e6095e4c4fdd: Pulling fs layer
+2026-11-02T19:38:30.5341895Z bad9dce990ef: Pulling fs layer
+2026-11-02T19:38:30.5343155Z 904defe665c0: Pulling fs layer
+2026-11-02T19:38:30.5344689Z 455e5ed72fb1: Pulling fs layer
+2026-11-02T19:38:30.5345961Z 55f036305357: Pulling fs layer
+2026-11-02T19:38:30.5347290Z db07174d12aa: Pulling fs layer
+2026-11-02T19:38:30.5348602Z 03f2ecc50d4c: Pulling fs layer
+2026-11-02T19:38:30.5350574Z ff7cbe54dfda: Pulling fs layer
+2026-11-02T19:38:30.5351847Z 0a26f79bdef8: Pulling fs layer
+2026-11-02T19:38:30.5353111Z 1f1fbc5e4aa5: Pulling fs layer
+2026-11-02T19:38:30.5354705Z 7f824adc2669: Pulling fs layer
+2026-11-02T19:38:30.5356080Z 3cecd013db3b: Pulling fs layer
+2026-11-02T19:38:30.5357444Z 7f0980702fb2: Pulling fs layer
+2026-11-02T19:38:30.5358758Z 904defe665c0: Waiting
+2026-11-02T19:38:30.5360268Z 455e5ed72fb1: Waiting
+2026-11-02T19:38:30.5361753Z 55f036305357: Waiting
+2026-11-02T19:38:30.5363312Z db07174d12aa: Waiting
+2026-11-02T19:38:30.5365150Z 03f2ecc50d4c: Waiting
+2026-11-02T19:38:30.5366658Z ff7cbe54dfda: Waiting
+2026-11-02T19:38:30.5368139Z 0a26f79bdef8: Waiting
+2026-11-02T19:38:30.5369641Z 1f1fbc5e4aa5: Waiting
+2026-11-02T19:38:30.5371125Z 7f824adc2669: Waiting
+2026-11-02T19:38:30.5372646Z 3cecd013db3b: Waiting
+2026-11-02T19:38:30.5374137Z 7f0980702fb2: Waiting
+2026-11-02T19:38:30.7513037Z e6095e4c4fdd: Verifying Checksum
+2026-11-02T19:38:30.7514768Z e6095e4c4fdd: Download complete
+2026-11-02T19:38:30.8466619Z bad9dce990ef: Verifying Checksum
+2026-11-02T19:38:30.8468290Z bad9dce990ef: Download complete
+2026-11-02T19:38:30.9379968Z 6fc242d221a6: Verifying Checksum
+2026-11-02T19:38:30.9380990Z 6fc242d221a6: Download complete
+2026-11-02T19:38:31.0312561Z 904defe665c0: Verifying Checksum
+2026-11-02T19:38:31.0319547Z 904defe665c0: Download complete
+2026-11-02T19:38:31.1998374Z 455e5ed72fb1: Verifying Checksum
+2026-11-02T19:38:31.2003518Z 455e5ed72fb1: Download complete
+2026-11-02T19:38:31.2285292Z db07174d12aa: Verifying Checksum
+2026-11-02T19:38:31.2287200Z db07174d12aa: Download complete
+2026-11-02T19:38:31.2346214Z 55f036305357: Verifying Checksum
+2026-11-02T19:38:31.2349821Z 55f036305357: Download complete
+2026-11-02T19:38:31.4127742Z 03f2ecc50d4c: Download complete
+2026-11-02T19:38:31.4466519Z 0a26f79bdef8: Verifying Checksum
+2026-11-02T19:38:31.4470541Z 0a26f79bdef8: Download complete
+2026-11-02T19:38:31.6210097Z 1f1fbc5e4aa5: Verifying Checksum
+2026-11-02T19:38:31.6211870Z 1f1fbc5e4aa5: Download complete
+2026-11-02T19:38:31.6374230Z 7f824adc2669: Verifying Checksum
+2026-11-02T19:38:31.6375655Z 7f824adc2669: Download complete
+2026-11-02T19:38:31.8740497Z 7f0980702fb2: Verifying Checksum
+2026-11-02T19:38:31.8741441Z 7f0980702fb2: Download complete
+2026-11-02T19:38:31.8752655Z 3cecd013db3b: Verifying Checksum
+2026-11-02T19:38:31.8754913Z 3cecd013db3b: Download complete
+2026-11-02T19:38:32.0792995Z ff7cbe54dfda: Verifying Checksum
+2026-11-02T19:38:32.0800728Z ff7cbe54dfda: Download complete
+2026-11-02T19:38:32.4624645Z 6fc242d221a6: Pull complete
+2026-11-02T19:38:33.9157217Z e6095e4c4fdd: Pull complete
+2026-11-02T19:38:34.1208016Z bad9dce990ef: Pull complete
+2026-11-02T19:38:34.1716693Z 904defe665c0: Pull complete
+2026-11-02T19:38:34.5347516Z 455e5ed72fb1: Pull complete
+2026-11-02T19:38:34.6002909Z 55f036305357: Pull complete
+2026-11-02T19:38:34.6083770Z db07174d12aa: Pull complete
+2026-11-02T19:38:34.6205810Z 03f2ecc50d4c: Pull complete
+2026-11-02T19:38:39.0176826Z ff7cbe54dfda: Pull complete
+2026-11-02T19:38:39.0373258Z 0a26f79bdef8: Pull complete
+2026-11-02T19:38:39.0643150Z 1f1fbc5e4aa5: Pull complete
+2026-11-02T19:38:39.0781266Z 7f824adc2669: Pull complete
+2026-11-02T19:38:39.0906177Z 3cecd013db3b: Pull complete
+2026-11-02T19:38:39.1009469Z 7f0980702fb2: Pull complete
+2026-11-02T19:38:39.1069132Z Digest: sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+2026-11-02T19:38:39.1095529Z Status: Downloaded newer image for postgres:17
+2026-11-02T19:38:39.1111221Z docker.io/library/postgres:17
+2026-11-02T19:38:39.1201249Z ##[command]/usr/bin/docker create --name eda9c55b6da849c284b9821acb584a8f_postgres17_ac27c7 --label bc482d --network github_network_526c5811613f40b48576527601cda891 --network-alias postgres -p 5432:5432 --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=gate" -e GITHUB_ACTIONS=true -e CI=true postgres:17
+2026-11-02T19:38:39.1521950Z bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:39.1553894Z ##[command]/usr/bin/docker start bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:39.4225595Z bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:39.4278581Z ##[command]/usr/bin/docker ps --all --filter id=bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-11-02T19:38:39.4546157Z bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5 Up Less than a second (health: starting)
+2026-11-02T19:38:39.4569450Z ##[command]/usr/bin/docker port bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:39.4825695Z 5432/tcp -> 0.0.0.0:5432
+2026-11-02T19:38:39.4834656Z 5432/tcp -> [::]:5432
+2026-11-02T19:38:39.4895377Z ##[endgroup]
+2026-11-02T19:38:39.4907921Z ##[group]Waiting for all services to be ready
+2026-11-02T19:38:39.4926731Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:39.5205001Z starting
+2026-11-02T19:38:39.5223258Z postgres service is starting, waiting 2 seconds before checking again.
+2026-11-02T19:38:41.5222121Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:41.5392537Z starting
+2026-11-02T19:38:41.5410073Z postgres service is starting, waiting 4 seconds before checking again.
+2026-11-02T19:38:45.8047551Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:45.8241775Z starting
+2026-11-02T19:38:45.8272378Z postgres service is starting, waiting 7 seconds before checking again.
+2026-11-02T19:38:52.9845129Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:38:53.0019740Z healthy
+2026-11-02T19:38:53.0041377Z postgres service is healthy.
+2026-11-02T19:38:53.0042085Z ##[endgroup]
+2026-11-02T19:38:53.0365683Z ##[group]Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+2026-11-02T19:38:53.0366395Z with:
+2026-11-02T19:38:53.0366639Z   ref: f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:53.0366955Z   repository: markmalina/gate
+2026-11-02T19:38:53.0369556Z   token: ***
+2026-11-02T19:38:53.0369773Z   ssh-strict: true
+2026-11-02T19:38:53.0369982Z   ssh-user: git
+2026-11-02T19:38:53.0370202Z   persist-credentials: true
+2026-11-02T19:38:53.0370441Z   clean: true
+2026-11-02T19:38:53.0370659Z   sparse-checkout-cone-mode: true
+2026-11-02T19:38:53.0370917Z   fetch-depth: 1
+2026-11-02T19:38:53.0371126Z   fetch-tags: false
+2026-11-02T19:38:53.0371335Z   show-progress: true
+2026-11-02T19:38:53.0371565Z   lfs: false
+2026-11-02T19:38:53.0371755Z   submodules: false
+2026-11-02T19:38:53.0371969Z   set-safe-directory: true
+2026-11-02T19:38:53.0372385Z env:
+2026-11-02T19:38:53.0372879Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:38:53.0373207Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:38:53.0373464Z   GATE_ENV: ci
+2026-11-02T19:38:53.0373671Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:53.0373923Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:53.0374186Z ##[endgroup]
+2026-11-02T19:38:53.3434831Z Syncing repository: markmalina/gate
+2026-11-02T19:38:53.3437049Z ##[group]Getting Git version info
+2026-11-02T19:38:53.3437659Z Working directory is '/home/runner/work/gate/gate'
+2026-11-02T19:38:53.3441643Z [command]/usr/bin/git version
+2026-11-02T19:38:53.3605662Z git version 2.56.0
+2026-11-02T19:38:53.3645647Z ##[endgroup]
+2026-11-02T19:38:53.3653610Z Temporarily overriding HOME='/home/runner/work/_temp/1dcce347-8f82-48b7-b716-dc8fc1c7d8bd' before making global git config changes
+2026-11-02T19:38:53.3656266Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:38:53.3657607Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate
+2026-11-02T19:38:53.3786253Z Deleting the contents of '/home/runner/work/gate/gate'
+2026-11-02T19:38:53.3787280Z ##[group]Initializing the repository
+2026-11-02T19:38:53.3787876Z [command]/usr/bin/git init /home/runner/work/gate/gate
+2026-11-02T19:38:53.3915677Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T19:38:53.3916930Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T19:38:53.3918416Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T19:38:53.3945568Z hint: call:
+2026-11-02T19:38:53.3949765Z hint:
+2026-11-02T19:38:53.3950333Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T19:38:53.3950863Z hint:
+2026-11-02T19:38:53.3951519Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T19:38:53.3952523Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T19:38:53.3953349Z hint:
+2026-11-02T19:38:53.3953827Z hint: 	git branch -m <name>
+2026-11-02T19:38:53.3954495Z hint:
+2026-11-02T19:38:53.3955291Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T19:38:53.3956365Z Initialized empty Git repository in /home/runner/work/gate/gate/.git/
+2026-11-02T19:38:53.3981871Z [command]/usr/bin/git remote add origin https://github.com/markmalina/gate
+2026-11-02T19:38:53.3985863Z ##[endgroup]
+2026-11-02T19:38:53.3987940Z ##[group]Disabling automatic garbage collection
+2026-11-02T19:38:53.3988759Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T19:38:53.4205474Z ##[endgroup]
+2026-11-02T19:38:53.4206774Z ##[group]Setting up auth
+2026-11-02T19:38:53.4209150Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:38:53.4220749Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:38:53.4816357Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:38:53.4865906Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:38:53.5195418Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:38:53.5248994Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:38:53.5580889Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T19:38:53.5641853Z ##[endgroup]
+2026-11-02T19:38:53.5642842Z ##[group]Fetching the repository
+2026-11-02T19:38:53.5656209Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.3854019Z From https://github.com/markmalina/gate
+2026-11-02T19:38:54.3865868Z  * branch            f06e2749e2d6e07a00a8554e7f47441a1f2ca729 -> FETCH_HEAD
+2026-11-02T19:38:54.3868420Z ##[endgroup]
+2026-11-02T19:38:54.3869269Z ##[group]Determining the checkout info
+2026-11-02T19:38:54.3870379Z ##[endgroup]
+2026-11-02T19:38:54.3884161Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T19:38:54.3948478Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T19:38:54.3993252Z ##[group]Checking out the ref
+2026-11-02T19:38:54.3997549Z [command]/usr/bin/git checkout --progress --force f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.4749320Z Note: switching to 'f06e2749e2d6e07a00a8554e7f47441a1f2ca729'.
+2026-11-02T19:38:54.4750658Z 
+2026-11-02T19:38:54.4751892Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-02T19:38:54.4752954Z changes and commit them, and you can discard any commits you make in this
+2026-11-02T19:38:54.4762250Z state without impacting any branches by switching back to a branch.
+2026-11-02T19:38:54.4762729Z 
+2026-11-02T19:38:54.4763214Z If you want to create a new branch to retain commits you create, you may
+2026-11-02T19:38:54.4764034Z do so (now or later) by using -c with the switch command. Example:
+2026-11-02T19:38:54.4764782Z 
+2026-11-02T19:38:54.4764972Z   git switch -c <new-branch-name>
+2026-11-02T19:38:54.4765267Z 
+2026-11-02T19:38:54.4765434Z Or undo this operation with:
+2026-11-02T19:38:54.4765739Z 
+2026-11-02T19:38:54.4765911Z   git switch -
+2026-11-02T19:38:54.4766181Z 
+2026-11-02T19:38:54.4766546Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-02T19:38:54.4767099Z 
+2026-11-02T19:38:54.4767634Z HEAD is now at f06e274 Verify unchanged deployed Actions app against populated Watch0119 fallback schema
+2026-11-02T19:38:54.4783819Z ##[endgroup]
+2026-11-02T19:38:54.4840885Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T19:38:54.4883363Z f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.5115208Z ##[group]Run test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+2026-11-02T19:38:54.5115721Z [36;1mtest "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"[0m
+2026-11-02T19:38:54.5139608Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:38:54.5139880Z env:
+2026-11-02T19:38:54.5140432Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:38:54.5140730Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:38:54.5140993Z   GATE_ENV: ci
+2026-11-02T19:38:54.5141205Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:54.5141467Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:54.5141792Z   EXPECTED_HEAD_SHA: f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.5142125Z ##[endgroup]
+2026-11-02T19:38:54.5326017Z ##[group]Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+2026-11-02T19:38:54.5326467Z with:
+2026-11-02T19:38:54.5326671Z   python-version: 3.12
+2026-11-02T19:38:54.5326897Z   cache: pip
+2026-11-02T19:38:54.5327184Z   cache-dependency-path: pyproject.toml
+constraints/ci.txt
+
+2026-11-02T19:38:54.5327531Z   check-latest: false
+2026-11-02T19:38:54.5330082Z   token: ***
+2026-11-02T19:38:54.5330294Z   update-environment: true
+2026-11-02T19:38:54.5330551Z   allow-prereleases: false
+2026-11-02T19:38:54.5330805Z   freethreaded: false
+2026-11-02T19:38:54.5331015Z env:
+2026-11-02T19:38:54.5331424Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:38:54.5331708Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:38:54.5331963Z   GATE_ENV: ci
+2026-11-02T19:38:54.5332170Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:54.5332415Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:54.5332666Z ##[endgroup]
+2026-11-02T19:38:54.6845359Z ##[group]Installed versions
+2026-11-02T19:38:54.6931824Z (node:2551) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T19:38:54.6933647Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T19:38:54.6934675Z Successfully set up CPython (3.12.15)
+2026-11-02T19:38:54.6936514Z ##[endgroup]
+2026-11-02T19:38:54.7546204Z [command]/opt/hostedtoolcache/Python/3.12.15/x64/bin/pip cache dir
+2026-11-02T19:38:55.1276271Z /home/runner/.cache/pip
+2026-11-02T19:38:55.3534994Z (node:2551) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-02T19:38:55.3543005Z Cache hit for: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.15-pip-b068aa210c8306e693e5e4dfe127bf3feab8e124a2b47a30c756d3528e772dc6
+2026-11-02T19:38:56.5625463Z Received 37748736 of 77947220 (48.4%), 36.0 MBs/sec
+2026-11-02T19:38:56.8460510Z Received 77947220 of 77947220 (100.0%), 57.9 MBs/sec
+2026-11-02T19:38:56.8484862Z Cache Size: ~74 MB (77947220 B)
+2026-11-02T19:38:56.8697267Z [command]/usr/bin/tar -xf /home/runner/work/_temp/6a3573f7-d916-4b56-aa59-41f3403962e0/cache.tzst -P -C /home/runner/work/gate/gate --use-compress-program unzstd
+2026-11-02T19:38:57.0551083Z Cache restored successfully
+2026-11-02T19:38:57.0609630Z Cache restored from key: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.15-pip-b068aa210c8306e693e5e4dfe127bf3feab8e124a2b47a30c756d3528e772dc6
+2026-11-02T19:38:57.0912512Z ##[group]Run python scripts/repository_sensitive_data_guard.py
+2026-11-02T19:38:57.0913019Z [36;1mpython scripts/repository_sensitive_data_guard.py[0m
+2026-11-02T19:38:57.0937534Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:38:57.0937810Z env:
+2026-11-02T19:38:57.0938308Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:38:57.0938619Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:38:57.0938898Z   GATE_ENV: ci
+2026-11-02T19:38:57.0939126Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:57.0939393Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:57.0939755Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.0940231Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:38:57.0940670Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.0941070Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.0941495Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.0941900Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:38:57.0942236Z ##[endgroup]
+2026-11-02T19:38:57.7579266Z ##[group]Run python -m pip install --upgrade pip
+2026-11-02T19:38:57.7579687Z [36;1mpython -m pip install --upgrade pip[0m
+2026-11-02T19:38:57.7580113Z [36;1mpython -m pip install -c constraints/ci.txt ".[dev,contact-sync]"[0m
+2026-11-02T19:38:57.7580525Z [36;1mpython -m pip check[0m
+2026-11-02T19:38:57.7600862Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:38:57.7601143Z env:
+2026-11-02T19:38:57.7601636Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:38:57.7601940Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:38:57.7602202Z   GATE_ENV: ci
+2026-11-02T19:38:57.7602418Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:57.7602681Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:57.7603018Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.7603469Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:38:57.7603931Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.7604650Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.7605075Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.7605475Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:38:57.7605812Z ##[endgroup]
+2026-11-02T19:38:58.3316379Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages (26.2.2)
+2026-11-02T19:38:58.9390731Z Processing ./.
+2026-11-02T19:38:58.9415543Z   Installing build dependencies: started
+2026-11-02T19:39:00.0765874Z   Installing build dependencies: finished with status 'done'
+2026-11-02T19:39:00.0772221Z   Getting requirements to build wheel: started
+2026-11-02T19:39:00.7330224Z   Getting requirements to build wheel: finished with status 'done'
+2026-11-02T19:39:00.7355582Z   Preparing metadata (pyproject.toml): started
+2026-11-02T19:39:00.9485732Z   Preparing metadata (pyproject.toml): finished with status 'done'
+2026-11-02T19:39:01.0758022Z Collecting alembic==1.18.5 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:39:01.0774476Z   Using cached alembic-1.18.5-py3-none-any.whl.metadata (7.2 kB)
+2026-11-02T19:39:01.1352938Z Collecting asyncpg==0.31.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 2))
+2026-11-02T19:39:01.1367486Z   Using cached asyncpg-0.31.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (4.4 kB)
+2026-11-02T19:39:01.3344719Z Collecting cryptography==46.0.7 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 3))
+2026-11-02T19:39:01.3362024Z   Using cached cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+2026-11-02T19:39:01.4126539Z Collecting fastapi==0.139.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:01.4140288Z   Using cached fastapi-0.139.0-py3-none-any.whl.metadata (26 kB)
+2026-11-02T19:39:01.4485874Z Collecting httpx==0.28.1 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:39:01.4498654Z   Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+2026-11-02T19:39:01.4768930Z Collecting defusedxml==0.7.1 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 6))
+2026-11-02T19:39:01.4783040Z   Using cached defusedxml-0.7.1-py2.py3-none-any.whl.metadata (32 kB)
+2026-11-02T19:39:01.5045872Z Collecting olefile==0.47 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 7))
+2026-11-02T19:39:01.5065469Z   Using cached olefile-0.47-py2.py3-none-any.whl.metadata (9.7 kB)
+2026-11-02T19:39:01.7092015Z Collecting Pillow==12.3.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 8))
+2026-11-02T19:39:01.7107187Z   Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+2026-11-02T19:39:01.7425718Z Collecting PyJWT==2.13.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 9))
+2026-11-02T19:39:01.7445311Z   Using cached pyjwt-2.13.0-py3-none-any.whl.metadata (3.4 kB)
+2026-11-02T19:39:01.7726110Z Collecting pydantic-settings==2.14.2 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 10))
+2026-11-02T19:39:01.7739744Z   Using cached pydantic_settings-2.14.2-py3-none-any.whl.metadata (3.4 kB)
+2026-11-02T19:39:02.0906460Z Collecting SQLAlchemy==2.0.51 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 11))
+2026-11-02T19:39:02.0921215Z   Using cached sqlalchemy-2.0.51-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.5 kB)
+2026-11-02T19:39:02.1548118Z Collecting Telethon==1.44.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:39:02.1561705Z   Using cached telethon-1.44.0-py3-none-any.whl.metadata (4.0 kB)
+2026-11-02T19:39:02.1925493Z Collecting uvicorn==0.51.0 (from -r /home/runner/work/gate/gate/constraints/runtime.txt (line 13))
+2026-11-02T19:39:02.1945316Z   Using cached uvicorn-0.51.0-py3-none-any.whl.metadata (6.6 kB)
+2026-11-02T19:39:02.2295401Z Collecting openpyxl<4.0.0,>=3.1.5 (from gate==0.1.0)
+2026-11-02T19:39:02.2303081Z   Using cached openpyxl-3.1.5-py2.py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:39:02.2665461Z Collecting pypdf<7.0.0,>=5.9.0 (from gate==0.1.0)
+2026-11-02T19:39:02.3585575Z   Downloading pypdf-6.21.4-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:39:02.3891517Z Collecting python-docx<2.0.0,>=1.2.0 (from gate==0.1.0)
+2026-11-02T19:39:02.3904037Z   Using cached python_docx-1.2.0-py3-none-any.whl.metadata (2.0 kB)
+2026-11-02T19:39:02.4235247Z Collecting aiosqlite<0.23,>=0.22.1 (from gate==0.1.0)
+2026-11-02T19:39:02.4245577Z   Using cached aiosqlite-0.22.1-py3-none-any.whl.metadata (4.3 kB)
+2026-11-02T19:39:02.4561735Z Collecting anyio>=4.4.0 (from gate==0.1.0)
+2026-11-02T19:39:02.4575112Z   Using cached anyio-4.14.2-py3-none-any.whl.metadata (4.6 kB)
+2026-11-02T19:39:02.4912265Z Collecting jsonschema>=4.23.0 (from gate==0.1.0)
+2026-11-02T19:39:02.4926584Z   Using cached jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:39:02.6135608Z Collecting mypy>=1.11.0 (from gate==0.1.0)
+2026-11-02T19:39:02.6151198Z   Using cached mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-11-02T19:39:02.6545100Z Collecting pytest>=8.3.0 (from gate==0.1.0)
+2026-11-02T19:39:02.6558109Z   Using cached pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:39:03.0028228Z Collecting ruff>=0.6.0 (from gate==0.1.0)
+2026-11-02T19:39:03.0044899Z   Using cached ruff-0.15.21-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (26 kB)
+2026-11-02T19:39:03.1447546Z Collecting cffi>=2.0.0 (from cryptography==46.0.7->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 3))
+2026-11-02T19:39:03.1465749Z   Using cached cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+2026-11-02T19:39:03.1791018Z Collecting Mako (from alembic==1.18.5->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:39:03.1804838Z   Using cached mako-1.4.3-py3-none-any.whl.metadata (2.9 kB)
+2026-11-02T19:39:03.2105930Z Collecting typing-extensions>=4.12 (from alembic==1.18.5->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:39:03.2163253Z   Using cached typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-11-02T19:39:03.2535285Z Collecting starlette>=0.46.0 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:03.2717162Z   Downloading starlette-1.10.0-py3-none-any.whl.metadata (6.6 kB)
+2026-11-02T19:39:03.3929337Z Collecting pydantic>=2.9.0 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:03.4119233Z   Downloading pydantic-2.14.2-py3-none-any.whl.metadata (137 kB)
+2026-11-02T19:39:03.4782671Z Collecting typing-inspection>=0.4.2 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:03.4796805Z   Using cached typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+2026-11-02T19:39:03.5046021Z Collecting annotated-doc>=0.0.2 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:03.5065804Z   Using cached annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+2026-11-02T19:39:03.5395489Z Collecting certifi (from httpx==0.28.1->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:39:03.5587959Z   Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:39:03.5906012Z Collecting httpcore==1.* (from httpx==0.28.1->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:39:03.5912591Z   Using cached httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+2026-11-02T19:39:03.6208574Z Collecting idna (from httpx==0.28.1->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 5))
+2026-11-02T19:39:03.6222479Z   Using cached idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+2026-11-02T19:39:03.6559627Z Collecting python-dotenv>=0.21.0 (from pydantic-settings==2.14.2->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 10))
+2026-11-02T19:39:03.6574050Z   Using cached python_dotenv-1.2.4-py3-none-any.whl.metadata (29 kB)
+2026-11-02T19:39:03.8172390Z Collecting greenlet>=1 (from SQLAlchemy==2.0.51->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 11))
+2026-11-02T19:39:03.8188073Z   Using cached greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-11-02T19:39:03.8459777Z Collecting pyaes (from Telethon==1.44.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:39:03.8461227Z   Using cached pyaes-1.6.1-py3-none-any.whl
+2026-11-02T19:39:03.8761313Z Collecting rsa (from Telethon==1.44.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:39:03.8774646Z   Using cached rsa-4.9.1-py3-none-any.whl.metadata (5.6 kB)
+2026-11-02T19:39:03.9081807Z Collecting click>=7.0 (from uvicorn==0.51.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 13))
+2026-11-02T19:39:03.9095538Z   Using cached click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+2026-11-02T19:39:03.9341244Z Collecting h11>=0.8 (from uvicorn==0.51.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 13))
+2026-11-02T19:39:03.9354832Z   Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-11-02T19:39:03.9613409Z Collecting et-xmlfile (from openpyxl<4.0.0,>=3.1.5->gate==0.1.0)
+2026-11-02T19:39:03.9635402Z   Using cached et_xmlfile-2.0.0-py3-none-any.whl.metadata (2.7 kB)
+2026-11-02T19:39:04.2161549Z Collecting lxml>=3.1.0 (from python-docx<2.0.0,>=1.2.0->gate==0.1.0)
+2026-11-02T19:39:04.2177835Z   Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (3.3 kB)
+2026-11-02T19:39:04.2500906Z Collecting pycparser (from cffi>=2.0.0->cryptography==46.0.7->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 3))
+2026-11-02T19:39:04.2690550Z   Downloading pycparser-3.12-py3-none-any.whl.metadata (9.7 kB)
+2026-11-02T19:39:04.3008476Z Collecting attrs>=22.2.0 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:04.3022224Z   Using cached attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-11-02T19:39:04.3284954Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:04.3298882Z   Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+2026-11-02T19:39:04.3622077Z Collecting referencing>=0.28.4 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:04.3635995Z   Using cached referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+2026-11-02T19:39:04.6655177Z Collecting rpds-py>=0.25.0 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:04.6671458Z   Using cached rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+2026-11-02T19:39:04.6953174Z Collecting mypy_extensions>=1.0.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:04.6969154Z   Using cached mypy_extensions-1.1.0-py3-none-any.whl.metadata (1.1 kB)
+2026-11-02T19:39:04.7225303Z Collecting pathspec>=1.0.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:04.7238937Z   Using cached pathspec-1.1.1-py3-none-any.whl.metadata (14 kB)
+2026-11-02T19:39:04.8663316Z Collecting librt>=0.13.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:04.8679818Z   Using cached librt-0.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (1.3 kB)
+2026-11-02T19:39:04.9425608Z Collecting ast-serialize<1.0.0,>=0.6.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:04.9623058Z   Downloading ast_serialize-0.13.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.4 kB)
+2026-11-02T19:39:04.9917983Z Collecting annotated-types>=0.6.0 (from pydantic>=2.9.0->fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:04.9931104Z   Using cached annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+2026-11-02T19:39:05.7227103Z Collecting pydantic-core==2.50.2 (from pydantic>=2.9.0->fastapi==0.139.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 4))
+2026-11-02T19:39:05.7421440Z   Downloading pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.5 kB)
+2026-11-02T19:39:05.7725900Z Collecting iniconfig>=1.0.1 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:05.7739943Z   Using cached iniconfig-2.3.1-py3-none-any.whl.metadata (2.8 kB)
+2026-11-02T19:39:05.7826914Z Collecting packaging>=22 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:05.7840069Z   Using cached packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+2026-11-02T19:39:05.8108135Z Collecting pluggy<2,>=1.5 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:05.8304144Z   Downloading pluggy-1.7.0-py3-none-any.whl.metadata (5.0 kB)
+2026-11-02T19:39:05.8639344Z Collecting pygments>=2.7.2 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:05.8653121Z   Using cached pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:39:05.9286679Z Collecting httptools>=0.8.0 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.9302004Z   Using cached httptools-0.9.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (3.5 kB)
+2026-11-02T19:39:05.9801421Z Collecting pyyaml>=5.1 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.9901638Z   Using cached pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-11-02T19:39:06.0364115Z Collecting uvloop>=0.15.1 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:06.0379123Z   Using cached uvloop-0.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.1 kB)
+2026-11-02T19:39:06.1249795Z Collecting watchfiles>=0.20 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:06.1263878Z   Using cached watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+2026-11-02T19:39:06.3101859Z Collecting websockets>=13.0 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:06.3297354Z   Downloading websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (6.3 kB)
+2026-11-02T19:39:06.4096793Z Collecting MarkupSafe>=2.0 (from Mako->alembic==1.18.5->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 1))
+2026-11-02T19:39:06.4110482Z   Using cached markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-11-02T19:39:06.4488873Z Collecting pyasn1>=0.1.3 (from rsa->Telethon==1.44.0->-r /home/runner/work/gate/gate/constraints/runtime.txt (line 12))
+2026-11-02T19:39:06.4677532Z   Downloading pyasn1-0.6.5-py3-none-any.whl.metadata (8.4 kB)
+2026-11-02T19:39:06.4749465Z Using cached cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl (4.5 MB)
+2026-11-02T19:39:06.4779196Z Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (6.9 MB)
+2026-11-02T19:39:06.4817033Z Using cached pyjwt-2.13.0-py3-none-any.whl (31 kB)
+2026-11-02T19:39:06.4831209Z Using cached alembic-1.18.5-py3-none-any.whl (264 kB)
+2026-11-02T19:39:06.4844659Z Using cached asyncpg-0.31.0-cp312-cp312-manylinux_2_28_x86_64.whl (3.5 MB)
+2026-11-02T19:39:06.4869995Z Using cached defusedxml-0.7.1-py2.py3-none-any.whl (25 kB)
+2026-11-02T19:39:06.4882631Z Using cached fastapi-0.139.0-py3-none-any.whl (130 kB)
+2026-11-02T19:39:06.4895665Z Using cached httpx-0.28.1-py3-none-any.whl (73 kB)
+2026-11-02T19:39:06.4908185Z Using cached olefile-0.47-py2.py3-none-any.whl (114 kB)
+2026-11-02T19:39:06.4921327Z Using cached pydantic_settings-2.14.2-py3-none-any.whl (61 kB)
+2026-11-02T19:39:06.4934877Z Using cached sqlalchemy-2.0.51-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.4 MB)
+2026-11-02T19:39:06.4960419Z Using cached telethon-1.44.0-py3-none-any.whl (789 kB)
+2026-11-02T19:39:06.4975435Z Using cached uvicorn-0.51.0-py3-none-any.whl (73 kB)
+2026-11-02T19:39:06.4988648Z Using cached aiosqlite-0.22.1-py3-none-any.whl (17 kB)
+2026-11-02T19:39:06.5001191Z Using cached httpcore-1.0.9-py3-none-any.whl (78 kB)
+2026-11-02T19:39:06.5014144Z Using cached openpyxl-3.1.5-py2.py3-none-any.whl (250 kB)
+2026-11-02T19:39:06.5203273Z Downloading pypdf-6.21.4-py3-none-any.whl (410 kB)
+2026-11-02T19:39:06.5470564Z Using cached python_docx-1.2.0-py3-none-any.whl (252 kB)
+2026-11-02T19:39:06.5483784Z Using cached annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+2026-11-02T19:39:06.5496718Z Using cached anyio-4.14.2-py3-none-any.whl (125 kB)
+2026-11-02T19:39:06.5510014Z Using cached cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (221 kB)
+2026-11-02T19:39:06.5522787Z Using cached click-8.5.0-py3-none-any.whl (125 kB)
+2026-11-02T19:39:06.5535643Z Using cached greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (621 kB)
+2026-11-02T19:39:06.5549948Z Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+2026-11-02T19:39:06.5562503Z Using cached idna-3.20-py3-none-any.whl (69 kB)
+2026-11-02T19:39:06.5575310Z Using cached jsonschema-4.26.0-py3-none-any.whl (90 kB)
+2026-11-02T19:39:06.5587894Z Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-11-02T19:39:06.5600743Z Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+2026-11-02T19:39:06.5617970Z Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (5.2 MB)
+2026-11-02T19:39:06.5707197Z Using cached mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (15.3 MB)
+2026-11-02T19:39:06.5922679Z Downloading ast_serialize-0.13.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+2026-11-02T19:39:06.6218783Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 43.1 MB/s  0:00:00
+2026-11-02T19:39:06.6232688Z Using cached librt-0.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (531 kB)
+2026-11-02T19:39:06.6247674Z Using cached mypy_extensions-1.1.0-py3-none-any.whl (5.0 kB)
+2026-11-02T19:39:06.6260295Z Using cached pathspec-1.1.1-py3-none-any.whl (57 kB)
+2026-11-02T19:39:06.6459176Z Downloading pydantic-2.14.2-py3-none-any.whl (490 kB)
+2026-11-02T19:39:06.6693858Z Downloading pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.2 MB)
+2026-11-02T19:39:06.6915132Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 102.9 MB/s  0:00:00
+2026-11-02T19:39:06.6929030Z Using cached annotated_types-0.8.0-py3-none-any.whl (13 kB)
+2026-11-02T19:39:06.6942494Z Using cached pytest-9.1.1-py3-none-any.whl (386 kB)
+2026-11-02T19:39:06.7134782Z Downloading pluggy-1.7.0-py3-none-any.whl (27 kB)
+2026-11-02T19:39:06.7172946Z Using cached iniconfig-2.3.1-py3-none-any.whl (7.6 kB)
+2026-11-02T19:39:06.7186739Z Using cached packaging-26.3-py3-none-any.whl (129 kB)
+2026-11-02T19:39:06.7200289Z Using cached pygments-2.21.0-py3-none-any.whl (1.3 MB)
+2026-11-02T19:39:06.7217996Z Using cached python_dotenv-1.2.4-py3-none-any.whl (23 kB)
+2026-11-02T19:39:06.7231363Z Using cached referencing-0.37.0-py3-none-any.whl (26 kB)
+2026-11-02T19:39:06.7244976Z Using cached rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+2026-11-02T19:39:06.7258823Z Using cached ruff-0.15.21-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (11.5 MB)
+2026-11-02T19:39:06.7493562Z Downloading starlette-1.10.0-py3-none-any.whl (80 kB)
+2026-11-02T19:39:06.7531384Z Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-11-02T19:39:06.7545207Z Using cached typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+2026-11-02T19:39:06.7558988Z Using cached httptools-0.9.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (552 kB)
+2026-11-02T19:39:06.7574474Z Using cached pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+2026-11-02T19:39:06.7590872Z Using cached uvloop-0.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (4.5 MB)
+2026-11-02T19:39:06.7620551Z Using cached watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (458 kB)
+2026-11-02T19:39:06.7817192Z Downloading websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (226 kB)
+2026-11-02T19:39:06.8045991Z Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+2026-11-02T19:39:06.8085064Z Using cached et_xmlfile-2.0.0-py3-none-any.whl (18 kB)
+2026-11-02T19:39:06.8098972Z Using cached mako-1.4.3-py3-none-any.whl (80 kB)
+2026-11-02T19:39:06.8112748Z Using cached markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-11-02T19:39:06.8305697Z Downloading pycparser-3.12-py3-none-any.whl (62 kB)
+2026-11-02T19:39:06.8385130Z Using cached rsa-4.9.1-py3-none-any.whl (34 kB)
+2026-11-02T19:39:06.8562057Z Downloading pyasn1-0.6.5-py3-none-any.whl (84 kB)
+2026-11-02T19:39:07.0573163Z Building wheels for collected packages: gate
+2026-11-02T19:39:07.0582610Z   Building wheel for gate (pyproject.toml): started
+2026-11-02T19:39:07.5822149Z   Building wheel for gate (pyproject.toml): finished with status 'done'
+2026-11-02T19:39:07.5832187Z   Created wheel for gate: filename=gate-0.1.0-py3-none-any.whl size=933866 sha256=2bd989df850ec81fb40500d8dd9d2a1618282df152b20ce1d25737cb1770109a
+2026-11-02T19:39:07.5834745Z   Stored in directory: /tmp/pip-ephem-wheel-cache-5u4v9oe4/wheels/6e/3b/96/1824203046eca45327da46521e4d3b250e7f5f557cadea708b
+2026-11-02T19:39:07.5871382Z Successfully built gate
+2026-11-02T19:39:07.7038771Z Installing collected packages: pyaes, websockets, uvloop, typing-extensions, ruff, rpds-py, pyyaml, python-dotenv, pypdf, PyJWT, pygments, pycparser, pyasn1, pluggy, Pillow, pathspec, packaging, olefile, mypy_extensions, MarkupSafe, lxml, librt, iniconfig, idna, httptools, h11, greenlet, et-xmlfile, defusedxml, click, certifi, attrs, asyncpg, ast-serialize, annotated-types, annotated-doc, aiosqlite, uvicorn, typing-inspection, SQLAlchemy, rsa, referencing, python-docx, pytest, pydantic-core, openpyxl, mypy, Mako, httpcore, cffi, anyio, watchfiles, Telethon, starlette, pydantic, jsonschema-specifications, httpx, cryptography, alembic, pydantic-settings, jsonschema, fastapi, gate
+2026-11-02T19:39:17.5767389Z 
+2026-11-02T19:39:17.5824633Z Successfully installed Mako-1.4.3 MarkupSafe-3.0.4 Pillow-12.3.0 PyJWT-2.13.0 SQLAlchemy-2.0.51 Telethon-1.44.0 aiosqlite-0.22.1 alembic-1.18.5 annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.14.2 ast-serialize-0.13.1 asyncpg-0.31.0 attrs-26.1.0 certifi-2026.10.23 cffi-2.1.1 click-8.5.0 cryptography-46.0.7 defusedxml-0.7.1 et-xmlfile-2.0.0 fastapi-0.139.0 gate-0.1.0 greenlet-3.5.6 h11-0.16.0 httpcore-1.0.9 httptools-0.9.0 httpx-0.28.1 idna-3.20 iniconfig-2.3.1 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 librt-0.16.0 lxml-6.1.3 mypy-2.3.0 mypy_extensions-1.1.0 olefile-0.47 openpyxl-3.1.5 packaging-26.3 pathspec-1.1.1 pluggy-1.7.0 pyaes-1.6.1 pyasn1-0.6.5 pycparser-3.12 pydantic-2.14.2 pydantic-core-2.50.2 pydantic-settings-2.14.2 pygments-2.21.0 pypdf-6.21.4 pytest-9.1.1 python-docx-1.2.0 python-dotenv-1.2.4 pyyaml-6.0.3 referencing-0.37.0 rpds-py-2026.9.1 rsa-4.9.1 ruff-0.15.21 starlette-1.10.0 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.51.0 uvloop-0.23.0 watchfiles-1.3.0 websockets-17.4
+2026-11-02T19:39:18.1239283Z No broken requirements found.
+2026-11-02T19:39:18.1573315Z ##[group]Run ruff check .
+2026-11-02T19:39:18.1573849Z [36;1mruff check .[0m
+2026-11-02T19:39:18.1598845Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:39:18.1599325Z env:
+2026-11-02T19:39:18.1600123Z   DATABASE_URL: ***localhost:5432/gate
+2026-11-02T19:39:18.1600649Z   TELEGRAM_BOT_USERNAME: gate_m_bot
+2026-11-02T19:39:18.1601109Z   GATE_ENV: ci
+2026-11-02T19:39:18.1601487Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:39:18.1601949Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:39:18.1602536Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:18.1603333Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:39:18.1604123Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:18.1605169Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:18.1605918Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:18.1606734Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:39:18.1607381Z ##[endgroup]
+2026-11-02T19:39:18.4786694Z I001 [*] Import block is un-sorted or un-formatted
+2026-11-02T19:39:18.4787341Z   --> tests/test_watch_voice_baseline_fallback_postgres.py:32:5
+2026-11-02T19:39:18.4787913Z    |
+2026-11-02T19:39:18.4788207Z 30 |   )
+2026-11-02T19:39:18.4788679Z 31 |   def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
+2026-11-02T19:39:18.4789288Z 32 | /     import httpx
+2026-11-02T19:39:18.4789745Z 33 | |     from app.api.health_routes import router
+2026-11-02T19:39:18.4790436Z 34 | |     from app.infrastructure.readiness import build_readiness_service
+2026-11-02T19:39:18.4791205Z 35 | |     from app.infrastructure.watch_voice_actions import drain
+2026-11-02T19:39:18.4792090Z 36 | |     from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+2026-11-02T19:39:18.4792870Z 37 | |     from fastapi import FastAPI
+2026-11-02T19:39:18.4793352Z 38 | |     from sqlalchemy import select, text
+2026-11-02T19:39:18.4794048Z 39 | |     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+2026-11-02T19:39:18.4795187Z 40 | |     from test_watch_voice_actions import ActionsWorld, action_settings, claims
+2026-11-02T19:39:18.4796211Z    | |______________________________________________________________________________^
+2026-11-02T19:39:18.4796779Z 41 |
+2026-11-02T19:39:18.4797152Z 42 |       root = Path(__file__).resolve().parents[1]
+2026-11-02T19:39:18.4797624Z    |
+2026-11-02T19:39:18.4797949Z help: Organize imports
+2026-11-02T19:39:18.4798176Z 
+2026-11-02T19:39:18.4798323Z Found 1 error.
+2026-11-02T19:39:18.4798689Z [*] 1 fixable with the `--fix` option.
+2026-11-02T19:39:18.4818956Z ##[error]Process completed with exit code 1.
+2026-11-02T19:39:18.5015026Z Post job cleanup.
+2026-11-02T19:39:18.6089489Z [command]/usr/bin/git version
+2026-11-02T19:39:18.6217636Z git version 2.56.0
+2026-11-02T19:39:18.6353120Z Temporarily overriding HOME='/home/runner/work/_temp/a5337442-2991-4387-8281-e3fb6bea4b5f' before making global git config changes
+2026-11-02T19:39:18.6355317Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:39:18.6360471Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate
+2026-11-02T19:39:18.6372453Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:39:18.6426862Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:39:18.6824055Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:39:18.6882259Z http.https://github.com/.extraheader
+2026-11-02T19:39:18.6889002Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T19:39:18.6989335Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:39:18.7528070Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:39:18.7529783Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:39:18.7965149Z Print service container logs: eda9c55b6da849c284b9821acb584a8f_postgres17_ac27c7
+2026-11-02T19:39:18.7970100Z ##[command]/usr/bin/docker logs --details bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:39:18.8153009Z  initdb: warning: enabling "trust" authentication for local connections
+2026-11-02T19:39:18.8154013Z  The files belonging to this database system will be owned by user "postgres".
+2026-11-02T19:39:18.8155660Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-11-02T19:39:18.8159165Z  2026-11-02 19:38:40.534 UTC [1] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-11-02T19:39:18.8160445Z  2026-11-02 19:38:40.535 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-11-02T19:39:18.8161311Z  2026-11-02 19:38:40.535 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-11-02T19:39:18.8162194Z  2026-11-02 19:38:40.536 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-02T19:39:18.8163181Z  2026-11-02 19:38:40.540 UTC [63] LOG:  database system was shut down at 2026-11-02 19:38:40 UTC
+2026-11-02T19:39:18.8164067Z  2026-11-02 19:38:40.545 UTC [1] LOG:  database system is ready to accept connections
+2026-11-02T19:39:18.8165031Z  2026-11-02 19:38:49.489 UTC [73] FATAL:  role "root" does not exist
+2026-11-02T19:39:18.8165679Z  2026-11-02 19:38:59.578 UTC [81] FATAL:  role "root" does not exist
+2026-11-02T19:39:18.8166341Z  2026-11-02 19:39:09.679 UTC [88] FATAL:  role "root" does not exist
+2026-11-02T19:39:18.8170258Z  This user must also own the server process.
+2026-11-02T19:39:18.8171295Z  
+2026-11-02T19:39:18.8172241Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-11-02T19:39:18.8173038Z  The default database encoding has accordingly been set to "UTF8".
+2026-11-02T19:39:18.8173713Z  The default text search configuration will be set to "english".
+2026-11-02T19:39:18.8174073Z  
+2026-11-02T19:39:18.8174715Z  Data page checksums are disabled.
+2026-11-02T19:39:18.8175046Z  
+2026-11-02T19:39:18.8175367Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-11-02T19:39:18.8175791Z  creating subdirectories ... ok
+2026-11-02T19:39:18.8176389Z  selecting dynamic shared memory implementation ... posix
+2026-11-02T19:39:18.8177115Z  selecting default "max_connections" ... 100
+2026-11-02T19:39:18.8177686Z  selecting default "shared_buffers" ... 128MB
+2026-11-02T19:39:18.8178217Z  selecting default time zone ... Etc/UTC
+2026-11-02T19:39:18.8178731Z  creating configuration files ... ok
+2026-11-02T19:39:18.8179217Z  running bootstrap script ... ok
+2026-11-02T19:39:18.8179752Z  performing post-bootstrap initialization ... ok
+2026-11-02T19:39:18.8180294Z  syncing data to disk ... ok
+2026-11-02T19:39:18.8180577Z  
+2026-11-02T19:39:18.8180760Z  
+2026-11-02T19:39:18.8181022Z  Success. You can now start the database server using:
+2026-11-02T19:39:18.8181337Z  
+2026-11-02T19:39:18.8181593Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-11-02T19:39:18.8181921Z  
+2026-11-02T19:39:18.8182604Z  waiting for server to start....2026-11-02 19:38:40.209 UTC [47] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-11-02T19:39:18.8183525Z  2026-11-02 19:38:40.210 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-02T19:39:18.8184111Z  2026-11-02 19:38:40.213 UTC [50] LOG:  database system was shut down at 2026-11-02 19:38:40 UTC
+2026-11-02T19:39:18.8185138Z  2026-11-02 19:38:40.217 UTC [47] LOG:  database system is ready to accept connections
+2026-11-02T19:39:18.8185543Z   done
+2026-11-02T19:39:18.8185744Z  server started
+2026-11-02T19:39:18.8185966Z  CREATE DATABASE
+2026-11-02T19:39:18.8186178Z  
+2026-11-02T19:39:18.8186366Z  
+2026-11-02T19:39:18.8186985Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-11-02T19:39:18.8187408Z  
+2026-11-02T19:39:18.8187686Z  2026-11-02 19:38:40.409 UTC [47] LOG:  received fast shutdown request
+2026-11-02T19:39:18.8188244Z  waiting for server to shut down....2026-11-02 19:38:40.410 UTC [47] LOG:  aborting any active transactions
+2026-11-02T19:39:18.8188952Z  2026-11-02 19:38:40.414 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
+2026-11-02T19:39:18.8189502Z  2026-11-02 19:38:40.414 UTC [48] LOG:  shutting down
+2026-11-02T19:39:18.8189916Z  2026-11-02 19:38:40.415 UTC [48] LOG:  checkpoint starting: shutdown immediate
+2026-11-02T19:39:18.8191027Z  2026-11-02 19:38:40.431 UTC [48] LOG:  checkpoint complete: wrote 925 buffers (5.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.013 s, sync=0.002 s, total=0.017 s; sync files=301, longest=0.001 s, average=0.001 s; distance=4256 kB, estimate=4256 kB; lsn=0/19179A8, redo lsn=0/19179A8
+2026-11-02T19:39:18.8192124Z  2026-11-02 19:38:40.439 UTC [47] LOG:  database system is shut down
+2026-11-02T19:39:18.8192469Z   done
+2026-11-02T19:39:18.8192666Z  server stopped
+2026-11-02T19:39:18.8192876Z  
+2026-11-02T19:39:18.8193130Z  PostgreSQL init process complete; ready for start up.
+2026-11-02T19:39:18.8193454Z  
+2026-11-02T19:39:18.8200315Z Stop and remove container: eda9c55b6da849c284b9821acb584a8f_postgres17_ac27c7
+2026-11-02T19:39:18.8205971Z ##[command]/usr/bin/docker rm --force bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:39:20.3163621Z bdd316a5f4225ac4bcacee70c01bf08444fc65416b6f1326445204ac2337fca5
+2026-11-02T19:39:20.3201062Z Remove container network: github_network_526c5811613f40b48576527601cda891
+2026-11-02T19:39:20.3206367Z ##[command]/usr/bin/docker network rm github_network_526c5811613f40b48576527601cda891
+2026-11-02T19:39:20.3952747Z github_network_526c5811613f40b48576527601cda891
+2026-11-02T19:39:20.4036172Z Cleaning up orphan processes
+2026-11-02T19:39:20.4465165Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5, actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

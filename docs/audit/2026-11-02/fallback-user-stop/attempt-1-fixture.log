@@ -1,0 +1,1220 @@
+﻿2026-11-02T19:38:27.6097991Z Current runner version: '2.338.2'
+2026-11-02T19:38:27.6138825Z ##[group]Runner Image Provisioner
+2026-11-02T19:38:27.6140373Z Hosted Compute Agent
+2026-11-02T19:38:27.6141404Z Version: 20261021.618
+2026-11-02T19:38:27.6142523Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T19:38:27.6144099Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T19:38:27.6145370Z Worker ID: {32eaad57-622c-486b-97f5-3597d6e6f470}
+2026-11-02T19:38:27.6146691Z Region: eastus2
+2026-11-02T19:38:27.6147684Z Cloud: Azure
+2026-11-02T19:38:27.6148739Z ##[endgroup]
+2026-11-02T19:38:27.6151617Z ##[group]Operating System
+2026-11-02T19:38:27.6152661Z Ubuntu
+2026-11-02T19:38:27.6153656Z 24.04.5
+2026-11-02T19:38:27.6154848Z LTS
+2026-11-02T19:38:27.6155784Z ##[endgroup]
+2026-11-02T19:38:27.6156744Z ##[group]Runner Image
+2026-11-02T19:38:27.6157863Z Image: ubuntu-24.04
+2026-11-02T19:38:27.6158959Z Version: 20261025.353.1
+2026-11-02T19:38:27.6161132Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T19:38:27.6164492Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T19:38:27.6166207Z ##[endgroup]
+2026-11-02T19:38:27.6168261Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T19:38:27.6171749Z Contents: read
+2026-11-02T19:38:27.6172756Z Metadata: read
+2026-11-02T19:38:27.6173995Z ##[endgroup]
+2026-11-02T19:38:27.6177493Z Secret source: Actions
+2026-11-02T19:38:27.6179072Z Cache mode: write
+2026-11-02T19:38:27.6180795Z Prepare workflow directory
+2026-11-02T19:38:27.6876856Z Prepare all required actions
+2026-11-02T19:38:27.6952518Z Getting action download info
+2026-11-02T19:38:27.9180947Z Download action repository 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-11-02T19:38:28.0168009Z Download action repository 'actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-11-02T19:38:28.1189373Z Download action repository 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-02T19:38:28.3646317Z Complete job name: watch-baseline-fallback
+2026-11-02T19:38:28.4371409Z ##[group]Checking docker version
+2026-11-02T19:38:28.4384851Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-11-02T19:38:28.5255873Z '1.48'
+2026-11-02T19:38:28.5292920Z Docker daemon API version: '1.48'
+2026-11-02T19:38:28.5294993Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-11-02T19:38:28.5527007Z '1.48'
+2026-11-02T19:38:28.5548011Z Docker client API version: '1.48'
+2026-11-02T19:38:28.5554550Z ##[endgroup]
+2026-11-02T19:38:28.5558672Z ##[group]Clean up resources from previous jobs
+2026-11-02T19:38:28.5566107Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=88484a"
+2026-11-02T19:38:28.5831917Z ##[command]/usr/bin/docker network prune --force --filter "label=88484a"
+2026-11-02T19:38:28.6109580Z ##[endgroup]
+2026-11-02T19:38:28.6110643Z ##[group]Create local container network
+2026-11-02T19:38:28.6126599Z ##[command]/usr/bin/docker network create --label 88484a github_network_6d1f2b25712e4d70a9d70ce5454c7403
+2026-11-02T19:38:28.7121556Z 8ecf3283b208dff79478f8cd66e2008ef6ac64c7b51a2514c52656142ccfce22
+2026-11-02T19:38:28.7131589Z ##[endgroup]
+2026-11-02T19:38:28.7171803Z ##[group]Starting postgres service container
+2026-11-02T19:38:28.7204928Z ##[command]/usr/bin/docker pull postgres:17
+2026-11-02T19:38:29.0623074Z 17: Pulling from library/postgres
+2026-11-02T19:38:29.1535587Z 6fc242d221a6: Pulling fs layer
+2026-11-02T19:38:29.1540933Z e6095e4c4fdd: Pulling fs layer
+2026-11-02T19:38:29.1542248Z bad9dce990ef: Pulling fs layer
+2026-11-02T19:38:29.1543393Z 904defe665c0: Pulling fs layer
+2026-11-02T19:38:29.1544865Z 455e5ed72fb1: Pulling fs layer
+2026-11-02T19:38:29.1545903Z 55f036305357: Pulling fs layer
+2026-11-02T19:38:29.1546859Z db07174d12aa: Pulling fs layer
+2026-11-02T19:38:29.1547713Z 03f2ecc50d4c: Pulling fs layer
+2026-11-02T19:38:29.1549410Z ff7cbe54dfda: Pulling fs layer
+2026-11-02T19:38:29.1550241Z 0a26f79bdef8: Pulling fs layer
+2026-11-02T19:38:29.1551222Z 1f1fbc5e4aa5: Pulling fs layer
+2026-11-02T19:38:29.1552273Z 7f824adc2669: Pulling fs layer
+2026-11-02T19:38:29.1553402Z 3cecd013db3b: Pulling fs layer
+2026-11-02T19:38:29.1554856Z 7f0980702fb2: Pulling fs layer
+2026-11-02T19:38:29.1556034Z 55f036305357: Waiting
+2026-11-02T19:38:29.1556926Z db07174d12aa: Waiting
+2026-11-02T19:38:29.1557900Z 03f2ecc50d4c: Waiting
+2026-11-02T19:38:29.1558901Z ff7cbe54dfda: Waiting
+2026-11-02T19:38:29.1559934Z 0a26f79bdef8: Waiting
+2026-11-02T19:38:29.1560990Z 1f1fbc5e4aa5: Waiting
+2026-11-02T19:38:29.1562509Z 7f824adc2669: Waiting
+2026-11-02T19:38:29.1564220Z 3cecd013db3b: Waiting
+2026-11-02T19:38:29.1564978Z 7f0980702fb2: Waiting
+2026-11-02T19:38:29.1565811Z 904defe665c0: Waiting
+2026-11-02T19:38:29.1566615Z 455e5ed72fb1: Waiting
+2026-11-02T19:38:29.2177315Z e6095e4c4fdd: Download complete
+2026-11-02T19:38:29.2797423Z bad9dce990ef: Verifying Checksum
+2026-11-02T19:38:29.2799650Z bad9dce990ef: Download complete
+2026-11-02T19:38:29.3105259Z 904defe665c0: Verifying Checksum
+2026-11-02T19:38:29.3106386Z 904defe665c0: Download complete
+2026-11-02T19:38:29.3561806Z 6fc242d221a6: Verifying Checksum
+2026-11-02T19:38:29.3564657Z 6fc242d221a6: Download complete
+2026-11-02T19:38:29.3905637Z 455e5ed72fb1: Download complete
+2026-11-02T19:38:29.4215076Z 55f036305357: Verifying Checksum
+2026-11-02T19:38:29.4221050Z 55f036305357: Download complete
+2026-11-02T19:38:29.4335215Z db07174d12aa: Verifying Checksum
+2026-11-02T19:38:29.4337701Z db07174d12aa: Download complete
+2026-11-02T19:38:29.4516680Z 03f2ecc50d4c: Verifying Checksum
+2026-11-02T19:38:29.4518730Z 03f2ecc50d4c: Download complete
+2026-11-02T19:38:29.5302485Z 1f1fbc5e4aa5: Verifying Checksum
+2026-11-02T19:38:29.5304445Z 1f1fbc5e4aa5: Download complete
+2026-11-02T19:38:29.5305823Z 0a26f79bdef8: Verifying Checksum
+2026-11-02T19:38:29.5307052Z 0a26f79bdef8: Download complete
+2026-11-02T19:38:29.5975426Z 3cecd013db3b: Download complete
+2026-11-02T19:38:29.5994780Z 7f824adc2669: Verifying Checksum
+2026-11-02T19:38:29.5999566Z 7f824adc2669: Download complete
+2026-11-02T19:38:29.6615801Z 7f0980702fb2: Verifying Checksum
+2026-11-02T19:38:29.6619517Z 7f0980702fb2: Download complete
+2026-11-02T19:38:30.2378801Z ff7cbe54dfda: Verifying Checksum
+2026-11-02T19:38:30.2387703Z ff7cbe54dfda: Download complete
+2026-11-02T19:38:31.4412851Z 6fc242d221a6: Pull complete
+2026-11-02T19:38:33.1940502Z e6095e4c4fdd: Pull complete
+2026-11-02T19:38:33.4194819Z bad9dce990ef: Pull complete
+2026-11-02T19:38:33.4679151Z 904defe665c0: Pull complete
+2026-11-02T19:38:33.8479057Z 455e5ed72fb1: Pull complete
+2026-11-02T19:38:33.9244978Z 55f036305357: Pull complete
+2026-11-02T19:38:33.9338470Z db07174d12aa: Pull complete
+2026-11-02T19:38:33.9475251Z 03f2ecc50d4c: Pull complete
+2026-11-02T19:38:38.4484770Z ff7cbe54dfda: Pull complete
+2026-11-02T19:38:38.4751354Z 0a26f79bdef8: Pull complete
+2026-11-02T19:38:38.4895897Z 1f1fbc5e4aa5: Pull complete
+2026-11-02T19:38:38.5035553Z 7f824adc2669: Pull complete
+2026-11-02T19:38:38.5189572Z 3cecd013db3b: Pull complete
+2026-11-02T19:38:38.5336481Z 7f0980702fb2: Pull complete
+2026-11-02T19:38:38.5385782Z Digest: sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+2026-11-02T19:38:38.5402638Z Status: Downloaded newer image for postgres:17
+2026-11-02T19:38:38.5429460Z docker.io/library/postgres:17
+2026-11-02T19:38:38.5485352Z ##[command]/usr/bin/docker create --name 91525b31f12d4b07ab2311f8c9999e72_postgres17_fb5339 --label 88484a --network github_network_6d1f2b25712e4d70a9d70ce5454c7403 --network-alias postgres -p 5432:5432 --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=watch_baseline" -e GITHUB_ACTIONS=true -e CI=true postgres:17
+2026-11-02T19:38:38.5816331Z bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:38.5846381Z ##[command]/usr/bin/docker start bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:38.8684967Z bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:38.8700024Z ##[command]/usr/bin/docker ps --all --filter id=bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-11-02T19:38:38.8949085Z bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62 Up Less than a second (health: starting)
+2026-11-02T19:38:38.8972865Z ##[command]/usr/bin/docker port bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:38.9248483Z 5432/tcp -> 0.0.0.0:5432
+2026-11-02T19:38:38.9249539Z 5432/tcp -> [::]:5432
+2026-11-02T19:38:38.9321331Z ##[endgroup]
+2026-11-02T19:38:38.9335915Z ##[group]Waiting for all services to be ready
+2026-11-02T19:38:38.9357748Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:38.9621531Z starting
+2026-11-02T19:38:38.9661191Z postgres service is starting, waiting 2 seconds before checking again.
+2026-11-02T19:38:40.9660130Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:40.9834822Z starting
+2026-11-02T19:38:40.9855042Z postgres service is starting, waiting 4 seconds before checking again.
+2026-11-02T19:38:45.2318797Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:45.2492065Z starting
+2026-11-02T19:38:45.2514078Z postgres service is starting, waiting 7 seconds before checking again.
+2026-11-02T19:38:52.9218772Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:38:52.9403533Z healthy
+2026-11-02T19:38:52.9433316Z postgres service is healthy.
+2026-11-02T19:38:52.9434518Z ##[endgroup]
+2026-11-02T19:38:52.9767256Z ##[group]Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+2026-11-02T19:38:52.9767977Z with:
+2026-11-02T19:38:52.9768232Z   ref: f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:52.9768558Z   persist-credentials: false
+2026-11-02T19:38:52.9768846Z   repository: markmalina/gate
+2026-11-02T19:38:52.9771910Z   token: ***
+2026-11-02T19:38:52.9772132Z   ssh-strict: true
+2026-11-02T19:38:52.9772349Z   ssh-user: git
+2026-11-02T19:38:52.9772552Z   clean: true
+2026-11-02T19:38:52.9772772Z   sparse-checkout-cone-mode: true
+2026-11-02T19:38:52.9773052Z   fetch-depth: 1
+2026-11-02T19:38:52.9773262Z   fetch-tags: false
+2026-11-02T19:38:52.9773482Z   show-progress: true
+2026-11-02T19:38:52.9774065Z   lfs: false
+2026-11-02T19:38:52.9774381Z   submodules: false
+2026-11-02T19:38:52.9774620Z   set-safe-directory: true
+2026-11-02T19:38:52.9775169Z env:
+2026-11-02T19:38:52.9775748Z   DATABASE_URL: ***localhost:5432/watch_baseline
+2026-11-02T19:38:52.9776057Z   GATE_ENV: ci
+2026-11-02T19:38:52.9776319Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:52.9776572Z   GATE_WATCH_VOICE_ENABLED: false
+2026-11-02T19:38:52.9776852Z   GATE_WATCH_VOICE_EARLY_INBOX_ENABLED: false
+2026-11-02T19:38:52.9777174Z   GATE_WATCH_VOICE_WORK_RESERVE_ENABLED: false
+2026-11-02T19:38:52.9777482Z   GATE_WATCH_VOICE_WORK_MCP_ENABLED: false
+2026-11-02T19:38:52.9777774Z   WATCH_BASELINE_FALLBACK_FIXTURE: 1
+2026-11-02T19:38:52.9778047Z   PGPASSWORD: postgres
+2026-11-02T19:38:52.9778289Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:52.9778548Z ##[endgroup]
+2026-11-02T19:38:53.3035877Z Syncing repository: markmalina/gate
+2026-11-02T19:38:53.3038106Z ##[group]Getting Git version info
+2026-11-02T19:38:53.3038747Z Working directory is '/home/runner/work/gate/gate'
+2026-11-02T19:38:53.3039752Z [command]/usr/bin/git version
+2026-11-02T19:38:53.3113275Z git version 2.56.0
+2026-11-02T19:38:53.3164823Z ##[endgroup]
+2026-11-02T19:38:53.3181937Z Temporarily overriding HOME='/home/runner/work/_temp/3e895870-c887-4012-8761-dfaaa741ef39' before making global git config changes
+2026-11-02T19:38:53.3189505Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:38:53.3203323Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate
+2026-11-02T19:38:53.3283394Z Deleting the contents of '/home/runner/work/gate/gate'
+2026-11-02T19:38:53.3295226Z ##[group]Initializing the repository
+2026-11-02T19:38:53.3296289Z [command]/usr/bin/git init /home/runner/work/gate/gate
+2026-11-02T19:38:53.3421062Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T19:38:53.3429062Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T19:38:53.3430643Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T19:38:53.3431576Z hint: call:
+2026-11-02T19:38:53.3432580Z hint:
+2026-11-02T19:38:53.3433319Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T19:38:53.3456772Z hint:
+2026-11-02T19:38:53.3457558Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T19:38:53.3458592Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T19:38:53.3459483Z hint:
+2026-11-02T19:38:53.3460055Z hint: 	git branch -m <name>
+2026-11-02T19:38:53.3460715Z hint:
+2026-11-02T19:38:53.3461448Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T19:38:53.3462531Z Initialized empty Git repository in /home/runner/work/gate/gate/.git/
+2026-11-02T19:38:53.3475984Z [command]/usr/bin/git remote add origin https://github.com/markmalina/gate
+2026-11-02T19:38:53.3624475Z ##[endgroup]
+2026-11-02T19:38:53.3655294Z ##[group]Disabling automatic garbage collection
+2026-11-02T19:38:53.3675431Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T19:38:53.3718405Z ##[endgroup]
+2026-11-02T19:38:53.3720164Z ##[group]Setting up auth
+2026-11-02T19:38:53.3722725Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:38:53.3740076Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:38:53.4359545Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:38:53.4410858Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:38:53.4707604Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:38:53.4754411Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:38:53.5030832Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T19:38:53.5089830Z ##[endgroup]
+2026-11-02T19:38:53.5091191Z ##[group]Fetching the repository
+2026-11-02T19:38:53.5105615Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.1460515Z From https://github.com/markmalina/gate
+2026-11-02T19:38:54.1467991Z  * branch            f06e2749e2d6e07a00a8554e7f47441a1f2ca729 -> FETCH_HEAD
+2026-11-02T19:38:54.1482342Z ##[endgroup]
+2026-11-02T19:38:54.1483569Z ##[group]Determining the checkout info
+2026-11-02T19:38:54.1485019Z ##[endgroup]
+2026-11-02T19:38:54.1486018Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T19:38:54.1537410Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T19:38:54.1583061Z ##[group]Checking out the ref
+2026-11-02T19:38:54.1588641Z [command]/usr/bin/git checkout --progress --force f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.2404654Z Note: switching to 'f06e2749e2d6e07a00a8554e7f47441a1f2ca729'.
+2026-11-02T19:38:54.2405195Z 
+2026-11-02T19:38:54.2405525Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-02T19:38:54.2406227Z changes and commit them, and you can discard any commits you make in this
+2026-11-02T19:38:54.2406998Z state without impacting any branches by switching back to a branch.
+2026-11-02T19:38:54.2407488Z 
+2026-11-02T19:38:54.2407792Z If you want to create a new branch to retain commits you create, you may
+2026-11-02T19:38:54.2408582Z do so (now or later) by using -c with the switch command. Example:
+2026-11-02T19:38:54.2409021Z 
+2026-11-02T19:38:54.2409206Z   git switch -c <new-branch-name>
+2026-11-02T19:38:54.2409495Z 
+2026-11-02T19:38:54.2409670Z Or undo this operation with:
+2026-11-02T19:38:54.2409944Z 
+2026-11-02T19:38:54.2410116Z   git switch -
+2026-11-02T19:38:54.2410342Z 
+2026-11-02T19:38:54.2410714Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-02T19:38:54.2411267Z 
+2026-11-02T19:38:54.2411820Z HEAD is now at f06e274 Verify unchanged deployed Actions app against populated Watch0119 fallback schema
+2026-11-02T19:38:54.2413583Z ##[endgroup]
+2026-11-02T19:38:54.2457442Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T19:38:54.2504119Z f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+2026-11-02T19:38:54.2513526Z ##[group]Removing auth
+2026-11-02T19:38:54.2525152Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:38:54.2575879Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:38:54.2866518Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:38:54.2914976Z http.https://github.com/.extraheader
+2026-11-02T19:38:54.2938654Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T19:38:54.2977245Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:38:54.3275255Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:38:54.3319333Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:38:54.3682635Z ##[endgroup]
+2026-11-02T19:38:54.3974321Z ##[group]Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+2026-11-02T19:38:54.3974748Z with:
+2026-11-02T19:38:54.3974996Z   ref: 7fd322c958cccf6828a3e8fcb00a075b2d4f1f46
+2026-11-02T19:38:54.3975301Z   path: fallback
+2026-11-02T19:38:54.3975531Z   fetch-depth: 2
+2026-11-02T19:38:54.3975747Z   persist-credentials: false
+2026-11-02T19:38:54.3976010Z   repository: markmalina/gate
+2026-11-02T19:38:54.3978959Z   token: ***
+2026-11-02T19:38:54.3979177Z   ssh-strict: true
+2026-11-02T19:38:54.3979389Z   ssh-user: git
+2026-11-02T19:38:54.3979589Z   clean: true
+2026-11-02T19:38:54.3979808Z   sparse-checkout-cone-mode: true
+2026-11-02T19:38:54.3980072Z   fetch-tags: false
+2026-11-02T19:38:54.3980287Z   show-progress: true
+2026-11-02T19:38:54.3980502Z   lfs: false
+2026-11-02T19:38:54.3980695Z   submodules: false
+2026-11-02T19:38:54.3980921Z   set-safe-directory: true
+2026-11-02T19:38:54.3981152Z env:
+2026-11-02T19:38:54.3981672Z   DATABASE_URL: ***localhost:5432/watch_baseline
+2026-11-02T19:38:54.3982031Z   GATE_ENV: ci
+2026-11-02T19:38:54.3982245Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:54.3982496Z   GATE_WATCH_VOICE_ENABLED: false
+2026-11-02T19:38:54.3982779Z   GATE_WATCH_VOICE_EARLY_INBOX_ENABLED: false
+2026-11-02T19:38:54.3983095Z   GATE_WATCH_VOICE_WORK_RESERVE_ENABLED: false
+2026-11-02T19:38:54.3983853Z   GATE_WATCH_VOICE_WORK_MCP_ENABLED: false
+2026-11-02T19:38:54.3984165Z   WATCH_BASELINE_FALLBACK_FIXTURE: 1
+2026-11-02T19:38:54.3984438Z   PGPASSWORD: postgres
+2026-11-02T19:38:54.3984691Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:54.3984953Z ##[endgroup]
+2026-11-02T19:38:54.5078893Z Syncing repository: markmalina/gate
+2026-11-02T19:38:54.5079754Z ##[group]Getting Git version info
+2026-11-02T19:38:54.5080383Z Working directory is '/home/runner/work/gate/gate/fallback'
+2026-11-02T19:38:54.5196485Z [command]/usr/bin/git version
+2026-11-02T19:38:54.5274956Z git version 2.56.0
+2026-11-02T19:38:54.5334808Z ##[endgroup]
+2026-11-02T19:38:54.5375222Z Temporarily overriding HOME='/home/runner/work/_temp/ccd2b339-3034-42d6-9021-356a68cdc04b' before making global git config changes
+2026-11-02T19:38:54.5384606Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:38:54.5385941Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate/fallback
+2026-11-02T19:38:54.5388179Z ##[group]Initializing the repository
+2026-11-02T19:38:54.5389011Z [command]/usr/bin/git init /home/runner/work/gate/gate/fallback
+2026-11-02T19:38:54.5444918Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T19:38:54.5457590Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T19:38:54.5479124Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T19:38:54.5494460Z hint: call:
+2026-11-02T19:38:54.5514821Z hint:
+2026-11-02T19:38:54.5531562Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T19:38:54.5532654Z hint:
+2026-11-02T19:38:54.5533407Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T19:38:54.5534861Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T19:38:54.5556045Z hint:
+2026-11-02T19:38:54.5583415Z hint: 	git branch -m <name>
+2026-11-02T19:38:54.5595494Z hint:
+2026-11-02T19:38:54.5611390Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T19:38:54.5634787Z Initialized empty Git repository in /home/runner/work/gate/gate/fallback/.git/
+2026-11-02T19:38:54.5648376Z [command]/usr/bin/git remote add origin https://github.com/markmalina/gate
+2026-11-02T19:38:54.5650636Z ##[endgroup]
+2026-11-02T19:38:54.5676960Z ##[group]Disabling automatic garbage collection
+2026-11-02T19:38:54.5707254Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T19:38:54.5708691Z ##[endgroup]
+2026-11-02T19:38:54.5709358Z ##[group]Setting up auth
+2026-11-02T19:38:54.5710526Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:38:54.5712333Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:38:54.6275542Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:38:54.6425002Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:38:54.6995917Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:38:54.7043660Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:38:54.7332258Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T19:38:54.7423223Z ##[endgroup]
+2026-11-02T19:38:54.7424620Z ##[group]Fetching the repository
+2026-11-02T19:38:54.7436370Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=2 origin 7fd322c958cccf6828a3e8fcb00a075b2d4f1f46
+2026-11-02T19:38:55.4322918Z From https://github.com/markmalina/gate
+2026-11-02T19:38:55.4328632Z  * branch            7fd322c958cccf6828a3e8fcb00a075b2d4f1f46 -> FETCH_HEAD
+2026-11-02T19:38:55.4332180Z ##[endgroup]
+2026-11-02T19:38:55.4333173Z ##[group]Determining the checkout info
+2026-11-02T19:38:55.4336788Z ##[endgroup]
+2026-11-02T19:38:55.4338832Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T19:38:55.4401747Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T19:38:55.4449153Z ##[group]Checking out the ref
+2026-11-02T19:38:55.4454952Z [command]/usr/bin/git checkout --progress --force 7fd322c958cccf6828a3e8fcb00a075b2d4f1f46
+2026-11-02T19:38:55.5184863Z Note: switching to '7fd322c958cccf6828a3e8fcb00a075b2d4f1f46'.
+2026-11-02T19:38:55.5185936Z 
+2026-11-02T19:38:55.5186878Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-02T19:38:55.5188047Z changes and commit them, and you can discard any commits you make in this
+2026-11-02T19:38:55.5189423Z state without impacting any branches by switching back to a branch.
+2026-11-02T19:38:55.5190178Z 
+2026-11-02T19:38:55.5190993Z If you want to create a new branch to retain commits you create, you may
+2026-11-02T19:38:55.5203552Z do so (now or later) by using -c with the switch command. Example:
+2026-11-02T19:38:55.5204773Z 
+2026-11-02T19:38:55.5205211Z   git switch -c <new-branch-name>
+2026-11-02T19:38:55.5205674Z 
+2026-11-02T19:38:55.5206017Z Or undo this operation with:
+2026-11-02T19:38:55.5218643Z 
+2026-11-02T19:38:55.5219101Z   git switch -
+2026-11-02T19:38:55.5219446Z 
+2026-11-02T19:38:55.5219952Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-02T19:38:55.5220632Z 
+2026-11-02T19:38:55.5221194Z HEAD is now at 7fd322c Archive unchanged deployed Actions app with exact reviewed Watch0119 migration graph
+2026-11-02T19:38:55.5223356Z ##[endgroup]
+2026-11-02T19:38:55.5268070Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T19:38:55.5314964Z 7fd322c958cccf6828a3e8fcb00a075b2d4f1f46
+2026-11-02T19:38:55.5335634Z ##[group]Removing auth
+2026-11-02T19:38:55.5345069Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:38:55.5395665Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:38:55.5676349Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:38:55.5715195Z http.https://github.com/.extraheader
+2026-11-02T19:38:55.5725082Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T19:38:55.5776505Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:38:55.6052785Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:38:55.6194444Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:38:55.6421543Z ##[endgroup]
+2026-11-02T19:38:55.6627136Z ##[group]Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+2026-11-02T19:38:55.6627585Z with:
+2026-11-02T19:38:55.6627795Z   python-version: 3.12
+2026-11-02T19:38:55.6628038Z   cache: pip
+2026-11-02T19:38:55.6628310Z   cache-dependency-path: fallback/constraints/ci.txt
+2026-11-02T19:38:55.6628650Z   check-latest: false
+2026-11-02T19:38:55.6631576Z   token: ***
+2026-11-02T19:38:55.6631800Z   update-environment: true
+2026-11-02T19:38:55.6632064Z   allow-prereleases: false
+2026-11-02T19:38:55.6632308Z   freethreaded: false
+2026-11-02T19:38:55.6632532Z env:
+2026-11-02T19:38:55.6632984Z   DATABASE_URL: ***localhost:5432/watch_baseline
+2026-11-02T19:38:55.6633294Z   GATE_ENV: ci
+2026-11-02T19:38:55.6633509Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:55.6634335Z   GATE_WATCH_VOICE_ENABLED: false
+2026-11-02T19:38:55.6634631Z   GATE_WATCH_VOICE_EARLY_INBOX_ENABLED: false
+2026-11-02T19:38:55.6634955Z   GATE_WATCH_VOICE_WORK_RESERVE_ENABLED: false
+2026-11-02T19:38:55.6635307Z   GATE_WATCH_VOICE_WORK_MCP_ENABLED: false
+2026-11-02T19:38:55.6635604Z   WATCH_BASELINE_FALLBACK_FIXTURE: 1
+2026-11-02T19:38:55.6635877Z   PGPASSWORD: postgres
+2026-11-02T19:38:55.6636132Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:55.6636395Z ##[endgroup]
+2026-11-02T19:38:55.8194847Z ##[group]Installed versions
+2026-11-02T19:38:55.8319251Z (node:2762) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T19:38:55.8320977Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T19:38:55.8321755Z Successfully set up CPython (3.12.15)
+2026-11-02T19:38:55.8323114Z ##[endgroup]
+2026-11-02T19:38:55.9125459Z [command]/opt/hostedtoolcache/Python/3.12.15/x64/bin/pip cache dir
+2026-11-02T19:38:56.2485282Z /home/runner/.cache/pip
+2026-11-02T19:38:56.3978102Z Cache hit for: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.15-pip-28c9fb1c7d8bcb0c8b6976e7bfa52f8e7ca9b2deab889ecd9394fc43a9b3d39a
+2026-11-02T19:38:56.4130618Z (node:2762) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-02T19:38:56.9954145Z Received 77947220 of 77947220 (100.0%), 132.5 MBs/sec
+2026-11-02T19:38:56.9955204Z Cache Size: ~74 MB (77947220 B)
+2026-11-02T19:38:56.9986919Z [command]/usr/bin/tar -xf /home/runner/work/_temp/4aeeb194-a0f9-4755-a7ae-a2a94e6fbb5d/cache.tzst -P -C /home/runner/work/gate/gate --use-compress-program unzstd
+2026-11-02T19:38:57.1942469Z Cache restored successfully
+2026-11-02T19:38:57.1979733Z Cache restored from key: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.15-pip-b068aa210c8306e693e5e4dfe127bf3feab8e124a2b47a30c756d3528e772dc6
+2026-11-02T19:38:57.2302110Z ##[group]Run python -m pip install -c fallback/constraints/ci.txt "./fallback[dev]"
+2026-11-02T19:38:57.2302792Z [36;1mpython -m pip install -c fallback/constraints/ci.txt "./fallback[dev]"[0m
+2026-11-02T19:38:57.2303237Z [36;1mpython -m pip check[0m
+2026-11-02T19:38:57.2303649Z [36;1mcp tests/test_watch_voice_baseline_fallback_postgres.py fallback/tests/[0m
+2026-11-02T19:38:57.2332118Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:38:57.2332407Z env:
+2026-11-02T19:38:57.2332959Z   DATABASE_URL: ***localhost:5432/watch_baseline
+2026-11-02T19:38:57.2333281Z   GATE_ENV: ci
+2026-11-02T19:38:57.2333507Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:38:57.2334161Z   GATE_WATCH_VOICE_ENABLED: false
+2026-11-02T19:38:57.2334479Z   GATE_WATCH_VOICE_EARLY_INBOX_ENABLED: false
+2026-11-02T19:38:57.2334813Z   GATE_WATCH_VOICE_WORK_RESERVE_ENABLED: false
+2026-11-02T19:38:57.2335131Z   GATE_WATCH_VOICE_WORK_MCP_ENABLED: false
+2026-11-02T19:38:57.2335432Z   WATCH_BASELINE_FALLBACK_FIXTURE: 1
+2026-11-02T19:38:57.2335761Z   PGPASSWORD: postgres
+2026-11-02T19:38:57.2336026Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:38:57.2336383Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.2336874Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:38:57.2337340Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.2337767Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.2338204Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:38:57.2338637Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:38:57.2338992Z ##[endgroup]
+2026-11-02T19:38:57.8198711Z Processing ./fallback
+2026-11-02T19:38:57.8227501Z   Installing build dependencies: started
+2026-11-02T19:38:58.8586688Z   Installing build dependencies: finished with status 'done'
+2026-11-02T19:38:58.8599789Z   Getting requirements to build wheel: started
+2026-11-02T19:38:59.4938392Z   Getting requirements to build wheel: finished with status 'done'
+2026-11-02T19:38:59.4954368Z   Preparing metadata (pyproject.toml): started
+2026-11-02T19:38:59.7189380Z   Preparing metadata (pyproject.toml): finished with status 'done'
+2026-11-02T19:38:59.8495566Z Collecting alembic==1.18.5 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 1))
+2026-11-02T19:38:59.8514525Z   Using cached alembic-1.18.5-py3-none-any.whl.metadata (7.2 kB)
+2026-11-02T19:38:59.9099897Z Collecting asyncpg==0.31.0 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 2))
+2026-11-02T19:38:59.9117090Z   Using cached asyncpg-0.31.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (4.4 kB)
+2026-11-02T19:39:00.1205568Z Collecting cryptography==46.0.7 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 3))
+2026-11-02T19:39:00.1224724Z   Using cached cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+2026-11-02T19:39:00.2022393Z Collecting fastapi==0.139.0 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:00.2024603Z   Using cached fastapi-0.139.0-py3-none-any.whl.metadata (26 kB)
+2026-11-02T19:39:00.2384526Z Collecting httpx==0.28.1 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 5))
+2026-11-02T19:39:00.2392037Z   Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+2026-11-02T19:39:00.2647011Z Collecting defusedxml==0.7.1 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 6))
+2026-11-02T19:39:00.2665194Z   Using cached defusedxml-0.7.1-py2.py3-none-any.whl.metadata (32 kB)
+2026-11-02T19:39:00.2935886Z Collecting olefile==0.47 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 7))
+2026-11-02T19:39:00.2937430Z   Using cached olefile-0.47-py2.py3-none-any.whl.metadata (9.7 kB)
+2026-11-02T19:39:00.6042695Z Collecting Pillow==12.3.0 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 8))
+2026-11-02T19:39:00.6045900Z   Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+2026-11-02T19:39:00.6515041Z Collecting PyJWT==2.13.0 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 9))
+2026-11-02T19:39:00.6539700Z   Using cached pyjwt-2.13.0-py3-none-any.whl.metadata (3.4 kB)
+2026-11-02T19:39:00.6909002Z Collecting pydantic-settings==2.14.2 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 10))
+2026-11-02T19:39:00.6927894Z   Using cached pydantic_settings-2.14.2-py3-none-any.whl.metadata (3.4 kB)
+2026-11-02T19:39:01.0700748Z Collecting SQLAlchemy==2.0.51 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 11))
+2026-11-02T19:39:01.0717225Z   Using cached sqlalchemy-2.0.51-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.5 kB)
+2026-11-02T19:39:01.1393036Z Collecting Telethon==1.44.0 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 12))
+2026-11-02T19:39:01.1408962Z   Using cached telethon-1.44.0-py3-none-any.whl.metadata (4.0 kB)
+2026-11-02T19:39:01.1775062Z Collecting uvicorn==0.51.0 (from -r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 13))
+2026-11-02T19:39:01.1791380Z   Using cached uvicorn-0.51.0-py3-none-any.whl.metadata (6.6 kB)
+2026-11-02T19:39:01.2160875Z Collecting openpyxl<4.0.0,>=3.1.5 (from gate==0.1.0)
+2026-11-02T19:39:01.2175737Z   Using cached openpyxl-3.1.5-py2.py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:39:01.2540167Z Collecting pypdf<7.0.0,>=5.9.0 (from gate==0.1.0)
+2026-11-02T19:39:01.3454908Z   Downloading pypdf-6.21.4-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:39:01.3837973Z Collecting python-docx<2.0.0,>=1.2.0 (from gate==0.1.0)
+2026-11-02T19:39:01.3863027Z   Using cached python_docx-1.2.0-py3-none-any.whl.metadata (2.0 kB)
+2026-11-02T19:39:01.4256484Z Collecting aiosqlite<0.23,>=0.22.1 (from gate==0.1.0)
+2026-11-02T19:39:01.4275735Z   Using cached aiosqlite-0.22.1-py3-none-any.whl.metadata (4.3 kB)
+2026-11-02T19:39:01.4676707Z Collecting anyio>=4.4.0 (from gate==0.1.0)
+2026-11-02T19:39:01.4692409Z   Using cached anyio-4.14.2-py3-none-any.whl.metadata (4.6 kB)
+2026-11-02T19:39:01.5149080Z Collecting jsonschema>=4.23.0 (from gate==0.1.0)
+2026-11-02T19:39:01.5165836Z   Using cached jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:39:01.6441018Z Collecting mypy>=1.11.0 (from gate==0.1.0)
+2026-11-02T19:39:01.6457933Z   Using cached mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-11-02T19:39:01.6868419Z Collecting pytest>=8.3.0 (from gate==0.1.0)
+2026-11-02T19:39:01.6884528Z   Using cached pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+2026-11-02T19:39:02.0540191Z Collecting ruff>=0.6.0 (from gate==0.1.0)
+2026-11-02T19:39:02.0556647Z   Using cached ruff-0.15.21-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (26 kB)
+2026-11-02T19:39:02.2364577Z Collecting cffi>=2.0.0 (from cryptography==46.0.7->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 3))
+2026-11-02T19:39:02.2380403Z   Using cached cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+2026-11-02T19:39:02.2704811Z Collecting Mako (from alembic==1.18.5->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 1))
+2026-11-02T19:39:02.2719428Z   Using cached mako-1.4.3-py3-none-any.whl.metadata (2.9 kB)
+2026-11-02T19:39:02.3007919Z Collecting typing-extensions>=4.12 (from alembic==1.18.5->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 1))
+2026-11-02T19:39:02.3023418Z   Using cached typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-11-02T19:39:02.3414964Z Collecting starlette>=0.46.0 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:02.3598242Z   Downloading starlette-1.10.0-py3-none-any.whl.metadata (6.6 kB)
+2026-11-02T19:39:02.4862602Z Collecting pydantic>=2.9.0 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:02.5054162Z   Downloading pydantic-2.14.2-py3-none-any.whl.metadata (137 kB)
+2026-11-02T19:39:02.5694572Z Collecting typing-inspection>=0.4.2 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:02.5709472Z   Using cached typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+2026-11-02T19:39:02.5947868Z Collecting annotated-doc>=0.0.2 (from fastapi==0.139.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:02.5962836Z   Using cached annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+2026-11-02T19:39:02.6339245Z Collecting certifi (from httpx==0.28.1->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 5))
+2026-11-02T19:39:02.6519967Z   Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:39:02.6832483Z Collecting httpcore==1.* (from httpx==0.28.1->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 5))
+2026-11-02T19:39:02.6848327Z   Using cached httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+2026-11-02T19:39:02.7137303Z Collecting idna (from httpx==0.28.1->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 5))
+2026-11-02T19:39:02.7151741Z   Using cached idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+2026-11-02T19:39:02.7489280Z Collecting python-dotenv>=0.21.0 (from pydantic-settings==2.14.2->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 10))
+2026-11-02T19:39:02.7504902Z   Using cached python_dotenv-1.2.4-py3-none-any.whl.metadata (29 kB)
+2026-11-02T19:39:02.9104895Z Collecting greenlet>=1 (from SQLAlchemy==2.0.51->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 11))
+2026-11-02T19:39:02.9120793Z   Using cached greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+2026-11-02T19:39:02.9388121Z Collecting pyaes (from Telethon==1.44.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 12))
+2026-11-02T19:39:02.9390132Z   Using cached pyaes-1.6.1-py3-none-any.whl
+2026-11-02T19:39:02.9692285Z Collecting rsa (from Telethon==1.44.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 12))
+2026-11-02T19:39:02.9706492Z   Using cached rsa-4.9.1-py3-none-any.whl.metadata (5.6 kB)
+2026-11-02T19:39:03.0006210Z Collecting click>=7.0 (from uvicorn==0.51.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 13))
+2026-11-02T19:39:03.0019345Z   Using cached click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+2026-11-02T19:39:03.0260766Z Collecting h11>=0.8 (from uvicorn==0.51.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 13))
+2026-11-02T19:39:03.0273959Z   Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-11-02T19:39:03.0538887Z Collecting et-xmlfile (from openpyxl<4.0.0,>=3.1.5->gate==0.1.0)
+2026-11-02T19:39:03.0552044Z   Using cached et_xmlfile-2.0.0-py3-none-any.whl.metadata (2.7 kB)
+2026-11-02T19:39:03.3065810Z Collecting lxml>=3.1.0 (from python-docx<2.0.0,>=1.2.0->gate==0.1.0)
+2026-11-02T19:39:03.3151517Z   Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (3.3 kB)
+2026-11-02T19:39:03.3428654Z Collecting pycparser (from cffi>=2.0.0->cryptography==46.0.7->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 3))
+2026-11-02T19:39:03.3607674Z   Downloading pycparser-3.12-py3-none-any.whl.metadata (9.7 kB)
+2026-11-02T19:39:03.3926280Z Collecting attrs>=22.2.0 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:03.3939487Z   Using cached attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-11-02T19:39:03.4199704Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:03.4214390Z   Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+2026-11-02T19:39:03.4538699Z Collecting referencing>=0.28.4 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:03.4551759Z   Using cached referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+2026-11-02T19:39:03.7892039Z Collecting rpds-py>=0.25.0 (from jsonschema>=4.23.0->gate==0.1.0)
+2026-11-02T19:39:03.8035673Z   Using cached rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+2026-11-02T19:39:03.8226328Z Collecting mypy_extensions>=1.0.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:03.8241401Z   Using cached mypy_extensions-1.1.0-py3-none-any.whl.metadata (1.1 kB)
+2026-11-02T19:39:03.8488868Z Collecting pathspec>=1.0.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:03.8501998Z   Using cached pathspec-1.1.1-py3-none-any.whl.metadata (14 kB)
+2026-11-02T19:39:03.9929607Z Collecting librt>=0.13.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:03.9945093Z   Using cached librt-0.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (1.3 kB)
+2026-11-02T19:39:04.0624845Z Collecting ast-serialize<1.0.0,>=0.6.0 (from mypy>=1.11.0->gate==0.1.0)
+2026-11-02T19:39:04.0798929Z   Downloading ast_serialize-0.13.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.4 kB)
+2026-11-02T19:39:04.1084920Z Collecting annotated-types>=0.6.0 (from pydantic>=2.9.0->fastapi==0.139.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:04.1098148Z   Using cached annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+2026-11-02T19:39:04.8767123Z Collecting pydantic-core==2.50.2 (from pydantic>=2.9.0->fastapi==0.139.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 4))
+2026-11-02T19:39:04.8951375Z   Downloading pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.5 kB)
+2026-11-02T19:39:04.9250608Z Collecting iniconfig>=1.0.1 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:04.9264366Z   Using cached iniconfig-2.3.1-py3-none-any.whl.metadata (2.8 kB)
+2026-11-02T19:39:04.9350632Z Collecting packaging>=22 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:04.9363427Z   Using cached packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+2026-11-02T19:39:04.9624154Z Collecting pluggy<2,>=1.5 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:04.9806016Z   Downloading pluggy-1.7.0-py3-none-any.whl.metadata (5.0 kB)
+2026-11-02T19:39:05.0139909Z Collecting pygments>=2.7.2 (from pytest>=8.3.0->gate==0.1.0)
+2026-11-02T19:39:05.0155568Z   Using cached pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+2026-11-02T19:39:05.0796365Z Collecting httptools>=0.8.0 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.0812848Z   Using cached httptools-0.9.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (3.5 kB)
+2026-11-02T19:39:05.1319186Z Collecting pyyaml>=5.1 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.1335315Z   Using cached pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-11-02T19:39:05.1914299Z Collecting uvloop>=0.15.1 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.1930258Z   Using cached uvloop-0.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.1 kB)
+2026-11-02T19:39:05.2796362Z Collecting watchfiles>=0.20 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.2814315Z   Using cached watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+2026-11-02T19:39:05.4820508Z Collecting websockets>=13.0 (from uvicorn[standard]>=0.30.0->gate==0.1.0)
+2026-11-02T19:39:05.5002944Z   Downloading websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (6.3 kB)
+2026-11-02T19:39:05.5779507Z Collecting MarkupSafe>=2.0 (from Mako->alembic==1.18.5->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 1))
+2026-11-02T19:39:05.5796547Z   Using cached markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-11-02T19:39:05.6176820Z Collecting pyasn1>=0.1.3 (from rsa->Telethon==1.44.0->-r /home/runner/work/gate/gate/fallback/constraints/runtime.txt (line 12))
+2026-11-02T19:39:05.6362375Z   Downloading pyasn1-0.6.5-py3-none-any.whl.metadata (8.4 kB)
+2026-11-02T19:39:05.6445721Z Using cached cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl (4.5 MB)
+2026-11-02T19:39:05.6478996Z Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (6.9 MB)
+2026-11-02T19:39:05.6520056Z Using cached pyjwt-2.13.0-py3-none-any.whl (31 kB)
+2026-11-02T19:39:05.6533010Z Using cached alembic-1.18.5-py3-none-any.whl (264 kB)
+2026-11-02T19:39:05.6547395Z Using cached asyncpg-0.31.0-cp312-cp312-manylinux_2_28_x86_64.whl (3.5 MB)
+2026-11-02T19:39:05.6573526Z Using cached defusedxml-0.7.1-py2.py3-none-any.whl (25 kB)
+2026-11-02T19:39:05.6587116Z Using cached fastapi-0.139.0-py3-none-any.whl (130 kB)
+2026-11-02T19:39:05.6600473Z Using cached httpx-0.28.1-py3-none-any.whl (73 kB)
+2026-11-02T19:39:05.6614268Z Using cached olefile-0.47-py2.py3-none-any.whl (114 kB)
+2026-11-02T19:39:05.6627943Z Using cached pydantic_settings-2.14.2-py3-none-any.whl (61 kB)
+2026-11-02T19:39:05.6641911Z Using cached sqlalchemy-2.0.51-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.4 MB)
+2026-11-02T19:39:05.6667421Z Using cached telethon-1.44.0-py3-none-any.whl (789 kB)
+2026-11-02T19:39:05.6683090Z Using cached uvicorn-0.51.0-py3-none-any.whl (73 kB)
+2026-11-02T19:39:05.6697341Z Using cached aiosqlite-0.22.1-py3-none-any.whl (17 kB)
+2026-11-02T19:39:05.6710701Z Using cached httpcore-1.0.9-py3-none-any.whl (78 kB)
+2026-11-02T19:39:05.6724386Z Using cached openpyxl-3.1.5-py2.py3-none-any.whl (250 kB)
+2026-11-02T19:39:05.6907659Z Downloading pypdf-6.21.4-py3-none-any.whl (410 kB)
+2026-11-02T19:39:05.7175531Z Using cached python_docx-1.2.0-py3-none-any.whl (252 kB)
+2026-11-02T19:39:05.7184715Z Using cached annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+2026-11-02T19:39:05.7195457Z Using cached anyio-4.14.2-py3-none-any.whl (125 kB)
+2026-11-02T19:39:05.7209914Z Using cached cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (221 kB)
+2026-11-02T19:39:05.7223301Z Using cached click-8.5.0-py3-none-any.whl (125 kB)
+2026-11-02T19:39:05.7237846Z Using cached greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (621 kB)
+2026-11-02T19:39:05.7253184Z Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+2026-11-02T19:39:05.7267082Z Using cached idna-3.20-py3-none-any.whl (69 kB)
+2026-11-02T19:39:05.7280789Z Using cached jsonschema-4.26.0-py3-none-any.whl (90 kB)
+2026-11-02T19:39:05.7294513Z Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-11-02T19:39:05.7318691Z Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+2026-11-02T19:39:05.7335194Z Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (5.2 MB)
+2026-11-02T19:39:05.7365203Z Using cached mypy-2.3.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (15.3 MB)
+2026-11-02T19:39:05.7615183Z Downloading ast_serialize-0.13.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.3 MB)
+2026-11-02T19:39:05.7887838Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 46.1 MB/s  0:00:00
+2026-11-02T19:39:05.7904392Z Using cached librt-0.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (531 kB)
+2026-11-02T19:39:05.7919368Z Using cached mypy_extensions-1.1.0-py3-none-any.whl (5.0 kB)
+2026-11-02T19:39:05.7934508Z Using cached pathspec-1.1.1-py3-none-any.whl (57 kB)
+2026-11-02T19:39:05.8116688Z Downloading pydantic-2.14.2-py3-none-any.whl (490 kB)
+2026-11-02T19:39:05.8338356Z Downloading pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.2 MB)
+2026-11-02T19:39:05.8546060Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 113.6 MB/s  0:00:00
+2026-11-02T19:39:05.8559689Z Using cached annotated_types-0.8.0-py3-none-any.whl (13 kB)
+2026-11-02T19:39:05.8573072Z Using cached pytest-9.1.1-py3-none-any.whl (386 kB)
+2026-11-02T19:39:05.8755781Z Downloading pluggy-1.7.0-py3-none-any.whl (27 kB)
+2026-11-02T19:39:05.8791744Z Using cached iniconfig-2.3.1-py3-none-any.whl (7.6 kB)
+2026-11-02T19:39:05.8805479Z Using cached packaging-26.3-py3-none-any.whl (129 kB)
+2026-11-02T19:39:05.8819161Z Using cached pygments-2.21.0-py3-none-any.whl (1.3 MB)
+2026-11-02T19:39:05.8836891Z Using cached python_dotenv-1.2.4-py3-none-any.whl (23 kB)
+2026-11-02T19:39:05.8850076Z Using cached referencing-0.37.0-py3-none-any.whl (26 kB)
+2026-11-02T19:39:05.8863539Z Using cached rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+2026-11-02T19:39:05.8878327Z Using cached ruff-0.15.21-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (11.5 MB)
+2026-11-02T19:39:05.9103655Z Downloading starlette-1.10.0-py3-none-any.whl (80 kB)
+2026-11-02T19:39:05.9144116Z Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-11-02T19:39:05.9157895Z Using cached typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+2026-11-02T19:39:05.9172087Z Using cached httptools-0.9.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (552 kB)
+2026-11-02T19:39:05.9188071Z Using cached pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+2026-11-02T19:39:05.9205028Z Using cached uvloop-0.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (4.5 MB)
+2026-11-02T19:39:05.9237113Z Using cached watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (458 kB)
+2026-11-02T19:39:05.9420314Z Downloading websockets-17.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (226 kB)
+2026-11-02T19:39:05.9626526Z Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+2026-11-02T19:39:05.9674677Z Using cached et_xmlfile-2.0.0-py3-none-any.whl (18 kB)
+2026-11-02T19:39:05.9694586Z Using cached mako-1.4.3-py3-none-any.whl (80 kB)
+2026-11-02T19:39:05.9696032Z Using cached markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-11-02T19:39:05.9875695Z Downloading pycparser-3.12-py3-none-any.whl (62 kB)
+2026-11-02T19:39:05.9917137Z Using cached rsa-4.9.1-py3-none-any.whl (34 kB)
+2026-11-02T19:39:06.0103157Z Downloading pyasn1-0.6.5-py3-none-any.whl (84 kB)
+2026-11-02T19:39:06.2152409Z Building wheels for collected packages: gate
+2026-11-02T19:39:06.2162210Z   Building wheel for gate (pyproject.toml): started
+2026-11-02T19:39:06.7252708Z   Building wheel for gate (pyproject.toml): finished with status 'done'
+2026-11-02T19:39:06.7267066Z   Created wheel for gate: filename=gate-0.1.0-py3-none-any.whl size=886371 sha256=f7728d3b220eca8a63a18b21546b70404f29c521fee1ce4942ce004a111596da
+2026-11-02T19:39:06.7269173Z   Stored in directory: /tmp/pip-ephem-wheel-cache-m2jyb011/wheels/f0/d0/7e/d74a2bb3057eb2ed1235a5e4a01ce9b59c16f1ecc6e474d26b
+2026-11-02T19:39:06.7302159Z Successfully built gate
+2026-11-02T19:39:06.8494638Z Installing collected packages: pyaes, websockets, uvloop, typing-extensions, ruff, rpds-py, pyyaml, python-dotenv, pypdf, PyJWT, pygments, pycparser, pyasn1, pluggy, Pillow, pathspec, packaging, olefile, mypy_extensions, MarkupSafe, lxml, librt, iniconfig, idna, httptools, h11, greenlet, et-xmlfile, defusedxml, click, certifi, attrs, asyncpg, ast-serialize, annotated-types, annotated-doc, aiosqlite, uvicorn, typing-inspection, SQLAlchemy, rsa, referencing, python-docx, pytest, pydantic-core, openpyxl, mypy, Mako, httpcore, cffi, anyio, watchfiles, Telethon, starlette, pydantic, jsonschema-specifications, httpx, cryptography, alembic, pydantic-settings, jsonschema, fastapi, gate
+2026-11-02T19:39:16.8445743Z 
+2026-11-02T19:39:16.8494534Z Successfully installed Mako-1.4.3 MarkupSafe-3.0.4 Pillow-12.3.0 PyJWT-2.13.0 SQLAlchemy-2.0.51 Telethon-1.44.0 aiosqlite-0.22.1 alembic-1.18.5 annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.14.2 ast-serialize-0.13.1 asyncpg-0.31.0 attrs-26.1.0 certifi-2026.10.23 cffi-2.1.1 click-8.5.0 cryptography-46.0.7 defusedxml-0.7.1 et-xmlfile-2.0.0 fastapi-0.139.0 gate-0.1.0 greenlet-3.5.6 h11-0.16.0 httpcore-1.0.9 httptools-0.9.0 httpx-0.28.1 idna-3.20 iniconfig-2.3.1 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 librt-0.16.0 lxml-6.1.3 mypy-2.3.0 mypy_extensions-1.1.0 olefile-0.47 openpyxl-3.1.5 packaging-26.3 pathspec-1.1.1 pluggy-1.7.0 pyaes-1.6.1 pyasn1-0.6.5 pycparser-3.12 pydantic-2.14.2 pydantic-core-2.50.2 pydantic-settings-2.14.2 pygments-2.21.0 pypdf-6.21.4 pytest-9.1.1 python-docx-1.2.0 python-dotenv-1.2.4 pyyaml-6.0.3 referencing-0.37.0 rpds-py-2026.9.1 rsa-4.9.1 ruff-0.15.21 starlette-1.10.0 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.51.0 uvloop-0.23.0 watchfiles-1.3.0 websockets-17.4
+2026-11-02T19:39:17.5170433Z No broken requirements found.
+2026-11-02T19:39:17.5648005Z ##[group]Run python -m pytest tests/test_watch_voice_baseline_fallback_postgres.py -v --junitxml=watch-baseline.xml
+2026-11-02T19:39:17.5648957Z [36;1mpython -m pytest tests/test_watch_voice_baseline_fallback_postgres.py -v --junitxml=watch-baseline.xml[0m
+2026-11-02T19:39:17.5670794Z shell: /usr/bin/bash -e {0}
+2026-11-02T19:39:17.5671070Z env:
+2026-11-02T19:39:17.5671633Z   DATABASE_URL: ***localhost:5432/watch_baseline
+2026-11-02T19:39:17.5671958Z   GATE_ENV: ci
+2026-11-02T19:39:17.5672185Z   GATE_DEFAULT_MODE: manual
+2026-11-02T19:39:17.5672451Z   GATE_WATCH_VOICE_ENABLED: false
+2026-11-02T19:39:17.5672745Z   GATE_WATCH_VOICE_EARLY_INBOX_ENABLED: false
+2026-11-02T19:39:17.5673084Z   GATE_WATCH_VOICE_WORK_RESERVE_ENABLED: false
+2026-11-02T19:39:17.5673415Z   GATE_WATCH_VOICE_WORK_MCP_ENABLED: false
+2026-11-02T19:39:17.5674085Z   WATCH_BASELINE_FALLBACK_FIXTURE: 1
+2026-11-02T19:39:17.5674404Z   PGPASSWORD: postgres
+2026-11-02T19:39:17.5674702Z   PIP_DISABLE_PIP_VERSION_CHECK: 1
+2026-11-02T19:39:17.5675067Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:17.5675543Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-11-02T19:39:17.5676259Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:17.5676688Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:17.5677109Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-11-02T19:39:17.5677536Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-11-02T19:39:17.5677898Z ##[endgroup]
+2026-11-02T19:39:18.3673275Z ============================= test session starts ==============================
+2026-11-02T19:39:18.3674913Z platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0
+2026-11-02T19:39:18.3677842Z rootdir: /home/runner/work/gate/gate/fallback
+2026-11-02T19:39:18.3678469Z configfile: pyproject.toml
+2026-11-02T19:39:18.3678961Z plugins: anyio-4.14.2
+2026-11-02T19:39:18.3679366Z collected 1 item
+2026-11-02T19:39:18.3679639Z 
+2026-11-02T19:39:23.9982335Z tests/test_watch_voice_baseline_fallback_postgres.py F                   [100%]
+2026-11-02T19:39:23.9982994Z 
+2026-11-02T19:39:23.9983293Z =================================== FAILURES ===================================
+2026-11-02T19:39:23.9984341Z ______________ test_exact_old_actions_app_on_populated_watch0119 _______________
+2026-11-02T19:39:23.9984860Z 
+2026-11-02T19:39:23.9985264Z monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f43fbe0f920>
+2026-11-02T19:39:23.9985806Z 
+2026-11-02T19:39:23.9985998Z     @pytest.mark.skipif(
+2026-11-02T19:39:23.9986523Z         os.getenv("WATCH_BASELINE_FALLBACK_FIXTURE") != "1",
+2026-11-02T19:39:23.9987260Z         reason="dedicated disposable fallback-compatibility job only",
+2026-11-02T19:39:23.9987900Z     )
+2026-11-02T19:39:23.9988415Z     def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
+2026-11-02T19:39:23.9989062Z         import httpx
+2026-11-02T19:39:23.9989514Z         from app.api.health_routes import router
+2026-11-02T19:39:23.9990223Z         from app.infrastructure.readiness import build_readiness_service
+2026-11-02T19:39:23.9991026Z         from app.infrastructure.watch_voice_actions import drain
+2026-11-02T19:39:23.9991606Z         from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+2026-11-02T19:39:23.9992104Z         from fastapi import FastAPI
+2026-11-02T19:39:23.9992409Z         from sqlalchemy import select, text
+2026-11-02T19:39:23.9992843Z         from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+2026-11-02T19:39:23.9993382Z         from test_watch_voice_actions import ActionsWorld, action_settings, claims
+2026-11-02T19:39:23.9994153Z     
+2026-11-02T19:39:23.9994598Z         root = Path(__file__).resolve().parents[1]
+2026-11-02T19:39:23.9995135Z         assert (
+2026-11-02T19:39:23.9995890Z             Path(inspect.getfile(drain)).resolve() == root / "app/infrastructure/watch_voice_actions.py"
+2026-11-02T19:39:23.9997134Z         )
+2026-11-02T19:39:23.9997522Z         assert (
+2026-11-02T19:39:23.9998284Z             subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+2026-11-02T19:39:23.9999079Z             == ARTIFACT
+2026-11-02T19:39:23.9999481Z         )
+2026-11-02T19:39:23.9999887Z         changed = subprocess.check_output(
+2026-11-02T19:39:24.0000588Z             ["git", "diff", "--name-only", BASE, ARTIFACT], cwd=root, text=True
+2026-11-02T19:39:24.0001226Z         )
+2026-11-02T19:39:24.0001689Z         assert set(changed.splitlines()) == set(MIGRATIONS)
+2026-11-02T19:39:24.0002359Z         for path, expected in MIGRATIONS.items():
+2026-11-02T19:39:24.0002948Z             raw = (root / path).read_bytes()
+2026-11-02T19:39:24.0007957Z             assert hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == expected
+2026-11-02T19:39:24.0008790Z         subprocess.run(
+2026-11-02T19:39:24.0009440Z             ["git", "diff", "--exit-code", "--", "app", "alembic", "railway.toml"], cwd=root, check=True
+2026-11-02T19:39:24.0010111Z         )
+2026-11-02T19:39:24.0010397Z     
+2026-11-02T19:39:24.0010722Z         url = os.environ["DATABASE_URL"]
+2026-11-02T19:39:24.0011489Z         assert url in {
+2026-11-02T19:39:24.0012363Z             "***localhost:5432/watch_baseline",
+2026-11-02T19:39:24.0013543Z             "***localhost:5432/watch_baseline_restore",
+2026-11-02T19:39:24.0014496Z         }, "only the dedicated local synthetic databases are allowed"
+2026-11-02T19:39:24.0015167Z         restored = os.getenv("WATCH_BASELINE_RESTORED_ONLY") == "1"
+2026-11-02T19:39:24.0015724Z         world = ActionsWorld()
+2026-11-02T19:39:24.0016139Z         world.patches(monkeypatch)
+2026-11-02T19:39:24.0016560Z         settings = action_settings()
+2026-11-02T19:39:24.0017069Z         assert settings.gate_watch_voice_enabled is False
+2026-11-02T19:39:24.0017684Z         assert settings.gate_watch_voice_actions_enabled is True
+2026-11-02T19:39:24.0018205Z         assert all(
+2026-11-02T19:39:24.0018560Z             os.environ[name] == "false"
+2026-11-02T19:39:24.0018972Z             for name in (
+2026-11-02T19:39:24.0019338Z                 "GATE_WATCH_VOICE_ENABLED",
+2026-11-02T19:39:24.0019825Z                 "GATE_WATCH_VOICE_EARLY_INBOX_ENABLED",
+2026-11-02T19:39:24.0020317Z                 "GATE_WATCH_VOICE_WORK_RESERVE_ENABLED",
+2026-11-02T19:39:24.0020811Z                 "GATE_WATCH_VOICE_WORK_MCP_ENABLED",
+2026-11-02T19:39:24.0021233Z             )
+2026-11-02T19:39:24.0021532Z         )
+2026-11-02T19:39:24.0021851Z         now = datetime(2026, 10, 5, 15, tzinfo=UTC)
+2026-11-02T19:39:24.0022336Z         watermark = datetime(2026, 10, 1, tzinfo=UTC)
+2026-11-02T19:39:24.0022786Z     
+2026-11-02T19:39:24.0023090Z         def upgrade(revision):
+2026-11-02T19:39:24.0024001Z             subprocess.run(["alembic", "upgrade", revision], cwd=root, check=True, timeout=120)
+2026-11-02T19:39:24.0024777Z     
+2026-11-02T19:39:24.0025099Z         async def run():
+2026-11-02T19:39:24.0025520Z             engine = create_async_engine(url)
+2026-11-02T19:39:24.0026103Z             factory = async_sessionmaker(engine, expire_on_commit=False)
+2026-11-02T19:39:24.0026674Z             web = FastAPI()
+2026-11-02T19:39:24.0027054Z             web.include_router(router)
+2026-11-02T19:39:24.0027627Z             web.state.readiness_service = build_readiness_service(engine)
+2026-11-02T19:39:24.0028159Z     
+2026-11-02T19:39:24.0028460Z             async def ready(expected):
+2026-11-02T19:39:24.0028903Z                 async with httpx.AsyncClient(
+2026-11-02T19:39:24.0029593Z                     transport=httpx.ASGITransport(app=web), base_url="http://fixture.invalid"
+2026-11-02T19:39:24.0030275Z                 ) as client:
+2026-11-02T19:39:24.0030701Z                     response = await client.get("/ready")
+2026-11-02T19:39:24.0031220Z                     assert response.status_code == expected
+2026-11-02T19:39:24.0031714Z                     return response.json()
+2026-11-02T19:39:24.0032126Z     
+2026-11-02T19:39:24.0032676Z             async def snapshot():
+2026-11-02T19:39:24.0033120Z                 async with factory() as session:
+2026-11-02T19:39:24.0034070Z                     cursor = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+2026-11-02T19:39:24.0034821Z                     notes = list(
+2026-11-02T19:39:24.0035203Z                         (
+2026-11-02T19:39:24.0035790Z                             await session.scalars(select(WatchVoiceNote).order_by(WatchVoiceNote.id))
+2026-11-02T19:39:24.0036458Z                         ).all()
+2026-11-02T19:39:24.0036821Z                     )
+2026-11-02T19:39:24.0037278Z                     old_run = await session.get(WatchVoiceDrainRun, "1" * 64)
+2026-11-02T19:39:24.0038023Z                     unknown = next(n for n in notes if n.id == "00000000-0000-0000-0000-000000000002")
+2026-11-02T19:39:24.0038649Z                     return (
+2026-11-02T19:39:24.0039029Z                         cursor.cursor,
+2026-11-02T19:39:24.0039465Z                         cursor.future_cutover_at,
+2026-11-02T19:39:24.0039903Z                         old_run.jwt_key,
+2026-11-02T19:39:24.0040319Z                         unknown.data,
+2026-11-02T19:39:24.0040948Z                         unknown.sha256,
+2026-11-02T19:39:24.0041391Z                         unknown.transcription_state,
+2026-11-02T19:39:24.0041878Z                         unknown.delivery_state,
+2026-11-02T19:39:24.0042336Z                         unknown.last_error,
+2026-11-02T19:39:24.0042777Z                         unknown.attempted_at,
+2026-11-02T19:39:24.0043197Z                     )
+2026-11-02T19:39:24.0043510Z     
+2026-11-02T19:39:24.0060027Z             try:
+2026-11-02T19:39:24.0060437Z                 if not restored:
+2026-11-02T19:39:24.0060909Z                     upgrade("0115_watch_voice_post_payment")
+2026-11-02T19:39:24.0061556Z                     assert (await ready(503))["reason"] == "migration_heads_mismatch"
+2026-11-02T19:39:24.0062236Z                     async with factory() as session:
+2026-11-02T19:39:24.0062698Z                         session.add(
+2026-11-02T19:39:24.0063129Z                             WatchVoiceCursor(
+2026-11-02T19:39:24.0063652Z                                 workspace_key="mark-personal",
+2026-11-02T19:39:24.0064468Z                                 account_id="synthetic-owner",
+2026-11-02T19:39:24.0065025Z                                 cursor="synthetic-cursor-before",
+2026-11-02T19:39:24.0065569Z                                 future_cutover_at=watermark,
+2026-11-02T19:39:24.0066042Z                             )
+2026-11-02T19:39:24.0066406Z                         )
+2026-11-02T19:39:24.0066763Z                         session.add(
+2026-11-02T19:39:24.0067420Z                             WatchVoiceDrainRun(run_key="1" * 64, jwt_key="2" * 64, claimed_at=now)
+2026-11-02T19:39:24.0068080Z                         )
+2026-11-02T19:39:24.0068546Z                         for index, state in ((1, "transcribed"), (2, "unknown")):
+2026-11-02T19:39:24.0069083Z                             session.add(
+2026-11-02T19:39:24.0069500Z                                 WatchVoiceNote(
+2026-11-02T19:39:24.0069997Z                                     id=f"00000000-0000-0000-0000-{index:012d}",
+2026-11-02T19:39:24.0070581Z                                     workspace_key="mark-personal",
+2026-11-02T19:39:24.0071106Z                                     account_id="synthetic-owner",
+2026-11-02T19:39:24.0071766Z                                     file_id="id:synthetic" if index == 1 else "id:synthetic-unknown",
+2026-11-02T19:39:24.0072514Z                                     revision="abcdef1234" if index == 1 else "abcdef5678",
+2026-11-02T19:39:24.0073157Z                                     source_path="/Alpha/Voice/Synthetic.m4a",
+2026-11-02T19:39:24.0074004Z                                     filename="Synthetic.m4a",
+2026-11-02T19:39:24.0074528Z                                     media_type="audio/mp4",
+2026-11-02T19:39:24.0075429Z                                     size_bytes=len(world.audio),
+2026-11-02T19:39:24.0076031Z                                     sha256=hashlib.sha256(world.audio).hexdigest(),
+2026-11-02T19:39:24.0076595Z                                     data=world.audio,
+2026-11-02T19:39:24.0077090Z                                     dropbox_modified_at=now,
+2026-11-02T19:39:24.0077573Z                                     received_at=now,
+2026-11-02T19:39:24.0078063Z                                     transcription_state=state,
+2026-11-02T19:39:24.0078686Z                                     transcript=world.transcript if index == 1 else None,
+2026-11-02T19:39:24.0079284Z                                     model="synthetic",
+2026-11-02T19:39:24.0079812Z                                     transcribed_at=now if index == 1 else None,
+2026-11-02T19:39:24.0080457Z                                     delivery_state="pending" if index == 1 else "unknown",
+2026-11-02T19:39:24.0081035Z                                     next_part=0,
+2026-11-02T19:39:24.0081561Z                                     attempted_at=now if index == 2 else None,
+2026-11-02T19:39:24.0082181Z                                     last_error="synthetic_unknown" if index == 2 else None,
+2026-11-02T19:39:24.0082964Z                                 )
+2026-11-02T19:39:24.0083326Z                             )
+2026-11-02T19:39:24.0083907Z                         await session.commit()
+2026-11-02T19:39:24.0084387Z                     before = await snapshot()
+2026-11-02T19:39:24.0084803Z                     upgrade(HEAD)
+2026-11-02T19:39:24.0085221Z                     assert await snapshot() == before
+2026-11-02T19:39:24.0085745Z                     assert (await ready(200))["status"] == "ready"
+2026-11-02T19:39:24.0086506Z                     async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+2026-11-02T19:39:24.0087204Z                         kwargs = dict(
+2026-11-02T19:39:24.0087619Z                             settings=settings,
+2026-11-02T19:39:24.0088084Z                             factory=factory,
+2026-11-02T19:39:24.0088508Z                             http=http,
+2026-11-02T19:39:24.0088904Z                             claims=claims(),
+2026-11-02T19:39:24.0089384Z                             job_token="synthetic-job-token",
+2026-11-02T19:39:24.0089840Z                         )
+2026-11-02T19:39:24.0090210Z                         receipt = await drain(**kwargs)
+2026-11-02T19:39:24.0090931Z                         assert receipt["delivered"] == 1 and receipt["private_content_exposed"] is False
+2026-11-02T19:39:24.0091844Z                         assert (await drain(**kwargs))["result"] == "replayed"
+2026-11-02T19:39:24.0092501Z                         assert world.posts == 1 and world.provider_calls == 0
+2026-11-02T19:39:24.0093209Z                         # A fresh admitted run must not retry an existing UNKNOWN original.
+2026-11-02T19:39:24.0094080Z                         world.current_run = "322"
+2026-11-02T19:39:24.0094689Z                         world.entry.update(id="id:synthetic-unknown", rev="abcdef5678")
+2026-11-02T19:39:24.0095505Z                         world.binding.update(file_id="id:synthetic-unknown", revision="abcdef5678")
+2026-11-02T19:39:24.0096200Z                         await drain(
+2026-11-02T19:39:24.0096606Z                             settings=settings,
+2026-11-02T19:39:24.0097044Z                             factory=factory,
+2026-11-02T19:39:24.0097459Z                             http=http,
+2026-11-02T19:39:24.0098062Z                             claims=claims(run_id="322", jti="synthetic-second-run"),
+2026-11-02T19:39:24.0098661Z                             job_token="synthetic-job-token",
+2026-11-02T19:39:24.0099114Z                         )
+2026-11-02T19:39:24.0099579Z                         assert world.posts == 1 and world.provider_calls == 0
+2026-11-02T19:39:24.0100131Z                     after = await snapshot()
+2026-11-02T19:39:24.0100567Z                     assert after[1:] == before[1:]
+2026-11-02T19:39:24.0101312Z                 else:
+2026-11-02T19:39:24.0101684Z                     after = await snapshot()
+2026-11-02T19:39:24.0102182Z                     assert after[1] == watermark and after[2] == "2" * 64
+2026-11-02T19:39:24.0102711Z                     assert after[3:] == (
+2026-11-02T19:39:24.0103120Z                         world.audio,
+2026-11-02T19:39:24.0103568Z                         hashlib.sha256(world.audio).hexdigest(),
+2026-11-02T19:39:24.0104254Z                         "unknown",
+2026-11-02T19:39:24.0104631Z                         "unknown",
+2026-11-02T19:39:24.0105024Z                         "synthetic_unknown",
+2026-11-02T19:39:24.0105433Z                         now,
+2026-11-02T19:39:24.0105780Z                     )
+2026-11-02T19:39:24.0106098Z     
+2026-11-02T19:39:24.0106455Z                 assert after[0] == "synthetic-cursor"
+2026-11-02T19:39:24.0106968Z                 assert (await ready(200))["status"] == "ready"
+2026-11-02T19:39:24.0107476Z                 async with factory() as session:
+2026-11-02T19:39:24.0107914Z                     heads = (
+2026-11-02T19:39:24.0108506Z                         (await session.execute(text("SELECT version_num FROM alembic_version")))
+2026-11-02T19:39:24.0109406Z                         .scalars()
+2026-11-02T19:39:24.0109810Z                         .all()
+2026-11-02T19:39:24.0110201Z                     )
+2026-11-02T19:39:24.0110556Z                     assert heads == [HEAD]
+2026-11-02T19:39:24.0110994Z                     notes = list(
+2026-11-02T19:39:24.0111380Z                         (
+2026-11-02T19:39:24.0111958Z                             await session.scalars(select(WatchVoiceNote).order_by(WatchVoiceNote.id))
+2026-11-02T19:39:24.0112620Z                         ).all()
+2026-11-02T19:39:24.0112964Z                     )
+2026-11-02T19:39:24.0113433Z                     assert len(notes) == 2 and notes[0].delivery_state == "delivered"
+2026-11-02T19:39:24.0120587Z                     assert all(
+2026-11-02T19:39:24.0121237Z                         n.data == world.audio and n.sha256 == hashlib.sha256(world.audio).hexdigest()
+2026-11-02T19:39:24.0121908Z                         for n in notes
+2026-11-02T19:39:24.0122311Z                     )
+2026-11-02T19:39:24.0122653Z                     assert (
+2026-11-02T19:39:24.0123228Z                         await session.execute(text("SELECT count(*) FROM watch_voice_drain_runs"))
+2026-11-02T19:39:24.0124139Z                     ).scalar_one() == 3
+2026-11-02T19:39:24.0124543Z                     assert (
+2026-11-02T19:39:24.0124927Z                         await session.execute(
+2026-11-02T19:39:24.0125358Z                             text(
+2026-11-02T19:39:24.0125811Z                                 "SELECT count(*) FROM watch_voice_notes "
+2026-11-02T19:39:24.0126357Z                                 "WHERE transcript_origin = 'gate'"
+2026-11-02T19:39:24.0126797Z                             )
+2026-11-02T19:39:24.0127132Z                         )
+2026-11-02T19:39:24.0127473Z                     ).scalar_one() == 2
+2026-11-02T19:39:24.0128082Z                     version = (await session.execute(text("SHOW server_version"))).scalar_one()
+2026-11-02T19:39:24.0128730Z                 evidence = {
+2026-11-02T19:39:24.0129218Z                     "schema": "gate.watch.baseline-fallback-fixture/v1",
+2026-11-02T19:39:24.0129752Z                     "result": "ACCEPT",
+2026-11-02T19:39:24.0130219Z                     "scope": "DISPOSABLE_SYNTHETIC_ONLY",
+2026-11-02T19:39:24.0130690Z                     "artifact_sha": ARTIFACT,
+2026-11-02T19:39:24.0131121Z                     "baseline_sha": BASE,
+2026-11-02T19:39:24.0131534Z                     "migration_head": HEAD,
+2026-11-02T19:39:24.0131979Z                     "postgres_version": version,
+2026-11-02T19:39:24.0132417Z                     "old_actions_app": True,
+2026-11-02T19:39:24.0132869Z                     "real_database_ready_http": True,
+2026-11-02T19:39:24.0133343Z                     "restore_checked": restored,
+2026-11-02T19:39:24.0134307Z                     "real_drain_with_http_stubs": not restored,
+2026-11-02T19:39:24.0134842Z                     "external_provider_calls": 0,
+2026-11-02T19:39:24.0135383Z                     "originals_cursor_unknown_and_replay_preserved": True,
+2026-11-02T19:39:24.0135947Z                     "production_authorized": False,
+2026-11-02T19:39:24.0136375Z                 }
+2026-11-02T19:39:24.0136680Z                 name = (
+2026-11-02T19:39:24.0137104Z                     "watch-baseline-fallback-restore.json"
+2026-11-02T19:39:24.0137594Z                     if restored
+2026-11-02T19:39:24.0138031Z                     else "watch-baseline-fallback.json"
+2026-11-02T19:39:24.0138481Z                 )
+2026-11-02T19:39:24.0139003Z                 Path(name).write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n")
+2026-11-02T19:39:24.0139622Z             finally:
+2026-11-02T19:39:24.0139977Z                 await engine.dispose()
+2026-11-02T19:39:24.0140362Z     
+2026-11-02T19:39:24.0140658Z >       asyncio.run(run())
+2026-11-02T19:39:24.0140902Z 
+2026-11-02T19:39:24.0141140Z tests/test_watch_voice_baseline_fallback_postgres.py:265: 
+2026-11-02T19:39:24.0141737Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2026-11-02T19:39:24.0142655Z /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/asyncio/runners.py:195: in run
+2026-11-02T19:39:24.0143309Z     return runner.run(main)
+2026-11-02T19:39:24.0143950Z            ^^^^^^^^^^^^^^^^
+2026-11-02T19:39:24.0144567Z /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/asyncio/runners.py:118: in run
+2026-11-02T19:39:24.0145271Z     return self._loop.run_until_complete(task)
+2026-11-02T19:39:24.0145720Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-11-02T19:39:24.0146436Z /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+2026-11-02T19:39:24.0147186Z     return future.result()
+2026-11-02T19:39:24.0147532Z            ^^^^^^^^^^^^^^^
+2026-11-02T19:39:24.0147993Z tests/test_watch_voice_baseline_fallback_postgres.py:179: in run
+2026-11-02T19:39:24.0148547Z     receipt = await drain(**kwargs)
+2026-11-02T19:39:24.0148944Z               ^^^^^^^^^^^^^^^^^^^^^
+2026-11-02T19:39:24.0149413Z app/infrastructure/watch_voice_actions.py:403: in drain
+2026-11-02T19:39:24.0150006Z     await worker.store_entry(scoped, factory, http, token, entry)
+2026-11-02T19:39:24.0150608Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2026-11-02T19:39:24.0150978Z 
+2026-11-02T19:39:24.0152507Z settings = Settings(database_url='***localhost:5432/watch_baseline', telegram_bot_token='', t...gate_reply_send_recovery_enabled=False, gate_reply_send_recovery_stale_seconds=900, gate_reply_send_recovery_limit=100)
+2026-11-02T19:39:24.0154633Z factory = async_sessionmaker(class_='AsyncSession', bind=<sqlalchemy.ext.asyncio.engine.AsyncEngine object at 0x7f43f80ac650>, autoflush=True, expire_on_commit=False)
+2026-11-02T19:39:24.0155912Z http = <httpx.AsyncClient object at 0x7f43f7fc3f50>, token = 'synthetic-access'
+2026-11-02T19:39:24.0156764Z entry = {'.tag': 'file', 'id': 'id:synthetic', 'rev': 'abcdef1234', 'name': 'Synthetic.m4a', ...}
+2026-11-02T19:39:24.0157253Z 
+2026-11-02T19:39:24.0157409Z     async def store_entry(
+2026-11-02T19:39:24.0157769Z         settings: Settings,
+2026-11-02T19:39:24.0158178Z         factory: async_sessionmaker[AsyncSession],
+2026-11-02T19:39:24.0158651Z         http: httpx.AsyncClient,
+2026-11-02T19:39:24.0159020Z         token: str,
+2026-11-02T19:39:24.0159336Z         entry: dict[str, Any],
+2026-11-02T19:39:24.0159693Z     ) -> None:
+2026-11-02T19:39:24.0160082Z         file_id, revision = entry["id"], entry["rev"]
+2026-11-02T19:39:24.0160712Z         scope = (settings.gate_workspace_id, settings.dropbox_call_account_id)
+2026-11-02T19:39:24.0161499Z         event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, repr((*scope, file_id, revision))))
+2026-11-02T19:39:24.0162147Z         async with factory() as session:
+2026-11-02T19:39:24.0162956Z             if await session.get(WatchVoiceNote, event_id) is not None:
+2026-11-02T19:39:24.0163472Z                 return
+2026-11-02T19:39:24.0164149Z         modified = timestamp(entry["server_modified"])
+2026-11-02T19:39:24.0164629Z         data, _ = await _download_revision(
+2026-11-02T19:39:24.0165050Z             http=http,
+2026-11-02T19:39:24.0165392Z             access_token=token,
+2026-11-02T19:39:24.0165773Z             revision=revision,
+2026-11-02T19:39:24.0166159Z             expected_size=entry["size"],
+2026-11-02T19:39:24.0166593Z             fallback_name=entry["name"],
+2026-11-02T19:39:24.0166981Z         )
+2026-11-02T19:39:24.0167329Z         duration = await _probe_duration_seconds(data)
+2026-11-02T19:39:24.0167788Z         now = datetime.now(UTC)
+2026-11-02T19:39:24.0168170Z         row = WatchVoiceNote(
+2026-11-02T19:39:24.0168525Z             id=event_id,
+2026-11-02T19:39:24.0168881Z             workspace_key=scope[0],
+2026-11-02T19:39:24.0169272Z             account_id=scope[1],
+2026-11-02T19:39:24.0169652Z             file_id=file_id,
+2026-11-02T19:39:24.0170023Z             revision=revision,
+2026-11-02T19:39:24.0170426Z             source_path=entry["path_display"],
+2026-11-02T19:39:24.0171062Z             filename=entry["name"],
+2026-11-02T19:39:24.0171509Z             media_type=_audio_media_type(entry["name"]),
+2026-11-02T19:39:24.0171987Z             size_bytes=len(data),
+2026-11-02T19:39:24.0172414Z             sha256=hashlib.sha256(data).hexdigest(),
+2026-11-02T19:39:24.0172844Z             data=data,
+2026-11-02T19:39:24.0173186Z             duration_seconds=duration,
+2026-11-02T19:39:24.0173600Z             recorded_at=None,
+2026-11-02T19:39:24.0174182Z             dropbox_modified_at=modified,
+2026-11-02T19:39:24.0174602Z             received_at=now,
+2026-11-02T19:39:24.0174987Z             transcription_state="received",
+2026-11-02T19:39:24.0175448Z             delivery_state="pending",
+2026-11-02T19:39:24.0175851Z             next_part=0,
+2026-11-02T19:39:24.0176178Z         )
+2026-11-02T19:39:24.0176541Z         if duration is None or duration > MAX_DURATION:
+2026-11-02T19:39:24.0177043Z             row.transcription_state = "rejected"
+2026-11-02T19:39:24.0177634Z             row.last_error = "watch_voice_media_unreadable_or_duration_exceeded"
+2026-11-02T19:39:24.0178234Z         async with factory() as session:
+2026-11-02T19:39:24.0178653Z             session.add(row)
+2026-11-02T19:39:24.0179003Z             try:
+2026-11-02T19:39:24.0179329Z                 await session.commit()
+2026-11-02T19:39:24.0179735Z             except IntegrityError:
+2026-11-02T19:39:24.0180142Z                 await session.rollback()
+2026-11-02T19:39:24.0180737Z                 # Only the exact already committed immutable source is an accepted race.
+2026-11-02T19:39:24.0181418Z                 old = await session.get(WatchVoiceNote, event_id)
+2026-11-02T19:39:24.0182096Z                 if old is None or old.sha256 != row.sha256 or old.size_bytes != row.size_bytes:
+2026-11-02T19:39:24.0182877Z >                   raise WatchVoiceError("watch_voice_source_conflict") from None
+2026-11-02T19:39:24.0183991Z E                   app.infrastructure.watch_voice_github.WatchVoiceError: watch_voice_source_conflict
+2026-11-02T19:39:24.0184591Z 
+2026-11-02T19:39:24.0184801Z app/worker/watch_voice.py:215: WatchVoiceError
+2026-11-02T19:39:24.0185387Z ----------------------------- Captured stderr call -----------------------------
+2026-11-02T19:39:24.0186073Z INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-11-02T19:39:24.0186746Z INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-11-02T19:39:24.0187612Z INFO  [alembic.runtime.migration] Running upgrade  -> 0001_initial_gate_domain, Initial Gate domain tables.
+2026-11-02T19:39:24.0188963Z INFO  [alembic.runtime.migration] Running upgrade 0001_initial_gate_domain -> 0002_durable_message_storage, Add durable Telegram update and message storage.
+2026-11-02T19:39:24.0190715Z INFO  [alembic.runtime.migration] Running upgrade 0002_durable_message_storage -> 0003_conversations_reply_tasks, Add conversations and reply tasks.
+2026-11-02T19:39:24.0192091Z INFO  [alembic.runtime.migration] Running upgrade 0003_conversations_reply_tasks -> 0004_reply_drafts, Add reply drafts.
+2026-11-02T19:39:24.0193463Z INFO  [alembic.runtime.migration] Running upgrade 0004_reply_drafts -> 0005_multi_account_routing, Add multi-account and routing data foundation.
+2026-11-02T19:39:24.0195360Z INFO  [alembic.runtime.migration] Running upgrade 0005_multi_account_routing -> 0006_business_message_direction, Reclassify Telegram Business messages sent by the account owner.
+2026-11-02T19:39:24.0197304Z INFO  [alembic.runtime.migration] Running upgrade 0006_business_message_direction -> 0007_owner_identity_direction, Reclassify messages authored by any Telegram identity owned by Mark.
+2026-11-02T19:39:24.0199127Z INFO  [alembic.runtime.migration] Running upgrade 0007_owner_identity_direction -> 0008_reply_send_attempts, Add idempotent reply send attempts.
+2026-11-02T19:39:24.0200682Z INFO  [alembic.runtime.migration] Running upgrade 0008_reply_send_attempts -> 0009_account_routing_repair, Repair Telegram Business account routing facts.
+2026-11-02T19:39:24.0202400Z INFO  [alembic.runtime.migration] Running upgrade 0009_account_routing_repair -> 0010_legacy_telegram_routing, Backfill legacy Telegram Business routing from retained raw updates.
+2026-11-02T19:39:24.0204709Z INFO  [alembic.runtime.migration] Running upgrade 0010_legacy_telegram_routing -> 0011_confirmed_account_routes, Apply operator-confirmed Telegram account corrections.
+2026-11-02T19:39:24.0206526Z INFO  [alembic.runtime.migration] Running upgrade 0011_confirmed_account_routes -> 0012_mark_workspace_owner, Normalize Mark's accounts to the OAuth workspace identity.
+2026-11-02T19:39:24.0208252Z INFO  [alembic.runtime.migration] Running upgrade 0012_mark_workspace_owner -> 0013_close_superseded_tasks, Close legacy reply tasks superseded by an outbound reply.
+2026-11-02T19:39:24.0209977Z INFO  [alembic.runtime.migration] Running upgrade 0013_close_superseded_tasks -> 0014_telegram_receipt_outbox, Add durable Telegram receipts and transactional outbox.
+2026-11-02T19:39:24.0211651Z INFO  [alembic.runtime.migration] Running upgrade 0014_telegram_receipt_outbox -> 0015_telegram_queue_incidents, Add durable payload-free Telegram queue incidents.
+2026-11-02T19:39:24.0213343Z INFO  [alembic.runtime.migration] Running upgrade 0015_telegram_queue_incidents -> 0016_canonical_foundation, Add workspace-scoped canonical messaging foundation.
+2026-11-02T19:39:24.0215142Z INFO  [alembic.runtime.migration] Running upgrade 0016_canonical_foundation -> 0017_agent_kernel, Add workspace-scoped Agent Kernel persistence.
+2026-11-02T19:39:24.0216674Z INFO  [alembic.runtime.migration] Running upgrade 0017_agent_kernel -> 0018_alpha_delivery, Add Alpha installation and delivery capability persistence.
+2026-11-02T19:39:24.0218192Z INFO  [alembic.runtime.migration] Running upgrade 0018_alpha_delivery -> 0019_alpha_lifecycle, Add Alpha operator lifecycle and usage accounting.
+2026-11-02T19:39:24.0219818Z INFO  [alembic.runtime.migration] Running upgrade 0019_alpha_lifecycle -> 0020_alpha_canary_release, Promote the immutable Alpha canary release for the owner-approved group.
+2026-11-02T19:39:24.0221619Z INFO  [alembic.runtime.migration] Running upgrade 0020_alpha_canary_release -> 0021_enable_alpha_canary, Enable the exact Alpha connector and finish its owner-approved binding.
+2026-11-02T19:39:24.0223285Z INFO  [alembic.runtime.migration] Running upgrade 0021_enable_alpha_canary -> 0022_alpha_bundle_digest, Correct the immutable Alpha canary bundle digest.
+2026-11-02T19:39:24.0225265Z INFO  [alembic.runtime.migration] Running upgrade 0022_alpha_bundle_digest -> 0023_alpha_model_release, Stage the reviewed Alpha model release without activating provider egress.
+2026-11-02T19:39:24.0227117Z INFO  [alembic.runtime.migration] Running upgrade 0023_alpha_model_release -> 0024_pause_alpha_canary_drill, Pause the exact fixed Alpha canary for a bounded owner live drill.
+2026-11-02T19:39:24.0229118Z INFO  [alembic.runtime.migration] Running upgrade 0024_pause_alpha_canary_drill -> 0025_resume_alpha_canary_drill, Restore the exact fixed Alpha canary after the bounded pause drill.
+2026-11-02T19:39:24.0230933Z INFO  [alembic.runtime.migration] Running upgrade 0025_resume_alpha_canary_drill -> 0026_alpha_model_preflight, Add one-shot delivery-free Alpha provider preflight evidence.
+2026-11-02T19:39:24.0232697Z INFO  [alembic.runtime.migration] Running upgrade 0026_alpha_model_preflight -> 0027_alpha_voice_intake, Add scoped canonical voice metadata and dormant Alpha voice jobs.
+2026-11-02T19:39:24.0234659Z INFO  [alembic.runtime.migration] Running upgrade 0027_alpha_voice_intake -> 0028_relationship_crm_core, Add module-owned Relationship CRM spaces, people and interaction facts.
+2026-11-02T19:39:24.0236570Z INFO  [alembic.runtime.migration] Running upgrade 0028_relationship_crm_core -> 0029_relationship_crm_personal, Add Relationship CRM identities, explicit attention, notes and work items.
+2026-11-02T19:39:24.0238567Z INFO  [alembic.runtime.migration] Running upgrade 0029_relationship_crm_personal -> 0030_relationship_crm_commercial, Add Relationship CRM commercial/program pipelines, deals and transitions.
+2026-11-02T19:39:24.0240691Z INFO  [alembic.runtime.migration] Running upgrade 0030_relationship_crm_commercial -> 0031_billing_ledger, Add provider-neutral billing ledger, entitlements and budget reservations.
+2026-11-02T19:39:24.0242467Z INFO  [alembic.runtime.migration] Running upgrade 0031_billing_ledger -> 0032_gate_voice_entitlement, Seed the dormant Gate Telegram voice transcription entitlement.
+2026-11-02T19:39:24.0244392Z INFO  [alembic.runtime.migration] Running upgrade 0032_gate_voice_entitlement -> 0033_canonical_input_origin, Record canonical Telegram text origin.
+2026-11-02T19:39:24.0246140Z INFO  [alembic.runtime.migration] Running upgrade 0033_canonical_input_origin -> 0034_alpha_model_v2_release, Stage immutable Alpha model v2 and retain v1 as the paused rollback target.
+2026-11-02T19:39:24.0248027Z INFO  [alembic.runtime.migration] Running upgrade 0034_alpha_model_v2_release -> 0035_alpha_rate_limit_deferral, Defer future Alpha rate limits and replay the bounded v2 test backlog.
+2026-11-02T19:39:24.0249858Z INFO  [alembic.runtime.migration] Running upgrade 0035_alpha_rate_limit_deferral -> 0036_business_text_parity, Persist content-free Telegram Business text parity evidence.
+2026-11-02T19:39:24.0251644Z INFO  [alembic.runtime.migration] Running upgrade 0036_business_text_parity -> 0037_direction_parity_v2, Version Business text parity after account-relative direction correction.
+2026-11-02T19:39:24.0253434Z INFO  [alembic.runtime.migration] Running upgrade 0037_direction_parity_v2 -> 0038_business_text_cutover, Link the current human inbox read model to canonical Business messages.
+2026-11-02T19:39:24.0255311Z INFO  [alembic.runtime.migration] Running upgrade 0038_business_text_cutover -> 0039_voice_archive, Persist bounded original Telegram Business voice audio.
+2026-11-02T19:39:24.0257006Z INFO  [alembic.runtime.migration] Running upgrade 0039_voice_archive -> 0040_alpha_model_v2_bounded_live, Promote the exact reviewed Alpha model v2 deployment to bounded-live.
+2026-11-02T19:39:24.0258833Z INFO  [alembic.runtime.migration] Running upgrade 0040_alpha_model_v2_bounded_live -> 0041_voice_transcript_store, Persist automatic Telegram voice transcripts beside original audio.
+2026-11-02T19:39:24.0260614Z INFO  [alembic.runtime.migration] Running upgrade 0041_voice_transcript_store -> 0042_dropbox_phone_calls, Add durable Dropbox mobile-call intake and transcript storage.
+2026-11-02T19:39:24.0262390Z INFO  [alembic.runtime.migration] Running upgrade 0042_dropbox_phone_calls -> 0043_alpha_model_v2_binding, Bind the single Alpha Group installation to the reviewed model v2 release.
+2026-11-02T19:39:24.0264434Z INFO  [alembic.runtime.migration] Running upgrade 0043_alpha_model_v2_binding -> 0044_mayak_owner_release, Release Universal Mayak for one owner-confirmed private dialog.
+2026-11-02T19:39:24.0266439Z INFO  [alembic.runtime.migration] Running upgrade 0044_mayak_owner_release -> 0045_mayak_owner_route, Repair the exact owner-private Mayak route without global account routing.
+2026-11-02T19:39:24.0268239Z INFO  [alembic.runtime.migration] Running upgrade 0045_mayak_owner_route -> 0046_mayak_reconcile, Reconcile the exact owner-private Mayak installation after task evolution.
+2026-11-02T19:39:24.0269975Z INFO  [alembic.runtime.migration] Running upgrade 0046_mayak_reconcile -> 0047_mayak_exact_route, Reconcile the owner Mayak route from immutable repository identities.
+2026-11-02T19:39:24.0271682Z INFO  [alembic.runtime.migration] Running upgrade 0047_mayak_exact_route -> 0048_mayak_connector, Bind the owner Mayak connector through its exact canonical dialog.
+2026-11-02T19:39:24.0273370Z INFO  [alembic.runtime.migration] Running upgrade 0048_mayak_connector -> 0049_mayak_connector_active, Activate the exact owner Mayak canonical connector and bind it.
+2026-11-02T19:39:24.0275295Z INFO  [alembic.runtime.migration] Running upgrade 0049_mayak_connector_active -> 0050_beta_context_pilot, Add the durable Gate outbox and co-located Beta context sink.
+2026-11-02T19:39:24.0276968Z INFO  [alembic.runtime.migration] Running upgrade 0050_beta_context_pilot -> 0051_beta_alexander_model, Bind the paused Alexander pilot to the reviewed live model.
+2026-11-02T19:39:24.0278970Z INFO  [alembic.runtime.migration] Running upgrade 0051_beta_alexander_model -> 0052_beta_alexander_exact_ref, Resolve Alexander by canonical installation ref and finish the live binding.
+2026-11-02T19:39:24.0280785Z INFO  [alembic.runtime.migration] Running upgrade 0052_beta_alexander_exact_ref -> 0053_audio_closeout, Close out bounded audio transcription, recovery and summary storage.
+2026-11-02T19:39:24.0282528Z INFO  [alembic.runtime.migration] Running upgrade 0053_audio_closeout -> 0054_audio_provider_limit, Retry one provider-oversized call through bounded compression.
+2026-11-02T19:39:24.0284514Z INFO  [alembic.runtime.migration] Running upgrade 0054_audio_provider_limit -> 0055_audio_provider_headroom, Retry one oversized call with additional provider request headroom.
+2026-11-02T19:39:24.0286413Z INFO  [alembic.runtime.migration] Running upgrade 0055_audio_provider_headroom -> 0056_audio_provider_diagnostics, Retry one oversized call to capture a safe provider rejection category.
+2026-11-02T19:39:24.0288276Z INFO  [alembic.runtime.migration] Running upgrade 0056_audio_provider_diagnostics -> 0057_dropbox_call_claim, Retry one call after fixing concurrent Dropbox worker claims.
+2026-11-02T19:39:24.0290103Z INFO  [alembic.runtime.migration] Running upgrade 0057_dropbox_call_claim -> 0058_beta_checkpoint_exports, Persist deterministic Beta checkpoint batches and recipient bindings.
+2026-11-02T19:39:24.0291861Z INFO  [alembic.runtime.migration] Running upgrade 0057_dropbox_call_claim -> 0058_long_call_chunking, Retry one long call through ordered bounded transcription parts.
+2026-11-02T19:39:24.0293599Z INFO  [alembic.runtime.migration] Running upgrade 0058_long_call_chunking, 0058_beta_checkpoint_exports -> 0059_merge_audio_beta_heads, Merge the audio and Beta migration heads.
+2026-11-02T19:39:24.0295489Z INFO  [alembic.runtime.migration] Running upgrade 0059_merge_audio_beta_heads -> 0060_call_processing_status, Allow atomic processing claims for stored phone calls.
+2026-11-02T19:39:24.0297265Z INFO  [alembic.runtime.migration] Running upgrade 0060_call_processing_status -> 0061_voice_reconcile, Reconcile the exact historical Telegram Business voice dead letters.
+2026-11-02T19:39:24.0299094Z INFO  [alembic.runtime.migration] Running upgrade 0061_voice_reconcile -> 0062_mayak_oko_v2, Release the accepted Oko LMS copy on the exact owner-private route.
+2026-11-02T19:39:24.0300840Z INFO  [alembic.runtime.migration] Running upgrade 0062_mayak_oko_v2 -> 0063_voice_unknown_retry, Authorize one exact isolated retry for the remaining transport-unknown voice.
+2026-11-02T19:39:24.0302909Z INFO  [alembic.runtime.migration] Running upgrade 0063_voice_unknown_retry -> 0064_long_call_wav_retry, Retry one exact rejected long call as bounded PCM WAV parts.
+2026-11-02T19:39:24.0304945Z INFO  [alembic.runtime.migration] Running upgrade 0064_long_call_wav_retry -> 0065_long_call_claim_v8, Claim one exact rejected long call only after the new worker is active.
+2026-11-02T19:39:24.0306682Z INFO  [alembic.runtime.migration] Running upgrade 0065_long_call_claim_v8 -> 0066_long_call_claim_v9, Retry one exact rejected long call as smaller PCM WAV parts.
+2026-11-02T19:39:24.0308379Z INFO  [alembic.runtime.migration] Running upgrade 0066_long_call_claim_v9 -> 0067_long_call_claim_v10, Retry one exact rejected long call as three-minute PCM WAV parts.
+2026-11-02T19:39:24.0310074Z INFO  [alembic.runtime.migration] Running upgrade 0067_long_call_claim_v10 -> 0068_long_call_claim_v11, Retry one exact rejected long call as three-minute MP3 parts.
+2026-11-02T19:39:24.0311776Z INFO  [alembic.runtime.migration] Running upgrade 0068_long_call_claim_v11 -> 0069_long_call_claim_v12, Retry one exact rejected long call with the full transcription model.
+2026-11-02T19:39:24.0313581Z INFO  [alembic.runtime.migration] Running upgrade 0069_long_call_claim_v12 -> 0070_long_call_claim_v13, Capture provider request diagnostics for one exact rejected long call.
+2026-11-02T19:39:24.0315813Z INFO  [alembic.runtime.migration] Running upgrade 0070_long_call_claim_v13 -> 0071_become_controlled_intake, Add durable content-free BECOME controlled-intake receipts.
+2026-11-02T19:39:24.0317666Z INFO  [alembic.runtime.migration] Running upgrade 0071_become_controlled_intake -> 0072_become_controlled_consent, Add explicit content-free BECOME controlled-consent receipts.
+2026-11-02T19:39:24.0319572Z INFO  [alembic.runtime.migration] Running upgrade 0072_become_controlled_consent -> 0073_become_relations_handoff, Add provider-disabled BECOME to Relations consent handoffs.
+2026-11-02T19:39:24.0321461Z INFO  [alembic.runtime.migration] Running upgrade 0073_become_relations_handoff -> 0074_become_relations_delivery, Add durable provider-disabled Relations delivery receipts.
+2026-11-02T19:39:24.0323227Z INFO  [alembic.runtime.migration] Running upgrade 0074_become_relations_delivery -> 0075_become_relations_execution, Persist canonical Relations consent execution receipts.
+2026-11-02T19:39:24.0325238Z INFO  [alembic.runtime.migration] Running upgrade 0075_become_relations_execution -> 0076_become_media_intake, Add consent-bound BECOME media intake and retention.
+2026-11-02T19:39:24.0326875Z INFO  [alembic.runtime.migration] Running upgrade 0076_become_media_intake -> 0077_become_media_prompt, Add one-shot BECOME media prompt delivery receipt.
+2026-11-02T19:39:24.0328514Z INFO  [alembic.runtime.migration] Running upgrade 0077_become_media_prompt -> 0078_become_voice_chain, Add provider-disabled BECOME voice correlation and chain slots.
+2026-11-02T19:39:24.0330217Z INFO  [alembic.runtime.migration] Running upgrade 0078_become_voice_chain -> 0079_become_voice_transcription, Add one-call BECOME voice transcription accounting.
+2026-11-02T19:39:24.0331910Z INFO  [alembic.runtime.migration] Running upgrade 0079_become_voice_transcription -> 0080_become_i4_recovery, Prepare an immutable default-off MAYAKI recovery receipt.
+2026-11-02T19:39:24.0333658Z INFO  [alembic.runtime.migration] Running upgrade 0080_become_i4_recovery -> 0081_become_i4_recovery_v2, Create immutable BECOME I4 recovery v2 attempt and append-only events.
+2026-11-02T19:39:24.0335482Z INFO  [alembic.runtime.migration] Running upgrade 0081_become_i4_recovery_v2 -> 0082_become_quest, Create durable role-correct BECOME Quest state.
+2026-11-02T19:39:24.0336968Z INFO  [alembic.runtime.migration] Running upgrade 0082_become_quest -> 0083_alpha_transcription_product, Create permanent private Alfa transcription jobs.
+2026-11-02T19:39:24.0338600Z INFO  [alembic.runtime.migration] Running upgrade 0082_become_quest -> 0083_become_quest_corrective, Correct role-correct BECOME Quest durability invariants.
+2026-11-02T19:39:24.0340695Z INFO  [alembic.runtime.migration] Running upgrade 0083_become_quest_corrective, 0083_alpha_transcription_product -> 0083_become_quest_corrective_m, Merge Quest corrective and Alfa transcription migration branches.
+2026-11-02T19:39:24.0342658Z INFO  [alembic.runtime.migration] Running upgrade 0083_become_quest_corrective_m -> 0084_become_pilot_slice1_review, Add bounded BECOME Pilot transcript human review.
+2026-11-02T19:39:24.0344650Z INFO  [alembic.runtime.migration] Running upgrade 0084_become_pilot_slice1_review -> 0085_become_pilot_slice2_program, Add bounded owner-only Slice 2 PROGRAM draft state.
+2026-11-02T19:39:24.0346419Z INFO  [alembic.runtime.migration] Running upgrade 0085_become_pilot_slice2_program -> 0086_beta_katya_space, Add isolated Beta Space binding, event and consent-delivery ledgers.
+2026-11-02T19:39:24.0348239Z INFO  [alembic.runtime.migration] Running upgrade 0086_beta_katya_space -> 0087_become_pilot_slice3_learner, Add bounded Become Slice 3 learner invitation and acceptance ledgers.
+2026-11-02T19:39:24.0349968Z INFO  [alembic.runtime.migration] Running upgrade 0087_become_pilot_slice3_learner -> 0088_beta_wedding_replies, Add durable owner-only Wedding Beta reply ledger.
+2026-11-02T19:39:24.0351682Z INFO  [alembic.runtime.migration] Running upgrade 0088_beta_wedding_replies -> 0089_beta_wedding_voice_phases, Add durable Wedding voice jobs and phase-keyed delivery ledger.
+2026-11-02T19:39:24.0353650Z INFO  [alembic.runtime.migration] Running upgrade 0089_beta_wedding_voice_phases -> 0090_beta_wedding_checkpoints, Add encrypted checkpoint durability for the owner Wedding Space.
+2026-11-02T19:39:24.0355731Z INFO  [alembic.runtime.migration] Running upgrade 0090_beta_wedding_checkpoints -> 0090_beta_wedding_checkpoints_a, Add AQUB live Telegram delivery ledger.
+2026-11-02T19:39:24.0357471Z INFO  [alembic.runtime.migration] Running upgrade 0090_beta_wedding_checkpoints_a -> 0091_beta_universal_material, Add provider-neutral Beta material jobs and phase delivery ledger.
+2026-11-02T19:39:24.0359201Z INFO  [alembic.runtime.migration] Running upgrade 0091_beta_universal_material -> 0092_aqub_installation_binding, Add durable AQUB Telegram installation binding.
+2026-11-02T19:39:24.0360897Z INFO  [alembic.runtime.migration] Running upgrade 0092_aqub_installation_binding -> 0093_beta_checkpoint_dispatch, Add durable coalesced Beta checkpoint dispatch intents.
+2026-11-02T19:39:24.0362645Z INFO  [alembic.runtime.migration] Running upgrade 0093_beta_checkpoint_dispatch -> 0094_beta_durable_workers, Add durable leased Beta Space work and dispatch recovery fields.
+2026-11-02T19:39:24.0364772Z INFO  [alembic.runtime.migration] Running upgrade 0094_beta_durable_workers -> 0095_beta_checkpoint_wake, Add durable generations to coalesced Beta checkpoint wake-ups.
+2026-11-02T19:39:24.0366604Z INFO  [alembic.runtime.migration] Running upgrade 0095_beta_checkpoint_wake -> 0096_beta_binding_provenance, Persist Beta binding actor policy and quarantine unproved Wedding provenance.
+2026-11-02T19:39:24.0368455Z INFO  [alembic.runtime.migration] Running upgrade 0096_beta_binding_provenance -> 0097_beta_exact_scope, Enforce exact workspace, connector, binding and event scope for Beta.
+2026-11-02T19:39:24.0370156Z INFO  [alembic.runtime.migration] Running upgrade 0097_beta_exact_scope -> 0098_beta_space_search, Add exact-Space full-history lexical search documents.
+2026-11-02T19:39:24.0371816Z INFO  [alembic.runtime.migration] Running upgrade 0098_beta_space_search -> 0099_telegram_caption_backfill, Backfill Telegram photo captions into historical text projections.
+2026-11-02T19:39:24.0373559Z INFO  [alembic.runtime.migration] Running upgrade 0099_telegram_caption_backfill -> 0100_aqub_food_media, Add owner-only AQUB Food raw media and normalized analysis ledger.
+2026-11-02T19:39:24.0375387Z INFO  [alembic.runtime.migration] Running upgrade 0100_aqub_food_media -> 0101_aqub_food_media_async, Add durable asynchronous AQUB Food media delivery state.
+2026-11-02T19:39:24.0377243Z INFO  [alembic.runtime.migration] Running upgrade 0101_aqub_food_media_async -> 0102_aqub_general_routes, Add default-inactive exact group+actor routes for AQUB General Cubes.
+2026-11-02T19:39:24.0379029Z INFO  [alembic.runtime.migration] Running upgrade 0102_aqub_general_routes -> 0103_aqub_food_routes, Add default-inactive exact group+actor routes for isolated AQUB Food Cubes.
+2026-11-02T19:39:24.0380829Z INFO  [alembic.runtime.migration] Running upgrade 0103_aqub_food_routes -> 0104_dropbox_call_source_limit, Align the phone-call archive with the accepted Dropbox source ceiling.
+2026-11-02T19:39:24.0382704Z INFO  [alembic.runtime.migration] Running upgrade 0104_dropbox_call_source_limit -> 0105_seekable_audio_recovery, Authorize two exact definite failures after repairing seekable audio decoding.
+2026-11-02T19:39:24.0385044Z INFO  [alembic.runtime.migration] Running upgrade 0105_seekable_audio_recovery -> 0106_owner_voice_recovery, Authorize one archive-only attempt for four owner-confirmed missing transcripts.
+2026-11-02T19:39:24.0387109Z INFO  [alembic.runtime.migration] Running upgrade 0106_owner_voice_recovery -> 0107_no_speech_recovery, One final exact classification after fixing valid empty transcription responses.
+2026-11-02T19:39:24.0389205Z INFO  [alembic.runtime.migration] Running upgrade 0107_no_speech_recovery -> 0108_short_voice_headroom, One exact final voice grant with minimum request-cost headroom.
+2026-11-02T19:39:24.0410799Z INFO  [alembic.runtime.migration] Running upgrade 0108_short_voice_headroom -> 0109_personal_delivery_fence, Add the shared draft fence for default-off personal Telegram sends.
+2026-11-02T19:39:24.0412738Z INFO  [alembic.runtime.migration] Running upgrade 0109_personal_delivery_fence -> 0110_gate_voice_three_dollar_cap, Raise only Mark's existing Gate voice entitlement to USD 3 monthly.
+2026-11-02T19:39:24.0414942Z INFO  [alembic.runtime.migration] Running upgrade 0110_gate_voice_three_dollar_cap -> 0111_reply_documents, Store bounded staged Business documents beside reply drafts.
+2026-11-02T19:39:24.0417095Z INFO  [alembic.runtime.migration] Running upgrade 0111_reply_documents -> 0112_watch_voice_inbox, Add isolated watch-voice originals, cursor and Mark delivery receipts.
+2026-11-02T19:39:24.0419208Z INFO  [alembic.runtime.migration] Running upgrade 0112_watch_voice_inbox -> 0113_watch_voice_drain_runs, Hash-only durable GitHub Actions watch-drain replay guard.
+2026-11-02T19:39:24.0421116Z INFO  [alembic.runtime.migration] Running upgrade 0113_watch_voice_drain_runs -> 0114_watch_voice_recovery_claims, Permanent one-shot owner watch-note recovery journal; originals stay intact.
+2026-11-02T19:39:24.0423158Z INFO  [alembic.runtime.migration] Running upgrade 0114_watch_voice_recovery_claims -> 0115_watch_voice_post_payment, One separate permanent owner post-payment continuation; history stays intact.
+2026-11-02T19:39:24.0446039Z INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-11-02T19:39:24.0446760Z INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-11-02T19:39:24.0448597Z INFO  [alembic.runtime.migration] Running upgrade 0115_watch_voice_post_payment -> 0116_watch_voice_observability, Durable Voice observations and source failures; no historical inference.
+2026-11-02T19:39:24.0450568Z INFO  [alembic.runtime.migration] Running upgrade 0116_watch_voice_observability -> 0117_watch_voice_early_inbox, Add an independent early-card journal; preserve all legacy sources/originals.
+2026-11-02T19:39:24.0452500Z INFO  [alembic.runtime.migration] Running upgrade 0117_watch_voice_early_inbox -> 0118_watch_voice_work_results, Add Work claim/result/part journals without admitting existing sources.
+2026-11-02T19:39:24.1388393Z INFO  [alembic.runtime.migration] Running upgrade 0118_watch_voice_work_results -> 0119_watch_voice_comment_ids, Bind Work text-part receipts to immutable GitHub comment identities.
+2026-11-02T19:39:24.1390291Z =============================== warnings summary ===============================
+2026-11-02T19:39:24.1391827Z tests/test_watch_voice_baseline_fallback_postgres.py::test_exact_old_actions_app_on_populated_watch0119
+2026-11-02T19:39:24.1395362Z   /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/alembic/config.py:612: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+2026-11-02T19:39:24.1397948Z     util.warn_deprecated(
+2026-11-02T19:39:24.1398411Z 
+2026-11-02T19:39:24.1398960Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2026-11-02T19:39:24.1399997Z - generated xml file: /home/runner/work/gate/gate/fallback/watch-baseline.xml --
+2026-11-02T19:39:24.1400951Z =========================== short test summary info ============================
+2026-11-02T19:39:24.1402579Z FAILED tests/test_watch_voice_baseline_fallback_postgres.py::test_exact_old_actions_app_on_populated_watch0119 - app.infrastructure.watch_voice_github.WatchVoiceError: watch_voice_source_conflict
+2026-11-02T19:39:24.1404413Z ========================= 1 failed, 1 warning in 5.75s =========================
+2026-11-02T19:39:24.4019071Z ##[error]Process completed with exit code 1.
+2026-11-02T19:39:24.4154703Z Post job cleanup.
+2026-11-02T19:39:24.5163580Z [command]/usr/bin/git version
+2026-11-02T19:39:24.5244836Z git version 2.56.0
+2026-11-02T19:39:24.5290557Z Temporarily overriding HOME='/home/runner/work/_temp/f37cf337-d3bd-4747-8fce-adb3c7bb829c' before making global git config changes
+2026-11-02T19:39:24.5292133Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:39:24.5312491Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate/fallback
+2026-11-02T19:39:24.5395144Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:39:24.5476614Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:39:24.5895694Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:39:24.6045737Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:39:24.6832010Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:39:24.6935720Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:39:24.7403178Z Post job cleanup.
+2026-11-02T19:39:24.8423993Z [command]/usr/bin/git version
+2026-11-02T19:39:24.8513439Z git version 2.56.0
+2026-11-02T19:39:24.8584766Z Temporarily overriding HOME='/home/runner/work/_temp/61f51343-4526-45ea-a53c-09a928568cb6' before making global git config changes
+2026-11-02T19:39:24.8591195Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T19:39:24.8592564Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/gate/gate
+2026-11-02T19:39:24.8659603Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T19:39:24.8809204Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T19:39:24.9164895Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T19:39:24.9236894Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T19:39:24.9747064Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T19:39:24.9837513Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T19:39:25.0304341Z Print service container logs: 91525b31f12d4b07ab2311f8c9999e72_postgres17_fb5339
+2026-11-02T19:39:25.0309134Z ##[command]/usr/bin/docker logs --details bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:39:25.0485825Z  The files belonging to this database system will be owned by user "postgres".
+2026-11-02T19:39:25.0489404Z  This user must also own the server process.
+2026-11-02T19:39:25.0490146Z  
+2026-11-02T19:39:25.0490834Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-11-02T19:39:25.0491961Z  The default database encoding has accordingly been set to "UTF8".
+2026-11-02T19:39:25.0494771Z  initdb: warning: enabling "trust" authentication for local connections
+2026-11-02T19:39:25.0496032Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-11-02T19:39:25.0497532Z  2026-11-02 19:38:40.008 UTC [1] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-11-02T19:39:25.0499111Z  2026-11-02 19:38:40.009 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-11-02T19:39:25.0500018Z  2026-11-02 19:38:40.009 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-11-02T19:39:25.0500873Z  2026-11-02 19:38:40.010 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-02T19:39:25.0501810Z  2026-11-02 19:38:40.015 UTC [64] LOG:  database system was shut down at 2026-11-02 19:38:39 UTC
+2026-11-02T19:39:25.0502683Z  2026-11-02 19:38:40.024 UTC [1] LOG:  database system is ready to accept connections
+2026-11-02T19:39:25.0503508Z  2026-11-02 19:38:48.936 UTC [76] FATAL:  role "root" does not exist
+2026-11-02T19:39:25.0504361Z  2026-11-02 19:38:59.045 UTC [85] FATAL:  role "root" does not exist
+2026-11-02T19:39:25.0505162Z  2026-11-02 19:39:09.148 UTC [93] FATAL:  role "root" does not exist
+2026-11-02T19:39:25.0505925Z  2026-11-02 19:39:19.259 UTC [103] FATAL:  role "root" does not exist
+2026-11-02T19:39:25.0506923Z  2026-11-02 19:39:23.872 UTC [107] ERROR:  duplicate key value violates unique constraint "uq_watch_voice_source_revision"
+2026-11-02T19:39:25.0508243Z  2026-11-02 19:39:23.872 UTC [107] DETAIL:  Key (workspace_key, account_id, file_id, revision)=(mark-personal, synthetic-owner, id:synthetic, abcdef1234) already exists.
+2026-11-02T19:39:25.0512362Z  2026-11-02 19:39:23.872 UTC [107] STATEMENT:  INSERT INTO watch_voice_notes (id, workspace_key, account_id, file_id, revision, source_path, filename, media_type, size_bytes, sha256, data, duration_seconds, recorded_at, dropbox_modified_at, received_at, transcription_state, transcript, model, transcribed_at, delivery_state, next_part, issue_number, issue_url, github_received_at, delivered_at, attempted_at, last_error) VALUES ($1::VARCHAR, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR, $8::VARCHAR, $9::INTEGER, $10::VARCHAR, $11::BYTEA, $12::INTEGER, $13::TIMESTAMP WITH TIME ZONE, $14::TIMESTAMP WITH TIME ZONE, $15::TIMESTAMP WITH TIME ZONE, $16::VARCHAR, $17::VARCHAR, $18::VARCHAR, $19::TIMESTAMP WITH TIME ZONE, $20::VARCHAR, $21::INTEGER, $22::INTEGER, $23::VARCHAR, $24::TIMESTAMP WITH TIME ZONE, $25::TIMESTAMP WITH TIME ZONE, $26::TIMESTAMP WITH TIME ZONE, $27::VARCHAR)
+2026-11-02T19:39:25.0518446Z  The default text search configuration will be set to "english".
+2026-11-02T19:39:25.0519160Z  
+2026-11-02T19:39:25.0519583Z  Data page checksums are disabled.
+2026-11-02T19:39:25.0520108Z  
+2026-11-02T19:39:25.0520700Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-11-02T19:39:25.0521475Z  creating subdirectories ... ok
+2026-11-02T19:39:25.0522110Z  selecting dynamic shared memory implementation ... posix
+2026-11-02T19:39:25.0522809Z  selecting default "max_connections" ... 100
+2026-11-02T19:39:25.0523435Z  selecting default "shared_buffers" ... 128MB
+2026-11-02T19:39:25.0524271Z  selecting default time zone ... Etc/UTC
+2026-11-02T19:39:25.0525199Z  creating configuration files ... ok
+2026-11-02T19:39:25.0525795Z  running bootstrap script ... ok
+2026-11-02T19:39:25.0526421Z  performing post-bootstrap initialization ... ok
+2026-11-02T19:39:25.0527058Z  syncing data to disk ... ok
+2026-11-02T19:39:25.0527535Z  
+2026-11-02T19:39:25.0527918Z  
+2026-11-02T19:39:25.0528387Z  Success. You can now start the database server using:
+2026-11-02T19:39:25.0528996Z  
+2026-11-02T19:39:25.0529496Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-11-02T19:39:25.0530123Z  
+2026-11-02T19:39:25.0531334Z  waiting for server to start....2026-11-02 19:38:39.682 UTC [48] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-11-02T19:39:25.0532908Z  2026-11-02 19:38:39.683 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-02T19:39:25.0534221Z  2026-11-02 19:38:39.686 UTC [51] LOG:  database system was shut down at 2026-11-02 19:38:39 UTC
+2026-11-02T19:39:25.0535244Z  2026-11-02 19:38:39.691 UTC [48] LOG:  database system is ready to accept connections
+2026-11-02T19:39:25.0536239Z   done
+2026-11-02T19:39:25.0536635Z  server started
+2026-11-02T19:39:25.0537600Z  CREATE DATABASE
+2026-11-02T19:39:25.0539073Z  
+2026-11-02T19:39:25.0539515Z  
+2026-11-02T19:39:25.0540120Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-11-02T19:39:25.0540863Z  
+2026-11-02T19:39:25.0541323Z  2026-11-02 19:38:39.881 UTC [48] LOG:  received fast shutdown request
+2026-11-02T19:39:25.0542263Z  waiting for server to shut down....2026-11-02 19:38:39.881 UTC [48] LOG:  aborting any active transactions
+2026-11-02T19:39:25.0543464Z  2026-11-02 19:38:39.885 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-11-02T19:39:25.0544355Z  2026-11-02 19:38:39.886 UTC [49] LOG:  shutting down
+2026-11-02T19:39:25.0544798Z  2026-11-02 19:38:39.886 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-11-02T19:39:25.0545971Z  2026-11-02 19:38:39.904 UTC [49] LOG:  checkpoint complete: wrote 925 buffers (5.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.003 s, total=0.019 s; sync files=301, longest=0.001 s, average=0.001 s; distance=4256 kB, estimate=4256 kB; lsn=0/19179B0, redo lsn=0/19179B0
+2026-11-02T19:39:25.0547090Z  2026-11-02 19:38:39.916 UTC [48] LOG:  database system is shut down
+2026-11-02T19:39:25.0547435Z   done
+2026-11-02T19:39:25.0547645Z  server stopped
+2026-11-02T19:39:25.0547857Z  
+2026-11-02T19:39:25.0548120Z  PostgreSQL init process complete; ready for start up.
+2026-11-02T19:39:25.0548454Z  
+2026-11-02T19:39:25.0555776Z Stop and remove container: 91525b31f12d4b07ab2311f8c9999e72_postgres17_fb5339
+2026-11-02T19:39:25.0560909Z ##[command]/usr/bin/docker rm --force bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:39:25.5871136Z bff9e352e40f25896b0ece2c1cce208ee21ba58b8bf9196bdecf1c2239413a62
+2026-11-02T19:39:25.5911575Z Remove container network: github_network_6d1f2b25712e4d70a9d70ce5454c7403
+2026-11-02T19:39:25.5916631Z ##[command]/usr/bin/docker network rm github_network_6d1f2b25712e4d70a9d70ce5454c7403
+2026-11-02T19:39:25.6664035Z github_network_6d1f2b25712e4d70a9d70ce5454c7403
+2026-11-02T19:39:25.6752626Z Cleaning up orphan processes
+2026-11-02T19:39:25.7197934Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5, actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
