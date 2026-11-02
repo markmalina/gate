@@ -30,7 +30,7 @@ jobs:
       admitted: ${{ steps.admission.outputs.admitted }}
     steps:
       - id: admission
-        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@866bdf7ebaffafbb382d4e28228fecb7878412ea
+        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@22319196ae57843681d9f191d0c656b3f51ed9d4
         with:
           phase: admission
         env:
@@ -48,7 +48,7 @@ jobs:
       detached-artifact-id: ${{ steps.detached.outputs.artifact-id }}
     steps:
       - id: observe
-        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@866bdf7ebaffafbb382d4e28228fecb7878412ea
+        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@22319196ae57843681d9f191d0c656b3f51ed9d4
         with:
           phase: observe
         env:
@@ -87,7 +87,7 @@ jobs:
           merge-multiple: true
           skip-decompress: true
           digest-mismatch: error
-      - uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@866bdf7ebaffafbb382d4e28228fecb7878412ea
+      - uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@22319196ae57843681d9f191d0c656b3f51ed9d4
         with:
           phase: verify
           expected-digest: ${{ needs.observe.outputs.receipt-digest }}
