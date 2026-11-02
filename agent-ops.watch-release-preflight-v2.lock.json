@@ -1,8 +1,8 @@
 {
   "schemaVersion": "agent-ops.gate-watch-scope-diagnostic-lock/v2",
   "repository": "markmalina/ops",
-  "commit": "f676942a22d1e35544b4463b0674281ea2673c52",
+  "commit": "866bdf7ebaffafbb382d4e28228fecb7878412ea",
   "actionPath": "agent-ops/actions/gate-watch-scope-diagnostic-v2",
-  "workflowSha256": "sha256:f1687794a95ea19bb3b25837d232698c71d15782c7fab95b042744dd2238d2e4",
-  "profileSha256": "sha256:497169af658a30390e2827c7c4f44dde229d31be6cd9fd10644ce277404cf88f"
+  "workflowSha256": "sha256:08171acc5b91ee43b49c3057e1bcac13285b16686410dce00c8a84e992de7b71",
+  "profileSha256": "sha256:6691d3ca013df57e8b64e6cb8409c8829ee6f7d6b2c536ae100af6562a9be2ec"
 }
