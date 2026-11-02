@@ -1,0 +1,88 @@
+{
+  "retrievalScope": "Historical GitHub metadata sufficient for native verifier replay; no provider credentials or temporary download URLs",
+  "run": {
+    "id": 41440937308,
+    "html_url": "https://github.com/markmalina/gate/actions/runs/41440937308",
+    "name": "Gate Watch release preflight observation",
+    "head_branch": "agent/736-autonomous-watch-queue",
+    "head_sha": "0dba814831889586a7141f79d4fbaeae71a54821",
+    "path": ".github/workflows/ops-watch-release-preflight-v2.yml",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "failure",
+    "workflow_id": 403635446,
+    "created_at": "2026-11-02T11:58:21Z",
+    "updated_at": "2026-11-02T11:59:31Z",
+    "run_attempt": 1,
+    "run_started_at": "2026-11-02T11:58:21Z",
+    "repository": {
+      "id": 1293746267,
+      "full_name": "markmalina/gate"
+    },
+    "head_repository": {
+      "id": 1293746267,
+      "full_name": "markmalina/gate"
+    },
+    "actor": {
+      "id": 23397294,
+      "login": "markmalina"
+    },
+    "triggering_actor": {
+      "id": 23397294,
+      "login": "markmalina"
+    }
+  },
+  "artifacts": {
+    "total_count": 3,
+    "artifacts": [
+      {
+        "id": 13140875567,
+        "name": "ops-watch-scope-observation.sha256",
+        "size_in_bytes": 72,
+        "created_at": "2026-11-02T11:59:11Z",
+        "expires_at": "2026-11-05T11:59:10Z",
+        "expired": false,
+        "digest": "sha256:94bb277c42bedaf17cc49e801125257af2f72d8ee9c6e3b30f87a79fbe0e49b9",
+        "workflow_run": {
+          "id": 41440937308,
+          "repository_id": 1293746267,
+          "head_repository_id": 1293746267,
+          "head_branch": "agent/736-autonomous-watch-queue",
+          "head_sha": "0dba814831889586a7141f79d4fbaeae71a54821"
+        }
+      },
+      {
+        "id": 13140240636,
+        "name": "ops-watch-scope-verification.json",
+        "size_in_bytes": 676,
+        "created_at": "2026-11-02T11:59:27Z",
+        "expires_at": "2026-11-05T11:59:27Z",
+        "expired": false,
+        "digest": "sha256:a868445dee06804b9648f1c7187ce33177f1fe7360f63b669745a679461606cf",
+        "workflow_run": {
+          "id": 41440937308,
+          "repository_id": 1293746267,
+          "head_repository_id": 1293746267,
+          "head_branch": "agent/736-autonomous-watch-queue",
+          "head_sha": "0dba814831889586a7141f79d4fbaeae71a54821"
+        }
+      },
+      {
+        "id": 13140100686,
+        "name": "ops-watch-scope-observation.json",
+        "size_in_bytes": 1244,
+        "created_at": "2026-11-02T11:59:09Z",
+        "expires_at": "2026-11-05T11:59:09Z",
+        "expired": false,
+        "digest": "sha256:ddd87ae29ea96a2ee49b51a79804199c60beae59eef899d0fefd7ebe4c881452",
+        "workflow_run": {
+          "id": 41440937308,
+          "repository_id": 1293746267,
+          "head_repository_id": 1293746267,
+          "head_branch": "agent/736-autonomous-watch-queue",
+          "head_sha": "0dba814831889586a7141f79d4fbaeae71a54821"
+        }
+      }
+    ]
+  }
+}

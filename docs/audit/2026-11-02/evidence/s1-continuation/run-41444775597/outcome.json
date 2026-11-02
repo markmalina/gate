@@ -1,0 +1,11 @@
+{
+  "result": "ADMISSION_FAILED",
+  "error": "E_RESPONSE_SIZE",
+  "railwayReads": 0,
+  "artifacts": 0,
+  "nativeObservationVerification": "NOT_APPLICABLE",
+  "reason": "Admission failed; protected observe and verifier jobs SKIPPED. No observation receipt exists.",
+  "workflowAttemptConsumed": true,
+  "newRailwayBudgetUsed": 2,
+  "newRailwayBudgetMax": 3
+}

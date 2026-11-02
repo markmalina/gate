@@ -1,0 +1,40 @@
+2.11.26 14:39 МСК
+
+Independent operational verdict: **BLOCKED — VERIFIED_STOP_ONLY**.
+execution_id:delta436-operational-independent-20261102
+policy_revision:delta.review-attempt.new-issue.v1
+registry_revision:2026-10-09.1
+review_series_id:gate-watch-runtime-20261006
+attempt_number:85
+candidate_sha:367654d6bfdca7c62e3151e11001ba2db44cdc0d
+installed_executor_sha:866bdf7ebaffafbb382d4e28228fecb7878412ea
+predecessor_pointer:https://github.com/AlphaCenter/delta/issues/435#issuecomment-6576035939
+reviewer:separate runtime436 agent; not author/operator; Railway requests by reviewer:0
+status:terminal
+lease:released
+
+Независимо получены fresh run, jobs, полные logs всех3jobs и скачаны RAW bytes всех3 artifacts через GitHub download. Это выполненная operational проверка нового результата; принятые source433/release434/client435 не переаудированы. Локальные64 исходных файла, используемые для verifier/dependencies, совпали Git blob SHA с remote tree exactinstalled866bdf7ebaffafbb382d4e28228fecb7878412ea.
+
+Фактический запуск: https://github.com/markmalina/gate/actions/runs/41437551667 , original attempt1, exactclient367654d6bfdca7c62e3151e11001ba2db44cdc0d, completed/failure. Admission125251039718 success; observe125251244151 success как сохранение STOP; verify125251395330 failure только на завершающем Require verified scope. Native verification step и upload verification success. Все3 logs показывают action exact866b; upload/download digests совпадают с metadata и независимо скачанными bytes.
+
+| RAW artifact | Bytes | SHA256 |
+|---|---:|---|
+| [Observation13137480810](https://github.com/markmalina/gate/actions/runs/41437551667/artifacts/13137480810) |1244|b8ccc3c847e78c9e2a20f8420f5a8834efefcb2ef0511528dfc5ce06d127b4d0|
+| [Detached13137610676](https://github.com/markmalina/gate/actions/runs/41437551667/artifacts/13137610676) |72|2b8bb3fb538641cbeb2d33166a2325a0abc2a4855a2b52a84e5029b0f8d8b7e0|
+| [Verification13137975266](https://github.com/markmalina/gate/actions/runs/41437551667/artifacts/13137975266) |676|2f3694cd506c4cf304235c32ada88913d8f124126181085937da57610ec5ecb0|
+
+All3 artifacts unexpired, workflow_run/head/repository provenance correct. Full current inventory total_count3 retained. For native verifier explicitly selected original observation+detached pair (2); did not misrepresent total inventory. Detached exact digest plus newline correct. Credential-free native verifier reproduced hosted receipt exactly using its verifiedAt2026-11-02T11:32:55.315Z; separate fresh native verify at2026-11-02T11:37:56.344Z also VERIFIED_STOP_ONLY. Eight negative cases rejected altered bytes, detached newline loss, credential contamination, attempt2, wrong head, all3 instead of pair, expired metadata, stale receipt. No provider or credential acquisition in verification.
+
+Fresh owner6575570385 and request6576060656 raw comments have unchanged created_at=updated_at, correct owner identity/issue; owner raw-body digest matches installed fixture; native assertOwnerRequest passes at actual hosted verification time with exact lock. New bounded grant authorizes up to3 additional requests, but this reviewed packet authorizes only first new original. Fresh full recent inventory203 runs across3pages shows scope workflow403635446 exactly4 originals:41318810046 failure,41341920729 cancelled,41425190543 failure,41437551667 failure; allattempt1. Old41425190543/grant6572700446 remains spent; old432 verdict unchanged. New budget consumed1/3; remaining2 are not automatically dispatched by this review.
+
+All other5 workflows from same label/head were independently inspected at job level:41437551726,41437551809,41437551795,41437551716,41437551722; each admission/observe/verify SKIPPED (15jobs), no extra observer executed.
+
+Established observation: one read at2026-11-02T11:32:34.010Z–11:32:34.290Z, STOP/E_PROVIDER; HTTP200 JSON object with data:null and one errors item, codes:[INTERNAL_SERVER_ERROR], errorPaths:[PROJECT_TOKEN], errorMessages:[UNCLASSIFIED], authorizes:false; facts:null; releaseAuthorized:false. Exact installed collector contains only fixed GraphQL query against fixed same target, one POST, attempted latch, no retries, no mutations. Protected Railway token is masked in observe; absent from admission and verify. No Gate deploy/configuration/migration/restart/audio/messages/S2 step occurred in this run.
+
+The diagnostic blocker is now localized to the provider error path beginning projectToken. UNCLASSIFIED means the returned message was not the exact whitelisted string Not Authorized; it does NOT establish valid credentials or exclude an authorization problem. The stored category deliberately omits deeper path components/raw message. Therefore exact underlying Railway failure, invalid token/scope, and nested relation resolver failure remain unproven hypotheses. No facts exist to assert scopeMatches or pendingChanges=false; data:null never means pending zero. Existing response handling correctly fails closed on this evidence.
+
+Next distinct diagnostic goal is justified: a separately reviewed same-target read replacing only projectToken nested selections with documented projectToken { projectId environmentId }, while retaining environment { id unmergedChangesCount }, can test whether the failure persists with direct token fields. Success would distinguish the direct projection from the previously failing nested document; it would still not alone prove the precise provider internal cause. A repeat failure at PROJECT_TOKEN would narrow away dependence on the removed nested fields and support escalation with sanitized provider evidence. This is a diagnostic alternative, NOT evidence that the original query is schema-invalid. Root remains sole operator; exact changed query/summary and packet must be reviewed before another read, within existing owner3-read grant.
+
+S1 cannot be closed: this scope observation is STOP and gives no successful Railway scope/pending-state evidence. Independently reported Watch0119 backup/migration release-route gap also remains outside what a scope receipt proves; no operational approval or S2 readiness is inferred. Review scope itself is complete; this terminal attempt is immutable, next changed candidate needs a new review issue.
+
+ДАЛЬШЕ: root may prepare the separately reviewed second diagnostic candidate; no provider execution by reviewer, no S2.

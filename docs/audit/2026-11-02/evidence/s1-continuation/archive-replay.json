@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-11-02T12:19:44.974Z",
+  "isFreshProviderObservation": false,
+  "results": [
+    {
+      "runId": "41437551667",
+      "exactExecutor": "866bdf7ebaffafbb382d4e28228fecb7878412ea",
+      "historicalReplayAt": "2026-11-02T11:32:55.315Z",
+      "artifactHashesVerified": 3,
+      "hostedReplayExactMatch": true
+    },
+    {
+      "runId": "41440937308",
+      "exactExecutor": "22319196ae57843681d9f191d0c656b3f51ed9d4",
+      "historicalReplayAt": "2026-11-02T11:59:26.854Z",
+      "artifactHashesVerified": 3,
+      "hostedReplayExactMatch": true
+    }
+  ]
+}

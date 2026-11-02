@@ -1,0 +1,12 @@
+{
+  "id": 6576060656,
+  "html_url": "https://github.com/markmalina/gate/issues/736#issuecomment-6576060656",
+  "issue_url": "https://api.github.com/repos/markmalina/gate/issues/736",
+  "created_at": "2026-11-02T11:31:32Z",
+  "updated_at": "2026-11-02T11:31:32Z",
+  "body": "/ops-observe-gate-watch-scope v2 grant=6575570385 pr=766 head=367654d6bfdca7c62e3151e11001ba2db44cdc0d base=86dbc0f429dce089bf733fc422f20f556535895b executor=866bdf7ebaffafbb382d4e28228fecb7878412ea workflow=sha256:08171acc5b91ee43b49c3057e1bcac13285b16686410dce00c8a84e992de7b71 issued=2026-11-02T11:31:31.000Z expires=2026-11-02T11:46:31.000Z",
+  "user": {
+    "id": 23397294,
+    "login": "markmalina"
+  }
+}

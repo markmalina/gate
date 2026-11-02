@@ -1,0 +1,14 @@
+{
+  "endpoint": "https://backboard.railway.com/graphql/v2",
+  "method": "POST",
+  "authHeaderName": "Project-Access-Token",
+  "targetId": "gate-production",
+  "serviceId": "099cbf8c-1d94-43fe-8714-90725bf93998",
+  "body": {
+    "query": "query GateWatchEnvironmentDiagnostic($projectId: String!, $environmentId: String!) {\n  environment(id: $environmentId, projectId: $projectId) { id projectId unmergedChangesCount }\n }",
+    "variables": {
+      "projectId": "972b6ab7-988a-421c-abfa-425451ad714f",
+      "environmentId": "a148b138-44b3-4349-9d4b-292880503055"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "agent-ops.gate-watch-scope-diagnostic-observation/v2",
+  "operation": "OBSERVE_GATE_WATCH_SCOPE_DIAGNOSTIC_V2",
+  "result": "STOP",
+  "error": "E_PROVIDER",
+  "railwayReads": 1,
+  "startedAt": "2026-11-02T11:32:34.010Z",
+  "finishedAt": "2026-11-02T11:32:34.290Z",
+  "execution": {
+    "callerHeadSha": "367654d6bfdca7c62e3151e11001ba2db44cdc0d",
+    "executorSha": "866bdf7ebaffafbb382d4e28228fecb7878412ea",
+    "runId": "41437551667",
+    "runAttempt": 1,
+    "requestCommentId": "6576060656",
+    "ownerApprovalCommentId": "6575570385",
+    "historicalRunId": "41318810046",
+    "historicalReviewDigest": "sha256:8e93490e5641b0535817d787df9965f25acbb87e6426c3f128e6a34f5715538b",
+    "clientDiffVerified": true,
+    "historyVerified": true
+  },
+  "facts": null,
+  "providerEnvelope": {
+    "schemaVersion": "agent-ops.provider-envelope-shape/v1",
+    "envelopeType": "object",
+    "dataType": "null",
+    "errorsType": "array",
+    "errorCount": 1,
+    "errorCountTruncated": false,
+    "codes": [
+      "INTERNAL_SERVER_ERROR"
+    ],
+    "authorizes": false,
+    "httpStatus": 200,
+    "errorPaths": [
+      "PROJECT_TOKEN"
+    ],
+    "errorMessages": [
+      "UNCLASSIFIED"
+    ]
+  },
+  "releaseAuthorized": false
+}

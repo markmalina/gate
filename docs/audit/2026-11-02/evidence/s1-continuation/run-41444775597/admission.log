@@ -1,0 +1,87 @@
+﻿2026-11-02T12:27:08.1469382Z Current runner version: '2.338.2'
+2026-11-02T12:27:08.1508410Z ##[group]Runner Image Provisioner
+2026-11-02T12:27:08.1509854Z Hosted Compute Agent
+2026-11-02T12:27:08.1511190Z Version: 20261021.618
+2026-11-02T12:27:08.1512419Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T12:27:08.1513998Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T12:27:08.1515351Z Worker ID: {6a78d1cc-385b-47e3-b298-0fbe20087776}
+2026-11-02T12:27:08.1516642Z Region: centralus
+2026-11-02T12:27:08.1517851Z Cloud: Azure
+2026-11-02T12:27:08.1518969Z ##[endgroup]
+2026-11-02T12:27:08.1521369Z ##[group]Operating System
+2026-11-02T12:27:08.1522642Z Ubuntu
+2026-11-02T12:27:08.1523933Z 24.04.5
+2026-11-02T12:27:08.1525034Z LTS
+2026-11-02T12:27:08.1526020Z ##[endgroup]
+2026-11-02T12:27:08.1527022Z ##[group]Runner Image
+2026-11-02T12:27:08.1528233Z Image: ubuntu-24.04
+2026-11-02T12:27:08.1529296Z Version: 20261025.353.1
+2026-11-02T12:27:08.1531755Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T12:27:08.1534925Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T12:27:08.1536841Z ##[endgroup]
+2026-11-02T12:27:08.1539461Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T12:27:08.1542598Z Actions: read
+2026-11-02T12:27:08.1543948Z Contents: read
+2026-11-02T12:27:08.1544925Z Issues: read
+2026-11-02T12:27:08.1545985Z Metadata: read
+2026-11-02T12:27:08.1546933Z PullRequests: read
+2026-11-02T12:27:08.1548075Z ##[endgroup]
+2026-11-02T12:27:08.1551319Z Secret source: Actions
+2026-11-02T12:27:08.1553314Z Cache mode: write
+2026-11-02T12:27:08.1555129Z Prepare workflow directory
+2026-11-02T12:27:08.2455534Z Prepare all required actions
+2026-11-02T12:27:08.2619027Z Getting action download info
+2026-11-02T12:27:09.2172642Z Download action repository 'markmalina/ops@58dedb145849bb6015803ad40c04d7be642064bf' (SHA:58dedb145849bb6015803ad40c04d7be642064bf)
+2026-11-02T12:27:10.1035642Z Getting action download info
+2026-11-02T12:27:10.2199538Z Download action repository 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' (SHA:820762786026740c76f36085b0efc47a31fe5020)
+2026-11-02T12:27:10.3950323Z Complete job name: admission
+2026-11-02T12:27:10.5041180Z ##[group]Run markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@58dedb145849bb6015803ad40c04d7be642064bf
+2026-11-02T12:27:10.5044271Z with:
+2026-11-02T12:27:10.5045462Z   phase: admission
+2026-11-02T12:27:10.5046786Z env:
+2026-11-02T12:27:10.5056730Z   AGENT_OPS_SOURCE_GITHUB_TOKEN: ***
+2026-11-02T12:27:10.5058100Z ##[endgroup]
+2026-11-02T12:27:10.5137605Z ##[start-action display=Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020;id=admission.__actions_setup-node]
+2026-11-02T12:27:10.5334605Z ##[group]Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+2026-11-02T12:27:10.5336287Z with:
+2026-11-02T12:27:10.5337395Z   node-version: 24.19.0
+2026-11-02T12:27:10.5338494Z   check-latest: false
+2026-11-02T12:27:10.5339637Z   package-manager-cache: false
+2026-11-02T12:27:10.5349290Z   token: ***
+2026-11-02T12:27:10.5350324Z env:
+2026-11-02T12:27:10.5351466Z   AGENT_OPS_SOURCE_GITHUB_TOKEN: 
+2026-11-02T12:27:10.5353004Z   RAILWAY_PROJECT_TOKEN: 
+2026-11-02T12:27:10.5354324Z ##[endgroup]
+2026-11-02T12:27:11.0018185Z Attempting to download 24.19.0...
+2026-11-02T12:27:12.5982585Z Acquiring 24.19.0 - x64 from https://github.com/actions/node-versions/releases/download/24.19.0-30872449280/node-24.19.0-linux-x64.tar.gz
+2026-11-02T12:27:12.5993944Z Extracting ...
+2026-11-02T12:27:12.6254877Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ba3c5c6e-d10e-4dba-860b-40008bdc3c0d -f /home/runner/work/_temp/754b6e55-b193-4a9c-91b6-f486291d16b6
+2026-11-02T12:27:14.1263549Z Adding to the cache ...
+2026-11-02T12:27:16.4637984Z ##[group]Environment details
+2026-11-02T12:27:16.7795712Z node: v24.19.0
+2026-11-02T12:27:16.7797146Z npm: 11.17.0
+2026-11-02T12:27:16.7798105Z yarn: 1.22.22
+2026-11-02T12:27:16.7799388Z ##[endgroup]
+2026-11-02T12:27:16.8071307Z ##[end-action id=admission.__actions_setup-node;outcome=success;conclusion=success;duration_ms=6293]
+2026-11-02T12:27:16.8103979Z ##[start-action display=Run node "/home/runner/work/_actions/markmalina/ops/58dedb145849bb6015803ad40c04d7be642064bf/agent-ops/actions/gate-watch-scope-diagnostic-v2/entry.mjs";id=admission.run]
+2026-11-02T12:27:16.8155554Z ##[group]Run node "/home/runner/work/_actions/markmalina/ops/58dedb145849bb6015803ad40c04d7be642064bf/agent-ops/actions/gate-watch-scope-diagnostic-v2/entry.mjs"
+2026-11-02T12:27:16.8156921Z [36;1mnode "/home/runner/work/_actions/markmalina/ops/58dedb145849bb6015803ad40c04d7be642064bf/agent-ops/actions/gate-watch-scope-diagnostic-v2/entry.mjs"[0m
+2026-11-02T12:27:16.8185710Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-11-02T12:27:16.8186101Z env:
+2026-11-02T12:27:16.8188883Z   AGENT_OPS_SOURCE_GITHUB_TOKEN: ***
+2026-11-02T12:27:16.8189190Z   AGENT_OPS_PHASE: admission
+2026-11-02T12:27:16.8189484Z   AGENT_OPS_ACTION_REPOSITORY: markmalina/ops
+2026-11-02T12:27:16.8189878Z   AGENT_OPS_ACTION_REF: 58dedb145849bb6015803ad40c04d7be642064bf
+2026-11-02T12:27:16.8190217Z ##[endgroup]
+2026-11-02T12:27:19.8036088Z E_RESPONSE_SIZE
+2026-11-02T12:27:19.8118393Z ##[error]Process completed with exit code 1.
+2026-11-02T12:27:19.8148558Z ##[end-action id=admission.run;outcome=failure;conclusion=failure;duration_ms=3004]
+2026-11-02T12:27:19.8158362Z ##[start-action display=Run node "/home/runner/work/_actions/markmalina/ops/58dedb145849bb6015803ad40c04d7be642064bf/agent-ops/actions/gate-watch-scope-diagnostic-v2/verify-entry.mjs";id=admission.__run]
+2026-11-02T12:27:19.8163524Z ##[end-action id=admission.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-11-02T12:27:19.8394874Z Post job cleanup.
+2026-11-02T12:27:19.8405039Z ##[start-action display=Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020;id=__f590893f-f455-4f88-8183-e4e622323cf4.__actions_setup-node]
+2026-11-02T12:27:19.8410423Z ##[end-action id=__f590893f-f455-4f88-8183-e4e622323cf4.__actions_setup-node;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-11-02T12:27:19.8557208Z Evaluate and set job outputs
+2026-11-02T12:27:19.8566917Z Set output 'admitted'
+2026-11-02T12:27:19.8569370Z Cleaning up orphan processes
+

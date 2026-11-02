@@ -1,0 +1,28 @@
+{
+  "reviewer": "runtime440",
+  "sourceExactFiles": 65,
+  "rawArtifactsValidated": 3,
+  "originalPairExplicitlySelected": true,
+  "hostedReplayExactMatch": true,
+  "freshNativeVerification": {
+    "schemaVersion": "agent-ops.gate-watch-scope-diagnostic-verification/v2",
+    "result": "VERIFIED_STOP_ONLY",
+    "error": "E_PROVIDER",
+    "railwayReads": 1,
+    "runId": "41440937308",
+    "runAttempt": 1,
+    "callerHeadSha": "0dba814831889586a7141f79d4fbaeae71a54821",
+    "executorSha": "22319196ae57843681d9f191d0c656b3f51ed9d4",
+    "requestCommentId": "6576557515",
+    "ownerApprovalCommentId": "6575570385",
+    "historicalRunId": "41318810046",
+    "artifactId": 13140100686,
+    "detachedArtifactId": 13140875567,
+    "receiptDigest": "sha256:ddd87ae29ea96a2ee49b51a79804199c60beae59eef899d0fefd7ebe4c881452",
+    "verifiedAt": "2026-11-02T12:01:14.473Z",
+    "releaseAuthorized": false
+  },
+  "negativeCases": 8,
+  "ownerAndRequestImmutable": true,
+  "railwayRequestsByReviewer": 0
+}

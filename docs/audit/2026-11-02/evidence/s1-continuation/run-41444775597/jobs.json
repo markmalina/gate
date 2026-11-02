@@ -1,0 +1,56 @@
+{
+  "jobs": [
+    {
+      "id": 125275058845,
+      "name": "admission",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_id": 41444775597,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@58dedb145849bb6015803ad40c04d7be642064bf",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 2
+        },
+        {
+          "name": "Post Run markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@58dedb145849bb6015803ad40c04d7be642064bf",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        }
+      ]
+    },
+    {
+      "id": 125275247296,
+      "name": "observe",
+      "status": "completed",
+      "conclusion": "skipped",
+      "run_id": 41444775597,
+      "logs_url": null,
+      "steps": null
+    },
+    {
+      "id": 125275247409,
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "skipped",
+      "run_id": 41444775597,
+      "logs_url": null,
+      "steps": null
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+2.11.26 15:35 МСК
+
+Independent operational verdict: **BLOCKED — ADMISSION_FAILED (E_RESPONSE_SIZE)**.
+policy_revision: delta.review-attempt.new-issue.v1
+registry_revision: 2026-10-09.1
+review_series_id: gate-watch-runtime-20261006
+attempt_number: 93
+predecessor_pointer: https://github.com/AlphaCenter/delta/issues/443
+review_execution_id: delta444-runtime-independent-20261102
+candidate_sha: dbddabd83784c52e45d938d1fc8026fdcb826998
+installed_executor_sha: 58dedb145849bb6015803ad40c04d7be642064bf
+reviewer: separate runtime436 agent; not author/operator
+status: terminal
+lease: released
+Railway requests by reviewer: 0
+
+Independently fetched actual [original41444775597 attempt1](https://github.com/markmalina/gate/actions/runs/41444775597), completed/failure, exact clientdbddabd83784c52e45d938d1fc8026fdcb826998/action58dedb145849bb6015803ad40c04d7be642064bf. This run did NOT perform the planned third Railway read.
+
+Fresh jobs: admission125275058845 failed; observe125275247296 SKIPPED; verify125275247409 SKIPPED. Full actual admission log downloaded and read. At2026-11-02T12:27:19.8036088Z exact entry.mjs reports E_RESPONSE_SIZE, then exit1 and admitted=false. No Railway credential is supplied to admission; setup-node environment explicitly clears it. Actual artifact inventory total_count0/artifacts[] — no observation, detached digest or hosted verification artifact exists. Native observation verifier, fresh verification and hosted replay are NOT APPLICABLE. No synthetic receipt was created; this is not VERIFIED_STOP_ONLY or VERIFIED_ENVIRONMENT_ONLY.
+
+All65 local source/dependency files checked against fresh non-truncated Git tree at installed58dedb145849bb6015803ad40c04d7be642064bf matched. Only relevant failure path was inspected; accepted source441/release442/client443 and CI were not rerun or broadly audited. In entry.mjs, admission calls admit then returns; makeScope/read occurs only after the admission-phase return and only for observe. Its admission catch returns admitted:false without creating a receipt. Therefore actual skipped observe plus exact control flow establishes zero Railway requests in this original, independently of absent artifacts.
+
+Established immediate cause: bounded GitHub metadata retrieval during admission rejected response size. Shared boundedText has65536-byte cap and emits E_RESPONSE_SIZE for malformed/oversize Content-Length or streamed bytes above cap. Actual log does not record endpoint, header value or bytes. Hence the exact endpoint/which size predicate is NOT established from this run. A growing workflow-history response is a plausible hypothesis, not the proven underlying cause; no Railway error was observed in this original.
+
+Same-label other5 workflows41444775567,41444775548,41444775530,41444775566,41444775587: all15 actual admission/observe/verify jobs independently fetched and confirmed SKIPPED. Fresh complete recent inventory227runs across3pages has exactly6 scope originals:41318810046 failure,41341920729 cancelled,41425190543 failure,41437551667 failure,41440937308 failure,41444775597 admission failure; allattempt1/completed and none active. This review does not imply unrelated historical CI is absent.
+
+Budget accounting: old41425190543/grant6572700446 stays spent. First new41437551667 and second new41440937308 each consumed one Railway read. New owner-authorized provider budget is2/3, with one provider read remaining. Failed original41444775597 is a real consumed original with zero provider reads and must remain in history; it cannot be erased, relabeled unused, rerun or silently omitted. Delta432/436/440 remain unchanged.
+
+Owner instruction bounds additional Railway requests to3. Agent-transcribed grant6575570385 additionally says at most3 new originals; it is a narrower local packet condition, not proof the user separately capped GitHub originals. Any recovery must explicitly reconcile that distinction in a new immutable clarification/binding and a separately reviewed changed source/release/client packet, preserve all6 actual records including this failed original, and admit only the single remaining third provider read. This verdict does not itself dispatch or approve a fourth provider request. A fresh recovery original is not a rerun of41444775597, and cannot widen provider budget.
+
+S1 remains BLOCKED: admission now has a confirmed response-size blocker; successful full token-scope/pending proof is still absent from previous provider observations. The independent applicable Watch0119 release-route gap remains as previously documented. No Gate deployment/configuration/migration/restart/audio/message/S2 action happened in this run. Neither source acceptance nor planned partial environment-only semantics establishes S1DONE/S2 readiness.
+
+Final report acceptance is deferred to a new issue after root incorporates this actual admission failure and any separately reviewed recovery result. Preliminary report checks of first2raw archives remain valid; this terminal reviews actual41444775597 only. Review attempt93 is complete and immutable.
+
+ДАЛЬШЕ: root preserves failed original and exact logs, isolates the metadata size failure, then submits any narrow recovery packet to a new independent review; no automatic retry and no S2.

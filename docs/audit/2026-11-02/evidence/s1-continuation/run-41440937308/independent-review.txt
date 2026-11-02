@@ -1,0 +1,41 @@
+2.11.26 15:03 МСК
+
+Independent operational verdict: **BLOCKED — VERIFIED_STOP_ONLY**.
+policy_revision: delta.review-attempt.new-issue.v1
+registry_revision: 2026-10-09.1
+review_series_id: gate-watch-runtime-20261006
+attempt_number: 89
+predecessor_pointer: https://github.com/AlphaCenter/delta/issues/439
+review_execution_id: delta440-runtime-independent-20261102
+candidate_sha: 0dba814831889586a7141f79d4fbaeae71a54821
+installed_executor_sha: 22319196ae57843681d9f191d0c656b3f51ed9d4
+reviewer: separate runtime436 agent; not author/operator
+status: terminal
+lease: released
+Railway requests by reviewer: 0
+
+Actual original [41440937308](https://github.com/markmalina/gate/actions/runs/41440937308), attempt1, completed/failure. Independently fetched fresh run/jobs/full logs of all3jobs, metadata and downloaded all3 RAW artifacts via GitHub connector+local download. Source437/release438/client439 not reaudited; no CI rerun. Local65 files for exact installed verifier/dependencies matched Git blob hashes from remote tree22319196ae57843681d9f191d0c656b3f51ed9d4.
+
+| RAW artifact | Bytes | SHA256 |
+|---|---:|---|
+| [Observation13140100686](https://github.com/markmalina/gate/actions/runs/41440937308/artifacts/13140100686) |1244|ddd87ae29ea96a2ee49b51a79804199c60beae59eef899d0fefd7ebe4c881452|
+| [Detached13140875567](https://github.com/markmalina/gate/actions/runs/41440937308/artifacts/13140875567) |72|94bb277c42bedaf17cc49e801125257af2f72d8ee9c6e3b30f87a79fbe0e49b9|
+| [Verification13140240636](https://github.com/markmalina/gate/actions/runs/41440937308/artifacts/13140240636) |676|a868445dee06804b9648f1c7187ce33177f1fe7360f63b669745a679461606cf|
+
+All3 unexpired, exact run/head/repository provenance correct; SHA256 and bytes match metadata plus upload/download logs. Detached equals observation digest plus newline. Current artifact inventory is3. Native verifier input explicitly selects original2 observation+detached, as hosted verification did before third artifact existed; does not claim inventory2. Credential-free native verify reproduced hosted verification exactly at2026-11-02T11:59:26.854Z; fresh native verify at2026-11-02T12:01:14.473Z returns VERIFIED_STOP_ONLY. Eight negative cases reject modified bytes, detached newline, credential contamination, retry attempt, wrong head, wrong artifact count, expired artifact and stale receipt. Owner6575570385 raw body remains fixture-exact and immutable; request6576557515 owner/issue/timestamps/body/exact lock pass native request verification at actual hosted time.
+
+Jobs: admission125262332772 success; observe125262449479 success saving STOP; verify125262695596 native verification and upload success, only final Require verified scope failure. Full logs show exact installed action and masked Railway token only for observe, absent from admission/verify. Actual receipt records one read2026-11-02T11:59:08.802Z–11:59:08.945Z. Exact collector reads fixed query projectToken { projectId environmentId } and environment(id:$environmentId,projectId:$projectId) { id unmergedChangesCount }, fixed same target/project+environment, one POST to Railway GraphQL using protected project token, attempted latch and zero retries. No mutation/service deploy/configuration/DB migration/restart/audio/message operation exists in this run.
+
+Same-label unrelated workflows41440937339,41440937061,41440937071,41440937006,41440937151 were independently inspected at job level: all admission/observe/verify SKIPPED (15jobs). Fresh recent inventory215 runs over3pages contains exactly5 scope originals:41318810046 failure,41341920729 cancelled,41425190543 failure,41437551667 failure,41440937308 failure, allattempt1, none active. New owner budget consumed2/3. Old41425190543/grant6572700446 stays spent; first new41437551667 stays spent/BLOCKED436; Delta432 and436 remain unchanged.
+
+Observed result: STOP/E_PROVIDER, HTTP200, envelope object/data:null/errors array1, codes:[INTERNAL_SERVER_ERROR], errorPaths:[PROJECT_TOKEN], errorMessages:[UNCLASSIFIED], authorizes:false, facts:null, releaseAuthorized:false. Both hosted and independent verifier correctly certify only STOP. Null facts do not establish target scope or zero pending changes.
+
+Diagnosis is narrower than after first new read: the error is reproducible with the documented direct projectToken scalar fields; the removed nested project/environment selections are not necessary for this observed failure. The query change was a diagnostic alternative, not proof that previous syntax/schema was defective. Exact underlying provider cause is still unknown. PROJECT_TOKEN categorizes only the first error-path component; UNCLASSIFIED excludes only an exact Not Authorized message match. These categories neither prove invalid token/scope nor establish healthy authorization, nor distinguish token resolver internal failure from other provider handling.
+
+A third identical scalar query has no new diagnostic purpose. One remaining authorized read could be reserved for a separately reviewed environment-only diagnostic, testing target environment visibility/pending-state independently of the failing projectToken selection, or for provider-guided diagnosis. An environment-only response must have explicitly partial/non-authorizing semantics; it cannot masquerade as the existing full scope proof. This verdict authorizes no new dispatch, credential rotation or service change. Root remains sole operator; owner grant already covers up to3 new read-only requests, not forbidden mutations.
+
+S1 remains BLOCKED and S2 readiness is not established: successful target scope/pending evidence is absent. Separately, [PLAN criterion](https://github.com/markmalina/gate/blob/3dd9d3afef9a67d608cdb60aa639aba3aa6aab35/docs/audit/2026-11-02/PLAN.md#L114-L119) requires an executable next Gate-owned release route. Supporting independent appendix reviewed here confirms existing backup/cutover primitives are Gate745/reply0116 scoped and disabled, while short deploy does not implement completed locked backup/physical DB binding/Watch0119 transition/post-apply contract. This is absence of an applicable reviewed Watch0119 route, not absence of all backup code. Exact source references and concrete prospective package are in independent-route-gap.md; no S2 operation was performed or approved.
+
+Review itself complete; attempt89 terminal is immutable. New candidate or final S1 report requires its own review issue, without rewriting this result.
+
+ДАЛЬШЕ: root preserves this evidence and chooses a genuinely distinct remaining diagnostic goal or records the precise blocker; no S2.

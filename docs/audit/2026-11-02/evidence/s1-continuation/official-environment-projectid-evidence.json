@@ -1,0 +1,23 @@
+{
+  "source_url": "https://github.com/railwayapp/cli/blob/b62467ef1b5303e3e340283ed96425dcf9612993/src/gql/schema.json",
+  "commit": "b62467ef1b5303e3e340283ed96425dcf9612993",
+  "blob_sha": "3f3c4ca20d99c07417db70882caedf47196308f9",
+  "json_path": "data.__schema.types[name=Environment].fields[name=projectId]",
+  "field": {
+    "name": "projectId",
+    "description": null,
+    "args": [],
+    "type": {
+      "kind": "NON_NULL",
+      "name": null,
+      "ofType": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    "isDeprecated": false,
+    "deprecationReason": null
+  },
+  "provenance": "Excerpt extracted from previously fetched exact GitHub schema content; not live target introspection."
+}

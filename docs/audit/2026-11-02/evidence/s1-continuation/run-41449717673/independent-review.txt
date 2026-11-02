@@ -1,0 +1,50 @@
+Independent final operational verdict: **BLOCKED — VERIFIED_STOP_ONLY / ENVIRONMENT AUTHORIZATION_DENIED**.
+policy_revision: delta.review-attempt.new-issue.v1
+registry_revision: 2026-10-09.1
+review_series_id: gate-watch-runtime-20261006
+attempt_number: 97
+predecessor_pointer: https://github.com/AlphaCenter/delta/issues/447
+review_execution_id: delta448-runtime-independent-20261102
+candidate_sha: 6fc78006c5b209dc93ca2904ae349d6401eb922f
+installed_executor_sha: ec4e689a0fa24305672ef4047ff7c5fac0666982
+reviewer: separate runtime436 agent; not author/operator
+status: terminal
+lease: released
+Railway requests by reviewer: 0
+new_owner_provider_budget: 3/3 consumed; 0 remaining
+
+Independently obtained actual completed [original41449717673 attempt1](https://github.com/markmalina/gate/actions/runs/41449717673), fresh jobs/full logs, all3 RAW artifacts and GitHub metadata. Exact client6fc78006c5b209dc93ca2904ae349d6401eb922f/actionec4e689a0fa24305672ef4047ff7c5fac0666982. Local68 source/dependency files match fresh non-truncated remote Git tree at installed executor. Accepted source445/release446/client447 and CI were inherited without broad reaudits or reruns.
+
+| Independently downloaded RAW artifact | Bytes | SHA256 |
+|---|---:|---|
+| [Observation13143242653](https://github.com/markmalina/gate/actions/runs/41449717673/artifacts/13143242653) |1250|0d10a898d4ca71d0ccfb2bb8c19c45dacc269a2a62a0f78355f167fbe5b405a9|
+| [Detached13144296731](https://github.com/markmalina/gate/actions/runs/41449717673/artifacts/13144296731) |72|2f73855dba4c90048e65061d1debe17f4af41055d66aa5a383b9402909fc28ef|
+| [Verification13144451956](https://github.com/markmalina/gate/actions/runs/41449717673/artifacts/13144451956) |676|be79b30c144153633c6d01407a8f7f9363b8eb26fe65ef57cdd6558af65281db|
+
+All3 unexpired, exact run/head/repository provenance; file bytes/digests match metadata and upload/download logs. Detached is exact observation digest+newline. Full current inventory3 retained. Native verifier explicitly selects original observation+detached pair2; no misrepresentation of full inventory. Credential-free native verification reproduced hosted receipt exactly at2026-11-02T13:05:05.750Z; separate fresh native verify at2026-11-02T13:06:49.280Z also VERIFIED_STOP_ONLY. Eight negative cases reject altered bytes, detached format, credential contamination, retry attempt, wrong head, wrong artifact count, expired metadata and stale receipt. Clarification6577269014 raw body digest matches installed approval fixture; owner/issue/immutable timestamps correct. Request6577823952 passes native exact-lock request verification at hosted observation-verification time. Original grant6575570385 and clarification are agent transcripts of the owner's existing3-read instruction, not fabricated new owner permission.
+
+Actual jobs: admission125291629710 success; observe125291784825 success saving STOP; verify125291965296 native verification and artifact upload success, final Require verified scope fails. Overall workflow failure correctly preserves fail-closed semantics. Full3logs show exact action and masked Railway credential only during observe; admission/verify are Railway-credential-free. Metadata admission now actually succeeds after the separately accepted history-capacity recovery; provider authorization is not fixed by that recovery.
+
+Observed third provider read:2026-11-02T13:04:18.729Z–13:04:18.880Z, railwayReads1, STOP/E_PROVIDER, HTTP200, data:null, one errors item, codes:[INTERNAL_SERVER_ERROR], errorPaths:[ENVIRONMENT], errorMessages:[AUTHORIZATION_DENIED], authorizes:false, facts:null, releaseAuthorized:false. The installed projection maps AUTHORIZATION_DENIED only from exact provider message Not Authorized. Therefore the provider explicitly denied authorization for the fixed environment query with the presented protected credential. This is a concrete authorization failure for this operation, not merely an unexplained HTTP500.
+
+Limits: this does NOT identify why authorization failed (credential validity/type, project/environment scope, account policy or provider implementation). No secret value was inspected or rotated. It does not prove token identity/exclusive scope, pending count, service/DB/runtime identity or successful environment access. Null facts cannot become pendingZERO. Prior projectToken/UNCLASSIFIED observations remain as recorded; this final result does not retroactively prove their exact underlying cause. No OBSERVED_ENVIRONMENT_ONLY or VERIFIED_ENVIRONMENT_ONLY success occurred.
+
+Actual query remains fixed environment(id:$environmentId,projectId:$projectId){id projectId unmergedChangesCount}, same endpoint https://backboard.railway.com/graphql/v2, Project-Access-Token header, same pinned project972b6ab7-988a-421c-abfa-425451ad714f/environmenta148b138-44b3-4349-9d4b-292880503055. Exact collector only sends one GraphQL query POST with attempted latch/zero retry; no mutation, service deploy/configuration/migration/restart/audio/message/S2 operation occurred.
+
+Other5 same-label workflows41449717591,41449717497,41449717525,41449717564,41449717509: all15 jobs independently fetched and SKIPPED. Fresh recent inventory241runs over3pages contains exactly7 scope originals, allattempt1/completed and none active:41318810046 failure,41341920729 cancelled,41425190543 failure,41437551667 failure,41440937308 failure,41444775597 admission failure,41449717673 failure. Old41425190543/grant6572700446 remains spent. This continuation used3 Railway reads in41437551667/41440937308/41449717673;41444775597 remains a consumed workflow original with0provider reads/0artifacts. No rerun and no fourth provider request. Delta432/436/440/444 remain immutable.
+
+S1 remains BLOCKED. Remaining concrete blockers:
+1. Railway denies authorization for the target environment query; no complete fixed-target/token-scope/pending-clean predicate has been established.
+2. Applicable executable Gate-owned Watch0119 release route remains absent: existing Gate745/reply0116 backup primitives and short deploy do not constitute the required physical DB identity→completed locked backup→Watch0119 migration/deploy→post-apply verification contract. Independent source-only route appendix's exact-version limits remain unchanged.
+S2 readiness is not established; S2 not started. Owner-authorized3 additional provider requests are exhausted. Required next action is an explicit authorized operator/support investigation of the environment authorization denial using IDs, exact query, UTC interval and sanitized receipt, without sharing secret values. Any credential/service change or further provider request requires a new concrete authorized package; no additional action is dispatched here.
+
+Final report accuracy review is **NOT ACCEPTED AS COMPLETE** at this terminal:
+- Earlier first2run RAW archives and immutable review bodies were independently verified byte-exact; previous report wording/reproducibility fixes are retained.
+- Inspected current S1-CONTINUATION.md SHA256601ad75b50bb7d91a6d0da3c2f9ebcb4e8c1f1d2fa228f4a36cc48576f11cc4a and S1-RAILWAY-DEBUG-PACKET.md SHA2564e26bf5609d9fd63af750980593cf86112a73f5489bc4b7625586cca9c608e7d still omit actual41449717673, its AUTHORIZATION_DENIED result and final3/3 accounting. report-evidence/run-41449717673 is not yet present. These drafts must not be published as a complete final result unchanged.
+- independent-route-gap.md SHA25619a1a6c87e46972be1144d2c5b49a674b3d4016e5f599ffa53ad410848b927c7 remains a bounded source-only appendix; it makes no runtime/S2 authorization claim.
+- Root must append the final actual outcome and required operator action, archive the3 RAW bytes/provenance/request/native-verification metadata without temporary download URLs, then obtain a narrow final-document review or equivalent separate review record. No source/CI/operational re-execution is required to fix this documentation omission.
+Independent complete runtime evidence is saved locally in review448/ for that archival step. This terminal completes the actual operational review and records the remaining report gap honestly; it does not assert report publication or S1 closure.
+
+Terminal immutable; any later final-report acceptance belongs to a new review record.
+
+ДАЛЬШЕ: root completes and preserves the final evidence/report, stops after reporting the precise blocker, and does not start S2 or make another provider request.
