@@ -1,0 +1,8 @@
+{
+  "result": "VERIFIED_STOP_ONLY",
+  "error": "PROVIDER_ERROR",
+  "railwayReads": 1,
+  "receiptDigest": "sha256:b52e9bb854ba95412d0263fe192462b6537980f1c71332525a1721f09dc97d4a",
+  "runId": "41487597926",
+  "releaseAuthorized": false
+}

@@ -1,0 +1,28 @@
+{
+  "operation": "VERIFY_GATE_PRODUCTION_PROJECT_TOKEN_POST_ROTATION",
+  "authorizationSource": "agent-transcription-of-direct-owner-session",
+  "result": "STOP",
+  "error": "PROVIDER_ERROR",
+  "providerEvidence": {
+    "shape": "NONEMPTY_LIST",
+    "count": 1,
+    "errors": [
+      {
+        "code": "INTERNAL_SERVER_ERROR",
+        "message": "PROJECT_TOKEN_NOT_FOUND",
+        "traceId": "5196625043623989654"
+      }
+    ]
+  },
+  "railwayReads": 1,
+  "startedAt": "2026-11-02T17:05:02.919Z",
+  "finishedAt": "2026-11-02T17:05:03.123Z",
+  "runId": "41487597926",
+  "callerHeadSha": "27b58e815c26225cac76893e57707a9eda96c835",
+  "executorSha": "da16ee3a694868bc3b3027b85f56817af98ad294",
+  "requestId": 6583207071,
+  "projectId": null,
+  "environmentId": null,
+  "projectTokenAuthenticated": false,
+  "releaseAuthorized": false
+}
