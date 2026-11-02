@@ -1,0 +1,17 @@
+{
+  "operation": "VERIFY_GATE_PRODUCTION_PROJECT_TOKEN_POST_ROTATION",
+  "authorizationSource": "agent-transcription-of-direct-owner-session",
+  "result": "STOP",
+  "error": "PROVIDER_ERROR",
+  "railwayReads": 1,
+  "startedAt": "2026-11-02T16:50:50.270Z",
+  "finishedAt": "2026-11-02T16:50:50.374Z",
+  "runId": "41485321391",
+  "callerHeadSha": "32a1e5a4eb23b76c7f2299415b56f8f01c205f5b",
+  "executorSha": "ab288cfa6c298b2f937f55eadd96c6fa7dc0c047",
+  "requestId": 6582875048,
+  "projectId": null,
+  "environmentId": null,
+  "projectTokenAuthenticated": false,
+  "releaseAuthorized": false
+}
