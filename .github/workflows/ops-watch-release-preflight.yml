@@ -12,7 +12,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: gate736-cli-state-observation
+  group: >-
+    ${{ github.event.pull_request.number == 766 && github.event.sender.id == 23397294 && startsWith(github.event.label.name, format('w{0}-', github.event.pull_request.head.sha)) && github.event.pull_request.head.repo.full_name == 'markmalina/gate' && github.event.pull_request.head.ref == 'agent/736-autonomous-watch-queue' && 'gate736-cli-state-observation' || format('gate736-inactive-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
