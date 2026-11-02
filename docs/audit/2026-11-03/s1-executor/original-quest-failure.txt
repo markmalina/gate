@@ -1,0 +1,27 @@
+Exact original head f06e2749e2d6e07a00a8554e7f47441a1f2ca729
+Run https://github.com/markmalina/gate/actions/runs/41511801715
+Quest job125505231920 SUCCESS; mandatory synthetic merge125506432521 FAILURE.
+Decoded actual failing job excerpt:
+2026-11-02T19:41:31.6973498Z I001 [*] Import block is un-sorted or un-formatted
+2026-11-02T19:41:31.6977451Z   --> tests/test_watch_voice_baseline_fallback_postgres.py:32:5
+2026-11-02T19:41:31.6978595Z    |
+2026-11-02T19:41:31.6979008Z 30 |   )
+2026-11-02T19:41:31.6979849Z 31 |   def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
+2026-11-02T19:41:31.6980523Z 32 | /     import httpx
+2026-11-02T19:41:31.6981273Z 33 | |     from app.api.health_routes import router
+2026-11-02T19:41:31.6981970Z 34 | |     from app.infrastructure.readiness import build_readiness_service
+2026-11-02T19:41:31.6982971Z 35 | |     from app.infrastructure.watch_voice_actions import drain
+2026-11-02T19:41:31.6983806Z 36 | |     from app.models.watch_voice import WatchVoiceCursor, WatchVoiceDrainRun, WatchVoiceNote
+2026-11-02T19:41:31.6984742Z 37 | |     from fastapi import FastAPI
+2026-11-02T19:41:31.6985123Z 38 | |     from sqlalchemy import select, text
+2026-11-02T19:41:31.6986140Z 39 | |     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+2026-11-02T19:41:31.6987226Z 40 | |     from test_watch_voice_actions import ActionsWorld, action_settings, claims
+2026-11-02T19:41:31.6988166Z    | |______________________________________________________________________________^
+2026-11-02T19:41:31.6988865Z 41 |
+2026-11-02T19:41:31.6989169Z 42 |       root = Path(__file__).resolve().parents[1]
+2026-11-02T19:41:31.6989550Z    |
+2026-11-02T19:41:31.6989831Z help: Organize imports
+2026-11-02T19:41:31.6990065Z 
+2026-11-02T19:41:31.6990257Z Found 1 error.
+2026-11-02T19:41:31.6990723Z [*] 1 fixable with the `--fix` option.
+2026-11-02T19:41:31.7001057Z ##[error]Process completed with exit code 1.

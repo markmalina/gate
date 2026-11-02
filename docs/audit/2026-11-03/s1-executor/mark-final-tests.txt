@@ -1,0 +1,43 @@
+✔ production history boundary is unavailable: UNKNOWN before any API or disable (1.337946ms)
+✔ restore authoritative current sequence: adjacent (2.862624ms)
+✔ restore authoritative current sequence: missing current (0.659504ms)
+✔ restore authoritative current sequence: deleted intervening (0.485101ms)
+✔ restore authoritative current sequence: foreign owner (0.341064ms)
+✔ signed log redirect never receives GitHub credential (1.224555ms)
+✔ foreign log redirect denied without disclosure (0.485131ms)
+✔ fixed unchanged drain bytes and proven stop/restore (3.545332ms)
+✔ already disabled remains disabled (0.38513ms)
+✔ queued cannot fence (0.402947ms)
+✔ waiting cannot fence (0.225379ms)
+✔ in_progress cannot fence (0.260292ms)
+✔ requested cannot fence (0.190887ms)
+✔ pending cannot fence (0.322866ms)
+✔ failure without receipt is UNKNOWN (0.49777ms)
+✔ cancelled without receipt is UNKNOWN (0.275415ms)
+✔ timed_out without receipt is UNKNOWN (0.358941ms)
+✔ wrong provenance denied (0.22569ms)
+✔ wrong provenance denied (0.155865ms)
+✔ wrong provenance denied (0.111097ms)
+✔ wrong provenance denied (0.175725ms)
+✔ disable timeout never repeats or restores (0.223827ms)
+✔ history truncation denied (0.174773ms)
+✔ replayed response is not completion proof (0.180582ms)
+✔ unknown extra receipt fields rejected (0.149726ms)
+✔ run appearing after disabled inventory prevents quiescence (0.263517ms)
+✔ restore rejects main drift and never blindly enables (0.342045ms)
+✔ cancelled after confirmed response is settled (0.205049ms)
+✔ invalid timestamp rejected (0.282616ms)
+✔ previous fence cannot cross newer control run (0.262406ms)
+✔ empty/deleted run history is not quiescence (0.135824ms)
+✔ deleted interior run is a gap (0.110286ms)
+✔ missing authoritative history boundary refuses BEFORE disable (0.099681ms)
+✔ HTTP processed alone cannot prove settled external operations (0.375876ms)
+✔ HTTP deferred alone cannot prove settled external operations (0.227082ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 35
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 99.735514

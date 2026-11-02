@@ -33,5 +33,23 @@
     "path": "fallback-ea929-windows.log.gz",
     "rawSha256": "48e93bc1c58e49dd7e5a63fba42a50675bf0e464efd05185e1ead41d257a4536",
     "gzipSha256": "52bc56e93c30e8920c725057c11a76c5023b925fe077cb1ba07dd18df2c42c30"
+  },
+  {
+    "path": "ops-5c86-full-ci.log.gz",
+    "rawSha256": "64f474dd899a754014ea6010a08bf8b7af98280f821f85599bd4a21ae801af8d",
+    "gzipSha256": "f30ae5d2259b1933825f5be44d8b401ab428697d92efd731fbbeffcadc4852fe",
+    "runId": 41530880282,
+    "jobId": 125570417233,
+    "commit": "5c86c479f6581c5922519382ffcd953d63629084"
+  },
+  {
+    "path": "s1-independent-mark-tests.log.gz",
+    "rawSha256": "7557115ea1012c04bc6158e0871113c3df828cd472baec94f31e456bad0a5d56",
+    "gzipSha256": "44bfdc7d6c7c83a34545e4f926bf94d1c2c9b03225b3328aa530ef0241696c4d"
+  },
+  {
+    "path": "s1-independent-node-tests.log.gz",
+    "rawSha256": "edd69ac2549e23f911b6c132421040f05542bb5fa5e61f0fa91c5f14d52fb38c",
+    "gzipSha256": "84f50d60fa3375db564a88199ecbd7e9ea7141f9728fde381e5305bfdfb4f165"
   }
 ]
