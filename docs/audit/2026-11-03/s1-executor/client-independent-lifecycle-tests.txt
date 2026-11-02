@@ -1,0 +1,17 @@
+✔ actual unchanged CODE release satisfies Production equivalence lifecycle (120.835637ms)
+✔ real-file release-only ACCEPT with exact earlier CODE SHA satisfies equivalence (98.748786ms)
+✔ real-file denied lifecycle: PENDING bound to code (104.834354ms)
+✔ real-file denied lifecycle: ACCEPT without code (106.869586ms)
+✔ real-file denied lifecycle: short code SHA (107.799644ms)
+✔ real-file denied lifecycle: unknown review state (122.913398ms)
+✔ real-file denied lifecycle: enabled mutation (102.823774ms)
+✔ real-file denied lifecycle: self-certified fixture (119.98233ms)
+✔ real-file denied lifecycle: allocation activation (112.649093ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1085.564193

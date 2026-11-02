@@ -1,0 +1,37 @@
+[
+  {
+    "path": "fallback-3329-backend-failure.log.gz",
+    "rawSha256": "f41f97fe40aa1ff4167f57796047c46d80d964c3ac67b124f8fafa54e288dea3",
+    "gzipSha256": "9419d34f64034cc2899a9901052e14cb351f17a0545806bef226a55e3a7ced8d"
+  },
+  {
+    "path": "fallback-3329-fixture.log.gz",
+    "rawSha256": "5a5d68a29257df523ee861cd07dbc2c911f28eeb04b73b798906c0387c76ca61",
+    "gzipSha256": "6a7ad318c9f51677f344811736ee1c3010ac93493ca0ec906e36cf4ade1290ee"
+  },
+  {
+    "path": "fallback-ea929-backend.log.gz",
+    "rawSha256": "49d70ad767a51136149ddb7111d49632af5fcf8bbf7131fe179294b0a536868e",
+    "gzipSha256": "39f4d11592b73b7ed228ed4fb2117f9c6e5ae05403aeb9cae4c93ac0dd101c8d"
+  },
+  {
+    "path": "fallback-ea929-fixture.log.gz",
+    "rawSha256": "fb396090de0786f82bfc9fdd019f62dbac520b6f79d5727284cb600b2c69ac58",
+    "gzipSha256": "6530f56f469e23931f5db6cfa6cde2f656d624dd6485de71ded8d2a1887f0a2c"
+  },
+  {
+    "path": "fallback-ea929-quest.log.gz",
+    "rawSha256": "bae181b2c24ea7c58b559adbfddcb7350a18b06339d6a669407e5b0ab5dc7eb7",
+    "gzipSha256": "f5209fec9c043888a630d32add256b0b04d59645511ce0c4b8ac72c90b5fc441"
+  },
+  {
+    "path": "fallback-ea929-synthetic-merge.log.gz",
+    "rawSha256": "d5948823db4bedd64d13337ef0a8143dcc55f6b4a90ae680598e4e4f2d85de70",
+    "gzipSha256": "4113f3043ccb7913e8e0d14ae6f0b152de39ec48ce2f21e804ee9d04dc2dc922"
+  },
+  {
+    "path": "fallback-ea929-windows.log.gz",
+    "rawSha256": "48e93bc1c58e49dd7e5a63fba42a50675bf0e464efd05185e1ead41d257a4536",
+    "gzipSha256": "52bc56e93c30e8920c725057c11a76c5023b925fe077cb1ba07dd18df2c42c30"
+  }
+]

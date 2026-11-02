@@ -31,6 +31,7 @@ settings_dependency = Depends(get_settings)
 @router.get("/admin/ops/watch-voice")
 async def watch_voice_preflight(
     request: Request,
+    baseline_flags: bool = False,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
 ) -> JSONResponse:
@@ -49,6 +50,12 @@ async def watch_voice_preflight(
         payload["reason"] = "observation_timeout"
     except Exception:
         payload["reason"] = "voice_journal_unavailable"
+    if baseline_flags:
+        payload["configuration"].update(
+            early_inbox_enabled=settings.gate_watch_voice_early_inbox_enabled,
+            work_reserve_enabled=settings.gate_watch_voice_work_reserve_enabled,
+            work_mcp_enabled=settings.gate_watch_voice_work_mcp_enabled,
+        )
     return JSONResponse(
         status_code=200 if payload["result"] == "OBSERVED" else 503,
         content=payload,

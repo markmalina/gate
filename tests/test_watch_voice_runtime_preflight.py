@@ -233,3 +233,35 @@ def test_foreign_workspace_is_denied_before_probe_or_journal():
 
     asyncio.run(scenario())
 
+
+def test_baseline_flag_observation_is_opt_in_and_uses_loaded_settings(tmp_path):
+    async def scenario():
+        cfg = settings().model_copy(
+            update={
+                "admin_bearer_token": SECRET,
+                "gate_watch_voice_early_inbox_enabled": True,
+                "gate_watch_voice_work_reserve_enabled": False,
+                "gate_watch_voice_work_mcp_enabled": True,
+            }
+        )
+        async with db(tmp_path) as factory:
+            service = await schema_probe(factory)
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app(cfg, factory, service)),
+                base_url="http://test",
+            ) as client:
+                headers = {"Authorization": "Bearer " + SECRET}
+                ordinary = await client.get("/admin/ops/watch-voice", headers=headers)
+                validate(ordinary.json(), RUNTIME_PREFLIGHT_SCHEMA)
+                assert "early_inbox_enabled" not in ordinary.json()["configuration"]
+                extended = await client.get(
+                    "/admin/ops/watch-voice?baseline_flags=true", headers=headers
+                )
+                assert extended.status_code == 200
+                flags = extended.json()["configuration"]
+                assert flags["early_inbox_enabled"] is True
+                assert flags["work_reserve_enabled"] is False
+                assert flags["work_mcp_enabled"] is True
+                assert SECRET not in extended.text
+
+    asyncio.run(scenario())
