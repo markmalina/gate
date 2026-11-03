@@ -1,0 +1,44 @@
+name: Gate781 fixture metadata inventory
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/gate781-fixture-inventory.yml'
+      - 'scripts/gate781/**'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  metadata:
+    if: >-
+      github.repository_id == '1293746267' &&
+      github.actor_id == '23397294' &&
+      github.event.pull_request.number == 766 &&
+      github.event.pull_request.head.repo.id == 1293746267 &&
+      github.event.pull_request.head.ref == 'agent/736-autonomous-watch-queue' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Validate exact checkout and local tests
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          node --test scripts/gate781/inventory.test.mjs
+      - name: Observe only GitHub fixture environment metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/gate781/inventory.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: gate781-github-environments
+          path: .agent-ops/out/gate781-github-environments.json
+          if-no-files-found: error
+          retention-days: 3
