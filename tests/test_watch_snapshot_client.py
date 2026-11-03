@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-OPS = "5c86c479f6581c5922519382ffcd953d63629084"
+OPS = "0079fc2f3f5048cb54fc0907364945779d89a6ca"
 
 
 def test_watch_snapshot_exact_pins_and_pure_terminal():

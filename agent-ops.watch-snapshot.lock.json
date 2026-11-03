@@ -2,8 +2,8 @@
   "schemaVersion": "agent-ops.gate-snapshot-lock/v1",
   "repository": "markmalina/ops",
   "actionPath": "agent-ops/actions/gate-snapshot-cutover",
-  "commit": "5c86c479f6581c5922519382ffcd953d63629084",
+  "commit": "0079fc2f3f5048cb54fc0907364945779d89a6ca",
   "profilePath": "agent-ops/actions/gate-snapshot-cutover/watch-profile.json",
   "profileSha256": "sha256:ca77d8e7c20231970135b965b2b47e54f4b52c02f94104da6547a472a054a8f0",
-  "workflowSha256": "sha256:cd75c4a53c690ed6b0c48466199ac6d19ca40d2b4e9f49e120b6e2d2fbaf7794"
+  "workflowSha256": "sha256:6dcaaffb44347a33fbddaed5880e312a9e43e9165546dedce9ca10c70632c0aa"
 }

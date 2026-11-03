@@ -279,7 +279,7 @@ jobs:
           check-latest: false
           package-manager-cache: false
       - name: Request exact plan as distinct App identity
-        uses: markmalina/ops/agent-ops/actions/github-app-requester@5c86c479f6581c5922519382ffcd953d63629084
+        uses: markmalina/ops/agent-ops/actions/github-app-requester@0079fc2f3f5048cb54fc0907364945779d89a6ca
         with:
           profile: watch0119
           source-read-token: ${{ secrets.AGENT_OPS_SOURCE_READ_TOKEN }}
@@ -347,7 +347,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - id: cutover
-        uses: markmalina/ops/agent-ops/actions/gate-snapshot-cutover@5c86c479f6581c5922519382ffcd953d63629084
+        uses: markmalina/ops/agent-ops/actions/gate-snapshot-cutover@0079fc2f3f5048cb54fc0907364945779d89a6ca
         with:
           profile: watch0119
         env:
@@ -438,7 +438,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - id: verify
-        uses: markmalina/ops/agent-ops/actions/gate-snapshot-cutover@5c86c479f6581c5922519382ffcd953d63629084
+        uses: markmalina/ops/agent-ops/actions/gate-snapshot-cutover@0079fc2f3f5048cb54fc0907364945779d89a6ca
         with:
           profile: watch0119
           mode: verify
@@ -494,7 +494,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - id: final-verifier
-        uses: markmalina/ops/agent-ops/actions/gate-snapshot-artifact-verifier@5c86c479f6581c5922519382ffcd953d63629084
+        uses: markmalina/ops/agent-ops/actions/gate-snapshot-artifact-verifier@0079fc2f3f5048cb54fc0907364945779d89a6ca
         with:
           profile: watch0119
           receipt-artifact-id: ${{ needs.watch-snapshot-cutover.outputs.receipt-artifact-id }}

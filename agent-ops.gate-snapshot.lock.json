@@ -5,5 +5,5 @@
   "commit": "b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85",
   "profilePath": "agent-ops/actions/gate-snapshot-cutover/profile.json",
   "profileSha256": "sha256:6df45d551b0df67c51aa35c1a642fc6b1ad667397a4143fe40813fb590da8d6a",
-  "workflowSha256": "sha256:cd75c4a53c690ed6b0c48466199ac6d19ca40d2b4e9f49e120b6e2d2fbaf7794"
+  "workflowSha256": "sha256:6dcaaffb44347a33fbddaed5880e312a9e43e9165546dedce9ca10c70632c0aa"
 }

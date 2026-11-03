@@ -35,7 +35,7 @@ The admission guard is first installed in the new candidate/fallback after the o
 
 Historical proven `7fd322c958cccf6828a3e8fcb00a075b2d4f1f46` remains immutable and is **not** selected by the new path because it lacks the restart admission guard.
 
-Selected guarded successor: [`4827624955c9543bfae1b1377de8497956720ab9`](https://github.com/markmalina/gate/commit/4827624955c9543bfae1b1377de8497956720ab9), parent7fd. Relative to afe: the same four additive0116–0119 migrations plus only the workflow-admission guard in `app/infrastructure/watch_voice_actions.py` (blob `0f05c0ce04b1d4e2b473b0383fc231de59f9b94b`). No models, provider settings, transcription behavior or data rewrite. Its new PostgreSQL restore proof must replace the old proof digest in Ops; an old green proof cannot admit this successor.
+Selected guarded successor: [`4827624955c9543bfae1b1377de8497956720ab9`](https://github.com/markmalina/gate/commit/4827624955c9543bfae1b1377de8497956720ab9), parent7fd. Relative to afe: the same four additive0116–0119 migrations plus only the workflow-admission guard in `app/infrastructure/watch_voice_actions.py` (blob `0f05c0ce04b1d4e2b473b0383fc231de59f9b94b`). No models, provider settings, transcription behavior or data rewrite. Ops now pins its new PostgreSQL restore proof `sha256:1b9e28f7100ae56acc37d3dbaf5f5b7346c9c1550425ec11a7b3fd787432d399`; an old green proof cannot admit this successor.
 
 ## Concrete installation and operation order — NOT executed
 
@@ -55,3 +55,20 @@ Downtime starts at baseline stop and ends at verified candidate/fallback readine
 New tests exercise actual server admission before claim, workflow identity/state errors, cancelled handler with active transaction, durable pre-effect claims, original bytes/checksum, late remote success without a duplicate POST, new admission transport, prior-state restore, changed workflow/main, and Ops ordering. PostgreSQL CI additionally executes abrupt child-process death (`os._exit`) at the actual external-effect boundary and dump/restore of processing/sending/UNKNOWN. No real audio, STT, messages, provider or production database is involved.
 
 Whole S1 remains pending native fixture/current protected facts and full independent acceptance. Gate736 stays open. S2 has not started.
+
+Native acceptance must also prove that the pinned provider's stopped deployment
+and empty allocation/fleet observation mean termination of ALL old application
+processes, not merely stop-request acknowledgement or the beginning of graceful
+shutdown. Fixed waiting time cannot substitute for this. The next native fixture
+therefore covers stop-all completion semantics as well as consistent backup and
+lock. Until that evidence is accepted, the release gate remains PENDING.
+
+## Confirmed source proof
+
+- Mark PR126: `f448bdb07efd97192e4a1b19117179d4abc3ef71`; 44 local Node tests passed, independently repeated.
+- Ops PR414: `0079fc2f3f5048cb54fc0907364945779d89a6ca`; 154 local snapshot tests passed, independently repeated. Gate Watch action pins and both workflow-hash locks are updated together; Reply745 action revisions are unchanged.
+- [Gate CI41590282789](https://github.com/markmalina/gate/actions/runs/41590282789) and [Quest41590282890](https://github.com/markmalina/gate/actions/runs/41590282890) succeeded on `6232e49221d5d84261434d634bce9e9d77e338df`. The corrected late-remote-completion test and final client pins are checked again at the final PR head; final run links are recorded in issue780.
+- Actual fallback job125765478098: 11 passed, then a separate restored-database test passed. Disposable PostgreSQL17.11, no production actions. Artifact13209747366 ZIP SHA256 `ea36cf5c20d075a7f388a01fc7111b4a4722ae4ffd010dcf71762633f7efeb92`. The three adjacent files are exact extracted artifact bytes, independently compared with the downloaded ZIP.
+- Fallback receipt SHA256 `4606b86e0f1fc31e893579cd2676535d93b5cafa1a126a45e00baaeb0753d4b0`; restore receipt SHA256 `1b9e28f7100ae56acc37d3dbaf5f5b7346c9c1550425ec11a7b3fd787432d399`; JUnit SHA256 `c20b54d793f68152ab58aa10a528474ab4132a5658c6f2a872f6cf65c6902310`.
+
+The independent reviewer is a separate agent, not the implementation author. Its final exact-head source conclusion and final CI metadata are linked from issue780. Source acceptance does not attest any native provider behavior or authorize S2.

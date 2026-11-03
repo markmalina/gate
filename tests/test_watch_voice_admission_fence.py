@@ -97,6 +97,7 @@ def test_interrupted_effect_preserves_claim_and_does_not_repeat_after_restart(
                 await session.commit()
             started = asyncio.Event()
             never = asyncio.Event()
+            late_remote_receipts = []
             transport = guarded_transport(world)
 
             async def handle(request):
@@ -106,8 +107,11 @@ def test_interrupted_effect_preserves_claim_and_does_not_repeat_after_restart(
                     and request.method == "POST"
                     and "/issues" in request.url.path
                 ):
-                    # Remote accepted the POST. The local acknowledgement is lost.
+                    # The remote accepted work, but commits its receipt only
+                    # after this local task has died (see below).
                     assert world.posts == 1
+                    late_remote_receipts.extend(world.issues)
+                    world.issues.clear()
                     async with factory() as session:
                         note = await session.scalar(select(WatchVoiceNote))
                         assert note.delivery_state == "sending"
@@ -153,6 +157,9 @@ def test_interrupted_effect_preserves_claim_and_does_not_repeat_after_restart(
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
                     await task
+                # Remote completion is independent of process/task lifetime.
+                # This neither saves a local result nor reissues the POST.
+                world.issues.extend(late_remote_receipts)
             before = (await notes(factory))[0]
             assert (
                 before.transcription_state if phase == "transcription" else before.delivery_state

@@ -1,0 +1,19 @@
+{
+  "artifact_sha": "4827624955c9543bfae1b1377de8497956720ab9",
+  "baseline_sha": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
+  "disabled_workflow_server_admission_fenced": true,
+  "external_provider_calls": 0,
+  "migration_head": "0119_watch_voice_comment_ids",
+  "old_actions_app_with_admission_guard": true,
+  "originals_cursor_unknown_and_replay_preserved": true,
+  "postgres_version": "17.11 (Debian 17.11-1.pgdg13+2)",
+  "production_authorized": false,
+  "real_database_ready_http": true,
+  "real_drain_with_http_stubs": true,
+  "restore_checked": false,
+  "restored_processing_sending_no_retry": false,
+  "restored_replay_and_unknown_no_effects": false,
+  "result": "ACCEPT",
+  "schema": "gate.watch.baseline-fallback-fixture/v1",
+  "scope": "DISPOSABLE_SYNTHETIC_ONLY"
+}
