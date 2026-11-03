@@ -51,12 +51,14 @@ jobs:
       - name: Build both capped disposable images
         run: |
           docker build -f Dockerfile.gate781-writer -t gate781-writer:ci .
-          docker pull postgres:17
-          PG_BASE=$(docker image inspect postgres:17 --format '{{index .RepoDigests 0}}')
-          docker build --build-arg POSTGRES_BASE="$PG_BASE" -f Dockerfile.gate781-postgres -t gate781-pg:ci .
+          docker build -f Dockerfile.gate781-postgres -t gate781-pg:ci .
           docker image inspect gate781-writer:ci gate781-pg:ci > gate781-images.json
           docker run --rm --cpus 1 --memory 512m --entrypoint python gate781-writer:ci -c 'import sys; sys.path.insert(0,"scripts/gate781"); import runtime; print(runtime.caps())'
           docker run --rm --cpus 1 --memory 512m --entrypoint python3 gate781-pg:ci -c 'import sys; sys.path.insert(0,"/fixture"); import runtime; print(runtime.caps())'
+      - name: Run real capped fixture process trees and reject wrong DB before seed
+        env:
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python scripts/gate781/container_scenario.py
       - name: Check formatting without accepting a modified source
         if: always()
         run: |

@@ -3,6 +3,7 @@
 The writer exercises real Watch tables with fixed synthetic bytes and uncommitted
 transactions. The verifier is read-only and recomputes an independent manifest.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,10 +40,15 @@ def digest(value):
 
 def identity(env=None):
     env = os.environ if env is None else env
-    keys = {"nonce": "GATE781_NONCE", "sourceSha": "GATE781_SOURCE_SHA",
-            "projectId": "RAILWAY_PROJECT_ID", "environmentId": "RAILWAY_ENVIRONMENT_ID",
-            "serviceId": "RAILWAY_SERVICE_ID", "deploymentId": "RAILWAY_DEPLOYMENT_ID",
-            "instanceId": "RAILWAY_REPLICA_ID"}
+    keys = {
+        "nonce": "GATE781_NONCE",
+        "sourceSha": "GATE781_SOURCE_SHA",
+        "projectId": "RAILWAY_PROJECT_ID",
+        "environmentId": "RAILWAY_ENVIRONMENT_ID",
+        "serviceId": "RAILWAY_SERVICE_ID",
+        "deploymentId": "RAILWAY_DEPLOYMENT_ID",
+        "instanceId": "RAILWAY_REPLICA_ID",
+    }
     result = {k: env.get(v, "") for k, v in keys.items()}
     if env.get("GATE781_DISPOSABLE") != "synthetic-data-only":
         raise ValueError("E_781_DISPOSABLE")
@@ -74,8 +80,9 @@ def caps():
     # cgroup v2 mounted by container runtime; no externally selectable path.
     if not Path("/sys/fs/cgroup/cgroup.controllers").is_file():
         raise ValueError("E_781_CGROUP_VERSION")
-    return parse_caps(Path("/sys/fs/cgroup/cpu.max").read_text(),
-                      Path("/sys/fs/cgroup/memory.max").read_text())
+    return parse_caps(
+        Path("/sys/fs/cgroup/cpu.max").read_text(), Path("/sys/fs/cgroup/memory.max").read_text()
+    )
 
 
 def emit(prefix, value):
@@ -83,19 +90,33 @@ def emit(prefix, value):
 
 
 def witness(who, boot, phase, processes, reaped, resources):
-    return {"schema": "gate781.process-witness/v1", **who, "bootId": boot, "phase": phase,
-            "observedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-            "processes": processes, "childrenReaped": reaped, **resources}
+    return {
+        "schema": "gate781.process-witness/v1",
+        **who,
+        "bootId": boot,
+        "phase": phase,
+        "observedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "processes": processes,
+        "childrenReaped": reaped,
+        **resources,
+    }
 
 
 def database_url():
     raw = os.environ.get("DATABASE_URL", "")
     parsed = urlparse(raw)
     expected = os.environ.get("GATE781_PG_HOST", "")
-    if (parsed.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}
-            or parsed.hostname != expected or not expected.endswith(".railway.internal")
-            or parsed.port != 5432 or parsed.path != "/gate781"
-            or parsed.username != "gate781" or not parsed.password or parsed.query or parsed.fragment):
+    if (
+        parsed.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}
+        or parsed.hostname != expected
+        or not expected.endswith(".railway.internal")
+        or parsed.port != 5432
+        or parsed.path != "/gate781"
+        or parsed.username != "gate781"
+        or not parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
         raise ValueError("E_781_DATABASE_BINDING")
     return raw.replace("postgresql+asyncpg:", "postgresql:")
 
@@ -104,24 +125,50 @@ def expected_rows():
     # Explicit synthetic identifiers, not copied owner data. Hash the actual bytes.
     blob = b"GATE781 SYNTHETIC AUDIO ORIGINAL\x00\x01"
     sha = hashlib.sha256(blob).hexdigest()
-    notes = [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "gate781/" + str(n))),
-              "sha256": sha, "data": blob.hex(), "transcription_state": state,
-              "delivery_state": delivery, "provider_request_count": count,
-              "revision": "synthetic-v1", "next_part": n}
-             for n, state, delivery, count in [(1, "processing", "pending", 1),
-                                               (2, "transcribed", "sending", 1),
-                                               (3, "unknown", "unknown", 1)]]
-    journal = [{"note_id": notes[1]["id"], "part": 0, "writer": "gate781-synthetic",
-                "body_sha256": hashlib.sha256(b"synthetic-text").hexdigest(),
-                "issue_number": 781, "comment_id": 781001}]
-    return {"notes": sorted(notes, key=lambda x: x["id"]), "cursor": "gate781-fixed-cursor", "journal": journal}
+    notes = [
+        {
+            "id": str(uuid.uuid5(uuid.NAMESPACE_URL, "gate781/" + str(n))),
+            "sha256": sha,
+            "data": blob.hex(),
+            "transcription_state": state,
+            "delivery_state": delivery,
+            "provider_request_count": count,
+            "revision": "synthetic-v1",
+            "next_part": n,
+        }
+        for n, state, delivery, count in [
+            (1, "processing", "pending", 1),
+            (2, "transcribed", "sending", 1),
+            (3, "unknown", "unknown", 1),
+        ]
+    ]
+    journal = [
+        {
+            "note_id": notes[1]["id"],
+            "part": 0,
+            "writer": "gate781-synthetic",
+            "body_sha256": hashlib.sha256(b"synthetic-text").hexdigest(),
+            "issue_number": 781,
+            "comment_id": 781001,
+        }
+    ]
+    return {
+        "notes": sorted(notes, key=lambda x: x["id"]),
+        "cursor": "gate781-fixed-cursor",
+        "journal": journal,
+    }
+
+
+def cluster_marker(nonce, service_id):
+    return "gate781-" + hashlib.sha256((nonce + ":" + service_id).encode()).hexdigest()[:32]
 
 
 async def connect(url=None):
     import asyncpg
+
     connection = await asyncpg.connect(url or database_url(), timeout=10, command_timeout=15)
     if url is None:
-        expected = "gate781:" + os.environ["GATE781_NONCE"] + ":" + os.environ["GATE781_PG_SERVICE_ID"]
+        expected = cluster_marker(os.environ["GATE781_NONCE"], os.environ["GATE781_PG_SERVICE_ID"])
         if await connection.fetchval("SHOW cluster_name") != expected:
             await connection.close()
             raise ValueError("E_781_DATABASE_IDENTITY")
@@ -133,9 +180,20 @@ async def read_data(connection):
     notes = await connection.fetch("""SELECT id,sha256,encode(data,'hex') AS data,
         transcription_state,delivery_state,provider_request_count,revision,next_part
         FROM watch_voice_notes ORDER BY id""")
-    cursor = await connection.fetchval("SELECT cursor FROM watch_voice_cursors WHERE workspace_key=$1 AND account_id='synthetic-account'", FIXTURE_WORKSPACE)
-    journal = await connection.fetch("SELECT note_id,part,writer,body_sha256,issue_number,comment_id FROM watch_voice_text_receipts ORDER BY note_id,part")
-    return {"notes": [dict(x) for x in notes], "cursor": cursor, "journal": [dict(x) for x in journal]}
+    cursor = await connection.fetchval(
+        "SELECT cursor FROM watch_voice_cursors "
+        "WHERE workspace_key=$1 AND account_id='synthetic-account'",
+        FIXTURE_WORKSPACE,
+    )
+    journal = await connection.fetch(
+        "SELECT note_id,part,writer,body_sha256,issue_number,comment_id "
+        "FROM watch_voice_text_receipts ORDER BY note_id,part"
+    )
+    return {
+        "notes": [dict(x) for x in notes],
+        "cursor": cursor,
+        "journal": [dict(x) for x in journal],
+    }
 
 
 async def seed(url=None):
@@ -149,26 +207,61 @@ async def seed(url=None):
                 raise ValueError("E_781_EXISTING_DATA")
             return False
         # Exact Watch model definitions at the pinned Gate source, not a lookalike schema.
-        from sqlalchemy.ext.asyncio import create_async_engine
         from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote, WatchVoiceTextReceipt
-        engine = create_async_engine((url or database_url()).replace("postgresql:", "postgresql+asyncpg:"))
-        tables = [WatchVoiceCursor.__table__, WatchVoiceNote.__table__, WatchVoiceTextReceipt.__table__]
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(
+            (url or database_url()).replace("postgresql:", "postgresql+asyncpg:")
+        )
+        tables = [
+            WatchVoiceCursor.__table__,
+            WatchVoiceNote.__table__,
+            WatchVoiceTextReceipt.__table__,
+        ]
         async with engine.begin() as conn:
-            await conn.run_sync(lambda sync: WatchVoiceNote.metadata.create_all(sync, tables=tables))
+            await conn.run_sync(
+                lambda sync: WatchVoiceNote.metadata.create_all(sync, tables=tables)
+            )
         await engine.dispose()
         async with c.transaction():
             rows = expected_rows()
-            await c.execute("INSERT INTO watch_voice_cursors(workspace_key,account_id,cursor) VALUES($1,'synthetic-account',$2)", FIXTURE_WORKSPACE, rows["cursor"])
+            await c.execute(
+                "INSERT INTO watch_voice_cursors(workspace_key,account_id,cursor) "
+                "VALUES($1,'synthetic-account',$2)",
+                FIXTURE_WORKSPACE,
+                rows["cursor"],
+            )
             for n in rows["notes"]:
-                await c.execute("""INSERT INTO watch_voice_notes(id,workspace_key,account_id,file_id,revision,source_path,filename,
-                    media_type,size_bytes,sha256,data,dropbox_modified_at,received_at,transcription_state,delivery_state,
-                    transcript_origin,next_part,provider_request_count) VALUES($1,$2,'synthetic-account',$1,$3,'/synthetic','synthetic.wav',
+                await c.execute(
+                    """INSERT INTO watch_voice_notes(id,workspace_key,account_id,file_id,
+                    revision,source_path,filename,media_type,size_bytes,sha256,data,
+                    dropbox_modified_at,received_at,transcription_state,delivery_state,
+                    transcript_origin,next_part,provider_request_count)
+                    VALUES($1,$2,'synthetic-account',$1,$3,'/synthetic','synthetic.wav',
                     'audio/wav',$4,$5,$6,now(),now(),$7,$8,'gate',$9,$10)""",
-                    n["id"], FIXTURE_WORKSPACE, n["revision"], len(bytes.fromhex(n["data"])), n["sha256"], bytes.fromhex(n["data"]),
-                    n["transcription_state"], n["delivery_state"], n["next_part"], n["provider_request_count"])
+                    n["id"],
+                    FIXTURE_WORKSPACE,
+                    n["revision"],
+                    len(bytes.fromhex(n["data"])),
+                    n["sha256"],
+                    bytes.fromhex(n["data"]),
+                    n["transcription_state"],
+                    n["delivery_state"],
+                    n["next_part"],
+                    n["provider_request_count"],
+                )
             j = rows["journal"][0]
-            await c.execute("""INSERT INTO watch_voice_text_receipts(note_id,part,writer,body_sha256,issue_number,issue_url,received_at,comment_id)
-                VALUES($1,$2,$3,$4,$5,'https://example.invalid/synthetic',now(),$6)""", j["note_id"], j["part"], j["writer"], j["body_sha256"], j["issue_number"], j["comment_id"])
+            await c.execute(
+                """INSERT INTO watch_voice_text_receipts(note_id,part,writer,body_sha256,
+                issue_number,issue_url,received_at,comment_id)
+                VALUES($1,$2,$3,$4,$5,'https://example.invalid/synthetic',now(),$6)""",
+                j["note_id"],
+                j["part"],
+                j["writer"],
+                j["body_sha256"],
+                j["issue_number"],
+                j["comment_id"],
+            )
         return True
     finally:
         await c.close()
@@ -182,11 +275,19 @@ async def proof(who, phase, url=None):
             if observed != expected_rows():
                 raise ValueError("E_781_RESTORE_CONTENT")
             system_id = await c.fetchval("SELECT system_identifier::text FROM pg_control_system()")
-        return {"schema": "gate781.data-proof/v1", "phase": phase, "nonce": who["nonce"],
-                "sourceSha": who["sourceSha"], "deploymentId": who["deploymentId"],
-                "postgresServiceId": os.environ["GATE781_PG_SERVICE_ID"], "databaseSystemId": system_id,
-                "dataDigest": digest(observed), "uncommittedAbsent": True,
-                "claimsQuarantined": True, "mutations": 0}
+        return {
+            "schema": "gate781.data-proof/v1",
+            "phase": phase,
+            "nonce": who["nonce"],
+            "sourceSha": who["sourceSha"],
+            "deploymentId": who["deploymentId"],
+            "postgresServiceId": os.environ["GATE781_PG_SERVICE_ID"],
+            "databaseSystemId": system_id,
+            "dataDigest": digest(observed),
+            "uncommittedAbsent": True,
+            "claimsQuarantined": True,
+            "mutations": 0,
+        }
     finally:
         await c.close()
 
@@ -198,13 +299,20 @@ async def hold_transaction(ready_fd, delay, url=None):
     # An uncommitted overwrite of a real original, cursor and durable claim.
     await c.execute("SET LOCAL lock_timeout='1s'")
     note = expected_rows()["notes"][delay % 3]["id"]
-    await c.execute("UPDATE watch_voice_notes SET transcription_state='received',provider_request_count=0,data=$1 WHERE id=$2", b"UNCOMMITTED MUST DISAPPEAR", note)
+    await c.execute(
+        "UPDATE watch_voice_notes SET transcription_state='received',"
+        "provider_request_count=0,data=$1 WHERE id=$2",
+        b"UNCOMMITTED MUST DISAPPEAR",
+        note,
+    )
     os.write(ready_fd, b"R")
     os.close(ready_fd)
     stopping = False
+
     def stop(_signum, _frame):
         nonlocal stopping
         stopping = True
+
     signal.signal(signal.SIGTERM, stop)
     while not stopping:
         await asyncio.sleep(0.05)
@@ -236,13 +344,17 @@ def supervise(child_function, count=2, timeout=5):
         available, _, _ = select.select([fd], [], [], 15)
         if not available or os.read(fd, 1) != b"R":
             for pid in children:
-                try: os.killpg(pid, signal.SIGKILL)
-                except ProcessLookupError: pass
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             for pid in children:
                 os.waitpid(pid, 0)
             for reader in readers:
-                try: os.close(reader)
-                except OSError: pass
+                try:
+                    os.close(reader)
+                except OSError:
+                    pass
             raise ValueError("E_781_CHILD_NOT_READY")
         os.close(fd)
     return children
@@ -250,8 +362,10 @@ def supervise(child_function, count=2, timeout=5):
 
 def reap(children, timeout=5):
     for pid in children:
-        try: os.killpg(pid, signal.SIGTERM)
-        except ProcessLookupError: pass
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     deadline = time.monotonic() + timeout
     reaped = 0
     while True:
@@ -264,8 +378,10 @@ def reap(children, timeout=5):
             continue
         if time.monotonic() >= deadline:
             for group in children:
-                try: os.killpg(group, signal.SIGKILL)
-                except ProcessLookupError: pass
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         if time.monotonic() >= deadline + 5:
             raise ValueError("E_781_PROCESS_TIMEOUT")
         time.sleep(0.01)
@@ -277,7 +393,9 @@ def main():
         raise ValueError("E_781_ROLE")
     role = sys.argv[1]
     who, resource, boot = identity(), caps(), str(uuid.uuid4())
-    expires = datetime.fromisoformat(os.environ["GATE781_EXPIRES_AT"].replace("Z", "+00:00")).timestamp()
+    expires = datetime.fromisoformat(
+        os.environ["GATE781_EXPIRES_AT"].replace("Z", "+00:00")
+    ).timestamp()
     remaining = expires - time.time()
     if remaining <= 0 or remaining > 120 * 60:
         raise ValueError("E_781_LIFETIME")
@@ -285,9 +403,21 @@ def main():
         emit("gate781:", witness(who, boot, "START", 1, 0, resource))
         # Actual PG runs in the SAME capped cgroup. The TTL remains active even
         # when the remote controller disappears; NEVER restart policy is required.
-        pg = subprocess.Popen(["/usr/local/bin/docker-entrypoint.sh", "postgres",
-                  "-c", "max_connections=12", "-c", "autovacuum=off", "-c", "max_worker_processes=0", "-c",
-                  "cluster_name=gate781:" + who["nonce"] + ":" + who["serviceId"]], start_new_session=True)
+        pg = subprocess.Popen(
+            [
+                "/usr/local/bin/docker-entrypoint.sh",
+                "postgres",
+                "-c",
+                "max_connections=12",
+                "-c",
+                "autovacuum=off",
+                "-c",
+                "max_worker_processes=0",
+                "-c",
+                "cluster_name=" + cluster_marker(who["nonce"], who["serviceId"]),
+            ],
+            start_new_session=True,
+        )
         signal.signal(signal.SIGTERM, lambda *_: os.killpg(pg.pid, signal.SIGTERM))
         try:
             code = pg.wait(timeout=remaining)
@@ -308,6 +438,7 @@ def main():
     created = asyncio.run(seed())
     if created:
         emit("gate781-data:", asyncio.run(proof(who, "BASELINE")))
+
     # Distinct rows avoid child lock contention; choose only one writer replica
     # to hold transactions, other replica runs independent non-DB child trees.
     def child(fd, index):
@@ -315,12 +446,17 @@ def main():
             asyncio.run(hold_transaction(fd, index))
         else:
             signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-            os.write(fd, b"R");os.close(fd)
-            while True: time.sleep(0.05)
+            os.write(fd, b"R")
+            os.close(fd)
+            while True:
+                time.sleep(0.05)
+
     stopping = False
+
     def stop(*_):
         nonlocal stopping
         stopping = True
+
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     children = supervise(child)

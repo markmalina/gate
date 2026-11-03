@@ -1,6 +1,4 @@
-# CI records the resolved immutable base; release MUST pin its approved digest.
-ARG POSTGRES_BASE
-FROM ${POSTGRES_BASE}
+FROM postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
 RUN apt-get update && apt-get install -y --no-install-recommends python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/gate781/runtime.py /fixture/runtime.py

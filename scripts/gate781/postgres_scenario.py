@@ -1,4 +1,5 @@
 """Real, LOCAL CI PostgreSQL rehearsal; never accepts a Railway address."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +22,8 @@ def main():
         assert asyncio.run(runtime.seed(url))
         assert not asyncio.run(runtime.seed(url))  # no re-seeding
         children = runtime.supervise(
-            lambda fd, i: asyncio.run(runtime.hold_transaction(fd, i, url)))
+            lambda fd, i: asyncio.run(runtime.hold_transaction(fd, i, url))
+        )
         # Both child transactions have modified actual rows but NOT committed.
         assert runtime.reap(children) == 2
         for pid in children:
@@ -30,13 +32,19 @@ def main():
             except ProcessLookupError:
                 continue
             raise AssertionError("child survived waitpid barrier")
-    who = {"nonce": "00000000-0000-0000-0000-000000000781",
-           "sourceSha": os.environ["GITHUB_SHA"],
-           "deploymentId": "00000000-0000-0000-0000-000000000782"}
+    who = {
+        "nonce": "00000000-0000-0000-0000-000000000781",
+        "sourceSha": os.environ["GITHUB_SHA"],
+        "deploymentId": "00000000-0000-0000-0000-000000000782",
+    }
     os.environ["GATE781_PG_SERVICE_ID"] = "00000000-0000-0000-0000-000000000783"
     proof = asyncio.run(runtime.proof(who, "BASELINE" if phase == "seed-stop" else "RESTORED", url))
-    output = {"mode": "LOCAL_POSTGRES_SYNTHETIC", "railwayCalls": 0,
-              "restoreKind": "PG_DUMP_LOGICAL_NOT_RAILWAY_VOLUME", "proof": proof}
+    output = {
+        "mode": "LOCAL_POSTGRES_SYNTHETIC",
+        "railwayCalls": 0,
+        "restoreKind": "PG_DUMP_LOGICAL_NOT_RAILWAY_VOLUME",
+        "proof": proof,
+    }
     Path("gate781-" + phase + ".json").write_text(json.dumps(output, indent=2) + "\n")
 
 
