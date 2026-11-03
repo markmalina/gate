@@ -51,7 +51,6 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
     from sqlalchemy import select, text
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from test_watch_voice import queued_note
     from test_watch_voice_actions import ActionsWorld, action_settings, claims
     from test_watch_voice_admission_fence import guarded_transport
 
@@ -292,10 +291,21 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                         ("processing", "processing", "pending"),
                         ("sending", "transcribed", "sending"),
                     ):
-                        row = queued_note(
-                            world,
-                            f"id:dump-{label}",
-                            now,
+                        row = WatchVoiceNote(
+                            workspace_key="mark-personal",
+                            account_id="synthetic-owner",
+                            file_id=f"id:dump-{label}",
+                            revision="abcdef1234",
+                            source_path="/Alpha/Voice/Synthetic.m4a",
+                            filename="Synthetic.m4a",
+                            media_type="audio/mp4",
+                            size_bytes=len(world.audio),
+                            sha256=hashlib.sha256(world.audio).hexdigest(),
+                            data=world.audio,
+                            duration_seconds=5,
+                            received_at=now,
+                            dropbox_modified_at=now,
+                            next_part=0,
                             transcription_state=transcription,
                             delivery_state=delivery,
                             transcript="Synthetic preserved transcript"
