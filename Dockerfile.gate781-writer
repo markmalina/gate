@@ -1,0 +1,9 @@
+FROM python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
+WORKDIR /app
+COPY constraints ./constraints
+RUN pip install --no-cache-dir -c constraints/runtime.txt sqlalchemy asyncpg greenlet
+COPY app/models ./app/models
+COPY scripts/gate781/runtime.py ./scripts/gate781/runtime.py
+USER nobody
+CMD ["python", "scripts/gate781/runtime.py", "writer"]

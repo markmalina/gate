@@ -1,0 +1,8 @@
+# CI records the resolved immutable base; release MUST pin its approved digest.
+ARG POSTGRES_BASE
+FROM ${POSTGRES_BASE}
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY scripts/gate781/runtime.py /fixture/runtime.py
+ENTRYPOINT []
+CMD ["python3", "/fixture/runtime.py", "pg"]
