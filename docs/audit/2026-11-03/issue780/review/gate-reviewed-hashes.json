@@ -1,0 +1,54 @@
+{
+  "app/infrastructure/watch_voice_actions.py": {
+    "git_blob": "9c246510c147114e881edc00b99ba748b67826d4",
+    "sha256": "5186303c55d652e39e21a731e02a8640bc6a23287149e12d0efb31bdc94f65bc"
+  },
+  "tests/test_watch_voice_admission_fence.py": {
+    "git_blob": "842ca6c5d32712d4500b5183a2bbd96b1fe968b0",
+    "sha256": "65428d4398405c120f9e28975e4814ed1558b0a2e384fb114efb966e47baec62"
+  },
+  "tests/test_watch_voice_baseline_fallback_postgres.py": {
+    "git_blob": "91f0b83e11b259adfb872f7d3d8a8b9032d0d846",
+    "sha256": "3b90a7979ac75ee1fc083f75d0c9d7a9f9686edca215c2c0127b5a853cfa4b0f"
+  },
+  "tests/watch_fence_crash_child.py": {
+    "git_blob": "bacda2293f1bca59e9019f9805cb1f21b5acc063",
+    "sha256": "e7ad0a92f641d4371ea61afd58840ceb46608d488fc64e09593fc93a4a7063b1"
+  },
+  ".github/workflows/ci.yml": {
+    "git_blob": "6ea3823a9ba1a150882a9b953dcea80a7e22aeb6",
+    "sha256": "f5bc7ea2ba15e1f9e506a8d84612e7312f7a550cd12115d444aa54c1c2291ca0"
+  },
+  ".github/workflows/gate-snapshot-cutover.yml": {
+    "git_blob": "ba9617713c49309806c6257e19a71f1ad6bd1c24",
+    "sha256": "6dcaaffb44347a33fbddaed5880e312a9e43e9165546dedce9ca10c70632c0aa"
+  },
+  "agent-ops.watch-snapshot.lock.json": {
+    "git_blob": "d13501599487f9ef344275146f252fb2a81890d1",
+    "sha256": "b505690e26154a646d317e18f7c172415ff32ec6ade4f4c4fdd73e874ea09995"
+  },
+  "agent-ops.gate-snapshot.lock.json": {
+    "git_blob": "133d3362ba29d67267e37e6ba4efd57012ed75ad",
+    "sha256": "e2079aa00591c7c89038dafa682186088f91cd1cb9b823f21ee5abe295f6525b"
+  },
+  "tests/test_watch_snapshot_client.py": {
+    "git_blob": "3a0e1c869d6b7cc108a2e4309771f0143ec511f7",
+    "sha256": "1f8b2b4277d9eeb7742c216d99f0c6962506ab10372ecb3c7f7e3a3bf06208af"
+  },
+  "docs/audit/2026-11-03/issue780/README.md": {
+    "git_blob": "459dd891440dba865f705dfbcfe838c005808f8d",
+    "sha256": "4e4c62842fa653864a1d0fa05821dac4b70ad8932beb749703d525312e21448d"
+  },
+  "docs/audit/2026-11-03/issue780/watch-baseline-fallback.json": {
+    "git_blob": "f597bad795bd0ca7ff5a5727ddb178996c6e25f0",
+    "sha256": "4606b86e0f1fc31e893579cd2676535d93b5cafa1a126a45e00baaeb0753d4b0"
+  },
+  "docs/audit/2026-11-03/issue780/watch-baseline-fallback-restore.json": {
+    "git_blob": "66f357d6393914ec94a79d5927714c9c90a9eac1",
+    "sha256": "1b9e28f7100ae56acc37d3dbaf5f5b7346c9c1550425ec11a7b3fd787432d399"
+  },
+  "docs/audit/2026-11-03/issue780/watch-baseline.xml": {
+    "git_blob": "0148cc45b2914b4f075cffff5979372536ab2e26",
+    "sha256": "c20b54d793f68152ab58aa10a528474ab4132a5658c6f2a872f6cf65c6902310"
+  }
+}

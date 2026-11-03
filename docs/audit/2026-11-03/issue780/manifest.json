@@ -1,0 +1,98 @@
+{
+  "FINAL.md": {
+    "sha256": "25f0cdf43436b34702ce876431bbae404ab7ecbac363141aad96c1195f445e72",
+    "bytes": 9545
+  },
+  "README.md": {
+    "sha256": "4e4c62842fa653864a1d0fa05821dac4b70ad8932beb749703d525312e21448d",
+    "bytes": 10927
+  },
+  "ci-final.json": {
+    "sha256": "1315ba73f8a2cb7902fc894a99d2d3df62d0dbef95c25af0b036055122710698",
+    "bytes": 3113
+  },
+  "final-watch-baseline-fallback-restore.json": {
+    "sha256": "1b9e28f7100ae56acc37d3dbaf5f5b7346c9c1550425ec11a7b3fd787432d399",
+    "bytes": 776
+  },
+  "final-watch-baseline-fallback.json": {
+    "sha256": "4606b86e0f1fc31e893579cd2676535d93b5cafa1a126a45e00baaeb0753d4b0",
+    "bytes": 779
+  },
+  "final-watch-baseline.xml": {
+    "sha256": "f186feadbfe4cb6fec6eb62566bde4faafe28782f5d9f6c8ed5923947e446a79",
+    "bytes": 2066
+  },
+  "metadata.json": {
+    "sha256": "e107c6c352df07c7b1a0508b7ef20c18f81de366a6eacbc45868c5aa0824a024",
+    "bytes": 1681
+  },
+  "review/fallback-artifact-metadata.json": {
+    "sha256": "5476b7aba89a3a30320acab8d9dd4293530851da52d3ac36ce7594ad20dc428e",
+    "bytes": 851
+  },
+  "review/fallback-job-excerpt.txt": {
+    "sha256": "a27c6b2fe83b34c0dbdacd9a61f79247f7f0cd5521ca4d6c84881ae191831ae0",
+    "bytes": 1284
+  },
+  "review/final-backend-job-excerpt.txt": {
+    "sha256": "af1e5a929186bcba8a2f8aed55b99d75d7e32db61dfc4cbe2b8e8d4cc6a4d193",
+    "bytes": 650
+  },
+  "review/final-fallback-artifact-metadata.json": {
+    "sha256": "9d642c0d8905920bd433d6d279ce97ce56a97492757e054da5882dcf24b3891a",
+    "bytes": 851
+  },
+  "review/final-fallback-job-excerpt.txt": {
+    "sha256": "98a7f66f56cc013607cd9e39b8e9601a0116779795556c1a9cf0840ed1d1ee58",
+    "bytes": 1282
+  },
+  "review/final-synthetic-job-excerpt.txt": {
+    "sha256": "8b4e24b2b3e829db6f6393b7046af07f63a5baa350cba920036f4ab763775c94",
+    "bytes": 460
+  },
+  "review/gate-boundary-tests.log": {
+    "sha256": "8b1a9c07c0432e4709acd48b2b51a285b4909425b3adce4569ab33b0838f0ce2",
+    "bytes": 80
+  },
+  "review/gate-client-tests.log": {
+    "sha256": "99db33d5c94c6f7da021687c7391181685cc33299c5435b1c861e2db3be3ec87",
+    "bytes": 80
+  },
+  "review/gate-reviewed-hashes.json": {
+    "sha256": "f9416918f02a4950df32cf0e1dd763a93e3a6187677f4fd0e8329f27a61f5db2",
+    "bytes": 2555
+  },
+  "review/independent-source-assessment.md": {
+    "sha256": "2d5b24821eed1ad7a790d1e30cca533ace5cccb1c72ab11e11b3a3ff396855eb",
+    "bytes": 12525
+  },
+  "review/mark-reviewed-hashes.json": {
+    "sha256": "7d51b62febde4511c8a5eb6953f9b5913dde1db43e5b28fc8ad5f0bc6297fae7",
+    "bytes": 625
+  },
+  "review/mark-tests.log": {
+    "sha256": "d7355a3e0b6e0263f90f3ae51bdc25233c1d2b5cc4845ff24c7e377110d534cb",
+    "bytes": 2765
+  },
+  "review/ops-reviewed-hashes.json": {
+    "sha256": "7697a77bba3244ae6e9471f7d055c711ba9b396ba5808bcf56a3d418abf1a554",
+    "bytes": 6042
+  },
+  "review/ops-snapshot-tests.log": {
+    "sha256": "ab0dc24d2a960dd03da8a8794b38f019d4bd3c7a64e08ef2bab3a79986a411b5",
+    "bytes": 14040
+  },
+  "watch-baseline-fallback-restore.json": {
+    "sha256": "1b9e28f7100ae56acc37d3dbaf5f5b7346c9c1550425ec11a7b3fd787432d399",
+    "bytes": 776
+  },
+  "watch-baseline-fallback.json": {
+    "sha256": "4606b86e0f1fc31e893579cd2676535d93b5cafa1a126a45e00baaeb0753d4b0",
+    "bytes": 779
+  },
+  "watch-baseline.xml": {
+    "sha256": "c20b54d793f68152ab58aa10a528474ab4132a5658c6f2a872f6cf65c6902310",
+    "bytes": 2066
+  }
+}

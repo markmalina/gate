@@ -1,0 +1,23 @@
+{
+  "artifacts": [
+    {
+      "id": 13209747366,
+      "name": "watch-baseline-fallback-evidence",
+      "size_in_bytes": 1866,
+      "url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13209747366",
+      "archive_download_url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13209747366/zip",
+      "expired": false,
+      "created_at": "2026-11-03T06:32:12Z",
+      "expires_at": "2026-11-10T06:32:11Z",
+      "updated_at": "2026-11-03T06:32:12Z",
+      "digest": "sha256:ea36cf5c20d075a7f388a01fc7111b4a4722ae4ffd010dcf71762633f7efeb92",
+      "workflow_run": {
+        "id": 41590282789,
+        "repository_id": 1293746267,
+        "head_repository_id": 1293746267,
+        "head_branch": "agent/736-autonomous-watch-queue",
+        "head_sha": "6232e49221d5d84261434d634bce9e9d77e338df"
+      }
+    }
+  ]
+}

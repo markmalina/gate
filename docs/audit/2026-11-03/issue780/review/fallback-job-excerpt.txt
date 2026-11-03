@@ -1,0 +1,9 @@
+2026-11-03T06:31:38.1908003Z   ref: 6232e49221d5d84261434d634bce9e9d77e338df
+2026-11-03T06:31:39.3438382Z HEAD is now at 6232e49 test(watch): seed uncertain restore rows in baseline-compatible fixture (#780)
+2026-11-03T06:31:39.4222815Z   ref: 4827624955c9543bfae1b1377de8497956720ab9
+2026-11-03T06:31:40.3224235Z HEAD is now at 4827624 fix(watch): fence delayed Actions requests in compatible fallback (#780)
+2026-11-03T06:32:03.5159986Z ======================== 11 passed, 1 warning in 5.09s =========================
+2026-11-03T06:32:03.6927713Z ##[group]Run docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname watch_baseline --format custom > /tmp/watch-baseline.dump
+2026-11-03T06:32:03.6929001Z [36;1mdocker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname watch_baseline --format custom > /tmp/watch-baseline.dump[0m
+2026-11-03T06:32:03.6931322Z [36;1mdocker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore --host localhost --username postgres --dbname watch_baseline_restore --no-owner --no-privileges < /tmp/watch-baseline.dump[0m
+2026-11-03T06:32:11.1416111Z ========================= 1 passed, 1 warning in 0.80s =========================

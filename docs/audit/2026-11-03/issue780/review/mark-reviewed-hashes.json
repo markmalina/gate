@@ -1,0 +1,9 @@
+{
+  ".github/workflows/gate-watch-voice-control.yml": "9325fb409287222f74a9776fd4c474f3e7731e4e",
+  ".github/workflows/gate-watch-voice-drain.yml": "3103cf2855bbfca5a62b19ea646e3f20494674f8",
+  "scripts/gate-watch-drain-api.mjs": "8e2f6c298362ce9b8182bf0b56de4911d0d1dc41",
+  "scripts/gate-watch-drain-control.release.json": "ebc589ab0c5efe585e93b94e7bb88d70132d10eb",
+  "scripts/gate-watch-drain-control.mjs": "429fcb623ca46a9455af649ddf50fa37993eb202",
+  "scripts/gate-watch-drain-entry.mjs": "c408e9f1c384ca277260fe30d534cd7abd617797",
+  "tests/gate-watch-admission.test.mjs": "4281b84c3cddb0d55a8bb4f0bef7106170aebfd8"
+}

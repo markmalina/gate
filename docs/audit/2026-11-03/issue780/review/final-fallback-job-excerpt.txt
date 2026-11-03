@@ -1,0 +1,9 @@
+2026-11-03T06:41:50.7348900Z   ref: 897b2f1b882326cdc77777f4c600d8087cfbcdb8
+2026-11-03T06:41:51.9024777Z HEAD is now at 897b2f1 fix(gate780): pin reviewed writer boundary and archive actual fallback proof
+2026-11-03T06:41:52.0514038Z   ref: 4827624955c9543bfae1b1377de8497956720ab9
+2026-11-03T06:41:52.8956140Z HEAD is now at 4827624 fix(watch): fence delayed Actions requests in compatible fallback (#780)
+2026-11-03T06:42:21.5317609Z ======================== 11 passed, 1 warning in 8.68s =========================
+2026-11-03T06:42:21.8430242Z ##[group]Run docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname watch_baseline --format custom > /tmp/watch-baseline.dump
+2026-11-03T06:42:21.8431860Z [36;1mdocker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname watch_baseline --format custom > /tmp/watch-baseline.dump[0m
+2026-11-03T06:42:21.8435196Z [36;1mdocker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore --host localhost --username postgres --dbname watch_baseline_restore --no-owner --no-privileges < /tmp/watch-baseline.dump[0m
+2026-11-03T06:42:25.3529441Z ========================= 1 passed, 1 warning in 1.26s =========================

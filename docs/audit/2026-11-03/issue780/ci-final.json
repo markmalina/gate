@@ -1,0 +1,122 @@
+[
+  {
+    "repo": "ops",
+    "id": 41591294947,
+    "name": "CI",
+    "head_sha": "0079fc2f3f5048cb54fc0907364945779d89a6ca",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/markmalina/ops/actions/runs/41591294947",
+    "run_attempt": 1,
+    "created_at": "2026-11-03T06:39:46Z",
+    "updated_at": "2026-11-03T06:41:25Z",
+    "jobs": [
+      {
+        "id": 125768395077,
+        "name": "test",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125768909070,
+        "name": "CI",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  {
+    "repo": "gate",
+    "id": 41591466908,
+    "name": "BECOME Quest exact-head CI",
+    "head_sha": "897b2f1b882326cdc77777f4c600d8087cfbcdb8",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/markmalina/gate/actions/runs/41591466908",
+    "run_attempt": 1,
+    "created_at": "2026-11-03T06:41:21Z",
+    "updated_at": "2026-11-03T06:48:28Z",
+    "jobs": [
+      {
+        "id": 125768930094,
+        "name": "quest",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125769507775,
+        "name": "Mandatory full synthetic-merge CI",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  {
+    "repo": "ops",
+    "id": 41591294948,
+    "name": "Security",
+    "head_sha": "0079fc2f3f5048cb54fc0907364945779d89a6ca",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/markmalina/ops/actions/runs/41591294948",
+    "run_attempt": 1,
+    "created_at": "2026-11-03T06:39:46Z",
+    "updated_at": "2026-11-03T06:40:33Z",
+    "jobs": [
+      {
+        "id": 125768395113,
+        "name": "pinned-security-clis",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125768395467,
+        "name": "dependency-and-secret-policy",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125768620513,
+        "name": "Security",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  {
+    "repo": "gate",
+    "id": 41591466943,
+    "name": "CI",
+    "head_sha": "897b2f1b882326cdc77777f4c600d8087cfbcdb8",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/markmalina/gate/actions/runs/41591466943",
+    "run_attempt": 1,
+    "created_at": "2026-11-03T06:41:21Z",
+    "updated_at": "2026-11-03T06:50:19Z",
+    "jobs": [
+      {
+        "id": 125768931107,
+        "name": "windows-enrollment",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125768931323,
+        "name": "watch-baseline-fallback",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 125768931367,
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  }
+]

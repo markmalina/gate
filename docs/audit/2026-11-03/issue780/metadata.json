@@ -1,0 +1,55 @@
+{
+  "gate": {
+    "repo": "gate",
+    "number": 766,
+    "state": "open",
+    "merged": false,
+    "draft": false,
+    "head": "897b2f1b882326cdc77777f4c600d8087cfbcdb8",
+    "base": "86dbc0f429dce089bf733fc422f20f556535895b",
+    "auto_merge": null
+  },
+  "ops": {
+    "repo": "ops",
+    "number": 414,
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "head": "0079fc2f3f5048cb54fc0907364945779d89a6ca",
+    "base": "d66dece8939398d5a149f9174c4b2fb4b98684f6",
+    "auto_merge": null
+  },
+  "mark": {
+    "repo": "mark",
+    "number": 126,
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "head": "f448bdb07efd97192e4a1b19117179d4abc3ef71",
+    "base": "9fc3a9402a75632d2e9a8d0f08f3697bfa82583b",
+    "auto_merge": null
+  },
+  "finalFallbackArtifact": {
+    "artifacts": [
+      {
+        "id": 13210546134,
+        "name": "watch-baseline-fallback-evidence",
+        "size_in_bytes": 1881,
+        "url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13210546134",
+        "archive_download_url": "https://api.github.com/repos/markmalina/gate/actions/artifacts/13210546134/zip",
+        "expired": false,
+        "created_at": "2026-11-03T06:42:26Z",
+        "expires_at": "2026-11-10T06:42:25Z",
+        "updated_at": "2026-11-03T06:42:26Z",
+        "digest": "sha256:bbdff8dad07bd02732419ae457f38ecd71fbcfd88a555cd4278031f9a8c96999",
+        "workflow_run": {
+          "id": 41591466943,
+          "repository_id": 1293746267,
+          "head_repository_id": 1293746267,
+          "head_branch": "agent/736-autonomous-watch-queue",
+          "head_sha": "897b2f1b882326cdc77777f4c600d8087cfbcdb8"
+        }
+      }
+    ]
+  }
+}
