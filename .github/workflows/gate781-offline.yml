@@ -37,8 +37,10 @@ jobs:
           python scripts/gate781/test_runtime.py
       - name: Seed actual Watch models and stop uncommitted writers
         env:
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python scripts/gate781/postgres_scenario.py seed-stop
+          GATE781_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GATE781_TEST_SOURCE_SHA"
+          python scripts/gate781/postgres_scenario.py seed-stop
       - name: Local PostgreSQL backup and restore
         run: |
           docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump -h localhost -U postgres -d gate781 -Fc > /tmp/gate781.dump
@@ -46,7 +48,7 @@ jobs:
           docker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore -h localhost -U postgres -d gate781_restore --no-owner --no-privileges < /tmp/gate781.dump
       - name: Verify restored bytes cursor journal and quarantined claims
         env:
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          GATE781_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: python scripts/gate781/postgres_scenario.py verify
       - name: Build both capped disposable images
         run: |
@@ -57,7 +59,7 @@ jobs:
           docker run --rm --cpus 1 --memory 512m --entrypoint python3 gate781-pg:ci -c 'import sys; sys.path.insert(0,"/fixture"); import runtime; print(runtime.caps())'
       - name: Run real capped fixture process trees and reject wrong DB before seed
         env:
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          GATE781_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: python scripts/gate781/container_scenario.py
       - name: Check formatting without accepting a modified source
         if: always()

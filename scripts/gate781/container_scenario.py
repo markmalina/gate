@@ -32,7 +32,7 @@ def main():
     common = {
         "GATE781_DISPOSABLE": "synthetic-data-only",
         "GATE781_NONCE": synthetic(781),
-        "GATE781_SOURCE_SHA": os.environ["GITHUB_SHA"],
+        "GATE781_SOURCE_SHA": os.environ["GATE781_TEST_SOURCE_SHA"],
         "GATE781_EXPIRES_AT": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
         "RAILWAY_PROJECT_ID": synthetic(1),
         "RAILWAY_ENVIRONMENT_ID": synthetic(2),

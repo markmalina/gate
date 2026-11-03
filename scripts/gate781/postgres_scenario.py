@@ -34,7 +34,7 @@ def main():
             raise AssertionError("child survived waitpid barrier")
     who = {
         "nonce": "00000000-0000-0000-0000-000000000781",
-        "sourceSha": os.environ["GITHUB_SHA"],
+        "sourceSha": os.environ["GATE781_TEST_SOURCE_SHA"],
         "deploymentId": "00000000-0000-0000-0000-000000000782",
     }
     os.environ["GATE781_PG_SERVICE_ID"] = "00000000-0000-0000-0000-000000000783"
