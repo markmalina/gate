@@ -1,0 +1,26 @@
+{
+  "schema": "gate781.refusal-package/v1",
+  "status": "BLOCKED_NATIVE_EXECUTION",
+  "nativeRun": "NOT_RUN",
+  "livePackageReady": false,
+  "gateSha": "728ce4ff7f8dbbb0751ecf15776251f4506b2ce3",
+  "opsSha": "1a698524260ba193b3b2904c5d2c9be23c973f51",
+  "githubEnvironment": {
+    "repo": "markmalina/ops",
+    "repoId": 1331657982,
+    "name": "agent-ops-disposable-backup-fixture",
+    "presence": "PRESENT"
+  },
+  "railwayTarget": null,
+  "credentialProvenance": "NOT_PROVEN",
+  "providerReadBudget": 0,
+  "providerMutationBudget": 0,
+  "productionChanges": 0,
+  "s2": "NOT_STARTED",
+  "nativeFixtureAcceptance": "NOT_PROVEN",
+  "evidence": {
+    "gate-inventory.json": "058f423f709940571761a5239d9baab4b6edbf7214c690153dc7fcd346aa605c",
+    "ops-final-inventory.json": "02af605636812dbe99f3e56911e9db6824a8853786d79a43a4f3365a8d98a45a",
+    "ops-inventory.json": "a0c80ae0ee774205209afca21523c1f7397f8d3568ed22d93a76621838677746"
+  }
+}
