@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 MAX_MEMORY = 512 * 1024 * 1024
 MAX_CPU = 1.0
 FIXTURE_WORKSPACE = "gate781-synthetic"
-ROLES = {"writer", "verify", "pg"}
+ROLES = {"writer", "verify", "pg", "seed"}
 PROD = {"972b6ab7-988a-421c-abfa-425451ad714f", "a148b138-44b3-4349-9d4b-292880503055"}
 
 
@@ -419,6 +419,7 @@ def main():
             start_new_session=True,
         )
         signal.signal(signal.SIGTERM, lambda *_: os.killpg(pg.pid, signal.SIGTERM))
+        signal.signal(signal.SIGINT, lambda *_: os.killpg(pg.pid, signal.SIGINT))
         try:
             code = pg.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
@@ -435,9 +436,24 @@ def main():
         emit("gate781:", witness(who, boot, "START", 1, 0, resource))
         emit("gate781-data:", asyncio.run(proof(who, "RESTORED")))
         return
-    created = asyncio.run(seed())
-    if created:
-        emit("gate781-data:", asyncio.run(proof(who, "BASELINE")))
+    if role == "seed":
+        created = asyncio.run(seed())
+        if created:
+            emit("gate781-data:", asyncio.run(proof(who, "BASELINE")))
+        print("gate781-created:" + str(int(created)), flush=True)
+        return
+    # Keep SQLAlchemy/DNS helper threads out of the supervisor before fork.
+    seeded = subprocess.check_output(
+        [sys.executable, str(Path(__file__).resolve()), "seed"], text=True, timeout=60
+    )
+    lines = seeded.splitlines()
+    if not lines or lines[-1] not in {"gate781-created:0", "gate781-created:1"}:
+        raise ValueError("E_781_SEED")
+    created = lines[-1] == "gate781-created:1"
+    for line in lines[:-1]:
+        if not line.startswith("gate781-data:"):
+            raise ValueError("E_781_SEED")
+        print(line, flush=True)
 
     # Distinct rows avoid child lock contention; choose only one writer replica
     # to hold transactions, other replica runs independent non-DB child trees.

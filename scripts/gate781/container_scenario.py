@@ -46,8 +46,18 @@ def main():
             "RAILWAY_REPLICA_ID": synthetic(replica),
             **extra,
         }
-        args = ["run", "-d", "--name", name, "--network", network,
-                "--cpus", "1", "--memory", "512m"]
+        args = [
+            "run",
+            "-d",
+            "--name",
+            name,
+            "--network",
+            network,
+            "--cpus",
+            "1",
+            "--memory",
+            "512m",
+        ]
         if role == "pg":
             args += ["--network-alias", "gate781-pg.railway.internal"]
         for key, value in env.items():
@@ -56,13 +66,22 @@ def main():
 
     try:
         docker("network", "create", network)
-        start("gate781-pg", "pg", 4, 40,
-              {"POSTGRES_USER": "gate781", "POSTGRES_PASSWORD": "synthetic-ci-only",
-               "POSTGRES_DB": "gate781"})
+        start(
+            "gate781-pg",
+            "pg",
+            4,
+            40,
+            {
+                "POSTGRES_USER": "gate781",
+                "POSTGRES_PASSWORD": "synthetic-ci-only",
+                "POSTGRES_DB": "gate781",
+            },
+        )
         for _ in range(40):
             ready = subprocess.run(
                 ["docker", "exec", "gate781-pg", "pg_isready", "-U", "gate781"],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
             if ready.returncode == 0:
                 break
@@ -71,16 +90,31 @@ def main():
             raise AssertionError("local PG did not start")
         database = {
             "DATABASE_URL": "postgresql://gate781:synthetic-ci-only@"
-                            "gate781-pg.railway.internal:5432/gate781",
+            "gate781-pg.railway.internal:5432/gate781",
             "GATE781_PG_HOST": "gate781-pg.railway.internal",
             "GATE781_PG_SERVICE_ID": synthetic(4),
         }
         # A wrong target is rejected BEFORE the first table creation/seed.
-        start("gate781-wrong-db", "writer", 3, 39,
-              {**database, "GATE781_PG_SERVICE_ID": synthetic(999)})
+        start(
+            "gate781-wrong-db",
+            "writer",
+            3,
+            39,
+            {**database, "GATE781_PG_SERVICE_ID": synthetic(999)},
+        )
         assert docker("wait", "gate781-wrong-db") == "1"
-        assert docker("exec", "gate781-pg", "psql", "-U", "gate781", "-Atc",
-                      "SELECT to_regclass('public.watch_voice_notes') IS NULL") == "t"
+        assert (
+            docker(
+                "exec",
+                "gate781-pg",
+                "psql",
+                "-U",
+                "gate781",
+                "-Atc",
+                "SELECT to_regclass('public.watch_voice_notes') IS NULL",
+            )
+            == "t"
+        )
         for n in (1, 2):
             start("gate781-writer" + str(n), "writer", 3, 30 + n, database)
         for _ in range(60):
@@ -100,11 +134,19 @@ def main():
             evidence += proof
         docker("stop", "--time", "15", "gate781-pg")
         assert docker("inspect", "--format", "{{.State.ExitCode}}", "gate781-pg") == "0"
-        Path("gate781-containers.json").write_text(json.dumps({
-            "mode": "LOCAL_DOCKER_SYNTHETIC", "railwayCalls": 0,
-            "wrongDatabaseBeforeSeed": "REFUSED", "writers": evidence,
-            "postgresResources": records("gate781-pg"),
-        }, indent=2) + "\n")
+        Path("gate781-containers.json").write_text(
+            json.dumps(
+                {
+                    "mode": "LOCAL_DOCKER_SYNTHETIC",
+                    "railwayCalls": 0,
+                    "wrongDatabaseBeforeSeed": "REFUSED",
+                    "writers": evidence,
+                    "postgresResources": records("gate781-pg"),
+                },
+                indent=2,
+            )
+            + "\n"
+        )
     finally:
         for name in containers:
             subprocess.run(["docker", "rm", "-fv", name], capture_output=True, timeout=30)

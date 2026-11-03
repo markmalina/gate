@@ -3,4 +3,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/gate781/runtime.py /fixture/runtime.py
 ENTRYPOINT []
+STOPSIGNAL SIGTERM
 CMD ["python3", "/fixture/runtime.py", "pg"]
