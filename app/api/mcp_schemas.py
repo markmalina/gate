@@ -10,6 +10,10 @@ from app.application.owner_reply_readiness import (
     OWNER_REPLY_READINESS_TOOL_NAME,
 )
 from app.application.reply_sequences import MAX_SEQUENCE_DRAFTS, MIN_SEQUENCE_DRAFTS
+from app.infrastructure.watch_voice_inventory import INVENTORY_SCHEMA
+from app.infrastructure.watch_voice_metrics import METRICS_SCHEMA
+from app.infrastructure.watch_voice_source_inventory import SOURCE_INVENTORY_SCHEMA
+from app.infrastructure.watch_voice_status import STATUS_SCHEMA
 
 JsonObject = dict[str, Any]
 
@@ -1833,6 +1837,9 @@ GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
         "reply_context_message": REPLY_CONTEXT_MESSAGE_SCHEMA,
     },
 )
+GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"].append(INVENTORY_SCHEMA)
+GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"].append(SOURCE_INVENTORY_SCHEMA)
+GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"].append(STATUS_SCHEMA)
 
 
 TELEGRAM_ENTITY_SCHEMA = _object(
@@ -2531,12 +2538,23 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice"] = _object({
     "transcription_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_metrics"] = METRICS_SCHEMA
 
 
 GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "enabled": {"type": "boolean"},
     "workflow_pin_configured": {"type": "boolean"},
     "ordinary_worker_enabled": {"type": "boolean"},
+    "server_writer_configuration": {
+        "anyOf": [
+            {"type": "null"},
+            _object({
+                "token_present": {"type": "boolean"},
+                "writer_present": {"type": "boolean"},
+                "verified": {"type": "boolean", "enum": [False]},
+            }),
+        ],
+    },
     "scope_allowed": {"type": "boolean"},
     "run_claim_count": {"type": "integer", "minimum": 0},
     "delivery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
@@ -2544,3 +2562,4 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"] = _object({
     "recovery_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
     "private_content_exposed": {"type": "boolean", "enum": [False]},
 })
+

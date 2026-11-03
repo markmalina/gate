@@ -21,6 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
+from app.infrastructure.watch_voice_status import protected_status
+from app.infrastructure.watch_voice_github import WatchVoiceError
+from app.api import mcp_watch_voice_work
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.health_routes import _get_worker_health_registry
@@ -81,6 +84,9 @@ from app.application.reply_sequences import (
     ReplySequenceError,
 )
 from app.models.watch_voice import WatchVoiceNote
+from app.infrastructure.watch_voice_inventory import protected_inventory
+from app.infrastructure.watch_voice_source_inventory import source_inventory
+from app.infrastructure.watch_voice_metrics import snapshot as watch_voice_metrics
 from app.infrastructure.watch_voice_actions import operational_status as watch_voice_actions_status
 from app.worker.watch_voice import operational_status as watch_voice_operational_status
 from app.core.config import Settings, get_settings
@@ -321,6 +327,7 @@ async def mcp_endpoint(
                     _gate_alpha_verify_review_replay_tool(settings),
                     _gate_beta_export_space_checkpoint_tool(settings),
                     _gate_beta_get_provider_probe_tool(settings),
+                    *mcp_watch_voice_work.tool_definitions(settings),
                 ]
             },
         )
@@ -330,6 +337,30 @@ async def mcp_endpoint(
             return _jsonrpc_error(request_id=request_id, code=-32602, message="Invalid params")
         tool_name = params.get("name")
         arguments = params.get("arguments")
+        if tool_name in mcp_watch_voice_work.TOOL_NAMES:
+            try:
+                principal = await _require_mcp_principal(
+                    authorization=authorization, settings=settings,
+                    required_scope=mcp_watch_voice_work.SCOPE, session=session,
+                )
+                receipt = await mcp_watch_voice_work.call_tool(
+                    tool_name, arguments, principal, session, settings,
+                )
+            except McpOAuthError as exc:
+                return _oauth_required_tool_result(
+                    request_id=request_id, settings=settings,
+                    scope=mcp_watch_voice_work.SCOPE, error=exc.error,
+                    description=exc.description,
+                )
+            except WatchVoiceError as exc:
+                return _tool_error_result(
+                    request_id=request_id, code=exc.code,
+                    message="Watch Work operation was not accepted; inspect current status",
+                )
+            return _jsonrpc_result(request_id=request_id, result={
+                "content": [{"type": "text", "text": json.dumps(receipt)}],
+                "structuredContent": receipt, "isError": False,
+            })
         if not isinstance(arguments, dict):
             arguments = {}
         if tool_name not in MCP_TOOL_SCOPES:
@@ -390,6 +421,10 @@ async def mcp_endpoint(
                     scope_allowed=(principal.access_scope.workspace_id == settings.gate_workspace_id
                                    and UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids),
                 )
+            if ((settings.gate_watch_voice_enabled or settings.gate_watch_voice_actions_enabled)
+                    and principal.access_scope.workspace_id == settings.gate_workspace_id
+                    and UNCLASSIFIED_PROJECT_ID in principal.access_scope.project_ids):
+                snapshot["watch_voice_metrics"] = await watch_voice_metrics(session, settings)
             snapshot["alpha_canary"] = await _build_alpha_canary_status(
                 session=session,
                 settings=settings,
@@ -802,10 +837,10 @@ async def _get_reply_context_tool_result(
             code="invalid_arguments",
             message="task_id is required",
         )
-    if raw_task_id.startswith("watch-voice:") or raw_task_id.startswith("watch-voice-file:"):
+    if raw_task_id.startswith(("watch-voice:", "watch-voice-file:", "watch-voice-status:")):
         return await _watch_voice_tool_result(
             request_id=request_id, selector=raw_task_id, principal=principal,
-            session=session, settings=settings,
+            session=session, settings=settings, arguments=arguments,
         )
     try:
         call_selector = _parse_latest_call_selector(raw_task_id)
@@ -962,6 +997,7 @@ async def _watch_voice_tool_result(
     principal: Principal,
     session: AsyncSession,
     settings: Settings,
+    arguments: JsonObject | None = None,
 ) -> JsonObject:
     if (
         principal.access_scope.workspace_id != settings.gate_workspace_id
@@ -973,6 +1009,44 @@ async def _watch_voice_tool_result(
             message="Watch voice is outside the allowed owner scope",
         )
     prefix, ref = selector.split(":", 1)
+    if prefix == "watch-voice-status":
+        try:
+            snapshot = await protected_status(session, settings, ref)
+        except ValueError:
+            return _tool_error_result(
+                request_id=request_id, code="invalid_arguments",
+                message="Exact watch voice status UUID is required",
+            )
+        except WatchVoiceError as exc:
+            return _tool_error_result(
+                request_id=request_id, code=exc.code,
+                message="Watch voice journals conflict; reconciliation is required",
+            )
+        if snapshot is None:
+            return _tool_error_result(
+                request_id=request_id, code="watch_voice_source_not_found",
+                message="No such watch voice source exists in this owner scope",
+            )
+        return _jsonrpc_result(request_id=request_id, result={
+            "content": [{"type": "text", "text": json.dumps(snapshot, ensure_ascii=False)}],
+            "structuredContent": snapshot, "isError": False,
+        })
+    if prefix == "watch-voice" and ref in {"list", "sources"}:
+        try:
+            listing = protected_inventory if ref == "list" else source_inventory
+            inventory = await listing(
+                session, settings, limit=(arguments or {}).get("limit", 20),
+                cursor=(arguments or {}).get("cursor"),
+            )
+        except (ValueError, TypeError):
+            return _tool_error_result(
+                request_id=request_id, code="invalid_arguments",
+                message="Watch inventory limit or cursor is invalid",
+            )
+        return _jsonrpc_result(request_id=request_id, result={
+            "content": [{"type": "text", "text": json.dumps(inventory, ensure_ascii=False)}],
+            "structuredContent": inventory, "isError": False,
+        })
     try:
         note_id = None if ref == "latest" else str(UUID(ref))
     except ValueError:
@@ -1040,6 +1114,9 @@ async def _watch_voice_tool_result(
         "gate_received_at": row.received_at.isoformat(),
         "transcribed_at": row.transcribed_at.isoformat() if row.transcribed_at else None,
         "transcript": row.transcript,
+        "transcript_origin": row.transcript_origin if row.transcript else None,
+        "transcribed_at_basis": ("gate_received_work_text" if row.transcript_origin == "work"
+                                 else "gate_stt_finished") if row.transcript else "unobserved",
         "transcription_state": row.transcription_state,
         "delivery_state": row.delivery_state,
         "issue_url": row.issue_url,
@@ -3038,17 +3115,31 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
             "Unavailable reply sources are explicit. Attachment metadata needs no "
             "provider call; an exact task:attachment:message:index selector retrieves "
             "one file on explicit request. Existing exact voice and latest call/voice "
-            "selectors remain available for compatibility."
+            "selectors remain available for compatibility. Use watch-voice-status:UUID "
+            "for current private source/card/archive/transcription/publication journal "
+            "status, including before archival. It returns no audio or transcript and "
+            "distinguishes prepared/saved/accepted Work results and never authorizes a retry. "
+            "Internal claim/submit is not exposed as a public MCP write tool."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "task_id": {
                     "oneOf": [
-                        {"type": "string", "format": "uuid"},
+                        {
+                            "type": "string", "format": "uuid",
+                            "pattern": "^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+                        },
                         {
                             "type": "string",
                             "pattern": "^watch-voice(-file)?:(latest|[0-9a-fA-F-]{36})$",
+                        },
+                        {
+                            "type": "string",
+                            "pattern": "^watch-voice-status:[0-9a-fA-F-]{36}$",
+                        },
+                        {
+                            "type": "string", "enum": ["watch-voice:list", "watch-voice:sources"],
                         },
                         {
                             "type": "string",
@@ -4389,6 +4480,7 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
 
 
 

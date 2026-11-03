@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,19 +22,24 @@ from app.core.watch_voice_actions_oidc import (
     REPOSITORY_ID,
     WORKFLOW_PATH,
 )
+from app.infrastructure.watch_voice_cards import card_status, drain_cards, publish_source_card
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
+from app.infrastructure.watch_voice_journal import pulse
+from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
 from app.infrastructure.watch_voice_post_payment import continue_note
 from app.infrastructure.watch_voice_recovery import (
     RECOVERY_ERRORS,
-    _utc,
     authorized_at,
     recover_note,
 )
+from app.infrastructure.watch_voice_sources import archive_source, drain_sources
+from app.infrastructure.watch_voice_sources import discover as discover_source
 from app.models.watch_voice import (
     WatchVoiceCursor,
     WatchVoiceDrainRun,
     WatchVoiceNote,
     WatchVoiceRecoveryClaim,
+    WatchVoiceWorkResult,
 )
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import _refresh_access_token, _verify_account_id
@@ -61,6 +67,7 @@ class ActionsInboxClient(MarkInboxClient):
         super().__init__(http, token, BOT_WRITER)
 
     async def _get(self, path: str) -> Any:
+        await pulse("github_read", seconds=90)
         try:
             response = await self.http.get(
                 "https://api.github.com" + path,
@@ -129,6 +136,21 @@ class ActionsInboxClient(MarkInboxClient):
             or run.get("status") != "in_progress"
         ):
             raise WatchVoiceError("watch_voice_actions_run_mismatch")
+        # A disabled driver is also a server admission fence after restart.
+        # Queued/delayed jobs may survive workflow disable. Never let them claim
+        # work in the candidate or compatible fallback while Ops holds the fence.
+        driver = await self._get(
+            f"/repos/{REPOSITORY}/actions/workflows/gate-watch-voice-drain.yml"
+        )
+        if (
+            not isinstance(driver, dict)
+            or type(driver.get("id")) is not int
+            or driver["id"] <= 0
+            or run.get("workflow_id") != driver["id"]
+            or driver.get("path") != WORKFLOW_PATH
+            or driver.get("state") != "active"
+        ):
+            raise WatchVoiceError("watch_voice_actions_driver_fenced")
         workflow = await self.file(WORKFLOW_PATH, claims["sha"], maximum=32_768)
         if hashlib.sha256(workflow).hexdigest() != workflow_pin:
             raise WatchVoiceError("watch_voice_actions_workflow_mismatch")
@@ -299,11 +321,43 @@ async def drain(
     claims: dict[str, Any],
     job_token: str,
 ) -> dict[str, Any]:
+    if settings.gate_watch_voice_enabled:
+        raise WatchVoiceError("watch_voice_driver_conflict")
     client = ActionsInboxClient(http, job_token)
     binding = await client.preflight_actions(
         claims, settings.gate_watch_voice_actions_workflow_sha256
     )
     scoped = await bound_settings(settings, binding, factory, job_token=job_token)
+    # Start durable observation only after the existing private binding has
+    # authorized this run. The runtime flag need not carry its data grant.
+    observed_settings = settings.model_copy(
+        update={
+            "gate_watch_voice_data_gate_approved": True,
+            "gate_watch_voice_workspace_key": scoped.gate_workspace_id,
+        }
+    )
+    return await _drain_bound(
+        settings=observed_settings,
+        scoped=scoped,
+        factory=factory,
+        http=http,
+        claims=claims,
+        client=client,
+        binding=binding,
+    )
+
+
+@observed_cycle
+async def _drain_bound(
+    *,
+    settings: Settings,
+    scoped: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    claims: dict[str, Any],
+    client: ActionsInboxClient,
+    binding: dict[str, Any],
+) -> dict[str, Any]:
     if not await claim_run(factory, claims):
         return result("replayed")
     if binding["scope"] == "initial-quota-probe":
@@ -344,10 +398,14 @@ async def drain(
         )
         if state is None:
             return result("deferred")
+        cutover = worker.future_cutover(state) if binding["scope"] == "future-only" else None
+        await pulse("cursor_claimed", owns_cursor=True)
+        await pulse("dropbox_scan", scan_started_at=datetime.now(UTC))
         token = await _refresh_access_token(scoped, http)
         await _verify_account_id(scoped, http, token)
         cursor = state.cursor
         for _ in range(100):
+            await pulse("dropbox_delta")
             endpoint = "list_folder/continue" if cursor else "list_folder"
             body = (
                 {"cursor": cursor}
@@ -378,42 +436,28 @@ async def drain(
             ):
                 raise WatchVoiceError("watch_voice_delta_invalid")
             for item in delta["entries"]:
-                if (
-                    scoped.gate_watch_voice_file_id
-                    and isinstance(item, dict)
-                    and (
-                        item.get("id") != scoped.gate_watch_voice_file_id
-                        or item.get("rev") != scoped.gate_watch_voice_revision
-                    )
-                ):
-                    continue
-                entry = worker.source_entry(item)
-                if entry is None:
-                    continue
-                if scoped.gate_watch_voice_file_id and (
-                    entry["id"] != scoped.gate_watch_voice_file_id
-                    or entry["rev"] != scoped.gate_watch_voice_revision
-                ):
-                    continue
-                if binding["scope"] == "future-only":
-                    if state.future_cutover_at is None:
-                        raise WatchVoiceError("watch_voice_actions_cutover_required")
-                    if worker.timestamp(entry["server_modified"]) <= _utc(state.future_cutover_at):
-                        continue
-                await worker.store_entry(scoped, factory, http, token, entry)
+                key = await discover_source(scoped, factory, item, cutover)
+                if key is not None:
+                    if scoped.gate_watch_voice_early_inbox_enabled:
+                        await publish_source_card(scoped, factory, client, key)
+                    else:
+                        await archive_source(scoped, factory, http, token, key)
             state.cursor = cursor = delta["cursor"]
             if not delta["has_more"]:
                 break
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
+        if scoped.gate_watch_voice_early_inbox_enabled:
+            await drain_cards(scoped, factory, client, cutover)
+        await drain_sources(scoped, factory, http, token, cutover)
+        OBSERVATION.scanned_at = datetime.now(UTC)
+        await pulse("dropbox_scanned", scan_finished_at=datetime.now(UTC), scan_error=None)
         scope = worker.note_scope(scoped)
-        if binding["scope"] == "future-only":
-            if state.future_cutover_at is None:
-                raise WatchVoiceError("watch_voice_actions_cutover_required")
-            scope += (
-                WatchVoiceNote.received_at >= state.future_cutover_at,
-                WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
-            )
+        if cutover is not None:
+            scope += worker.future_note_scope(cutover)
+        from app.infrastructure.watch_voice_work import accept_work_result, expire_work_claims
+
+        await expire_work_claims(scoped, factory)
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:
             for field, active, error in (
@@ -436,20 +480,30 @@ async def drain(
             await session.commit()
             note = await session.scalar(
                 select(WatchVoiceNote)
+                .outerjoin(WatchVoiceWorkResult,
+                           WatchVoiceWorkResult.note_id == WatchVoiceNote.id)
                 .where(
                     *scope,
                     or_(
                         WatchVoiceNote.transcription_state == "received",
                         (WatchVoiceNote.transcription_state == "transcribed")
                         & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
+                        (WatchVoiceNote.delivery_state == "delivered")
+                        & WatchVoiceWorkResult.state.in_(("prepared", "saved")),
                     ),
                 )
-                .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
+                .order_by(worker.delivery_order()[0],
+                          func.coalesce(WatchVoiceWorkResult.readback_attempted_at,
+                                        WatchVoiceNote.received_at), WatchVoiceNote.id)
                 .limit(1)
             )
         if note is None:
             await coordinator.commit()
             return result("idle")
+        if note.delivery_state == "delivered":
+            await accept_work_result(factory, client, note.id)
+            await coordinator.commit()
+            return result("processed", considered=1)
         if note.transcription_state == "received":
             await worker.transcribe_note(scoped, factory, http, note.id)
             async with factory() as session:
@@ -514,12 +568,24 @@ async def operational_status(
             .group_by(WatchVoiceRecoveryClaim.outcome)
         )
         recovery_counts.update({str(state): count for state, count in rows})
-    return {
+    result = {
         "enabled": settings.gate_watch_voice_actions_enabled,
         "workflow_pin_configured": bool(
             re.fullmatch(r"[a-f0-9]{64}", settings.gate_watch_voice_actions_workflow_sha256)
         ),
         "ordinary_worker_enabled": settings.gate_watch_voice_enabled,
+        # Presence is not validity or permission to enable the ordinary worker.
+        # Never reveal the credential or configured writer identity, even here.
+        "server_writer_configuration": (
+            {
+                "token_present": isinstance(settings.gate_mark_github_token, SecretStr)
+                and bool(settings.gate_mark_github_token.get_secret_value()),
+                "writer_present": bool(settings.gate_mark_github_writer),
+                "verified": False,
+            }
+            if scope_allowed
+            else None
+        ),
         "scope_allowed": scope_allowed,
         "run_claim_count": runs,
         "delivery_counts": delivery_counts,
@@ -527,3 +593,8 @@ async def operational_status(
         "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }
+    if (scope_allowed and settings.gate_watch_voice_actions_enabled
+            and settings.gate_watch_voice_early_inbox_enabled):
+        result["early_inbox"] = await card_status(session, settings)
+    return result
+

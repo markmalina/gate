@@ -6,15 +6,22 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
 
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.billing import (
+    BudgetAdmission,
+    BudgetReservation,
+    ReserveBudgetCommand,
+    UsageUnit,
+)
 from app.application.telegram_voice_transcription import (
     DownloadedVoice,
     NormalizedVoice,
@@ -31,6 +38,12 @@ from app.infrastructure.openai_transcription import (
     OpenAITranscriptionConfig,
 )
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
+from app.infrastructure.watch_voice_cards import (
+    card_status,
+    drain_cards,
+    publish_source_card,
+    transcript_card_offset,
+)
 from app.infrastructure.watch_voice_github import (
     GithubReceipt,
     MarkInboxClient,
@@ -38,8 +51,21 @@ from app.infrastructure.watch_voice_github import (
     marker,
     transcript_parts,
 )
+from app.infrastructure.watch_voice_journal import processing_started, provider_observation, pulse
+from app.infrastructure.watch_voice_metrics import OBSERVATION, observed_cycle
+from app.infrastructure.watch_voice_sources import archive_source, drain_sources
+from app.infrastructure.watch_voice_sources import discover as discover_source
+from app.infrastructure.watch_voice_work import (
+    accept_work_result,
+    claim_gate_dispatch,
+    drain_work_receipts,
+    expire_work_claims,
+    record_text_receipt,
+    validate_work_publication,
+)
 from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
 from app.worker.dropbox_calls import (
+    DropboxCallWorkerError,
     _audio_media_type,
     _download_revision,
     _probe_duration_seconds,
@@ -68,7 +94,8 @@ def validate_settings(settings: Settings) -> None:
         or not settings.dropbox_call_account_id
     ):
         raise WatchVoiceError("watch_voice_dropbox_credentials_missing")
-    if not settings.openai_api_key.get_secret_value():
+    if (not settings.openai_api_key.get_secret_value()
+            and not settings.gate_watch_voice_early_inbox_enabled):
         raise WatchVoiceError("watch_voice_transcription_key_missing")
     if (
         settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
@@ -133,14 +160,45 @@ def note_scope(settings: Settings) -> tuple[Any, ...]:
     return scope
 
 
-def issue_body(note: WatchVoiceNote, part: int) -> str:
+def future_cutover(state: WatchVoiceCursor | None) -> datetime:
+    """Reuse durable Actions admission; the ordinary worker never creates it."""
+    if state is None or not state.cursor or state.future_cutover_at is None:
+        raise WatchVoiceError("watch_voice_future_cutover_required")
+    value = state.future_cutover_at
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def future_entry(entry: dict[str, Any], cutover: datetime) -> bool:
+    """Exclude Dropbox history before downloading or probing original audio."""
+    return timestamp(entry["server_modified"]) > cutover
+
+
+def future_note_scope(cutover: datetime) -> tuple[Any, ...]:
+    """A late archived historical source is not a newly admitted recording."""
+    return (
+        WatchVoiceNote.received_at >= cutover,
+        WatchVoiceNote.dropbox_modified_at > cutover,
+    )
+
+
+def issue_body(note: WatchVoiceNote, part: int, *, publication_part: int | None = None) -> str:
     parts = transcript_parts(note.transcript or "")
     transcribed = note.transcribed_at.isoformat() if note.transcribed_at else "неизвестно"
-    start = marker(note.id, part)
+    start = marker(note.id, part if publication_part is None else publication_part)
     if part:
         return f"{start}\n\nРасшифровка, часть {part + 1}/{len(parts)}:\n\n{parts[part]}"
+    origin = (
+        "Происхождение текста: Work; внешний способ, модель и стоимость не подтверждены Gate.\n"
+        if getattr(note, "transcript_origin", "gate") == "work" else ""
+    )
+    time_line = (
+        f"Текст Work получен Gate: {transcribed}. Время внешнего распознавания не подтверждено.\n"
+        if getattr(note, "transcript_origin", "gate") == "work"
+        else f"Расшифровано: {transcribed}.\n"
+    )
     return (
         f"{start}\n\nАвтор: Марк Малиновский. Доставщик: Gate.\n"
+        f"{origin}"
         "Канал: Galaxy Watch → Samsung Звукозапись → Dropsync → Dropbox Voice.\n\n"
         f"Gate receipt / event_id: `{note.id}`\n"
         f"Оригинал: `watch-voice:{note.id}` (защищённый архив Gate).\n"
@@ -150,7 +208,7 @@ def issue_body(note: WatchVoiceNote, part: int) -> str:
         "Время начала записи: не подтверждено.\n"
         f"Dropbox server_modified: {note.dropbox_modified_at.isoformat()}.\n"
         f"Получено Gate: {note.received_at.isoformat()}.\n"
-        f"Расшифровано: {transcribed}.\n"
+        f"{time_line}"
         "Назначение: private markmalina/mark, Inbox.\n"
         "Статус: входящая запись; исполнение задачи отдельно от получения.\n\n"
         f"Расшифровка, часть 1/{len(parts)}:\n\n{parts[0]}"
@@ -163,7 +221,10 @@ async def store_entry(
     http: httpx.AsyncClient,
     token: str,
     entry: dict[str, Any],
+    *,
+    detected_at: datetime | None = None,
 ) -> None:
+    detected_at = detected_at or datetime.now(UTC)
     file_id, revision = entry["id"], entry["rev"]
     scope = (settings.gate_workspace_id, settings.dropbox_call_account_id)
     event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, repr((*scope, file_id, revision))))
@@ -199,6 +260,11 @@ async def store_entry(
         transcription_state="received",
         delivery_state="pending",
         next_part=0,
+        detected_at=detected_at,
+        processing_attempt_count=0,
+        provider_request_count=0,
+        provider_finished_count=0,
+        provider_elapsed_ms=0,
     )
     if duration is None or duration > MAX_DURATION:
         row.transcription_state = "rejected"
@@ -239,21 +305,20 @@ async def transcribe_note(
     http: httpx.AsyncClient,
     note_id: str,
 ) -> None:
-    async with factory() as session:
-        claimed = await session.execute(
-            update(WatchVoiceNote)
-            .where(
-                WatchVoiceNote.id == note_id,
-                *note_scope(settings),
-                WatchVoiceNote.transcription_state == "received",
+    if not settings.openai_api_key.get_secret_value():
+        # Intake/archive still work; no processing claim or provider attempt exists.
+        async with factory() as session:
+            await session.execute(
+                update(WatchVoiceNote)
+                .where(WatchVoiceNote.id == note_id, *note_scope(settings),
+                       WatchVoiceNote.transcription_state == "received")
+                .values(last_error="watch_voice_transcription_key_missing")
             )
-            .values(transcription_state="processing", attempted_at=datetime.now(UTC))
-        )
-        await session.commit()
-        if not claimed.rowcount:  # type: ignore[attr-defined]
-            return
-        note = await session.get(WatchVoiceNote, note_id)
-        assert note is not None
+            await session.commit()
+        return
+    note = await claim_gate_dispatch(settings, factory, note_id)
+    if note is None:
+        return
     await transcribe_claimed_note(settings, factory, http, note)
 
 
@@ -263,6 +328,74 @@ class RecoveryVoiceNormalizer(TelegramVoiceNormalizer):
         if normalized.additional_parts:
             raise TelegramVoiceError("watch_voice_recovery_single_part_required")
         return normalized
+
+
+class WatchVoiceProcessingBudget(SqlBillingBudgetService):
+    """Use the actual watch processing period without changing shared billing."""
+
+    def __init__(
+        self, sessions: async_sessionmaker[AsyncSession], *, recovery_period: str | None
+    ) -> None:
+        super().__init__(sessions)
+        self.recovery_period = recovery_period
+
+    async def reserve(self, command: ReserveBudgetCommand, *, period_key: str) -> BudgetAdmission:
+        # Normalization can cross midnight/month end after the source command
+        # was constructed. Neither an archived timestamp nor that older command
+        # can select the entitlement/budget period of a new provider attempt.
+        now = datetime.now(UTC)
+        period = now.strftime("%Y-%m")
+        if self.recovery_period is not None and period != self.recovery_period:
+            return BudgetAdmission(allowed=False, reason_code="watch_voice_recovery_period_changed")
+        admission = await super().reserve(replace(command, occurred_at=now), period_key=period)
+        finished = datetime.now(UTC)
+        if admission.allowed and finished.strftime("%Y-%m") != period:
+            # A database lock may also span month end. This is our new, known
+            # zero-provider reservation, never a historical or unknown claim.
+            if admission.reservation is not None:
+                await super().release(admission.reservation, occurred_at=finished)
+            return BudgetAdmission(
+                allowed=False, reason_code="watch_voice_processing_period_changed"
+            )
+        return admission
+
+    async def settle(
+        self,
+        reservation: BudgetReservation,
+        *,
+        actual_microusd: int,
+        quantity: int,
+        unit: UsageUnit,
+        provider_operation_ref: str | None,
+        occurred_at: datetime,
+    ) -> None:
+        await super().settle(
+            reservation,
+            actual_microusd=actual_microusd,
+            quantity=quantity,
+            unit=unit,
+            provider_operation_ref=provider_operation_ref,
+            occurred_at=datetime.now(UTC),
+        )
+
+    async def release(self, reservation: BudgetReservation, *, occurred_at: datetime) -> None:
+        await super().release(reservation, occurred_at=datetime.now(UTC))
+
+    async def mark_unknown(
+        self, reservation: BudgetReservation, *, occurred_at: datetime, error_code: str
+    ) -> None:
+        await super().mark_unknown(
+            reservation, occurred_at=datetime.now(UTC), error_code=error_code
+        )
+
+
+def delivery_order() -> tuple[Any, ...]:
+    """An unresolved publication must not block known actionable notes."""
+    return (
+        case((WatchVoiceNote.delivery_state == "unknown", 1), else_=0),
+        WatchVoiceNote.received_at,
+        WatchVoiceNote.id,
+    )
 
 
 async def transcribe_claimed_note(
@@ -279,13 +412,21 @@ async def transcribe_claimed_note(
     if post_payment and not recovery:
         raise ValueError("watch_voice_post_payment_recovery_required")
     model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
-    received = note.received_at
-    if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
-        received = received.replace(tzinfo=UTC)
+    processing_at = datetime.now(UTC)
+    await processing_started(
+        factory, note.id, note.duration_seconds, first_normal_claim=not recovery
+    )
+
+    async def observe_part(phase: str, elapsed_ms: int) -> None:
+        await provider_observation(factory, note.id, phase, elapsed_ms)
+
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
         normalizer=RecoveryVoiceNormalizer() if recovery else TelegramVoiceNormalizer(),
-        budget=SqlBillingBudgetService(factory),
+        budget=WatchVoiceProcessingBudget(
+            factory,
+            recovery_period=note.received_at.strftime("%Y-%m") if recovery else None,
+        ),
         speech_to_text=OpenAITranscriptionClient(
             config=OpenAITranscriptionConfig(
                 api_key=settings.openai_api_key.get_secret_value(),
@@ -294,6 +435,7 @@ async def transcribe_claimed_note(
                 base_url=settings.openai_api_base_url,
             ),
             http=http,
+            part_observer=observe_part,
         ),
     )
     try:
@@ -309,13 +451,13 @@ async def transcribe_claimed_note(
                 connector_ref="telegram_business",
                 reservation_key=f"watch-voice:{note.id}"
                 + (":postpayment1" if post_payment else ":recovery1" if recovery else ""),
-                period_key=received.strftime("%Y-%m"),
+                period_key=processing_at.strftime("%Y-%m"),
                 requested_microusd=max(
                     100,
                     note.duration_seconds
                     * settings.gate_telegram_voice_reserve_microusd_per_second,
                 ),
-                occurred_at=received,
+                occurred_at=processing_at,
                 language="ru",
                 enabled=True,
             )
@@ -329,7 +471,9 @@ async def transcribe_claimed_note(
                 update(WatchVoiceNote)
                 .where(WatchVoiceNote.id == note.id)
                 .values(
-                    transcription_state="unknown", last_error="watch_voice_transcription_unknown"
+                    transcription_state="unknown",
+                    last_error="watch_voice_transcription_unknown",
+                    processing_finished_at=datetime.now(UTC),
                 )
             )
             await session.commit()
@@ -343,6 +487,7 @@ async def transcribe_claimed_note(
                 transcript=result.alpha_input_text,
                 model=model,
                 transcribed_at=datetime.now(UTC),
+                processing_finished_at=datetime.now(UTC),
                 last_error=result.reason_code,
             )
         )
@@ -358,14 +503,26 @@ async def publish_note(
 ) -> None:
     if note.transcription_state != TelegramVoiceOutcome.TRANSCRIBED.value or not note.transcript:
         return
+    offset = await transcript_card_offset(factory, note)
+    if offset is None:
+        return
+    await pulse("publishing", seconds=180)
     completed_parts = 0
     while note.delivery_state in {"pending", "unknown"}:
         if max_parts is not None and completed_parts >= max_parts:
             return
-        part, body = note.next_part, issue_body(note, note.next_part)
+        if note.transcript_origin == "work":
+            await validate_work_publication(factory, note)
+        part = note.next_part
+        publication_part = part + offset
+        body = issue_body(note, part, publication_part=publication_part)
         if note.delivery_state == "unknown":
+            await pulse("publication_reconcile", seconds=180)
             # No absence-of-search-result is allowed to authorize a second POST.
-            receipt = await client.reconcile(part=part, issue_number=note.issue_number, body=body)
+            receipt = await client.reconcile(
+                part=publication_part, issue_number=note.issue_number, body=body,
+                expected_writer=note.delivery_writer,
+            )
             if receipt is None:
                 return
         else:
@@ -377,14 +534,16 @@ async def publish_note(
                         WatchVoiceNote.delivery_state == "pending",
                         WatchVoiceNote.next_part == part,
                     )
-                    .values(delivery_state="sending", attempted_at=datetime.now(UTC))
+                    .values(delivery_state="sending", attempted_at=datetime.now(UTC),
+                            delivery_writer=client.writer)
                 )
                 await session.commit()
                 if not claimed.rowcount:  # type: ignore[attr-defined]
                     return
+            note.delivery_writer = client.writer
             try:
                 receipt = await client.post(
-                    part=part,
+                    part=publication_part,
                     issue_number=note.issue_number,
                     title=(
                         f"[Gate][Voice] Входящая запись {note.received_at.date()} · {note.id[:8]}"
@@ -407,17 +566,20 @@ async def publish_note(
                     )
                     await session.commit()
                 return
-        await save_receipt(factory, note, receipt)
+        await save_receipt(factory, note, receipt, body=body)
         completed_parts += 1
+    if note.delivery_state == "delivered":
+        await accept_work_result(factory, client, note.id)
 
 
 async def save_receipt(
-    factory: async_sessionmaker[AsyncSession], note: WatchVoiceNote, receipt: GithubReceipt
+    factory: async_sessionmaker[AsyncSession], note: WatchVoiceNote, receipt: GithubReceipt,
+    *, body: str | None = None,
 ) -> None:
     next_part = note.next_part + 1
     finished = next_part >= len(transcript_parts(note.transcript or ""))
     async with factory() as session:
-        await session.execute(
+        changed = await session.execute(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note.id,
@@ -434,6 +596,10 @@ async def save_receipt(
                 last_error=None,
             )
         )
+        if changed.rowcount and note.transcript_origin == "work":  # type: ignore[attr-defined]
+            if body is None:
+                raise WatchVoiceError("watch_voice_work_publication_body_missing")
+            await record_text_receipt(session, note, receipt, body)
         await session.commit()
     note.next_part, note.issue_number, note.issue_url = next_part, receipt.number, receipt.url
     note.github_received_at = note.github_received_at or receipt.received_at
@@ -453,17 +619,87 @@ async def ensure_cursor(settings: Settings, factory: async_sessionmaker[AsyncSes
                     raise
 
 
+async def scan_voice_source(
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    state: WatchVoiceCursor,
+    cutover: datetime | None,
+) -> None:
+    await pulse("dropbox_scan", scan_started_at=datetime.now(UTC))
+    token = await _refresh_access_token(settings, http)
+    await _verify_account_id(settings, http, token)
+    cursor = state.cursor
+    while True:
+        await pulse("dropbox_delta")
+        endpoint = "list_folder/continue" if cursor else "list_folder"
+        body: dict[str, Any] = (
+            {"cursor": cursor}
+            if cursor
+            else {"path": PATH, "recursive": False, "include_deleted": False}
+        )
+        try:
+            response = await http.post(
+                "https://api.dropboxapi.com/2/files/" + endpoint,
+                headers={"Authorization": f"Bearer {token}"},
+                json=body,
+            )
+            if response.status_code != 200:
+                raise WatchVoiceError("watch_voice_delta_rejected")
+            delta = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise WatchVoiceError("watch_voice_delta_unavailable") from None
+        if (
+            not isinstance(delta, dict)
+            or not isinstance(delta.get("entries"), list)
+            or not isinstance(delta.get("cursor"), str)
+            or not delta["cursor"]
+            or type(delta.get("has_more")) is not bool
+        ):
+            raise WatchVoiceError("watch_voice_delta_invalid")
+        for item in delta["entries"]:
+            key = await discover_source(settings, factory, item, cutover)
+            if key is not None:
+                if settings.gate_watch_voice_early_inbox_enabled:
+                    # Discovery/card publication precedes every batch download.
+                    await publish_source_card(
+                        settings, factory,
+                        MarkInboxClient(http, settings.gate_mark_github_token.get_secret_value(),
+                                        settings.gate_mark_github_writer), key,
+                    )
+                else:
+                    await archive_source(settings, factory, http, token, key)
+        cursor = delta["cursor"]
+        state.cursor = cursor
+        if not delta["has_more"]:
+            break
+    if settings.gate_watch_voice_early_inbox_enabled:
+        await drain_cards(
+            settings, factory,
+            MarkInboxClient(http, settings.gate_mark_github_token.get_secret_value(),
+                            settings.gate_mark_github_writer), cutover,
+        )
+    await drain_sources(settings, factory, http, token, cutover)
+    OBSERVATION.scanned_at = datetime.now(UTC)
+    await pulse("dropbox_scanned", scan_finished_at=datetime.now(UTC), scan_error=None)
+
+
+@observed_cycle
 async def process_watch_voice(
     settings: Settings, factory: async_sessionmaker[AsyncSession], http: httpx.AsyncClient
-) -> None:
+) -> bool:
     if not settings.gate_watch_voice_enabled:
-        return
+        return False
+    if settings.gate_watch_voice_actions_enabled:
+        raise WatchVoiceError("watch_voice_driver_conflict")
     validate_settings(settings)
     client = MarkInboxClient(
         http, settings.gate_mark_github_token.get_secret_value(), settings.gate_mark_github_writer
     )
-    await client.preflight()
-    await ensure_cursor(settings, factory)
+    if settings.gate_watch_voice_file_id:
+        # Only an already authorized exact source may bootstrap its cursor.
+        await client.preflight()
+        await ensure_cursor(settings, factory)
     # PostgreSQL row lock serializes the source across all web processes.
     # Originals and per-effect claims commit in separate short transactions.
     async with factory() as coordinator:
@@ -476,54 +712,48 @@ async def process_watch_voice(
             .with_for_update(skip_locked=True)
         )
         if state is None:
-            return
-        token = await _refresh_access_token(settings, http)
-        await _verify_account_id(settings, http, token)
-        cursor = state.cursor
-        while True:
-            endpoint = "list_folder/continue" if cursor else "list_folder"
-            body: dict[str, Any] = (
-                {"cursor": cursor}
-                if cursor
-                else {"path": PATH, "recursive": False, "include_deleted": False}
-            )
-            try:
-                response = await http.post(
-                    "https://api.dropboxapi.com/2/files/" + endpoint,
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=body,
+            if not settings.gate_watch_voice_file_id:
+                existing = await coordinator.get(
+                    WatchVoiceCursor,
+                    (
+                        settings.gate_workspace_id,
+                        settings.dropbox_call_account_id,
+                    ),
                 )
-                if response.status_code != 200:
-                    raise WatchVoiceError("watch_voice_delta_rejected")
-                delta = response.json()
-            except (httpx.HTTPError, ValueError):
-                raise WatchVoiceError("watch_voice_delta_unavailable") from None
-            if (
-                not isinstance(delta, dict)
-                or not isinstance(delta.get("entries"), list)
-                or not isinstance(delta.get("cursor"), str)
-                or not delta["cursor"]
-                or type(delta.get("has_more")) is not bool
-            ):
-                raise WatchVoiceError("watch_voice_delta_invalid")
-            for item in delta["entries"]:
-                entry = source_entry(item)
-                if (
-                    entry is not None
-                    and settings.gate_watch_voice_file_id
-                    and (
-                        entry["id"] != settings.gate_watch_voice_file_id
-                        or entry["rev"] != settings.gate_watch_voice_revision
-                    )
-                ):
-                    continue
-                if entry is not None:
-                    await store_entry(settings, factory, http, token, entry)
-            cursor = delta["cursor"]
-            state.cursor = cursor
-            if not delta["has_more"]:
-                break
+                if existing is None:
+                    future_cutover(None)  # missing admission is not an idle locked cursor
+            return False
+        cutover = None if settings.gate_watch_voice_file_id else future_cutover(state)
+        await pulse("cursor_claimed", owns_cursor=True)
+        if cutover is not None:
+            await client.preflight()
+        try:
+            await scan_voice_source(settings, factory, http, state, cutover)
+        except (DropboxCallWorkerError, WatchVoiceError) as exc:
+            # Source availability may defer discovery while draining archived work.
+            # Scope, metadata, identity mismatch and integrity failures still stop.
+            if exc.code not in {
+                "dropbox_call_oauth_transport_failed",
+                "dropbox_call_oauth_rejected",
+                "dropbox_call_identity_transport_failed",
+                "dropbox_call_identity_rejected",
+                "dropbox_call_download_transport_failed",
+                "dropbox_call_download_rejected",
+                "watch_voice_delta_rejected",
+                "watch_voice_delta_unavailable",
+            }:
+                raise
+            OBSERVATION.scan_error_code = exc.code
+            await pulse("dropbox_deferred", scan_error=exc.code)
+        else:
+            OBSERVATION.scan_error_code = None
+        if settings.gate_watch_voice_early_inbox_enabled:
+            await drain_cards(settings, factory, client, cutover)
+        await expire_work_claims(settings, factory)
+        await drain_work_receipts(settings, factory, client, cutover)
         scope = note_scope(settings)
+        if cutover is not None:
+            scope += future_note_scope(cutover)
         # Crashed effect claims are quarantined, never blindly retried.
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory() as session:
@@ -551,12 +781,20 @@ async def process_watch_voice(
                     await session.scalars(
                         select(WatchVoiceNote.id)
                         .where(*scope, WatchVoiceNote.transcription_state == "received")
+                        .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
                         .limit(10)
                     )
                 ).all()
             )
+        made_transcription_progress = False
         for note_id in ids:
             await transcribe_note(settings, factory, http, note_id)
+            # Publish each completed note before starting the next transcription.
+            async with factory() as session:
+                ready = await session.get(WatchVoiceNote, note_id)
+            if ready is not None:
+                made_transcription_progress |= ready.transcription_state != "received"
+                await publish_note(factory, client, ready)
         async with factory() as session:
             notes = list(
                 (
@@ -566,14 +804,21 @@ async def process_watch_voice(
                             *scope,
                             WatchVoiceNote.transcription_state == "transcribed",
                             WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
+                            WatchVoiceNote.id.not_in(ids),
                         )
+                        .order_by(*delivery_order())
                         .limit(10)
                     )
                 ).all()
             )
+        made_publication_progress = False
         for note in notes:
+            previous_part = note.next_part
             await publish_note(factory, client, note)
+            if note.next_part > previous_part:
+                made_publication_progress = True
         await coordinator.commit()
+        return made_transcription_progress or made_publication_progress
 
 
 async def run_watch_voice_worker_loop(
@@ -583,14 +828,15 @@ async def run_watch_voice_worker_loop(
         return
     async with httpx.AsyncClient(timeout=60, follow_redirects=False) as http:
         while True:
+            progressed = False
             try:
-                await process_watch_voice(settings, session_factory, http)
+                progressed = await process_watch_voice(settings, session_factory, http)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 # Never log HTTP exception URLs, credentials, filenames or audio/text.
                 logger.warning("Watch voice cycle deferred")
-            await asyncio.sleep(settings.gate_watch_voice_poll_seconds)
+            await asyncio.sleep(0 if progressed else settings.gate_watch_voice_poll_seconds)
 
 
 async def operational_status(
@@ -623,7 +869,7 @@ async def operational_status(
             .group_by(WatchVoiceNote.transcription_state)
         )
         transcription_counts = {str(state): count for state, count in rows}
-    return {
+    result: dict[str, Any] = {
         "enabled": settings.gate_watch_voice_enabled,
         "configured": configured,
         "scope_allowed": scope_allowed,
@@ -631,6 +877,9 @@ async def operational_status(
         "transcription_counts": transcription_counts,
         "private_content_exposed": False,
     }
+    if scope_allowed and configured and settings.gate_watch_voice_early_inbox_enabled:
+        result["early_inbox"] = await card_status(session, settings)
+    return result
 
 
 async def resume_rejected_delivery(

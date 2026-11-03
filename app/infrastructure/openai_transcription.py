@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -55,9 +57,11 @@ class OpenAITranscriptionClient:
         *,
         config: OpenAITranscriptionConfig,
         http: httpx.AsyncClient,
+        part_observer: Callable[[str, int], Awaitable[None]] | None = None,
     ) -> None:
         self._config = config
         self._http = http
+        self._part_observer = part_observer
 
     @property
     def ready(self) -> bool:
@@ -124,6 +128,10 @@ class OpenAITranscriptionClient:
             data["language"] = language
         if prompt is not None:
             data["prompt"] = prompt
+        if self._part_observer is not None:
+            # A durable start must succeed before a paid request is attempted.
+            await self._part_observer("started", 0)
+        started = time.monotonic()
         try:
             response = await self._http.post(
                 f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
@@ -137,6 +145,16 @@ class OpenAITranscriptionClient:
                 "openai_transcription_transport_unknown",
                 outcome_unknown=True,
             ) from None
+        finally:
+            if self._part_observer is not None:
+                try:
+                    await self._part_observer(
+                        "finished", max(0, round((time.monotonic() - started) * 1000)),
+                    )
+                except Exception:
+                    # Never discard an accepted transcript because its timing
+                    # acknowledgement failed. The missing finish remains visible.
+                    _logger.warning("transcription_observation_finish_unavailable")
 
         if response.is_error:
             _log_provider_error(response, model=self._config.model)
@@ -326,3 +344,4 @@ def _quota_unavailable(error: Any) -> bool:
         "billing_not_active",
         "credit_balance_too_low",
     )
+

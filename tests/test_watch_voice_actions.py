@@ -4,7 +4,8 @@ import asyncio
 import base64
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -20,14 +21,42 @@ from app.infrastructure.watch_voice_actions import (
     validate_binding,
 )
 from app.infrastructure.watch_voice_github import WatchVoiceError
-from app.models.watch_voice import WatchVoiceDrainRun
+from app.models.watch_voice import (
+    WatchVoiceCursor,
+    WatchVoiceCycle,
+    WatchVoiceDrainRun,
+    WatchVoiceNote,
+)
 from sqlalchemy import select
 
-from test_watch_voice import World, database, notes, settings
+from test_watch_voice import World, database, notes, queued_note, settings
 
 WORKFLOW = b"synthetic-reviewed-workflow"
 PIN = hashlib.sha256(WORKFLOW).hexdigest()
 SHA = "a" * 40
+
+
+def test_actions_rejects_persistent_driver_before_any_io(monkeypatch):
+    def unexpected_client(*args, **kwargs):
+        raise AssertionError("conflicting driver reached GitHub client")
+
+    monkeypatch.setattr(
+        "app.infrastructure.watch_voice_actions.ActionsInboxClient", unexpected_client
+    )
+    factory, http = AsyncMock(), AsyncMock()
+    conflicting = settings().model_copy(update={"gate_watch_voice_actions_enabled": True})
+    with pytest.raises(WatchVoiceError, match="^watch_voice_driver_conflict$"):
+        asyncio.run(
+            drain(
+                settings=conflicting,
+                factory=factory,
+                http=http,
+                claims={},
+                job_token="synthetic-unused-token",
+            )
+        )
+    factory.assert_not_called()
+    assert http.mock_calls == []
 
 
 def claims(**extra):
@@ -78,9 +107,16 @@ class ActionsWorld(World):
         self.workflow = WORKFLOW
         self.run_event = "schedule"
         self.current_run = "321"
+        self.workflow_state = "active"
 
     def handle(self, request):
         path = request.url.path
+        if path == "/repos/markmalina/mark/actions/workflows/gate-watch-voice-drain.yml":
+            return httpx.Response(
+                200,
+                json={"id": 123, "path": ".github/workflows/gate-watch-voice-drain.yml",
+                      "state": self.workflow_state},
+            )
         if request.method == "GET" and path == "/repos/markmalina/mark":
             return httpx.Response(
                 200,
@@ -100,6 +136,7 @@ class ActionsWorld(World):
             return httpx.Response(
                 200,
                 json={
+                    "workflow_id": 123,
                     "id": int(self.current_run),
                     "head_sha": SHA,
                     "head_branch": "main",
@@ -202,7 +239,9 @@ def test_owner_comment_fresh_runs_keep_exact_receipt_and_no_duplicate_effects(
                 )
                 authorize_claims(claim)
                 receipt = await drain(
-                    settings=action_settings(),
+                    settings=action_settings().model_copy(
+                        update={"gate_watch_voice_data_gate_approved": False}
+                    ),
                     factory=factory,
                     http=http,
                     claims=claim,
@@ -220,6 +259,10 @@ def test_owner_comment_fresh_runs_keep_exact_receipt_and_no_duplicate_effects(
                 assert receipt["delivered"] == int(index == 0)
             assert world.posts == world.provider_calls == 1
             assert (await notes(factory))[0].delivery_state == "delivered"
+            async with factory() as session:
+                cycles = list((await session.scalars(select(WatchVoiceCycle))).all())
+                assert len(cycles) == 4
+                assert all(c.driver == "actions" and c.outcome == "success" for c in cycles)
 
     asyncio.run(run())
 
@@ -324,6 +367,124 @@ def test_one_run_one_part_full_transcript_next_fresh_run_and_no_retranscription(
     asyncio.run(run())
 
 
+def test_unknown_publication_does_not_block_new_notes_or_reset_claims(tmp_path, monkeypatch):
+    world = ActionsWorld()
+    world.patches(monkeypatch)
+
+    def handle(request):
+        response = world.handle(request)
+        if request.method == "POST" and request.url.path == "/repos/markmalina/mark/issues":
+            obj = world.issues[-1]
+            obj["number"] = 100 + len(world.issues)
+            obj["html_url"] = f"https://github.com/markmalina/mark/issues/{obj['number']}"
+            return httpx.Response(201, json=obj)
+        return response
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http,
+        ):
+            now = datetime.now(UTC)
+            cutover = now - timedelta(hours=1)
+            accepted = queued_note(
+                world,
+                "id:accepted",
+                now - timedelta(hours=2),
+                transcription_state="transcribed",
+                transcript="Synthetic accepted source",
+                delivery_state="delivered",
+                issue_number=99,
+                issue_url="https://github.com/markmalina/mark/issues/99",
+                next_part=1,
+            )
+            unknown = queued_note(
+                world,
+                "id:unresolved-a",
+                now - timedelta(minutes=10),
+                transcription_state="transcribed",
+                transcript="Synthetic unresolved A",
+                delivery_state="unknown",
+                attempted_at=now - timedelta(minutes=5),
+                last_error="github_post_unknown",
+            )
+            received = queued_note(world, "id:actionable-b", now - timedelta(minutes=9))
+            pending = queued_note(
+                world,
+                "id:actionable-c",
+                now - timedelta(minutes=8),
+                transcription_state="transcribed",
+                transcript="Synthetic pending C",
+            )
+            async with factory() as session:
+                await session.run_sync(
+                    lambda s: WatchVoiceDrainRun.__table__.create(s.connection())
+                )
+                session.add_all(
+                    [
+                        accepted,
+                        unknown,
+                        received,
+                        pending,
+                        WatchVoiceCursor(
+                            workspace_key="mark-personal",
+                            account_id="synthetic-owner",
+                            cursor="synthetic-cursor",
+                            future_cutover_at=cutover,
+                        ),
+                    ]
+                )
+                await session.commit()
+            world.binding = {
+                "schema": "watch-voice-binding.v1",
+                "enabled": True,
+                "workspace_key": "mark-personal",
+                "scope": "future-only",
+                "accepted_initial_event_id": accepted.id,
+            }
+            async with factory() as session:
+                before = await session.get(WatchVoiceNote, unknown.id)
+                original = {
+                    column.key: getattr(before, column.key)
+                    for column in WatchVoiceNote.__table__.columns
+                }
+            for i in range(3):
+                world.current_run = str(321 + i)
+                result = await drain(
+                    settings=action_settings(),
+                    factory=factory,
+                    http=http,
+                    claims=claims(run_id=world.current_run, jti=f"queue-{i}"),
+                    job_token="synthetic-job-token",
+                )
+                assert result["considered"] == 1 and result["published_parts"] <= 1
+                assert result["published_parts"] == (1 if i < 2 else 0)
+            assert world.provider_calls == 1 and world.posts == 2
+            assert len({issue["number"] for issue in world.issues}) == 2
+            rows = {note.id: note for note in await notes(factory)}
+            assert (
+                rows[received.id].delivery_state == rows[pending.id].delivery_state == "delivered"
+            )
+            assert {
+                column.key: getattr(rows[unknown.id], column.key)
+                for column in WatchVoiceNote.__table__.columns
+            } == original
+            replay = await drain(
+                settings=action_settings(),
+                factory=factory,
+                http=http,
+                claims=claims(run_id=world.current_run, jti="new-jti-same-consumed-run"),
+                job_token="synthetic-job-token",
+            )
+            assert replay["result"] == "replayed" and world.provider_calls == 1 and world.posts == 2
+            async with factory() as session:
+                assert len((await session.scalars(select(WatchVoiceDrainRun))).all()) == 3
+                cursor = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert cursor.future_cutover_at.replace(tzinfo=UTC) == cutover
+
+    asyncio.run(run())
+
+
 def test_stale_workflow_or_main_fail_before_run_consumption(tmp_path):
     world = ActionsWorld()
 
@@ -357,6 +518,69 @@ def test_future_mode_requires_delivered_initial_proof(tmp_path):
                 await bound_settings(
                     action_settings(), binding, factory, job_token="synthetic-job-token"
                 )
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("missing", ["note", "transcript", "delivery", "issue", "cursor"])
+def test_future_admission_cannot_install_watermark_without_initial_acceptance(
+    tmp_path, monkeypatch, missing
+):
+    world = ActionsWorld()
+    world.patches(monkeypatch)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http,
+        ):
+            initial = queued_note(
+                world,
+                "id:initial-acceptance",
+                datetime.now(UTC),
+                transcription_state="received" if missing == "transcript" else "transcribed",
+                transcript="Synthetic initial receipt",
+                delivery_state="pending" if missing == "delivery" else "delivered",
+                issue_url=None
+                if missing == "issue"
+                else "https://github.com/markmalina/mark/issues/1",
+            )
+            world.binding = {
+                "schema": "watch-voice-binding.v1",
+                "enabled": True,
+                "workspace_key": "mark-personal",
+                "scope": "future-only",
+                "accepted_initial_event_id": initial.id,
+            }
+            async with factory() as session:
+                await session.run_sync(
+                    lambda s: WatchVoiceDrainRun.__table__.create(s.connection())
+                )
+                if missing != "note":
+                    session.add(initial)
+                session.add(
+                    WatchVoiceCursor(
+                        workspace_key="mark-personal",
+                        account_id="synthetic-owner",
+                        cursor=None if missing == "cursor" else "kept-initial-cursor",
+                    )
+                )
+                await session.commit()
+            with pytest.raises(WatchVoiceError, match="initial_acceptance_required"):
+                await drain(
+                    settings=action_settings(),
+                    factory=factory,
+                    http=http,
+                    claims=claims(),
+                    job_token="synthetic-job-token",
+                )
+            assert world.provider_calls == world.posts == 0
+            assert not any("dropbox" in url for _, url in world.calls)
+            async with factory() as session:
+                state = await session.get(WatchVoiceCursor, ("mark-personal", "synthetic-owner"))
+                assert state.future_cutover_at is None
+                assert state.cursor == (None if missing == "cursor" else "kept-initial-cursor")
+                assert not (await session.scalars(select(WatchVoiceDrainRun))).all()
 
     asyncio.run(run())
 
@@ -490,6 +714,43 @@ def test_foreign_status_does_not_read_journal():
     session = AsyncMock()
     payload = asyncio.run(operational_status(session, action_settings(), scope_allowed=False))
     assert payload["run_claim_count"] == 0 and payload["delivery_counts"] == {}
+    assert payload["server_writer_configuration"] is None
+    session.execute.assert_not_called()
+    session.scalar.assert_not_called()
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_owner_writer_preflight_is_presence_only_without_io(configured):
+    from unittest.mock import AsyncMock
+
+    from app.api.mcp_schemas import GATE_STATUS_OUTPUT_SCHEMA
+    from app.infrastructure.watch_voice_actions import operational_status
+    from jsonschema import validate
+    from pydantic import SecretStr
+
+    token = "synthetic-private-writer-token"
+    writer = "synthetic-private-writer-identity"
+    config = action_settings().model_copy(
+        update={
+            "gate_watch_voice_actions_enabled": False,
+            "gate_mark_github_token": SecretStr(token if configured else ""),
+            "gate_mark_github_writer": writer if configured else "",
+        }
+    )
+    session = AsyncMock()
+    payload = asyncio.run(operational_status(session, config, scope_allowed=True))
+    assert payload["server_writer_configuration"] == {
+        "token_present": configured,
+        "writer_present": configured,
+        "verified": False,
+    }
+    assert token not in json.dumps(payload) and writer not in json.dumps(payload)
+    denied = asyncio.run(operational_status(session, config, scope_allowed=False))
+    assert denied["server_writer_configuration"] is None
+    assert token not in json.dumps(denied) and writer not in json.dumps(denied)
+    schema = GATE_STATUS_OUTPUT_SCHEMA["properties"]["watch_voice_actions"]
+    validate(payload, schema)
+    validate(denied, schema)
     session.execute.assert_not_called()
     session.scalar.assert_not_called()
 
@@ -677,3 +938,4 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
             ]
 
     asyncio.run(run())
+

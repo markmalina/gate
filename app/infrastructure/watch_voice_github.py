@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from app.infrastructure.watch_voice_journal import pulse
+
 REPOSITORY = "markmalina/mark"
 API = "https://api.github.com"
 MAX_BODY_BYTES = 24_000
@@ -26,6 +28,7 @@ class GithubReceipt:
     number: int
     url: str
     received_at: datetime
+    comment_id: int | None = None
 
 
 def transcript_parts(text: str) -> list[str]:
@@ -60,6 +63,7 @@ class MarkInboxClient:
         }
 
     async def _get(self, path: str) -> Any:
+        await pulse("github_read", seconds=90)
         try:
             response = await self.http.get(API + path, headers=self.headers, follow_redirects=False)
         except httpx.HTTPError:
@@ -90,6 +94,7 @@ class MarkInboxClient:
     async def post(
         self, *, part: int, issue_number: int | None, title: str, body: str
     ) -> GithubReceipt:
+        await pulse("github_write", seconds=90)
         path = f"/repos/{REPOSITORY}/issues"
         payload: dict[str, str] = {"title": title, "body": body}
         if part:
@@ -115,10 +120,23 @@ class MarkInboxClient:
             raise WatchVoiceError("github_receipt_unknown", unknown=True) from None
 
     def receipt(
-        self, obj: dict[str, Any], *, part: int, issue_number: int | None, expected_body: str
+        self, obj: dict[str, Any], *, part: int, issue_number: int | None, expected_body: str,
+        expected_writer: str | None = None,
     ) -> GithubReceipt:
         number = issue_number if part else obj["number"]
         expected_url = f"https://github.com/{REPOSITORY}/issues/{number}"
+        comment_id = None
+        if part:
+            prefix = expected_url + "#issuecomment-"
+            suffix = obj["html_url"].removeprefix(prefix)
+            if (not obj["html_url"].startswith(prefix) or not suffix.isascii()
+                    or not suffix.isdecimal() or len(suffix) > 19):
+                raise ValueError("receipt comment identity missing")
+            comment_id = int(suffix)
+            if (not 0 < comment_id <= 2**63 - 1 or str(comment_id) != suffix
+                    or ("id" in obj and (type(obj["id"]) is not int
+                                         or obj["id"] != comment_id))):
+                raise ValueError("receipt comment identity mismatch")
         valid_url = (
             obj["html_url"].startswith(expected_url + "#issuecomment-")
             if part
@@ -129,7 +147,9 @@ class MarkInboxClient:
             type(number) is not int
             or number <= 0
             or not valid_url
-            or obj.get("user", {}).get("login") != self.writer
+            or obj.get("user", {}).get("login") != (
+                self.writer if expected_writer is None else expected_writer
+            )
             or obj.get("body") != expected_body
             or "pull_request" in obj
         ):
@@ -137,10 +157,11 @@ class MarkInboxClient:
         received_at = datetime.fromisoformat(obj["created_at"].replace("Z", "+00:00"))
         if received_at.tzinfo is None:
             raise ValueError("receipt time missing")
-        return GithubReceipt(number, expected_url, received_at)
+        return GithubReceipt(number, expected_url, received_at, comment_id)
 
     async def reconcile(
-        self, *, part: int, issue_number: int | None, body: str
+        self, *, part: int, issue_number: int | None, body: str,
+        expected_writer: str | None = None,
     ) -> GithubReceipt | None:
         path = f"/repos/{REPOSITORY}/issues?state=all&per_page=100"
         if part:
@@ -157,7 +178,8 @@ class MarkInboxClient:
                     continue
                 try:
                     found.append(
-                        self.receipt(obj, part=part, issue_number=issue_number, expected_body=body)
+                        self.receipt(obj, part=part, issue_number=issue_number, expected_body=body,
+                                     expected_writer=expected_writer)
                     )
                 except (ValueError, KeyError, TypeError, AttributeError):
                     continue
@@ -172,3 +194,4 @@ class MarkInboxClient:
 
 def body_digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+

@@ -1,5 +1,7 @@
 """Process liveness, deployment readiness, and redacted worker health routes."""
 
+import asyncio
+import os
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -8,6 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.api.admin_auth import require_admin_bearer
+from app.api.deps import get_database_runtime
 from app.application.readiness import (
     CheckReadinessService,
     ReadinessComponentStatus,
@@ -19,9 +22,45 @@ from app.application.worker_health import (
     WorkerRuntimeState,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.watch_voice_release import empty_runtime_preflight, runtime_preflight
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
+
+
+@router.get("/admin/ops/watch-voice")
+async def watch_voice_preflight(
+    request: Request,
+    baseline_flags: bool = False,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    settings: Settings = settings_dependency,
+) -> JSONResponse:
+    """Observe loaded flags/schema/journal; this GET grants no release action."""
+    require_admin_bearer(authorization=authorization, settings=settings)
+    payload = empty_runtime_preflight(settings, os.environ)
+    try:
+        runtime = get_database_runtime(request)
+        service = getattr(request.app.state, "readiness_service", None)
+        if not isinstance(service, CheckReadinessService):
+            service = None
+        async with asyncio.timeout(4):
+            async with runtime.session_factory() as session:
+                payload = await runtime_preflight(session, settings, service, os.environ)
+    except TimeoutError:
+        payload["reason"] = "observation_timeout"
+    except Exception:
+        payload["reason"] = "voice_journal_unavailable"
+    if baseline_flags:
+        payload["configuration"].update(
+            early_inbox_enabled=settings.gate_watch_voice_early_inbox_enabled,
+            work_reserve_enabled=settings.gate_watch_voice_work_reserve_enabled,
+            work_mcp_enabled=settings.gate_watch_voice_work_mcp_enabled,
+        )
+    return JSONResponse(
+        status_code=200 if payload["result"] == "OBSERVED" else 503,
+        content=payload,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 class ReadinessChecksResponse(BaseModel):
@@ -114,7 +153,6 @@ async def ready(request: Request) -> JSONResponse:
     )
 
 
-
 @router.get(
     "/admin/ops/health",
     response_model=OperationsHealthResponse,
@@ -169,4 +207,3 @@ async def operations_health(
         content=payload.model_dump(mode="json"),
         headers={"Cache-Control": "no-store"},
     )
-

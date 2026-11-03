@@ -58,6 +58,7 @@ from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.reply_documents import run_reply_document_cleanup_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.watch_voice import run_watch_voice_worker_loop
+from app.infrastructure.watch_voice_journal import expect_worker
 from app.worker.telegram_processing import run_telegram_worker_loop
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                             run_reply_document_cleanup_loop(database_runtime.session_factory)
                         )
                     if getattr(settings, "gate_watch_voice_enabled", False):
+                        await expect_worker(database_runtime.session_factory, settings)
                         watch_voice_task = asyncio.create_task(
                             run_watch_voice_worker_loop(
                                 settings=settings,
@@ -401,4 +403,5 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
 

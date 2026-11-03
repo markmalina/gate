@@ -1,0 +1,110 @@
+name: Gate Watch release preflight observation
+
+on:
+  pull_request:
+    types: [labeled]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  actions: read
+
+concurrency:
+  group: >-
+    ${{ github.event.pull_request.number == 766 && github.event.sender.id == 23397294 && startsWith(github.event.label.name, format('v{0}-', github.event.pull_request.head.sha)) && github.event.pull_request.head.repo.full_name == 'markmalina/gate' && github.event.pull_request.head.ref == 'agent/736-autonomous-watch-queue' && 'gate736-cli-state-observation' || format('gate736-inactive-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  admission:
+    if: >-
+      github.event.pull_request.number == 766 &&
+      github.event.sender.id == 23397294 &&
+      startsWith(github.event.label.name, format('v{0}-', github.event.pull_request.head.sha)) &&
+      github.event.pull_request.head.repo.full_name == 'markmalina/gate' &&
+      github.event.pull_request.head.ref == 'agent/736-autonomous-watch-queue'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      admitted: ${{ steps.admission.outputs.admitted }}
+    steps:
+      - id: admission
+        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@ec4e689a0fa24305672ef4047ff7c5fac0666982
+        with:
+          phase: admission
+        env:
+          AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ github.token }}
+
+  observe:
+    needs: admission
+    if: needs.admission.outputs.admitted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: gate-production
+    outputs:
+      receipt-digest: ${{ steps.observe.outputs.receipt-digest }}
+      receipt-artifact-id: ${{ steps.receipt.outputs.artifact-id }}
+      detached-artifact-id: ${{ steps.detached.outputs.artifact-id }}
+    steps:
+      - id: observe
+        uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@ec4e689a0fa24305672ef4047ff7c5fac0666982
+        with:
+          phase: observe
+        env:
+          AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ github.token }}
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - id: receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: ops-watch-scope-observation.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 3
+      - id: detached
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: ops-watch-scope-observation.sha256
+          archive: false
+          if-no-files-found: error
+          retention-days: 3
+
+  verify:
+    needs: [admission, observe]
+    if: >-
+      always() && needs.admission.outputs.admitted == 'true' &&
+      needs.observe.outputs.receipt-digest != '' &&
+      needs.observe.outputs.receipt-artifact-id != '' &&
+      needs.observe.outputs.detached-artifact-id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.observe.outputs.receipt-artifact-id }},${{ needs.observe.outputs.detached-artifact-id }}
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - uses: markmalina/ops/agent-ops/actions/gate-watch-scope-diagnostic-v2@ec4e689a0fa24305672ef4047ff7c5fac0666982
+        with:
+          phase: verify
+          expected-digest: ${{ needs.observe.outputs.receipt-digest }}
+          receipt-artifact-id: ${{ needs.observe.outputs.receipt-artifact-id }}
+          detached-artifact-id: ${{ needs.observe.outputs.detached-artifact-id }}
+        env:
+          AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: ops-watch-scope-verification.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 3
+      - name: Require verified scope for successful workflow
+        shell: bash
+        run: >-
+          node --input-type=module -e
+          "import { readFileSync } from 'node:fs';
+          const receipt = JSON.parse(readFileSync('ops-watch-scope-verification.json'));
+          if (receipt.result !== 'VERIFIED_SCOPE_ONLY' || receipt.releaseAuthorized !== false) process.exitCode = 1;"

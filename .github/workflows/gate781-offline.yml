@@ -1,0 +1,77 @@
+name: Gate781 offline PostgreSQL and process proof
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['scripts/gate781/**', 'Dockerfile.gate781-*', '.github/workflows/gate781-offline.yml']
+permissions:
+  contents: read
+jobs:
+  postgres-process-restore:
+    if: github.event.pull_request.number == 766 && github.event.pull_request.head.repo.id == 1293746267
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gate781
+        ports: ['5432:5432']
+        options: --cpus 1 --memory 512m --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 6
+    env:
+      PYTHONPATH: .
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install fixed dependencies
+        run: python -m pip install -c constraints/ci.txt sqlalchemy asyncpg greenlet ruff
+      - name: Lint and OS child-tree tests
+        run: |
+          python scripts/gate781/test_runtime.py
+      - name: Seed actual Watch models and stop uncommitted writers
+        env:
+          GATE781_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GATE781_TEST_SOURCE_SHA"
+          python scripts/gate781/postgres_scenario.py seed-stop
+      - name: Local PostgreSQL backup and restore
+        run: |
+          docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump -h localhost -U postgres -d gate781 -Fc > /tmp/gate781.dump
+          docker run --rm --network host -e PGPASSWORD postgres:17 createdb -h localhost -U postgres gate781_restore
+          docker run --rm --network host -e PGPASSWORD -i postgres:17 pg_restore -h localhost -U postgres -d gate781_restore --no-owner --no-privileges < /tmp/gate781.dump
+      - name: Verify restored bytes cursor journal and quarantined claims
+        env:
+          GATE781_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python scripts/gate781/postgres_scenario.py verify
+      - name: Build both capped disposable images
+        run: |
+          docker build -f Dockerfile.gate781-writer -t gate781-writer:ci .
+          docker build -f Dockerfile.gate781-postgres -t gate781-pg:ci .
+          docker image inspect gate781-writer:ci gate781-pg:ci > gate781-images.json
+          docker run --rm --cpus 1 --memory 512m --entrypoint python gate781-writer:ci -c 'import sys; sys.path.insert(0,"scripts/gate781"); import runtime; print(runtime.caps())'
+          docker run --rm --cpus 1 --memory 512m --entrypoint python3 gate781-pg:ci -c 'import sys; sys.path.insert(0,"/fixture"); import runtime; print(runtime.caps())'
+      - name: Run real capped fixture process trees and reject wrong DB before seed
+        env:
+          GATE781_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python scripts/gate781/container_scenario.py
+      - name: Check formatting without accepting a modified source
+        if: always()
+        run: |
+          ruff check --fix --exit-zero scripts/gate781
+          ruff format scripts/gate781
+          git diff --exit-code -- scripts/gate781
+          ruff check scripts/gate781
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: gate781-offline-postgres
+          path: gate781-*.json
+          if-no-files-found: error
+          retention-days: 7
