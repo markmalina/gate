@@ -1,0 +1,18 @@
+{
+  "mode": "LOCAL_POSTGRES_SYNTHETIC",
+  "railwayCalls": 0,
+  "restoreKind": "PG_DUMP_LOGICAL_NOT_RAILWAY_VOLUME",
+  "proof": {
+    "schema": "gate781.data-proof/v1",
+    "phase": "RESTORED",
+    "nonce": "00000000-0000-0000-0000-000000000781",
+    "sourceSha": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+    "deploymentId": "00000000-0000-0000-0000-000000000782",
+    "postgresServiceId": "00000000-0000-0000-0000-000000000783",
+    "databaseSystemId": "7703878334758682661",
+    "dataDigest": "sha256:53355133c4e16e2f4d140ce2c3d5f9bb8b55e11b2730ef07ae0261beda527085",
+    "uncommittedAbsent": true,
+    "claimsQuarantined": true,
+    "mutations": 0
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "schema": "gate781.offline-evidence/v1",
+  "railwayCalls": 0,
+  "productionOperations": 0,
+  "S2": "NOT_STARTED",
+  "scope": "OFFLINE_IMPLEMENTATION_AND_REVIEWABLE_PACKAGE",
+  "candidate": {
+    "gate": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+    "ops": "0c8fc49b2e9d973d5f7e58289726e54e5f6ec2e4"
+  },
+  "artifact": {
+    "repository": "markmalina/gate",
+    "runId": 41613168631,
+    "artifactId": 13220381193,
+    "zipSha256": "cb64095c6e48041b9006e78e54a782e09eec7cdf0a9407d0ecfaf16fdcfa59e9",
+    "expiresAt": "2026-11-10T09:43:15Z",
+    "files": {
+      "gate781-containers.json": {
+        "sha256": "bcacd2627a450f6b291853877826238b073f29361c7257d3f03c64f367997d8d",
+        "bytes": 3690
+      },
+      "gate781-images.json": {
+        "sha256": "5a0f03db84b0a2e68ecb7953f943a9c0a5a6f270089739a87dcb0903d18af194",
+        "bytes": 8636
+      },
+      "gate781-seed-stop.json": {
+        "sha256": "378c414d36fb35b397944f866f883360b3810e29afce562757c1354b51a0ea0e",
+        "bytes": 659
+      },
+      "gate781-verify.json": {
+        "sha256": "2d1cade70d3d365ec33f226647e32919d1f9198579f59b59f5ba05704fdbf53e",
+        "bytes": 659
+      }
+    }
+  },
+  "workflowRuns": [
+    {
+      "repository": "markmalina/gate",
+      "id": 41613168717,
+      "name": "Gate781 fixture metadata inventory",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+      "url": "https://github.com/markmalina/gate/actions/runs/41613168717",
+      "created_at": "2026-11-03T09:42:17Z",
+      "updated_at": "2026-11-03T09:42:38Z"
+    },
+    {
+      "repository": "markmalina/gate",
+      "id": 41613168631,
+      "name": "Gate781 offline PostgreSQL and process proof",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+      "url": "https://github.com/markmalina/gate/actions/runs/41613168631",
+      "created_at": "2026-11-03T09:42:17Z",
+      "updated_at": "2026-11-03T09:43:19Z"
+    },
+    {
+      "repository": "markmalina/gate",
+      "id": 41613168672,
+      "name": "BECOME Quest exact-head CI",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+      "url": "https://github.com/markmalina/gate/actions/runs/41613168672",
+      "created_at": "2026-11-03T09:42:17Z",
+      "updated_at": "2026-11-03T09:49:58Z"
+    },
+    {
+      "repository": "markmalina/gate",
+      "id": 41613168624,
+      "name": "CI",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+      "url": "https://github.com/markmalina/gate/actions/runs/41613168624",
+      "created_at": "2026-11-03T09:42:17Z",
+      "updated_at": "2026-11-03T09:51:47Z"
+    },
+    {
+      "repository": "markmalina/ops",
+      "id": 41613337208,
+      "name": "Gate781 fixture metadata inventory",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "0c8fc49b2e9d973d5f7e58289726e54e5f6ec2e4",
+      "url": "https://github.com/markmalina/ops/actions/runs/41613337208",
+      "created_at": "2026-11-03T09:43:31Z",
+      "updated_at": "2026-11-03T09:43:48Z"
+    },
+    {
+      "repository": "markmalina/ops",
+      "id": 41613337223,
+      "name": "CI",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "0c8fc49b2e9d973d5f7e58289726e54e5f6ec2e4",
+      "url": "https://github.com/markmalina/ops/actions/runs/41613337223",
+      "created_at": "2026-11-03T09:43:31Z",
+      "updated_at": "2026-11-03T09:45:15Z"
+    },
+    {
+      "repository": "markmalina/ops",
+      "id": 41613337957,
+      "name": "Security",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "0c8fc49b2e9d973d5f7e58289726e54e5f6ec2e4",
+      "url": "https://github.com/markmalina/ops/actions/runs/41613337957",
+      "created_at": "2026-11-03T09:43:31Z",
+      "updated_at": "2026-11-03T09:44:20Z"
+    }
+  ],
+  "independentReview": "https://github.com/AlphaCenter/delta/issues/451",
+  "reviewLimitation": "Functional offline/package consistency only. Final broader adversarial review tool-restricted; no full security/native acceptance."
+}
