@@ -221,9 +221,9 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: 7fd322c958cccf6828a3e8fcb00a075b2d4f1f46
+          ref: 4827624955c9543bfae1b1377de8497956720ab9
           path: fallback
-          fetch-depth: 2
+          fetch-depth: 3
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -234,11 +234,11 @@ jobs:
         run: |
           python -m pip install -c fallback/constraints/ci.txt "./fallback[dev]"
           python -m pip check
-          cp tests/test_watch_voice_baseline_fallback_postgres.py fallback/tests/
+          cp tests/test_watch_voice_baseline_fallback_postgres.py tests/test_watch_voice_admission_fence.py tests/watch_fence_crash_child.py fallback/tests/
       - name: Populate0115, upgrade0119, run old ready and Actions against HTTP stubs
         working-directory: fallback
         run: |
-          python -m pytest tests/test_watch_voice_baseline_fallback_postgres.py -v --junitxml=watch-baseline.xml
+          python -m pytest tests/test_watch_voice_baseline_fallback_postgres.py tests/test_watch_voice_admission_fence.py -v --junitxml=watch-baseline.xml
       - name: Restore only the disposable synthetic PostgreSQL database
         run: |
           docker run --rm --network host -e PGPASSWORD postgres:17 pg_dump --host localhost --username postgres --dbname watch_baseline --format custom > /tmp/watch-baseline.dump
@@ -259,3 +259,4 @@ jobs:
             fallback/watch-baseline.xml
           if-no-files-found: error
           retention-days: 7
+

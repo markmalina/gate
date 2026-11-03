@@ -136,6 +136,21 @@ class ActionsInboxClient(MarkInboxClient):
             or run.get("status") != "in_progress"
         ):
             raise WatchVoiceError("watch_voice_actions_run_mismatch")
+        # A disabled driver is also a server admission fence after restart.
+        # Queued/delayed jobs may survive workflow disable. Never let them claim
+        # work in the candidate or compatible fallback while Ops holds the fence.
+        driver = await self._get(
+            f"/repos/{REPOSITORY}/actions/workflows/gate-watch-voice-drain.yml"
+        )
+        if (
+            not isinstance(driver, dict)
+            or type(driver.get("id")) is not int
+            or driver["id"] <= 0
+            or run.get("workflow_id") != driver["id"]
+            or driver.get("path") != WORKFLOW_PATH
+            or driver.get("state") != "active"
+        ):
+            raise WatchVoiceError("watch_voice_actions_driver_fenced")
         workflow = await self.file(WORKFLOW_PATH, claims["sha"], maximum=32_768)
         if hashlib.sha256(workflow).hexdigest() != workflow_pin:
             raise WatchVoiceError("watch_voice_actions_workflow_mismatch")
@@ -582,3 +597,4 @@ async def operational_status(
             and settings.gate_watch_voice_early_inbox_enabled):
         result["early_inbox"] = await card_status(session, settings)
     return result
+

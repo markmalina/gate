@@ -107,9 +107,16 @@ class ActionsWorld(World):
         self.workflow = WORKFLOW
         self.run_event = "schedule"
         self.current_run = "321"
+        self.workflow_state = "active"
 
     def handle(self, request):
         path = request.url.path
+        if path == "/repos/markmalina/mark/actions/workflows/gate-watch-voice-drain.yml":
+            return httpx.Response(
+                200,
+                json={"id": 123, "path": ".github/workflows/gate-watch-voice-drain.yml",
+                      "state": self.workflow_state},
+            )
         if request.method == "GET" and path == "/repos/markmalina/mark":
             return httpx.Response(
                 200,
@@ -129,6 +136,7 @@ class ActionsWorld(World):
             return httpx.Response(
                 200,
                 json={
+                    "workflow_id": 123,
                     "id": int(self.current_run),
                     "head_sha": SHA,
                     "head_branch": "main",
@@ -930,3 +938,4 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
             ]
 
     asyncio.run(run())
+

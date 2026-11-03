@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-ARTIFACT = "7fd322c958cccf6828a3e8fcb00a075b2d4f1f46"
+ARTIFACT = "4827624955c9543bfae1b1377de8497956720ab9"
 BASE = "afe0c6b8519381a0007c0dcc1c145207b5d54a3f"
 HEAD = "0119_watch_voice_comment_ids"
 MIGRATIONS = {
@@ -51,7 +51,9 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
     from sqlalchemy import select, text
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+    from test_watch_voice import queued_note
     from test_watch_voice_actions import ActionsWorld, action_settings, claims
+    from test_watch_voice_admission_fence import guarded_transport
 
     root = Path(__file__).resolve().parents[1]
     assert (
@@ -64,7 +66,9 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
     changed = subprocess.check_output(
         ["git", "diff", "--name-only", BASE, ARTIFACT], cwd=root, text=True
     )
-    assert set(changed.splitlines()) == set(MIGRATIONS)
+    assert set(changed.splitlines()) == set(MIGRATIONS) | {
+        "app/infrastructure/watch_voice_actions.py"
+    }
     for path, expected in MIGRATIONS.items():
         raw = (root / path).read_bytes()
         assert hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == expected
@@ -182,7 +186,9 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                 upgrade(HEAD)
                 assert await snapshot() == before
                 assert (await ready(200))["status"] == "ready"
-                async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(guarded_transport(world))
+                ) as http:
                     kwargs = dict(
                         settings=settings,
                         factory=factory,
@@ -221,7 +227,9 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                 )
                 # Restored journals must still suppress effects, including a
                 # fresh admitted run encountering the original UNKNOWN note.
-                async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(guarded_transport(world))
+                ) as http:
                     replay = await drain(
                         settings=settings,
                         factory=factory,
@@ -257,7 +265,7 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                         await session.scalars(select(WatchVoiceNote).order_by(WatchVoiceNote.id))
                     ).all()
                 )
-                assert len(notes) == 2
+                assert len(notes) == (4 if restored else 2)
                 assert next(n for n in notes if n.id == NOTE_IDS[1]).delivery_state == "delivered"
                 assert all(
                     n.data == world.audio and n.sha256 == hashlib.sha256(world.audio).hexdigest()
@@ -273,8 +281,107 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                             "WHERE transcript_origin = 'gate'"
                         )
                     )
-                ).scalar_one() == 2
+                ).scalar_one() == (4 if restored else 2)
                 version = (await session.execute(text("SHOW server_version"))).scalar_one()
+            # Persist unresolved effect claims into the actual dump, then prove
+            # restored processing/sending cannot trigger a second external call.
+            uncertain_ids = []
+            if not restored:
+                async with factory() as session:
+                    for label, transcription, delivery in (
+                        ("processing", "processing", "pending"),
+                        ("sending", "transcribed", "sending"),
+                    ):
+                        row = queued_note(
+                            world,
+                            f"id:dump-{label}",
+                            now,
+                            transcription_state=transcription,
+                            delivery_state=delivery,
+                            transcript="Synthetic preserved transcript"
+                            if transcription == "transcribed"
+                            else None,
+                            attempted_at=now,
+                        )
+                        row.id = str(
+                            uuid.uuid5(
+                                uuid.NAMESPACE_URL,
+                                repr(
+                                    ("mark-personal", "synthetic-owner", row.file_id, row.revision)
+                                ),
+                            )
+                        )
+                        session.add(row)
+                    await session.commit()
+            else:
+                async with factory() as session:
+                    rows = list(
+                        (
+                            await session.scalars(
+                                select(WatchVoiceNote).where(
+                                    WatchVoiceNote.file_id.in_(
+                                        ("id:dump-processing", "id:dump-sending")
+                                    )
+                                )
+                            )
+                        ).all()
+                    )
+                    assert len(rows) == 2
+                    assert {r.transcription_state for r in rows} == {"processing", "transcribed"}
+                    assert {r.delivery_state for r in rows} == {"pending", "sending"}
+                    uncertain_ids = [(r.id, r.file_id, r.revision, r.data, r.sha256) for r in rows]
+                for index, (_, file_id, revision, _, _) in enumerate(uncertain_ids):
+                    world.current_run = str(330 + index)
+                    world.entry.update(id=file_id, rev=revision)
+                    world.binding.update(file_id=file_id, revision=revision)
+                    async with httpx.AsyncClient(
+                        transport=httpx.MockTransport(guarded_transport(world))
+                    ) as http:
+                        await drain(
+                            settings=settings,
+                            factory=factory,
+                            http=http,
+                            claims=claims(run_id=world.current_run, jti=f"restored-active-{index}"),
+                            job_token="synthetic-job-token",
+                        )
+                assert world.posts == world.provider_calls == 0
+                async with factory() as session:
+                    for note_id, file_id, revision, data, checksum in uncertain_ids:
+                        row = await session.get(WatchVoiceNote, note_id)
+                        assert (row.file_id, row.revision, row.data, row.sha256) == (
+                            file_id,
+                            revision,
+                            data,
+                            checksum,
+                        )
+                        assert (
+                            row.transcription_state == "unknown" or row.delivery_state == "unknown"
+                        )
+            # Actual disabled server request: no claim is written, even with an
+            # in-progress old Actions run and valid synthetic credential.
+            async with factory() as session:
+                run_count = await session.scalar(
+                    text("SELECT count(*) FROM watch_voice_drain_runs")
+                )
+            world.current_run = "399"
+            from app.infrastructure.watch_voice_github import WatchVoiceError
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(guarded_transport(world, state="disabled_manually"))
+            ) as http:
+                with pytest.raises(WatchVoiceError, match="driver_fenced"):
+                    await drain(
+                        settings=settings,
+                        factory=factory,
+                        http=http,
+                        claims=claims(run_id="399", jti="disabled-after-restore"),
+                        job_token="synthetic-job-token",
+                    )
+            async with factory() as session:
+                assert (
+                    await session.scalar(text("SELECT count(*) FROM watch_voice_drain_runs"))
+                    == run_count
+                )
             evidence = {
                 "schema": "gate.watch.baseline-fallback-fixture/v1",
                 "result": "ACCEPT",
@@ -283,9 +390,11 @@ def test_exact_old_actions_app_on_populated_watch0119(monkeypatch):
                 "baseline_sha": BASE,
                 "migration_head": HEAD,
                 "postgres_version": version,
-                "old_actions_app": True,
+                "old_actions_app_with_admission_guard": True,
+                "disabled_workflow_server_admission_fenced": True,
                 "real_database_ready_http": True,
                 "restore_checked": restored,
+                "restored_processing_sending_no_retry": restored,
                 "real_drain_with_http_stubs": True,
                 "restored_replay_and_unknown_no_effects": restored,
                 "external_provider_calls": 0,
