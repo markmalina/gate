@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "agent-ops.gate-release-preflight-lock/v1",
+  "repository": "markmalina/ops",
+  "actionPath": "agent-ops/actions/gate-release-preflight",
+  "commit": "6d25ca027f81208f8068e39abacc42e8dc965be0",
+  "workflowSha256": "sha256:cca8de6ac129aaea5f33c561d75139b708b7274a3f4e10b7d74ff069d825daa7",
+  "expectedCurrentMain": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "expectedProductionSource": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
+  "reviewedStartCommand": "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'",
+  "authorizationExpiresAt": "2026-11-04T13:11:00Z",
+  "reviewedConfiguration": {
+    "productionSourceSha": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
+    "proposedSourceSha": "d116962adea52ae769381f2c49cdb537a14221a9",
+    "railwayTomlBlob": "d26281d309732ade5b8a9787d97e679398dec283",
+    "productionDockerfileBlob": "22dc92c6cc82bf9b33131647d2243a408fd6e5f2",
+    "proposedDockerfileBlob": "78e94f24fea683302c49fbe4badce55fff281023",
+    "railwayTomlIdenticalProductionAndProposed": true,
+    "preDeployCommand": "alembic upgrade head",
+    "startCommand": "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'",
+    "productionEnvironmentOverrides": false,
+    "alternateRootRailwayJsonExists": false,
+    "semanticsSources": [
+      "https://docs.railway.com/config-as-code/reference",
+      "https://docs.railway.com/builds/build-configuration"
+    ]
+  }
+}
