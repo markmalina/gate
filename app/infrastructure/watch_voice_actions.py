@@ -344,12 +344,6 @@ async def drain(
         )
         if state is None:
             return result("deferred")
-        # Durable work must not depend on availability or validity of a new delta.
-        # Binding, cutover, and coordinator guards still precede every effect.
-        payload = await _process_queued_note(scoped, factory, http, client, binding, state)
-        if payload is not None:
-            await coordinator.commit()
-            return payload
         token = await _refresh_access_token(scoped, http)
         await _verify_account_id(scoped, http, token)
         cursor = state.cursor
@@ -412,73 +406,63 @@ async def drain(
                 break
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
-        payload = await _process_queued_note(scoped, factory, http, client, binding, state)
-        await coordinator.commit()
-        return payload if payload is not None else result("idle")
-
-
-async def _process_queued_note(
-    scoped: Settings,
-    factory: async_sessionmaker[AsyncSession],
-    http: httpx.AsyncClient,
-    client: ActionsInboxClient,
-    binding: dict[str, Any],
-    state: WatchVoiceCursor,
-) -> dict[str, Any] | None:
-    """Consume one eligible durable note; caller holds the intake coordinator lock."""
-    scope = worker.note_scope(scoped)
-    if binding["scope"] == "future-only":
-        if state.future_cutover_at is None:
-            raise WatchVoiceError("watch_voice_actions_cutover_required")
-        scope += (
-            WatchVoiceNote.received_at >= state.future_cutover_at,
-            WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
-        )
-    stale = datetime.now(UTC) - timedelta(hours=1)
-    async with factory() as session:
-        for field, active, error in (
-            (
-                WatchVoiceNote.transcription_state,
-                "processing",
-                "watch_voice_stale_transcription",
-            ),
-            (WatchVoiceNote.delivery_state, "sending", "watch_voice_stale_publication"),
-        ):
-            await session.execute(
-                update(WatchVoiceNote)
+        scope = worker.note_scope(scoped)
+        if binding["scope"] == "future-only":
+            if state.future_cutover_at is None:
+                raise WatchVoiceError("watch_voice_actions_cutover_required")
+            scope += (
+                WatchVoiceNote.received_at >= state.future_cutover_at,
+                WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
+            )
+        stale = datetime.now(UTC) - timedelta(hours=1)
+        async with factory() as session:
+            for field, active, error in (
+                (
+                    WatchVoiceNote.transcription_state,
+                    "processing",
+                    "watch_voice_stale_transcription",
+                ),
+                (WatchVoiceNote.delivery_state, "sending", "watch_voice_stale_publication"),
+            ):
+                await session.execute(
+                    update(WatchVoiceNote)
+                    .where(
+                        *scope,
+                        WatchVoiceNote.attempted_at < stale,
+                        field == active,
+                    )
+                    .values({field.key: "unknown", "last_error": error})
+                )
+            await session.commit()
+            note = await session.scalar(
+                select(WatchVoiceNote)
                 .where(
                     *scope,
-                    WatchVoiceNote.attempted_at < stale,
-                    field == active,
+                    or_(
+                        WatchVoiceNote.transcription_state == "received",
+                        (WatchVoiceNote.transcription_state == "transcribed")
+                        & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
+                    ),
                 )
-                .values({field.key: "unknown", "last_error": error})
+                .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
+                .limit(1)
             )
-        await session.commit()
-        note = await session.scalar(
-            select(WatchVoiceNote)
-            .where(
-                *scope,
-                or_(
-                    WatchVoiceNote.transcription_state == "received",
-                    (WatchVoiceNote.transcription_state == "transcribed")
-                    & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
-                ),
-            )
-            .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
-            .limit(1)
-        )
-    if note is None:
-        return None
-    if note.transcription_state == "received":
-        await worker.transcribe_note(scoped, factory, http, note.id)
-        async with factory() as session:
-            refreshed = await session.get(WatchVoiceNote, note.id)
-        if refreshed is None:
-            raise WatchVoiceError("watch_voice_actions_note_missing")
-        note = refreshed
-    if note.transcription_state != "transcribed":
-        return result("processed", considered=1)
-    return await publish_result(factory, client, note)
+        if note is None:
+            await coordinator.commit()
+            return result("idle")
+        if note.transcription_state == "received":
+            await worker.transcribe_note(scoped, factory, http, note.id)
+            async with factory() as session:
+                refreshed = await session.get(WatchVoiceNote, note.id)
+            if refreshed is None:
+                raise WatchVoiceError("watch_voice_actions_note_missing")
+            note = refreshed
+        if note.transcription_state != "transcribed":
+            await coordinator.commit()
+            return result("processed", considered=1)
+        payload = await publish_result(factory, client, note)
+        await coordinator.commit()
+        return payload
 
 
 async def publish_result(
@@ -543,4 +527,3 @@ async def operational_status(
         "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }
-
