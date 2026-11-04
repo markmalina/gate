@@ -4,7 +4,7 @@
   "actionPath": "agent-ops/actions/gate-release-preflight",
   "commit": "c948e2e54462c9fb974259286ff426c326a1e087",
   "workflowSha256": "sha256:4da012f627821df9d484d01330f94b9dcdcc92ce97f61ec5cfadd20b4539974e",
-  "expectedCurrentMain": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "expectedCurrentMain": "c435eb695ec6bedb092600cced57c1a38b4cc2d1",
   "expectedProductionSource": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
   "reviewedStartCommand": "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'",
   "authorizationExpiresAt": "2026-11-04T13:11:00Z",
