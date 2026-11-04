@@ -683,8 +683,8 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
 @pytest.mark.parametrize("queued_state", ["received", "transcribed"])
 def test_durable_queue_precedes_oversized_delta(tmp_path, monkeypatch, queued_state):
     """A new oversized revision cannot starve an already archived eligible note."""
-    from app.worker import watch_voice as worker
     from app.models.watch_voice import WatchVoiceNote
+    from app.worker import watch_voice as worker
 
     world = ActionsWorld()
     world.patches(monkeypatch)
