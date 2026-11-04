@@ -66,7 +66,7 @@ jobs:
       - id: deploy
         name: Deploy through Ops
         continue-on-error: true
-        uses: markmalina/ops/agent-ops/actions/gate-deploy@cf771830c0af52d2fa13394cfbe712a9169a4df1
+        uses: markmalina/ops/agent-ops/actions/gate-deploy@02ef5f1c6f4273ca2a3194643383d646dbf37648
         with:
           target: gate
           expected-source-sha: ${{ steps.request.outputs.source_sha }}
