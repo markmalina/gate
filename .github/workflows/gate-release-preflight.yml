@@ -38,7 +38,7 @@ jobs:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
       - name: Observe fixed Gate target
-        uses: markmalina/ops/agent-ops/actions/gate-release-preflight@b97e06b741421e92aa67023bd3bd8aa1f2675023
+        uses: markmalina/ops/agent-ops/actions/gate-release-preflight@c948e2e54462c9fb974259286ff426c326a1e087
         env:
           GATE_HELPER_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
