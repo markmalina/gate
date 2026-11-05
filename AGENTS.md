@@ -44,7 +44,27 @@ worker or product acceptance, or request any operation through AQUB issues,
 workflows or credentials. Old routes/grants, including Gate745, are superseded.
 Historical contracts and migrations do not authorize reactivation.
 
-### Production deploy route
+### Public visibility preparation — Gate789, NEW_UNRELEASED
+
+This source package prepares a Gate-local copy of the narrow Ops Gate-only executor.
+Its upstream is Ops `02ef5f1c6f4273ca2a3194643383d646dbf37648`; its actual executor
+revision is the checked-out Gate workflow SHA, recorded separately in receipts.
+`.github/workflows/ops-deploy.yml` has a literal DEFAULT OFF job gate. This package
+does not activate or authorize any deployment. Activation requires a separately
+reviewed exact source and release contract, current provider/UNKNOWN reconciliation,
+and owner grant. Existing target, owner, main, rerun, token and receipt boundaries
+remain; Ops remains private and continues source maintenance/review.
+
+The four private Ops dependencies in `gate-snapshot-cutover.yml` are explicitly
+quarantined. S1 is NOT_ACCEPTED; its old source/workflow lock is not rewritten to
+claim compatibility. Do not execute it or treat this change as S1 acceptance.
+
+The manual history scanner is read-only and unrun. NO_FINDINGS covers only fetched
+Git refs under its scanner rules; it cannot clear issues, comments, attachments,
+unreachable objects, LFS payloads or runtime data. Publication remains a separate
+owner action after review. See `docs/operations/GATE-PUBLIC-PREP.md`.
+
+### Production deploy route (historical registration; prepared successor OFF)
 
 Gate owns `.github/workflows/ops-deploy.yml` and control issue #751.
 After the exact owner Gate-only release gate and exact-head checks, post only:

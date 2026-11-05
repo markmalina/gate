@@ -54,6 +54,13 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             constraints/ci.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Check Gate-local Ops executor offline
+        run: node --test tests/ops/*.test.mjs
       - name: Scan tracked runtime tree for sensitive literals
         run: python scripts/repository_sensitive_data_guard.py
       - name: Install dependencies
