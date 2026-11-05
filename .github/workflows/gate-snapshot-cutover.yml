@@ -1,4 +1,4 @@
-name: Gate Snapshot Cutover
+name: Gate Snapshot Cutover (QUARANTINED for public visibility)
 
 on:
   issue_comment:
@@ -14,9 +14,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # NOT_EXECUTABLE: private Ops dependencies remain historical; public migration is not accepted.
+  # Do not update the existing snapshot lock or claim S1 compatibility from this quarantine.
   snapshot-requester:
     if: >-
-      ${{ github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
+      ${{ false && github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
           github.event_name == 'issue_comment' && github.event.action == 'created' &&
           github.event.issue.number == 745 && !github.event.issue.pull_request &&
           github.actor == 'markmalina' && github.actor_id == '23397294' &&
@@ -50,7 +52,7 @@ jobs:
           operation: gate-snapshot-cutover
   snapshot-cutover:
     if: >-
-      ${{
+      ${{ false &&
         github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
         github.event_name == 'issue_comment' && github.event.action == 'created' &&
         github.event.issue.number == 745 && !github.event.issue.pull_request &&
@@ -154,7 +156,7 @@ jobs:
           if-no-files-found: error
   snapshot-verify:
     needs: snapshot-cutover
-    if: ${{ needs.snapshot-cutover.result == 'success' && needs.snapshot-cutover.outputs.result == 'SUCCEEDED' }}
+    if: ${{ false && needs.snapshot-cutover.result == 'success' && needs.snapshot-cutover.outputs.result == 'SUCCEEDED' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: gate-production
@@ -200,7 +202,7 @@ jobs:
     needs:
       - snapshot-cutover
       - snapshot-verify
-    if: ${{ needs.snapshot-cutover.result == 'success' && needs.snapshot-cutover.outputs.result == 'SUCCEEDED' && needs.snapshot-verify.result == 'success' && needs.snapshot-verify.outputs.result == 'OBSERVED' }}
+    if: ${{ false && needs.snapshot-cutover.result == 'success' && needs.snapshot-cutover.outputs.result == 'SUCCEEDED' && needs.snapshot-verify.result == 'success' && needs.snapshot-verify.outputs.result == 'OBSERVED' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
