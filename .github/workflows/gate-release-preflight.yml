@@ -1,0 +1,57 @@
+name: Gate release read-only preflight
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'edited' &&
+      github.repository == 'markmalina/gate' &&
+      github.repository_id == '1293746267' &&
+      github.repository_owner_id == '23397294' &&
+      github.actor_id == '23397294' &&
+      github.event.sender.id == 23397294 &&
+      github.event.pull_request.head.repo.id == 1293746267 &&
+      github.event.pull_request.head.repo.fork == false &&
+      github.run_attempt == 1 &&
+      startsWith(github.event.pull_request.body, '/ops-gate-release-preflight expected-head-sha=')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: gate-production
+    concurrency:
+      group: gate-production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert exact helper head without provider credentials
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Observe fixed Gate target
+        uses: markmalina/ops/agent-ops/actions/gate-release-preflight@4253055419e943c59aeb41f1e604f631b4499d26
+        env:
+          GATE_HELPER_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          GITHUB_READ_TOKEN: ${{ github.token }}
+      - name: Retain redacted original receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate-release-preflight-${{ github.run_id }}
+          path: |
+            gate-release-preflight.json
+            gate-release-preflight.sha256
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
+
