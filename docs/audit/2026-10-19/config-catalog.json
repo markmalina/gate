@@ -1,0 +1,1692 @@
+{
+  "schema_version": "gate.audit.snapshot.v1",
+  "repository": "markmalina/gate",
+  "repository_id": 1293746267,
+  "source_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "source_tree": "7b5ddc0e6317fc475e2256953a69a07b109463dc",
+  "captured_on": "2026-10-19",
+  "audit_issue": 767,
+  "analysis": "source defaults only; no real environment/secret values collected",
+  "field_count": 161,
+  "example_assignments": 118,
+  "missing_aliases": [
+    "TELEGRAM_AQUB_BOT_TOKEN",
+    "TELEGRAM_AQUB_BOT_USERNAME",
+    "TELEGRAM_AQUB_WEBHOOK_SECRET",
+    "RAILWAY_GIT_COMMIT_SHA",
+    "RAILWAY_SERVICE_NAME",
+    "GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID",
+    "GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID",
+    "GATE_SEND_ENABLED",
+    "GATE_RICH_SEND_ENABLED",
+    "GATE_ACCOUNT_RU_SEND_ENABLED",
+    "GATE_ACCOUNT_BY_SEND_ENABLED",
+    "GATE_AQUB_RECEIPT_SIGNING_KEY",
+    "GATE_BECOME_I4_CHAIN_EXECUTION_ENABLED",
+    "GATE_BECOME_I4_RECOVERY_EXECUTION_ENABLED",
+    "GATE_BECOME_I4_RECOVERY_MAX_POSTS",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_ENABLED",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_MAX_CALLS",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_MODEL",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_LANGUAGE",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND",
+    "GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS",
+    "GATE_TELEGRAM_VOICE_ARCHIVE_ENABLED",
+    "GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED",
+    "GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL",
+    "GATE_TELEGRAM_VOICE_RESERVE_MICROUSD_PER_SECOND",
+    "GATE_TELEGRAM_VOICE_LANGUAGE",
+    "GATE_DROPBOX_CALL_INTAKE_ENABLED",
+    "DROPBOX_CALL_APP_KEY",
+    "DROPBOX_CALL_APP_SECRET",
+    "DROPBOX_CALL_REFRESH_TOKEN",
+    "DROPBOX_CALL_ACCOUNT_ID",
+    "DROPBOX_CALL_INBOX_PATH",
+    "GATE_DROPBOX_CALL_POLL_SECONDS",
+    "GATE_WATCH_VOICE_ENABLED",
+    "GATE_WATCH_VOICE_DATA_GATE_APPROVED",
+    "GATE_WATCH_VOICE_WORKSPACE_KEY",
+    "GATE_WATCH_VOICE_POLL_SECONDS",
+    "GATE_WATCH_VOICE_FILE_ID",
+    "GATE_WATCH_VOICE_REVISION",
+    "GATE_MARK_GITHUB_TOKEN",
+    "GATE_MARK_GITHUB_WRITER",
+    "GATE_WORKSPACE_ID",
+    "GATE_REPLY_SEQUENCE_WORKER_ENABLED",
+    "GATE_REPLY_SEQUENCE_POLL_SECONDS",
+    "GATE_REPLY_SEND_RECOVERY_ENABLED",
+    "GATE_REPLY_SEND_RECOVERY_STALE_SECONDS",
+    "GATE_REPLY_SEND_RECOVERY_LIMIT"
+  ],
+  "example_names_outside_settings": [
+    "TELEGRAM_API_BASE_URL",
+    "GATE_FOODCUBE_G3_ENABLED",
+    "GATE_FOODCUBE_G3_ENV",
+    "GATE_FOODCUBE_G3_RUNTIME_DATABASE_URL",
+    "GATE_FOODCUBE_G3_MIGRATION_DATABASE_URL"
+  ],
+  "fields": [
+    {
+      "name": "database_url",
+      "type": "str",
+      "env": "DATABASE_URL",
+      "default_expression": "\"\"",
+      "line": 25,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_bot_token",
+      "type": "str",
+      "env": "TELEGRAM_BOT_TOKEN",
+      "default_expression": "\"\"",
+      "line": 26,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_bot_username",
+      "type": "str",
+      "env": "TELEGRAM_BOT_USERNAME",
+      "default_expression": "\"gate_m_bot\"",
+      "line": 27,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_webhook_secret",
+      "type": "SecretStr",
+      "env": "TELEGRAM_WEBHOOK_SECRET",
+      "default_expression": "SecretStr(\"\")",
+      "line": 30,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_alpha_bot_token",
+      "type": "SecretStr",
+      "env": "TELEGRAM_ALPHA_BOT_TOKEN",
+      "default_expression": "SecretStr(\"\")",
+      "line": 34,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_alpha_bot_username",
+      "type": "str",
+      "env": "TELEGRAM_ALPHA_BOT_USERNAME",
+      "default_expression": "\"\"",
+      "line": 37,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_alpha_webhook_secret",
+      "type": "SecretStr",
+      "env": "TELEGRAM_ALPHA_WEBHOOK_SECRET",
+      "default_expression": "SecretStr(\"\")",
+      "line": 40,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_beta_bot_token",
+      "type": "SecretStr",
+      "env": "TELEGRAM_BETA_BOT_TOKEN",
+      "default_expression": "SecretStr(\"\")",
+      "line": 43,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_beta_bot_username",
+      "type": "str",
+      "env": "TELEGRAM_BETA_BOT_USERNAME",
+      "default_expression": "\"\"",
+      "line": 46,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_beta_webhook_secret",
+      "type": "SecretStr",
+      "env": "TELEGRAM_BETA_WEBHOOK_SECRET",
+      "default_expression": "SecretStr(\"\")",
+      "line": 49,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_become_bot_token",
+      "type": "SecretStr",
+      "env": "TELEGRAM_BECOME_BOT_TOKEN",
+      "default_expression": "SecretStr(\"\")",
+      "line": 52,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_become_bot_username",
+      "type": "str",
+      "env": "TELEGRAM_BECOME_BOT_USERNAME",
+      "default_expression": "\"\"",
+      "line": 55,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_become_webhook_secret",
+      "type": "SecretStr",
+      "env": "TELEGRAM_BECOME_WEBHOOK_SECRET",
+      "default_expression": "SecretStr(\"\")",
+      "line": 58,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_aqub_bot_token",
+      "type": "SecretStr",
+      "env": "TELEGRAM_AQUB_BOT_TOKEN",
+      "default_expression": "SecretStr(\"\")",
+      "line": 61,
+      "in_example": false,
+      "secret_type": true
+    },
+    {
+      "name": "telegram_aqub_bot_username",
+      "type": "str",
+      "env": "TELEGRAM_AQUB_BOT_USERNAME",
+      "default_expression": "\"\"",
+      "line": 64,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "telegram_aqub_webhook_secret",
+      "type": "SecretStr",
+      "env": "TELEGRAM_AQUB_WEBHOOK_SECRET",
+      "default_expression": "SecretStr(\"\")",
+      "line": 67,
+      "in_example": false,
+      "secret_type": true
+    },
+    {
+      "name": "gate_env",
+      "type": "str",
+      "env": "GATE_ENV",
+      "default_expression": "\"development\"",
+      "line": 70,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_default_mode",
+      "type": "str",
+      "env": "GATE_DEFAULT_MODE",
+      "default_expression": "\"manual\"",
+      "line": 71,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "action_bearer_token",
+      "type": "str",
+      "env": "ACTION_BEARER_TOKEN",
+      "default_expression": "\"\"",
+      "line": 72,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "admin_bearer_token",
+      "type": "str",
+      "env": "ADMIN_BEARER_TOKEN",
+      "default_expression": "\"\"",
+      "line": 73,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_mcp_enabled",
+      "type": "bool",
+      "env": "GATE_MCP_ENABLED",
+      "default_expression": "False",
+      "line": 74,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_auth_mode",
+      "type": "str",
+      "env": "MCP_AUTH_MODE",
+      "default_expression": "\"temporary_bearer\"",
+      "line": 75,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_authorization_server",
+      "type": "str",
+      "env": "MCP_AUTHORIZATION_SERVER",
+      "default_expression": "\"\"",
+      "line": 76,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_public_resource_url",
+      "type": "str",
+      "env": "MCP_PUBLIC_RESOURCE_URL",
+      "default_expression": "\"\"",
+      "line": 77,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_oauth_jwks_url",
+      "type": "str",
+      "env": "MCP_OAUTH_JWKS_URL",
+      "default_expression": "\"\"",
+      "line": 78,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_oauth_allowed_algorithms",
+      "type": "str",
+      "env": "MCP_OAUTH_ALLOWED_ALGORITHMS",
+      "default_expression": "\"RS256\"",
+      "line": 79,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_oauth_clock_skew_seconds",
+      "type": "int",
+      "env": "MCP_OAUTH_CLOCK_SKEW_SECONDS",
+      "default_expression": "30",
+      "line": 82,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_oauth_workspace_claim",
+      "type": "str",
+      "env": "MCP_OAUTH_WORKSPACE_CLAIM",
+      "default_expression": "\"gate_workspace_id\"",
+      "line": 85,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_oauth_account_ids_claim",
+      "type": "str",
+      "env": "MCP_OAUTH_ACCOUNT_IDS_CLAIM",
+      "default_expression": "\"gate_account_ids\"",
+      "line": 88,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_oauth_project_ids_claim",
+      "type": "str",
+      "env": "MCP_OAUTH_PROJECT_IDS_CLAIM",
+      "default_expression": "\"gate_project_ids\"",
+      "line": 91,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_read_bearer_token",
+      "type": "str",
+      "env": "MCP_READ_BEARER_TOKEN",
+      "default_expression": "\"\"",
+      "line": 94,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_read_workspace_id",
+      "type": "str",
+      "env": "MCP_READ_WORKSPACE_ID",
+      "default_expression": "\"\"",
+      "line": 95,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_read_account_ids",
+      "type": "str",
+      "env": "MCP_READ_ACCOUNT_IDS",
+      "default_expression": "\"\"",
+      "line": 96,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "mcp_read_project_ids",
+      "type": "str",
+      "env": "MCP_READ_PROJECT_IDS",
+      "default_expression": "\"\"",
+      "line": 97,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "deployment_sha",
+      "type": "str",
+      "env": "RAILWAY_GIT_COMMIT_SHA",
+      "default_expression": "\"unknown\"",
+      "line": 98,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "deployment_service",
+      "type": "str",
+      "env": "RAILWAY_SERVICE_NAME",
+      "default_expression": "\"gate\"",
+      "line": 99,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_account_ru_business_connection_id",
+      "type": "str",
+      "env": "GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID",
+      "default_expression": "\"\"",
+      "line": 100,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_account_by_business_connection_id",
+      "type": "str",
+      "env": "GATE_ACCOUNT_BY_BUSINESS_CONNECTION_ID",
+      "default_expression": "\"\"",
+      "line": 103,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_send_enabled",
+      "type": "bool",
+      "env": "GATE_SEND_ENABLED",
+      "default_expression": "True",
+      "line": 106,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_rich_send_enabled",
+      "type": "bool",
+      "env": "GATE_RICH_SEND_ENABLED",
+      "default_expression": "False",
+      "line": 107,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_document_send_enabled",
+      "type": "bool",
+      "env": "GATE_DOCUMENT_SEND_ENABLED",
+      "default_expression": "False",
+      "line": 108,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_document_cleanup_enabled",
+      "type": "bool",
+      "env": "GATE_DOCUMENT_CLEANUP_ENABLED",
+      "default_expression": "True",
+      "line": 111,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_account_ru_send_enabled",
+      "type": "bool",
+      "env": "GATE_ACCOUNT_RU_SEND_ENABLED",
+      "default_expression": "True",
+      "line": 114,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_account_by_send_enabled",
+      "type": "bool",
+      "env": "GATE_ACCOUNT_BY_SEND_ENABLED",
+      "default_expression": "True",
+      "line": 117,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_telegram_worker_enabled",
+      "type": "bool",
+      "env": "GATE_TELEGRAM_WORKER_ENABLED",
+      "default_expression": "False",
+      "line": 120,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_connector_enabled",
+      "type": "bool",
+      "env": "GATE_ALPHA_CONNECTOR_ENABLED",
+      "default_expression": "False",
+      "line": 124,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_connector_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_CONNECTOR_ENABLED",
+      "default_expression": "False",
+      "line": 127,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_dispatch_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_CHECKPOINT_DISPATCH_ENABLED",
+      "default_expression": "False",
+      "line": 130,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_github_app_id",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_GITHUB_APP_ID",
+      "default_expression": "\"\"",
+      "line": 134,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_github_installation_id",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_GITHUB_INSTALLATION_ID",
+      "default_expression": "\"\"",
+      "line": 138,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_github_private_key",
+      "type": "SecretStr",
+      "env": "GATE_BETA_CHECKPOINT_GITHUB_PRIVATE_KEY",
+      "default_expression": "SecretStr(\"\")",
+      "line": 142,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "gate_become_connector_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_CONNECTOR_ENABLED",
+      "default_expression": "False",
+      "line": 146,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_aqub_receipt_signing_key",
+      "type": "SecretStr",
+      "env": "GATE_AQUB_RECEIPT_SIGNING_KEY",
+      "default_expression": "SecretStr(\"\")",
+      "line": 149,
+      "in_example": false,
+      "secret_type": true
+    },
+    {
+      "name": "gate_aqub_media_forward_enabled",
+      "type": "bool",
+      "env": "GATE_AQUB_MEDIA_FORWARD_ENABLED",
+      "default_expression": "False",
+      "line": 153,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_aqub_food_media_processing_enabled",
+      "type": "bool",
+      "env": "GATE_AQUB_FOOD_MEDIA_PROCESSING_ENABLED",
+      "default_expression": "False",
+      "line": 157,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_aqub_food_media_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_AQUB_FOOD_MEDIA_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 161,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_aqub_food_media_model",
+      "type": "str",
+      "env": "GATE_AQUB_FOOD_MEDIA_MODEL",
+      "default_expression": "\"gpt-5.6-luna\"",
+      "line": 165,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_aqub_food_media_transcription_model",
+      "type": "str",
+      "env": "GATE_AQUB_FOOD_MEDIA_TRANSCRIPTION_MODEL",
+      "default_expression": "\"gpt-4o-mini-transcribe\"",
+      "line": 171,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_installation_key",
+      "type": "str",
+      "env": "GATE_BETA_INSTALLATION_KEY",
+      "default_expression": "\"\"",
+      "line": 176,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_shadow_worker_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_SHADOW_WORKER_ENABLED",
+      "default_expression": "False",
+      "line": 179,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_canary_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_CANARY_ENABLED",
+      "default_expression": "False",
+      "line": 183,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_model_profile",
+      "type": "str",
+      "env": "GATE_BETA_MODEL_PROFILE",
+      "default_expression": "\"gpt-5.6-luna\"",
+      "line": 187,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_model_max_output_tokens",
+      "type": "int",
+      "env": "GATE_BETA_MODEL_MAX_OUTPUT_TOKENS",
+      "default_expression": "512",
+      "line": 193,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_model_timeout_seconds",
+      "type": "float",
+      "env": "GATE_BETA_MODEL_TIMEOUT_SECONDS",
+      "default_expression": "30",
+      "line": 199,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_privacy_mode_confirmed",
+      "type": "bool",
+      "env": "GATE_BETA_PRIVACY_MODE_CONFIRMED",
+      "default_expression": "False",
+      "line": 205,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_katya_space_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_KATYA_SPACE_ENABLED",
+      "default_expression": "False",
+      "line": 209,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_katya_space_ready",
+      "type": "bool",
+      "env": "GATE_BETA_KATYA_SPACE_READY",
+      "default_expression": "False",
+      "line": 213,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_katya_delivery_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_KATYA_DELIVERY_ENABLED",
+      "default_expression": "False",
+      "line": 217,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_katya_chat_id",
+      "type": "SecretStr",
+      "env": "GATE_BETA_KATYA_CHAT_ID",
+      "default_expression": "SecretStr(\"\")",
+      "line": 221,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "gate_beta_katya_user_id",
+      "type": "SecretStr",
+      "env": "GATE_BETA_KATYA_USER_ID",
+      "default_expression": "SecretStr(\"\")",
+      "line": 225,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "gate_beta_katya_consent_sha256",
+      "type": "SecretStr",
+      "env": "GATE_BETA_KATYA_CONSENT_SHA256",
+      "default_expression": "SecretStr(\"\")",
+      "line": 229,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "gate_beta_group_capacity",
+      "type": "int",
+      "env": "GATE_BETA_GROUP_CAPACITY",
+      "default_expression": "1",
+      "line": 233,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_installation_key",
+      "type": "str",
+      "env": "GATE_BECOME_INSTALLATION_KEY",
+      "default_expression": "\"\"",
+      "line": 239,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_shadow_worker_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_SHADOW_WORKER_ENABLED",
+      "default_expression": "False",
+      "line": 242,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_canary_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_CANARY_ENABLED",
+      "default_expression": "False",
+      "line": 246,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_delivery_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_DELIVERY_ENABLED",
+      "default_expression": "False",
+      "line": 250,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_privacy_mode_confirmed",
+      "type": "bool",
+      "env": "GATE_BECOME_PRIVACY_MODE_CONFIRMED",
+      "default_expression": "False",
+      "line": 254,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_group_capacity",
+      "type": "int",
+      "env": "GATE_BECOME_GROUP_CAPACITY",
+      "default_expression": "1",
+      "line": 258,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_i4_chain_execution_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_I4_CHAIN_EXECUTION_ENABLED",
+      "default_expression": "False",
+      "line": 264,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_i4_recovery_execution_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_I4_RECOVERY_EXECUTION_ENABLED",
+      "default_expression": "False",
+      "line": 268,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_i4_recovery_max_posts",
+      "type": "int",
+      "env": "GATE_BECOME_I4_RECOVERY_MAX_POSTS",
+      "default_expression": "0",
+      "line": 272,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_ENABLED",
+      "default_expression": "False",
+      "line": 278,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 282,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_max_calls",
+      "type": "int",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_MAX_CALLS",
+      "default_expression": "0",
+      "line": 286,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_model",
+      "type": "str",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_MODEL",
+      "default_expression": "\"gpt-4o-mini-transcribe\"",
+      "line": 292,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_language",
+      "type": "str",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_LANGUAGE",
+      "default_expression": "\"ru\"",
+      "line": 296,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_reserve_microusd_per_second",
+      "type": "int",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_RESERVE_MICROUSD_PER_SECOND",
+      "default_expression": "100",
+      "line": 302,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_voice_transcription_timeout_seconds",
+      "type": "float",
+      "env": "GATE_BECOME_VOICE_TRANSCRIPTION_TIMEOUT_SECONDS",
+      "default_expression": "60",
+      "line": 308,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice1_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE1_ENABLED",
+      "default_expression": "False",
+      "line": 314,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice1_max_operations",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE1_MAX_OPERATIONS",
+      "default_expression": "0",
+      "line": 318,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice1_provider_max_calls",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE1_PROVIDER_MAX_CALLS",
+      "default_expression": "0",
+      "line": 324,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE2_ENABLED",
+      "default_expression": "False",
+      "line": 330,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE2_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 334,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_max_operations",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE2_MAX_OPERATIONS",
+      "default_expression": "0",
+      "line": 338,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_provider_max_calls",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE2_PROVIDER_MAX_CALLS",
+      "default_expression": "0",
+      "line": 344,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_model",
+      "type": "str",
+      "env": "GATE_BECOME_PILOT_SLICE2_MODEL",
+      "default_expression": "\"gpt-5.6-luna\"",
+      "line": 350,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_max_output_tokens",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE2_MAX_OUTPUT_TOKENS",
+      "default_expression": "1024",
+      "line": 356,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice2_timeout_seconds",
+      "type": "float",
+      "env": "GATE_BECOME_PILOT_SLICE2_TIMEOUT_SECONDS",
+      "default_expression": "30",
+      "line": 362,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE3_ENABLED",
+      "default_expression": "False",
+      "line": 368,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE3_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 372,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_delivery_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE3_DELIVERY_ENABLED",
+      "default_expression": "False",
+      "line": 376,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_relations_enabled",
+      "type": "bool",
+      "env": "GATE_BECOME_PILOT_SLICE3_RELATIONS_ENABLED",
+      "default_expression": "False",
+      "line": 380,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_max_telegram_sends",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE3_MAX_TELEGRAM_SENDS",
+      "default_expression": "0",
+      "line": 384,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_max_relations_posts",
+      "type": "int",
+      "env": "GATE_BECOME_PILOT_SLICE3_MAX_RELATIONS_POSTS",
+      "default_expression": "0",
+      "line": 390,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_bot_installation_identity",
+      "type": "str",
+      "env": "GATE_BECOME_PILOT_SLICE3_BOT_INSTALLATION_IDENTITY",
+      "default_expression": "\"\"",
+      "line": 396,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_space_ref",
+      "type": "str",
+      "env": "GATE_BECOME_PILOT_SLICE3_SPACE_REF",
+      "default_expression": "\"\"",
+      "line": 400,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_become_pilot_slice3_relations_url",
+      "type": "str",
+      "env": "GATE_BECOME_PILOT_SLICE3_RELATIONS_URL",
+      "default_expression": "\"\"",
+      "line": 404,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_shadow_worker_enabled",
+      "type": "bool",
+      "env": "GATE_ALPHA_SHADOW_WORKER_ENABLED",
+      "default_expression": "False",
+      "line": 408,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_canary_enabled",
+      "type": "bool",
+      "env": "GATE_ALPHA_CANARY_ENABLED",
+      "default_expression": "False",
+      "line": 412,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_group_capacity",
+      "type": "int",
+      "env": "GATE_ALPHA_GROUP_CAPACITY",
+      "default_expression": "1",
+      "line": 416,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_membership_replay_limit",
+      "type": "int",
+      "env": "GATE_ALPHA_MEMBERSHIP_REPLAY_LIMIT",
+      "default_expression": "0",
+      "line": 422,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_enabled",
+      "type": "bool",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_ENABLED",
+      "default_expression": "True",
+      "line": 428,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_audience",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_AUDIENCE",
+      "default_expression": "\"gate-beta-checkpoint-v1\"",
+      "line": 432,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_repository",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_REPOSITORY",
+      "default_expression": "\"AlphaCenter/beta\"",
+      "line": 438,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_repository_id",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_ID",
+      "default_expression": "\"1312239432\"",
+      "line": 442,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_repository_owner_id",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_REPOSITORY_OWNER_ID",
+      "default_expression": "\"310893851\"",
+      "line": 446,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_ref",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_REF",
+      "default_expression": "\"refs/heads/main\"",
+      "line": 450,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_beta_checkpoint_oidc_workflow_ref",
+      "type": "str",
+      "env": "GATE_BETA_CHECKPOINT_OIDC_WORKFLOW_REF",
+      "default_expression": "(\"AlphaCenter/beta/.github/workflows/checkpoint-context.yml@refs/heads/main\")",
+      "line": 454,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_delivery_enabled",
+      "type": "bool",
+      "env": "GATE_ALPHA_DELIVERY_ENABLED",
+      "default_expression": "False",
+      "line": 458,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_privacy_mode_confirmed",
+      "type": "bool",
+      "env": "GATE_ALPHA_PRIVACY_MODE_CONFIRMED",
+      "default_expression": "False",
+      "line": 462,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_agent_bundle_root",
+      "type": "str",
+      "env": "GATE_AGENT_BUNDLE_ROOT",
+      "default_expression": "\"agent_bundles\"",
+      "line": 466,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "openai_api_key",
+      "type": "SecretStr",
+      "env": "OPENAI_API_KEY",
+      "default_expression": "SecretStr(\"\")",
+      "line": 472,
+      "in_example": true,
+      "secret_type": true
+    },
+    {
+      "name": "openai_api_base_url",
+      "type": "str",
+      "env": "OPENAI_API_BASE_URL",
+      "default_expression": "\"https://api.openai.com/v1\"",
+      "line": 476,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_universal_mayak_runtime_enabled",
+      "type": "bool",
+      "env": "GATE_UNIVERSAL_MAYAK_RUNTIME_ENABLED",
+      "default_expression": "False",
+      "line": 480,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_universal_mayak_delivery_enabled",
+      "type": "bool",
+      "env": "GATE_UNIVERSAL_MAYAK_DELIVERY_ENABLED",
+      "default_expression": "False",
+      "line": 484,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_universal_mayak_model_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_UNIVERSAL_MAYAK_MODEL_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 488,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_universal_mayak_model_profile",
+      "type": "str",
+      "env": "GATE_UNIVERSAL_MAYAK_MODEL_PROFILE",
+      "default_expression": "\"gpt-5.6-luna\"",
+      "line": 492,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_universal_mayak_max_output_tokens",
+      "type": "int",
+      "env": "GATE_UNIVERSAL_MAYAK_MAX_OUTPUT_TOKENS",
+      "default_expression": "512",
+      "line": 498,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_universal_mayak_timeout_seconds",
+      "type": "float",
+      "env": "GATE_UNIVERSAL_MAYAK_TIMEOUT_SECONDS",
+      "default_expression": "30",
+      "line": 504,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_telegram_voice_archive_enabled",
+      "type": "bool",
+      "env": "GATE_TELEGRAM_VOICE_ARCHIVE_ENABLED",
+      "default_expression": "True",
+      "line": 510,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_telegram_voice_transcription_enabled",
+      "type": "bool",
+      "env": "GATE_TELEGRAM_VOICE_TRANSCRIPTION_ENABLED",
+      "default_expression": "False",
+      "line": 514,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_telegram_voice_transcription_model",
+      "type": "str",
+      "env": "GATE_TELEGRAM_VOICE_TRANSCRIPTION_MODEL",
+      "default_expression": "\"gpt-4o-mini-transcribe\"",
+      "line": 518,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_telegram_voice_reserve_microusd_per_second",
+      "type": "int",
+      "env": "GATE_TELEGRAM_VOICE_RESERVE_MICROUSD_PER_SECOND",
+      "default_expression": "100",
+      "line": 522,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_telegram_voice_language",
+      "type": "str",
+      "env": "GATE_TELEGRAM_VOICE_LANGUAGE",
+      "default_expression": "\"\"",
+      "line": 528,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_dropbox_call_intake_enabled",
+      "type": "bool",
+      "env": "GATE_DROPBOX_CALL_INTAKE_ENABLED",
+      "default_expression": "False",
+      "line": 533,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "dropbox_call_app_key",
+      "type": "str",
+      "env": "DROPBOX_CALL_APP_KEY",
+      "default_expression": "\"\"",
+      "line": 537,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "dropbox_call_app_secret",
+      "type": "SecretStr",
+      "env": "DROPBOX_CALL_APP_SECRET",
+      "default_expression": "SecretStr(\"\")",
+      "line": 541,
+      "in_example": false,
+      "secret_type": true
+    },
+    {
+      "name": "dropbox_call_refresh_token",
+      "type": "SecretStr",
+      "env": "DROPBOX_CALL_REFRESH_TOKEN",
+      "default_expression": "SecretStr(\"\")",
+      "line": 545,
+      "in_example": false,
+      "secret_type": true
+    },
+    {
+      "name": "dropbox_call_account_id",
+      "type": "str",
+      "env": "DROPBOX_CALL_ACCOUNT_ID",
+      "default_expression": "\"\"",
+      "line": 549,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "dropbox_call_inbox_path",
+      "type": "str",
+      "env": "DROPBOX_CALL_INBOX_PATH",
+      "default_expression": "DROPBOX_CALL_INBOX_PATH",
+      "line": 554,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_dropbox_call_poll_seconds",
+      "type": "float",
+      "env": "GATE_DROPBOX_CALL_POLL_SECONDS",
+      "default_expression": "30",
+      "line": 559,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_actions_enabled",
+      "type": "bool",
+      "env": "GATE_WATCH_VOICE_MARK_OIDC_ENABLED",
+      "default_expression": "False",
+      "line": 565,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_actions_workflow_sha256",
+      "type": "str",
+      "env": "GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256",
+      "default_expression": "\"\"",
+      "line": 568,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_enabled",
+      "type": "bool",
+      "env": "GATE_WATCH_VOICE_ENABLED",
+      "default_expression": "False",
+      "line": 573,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_WATCH_VOICE_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 576,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_workspace_key",
+      "type": "str",
+      "env": "GATE_WATCH_VOICE_WORKSPACE_KEY",
+      "default_expression": "\"\"",
+      "line": 580,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_poll_seconds",
+      "type": "float",
+      "env": "GATE_WATCH_VOICE_POLL_SECONDS",
+      "default_expression": "30",
+      "line": 585,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_file_id",
+      "type": "str",
+      "env": "GATE_WATCH_VOICE_FILE_ID",
+      "default_expression": "\"\", max_length=255",
+      "line": 591,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_watch_voice_revision",
+      "type": "str",
+      "env": "GATE_WATCH_VOICE_REVISION",
+      "default_expression": "\"\", max_length=255",
+      "line": 594,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_mark_github_token",
+      "type": "SecretStr",
+      "env": "GATE_MARK_GITHUB_TOKEN",
+      "default_expression": "SecretStr(\"\")",
+      "line": 597,
+      "in_example": false,
+      "secret_type": true
+    },
+    {
+      "name": "gate_mark_github_writer",
+      "type": "str",
+      "env": "GATE_MARK_GITHUB_WRITER",
+      "default_expression": "\"\"",
+      "line": 601,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_model_runtime_enabled",
+      "type": "bool",
+      "env": "GATE_ALPHA_MODEL_RUNTIME_ENABLED",
+      "default_expression": "False",
+      "line": 606,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_model_data_gate_approved",
+      "type": "bool",
+      "env": "GATE_ALPHA_MODEL_DATA_GATE_APPROVED",
+      "default_expression": "False",
+      "line": 610,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_model_max_output_tokens",
+      "type": "int",
+      "env": "GATE_ALPHA_MODEL_MAX_OUTPUT_TOKENS",
+      "default_expression": "512",
+      "line": 614,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_alpha_model_timeout_seconds",
+      "type": "float",
+      "env": "GATE_ALPHA_MODEL_TIMEOUT_SECONDS",
+      "default_expression": "30",
+      "line": 620,
+      "in_example": true,
+      "secret_type": false
+    },
+    {
+      "name": "gate_workspace_id",
+      "type": "str",
+      "env": "GATE_WORKSPACE_ID",
+      "default_expression": "\"mark-personal\"",
+      "line": 626,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_reply_sequence_worker_enabled",
+      "type": "bool",
+      "env": "GATE_REPLY_SEQUENCE_WORKER_ENABLED",
+      "default_expression": "False",
+      "line": 632,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_reply_sequence_poll_seconds",
+      "type": "float",
+      "env": "GATE_REPLY_SEQUENCE_POLL_SECONDS",
+      "default_expression": "5",
+      "line": 636,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_reply_send_recovery_enabled",
+      "type": "bool",
+      "env": "GATE_REPLY_SEND_RECOVERY_ENABLED",
+      "default_expression": "False",
+      "line": 642,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_reply_send_recovery_stale_seconds",
+      "type": "int",
+      "env": "GATE_REPLY_SEND_RECOVERY_STALE_SECONDS",
+      "default_expression": "900",
+      "line": 646,
+      "in_example": false,
+      "secret_type": false
+    },
+    {
+      "name": "gate_reply_send_recovery_limit",
+      "type": "int",
+      "env": "GATE_REPLY_SEND_RECOVERY_LIMIT",
+      "default_expression": "100",
+      "line": 652,
+      "in_example": false,
+      "secret_type": false
+    }
+  ],
+  "direct_environment_reads": [
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/main.py",
+      "line": 159
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/api/alpha_telegram_ingress.py",
+      "line": 98
+    },
+    {
+      "name": "GATE_AQUB_RUNTIME_URL",
+      "path": "app/api/aqub_telegram.py",
+      "line": 222
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "path": "app/api/owner_one_off_transcription.py",
+      "line": 114
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "path": "app/api/routes.py",
+      "line": 180
+    },
+    {
+      "name": "TELEGRAM_ADMIN_USER_IDS",
+      "path": "app/api/routes.py",
+      "line": 1033
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "path": "app/api/sprint10_routes.py",
+      "line": 397
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "path": "app/api/sprint14_routes.py",
+      "line": 810
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/api/sprint15b_routes.py",
+      "line": 274
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "path": "app/api/sprint15b_routes.py",
+      "line": 345
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/api/sprint15b_routes.py",
+      "line": 351
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "path": "app/api/sprint9_routes.py",
+      "line": 449
+    },
+    {
+      "name": "BECOME_SOURCE_SHA",
+      "path": "app/become_i4_service.py",
+      "line": 123
+    },
+    {
+      "name": "HOST",
+      "path": "app/become_i4_service.py",
+      "line": 269
+    },
+    {
+      "name": "PORT",
+      "path": "app/become_i4_service.py",
+      "line": 269
+    },
+    {
+      "name": "TELEGRAM_CONTACT_SESSION_STRING",
+      "path": "app/contact_sync/cli.py",
+      "line": 104
+    },
+    {
+      "name": "TELEGRAM_CONTACT_SESSION_FILE",
+      "path": "app/contact_sync/cli.py",
+      "line": 105
+    },
+    {
+      "name": "GATE_FOODCUBE_G3_ENV",
+      "path": "app/infrastructure/foodcube_g3_staging_db.py",
+      "line": 80
+    },
+    {
+      "name": "GATE_FOODCUBE_G3_RUNTIME_DATABASE_URL",
+      "path": "app/infrastructure/foodcube_g3_staging_db.py",
+      "line": 84
+    },
+    {
+      "name": "GATE_FOODCUBE_G3_MIGRATION_DATABASE_URL",
+      "path": "app/infrastructure/foodcube_g3_staging_db.py",
+      "line": 85
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/services/telegram_alpha_webhook.py",
+      "line": 48
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/services/telegram_aqub_webhook.py",
+      "line": 194
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/services/telegram_become_webhook.py",
+      "line": 48
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_SECRET",
+      "path": "app/services/telegram_webhook.py",
+      "line": 49
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/services/telegram_webhook.py",
+      "line": 57
+    },
+    {
+      "name": "GATE_AQUB_RUNTIME_URL",
+      "path": "app/worker/aqub_food_media.py",
+      "line": 150
+    },
+    {
+      "name": "GATE_AQUB_RUNTIME_URL",
+      "path": "app/worker/aqub_food_media.py",
+      "line": 299
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/beta_space.py",
+      "line": 257
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/telegram_processing.py",
+      "line": 1276
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/telegram_processing.py",
+      "line": 1317
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/telegram_processing.py",
+      "line": 1366
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/telegram_processing.py",
+      "line": 1469
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/telegram_processing.py",
+      "line": 1898
+    },
+    {
+      "name": "TELEGRAM_API_BASE_URL",
+      "path": "app/worker/telegram_processing.py",
+      "line": 1931
+    }
+  ]
+}
