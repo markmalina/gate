@@ -2,8 +2,13 @@
 
 Regulation: https://github.com/markmalina/ai/blob/main/WORK-RULES.md
 Task: https://github.com/markmalina/gate/issues/789
-State: **NEW_UNRELEASED / SOURCE ONLY / deployment DEFAULT OFF**.
-This package has not been pushed, merged, hosted-tested, installed or executed.
+State as of 2026-11-05: **SOURCE REGISTERED / deployment NEW_UNRELEASED / DEFAULT OFF**.
+PR790 registered this package in main. Its original PR CI passed; the subsequent
+main backend CI was cancelled during apt installation. One read-only history scan
+completed and its findings were source-triaged; no application was deployed.
+See the [durable checkpoint](https://github.com/markmalina/gate/issues/789#issuecomment-6666029141)
+and [Delta515 source triage](https://github.com/AlphaCenter/delta/issues/515#issuecomment-6666171645)
+for exact source, runs, limitations and cost. This does not declare publication ready.
 
 ## Exact source and minimal choice
 
@@ -118,17 +123,16 @@ https://github.com/gitleaks/gitleaks/blob/v8.30.1/report/json.go
 
 ### Launchability and limits
 
-A brand-new manual workflow must first be registered on default main through
-a reviewed change. Preparing the file does not make it dispatchable now. Smallest
-execution sequence: separately review/register the scanner files (and their tests)
-in main, then approve exactly one manual dispatch for its resulting SHA. No
-hidden PR/push trigger is added. Registration/push/hosted checks/dispatch are not
-part of this SOURCE ONLY permission; controller must identify the concrete next effect.
+The reviewed workflow was registered in main and dispatched once on 2026-11-05;
+the checkpoint above records its exact SHA and original run. No hidden PR/push
+trigger is added. Another scan requires a concrete new reason and controller
+admission; the existing receipt does not authorize a replay.
 
 Coverage is the fetched Git branch/tag refs and reachable commits, with counts and
 digest in the receipt. It does not include un-fetched closed PR refs, unreachable
 objects, Git LFS object payloads, issues/comments/attachments, prior Actions logs
-or artifacts, runtime variables, or credential validity. No scanner run has occurred.
+or artifacts, runtime variables, or credential validity. Use the original scan's
+receipt and scoped triage; neither replaces those unexamined surfaces.
 NO_FINDINGS is not universal history/private-data clearance.
 
 ## Migration and recovery order

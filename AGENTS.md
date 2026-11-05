@@ -59,8 +59,11 @@ The four private Ops dependencies in `gate-snapshot-cutover.yml` are explicitly
 quarantined. S1 is NOT_ACCEPTED; its old source/workflow lock is not rewritten to
 claim compatibility. Do not execute it or treat this change as S1 acceptance.
 
-The manual history scanner is read-only and unrun. NO_FINDINGS covers only fetched
-Git refs under its scanner rules; it cannot clear issues, comments, attachments,
+As of 2026-11-05, the read-only history scanner ran once; source registration and
+its scoped findings triage are recorded in [Gate789 checkpoint](https://github.com/markmalina/gate/issues/789#issuecomment-6666029141)
+and [Delta515](https://github.com/AlphaCenter/delta/issues/515#issuecomment-6666171645).
+The deployment route remains OFF. Do not repeat the scan merely to obtain a green check.
+NO_FINDINGS covers only fetched Git refs under its scanner rules; it cannot clear issues, comments, attachments,
 unreachable objects, LFS payloads or runtime data. Publication remains a separate
 owner action after review. See `docs/operations/GATE-PUBLIC-PREP.md`.
 
