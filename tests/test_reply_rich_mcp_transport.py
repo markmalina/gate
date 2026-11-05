@@ -28,7 +28,10 @@ def anyio_backend() -> str:
 def test_tools_list_rich_schema_matches_actual_contract() -> None:
     schema = mcp_routes._gate_save_reply_draft_tool(_settings())["inputSchema"]
     validator = Draft202012Validator(schema)
-    base = {"task_id": str(uuid4()), "text_format": "rich", "rich_content": rich_fixture()}
+    base = {
+        "expected_context_snapshot": "dialog-v1:" + "0" * 64, "task_id": str(uuid4()),
+        "text_format": "rich", "rich_content": rich_fixture(),
+    }
     validator.validate(base)
     validator.validate({**base, "text": ""})
     for changed in (
@@ -270,7 +273,8 @@ def test_exact_issue_fixtures_and_operator_example_validate() -> None:
     example = json.loads((root / "docs/specs/ISSUE-737-RICH-OPERATOR-EXAMPLE.json").read_text())
     schema = mcp_routes._gate_save_reply_draft_tool(_settings())["inputSchema"]
     for name in ("P", "D", "L", "M"):
-        Draft202012Validator(schema).validate({"task_id": fixtures["task_id"], **fixtures[name]})
+        Draft202012Validator(schema).validate({"task_id": fixtures["task_id"],
+             "expected_context_snapshot": "dialog-v1:" + "0" * 64, **fixtures[name]})
     Draft202012Validator(schema).validate(example["params"]["arguments"])
     preview = compile_rich(fixtures["D"]["rich_content"])
     assert [block["type"] for block in preview.blocks] == [

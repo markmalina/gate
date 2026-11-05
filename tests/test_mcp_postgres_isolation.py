@@ -161,7 +161,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     bot_id=bot.id,
                     account_id=account_id,
                     project_id=project_id,
-                    chat_id=str(uuid4()),
+                    chat_id="sender" if label == "allowed message" else "denied-sender",
                     business_connection_id=(
                         "bc-allowed" if label == "allowed message" else "bc-denied"
                     ),
@@ -425,7 +425,7 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     subject="integration-user",
                     auth_method="oauth2",
                     scopes=frozenset(
-                        {"gate:drafts:write", "gate:messages:send"}
+                        {"gate:drafts:write", "gate:messages:send", "gate:inbox:read"}
                     ),
                     access_scope=AccessScope(
                         workspace_id="mark-personal",
@@ -475,6 +475,16 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
             app.dependency_overrides[get_telegram_client] = override_telegram
 
             async with AsyncClient(transport=transport, base_url="http://test") as client:
+                reviewed = await client.post(
+                    "/mcp", headers={"Authorization": "Bearer signed-token"},
+                    json={"jsonrpc": "2.0", "id": "reviewed", "method": "tools/call",
+                          "params": {"name": "gate_get_reply_context", "arguments": {
+                              "task_id": str(task_ids["allowed message"]),
+                          }}},
+                )
+                reviewed_context = reviewed.json()["result"]["structuredContent"]
+                assert reviewed_context["context_ready"] is True
+                reviewed_snapshot = reviewed_context["context_snapshot"]
                 denied = await client.post(
                     "/mcp",
                     headers={"Authorization": "Bearer signed-token"},
@@ -502,54 +512,32 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                             "name": "gate_save_reply_draft",
                             "arguments": {
                                 "task_id": str(task_ids["allowed message"]),
+                                "expected_context_snapshot": reviewed_snapshot,
                                 "text": "Привет! С удовольствием расскажу подробнее.",
                                 "text_format": "plain",
                             },
                         },
                     },
                 )
-                follow_up = await client.post(
-                    "/mcp",
-                    headers={"Authorization": "Bearer signed-token"},
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": "follow-up-draft",
-                        "method": "tools/call",
-                        "params": {
-                            "name": "gate_save_reply_draft",
-                            "arguments": {
-                                "task_id": str(task_ids["allowed message"]),
-                                "text": "И ещё одно подтверждённое сообщение.",
-                                "text_format": "plain",
-                            },
-                        },
-                    },
-                )
+
 
             denied_payload = denied.json()["result"]["structuredContent"]
             allowed_payload = allowed.json()["result"]["structuredContent"]
-            follow_up_payload = follow_up.json()["result"]["structuredContent"]
             draft_validator = Draft202012Validator(
                 GATE_DRAFT_OUTPUT_SCHEMA,
                 format_checker=FormatChecker(),
             )
             draft_validator.validate(denied_payload)
             draft_validator.validate(allowed_payload)
-            draft_validator.validate(follow_up_payload)
             assert denied.json()["result"]["isError"] is True
             assert denied_payload["error"] == "task_not_found"
             assert allowed.json()["result"]["isError"] is False
             assert allowed_payload["sent"] is False
             assert allowed_payload["account"]["label"] == "RU"
-            assert follow_up.json()["result"]["isError"] is False
-            assert follow_up_payload["sent"] is False
             allowed_draft_id = allowed_payload["draft_id"]
-            follow_up_draft_id = follow_up_payload["draft_id"]
 
             allowed_digest = allowed_payload["formatting"]["payload_sha256"]
-            follow_up_digest = follow_up_payload["formatting"]["payload_sha256"]
             assert allowed_payload["confirmation"]["expected_payload_sha256"] == allowed_digest
-            assert follow_up_payload["confirmation"]["expected_payload_sha256"] == follow_up_digest
 
             def send_payload(
                 *, request_id: str, draft_id: str, digest: str | None,
@@ -575,11 +563,6 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                 draft_id=allowed_draft_id,
                 digest=allowed_digest,
             )
-            follow_up_send_payload = send_payload(
-                request_id="send-follow-up",
-                draft_id=follow_up_draft_id,
-                digest=follow_up_digest,
-            )
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 unconfirmed = await client.post(
                     "/mcp",
@@ -602,6 +585,34 @@ async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
                     "/mcp",
                     headers={"Authorization": "Bearer signed-token"},
                     json=first_send_payload,
+                )
+                fresh = await client.post(
+                    "/mcp", headers={"Authorization": "Bearer signed-token"},
+                    json={"jsonrpc": "2.0", "id": "fresh", "method": "tools/call",
+                          "params": {"name": "gate_get_reply_context", "arguments": {
+                              "task_id": str(task_ids["allowed message"]),
+                          }}},
+                )
+                fresh_context = fresh.json()["result"]["structuredContent"]
+                assert fresh_context["context_snapshot"] != reviewed_snapshot
+                follow_up = await client.post(
+                    "/mcp", headers={"Authorization": "Bearer signed-token"},
+                    json={"jsonrpc": "2.0", "id": "follow-up-draft", "method": "tools/call",
+                          "params": {"name": "gate_save_reply_draft", "arguments": {
+                              "task_id": str(task_ids["allowed message"]), "follow_up": True,
+                              "expected_context_snapshot": fresh_context["context_snapshot"],
+                              "text": "И ещё одно подтверждённое сообщение.",
+                              "text_format": "plain",
+                          }}},
+                )
+                follow_up_payload = follow_up.json()["result"]["structuredContent"]
+                draft_validator.validate(follow_up_payload)
+                assert follow_up.json()["result"]["isError"] is False
+                follow_up_draft_id = follow_up_payload["draft_id"]
+                follow_up_digest = follow_up_payload["formatting"]["payload_sha256"]
+                follow_up_send_payload = send_payload(
+                    request_id="send-follow-up", draft_id=follow_up_draft_id,
+                    digest=follow_up_digest,
                 )
                 followed_up = await client.post(
                     "/mcp",

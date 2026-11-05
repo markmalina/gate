@@ -66,11 +66,23 @@ jobs:
       - name: Mypy
         run: mypy app
       - name: Ensure real audio regression tools
+        timeout-minutes: 5
         run: |
+          trap 'code=$?; echo "::error::Real audio regression tools setup failed (exit ${code})."; exit "$code"' ERR
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y ffmpeg
+            apt_options=(
+              -o Acquire::Retries=1
+              -o Acquire::http::Timeout=20
+              -o Acquire::https::Timeout=20
+              -o DPkg::Lock::Timeout=30
+            )
+            sudo -n timeout --kill-after=10s 90s \
+              apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
+            sudo -n timeout --kill-after=10s 180s \
+              apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg
           fi
+          ffmpeg -version
+          ffprobe -version
       - name: Pytest
         run: pytest
       - name: Alpha delivery-free release rehearsal

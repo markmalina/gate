@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.dialog_snapshots import telegram_dialog_key
 from app.application.telegram_processing import (
     ALPHA_GROUP_CAPACITY_ERROR_CODES,
     TELEGRAM_CONTENT_TOMBSTONE_SCHEMA,
@@ -22,6 +23,8 @@ from app.application.telegram_processing import (
     canonical_telegram_payload_digest,
     is_alpha_membership_update,
 )
+from app.core.telegram_connectors import TelegramConnectorKey
+from app.infrastructure.dialog_snapshots import bump_dialog_version
 from app.models.domain import (
     TelegramOutboxEvent,
     TelegramOutboxStatus,
@@ -108,6 +111,11 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                     duplicate=True,
                 )
 
+            dialog_key = telegram_dialog_key(command.payload)
+            if command.bot_key == TelegramConnectorKey.BUSINESS.value and dialog_key:
+                await bump_dialog_version(
+                    self._session, connection_id=dialog_key[0], chat_id=dialog_key[1]
+                )
             await self._session.execute(
                 insert(TelegramOutboxEvent).values(
                     id=outbox_event_id,

@@ -1,0 +1,143 @@
+{
+  "schema_version": "gate745.s1-read-transport-evidence/v1",
+  "observed_at": "2026-10-19T12:47:54.115195+00:00",
+  "execution_id": "gate-745-snapshot-20261008T1458Z",
+  "stage": "S1-existing-metadata-transport-admission-packet",
+  "base_head": "650faddbc9ee0a4b48130ff8ff9396a6697622c1",
+  "gate_current_main": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "gate_raw_pr_base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+  "ops_current_main": "b2d0587126488cebb0ff48e16ba397cd7e97e27f",
+  "ops_source_code_accepted": "a441e184c98732db49ad5e02b17efa42cb30a5ef",
+  "ops_source_installed": false,
+  "existing_binding": "UNPROVEN",
+  "secret_settings": "NOT_READ_UNKNOWN",
+  "live_readonly": "NOT_RUN",
+  "new_credential_authority": false,
+  "sources": [
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/atlas-graphify.yml",
+      "git_blob": "6094139259fe6bda1cd37bbb4dd1a736589ac790",
+      "raw_sha256": "0b421f9d49749d329fe05442ec0d1c68d0234e3d9a2bf593ce68ef3bcbfdbc45",
+      "utf8_bytes": 3275
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/become-i4-check.yml",
+      "git_blob": "b8edb05f7b45f0463bf0645d145f48e69fba7bf9",
+      "raw_sha256": "1f22ddf9c151cd44b37e3246ea90b738772b914588e1ef9e595ca72b818f84d5",
+      "utf8_bytes": 3076
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/become-quest-exact-head.yml",
+      "git_blob": "2d892db6be0750517ba719151c4158766a2083cf",
+      "raw_sha256": "09b0f7ec310795584471aa7256afa60bd8fc8bb97f714124d06f45b29a655a03",
+      "utf8_bytes": 16460
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/become-w9-exact-head.yml",
+      "git_blob": "dcebf348e11d7a53885e8b328847c397043adb00",
+      "raw_sha256": "d1e160d0190921f3b5778eb2117f57444c0908f627a77c3b74d206a81b271572",
+      "utf8_bytes": 1628
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/ci.yml",
+      "git_blob": "e441d9db93205f743e17f4148fc8ebfa2ba30b62",
+      "raw_sha256": "ddc448c7c344dce0a9ac022ca6afcc580c3597c575e3d2a41372d4845efe6b71",
+      "utf8_bytes": 7353
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/gate-snapshot-cutover.yml",
+      "git_blob": "49c9f6643b148b6e2c610b69f9fad66f36d1fa8f",
+      "raw_sha256": "d73c8eb3e258c2b67395e15a08ed8581b3ff7556090b649e724b4b0925d90684",
+      "utf8_bytes": 11146
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "path": ".github/workflows/ops-deploy.yml",
+      "git_blob": "1a1dac30eb1b1d75f632ae9d58bfcc8b997bda63",
+      "raw_sha256": "d161e6f639a728105403d5d3be0dc3139b7e7a1254c13c083b1eb144fb903ecd",
+      "utf8_bytes": 3142
+    },
+    {
+      "repository": "markmalina/ops",
+      "ref": "a441e184c98732db49ad5e02b17efa42cb30a5ef",
+      "path": "agent-ops/actions/gate-snapshot-cutover/github-source.mjs",
+      "git_blob": "456dcf9a32e7e44bcb18b97f514ebd22a7673ec2",
+      "raw_sha256": "703c8a957745bd644d884ab161ba2817119f4c40dfcfe4490a2744b467be93f1",
+      "utf8_bytes": 3765
+    },
+    {
+      "repository": "markmalina/ops",
+      "ref": "a441e184c98732db49ad5e02b17efa42cb30a5ef",
+      "path": "agent-ops/actions/gate745-fixture-controller/source-admission.mjs",
+      "git_blob": "02a85a6d92e41cb879d3f152e6ee59d73aaf90b3",
+      "raw_sha256": "b15e829a449ec54e337e4f82f9f78ad7cca8039bf97537663bc1cb3dd9f62a9a",
+      "utf8_bytes": 12589
+    },
+    {
+      "repository": "markmalina/ops",
+      "ref": "a441e184c98732db49ad5e02b17efa42cb30a5ef",
+      "path": "agent-ops/actions/github-app-requester/action.yml",
+      "git_blob": "8fcdbda0d0fc0f2bd706a1c8975883287452e122",
+      "raw_sha256": "e304dd53fb777462a69fda1daf0d9dbfd0fa34602a285fc0f3c8fcb4219f90ca",
+      "utf8_bytes": 2246
+    },
+    {
+      "repository": "markmalina/ops",
+      "ref": "a441e184c98732db49ad5e02b17efa42cb30a5ef",
+      "path": "agent-ops/actions/gate-snapshot-cutover/release.json",
+      "git_blob": "d24afde6020a7f194166bc6c71167e8e398e2519",
+      "raw_sha256": "659e295d6f2f98cd176bd0ab979fdaf1b365fbb7dfcea8956851c5ae3ac57762",
+      "utf8_bytes": 561
+    },
+    {
+      "repository": "markmalina/gate",
+      "ref": "7ec459467b606ac67ec2110289e9018fa322b8fa",
+      "path": ".github/workflows/gate745-fixture-controller.yml",
+      "git_blob": "05dfb65fa5cb70fba81717fee44e7de25d38fa8d",
+      "raw_sha256": "2a70bcbe1ed9830806b6622c7aa8e5428d3038071fc737293663b030694145c0",
+      "utf8_bytes": 14624
+    }
+  ],
+  "comments": [
+    {
+      "url": "https://github.com/markmalina/gate/issues/745#issuecomment-6265522437",
+      "id": 6265522437,
+      "body_sha256": "deea507ee81cfdbbcd22e93585caeabb02f4f4dfe918291f0f0c6626dbdb3262"
+    },
+    {
+      "url": "https://github.com/markmalina/ops/issues/375#issuecomment-6265513072",
+      "id": 6265513072,
+      "body_sha256": "5426ec26778e68e9c35ed3cc5f34a771ce56326cd3e8f6c46d7e145550104925"
+    },
+    {
+      "url": "https://github.com/AlphaCenter/delta/issues/348#issuecomment-6265473225",
+      "id": 6265473225,
+      "body_sha256": "fe21c1f3244e8d1e809362be53edb81d93f98f63f87a8b6e88ccfe86112a18cb"
+    }
+  ],
+  "verification": {
+    "canonical_git_blobs": 12,
+    "canonical_mismatches": 0,
+    "gate_main_workflow_count": 7,
+    "explicit_source_binding_in_main_workflows": false,
+    "historical_readme_preserved": true,
+    "token_or_protected_key_read": false,
+    "provider_calls": 0,
+    "workflow_runs_dispatched": 0,
+    "runtime_tests_run_by_this_stage": 0,
+    "independent_acceptance_of_this_packet": "NOT_REQUESTED_NOT_CLAIMED"
+  }
+}

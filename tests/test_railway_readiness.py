@@ -12,7 +12,7 @@ def _configuration() -> dict[str, Any]:
 def test_railway_uses_strict_readiness_after_single_head_migration() -> None:
     configuration = _configuration()
 
-    assert configuration["deploy"]["preDeployCommand"] == "alembic upgrade head"
+    assert configuration["deploy"]["preDeployCommand"] == "python -m app.worker.reply_cutover"
     assert configuration["deploy"]["healthcheckPath"] == "/ready"
 
 

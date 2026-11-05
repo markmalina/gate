@@ -320,6 +320,8 @@ def test_actual_mcp_schemas_accept_explicit_formats_hashes_and_reject_invalid_ty
 ) -> None:
     tool = getattr(mcp_routes, factory)(_settings())
     validator = Draft202012Validator(tool["inputSchema"], format_checker=FormatChecker())
+    if factory in {"_gate_save_reply_draft_tool", "_gate_prepare_reply_document_tool"}:
+        arguments = {**arguments, "expected_context_snapshot": "dialog-v1:" + "0" * 64}
     validator.validate({**arguments, field: valid})
     for invalid in (None, 3, True, {}, [3], "unsupported"):
         with pytest.raises(ValidationError):

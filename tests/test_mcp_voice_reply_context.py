@@ -141,7 +141,9 @@ def task_row() -> tuple[Any, ...]:
                 }
             }
         ),
-        SimpleNamespace(id=ACCOUNT_ID, alias="telegram_mark_ru", country_code="RU"),
+        SimpleNamespace(
+            id=ACCOUNT_ID, alias="telegram_mark_ru", country_code="RU", telegram_user_id=999,
+        ),
         "Катя",
     )
 
@@ -352,3 +354,13 @@ async def test_ambiguous_or_missing_person_binding_fails_closed() -> None:
     assert context is not None
     assert [item["message_type"] for item in context["messages"]] == ["text"]
     assert len(session.statements) == 2
+
+
+@pytest.fixture(autouse=True)
+def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
+    async def snapshot(*args, **kwargs):
+        return "dialog-v1:" + "0" * 64
+    async def events(*args, **kwargs):
+        return [], False, True
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
+    monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)

@@ -1,0 +1,1411 @@
+{
+  "source": {
+    "repository": "railwayapp/cli",
+    "commit": "05ed159796ef6bf15de0dab388b1054c1af6f395",
+    "path": "src/gql/schema.json",
+    "blob": "3f3c4ca20d99c07417db70882caedf47196308f9"
+  },
+  "note": "Selected factual signatures only; no live introspection and no authority.",
+  "types": [
+    {
+      "name": "Deployment",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "deploymentStopped",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "environmentId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "instances",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "LIST",
+              "ofType": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "DeploymentDeploymentInstance"
+                }
+              }
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "projectId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "serviceId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "ENUM",
+              "name": "DeploymentStatus"
+            }
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "DeploymentDeploymentInstance",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "ENUM",
+              "name": "DeploymentInstanceStatus"
+            }
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Mutation",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "environmentApplyChangeSet",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ChangeSetApplyResult"
+            }
+          },
+          "args": [
+            {
+              "name": "baseConfigEtag",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            {
+              "name": "commitMessage",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            {
+              "name": "environmentId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            },
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "JSON"
+                }
+              }
+            },
+            {
+              "name": "waitForCompletion",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean"
+              }
+            }
+          ]
+        },
+        {
+          "name": "projectCreate",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Project"
+            }
+          },
+          "args": [
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "ProjectCreateInput"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "projectScheduleDelete",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": [
+            {
+              "name": "id",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "serviceCreate",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Service"
+            }
+          },
+          "args": [
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "ServiceCreateInput"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "serviceDelete",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": [
+            {
+              "name": "environmentId",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            {
+              "name": "id",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "serviceInstanceLimitsUpdate",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": [
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "ServiceInstanceLimitsUpdateInput"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeCreate",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Volume"
+            }
+          },
+          "args": [
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "VolumeCreateInput"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeDelete",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": [
+            {
+              "name": "volumeId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeInstanceBackupCreate",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "WorkflowId"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            {
+              "name": "volumeInstanceId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeInstanceBackupDelete",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "WorkflowId"
+            }
+          },
+          "args": [
+            {
+              "name": "volumeInstanceBackupId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            },
+            {
+              "name": "volumeInstanceId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeInstanceBackupLock",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": [
+            {
+              "name": "volumeInstanceBackupId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            },
+            {
+              "name": "volumeInstanceId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeInstanceUpdate",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": [
+            {
+              "name": "environmentId",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "VolumeInstanceUpdateInput"
+                }
+              }
+            },
+            {
+              "name": "volumeId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ProjectCreateInput",
+      "kind": "INPUT_OBJECT",
+      "inputFields": [
+        {
+          "name": "defaultEnvironmentName",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "isMonorepo",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "isPublic",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "prDeploys",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "repo",
+          "type": {
+            "kind": "INPUT_OBJECT",
+            "name": "ProjectCreateRepo"
+          }
+        },
+        {
+          "name": "runtime",
+          "type": {
+            "kind": "ENUM",
+            "name": "PublicRuntime"
+          }
+        },
+        {
+          "name": "workspaceId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ProjectToken",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "displayToken",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Environment"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "environmentId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "project",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Project"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "projectId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Query",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "environmentChangeSetApply",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ChangeSetApplyResult"
+            }
+          },
+          "args": [
+            {
+              "name": "environmentId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            },
+            {
+              "name": "id",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "projectToken",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ProjectToken"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "serviceInstanceLimits",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ServiceInstanceLimit"
+            }
+          },
+          "args": [
+            {
+              "name": "environmentId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            },
+            {
+              "name": "serviceId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "volumeInstance",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "VolumeInstance"
+            }
+          },
+          "args": [
+            {
+              "name": "id",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "workflowStatus",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "WorkflowResult"
+            }
+          },
+          "args": [
+            {
+              "name": "workflowId",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ServiceInstanceLimit",
+      "kind": "SCALAR"
+    },
+    {
+      "name": "ServiceInstanceLimitsUpdateInput",
+      "kind": "INPUT_OBJECT",
+      "inputFields": [
+        {
+          "name": "environmentId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        },
+        {
+          "name": "memoryGB",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Float"
+          }
+        },
+        {
+          "name": "serviceId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        },
+        {
+          "name": "vCPUs",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Float"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ServiceInstanceUpdateInput",
+      "kind": "INPUT_OBJECT",
+      "inputFields": [
+        {
+          "name": "autoInstrumentationEnabled",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "buildCommand",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "builder",
+          "type": {
+            "kind": "ENUM",
+            "name": "Builder"
+          }
+        },
+        {
+          "name": "cronSchedule",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "dockerfilePath",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "drainingSeconds",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "healthcheckPath",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "healthcheckTimeout",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "ipv6EgressEnabled",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "multiRegionConfig",
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON"
+          }
+        },
+        {
+          "name": "nixpacksPlan",
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON"
+          }
+        },
+        {
+          "name": "numReplicas",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "overlapSeconds",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "preDeployCommand",
+          "type": {
+            "kind": "LIST",
+            "ofType": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            }
+          }
+        },
+        {
+          "name": "railwayConfigFile",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "region",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "registryCredentials",
+          "type": {
+            "kind": "INPUT_OBJECT",
+            "name": "RegistryCredentialsInput"
+          }
+        },
+        {
+          "name": "restartPolicyMaxRetries",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "restartPolicyType",
+          "type": {
+            "kind": "ENUM",
+            "name": "RestartPolicyType"
+          }
+        },
+        {
+          "name": "rootDirectory",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "sleepApplication",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "source",
+          "type": {
+            "kind": "INPUT_OBJECT",
+            "name": "ServiceSourceInput"
+          }
+        },
+        {
+          "name": "startCommand",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "tracingEnabled",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean"
+          }
+        },
+        {
+          "name": "watchPatterns",
+          "type": {
+            "kind": "LIST",
+            "ofType": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "VolumeCreateInput",
+      "kind": "INPUT_OBJECT",
+      "inputFields": [
+        {
+          "name": "environmentId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "mountPath",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        },
+        {
+          "name": "projectId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        },
+        {
+          "name": "region",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
+          "name": "serviceId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "VolumeInstance",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "currentSizeMB",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Float"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "deletedAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime"
+          },
+          "args": []
+        },
+        {
+          "name": "environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Environment"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "environmentId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "externalId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "isPendingDeletion",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "mountPath",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "region",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "service",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Service"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "serviceId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "sizeMB",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "state",
+          "type": {
+            "kind": "ENUM",
+            "name": "VolumeState"
+          },
+          "args": []
+        },
+        {
+          "name": "volume",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Volume"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "volumeId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "VolumeInstanceBackup",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "creatorId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "expiresAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime"
+          },
+          "args": []
+        },
+        {
+          "name": "externalId",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "referencedMB",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          },
+          "args": []
+        },
+        {
+          "name": "scheduleId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "usedMB",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          },
+          "args": []
+        },
+        {
+          "name": "volumeInstanceSizeMB",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "VolumeState",
+      "kind": "ENUM",
+      "enumValues": [
+        {
+          "name": "DELETED"
+        },
+        {
+          "name": "DELETING"
+        },
+        {
+          "name": "ERROR"
+        },
+        {
+          "name": "MIGRATING"
+        },
+        {
+          "name": "MIGRATION_PENDING"
+        },
+        {
+          "name": "READY"
+        },
+        {
+          "name": "RESTORING"
+        },
+        {
+          "name": "UPDATING"
+        }
+      ]
+    },
+    {
+      "name": "VolumeUpdateInput",
+      "kind": "INPUT_OBJECT",
+      "inputFields": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "WorkflowId",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "workflowId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "WorkflowResult",
+      "kind": "OBJECT",
+      "fields": [
+        {
+          "name": "error",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          },
+          "args": []
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "ENUM",
+              "name": "WorkflowStatus"
+            }
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "WorkflowStatus",
+      "kind": "ENUM",
+      "enumValues": [
+        {
+          "name": "Complete"
+        },
+        {
+          "name": "Error"
+        },
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Running"
+        }
+      ]
+    }
+  ]
+}

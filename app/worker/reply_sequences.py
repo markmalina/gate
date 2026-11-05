@@ -26,8 +26,6 @@ from app.infrastructure.reply_sequences import SEQUENCE_CONTEXT_KEY
 from app.models.domain import (
     AuditLog,
     ReplyDraft,
-    ReplyTask,
-    ReplyTaskStatus,
     SendAttempt,
     SendAttemptStatus,
 )
@@ -90,18 +88,9 @@ async def run_reply_sequence_once(
     due = _due_items(rows, now=current_time)
     sent_count = 0
     for item in due:
-        if await _sequence_superseded(
-            session_factory=session_factory,
-            item=item,
-        ):
-            await _record_sequence_outcome(
-                session_factory=session_factory,
-                item=item,
-                state="stopped",
-                error_code="task_superseded",
-                stop_remaining=True,
-            )
-            continue
+        # Task age is not a freshness boundary: a newer task can already be
+        # part of the reviewed snapshot. The shared sender checks that exact
+        # snapshot (and sequence progress) before any provider dispatch.
         principal = Principal(
             subject=item.principal_subject,
             auth_method="approved-reply-sequence",
@@ -326,35 +315,6 @@ def _metadata_payload_digest(value: object) -> str | None:
         # the first unsent item and skip a predecessor.
         return "invalid"
     return value
-
-
-async def _sequence_superseded(
-    *,
-    session_factory: async_sessionmaker[AsyncSession],
-    item: _DueSequenceItem,
-) -> bool:
-    async with session_factory() as session:
-        current_created_at = await session.scalar(
-            select(ReplyTask.created_at).where(ReplyTask.id == item.task_id)
-        )
-        if current_created_at is None:
-            await session.rollback()
-            return True
-        newer = await session.scalar(
-            select(ReplyTask.id)
-            .where(
-                ReplyTask.conversation_id == item.conversation_id,
-                ReplyTask.account_id == item.account_id,
-                ReplyTask.project_id == item.project_id,
-                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-                ReplyTask.id != item.task_id,
-                ReplyTask.created_at > current_created_at,
-            )
-            .order_by(ReplyTask.created_at, ReplyTask.id)
-            .limit(1)
-        )
-        await session.rollback()
-        return newer is not None
 
 
 async def _record_sequence_outcome(

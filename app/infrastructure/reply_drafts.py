@@ -7,15 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.dialog_snapshots import SNAPSHOT_KEY
 from app.application.reply_drafts import (
+    ReplyDraftError,
     ReplyTaskClosedError,
     ReplyTaskNotFoundError,
-    ReplyTaskSupersededError,
     SavedReplyDraft,
     SaveReplyDraftCommand,
 )
+from app.application.reply_sends import ReplySendError
 from app.application.telegram_formatting import FORMAT_KEY
 from app.application.telegram_rich import RichPreview
+from app.infrastructure.dialog_snapshots import require_dialog_snapshot
 from app.models.domain import (
     Account,
     AuditLog,
@@ -78,24 +81,19 @@ class SqlReplyDraftWriter:
         if row is None:
             raise ReplyTaskNotFoundError()
         task, conversation, trigger_message, account = row
+        try:
+            await require_dialog_snapshot(
+                self._session, scope=scope, conversation=conversation,
+                expected=command.expected_context_snapshot,
+            )
+        except ReplySendError as exc:
+            raise ReplyDraftError(code=exc.code, message=exc.message) from exc
         is_follow_up = task.status == ReplyTaskStatus.REPLIED.value and command.follow_up
         if task.status != ReplyTaskStatus.NEEDS_REPLY.value and not is_follow_up:
             raise ReplyTaskClosedError()
-        if is_follow_up:
-            newer_task_id = await self._session.scalar(
-                select(ReplyTask.id)
-                .where(
-                    ReplyTask.conversation_id == task.conversation_id,
-                    ReplyTask.account_id == task.account_id,
-                    ReplyTask.project_id == task.project_id,
-                    ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-                    ReplyTask.id != task.id,
-                )
-                .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
-                .limit(1)
-            )
-            if newer_task_id is not None:
-                raise ReplyTaskSupersededError()
+        # A follow-up may review other pending tasks in the same dialog.
+        # The required snapshot above, rather than sibling task status,
+        # proves that the owner reviewed the current message state.
 
         label = account_label(alias=account.alias, country_code=account.country_code)
         recipient_chat_id = trigger_message.sender_id
@@ -106,8 +104,6 @@ class SqlReplyDraftWriter:
                 conversation.business_connection_id or trigger_message.business_connection_id
             )
             if not connection_id:
-                from app.application.reply_drafts import ReplyDraftError
-
                 raise ReplyDraftError(
                     code="origin_connection_missing",
                     message="Rich draft requires an originating Business connection",
@@ -138,6 +134,8 @@ class SqlReplyDraftWriter:
                 "bounded_context": True,
                 "source": "chatgpt-mcp",
                 "follow_up": is_follow_up,
+                SNAPSHOT_KEY: command.expected_context_snapshot,
+                "dialog_snapshot_workspace": scope.workspace_id,
                 **({FORMAT_KEY: formatting.to_dict()} if formatting else {}),
             },
         )

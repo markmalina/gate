@@ -61,7 +61,9 @@ class TestGateI4Service(unittest.TestCase):
             },
         )
         self.assertNotIn("preDeployCommand", staging["deploy"])
-        self.assertEqual(production["deploy"]["preDeployCommand"], "alembic upgrade head")
+        self.assertEqual(
+            production["deploy"]["preDeployCommand"], "python -m app.worker.reply_cutover"
+        )
         self.assertIn("uvicorn app.main:app", production["deploy"]["startCommand"])
         self.assertIn('CMD ["python", "-m", "app.become_i4_service"]', staging_image)
         self.assertIn("COPY app/become_i4_service.py", staging_image)

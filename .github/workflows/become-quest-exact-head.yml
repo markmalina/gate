@@ -229,11 +229,38 @@ jobs:
           python -m pip install -c constraints/ci.txt ".[dev,contact-sync]"
           python -m pip check
 
-      - name: Full lint, type, and PostgreSQL test suite
+      - name: Full Ruff on the synthetic merge
+        run: timeout --signal=TERM --kill-after=10s 2m ruff check .
+
+      - name: Full Mypy on the synthetic merge
+        run: >-
+          timeout --signal=ABRT --kill-after=10s 2m
+          python -u -X faulthandler -m mypy app
+
+      - name: Full PostgreSQL test suite on the synthetic merge
         run: |
-          ruff check .
-          mypy app
-          pytest
+          # A stalled test must leave its node ID and thread stacks, rather
+          # than consuming the entire job without a diagnosable failure.
+          diagnostic_log="$RUNNER_TEMP/synthetic-merge-pytest.log"
+          set +e
+          timeout --signal=ABRT --kill-after=10s 8m \
+            python -u -X faulthandler -m pytest -vv \
+            -o faulthandler_timeout=60 --durations=25 \
+            > "$diagnostic_log" 2>&1
+          pytest_status=$?
+          set -e
+          printf '\npytest_exit_status=%s\n' "$pytest_status" >> "$diagnostic_log"
+          tail -n 250 "$diagnostic_log"
+          exit "$pytest_status"
+
+      - name: Upload synthetic-merge pytest diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: synthetic-merge-pytest-diagnostics
+          path: ${{ runner.temp }}/synthetic-merge-pytest.log
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Full migration and restore proof
         env:

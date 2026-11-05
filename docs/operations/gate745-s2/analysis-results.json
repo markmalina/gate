@@ -1,0 +1,173 @@
+{
+  "kind": "OFFLINE_SOURCE_AND_ARITHMETIC_ONLY",
+  "source_blob_matches": 21,
+  "schema_assertions": 10,
+  "source_verification": [
+    {
+      "path": "cli/change_set.rs",
+      "blob": "aee0af987e3ce88940b7f3eba0fb63754b74399d",
+      "sha256": "ff584e926080f16dd792497d364da943df317d89f0124b6afb154df306ba9a23",
+      "bytes": 76602
+    },
+    {
+      "path": "cli/engine.rs",
+      "blob": "6dab6aea1a5a258f1f96c88f23600997d4d8488e",
+      "sha256": "db012b628b83d3c1e4aea11ec0d9dbaf80de0444fe1c5d3d3fe4100603995905",
+      "bytes": 33405
+    },
+    {
+      "path": "cli/compiler.rs",
+      "blob": "c7df70caf825eef5d66e21c297db1263cd66e208",
+      "sha256": "74ca523e0ae87db04eabcc5048aec54f08edde22fc90b6b0b1491dd4385f9f08",
+      "bytes": 42710
+    },
+    {
+      "path": "cli/volume.rs",
+      "blob": "ebd581f352e6f846f7a546f52e2c04c25676121e",
+      "sha256": "4a11f7cef6c8a789295084f3065ea0d68b4c1a36cfc638faf17a3a5dab1c3cd1",
+      "bytes": 31251
+    },
+    {
+      "path": "sdk/schema.ts",
+      "blob": "29b7b30e1cf828504307f43ae8658ea1ae200dd6",
+      "sha256": "2bd4ba32a28bdf231580d34f41f2717231ee77c92c5c8d88e247ea773d6875f2",
+      "bytes": 7248
+    },
+    {
+      "path": "sdk/sdk.ts",
+      "blob": "0b4c1550edbc573e531ee49c4c07d33ee65f30b9",
+      "sha256": "a2fa494b8b9ef63c22439706da3c4d34a32d578ed7214162429cd9b998576f7a",
+      "bytes": 24796
+    },
+    {
+      "path": "ops/native.mjs",
+      "blob": "bafb6b9db989f2ffa1a87971a8e7b743033256dd",
+      "sha256": "b47bb7c01f33766ded58d3ebfc10121459674853dd0eea354e8c0f77f760b819",
+      "bytes": 25602
+    },
+    {
+      "path": "ops/configuration.mjs",
+      "blob": "f5b1a55ae1a9a114670ada902a5d824dfcf4e9f1",
+      "sha256": "e40a767be54a00dac3dc7390c5dfd4baf78dd3a01f67de27053d77c40060aba7",
+      "bytes": 6644
+    },
+    {
+      "path": "ops/controller.mjs",
+      "blob": "521134616afc25515202e3a9c954c2370b56c498",
+      "sha256": "3d1c52ee3fc3b08376c0bca75993aaf243da15505dbda456c086f66560da2111",
+      "bytes": 11002
+    },
+    {
+      "path": "ops/primitives.mjs",
+      "blob": "f8b5bb06054781ec8ecdd39feabb0d06af2066d0",
+      "sha256": "1e62bc98ed7ce94e7d9de5a0df3958d048b1d3e402ded4960c127707a64d1804",
+      "bytes": 3709
+    },
+    {
+      "path": "content/docs/integrations/api/manage-volumes.md",
+      "blob": "6f97472deeabbc6b5f26f618448c23857487b4ac",
+      "sha256": "f7460a6e05f248eb52db124a638e7bf5ef44ff0fe9f5b6b922abb9f5f9fc7301",
+      "bytes": 4612
+    },
+    {
+      "path": "content/docs/volumes/backups.md",
+      "blob": "3eabcb367dc0099692213e664a2887e0cc58f179",
+      "sha256": "e38ea3c9bb9a03422765ad8c5ead21f42731d537c0b98b5be43928faf6fadb81",
+      "bytes": 3883
+    },
+    {
+      "path": "content/docs/pricing/plans.md",
+      "blob": "86b45910bab311ffa82e11c71a9b56278028f06e",
+      "sha256": "a97d5f6c0519646b8e1d857fb8e018e45b2ed75b8897842a533e57a3eb71739f",
+      "bytes": 12467
+    },
+    {
+      "path": "content/docs/pricing/cost-control.md",
+      "blob": "b682f6773642b43ed68a30d570533cced6a239b7",
+      "sha256": "03c16f22b5b16ea43b5ba7d77b9b1fe99539da613cebbc66abe857ccdc83e199",
+      "bytes": 6811
+    },
+    {
+      "path": "content/docs/networking/outbound-networking.md",
+      "blob": "05b445604a4d423e129306ffbfa15da23115f7a9",
+      "sha256": "e5eaba1f05fadc55004c77aa8cf16f6df57cb965613aeb8d638ea7fe35a4fd2e",
+      "bytes": 4773
+    },
+    {
+      "path": "content/docs/networking/private-networking/how-it-works.md",
+      "blob": "54f510fa5115cd6c4a2ed3ee2e39bc89b0bf38bf",
+      "sha256": "608a1dc1ab260c88e956407b87f8e8dd54f0cf84422ad6ea50213ebc845abcca",
+      "bytes": 4702
+    },
+    {
+      "path": "content/docs/deployments/pre-deploy-command.md",
+      "blob": "fbaee8bfae1c2965f5361528078c36e45187b72e",
+      "sha256": "48ac7512b1f50aa9b2dd20fcb98f5d1dc516ff18626871c82d02c112231424d1",
+      "bytes": 2658
+    },
+    {
+      "path": "content/docs/integrations/api.md",
+      "blob": "48cce70ee3c44ab93a753b49653f223e4573ba09",
+      "sha256": "b0a9a7c07b59689dd8a866589caf176f16f73732410134cea05f9bdf36acff78",
+      "bytes": 13741
+    },
+    {
+      "path": "content/docs/infrastructure-as-code/reference.md",
+      "blob": "f6a78917ed46f4a076a31dfc7672ede3aa7c88ac",
+      "sha256": "100d3438bdffac886109b071ce3edd2f1f0ee9e0c0cb43ce511cb32333a162c4",
+      "bytes": 11714
+    },
+    {
+      "path": "docs/oauth-scopes.md",
+      "blob": "5a66c8451059744c9454662e84c4af2a77f8025a",
+      "sha256": "858401b3b2e62bc0b3d063352cedc3453863c98d85e35384a29a0172b4cc6b0a",
+      "bytes": 4133
+    },
+    {
+      "path": "docs/iac.md",
+      "blob": "5b4d657ebb39121f04370994999e0a5775455581",
+      "sha256": "07a5922b5750b3a061df645c7a5d0f5f0426a4912bee798c4bf0a236a2e77fba",
+      "bytes": 24056
+    }
+  ],
+  "conditional_model": {
+    "currency": "USD",
+    "billing_gb_assumption": "decimal_1000000000_bytes",
+    "whole_fleet_vcpu": 2,
+    "whole_fleet_memory_mib": 2048,
+    "compute_minutes": 120,
+    "storage_gib_conservative": 3,
+    "storage_minutes_assumed": 4320,
+    "egress_gb_example_only": 1,
+    "compute_usd": "0.170648246722560",
+    "storage_usd": "0.048318382076907623546880",
+    "egress_usd": "0.05",
+    "sum_before_github_subscription_tax_and_unknowns_usd": "0.268966628799467623546880",
+    "invoice_cap_proven": false,
+    "billing_stops_at_observer_expiry_proven": false
+  },
+  "polling": {
+    "five_second_ticks_in_72_hours": 51840,
+    "four_separate_reads_hourly_for_72_hours": 288,
+    "proposed_v7_reads": 256,
+    "current_native_wire_call_ceiling": 1800,
+    "claim_that_either_budget_fits_full_trace": false,
+    "candidate_allocation_wide_wire_budget": {
+      "preparation": 128,
+      "native": 1200,
+      "early_cleanup": 160,
+      "terminal_readonly": 288,
+      "reserved_reconciliation": 24,
+      "sum": 1800,
+      "proposal_only": true
+    }
+  },
+  "infrastructure": {
+    "provider_requests": 0,
+    "database_connections": 0,
+    "resources_created": 0,
+    "resources_deleted": 0,
+    "credentials_created_or_read": 0
+  },
+  "acceptance": "S2_FEASIBILITY_NOT_PROVEN"
+}

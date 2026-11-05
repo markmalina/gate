@@ -38,6 +38,7 @@ class PrepareReplyDocumentCommand:
     follow_up: bool = False
     caption_format: str | None = None
     formatting: FormattingPreview | None = None
+    expected_context_snapshot: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,4 +148,5 @@ class PrepareReplyDocumentService:
             ),
             data,
         )
+
 

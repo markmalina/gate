@@ -1,0 +1,11 @@
+# REFERENCE ONLY. New Railway services cannot opt into legacy TOML.
+# The reviewed Ops fixed serviceInstanceUpdate route must apply and verify these
+# exact effective values before deploying the existing isolated Gate service.
+# This file is never selected by ordinary Gate configuration/predeploy.
+[deploy]
+startCommand = "python -m app.worker.gate745_fixture_hosted"
+healthcheckPath = "/admin/ops/gate745-fixture-metadata"
+healthcheckTimeout = 30
+restartPolicyType = "NEVER"
+numReplicas = 1
+# No preDeployCommand: bootstrap/reset require authenticated C0 POST admission.

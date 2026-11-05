@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.dialog_snapshots import SNAPSHOT_KEY
+from app.application.reply_sends import ReplySendError
 from app.application.reply_sequences import (
     QueueApprovedReplySequenceCommand,
     QueuedReplySequence,
@@ -20,6 +22,7 @@ from app.application.reply_sequences import (
     validate_sequence_payload_digests,
 )
 from app.application.telegram_formatting import FormattingError, stored_preview
+from app.infrastructure.dialog_snapshots import require_saved_dialog_snapshot
 from app.models.domain import (
     Account,
     AuditLog,
@@ -130,6 +133,18 @@ class SqlReplySequenceWriter:
                 message="One or more drafts already belong to a reply sequence",
             )
 
+        try:
+            for draft, _task, conversation, _message, _account in ordered:
+                await require_saved_dialog_snapshot(
+                    self._session, scope=scope, draft=draft, conversation=conversation,
+                )
+            if any((draft.prompt_context or {}).get(SNAPSHOT_KEY) !=
+                   (first_draft.prompt_context or {}).get(SNAPSHOT_KEY)
+                   for draft, *_ in ordered):
+                raise ReplySendError(code="context_changed", message="Sequence snapshots differ")
+        except ReplySendError as exc:
+            raise ReplySequenceError(code=exc.code, message=exc.message) from exc
+
         attempts = await self._session.execute(
             select(SendAttempt.reply_draft_id).where(
                 SendAttempt.reply_draft_id.in_(command.draft_ids)
@@ -141,23 +156,9 @@ class SqlReplySequenceWriter:
                 message="A sequence cannot include a draft with a delivery attempt",
             )
 
-        newer_task = await self._session.scalar(
-            select(ReplyTask.id)
-            .where(
-                ReplyTask.conversation_id == first_conversation.id,
-                ReplyTask.account_id == first_draft.account_id,
-                ReplyTask.project_id == first_draft.project_id,
-                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-                ReplyTask.id != first_task.id,
-            )
-            .order_by(ReplyTask.created_at.desc(), ReplyTask.id.desc())
-            .limit(1)
-        )
-        if newer_task is not None:
-            raise ReplySequenceError(
-                code="task_superseded",
-                message="A newer inbound reply task must be reviewed before queueing",
-            )
+        # The mandatory reviewed snapshot above decides freshness. A pending
+        # sibling may predate that review; its existence is not a new event.
+        # Dispatch rechecks the snapshot at the shared sender boundary.
 
         label = account_label(alias=account.alias, country_code=account.country_code)
         recipient_chat_id = first_message.sender_id
