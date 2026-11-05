@@ -73,11 +73,36 @@ jobs:
       - name: Mypy
         run: mypy app
       - name: Ensure real audio regression tools
+        timeout-minutes: 4
         run: |
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y ffmpeg
+            . /etc/os-release
+            test "${ID:-}" = ubuntu
+            [[ "${VERSION_CODENAME:-}" =~ ^[a-z]+$ ]]
+            test -r /usr/share/keyrings/ubuntu-archive-keyring.gpg
+            gate_audio_apt_dir="$(mktemp -d "${RUNNER_TEMP}/gate-audio-apt.XXXXXX")"
+            chmod 755 "$gate_audio_apt_dir"
+            mkdir -p "$gate_audio_apt_dir/lists/partial" "$gate_audio_apt_dir/sources.list.d"
+            # Isolate this install from the runner's stalled Azure mirror.
+            # Ubuntu's existing archive keyring still verifies every package.
+            printf '%s\n' \
+              "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu ${VERSION_CODENAME} main universe" \
+              "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu ${VERSION_CODENAME}-updates main universe" \
+              "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu ${VERSION_CODENAME}-security main universe" \
+              > "$gate_audio_apt_dir/sources.list"
+            gate_audio_apt_options=(
+              -o "Dir::Etc::sourcelist=$gate_audio_apt_dir/sources.list"
+              -o "Dir::Etc::sourceparts=$gate_audio_apt_dir/sources.list.d"
+              -o "Dir::State::lists=$gate_audio_apt_dir/lists"
+              -o 'Acquire::http::Timeout=15'
+              -o 'Acquire::https::Timeout=15'
+              -o 'Acquire::Retries=1'
+            )
+            sudo apt-get "${gate_audio_apt_options[@]}" update --error-on=any -qq
+            sudo apt-get "${gate_audio_apt_options[@]}" install -y --no-install-recommends ffmpeg
           fi
+          ffmpeg -version
+          ffprobe -version
       - name: Pytest
         run: pytest
       - name: Alpha delivery-free release rehearsal
