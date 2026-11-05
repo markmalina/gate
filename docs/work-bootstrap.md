@@ -9,7 +9,9 @@ Gate retains authority for its transport/runtime implementation.
 For every new Gate Work:
 
 1. Read Center `AGENTS.md`, root `AGENTS.md`, `WORK-PARENT.json`, this
-   document, the current issue, latest implementation receipt and next pointer.
+   document, [GATE-CURRENT](GATE-CURRENT.md), [the program plan](GATE-RECOVERY-PLAN.md),
+   [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md),
+   the active sprint issue, latest implementation receipt and next pointer.
 2. Re-query current main, open PR/issues, execution/lease claims, receipts and
    scheduled automations.
 3. Search for the exact outcome before creating an issue, execution, lease,
@@ -23,6 +25,19 @@ For every new Gate Work:
 
 Create no zero-change receipt, pointer commit or comment when repository state
 has not materially changed.
+
+## Measured sprint and history
+
+Use [#787](https://github.com/markmalina/gate/issues/787) as the current program
+pointer for Watch/Calls/reply freshness. Before coding, record the bounded user
+result, dated baseline, target, scope and claim in its issue. Record material
+errors, decisions, candidates and CI/runtime outcomes while working, not only
+a final retrospective after many iterations. Follow [GATE-METRICS](GATE-METRICS.md)
+for durations, sample sizes, incomplete cases and cumulative cost estimates.
+The accepted result is the observed user outcome; documentation preparation and
+source/CI acceptance remain separate. Dated audit plans are historical sources,
+not a competing active queue. Continue within existing authorization; ask only
+for an actually missing decision or protected action.
 
 ## Execution states
 

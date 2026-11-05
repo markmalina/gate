@@ -1,5 +1,22 @@
 # Gate Work instructions
 
+## Required current context for every Gate task
+
+Before working on any Gate issue, read [docs/GATE-CURRENT.md](docs/GATE-CURRENT.md),
+[the recovery program](docs/GATE-RECOVERY-PLAN.md), its active sprint/latest receipt,
+and [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md).
+Program [#787](https://github.com/markmalina/gate/issues/787) is the current coordination
+pointer for Mark's Watch, Calls and reply-freshness routes. Read historical audits
+only when needed for the current question; dated snapshots are not fresh authority.
+
+Before implementation, the issue records one user outcome, dated baseline, target,
+scope and responsible execution. Keep material findings/errors/decisions and
+CI/runtime evidence in that issue as work progresses. Report actual before/after,
+latency sample size, incomplete cases and cost/time under
+[the metrics contract](docs/GATE-METRICS.md). Source, CI, merge, installation and
+product acceptance are separate states. No heartbeat-only repository writes.
+This documentation adds no provider, deployment, data or message authority.
+
 
 Canonical company policy and ownership live in
 [AlphaCenter/center](https://github.com/AlphaCenter/center). This repository
@@ -49,7 +66,8 @@ On the first turn of every newly opened Gate Work:
 
 
 1. Read Center `AGENTS.md`, this repository's `WORK-PARENT.json`,
-   `docs/work-bootstrap.md`, the current GitHub issue, latest receipt and
+   `docs/work-bootstrap.md`, `docs/GATE-CURRENT.md`, the program/active sprint,
+   the current GitHub issue, latest receipt and
    next pointer.
 2. Re-query current main, open PR/issues, executions, leases, receipts and
    scheduled automations before mutation.

@@ -677,3 +677,66 @@ def test_future_cutover_excludes_history_and_preserves_new_cursor(tmp_path, monk
             ]
 
     asyncio.run(run())
+
+
+
+@pytest.mark.parametrize("queued_state", ["received", "transcribed"])
+def test_durable_queue_precedes_oversized_delta(tmp_path, monkeypatch, queued_state):
+    """A new oversized revision cannot starve an already archived eligible note."""
+    from app.models.watch_voice import WatchVoiceNote
+    from app.worker import watch_voice as worker
+
+    world = ActionsWorld()
+    world.patches(monkeypatch)
+
+    async def run():
+        async with (
+            database(tmp_path) as factory,
+            httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http,
+        ):
+            async with factory() as session:
+                await session.run_sync(
+                    lambda s: WatchVoiceDrainRun.__table__.create(s.connection())
+                )
+                await session.commit()
+            await worker.ensure_cursor(settings(), factory)
+            await worker.store_entry(settings(), factory, http, "synthetic-access", world.entry)
+            queued = (await notes(factory))[0]
+            original = (queued.sha256, queued.data, queued.file_id, queued.revision)
+            if queued_state == "transcribed":
+                async with factory() as session:
+                    row = await session.get(WatchVoiceNote, queued.id)
+                    row.transcription_state = "transcribed"
+                    row.transcript = world.transcript
+                    await session.commit()
+            # Same exact selected source, with an invalid new delta metadata size.
+            # The queued immutable archive, not this delta, is the processing input.
+            world.entry = {**world.entry, "size": worker.SOURCE_LIMIT + 1}
+            world.calls.clear()
+            receipt = await drain(
+                settings=action_settings(),
+                factory=factory,
+                http=http,
+                claims=claims(),
+                job_token="synthetic-job-token",
+            )
+            assert receipt["considered"] == receipt["published_parts"] == 1
+            assert world.provider_calls == int(queued_state == "received")
+            assert world.posts == 1
+            assert not any("dropboxapi.com" in url for _, url in world.calls)
+            saved = (await notes(factory))[0]
+            assert (saved.sha256, saved.data, saved.file_id, saved.revision) == original
+            assert saved.delivery_state == "delivered"
+            replay = await drain(
+                settings=action_settings(),
+                factory=factory,
+                http=http,
+                claims=claims(),
+                job_token="synthetic-job-token",
+            )
+            assert replay["result"] == "replayed"
+            assert world.posts == 1
+            assert world.provider_calls == int(queued_state == "received")
+
+    asyncio.run(run())
+
