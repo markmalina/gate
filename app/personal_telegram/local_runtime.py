@@ -28,12 +28,6 @@ from app.personal_telegram.enrollment import (
 )
 
 
-class PersonalTelegramSessionSource(Protocol):
-    """Session custody may be owner-local or protected cloud storage."""
-
-    def load(self, *, session_ref: str) -> str: ...
-
-
 class LocalEncryptedSessionSource:
     """Unseal an exact local enrollment without exporting it from this process."""
 
@@ -121,7 +115,7 @@ class TelethonPersonalTelegramTransport:
     def __init__(
         self,
         *,
-        source: PersonalTelegramSessionSource,
+        source: LocalEncryptedSessionSource,
         peers: PinnedPersonalPeerResolver,
         api_id: int,
         api_hash: str,
@@ -225,4 +219,3 @@ def _confirmed_message_id(response: Any, random_id: int) -> int | None:
             identifier = getattr(update, "id", None)
             return identifier if type(identifier) is int and identifier > 0 else None
     return None
-
