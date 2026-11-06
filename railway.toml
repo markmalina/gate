@@ -4,7 +4,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 preDeployCommand = "alembic upgrade head"
-startCommand = "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+startCommand = "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=${GATE_WATCH_VOICE_MARK_OIDC_ENABLED:-true}; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 healthcheckPath = "/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
