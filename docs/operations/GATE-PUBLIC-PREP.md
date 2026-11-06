@@ -10,6 +10,11 @@ See the [durable checkpoint](https://github.com/markmalina/gate/issues/789#issue
 and [Delta515 source triage](https://github.com/AlphaCenter/delta/issues/515#issuecomment-6666171645)
 for exact source, runs, limitations and cost. This does not declare publication ready.
 
+Current source status (#799): unmerged PR797 assembles the accepted W1 guard and
+release checks with an owner-gated activation candidate. Only the deploy job's
+literal OFF is removed in that candidate; main still has OFF. W1 defaults OFF and
+S1 retains all four OFF gates. This is no live grant, deployment or recovery proof.
+
 ## Exact source and minimal choice
 
 Gate base: `062ffdd44bfc0780d5940203f8584a7edb117f97`.
@@ -25,8 +30,8 @@ Only two runtime files are vendored from that exact accepted upstream:
 
 They use Node built-ins and the existing pinned setup-node action; no private Ops
 module or npm dependency is imported. The 24 upstream synthetic tests are copied
-with only import/identity fixture adaptation. Additional tests cover new provenance,
-literal OFF, quarantine and safe scanner reporting. The rest of Ops is not copied.
+with only import/identity fixture adaptation. Additional tests cover provenance,
+owner-gated activation, S1 quarantine and safe scanner reporting. The rest of Ops is not copied.
 
 ### Why not execute inside private Ops now?
 
@@ -50,11 +55,11 @@ copy would be in Gate. Do not describe this as runtime execution inside Ops.
 
 ## New source contract
 
-The job in ops-deploy.yml is unconditionally OFF with a literal false expression.
-There is no environment variable, input or comment that activates it. Activation
-is a separate reviewed source change and does not inherit any expired release grant.
+Main's job in ops-deploy.yml remains unconditionally OFF. The unmerged #799
+candidate removes that one literal gate while retaining the conditions below.
+It does not inherit an expired release grant or authorize merge/live execution.
 
-When eventually activated after review:
+The owner-gated candidate retains:
 - The same Gate repository and immutable repository ID, owner login/ID, main ref,
   original Gate751 command grammar or existing manual input, and attempt 1 remain.
 - Checkout uses exactly github.sha and no persisted token. Workflow SHA and clean
@@ -153,8 +158,10 @@ NO_FINDINGS is not universal history/private-data clearance.
 5. Change visibility only under its exact owner authorization. Source identity,
    repository ID, URL, history and production source stay the same; this does not
    fix historical Railway BAD_USER_INPUT or prove exact provider source access.
-6. Keep deployment OFF until separately reviewed activation and a new exact live
-   release grant. Do not replay any historical UNKNOWN or call STT as a test.
+6. Main stays OFF pending separate exact-source acceptance/merge. This unmerged
+   activation candidate does not grant a live release; current protected facts,
+   quiescence/autoDeploy boundary and recovery must precede a new exact live grant.
+   Do not replay any historical UNKNOWN or call STT as a test.
 
 Before visibility, source rollback may restore the old private-to-private
 workflow from the recorded base. After visibility, restoring that workflow would
