@@ -565,6 +565,12 @@ class Settings(BaseSettings):
     gate_watch_voice_actions_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
     )
+    gate_watch_voice_w1_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_W1_ENABLED"
+    )
+    gate_watch_voice_w1_admission: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_VOICE_W1_ADMISSION"
+    )
     gate_watch_voice_actions_workflow_sha256: str = Field(
         default="",
         max_length=64,
