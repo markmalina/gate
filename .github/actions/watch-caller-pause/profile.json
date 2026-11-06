@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "mark.caller-pause-profile/v1",
+  "repository": "markmalina/mark",
+  "repositoryId": 1336157811,
+  "ownerId": 23397294,
+  "workflowId": 376111707,
+  "workflowPath": ".github/workflows/gate-watch-voice-drain.yml",
+  "workflowBlob": "3103cf2855bbfca5a62b19ea646e3f20494674f8",
+  "workflowSha256": "6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34",
+  "callerPath": ".github/workflows/gate-watch-caller-pause.yml",
+  "pageSize": 100,
+  "maxPages": 20,
+  "maxRows": 2000,
+  "requestTimeoutMs": 10000,
+  "deadlineMs": 180000,
+  "maxRequests": 64,
+  "maxResponseBytes": 2097152,
+  "maxGrantMs": 600000
+}
