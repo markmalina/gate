@@ -29,6 +29,7 @@ from app.infrastructure.watch_voice_recovery import (
     authorized_at,
     recover_note,
 )
+from app.infrastructure.watch_voice_w1 import W1Admission
 from app.models.watch_voice import (
     WatchVoiceCursor,
     WatchVoiceDrainRun,
@@ -299,13 +300,26 @@ async def drain(
     claims: dict[str, Any],
     job_token: str,
 ) -> dict[str, Any]:
+    admission = None
+    if settings.gate_watch_voice_w1_enabled:
+        try:
+            admission = W1Admission.from_settings(settings)
+        except (ValueError, TypeError, KeyError):
+            raise WatchVoiceError("watch_voice_w1_admission_invalid") from None
+        if not admission.active():
+            raise WatchVoiceError("watch_voice_w1_admission_inactive")
     client = ActionsInboxClient(http, job_token)
     binding = await client.preflight_actions(
         claims, settings.gate_watch_voice_actions_workflow_sha256
     )
+    if admission is not None and binding["scope"] != "future-only":
+        raise WatchVoiceError("watch_voice_w1_future_only_required")
     scoped = await bound_settings(settings, binding, factory, job_token=job_token)
     if not await claim_run(factory, claims):
         return result("replayed")
+    if admission is not None:
+        # Always returns: never recovery, cursor initialization, stale sweep or scan.
+        return await _process_w1_note(scoped, factory, http, client, admission)
     if binding["scope"] == "initial-quota-probe":
         recovered_note = await recover_note(
             scoped, factory, http, binding, authorization_sha=claims["sha"]
@@ -415,6 +429,61 @@ async def drain(
         payload = await _process_queued_note(scoped, factory, http, client, binding, state)
         await coordinator.commit()
         return payload if payload is not None else result("idle")
+
+
+async def _process_w1_note(
+    scoped: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    client: ActionsInboxClient,
+    admission: W1Admission,
+) -> dict[str, Any]:
+    """Existing coordinator + claims; only this archived row, no discovery fallback."""
+    async with factory() as coordinator:
+        state = await coordinator.scalar(
+            select(WatchVoiceCursor)
+            .where(
+                WatchVoiceCursor.workspace_key == scoped.gate_workspace_id,
+                WatchVoiceCursor.account_id == scoped.dropbox_call_account_id,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if state is None or not state.cursor or state.future_cutover_at is None:
+            return result("deferred")
+        async with factory() as session:
+            note = await session.get(WatchVoiceNote, admission.event_id)
+        if note is None or not admission.active() or not admission.matches(note):
+            return result("deferred")
+        cutover = _utc(state.future_cutover_at)
+        if _utc(note.received_at) < cutover or _utc(note.dropbox_modified_at) <= cutover:
+            return result("deferred")
+        if note.delivery_state == "delivered":
+            return result("idle")
+        if note.delivery_state not in {"pending", "unknown"}:
+            return result("deferred")
+        if note.transcription_state == "received":
+            # Do not turn a historical/uncertain attempt into fresh received work.
+            if (
+                note.delivery_state != "pending"
+                or note.attempted_at is not None
+                or note.last_error is not None
+                or note.transcript is not None
+                or note.transcribed_at is not None
+                or note.model is not None
+                or note.next_part != 0
+                or note.issue_number is not None
+                or note.issue_url is not None
+            ):
+                return result("deferred")
+            await worker.transcribe_note(scoped, factory, http, note.id)
+            async with factory() as session:
+                note = await session.get(WatchVoiceNote, admission.event_id)
+            # An admitted in-flight STT may finish after expiry. No new publication then.
+            if note is None or not admission.active() or not admission.matches(note):
+                return result("deferred")
+        if note.transcription_state != "transcribed" or not admission.active():
+            return result("deferred")
+        return await publish_result(factory, client, note)
 
 
 async def _process_queued_note(

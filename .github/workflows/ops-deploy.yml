@@ -16,11 +16,10 @@ permissions:
   issues: read
 
 jobs:
-  # NEW_UNRELEASED / DEFAULT OFF. Remove the literal gate only in a separately reviewed activation.
+  # Unmerged owner-gated activation candidate (#799); no live release grant.
   deploy:
     if: >-
       ${{
-        false &&
         github.repository == 'markmalina/gate' &&
         github.repository_id == '1293746267' &&
         github.run_attempt == 1 &&
@@ -80,10 +79,15 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.sha }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
+          APPROVED_SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
         run: |
           set -euo pipefail
+          [[ "$APPROVED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$WORKFLOW_SHA" = "$EXPECTED_SHA"
+          test "$APPROVED_SOURCE_SHA" = "$EXPECTED_SHA"
           echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
 
       - id: deploy
@@ -116,8 +120,12 @@ jobs:
         env:
           RESULT: ${{ steps.deploy.outputs.result }}
           RECEIPT: ${{ steps.deploy.outputs.receipt-digest }}
+          APPROVED_SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          EXECUTOR_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          CHECKED_OUT_SHA: ${{ steps.source.outputs.sha }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          printf 'result=%s receipt=%s\n' "${RESULT:-missing}" "${RECEIPT:-missing}"
-          test "$RESULT" = SUCCEEDED
+          node .github/actions/gate-deploy/release-checks.mjs
 
