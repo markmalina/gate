@@ -68,7 +68,7 @@ def test_production_startup_defaults_off_and_preserves_explicit_value(
     assert payload == {
         "args": ["app.main:app", "--host", "0.0.0.0", "--port", port or "8000"],
         "exports": {
-            OIDC: oidc or "false",
+            OIDC: "false",
             ORDINARY: "false",
             "GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256": WORKFLOW_PIN,
             "GATE_DOCUMENT_SEND_ENABLED": "true",

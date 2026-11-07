@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-import os
-from collections.abc import Mapping
 from typing import Any
 
-from app.personal_telegram.cloud_session import cloud_binding_enabled, inspect_cloud_session
 
-
-def personal_telegram_server_status(
-    environment: Mapping[str, str] | None = None,
-) -> dict[str, Any]:
+def personal_telegram_server_status() -> dict[str, Any]:
     """The local DPAPI enrollment is not mounted or observed by Gate runtime."""
-    environment = os.environ if environment is None else environment
-    if cloud_binding_enabled(environment):
-        return inspect_cloud_session(environment)
     return {
         "configured": None,
         "authenticated": None,
@@ -25,4 +16,3 @@ def personal_telegram_server_status(
         "last_successful_check": None,
         "error_code": "local_session_not_bound",
     }
-
