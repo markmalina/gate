@@ -417,15 +417,46 @@ export class MaintenanceTransportError extends FastDeployError {
 }
 
 export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.now,
-  sleep = (ms) => new Promise((done) => setTimeout(done, ms)) }) {
+  sleep = (ms) => new Promise((done) => setTimeout(done, ms)), recordedSourceBinding }) {
   let expires = null, requests = 0, stopAttempted = false, stopAcknowledged = false;
   const target = { projectId: RAILWAY.projectId, environmentId: RAILWAY.environmentId,
     serviceId: TARGETS.gate.serviceId };
   const deny = (code, stage, details = {}) => {
     throw new MaintenanceTransportError(code, stage, stopAttempted, details);
   };
+  // gate.recorded-source-binding/v1 is consistency input, NOT authentication or
+  // permission. A future trusted admission/caller must establish the provenance
+  // of BOTH evidence/owner-grant bytes whose SHA256 digests are recorded here.
+  // This factory never fetches those bytes, verifies consent or rebinds source.
+  const bindingFixed = { schemaVersion: "gate.recorded-source-binding/v1",
+    repositoryId: 1293746267, ownerId: 23397294, ...target, repository: "AlphaCenter/gate" };
+  const bindingKeys = [...Object.keys(bindingFixed), "expectedDeploymentId", "expectedSha",
+    "evidenceSha256", "ownerGrantSha256"];
+  function readBinding() {
+    try {
+      if (!recordedSourceBinding || Object.getPrototypeOf(recordedSourceBinding) !== Object.prototype) throw Error();
+      const descriptors = Object.getOwnPropertyDescriptors(recordedSourceBinding);
+      if (Reflect.ownKeys(descriptors).length !== bindingKeys.length ||
+          bindingKeys.some((key) => !Object.hasOwn(descriptors, key) ||
+            !Object.hasOwn(descriptors[key], "value") || !descriptors[key].enumerable)) throw Error();
+      const value = Object.fromEntries(bindingKeys.map((key) => [key, descriptors[key].value]));
+      if (Object.entries(bindingFixed).some(([key, expected]) => value[key] !== expected) ||
+          !isUuid(value.expectedDeploymentId) || typeof value.expectedSha !== "string" || !SHA_RE.test(value.expectedSha) ||
+          [value.evidenceSha256, value.ownerGrantSha256].some((digest) => typeof digest !== "string" || !/^[0-9a-f]{64}$/u.test(digest))) throw Error();
+      return Object.freeze(value);
+    } catch { deny("E_SOURCE_BINDING", "input"); }
+  }
+  const binding = recordedSourceBinding === undefined ? null : readBinding();
+  const checkBinding = () => {
+    if (binding) {
+      const current = readBinding();
+      if (bindingKeys.some((key) => current[key] !== binding[key])) deny("E_SOURCE_BINDING", "input");
+    }
+  };
   const inputs = (sha, id) => {
     if (typeof sha !== "string" || !SHA_RE.test(sha) || !isUuid(id)) deny("E_INPUT", "input");
+    checkBinding();
+    if (binding && (sha !== binding.expectedSha || id !== binding.expectedDeploymentId)) deny("E_SOURCE_BINDING", "input");
   };
   const checkBudget = (deadline = Infinity) => {
     expires ??= clock() + 600_000;
@@ -433,6 +464,7 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
     if (requests >= 20) deny("E_REQUEST_LIMIT", "maintenance");
   };
   async function request(query, variables, stage, mutation = false, deadline = Infinity) {
+    checkBinding();
     if (typeof token !== "string" || token.length < 20 || token.length > 512 || /\s/u.test(token)) deny("E_AUTH", "auth-token");
     checkBudget(deadline);
     if (mutation) {
@@ -515,13 +547,14 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
       }
       serviceInstanceAutoDeployStatus(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId) { enabled }
     }`, target, "fleet", false, deadline);
+    checkBinding();
     const env = data.environment, staged = data.environmentStagedChanges, service = data.serviceInstance;
     if (env?.id !== target.environmentId || !Object.hasOwn(env, "unmergedChangesCount") ||
         (env.unmergedChangesCount !== 0 && env.unmergedChangesCount !== null) ||
         staged?.environmentId !== target.environmentId || staged.status !== "STAGED" ||
         !staged.patch || typeof staged.patch !== "object" || Array.isArray(staged.patch) || Object.keys(staged.patch).length !== 0 ||
         service?.serviceId !== target.serviceId || service.environmentId !== target.environmentId ||
-        service.source?.repo !== TARGETS.gate.repository || service.source.image !== null ||
+        service.source?.repo !== (binding?.repository ?? TARGETS.gate.repository) || service.source.image !== null ||
         data.serviceInstanceAutoDeployStatus?.enabled !== false ||
         !Number.isSafeInteger(service.numReplicas) || service.numReplicas < 1 || service.numReplicas > 8 ||
         !Array.isArray(service.activeDeployments) || service.activeDeployments.length > 1 ||
@@ -531,7 +564,9 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
     if (active.some((item) => item.stopped || item.status !== "SUCCESS") ||
         (latest && !latest.stopped && !active.some((item) => item.id === latest.id)) ||
         (latest && active.length && (latest.stopped !== active[0].stopped || latest.status !== active[0].status))) deny("E_FLEET", "fleet");
-    return { ...target, repository: TARGETS.gate.repository, autoDeploy: false, pendingChanges: false,
+    return { ...target, repository: service.source.repo, source: { repo: service.source.repo, image: service.source.image },
+      sourceRepoState: binding ? "HISTORICAL_GATE_ALIAS" : "CANONICAL_GATE", sourceMatches: !binding,
+      autoDeploy: false, pendingChanges: false,
       numReplicas: service.numReplicas, activeDeployments: active, latestDeployment: latest };
   }
   async function exact(sha, id, deadline = Infinity) {
