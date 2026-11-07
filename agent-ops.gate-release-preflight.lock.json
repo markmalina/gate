@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "gate.local-release-preflight-lock/v1",
+  "repository": "markmalina/gate",
+  "actionPath": ".github/actions/gate-release-preflight",
+  "workflowSha256": "sha256:5fdd98f108fc6008e6c4e66a6f602140cb1ca335c8af186e285ebae2e8fcfb88",
+  "expectedCurrentMain": "e7b3e32998706f7ef19053331466ea6c63105beb",
+  "expectedProductionSource": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
+  "reviewedStartCommand": "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'",
+  "authorizationExpiresAt": "2026-11-07T14:45:00Z",
+  "reviewedConfiguration": {
+    "productionSourceSha": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
+    "proposedSourceSha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+    "railwayTomlBlob": "d26281d309732ade5b8a9787d97e679398dec283",
+    "productionDockerfileBlob": "22dc92c6cc82bf9b33131647d2243a408fd6e5f2",
+    "proposedDockerfileBlob": "78e94f24fea683302c49fbe4badce55fff281023",
+    "railwayTomlIdenticalProductionAndProposed": true,
+    "preDeployCommand": "alembic upgrade head",
+    "startCommand": "/bin/sh -c 'export GATE_WATCH_VOICE_ENABLED=false; export GATE_WATCH_VOICE_MARK_OIDC_ENABLED=true; export GATE_WATCH_VOICE_ACTIONS_WORKFLOW_SHA256=6a5b4db5e428ca13524eb2140e86298447bb520fa33e24a067aa8f8d7a026d34; export GATE_DOCUMENT_SEND_ENABLED=true; export GATE_RICH_SEND_ENABLED=${GATE_RICH_SEND_ENABLED:-true}; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'",
+    "productionEnvironmentOverrides": false,
+    "alternateRootRailwayJsonExists": false,
+    "semanticsSources": [
+      "https://docs.railway.com/config-as-code/reference",
+      "https://docs.railway.com/builds/build-configuration"
+    ]
+  },
+  "upstreamRepository": "markmalina/ops",
+  "upstreamCommit": "d1b47bdacf6b3bcf9d2abc46e133eada4e0832c6",
+  "upstreamSourceSha256": "sha256:c39ed6016bd88b123464a9be488686387531177055adf313da6f75e0253a0d08",
+  "sourceBase": "e7b3e32998706f7ef19053331466ea6c63105beb",
+  "authorizationStartsAt": "2026-11-07T14:00:00Z",
+  "executorFilesSha256": {
+    "action.yml": "sha256:d1767a120d5a64d58c901bf8b18fbe406a962f9551fff1c76e863bca005cdde5",
+    "local.mjs": "sha256:38b245363cd17691e2612cf89d114641bd4e9b8ecdbb5cca5842617b3bb889fd",
+    "preflight.mjs": "sha256:c39ed6016bd88b123464a9be488686387531177055adf313da6f75e0253a0d08",
+    "preflight.test.js": "sha256:7277e0c684ba27546740c0ebe307c872e9481517dade1a8918365cf3de3fc098"
+  },
+  "authorizationStatus": "PROPOSED_NOT_GRANTED"
+}
