@@ -15,10 +15,10 @@ const fleet = (stopped = false) => ({ environment: { id: target.environmentId, u
   serviceInstance: { serviceId: target.serviceId, environmentId: target.environmentId, numReplicas: 1,
     source: { repo: "markmalina/gate", image: null }, latestDeployment: item(stopped), activeDeployments: stopped ? [] : [item()] },
   serviceInstanceAutoDeployStatus: { enabled: false } });
-function fake({ edit = () => {}, stop, stopped = false, clock, sleep } = {}) {
+function fake({ edit = () => {}, stop, stopped = false, clock, sleep, recordedSourceBinding } = {}) {
   const calls = [];
   let stopCount = 0;
-  const provider = makeFixedGateMaintenance({ token, clock, sleep, fetchFn: async (url, options) => {
+  const provider = makeFixedGateMaintenance({ token, clock, sleep, recordedSourceBinding, fetchFn: async (url, options) => {
     assert.equal(url, "https://backboard.railway.com/graphql/v2");
     assert.equal(options.redirect, "error"); assert.equal(options.method, "POST");
     assert.equal(options.headers["Project-Access-Token"], token);
@@ -217,4 +217,98 @@ test("valid null pending count needs an independently complete exact empty stage
   await accepted.provider.stopExactDeployment(stopInput);assert.equal(accepted.stops(),1);
   const denied=fake({edit:(d,k)=>{if(k === "Fleet"){d.environment.unmergedChangesCount=null;delete d.environmentStagedChanges;}}});
   await assert.rejects(denied.provider.stopExactDeployment(stopInput));assert.equal(denied.stops(),0);
+});
+
+const bindingRecord = () => ({ schemaVersion: "gate.recorded-source-binding/v1", repositoryId: 1293746267,
+  ownerId: 23397294, ...target, repository: "AlphaCenter/gate", expectedDeploymentId: id, expectedSha: sha,
+  evidenceSha256: "c".repeat(64), ownerGrantSha256: "d".repeat(64) });
+const historical = (d,k) => { if (k === "Fleet") d.serviceInstance.source.repo = "AlphaCenter/gate"; };
+test("explicit recorded historical profile preserves raw metadata and permits only one exact stop", async () => {
+  const record = bindingRecord(), f = fake({ recordedSourceBinding: record, edit: historical });
+  const observed = await f.provider.inspectFixedGate(sha,id);
+  assert.equal(observed.fleet.repository,"AlphaCenter/gate");
+  assert.deepEqual(observed.fleet.source,{repo:"AlphaCenter/gate",image:null});
+  assert.equal(observed.fleet.sourceRepoState,"HISTORICAL_GATE_ALIAS");
+  assert.equal(observed.fleet.sourceMatches,false); assert.ok(!Object.hasOwn(observed,"releaseReady"));
+  assert.ok(!Object.hasOwn(observed.fleet,"releaseReady"));
+  await f.provider.stopExactDeployment(stopInput); assert.equal(f.stops(),1);
+  const count=f.calls.length; await assert.rejects(f.provider.stopExactDeployment(stopInput));
+  assert.equal(f.calls.length,count); assert.equal(f.stops(),1);
+  const canonical=fake(); const plain=await canonical.provider.inspectFixedGate(sha,id);
+  assert.equal(plain.fleet.sourceMatches,true); assert.equal(plain.fleet.repository,"markmalina/gate");
+  await canonical.provider.stopExactDeployment(stopInput); assert.equal(canonical.stops(),1);
+});
+test("historical profile never falls back without binding or across canonical/unknown sources", async () => {
+  const absent=fake({edit:historical}); await assert.rejects(absent.provider.stopExactDeployment(stopInput));
+  assert.equal(absent.stops(),0);
+  for (const repository of ["markmalina/gate","attacker/gate","alphacenter/gate","AlphaCenter/other"]) {
+    const f=fake({recordedSourceBinding:bindingRecord(),edit:(d,k)=>{if(k === "Fleet")d.serviceInstance.source.repo=repository;}});
+    await assert.rejects(f.provider.stopExactDeployment(stopInput)); assert.equal(f.stops(),0);
+  }
+});
+test("record schema rejects missing/extra/coerced/accessor and wrong fixed inputs before HTTP", async () => {
+  const bad=[null,[],"AlphaCenter/gate",Object.create(bindingRecord())];
+  for(const key of Object.keys(bindingRecord())) { const value=bindingRecord(); delete value[key]; bad.push(value); }
+  for(const patch of [
+    {extra:true},{schemaVersion:"other"},{repositoryId:"1293746267"},{repositoryId:1},{ownerId:"23397294"},{ownerId:1},
+    {projectId:other},{environmentId:other},{serviceId:other},{repository:"markmalina/gate"},{repository:"attacker/gate"},
+    {expectedDeploymentId:"wrong"},{expectedSha:"main"},{expectedSha:"A".repeat(40)},
+    {evidenceSha256:"c".repeat(63)},{evidenceSha256:"G".repeat(64)},{ownerGrantSha256:null},
+    {ownerGrantSha256:"sha256:"+"d".repeat(64)}, {evidenceSha256:{toString:()=>"c".repeat(64)}},
+  ]) bad.push({...bindingRecord(),...patch});
+  const accessor=bindingRecord(); Object.defineProperty(accessor,"repository",{get(){throw Error("must not execute");},enumerable:true}); bad.push(accessor);
+  const symbol=bindingRecord(); symbol[Symbol("extra")]=true; bad.push(symbol);
+  const hidden=bindingRecord(); Object.defineProperty(hidden,"evidenceSha256",{enumerable:false}); bad.push(hidden);
+  let calls=0;
+  for(const recordedSourceBinding of bad) assert.throws(()=>makeFixedGateMaintenance({token,recordedSourceBinding,
+    fetchFn:async()=>{calls++;throw Error("HTTP forbidden");}}),/E_SOURCE_BINDING/);
+  assert.equal(calls,0);
+  for(const patch of [{expectedSha:"b".repeat(40)},{expectedDeploymentId:other}]) {
+    const f=fake({recordedSourceBinding:{...bindingRecord(),...patch},edit:historical});
+    await assert.rejects(f.provider.stopExactDeployment(stopInput),/E_SOURCE_BINDING/);
+    assert.equal(f.calls.length,0); assert.equal(f.stops(),0);
+  }
+});
+test("copied binding cannot be bypassed by mutation before or during preflight", async () => {
+  for(const mutate of [r=>{r.expectedSha="b".repeat(40);},r=>{r.ownerGrantSha256="e".repeat(64);},
+    r=>{r.repository="markmalina/gate";},r=>{r.extra=true;},r=>{delete r.evidenceSha256;}]) {
+    const record=bindingRecord(), f=fake({recordedSourceBinding:record,edit:historical}); mutate(record);
+    await assert.rejects(f.provider.stopExactDeployment(stopInput),/E_SOURCE_BINDING/);
+    assert.equal(f.calls.length,0); assert.equal(f.stops(),0);
+  }
+  for(const when of ["Auth","Fleet","Deployment"]) {
+    const record=bindingRecord(), f=fake({recordedSourceBinding:record,edit:(d,k)=>{
+      historical(d,k); if(k === when)record.ownerGrantSha256="e".repeat(64);
+    }});
+    await assert.rejects(f.provider.stopExactDeployment(stopInput),/E_SOURCE_BINDING/); assert.equal(f.stops(),0);
+  }
+  const frozen=fake({recordedSourceBinding:Object.freeze(bindingRecord()),edit:historical});
+  await frozen.provider.stopExactDeployment(stopInput); assert.equal(frozen.stops(),1);
+});
+test("bound historical source still rejects fleet/target drift and preserves uncertain stop", async () => {
+  for(const change of [d=>{d.serviceInstance.source.repo="markmalina/gate";},d=>{d.serviceInstance.serviceId=other;},
+    d=>{d.serviceInstance.latestDeployment.meta.commitSha="b".repeat(40);},d=>{d.serviceInstance.source.image="image";},
+    d=>{d.serviceInstanceAutoDeployStatus.enabled=true;}]) {
+    const f=fake({recordedSourceBinding:bindingRecord(),edit:(d,k,c)=>{
+      historical(d,k); if(k === "Fleet" && c.filter(x=>x === "Fleet").length === 2)change(d);
+    }});
+    await assert.rejects(f.provider.stopExactDeployment(stopInput)); assert.equal(f.stops(),0);
+  }
+  const uncertain=fake({recordedSourceBinding:bindingRecord(),edit:historical,
+    stop:()=>{throw new DOMException("synthetic lost ACK","TimeoutError");}});
+  await assert.rejects(uncertain.provider.stopExactDeployment(stopInput),unknown);
+  const count=uncertain.calls.length;
+  await assert.rejects(uncertain.provider.stopExactDeployment(stopInput),unknown);
+  assert.equal(uncertain.calls.length,count); assert.equal(uncertain.stops(),1);
+});
+test("bound historical ACK and stopped readback retain historical classification", async () => {
+  let stopped=false;
+  const f=fake({recordedSourceBinding:bindingRecord(),stop:()=>{stopped=true;return Response.json({data:{deploymentStop:true}});},
+    edit:(d,k)=>{if(stopped && k === "Fleet")Object.assign(d,fleet(true));
+      if(stopped && k === "Deployment")d.deployment=item(true); historical(d,k);}});
+  await f.provider.stopExactDeployment(stopInput);
+  const result=await f.provider.waitStopped({...stopInput,deadline:Date.now()+60_000});
+  assert.equal(result.stopped,true); assert.equal(result.fleet.sourceRepoState,"HISTORICAL_GATE_ALIAS");
+  assert.equal(result.fleet.sourceMatches,false); assert.equal(result.fleet.source.repo,"AlphaCenter/gate");
+  assert.equal(f.stops(),1); assert.equal(f.calls.length,10);
 });

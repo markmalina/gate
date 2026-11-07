@@ -28,7 +28,8 @@
     "Gate checkout/identity provenance",
     "Explicit upstream versus executor receipt provenance",
     "Gate-owned gate.local-deploy/v1 receipt discriminator; old receipts unchanged",
-    "Gate816 unregistered fixed maintenance transport and uncertain-stop classifier; independent local extension, no private Ops code copy"
+    "Gate816 unregistered fixed maintenance transport and uncertain-stop classifier; independent local extension, no private Ops code copy",
+    "Gate818 explicit recorded historical source consistency predicate; no owner authentication, runtime binding change or admission implementation"
   ],
   "unchanged": [
     "fixed target",
