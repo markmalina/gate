@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { verifyMaintenanceReceipt } from "../../.github/actions/gate-deploy/maintenance-receipt.mjs";
+import { verifyMaintenanceReceipt, verifyMaintenancePayload } from "../../.github/actions/gate-deploy/maintenance-receipt.mjs";
 import { MAINTENANCE_TARGET as target, MAINTENANCE_CAPS, MAINTENANCE_CONTRACT_SHA256 as contract,
   PROPOSED_WORKFLOW_REF as workflow } from "../../.github/actions/gate-deploy/maintenance-admission.mjs";
 
@@ -311,4 +311,14 @@ test("body-limit overruns are exact safe counters only for explicit FAILED/UNKNO
     f.r.diagnostic.category="TRANSPORT";f.r.counters.providerRequests=0;reject(input(f));
   }
   for(const result of ["HELD_STOPPED","NOOP_ALREADY_HELD"]){const f=fixture(result);f.r.counters.maxBodyBytes=524289;reject(input(f));}
+});
+
+
+
+test("payload validation has no artifact ID/provenance claim and keeps all receipt guards", () => {
+  const f = fixture(), i = input(f); delete i.context.artifactId;
+  const out = verifyMaintenancePayload(i); assert.equal(out.provenanceState, "NOT_VERIFIED");
+  assert.equal(out.effectSucceeded, true); assert.equal(Object.hasOwn(out, "success"), false);
+  assert.throws(() => verifyMaintenanceReceipt(i));
+  i.context.artifactId = "123"; assert.throws(() => verifyMaintenancePayload(i));
 });

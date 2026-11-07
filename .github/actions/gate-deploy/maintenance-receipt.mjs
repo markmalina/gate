@@ -86,16 +86,16 @@ function fleet(value, admission, start, end) {
   need(match(DIGEST, sha256) && hash(canonical(preimage)) === sha256);
   return f;
 }
-function parse(envelope, admission, now) {
+function parse(envelope, admission, now, payloadOnly = false) {
   const e = record(envelope, ["receiptBytes", "digestBytes", "context"]);
   const raw = bytes(e.receiptBytes, 32768), detached = bytes(e.digestBytes, 128);
   const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw);
   const parsed = JSON.parse(text); need(canonical(parsed) === text);
-  const r = record(parsed, RECEIPT_KEYS), c = record(e.context, CONTEXT_KEYS), digest = hash(raw);
+  const r = record(parsed, RECEIPT_KEYS), c = record(e.context, payloadOnly ? CONTEXT_KEYS.filter(k => k !== "artifactId") : CONTEXT_KEYS), digest = hash(raw);
   need(detached.equals(Buffer.from(`sha256:${digest}  ${MAINTENANCE_RECEIPT_NAME}\n`)));
   need(c.repository === "markmalina/gate" && c.repositoryId === 1293746267 && c.ownerId === 23397294
     && c.actorId === 23397294 && c.workflowRef === PROPOSED_WORKFLOW_REF
-    && match(RUN, c.runId) && c.runAttempt === 1 && match(RUN, c.artifactId)
+    && match(RUN, c.runId) && c.runAttempt === 1 && (payloadOnly || match(RUN, c.artifactId))
     && c.artifactName === MAINTENANCE_RECEIPT_NAME && c.outputDigest === `sha256:${digest}`
     && c.outputResult === r.result && RESULTS.includes(r.result));
   need(r.schemaVersion === "gate.maintenance-hold/v1" && r.operation === "GATE_MAINTENANCE_HOLD_V1"
@@ -178,7 +178,7 @@ function parse(envelope, admission, now) {
   return { receipt: r, digest, success };
 }
 
-export function verifyMaintenanceReceipt(input) {
+function verify(input, payloadOnly) {
   try {
     const { receiptBytes, digestBytes, context, admissionRequest, originalHeld } = record(input,
       ["receiptBytes", "digestBytes", "context", "admissionRequest", "originalHeld"]);
@@ -187,9 +187,12 @@ export function verifyMaintenanceReceipt(input) {
     // checks canonical bytes, digest, exact keys and every failure constraint.
     const preview = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes(receiptBytes, 32768)));
     const nonSuccess = preview.result === "FAILED" || preview.result === "UNKNOWN_STOP";
-    const admission = admitMaintenanceRequest(nonSuccess
+    // Payload verification can occur after upload, outside the effect window.
+    // Validate original authority at start; parse still enforces strict success
+    // end <= expiry. This retrospective path grants no provider/ledger I/O.
+    const admission = admitMaintenanceRequest((nonSuccess || payloadOnly)
       ? { ...admissionRequest, now: preview.startedAt } : admissionRequest);
-    const current = parse({ receiptBytes, digestBytes, context }, admission, admissionRequest.now);
+    const current = parse({ receiptBytes, digestBytes, context }, admission, admissionRequest.now, payloadOnly);
     if (current.receipt.result === "NOOP_ALREADY_HELD") {
       const original = parse(originalHeld, admission, admissionRequest.now);
       need(original.receipt.result === "HELD_STOPPED" && original.success
@@ -200,4 +203,14 @@ export function verifyMaintenanceReceipt(input) {
       receiptSha256: current.digest, sourceMatches: admission.sourceMatches,
       sourceRepoState: admission.sourceRepoState, receipt: current.receipt });
   } catch { deny(); }
+}
+
+
+// Payload validity is deliberately separate from artifact provenance. No ID is
+// accepted or synthesized on this path; all receipt/admission guards still run.
+export function verifyMaintenanceReceipt(input) { return verify(input, false); }
+export function verifyMaintenancePayload(input) {
+  const checked = verify(input, true);
+  const { success, ...rest } = checked;
+  return Object.freeze({ ...rest, effectSucceeded: success, provenanceState: "NOT_VERIFIED" });
 }
