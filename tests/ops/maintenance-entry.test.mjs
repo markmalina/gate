@@ -81,3 +81,16 @@ describe("default-OFF maintenance hosted entry", () => {
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 });
+
+
+
+it("new hosted CLI remains literal OFF before event or credentials for all three modes", async () => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "maintenance-hosted-off-"));
+  try { for (const mode of ["preflight", "prepare", "verify"]) {
+    const out = join(dir, `${mode}.json`);
+    const child = spawnSync(process.execPath, [".github/actions/gate-deploy/maintenance-entry.mjs", mode, out], { env: { PATH: process.env.PATH }, encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr); assert.equal(JSON.parse(await readFile(out, "utf8")).state, "OFF");
+  } } finally { await rm(dir, { recursive: true, force: true }); }
+});
