@@ -417,8 +417,20 @@ export class MaintenanceTransportError extends FastDeployError {
 }
 
 export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.now,
-  sleep = (ms) => new Promise((done) => setTimeout(done, ms)), recordedSourceBinding }) {
+  sleep = (ms) => new Promise((done) => setTimeout(done, ms)), recordedSourceBinding, absoluteDeadline = Infinity }) {
   let expires = null, requests = 0, stopAttempted = false, stopAcknowledged = false;
+  let polls = 0, maxHttpMs = 0, maxBodyBytes = 0;
+  let inspection = null, stoppedChain = null, observedDeployment = null;
+  const canonical = (x) => Array.isArray(x) ? `[${x.map(canonical).join(",")}]` : x !== null && typeof x === "object"
+    ? `{${Object.keys(x).sort().map(k => `${JSON.stringify(k)}:${canonical(x[k])}`).join(",")}}` : JSON.stringify(x);
+  const freeze = (x) => { if (x && typeof x === "object") { Object.values(x).forEach(freeze); Object.freeze(x); } return x; };
+  const timedFleet = (f) => { const raw = { ...f, complete: true, observedAt: new Date(clock()).toISOString() };
+    return freeze({ ...raw, sha256: createHash("sha256").update(canonical(raw)).digest("hex") }); };
+  const core = ({ observedAt, sha256, ...f }) => canonical(f);
+  const evidence = () => freeze({ inspection, stoppedChain, deployment: observedDeployment,
+    stopAttempted, acknowledged: stopAcknowledged,
+    counters: { providerRequests: requests, stop: Number(stopAttempted), restart: 0, deploy: 0, config: 0,
+      stt: 0, messages: 0, retries: 0, redirects: 0, polls, maxHttpMs, maxBodyBytes, pollIntervalMs: 5000 } });
   const target = { projectId: RAILWAY.projectId, environmentId: RAILWAY.environmentId,
     serviceId: TARGETS.gate.serviceId };
   const deny = (code, stage, details = {}) => {
@@ -460,7 +472,7 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
   };
   const checkBudget = (deadline = Infinity) => {
     expires ??= clock() + 600_000;
-    if (clock() >= Math.min(expires, deadline)) deny("E_TIMEOUT", "maintenance");
+    if (clock() >= Math.min(expires, absoluteDeadline, deadline)) deny("E_TIMEOUT", "maintenance");
     if (requests >= 20) deny("E_REQUEST_LIMIT", "maintenance");
   };
   async function request(query, variables, stage, mutation = false, deadline = Infinity) {
@@ -474,7 +486,8 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
     }
     requests++;
     const controller = new AbortController();
-    const timeoutMs = Math.min(API_TIMEOUT_MS, expires - clock(), deadline - clock());
+    const began = clock();
+    const timeoutMs = Math.min(API_TIMEOUT_MS, expires - began, absoluteDeadline - began, deadline - began);
     const requestExpires = clock() + timeoutMs;
     let timer, reader;
     let details = {};
@@ -500,6 +513,7 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
         if (done) break;
         if (!(value instanceof Uint8Array)) deny("E_PROVIDER_SHAPE", stage, details);
         size += value.byteLength;
+        maxBodyBytes = Math.max(maxBodyBytes, size);
         if (size > MAX_PROVIDER_BODY_BYTES) deny("E_BODY_LIMIT", stage, details);
         chunks.push(value);
       }
@@ -513,6 +527,7 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
       if (error instanceof MaintenanceTransportError) throw error;
       deny(error?.name === "AbortError" || error?.name === "TimeoutError" ? "E_TIMEOUT" : "E_PROVIDER_RESPONSE", stage, details);
     } finally {
+      maxHttpMs = Math.max(maxHttpMs, Math.max(0, Math.ceil(clock() - began)));
       clearTimeout(timer);
       try { void reader?.cancel().catch(() => {}); } catch { /* safe best effort */ }
       try { reader?.releaseLock(); } catch { /* pending read */ }
@@ -564,10 +579,10 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
     if (active.some((item) => item.stopped || item.status !== "SUCCESS") ||
         (latest && !latest.stopped && !active.some((item) => item.id === latest.id)) ||
         (latest && active.length && (latest.stopped !== active[0].stopped || latest.status !== active[0].status))) deny("E_FLEET", "fleet");
-    return { ...target, repository: service.source.repo, source: { repo: service.source.repo, image: service.source.image },
+    return timedFleet({ ...target, repository: service.source.repo, source: { repo: service.source.repo, image: service.source.image },
       sourceRepoState: binding ? "HISTORICAL_GATE_ALIAS" : "CANONICAL_GATE", sourceMatches: !binding,
       autoDeploy: false, pendingChanges: false,
-      numReplicas: service.numReplicas, activeDeployments: active, latestDeployment: latest };
+      numReplicas: service.numReplicas, activeDeployments: active, latestDeployment: latest });
   }
   async function exact(sha, id, deadline = Infinity) {
     const data = await request(`query GateMaintenanceDeployment($id: String!) {
@@ -575,7 +590,9 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
     }`, { id }, "inspect", false, deadline);
     const item = data.deployment;
     if (Object.entries(target).some(([key, value]) => item?.[key] !== value)) deny("E_DEPLOYMENT_SCOPE", "inspect");
-    return deployment(item, sha, id);
+    const value = deployment(item, sha, id);
+    observedDeployment = freeze({ ...value, ...target, observedAt: new Date(clock()).toISOString() });
+    return value;
   }
   async function inspectFixedGate(expectedSha, expectedDeploymentId) {
     inputs(expectedSha, expectedDeploymentId);
@@ -583,16 +600,21 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
     const before = await fleet(expectedSha, expectedDeploymentId);
     const recorded = await exact(expectedSha, expectedDeploymentId);
     const after = await fleet(expectedSha, expectedDeploymentId);
-    if (JSON.stringify(before) !== JSON.stringify(after) ||
+    if (core(before) !== core(after) ||
         (after.activeDeployments.length && recorded.stopped !== false)) deny("E_STATE_DRIFT", "inspect");
+    inspection = freeze({ fleets: [before, after], deployment: observedDeployment,
+      fingerprint: createHash("sha256").update(core(after)).digest("hex") });
     return { fleet: after, deployment: recorded };
   }
   return {
     inspectFixedGate,
-    async stopExactDeployment({ deploymentId, expectedSha }) {
+    evidence,
+    async stopExactDeployment({ deploymentId, expectedSha, expectedFleetFingerprint }) {
       inputs(expectedSha, deploymentId);
       if (stopAttempted) deny("E_STOP_USED", "stop");
       const observed = await inspectFixedGate(expectedSha, deploymentId);
+      if (expectedFleetFingerprint !== undefined && (typeof expectedFleetFingerprint !== "string" ||
+          !/^[0-9a-f]{64}$/u.test(expectedFleetFingerprint) || expectedFleetFingerprint !== inspection.fingerprint)) deny("E_STATE_DRIFT", "stop");
       const running = observed.fleet.activeDeployments;
       if (running.length !== 1 || observed.deployment.stopped !== false || observed.deployment.status !== "SUCCESS" ||
           observed.fleet.latestDeployment?.id !== deploymentId) deny("E_NOT_RUNNING", "stop");
@@ -609,16 +631,18 @@ export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.
       await auth(deadline);
       for (let poll = 0; poll < 12; poll++) {
         checkBudget(deadline);
+        polls++;
         const recorded = await exact(expectedSha, deploymentId, deadline);
         if (recorded.stopped) {
           const before = await fleet(expectedSha, deploymentId, deadline);
           const confirmed = await exact(expectedSha, deploymentId, deadline);
           const after = await fleet(expectedSha, deploymentId, deadline);
           if (!confirmed.stopped || before.activeDeployments.length || after.activeDeployments.length ||
-              JSON.stringify(before) !== JSON.stringify(after)) deny("E_NOT_STOPPED", "wait-stopped");
+              core(before) !== core(after)) deny("E_NOT_STOPPED", "wait-stopped");
+          stoppedChain = freeze({ fleets: [before, after], deployment: observedDeployment });
           return { deployment: confirmed, fleet: after, stopped: true };
         }
-        if (poll === 11 || clock() + 5_000 >= Math.min(expires, deadline)) deny("E_TIMEOUT", "wait-stopped");
+        if (poll === 11 || clock() + 5_000 >= Math.min(expires, absoluteDeadline, deadline)) deny("E_TIMEOUT", "wait-stopped");
         await sleep(5_000);
       }
     },

@@ -312,3 +312,19 @@ test("bound historical ACK and stopped readback retain historical classification
   assert.equal(result.fleet.sourceMatches,false); assert.equal(result.fleet.source.repo,"AlphaCenter/gate");
   assert.equal(f.stops(),1); assert.equal(f.calls.length,10);
 });
+
+test("maintenance evidence exposes only frozen actual safe observations and request counters",async()=>{
+  let ms=Date.parse("2030-01-01T00:00:00.000Z");
+  const f=fake({clock:()=>ms,edit:()=>{ms++;}});
+  const empty=f.provider.evidence();assert.equal(empty.deployment,null);assert.equal(empty.counters.providerRequests,0);assert.equal(empty.inspection,null);
+  await f.provider.inspectFixedGate(sha,id);const evidence=f.provider.evidence();
+  assert.equal(evidence.counters.providerRequests,4);assert.equal(evidence.counters.stop,0);assert.equal(evidence.counters.maxHttpMs,1);
+  assert.equal(evidence.inspection.fleets.length,2);assert.equal(evidence.inspection.fleets[0].complete,true);
+  assert.equal(evidence.deployment.observedAt,"2030-01-01T00:00:00.003Z");assert.equal(evidence.deployment.stopped,false);
+  assert.ok(Object.isFrozen(evidence.inspection.fleets[0].source));assert.throws(()=>{evidence.counters.stop=1;});
+  assert.equal(empty.inspection,null);assert.equal(JSON.stringify(evidence).includes(token),false);assert.equal(JSON.stringify(evidence).includes("meta"),false);
+});
+test("absolute operation deadline applies before every transport request and mutation",async()=>{
+  let calls=0;const p=makeFixedGateMaintenance({token,clock:()=>1000,absoluteDeadline:1000,fetchFn:()=>{calls++;throw Error();}});
+  await assert.rejects(p.stopExactDeployment(stopInput));assert.equal(calls,0);assert.equal(p.evidence().stopAttempted,false);
+});

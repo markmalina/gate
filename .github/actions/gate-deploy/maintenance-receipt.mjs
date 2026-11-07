@@ -113,14 +113,24 @@ function parse(envelope, admission, now) {
   for (const key of ["executorSha", "clientSha", "workflowSha"])
     need(match(SHA, c[key]) && c[key] === admission.expectedExecutorSha && r[key] === c[key]);
   const start = instant(r.startedAt), end = instant(r.finishedAt);
-  need(end >= start && end - start <= 600000 && start >= instant(admission.grant.notBefore)
-    && end <= instant(admission.grant.expiresAt) && end <= instant(now));
+  // A bounded in-flight request may finish after authority expires. Accept its
+  // truthful non-success evidence retrospectively; this never grants new I/O.
+  const nonSuccess = r.result === "FAILED" || r.result === "UNKNOWN_STOP";
+  const overrun = nonSuccess ? 15000 : 0;
+  need(end >= start && end - start <= 600000 + overrun && start >= instant(admission.grant.notBefore)
+    && start < instant(admission.grant.expiresAt)
+    && end <= instant(admission.grant.expiresAt) + overrun && end <= instant(now));
   if (r.observedAt !== null) need(instant(r.observedAt) >= start && instant(r.observedAt) <= end);
   const count = record(r.counters, COUNTER_KEYS);
   need(COUNTER_KEYS.every((key) => Number.isSafeInteger(count[key]) && count[key] >= 0)
     && count.providerRequests <= 20 && count.stop <= 1 && count.polls <= 12
     && count.providerRequests >= count.stop + count.polls
-    && count.maxHttpMs <= 15000 && count.maxBodyBytes <= 524288 && count.pollIntervalMs === 5000
+    && count.maxHttpMs <= 15000
+    // A rejected chunk can itself cross the read limit. Preserve its actual
+    // finite safe integer count only as explicit body-limit failure evidence.
+    && (count.maxBodyBytes <= 524288 || (nonSuccess && count.providerRequests > 0
+      && r.diagnostic?.code === "E_BODY" && r.diagnostic?.category === "TRANSPORT"))
+    && count.pollIntervalMs === 5000
     && count.maxHttpMs <= end - start && Math.max(0, count.polls - 1) * 5000 <= end - start
     && (count.providerRequests > 0 || (count.maxHttpMs === 0 && count.maxBodyBytes === 0 && count.polls === 0))
     && ["restart", "deploy", "config", "stt", "messages", "retries", "redirects"].every((key) => count[key] === 0)
@@ -173,7 +183,12 @@ export function verifyMaintenanceReceipt(input) {
     const { receiptBytes, digestBytes, context, admissionRequest, originalHeld } = record(input,
       ["receiptBytes", "digestBytes", "context", "admissionRequest", "originalHeld"]);
     // Calls the real admission parser, not a user-supplied imitation of its output.
-    const admission = admitMaintenanceRequest(admissionRequest);
+    // Read only enough to choose retrospective validation. parse() below still
+    // checks canonical bytes, digest, exact keys and every failure constraint.
+    const preview = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes(receiptBytes, 32768)));
+    const nonSuccess = preview.result === "FAILED" || preview.result === "UNKNOWN_STOP";
+    const admission = admitMaintenanceRequest(nonSuccess
+      ? { ...admissionRequest, now: preview.startedAt } : admissionRequest);
     const current = parse({ receiptBytes, digestBytes, context }, admission, admissionRequest.now);
     if (current.receipt.result === "NOOP_ALREADY_HELD") {
       const original = parse(originalHeld, admission, admissionRequest.now);

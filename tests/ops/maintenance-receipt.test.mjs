@@ -289,3 +289,26 @@ test("import and actual HELD/NOOP validation work with FS/env/fetch/clock capabi
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", env: {} });
   assert.equal(run.status, 0, run.stderr);
 });
+
+test("retrospective FAILED/UNKNOWN admits only truthful bounded failure evidence after grant expiry",()=>{
+  for(const result of ["FAILED","UNKNOWN_STOP"]){const f=fixture(result);f.r.startedAt=at(899);f.r.finishedAt=at(901);
+    f.r.beforeFleets=[null,null];f.r.afterFleets=[null,null];f.r.counters.polls=0;f.r.counters.maxHttpMs=100;
+    f.admissionRequest.now=at(902);const out=verifyMaintenanceReceipt(input(f));assert.equal(out.success,false);assert.equal(out.result,result);
+    f.r.finishedAt=at(916);f.admissionRequest.now=at(917);reject(input(f));
+    f.r.startedAt=at(900);f.r.finishedAt=at(901);reject(input(f));
+  }
+  const held=fixture();held.r.finishedAt=at(901);held.admissionRequest.now=at(902);reject(input(held));
+  const future=fixture("UNKNOWN_STOP");future.r.startedAt=at(899);future.r.finishedAt=at(901);future.admissionRequest.now=at(900);reject(input(future));
+});
+
+test("body-limit overruns are exact safe counters only for explicit FAILED/UNKNOWN evidence, never success",()=>{
+  for(const result of ["FAILED","UNKNOWN_STOP"]){const f=fixture(result);f.r.counters.maxBodyBytes=524289;
+    reject(input(f));f.r.diagnostic={code:"E_BODY",category:"TRANSPORT",httpStatus:200};
+    const v=verifyMaintenanceReceipt(input(f));assert.equal(v.receipt.counters.maxBodyBytes,524289);assert.equal(v.success,false);
+    f.r.counters.maxBodyBytes=Number.MAX_SAFE_INTEGER;assert.equal(verifyMaintenanceReceipt(input(f)).success,false);
+    f.r.counters.maxBodyBytes=Number.MAX_SAFE_INTEGER+1;reject(input(f));
+    f.r.counters.maxBodyBytes=524289;f.r.diagnostic.category="READBACK";reject(input(f));
+    f.r.diagnostic.category="TRANSPORT";f.r.counters.providerRequests=0;reject(input(f));
+  }
+  for(const result of ["HELD_STOPPED","NOOP_ALREADY_HELD"]){const f=fixture(result);f.r.counters.maxBodyBytes=524289;reject(input(f));}
+});
