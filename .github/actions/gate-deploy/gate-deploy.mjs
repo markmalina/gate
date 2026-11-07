@@ -405,3 +405,187 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   await main();
 }
 
+
+// Gate-local, unregistered maintenance transport. No caller, grants, ledger or
+// durable idempotency is supplied here. Constructing/importing performs no I/O.
+export class MaintenanceTransportError extends FastDeployError {
+  constructor(code, stage, attempted = false, details = {}) {
+    super(code, stage, attempted, details);
+    this.result = attempted ? "UNKNOWN_STOP" : "FAILED";
+    this.retryable = false;
+  }
+}
+
+export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.now,
+  sleep = (ms) => new Promise((done) => setTimeout(done, ms)) }) {
+  let expires = null, requests = 0, stopAttempted = false, stopAcknowledged = false;
+  const target = { projectId: RAILWAY.projectId, environmentId: RAILWAY.environmentId,
+    serviceId: TARGETS.gate.serviceId };
+  const deny = (code, stage, details = {}) => {
+    throw new MaintenanceTransportError(code, stage, stopAttempted, details);
+  };
+  const inputs = (sha, id) => {
+    if (typeof sha !== "string" || !SHA_RE.test(sha) || !isUuid(id)) deny("E_INPUT", "input");
+  };
+  const checkBudget = (deadline = Infinity) => {
+    expires ??= clock() + 600_000;
+    if (clock() >= Math.min(expires, deadline)) deny("E_TIMEOUT", "maintenance");
+    if (requests >= 20) deny("E_REQUEST_LIMIT", "maintenance");
+  };
+  async function request(query, variables, stage, mutation = false, deadline = Infinity) {
+    if (typeof token !== "string" || token.length < 20 || token.length > 512 || /\s/u.test(token)) deny("E_AUTH", "auth-token");
+    checkBudget(deadline);
+    if (mutation) {
+      // Synchronous reservation after all async preflights, before outgoing I/O.
+      if (stopAttempted) deny("E_STOP_USED", "stop");
+      stopAttempted = true;
+    }
+    requests++;
+    const controller = new AbortController();
+    const timeoutMs = Math.min(API_TIMEOUT_MS, expires - clock(), deadline - clock());
+    const requestExpires = clock() + timeoutMs;
+    let timer, reader;
+    let details = {};
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new MaintenanceTransportError("E_TIMEOUT", stage, stopAttempted, details));
+      }, timeoutMs);
+    });
+    try {
+      const response = await Promise.race([fetchFn("https://backboard.railway.com/graphql/v2", {
+        method: "POST", redirect: "error", cache: "no-store", signal: controller.signal,
+        headers: { "Content-Type": "application/json", "Project-Access-Token": token },
+        body: JSON.stringify({ query, variables }),
+      }), timeout]);
+      details = { httpStatus: safeHttpStatus(response.status) };
+      reader = response.body.getReader();
+      let size = 0;
+      const chunks = [];
+      for (;;) {
+        const { done, value } = await Promise.race([reader.read(), timeout]);
+        if (clock() >= requestExpires) deny("E_TIMEOUT", stage, details);
+        if (done) break;
+        if (!(value instanceof Uint8Array)) deny("E_PROVIDER_SHAPE", stage, details);
+        size += value.byteLength;
+        if (size > MAX_PROVIDER_BODY_BYTES) deny("E_BODY_LIMIT", stage, details);
+        chunks.push(value);
+      }
+      const envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, size)));
+      if (envelope?.errors) details.graphqlCodes = safeGraphqlCodes(envelope.errors);
+      if (!response.ok || envelope?.errors || !envelope?.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)) {
+        deny(response.status === 401 || response.status === 403 ? "E_AUTH" : "E_PROVIDER_API", stage, details);
+      }
+      return envelope.data;
+    } catch (error) {
+      if (error instanceof MaintenanceTransportError) throw error;
+      deny(error?.name === "AbortError" || error?.name === "TimeoutError" ? "E_TIMEOUT" : "E_PROVIDER_RESPONSE", stage, details);
+    } finally {
+      clearTimeout(timer);
+      try { void reader?.cancel().catch(() => {}); } catch { /* safe best effort */ }
+      try { reader?.releaseLock(); } catch { /* pending read */ }
+    }
+  }
+  async function auth(deadline = Infinity) {
+    const data = await request(`query GateMaintenanceAuth($projectId: String!) {
+      projectToken { id project { id } environment { id } }
+      project(id: $projectId) { id services { edges { node { id } } } }
+    }`, { projectId: target.projectId }, "authenticate", false, deadline);
+    const services = data.project?.services?.edges;
+    if (!isUuid(data.projectToken?.id) || data.projectToken.project?.id !== target.projectId ||
+        data.projectToken.environment?.id !== target.environmentId || data.project?.id !== target.projectId ||
+        !Array.isArray(services) || services.filter((edge) => edge?.node?.id === target.serviceId).length !== 1) deny("E_AUTH", "authenticate");
+  }
+  function deployment(item, sha, id) {
+    const values = [item?.meta?.commitSha, item?.meta?.commitHash, item?.meta?.sourceSha, item?.meta?.repoCommit]
+      .filter((value) => value !== undefined && value !== null);
+    const statuses = new Set(["SUCCESS", "FAILED", "CRASHED", "REMOVED", "SKIPPED", "SLEEPING"]);
+    if (item?.id !== id || !values.length || values.some((value) => typeof value !== "string" || value !== sha) ||
+        typeof item.deploymentStopped !== "boolean" || !statuses.has(item.status)) deny("E_DEPLOYMENT_SCOPE", "inspect");
+    return { id, sha, stopped: item.deploymentStopped, status: item.status };
+  }
+  async function fleet(sha, id, deadline = Infinity) {
+    const data = await request(`query GateMaintenanceFleet($projectId: String!, $environmentId: String!, $serviceId: String!) {
+      environment(id: $environmentId, projectId: $projectId) { id unmergedChangesCount }
+      environmentStagedChanges(environmentId: $environmentId) { environmentId status patch(decryptVariables: false) }
+      serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+        serviceId environmentId numReplicas source { repo image }
+        latestDeployment { id status meta deploymentStopped }
+        activeDeployments { id status meta deploymentStopped }
+      }
+      serviceInstanceAutoDeployStatus(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId) { enabled }
+    }`, target, "fleet", false, deadline);
+    const env = data.environment, staged = data.environmentStagedChanges, service = data.serviceInstance;
+    if (env?.id !== target.environmentId || !Object.hasOwn(env, "unmergedChangesCount") ||
+        (env.unmergedChangesCount !== 0 && env.unmergedChangesCount !== null) ||
+        staged?.environmentId !== target.environmentId || staged.status !== "STAGED" ||
+        !staged.patch || typeof staged.patch !== "object" || Array.isArray(staged.patch) || Object.keys(staged.patch).length !== 0 ||
+        service?.serviceId !== target.serviceId || service.environmentId !== target.environmentId ||
+        service.source?.repo !== TARGETS.gate.repository || service.source.image !== null ||
+        data.serviceInstanceAutoDeployStatus?.enabled !== false ||
+        !Number.isSafeInteger(service.numReplicas) || service.numReplicas < 1 || service.numReplicas > 8 ||
+        !Array.isArray(service.activeDeployments) || service.activeDeployments.length > 1 ||
+        !Object.hasOwn(service, "latestDeployment")) deny("E_FLEET", "fleet");
+    const active = service.activeDeployments.map((item) => deployment(item, sha, id));
+    const latest = service.latestDeployment === null ? null : deployment(service.latestDeployment, sha, id);
+    if (active.some((item) => item.stopped || item.status !== "SUCCESS") ||
+        (latest && !latest.stopped && !active.some((item) => item.id === latest.id)) ||
+        (latest && active.length && (latest.stopped !== active[0].stopped || latest.status !== active[0].status))) deny("E_FLEET", "fleet");
+    return { ...target, repository: TARGETS.gate.repository, autoDeploy: false, pendingChanges: false,
+      numReplicas: service.numReplicas, activeDeployments: active, latestDeployment: latest };
+  }
+  async function exact(sha, id, deadline = Infinity) {
+    const data = await request(`query GateMaintenanceDeployment($id: String!) {
+      deployment(id: $id) { id projectId environmentId serviceId status meta deploymentStopped }
+    }`, { id }, "inspect", false, deadline);
+    const item = data.deployment;
+    if (Object.entries(target).some(([key, value]) => item?.[key] !== value)) deny("E_DEPLOYMENT_SCOPE", "inspect");
+    return deployment(item, sha, id);
+  }
+  async function inspectFixedGate(expectedSha, expectedDeploymentId) {
+    inputs(expectedSha, expectedDeploymentId);
+    await auth();
+    const before = await fleet(expectedSha, expectedDeploymentId);
+    const recorded = await exact(expectedSha, expectedDeploymentId);
+    const after = await fleet(expectedSha, expectedDeploymentId);
+    if (JSON.stringify(before) !== JSON.stringify(after) ||
+        (after.activeDeployments.length && recorded.stopped !== false)) deny("E_STATE_DRIFT", "inspect");
+    return { fleet: after, deployment: recorded };
+  }
+  return {
+    inspectFixedGate,
+    async stopExactDeployment({ deploymentId, expectedSha }) {
+      inputs(expectedSha, deploymentId);
+      if (stopAttempted) deny("E_STOP_USED", "stop");
+      const observed = await inspectFixedGate(expectedSha, deploymentId);
+      const running = observed.fleet.activeDeployments;
+      if (running.length !== 1 || observed.deployment.stopped !== false || observed.deployment.status !== "SUCCESS" ||
+          observed.fleet.latestDeployment?.id !== deploymentId) deny("E_NOT_RUNNING", "stop");
+      const data = await request(`mutation GateMaintenanceStop($id: String!) { deploymentStop(id: $id) }`,
+        { id: deploymentId }, "stop", true);
+      if (data.deploymentStop !== true) deny("E_STOP_ACK", "stop");
+      stopAcknowledged = true;
+      return { deploymentId, acknowledged: true };
+    },
+    async waitStopped({ deploymentId, expectedSha, deadline }) {
+      inputs(expectedSha, deploymentId);
+      if (typeof deadline !== "number" || !Number.isFinite(deadline) || deadline <= clock()) deny("E_INPUT", "input");
+      if (stopAttempted && !stopAcknowledged) deny("E_STOP_UNCERTAIN", "wait-stopped");
+      await auth(deadline);
+      for (let poll = 0; poll < 12; poll++) {
+        checkBudget(deadline);
+        const recorded = await exact(expectedSha, deploymentId, deadline);
+        if (recorded.stopped) {
+          const before = await fleet(expectedSha, deploymentId, deadline);
+          const confirmed = await exact(expectedSha, deploymentId, deadline);
+          const after = await fleet(expectedSha, deploymentId, deadline);
+          if (!confirmed.stopped || before.activeDeployments.length || after.activeDeployments.length ||
+              JSON.stringify(before) !== JSON.stringify(after)) deny("E_NOT_STOPPED", "wait-stopped");
+          return { deployment: confirmed, fleet: after, stopped: true };
+        }
+        if (poll === 11 || clock() + 5_000 >= Math.min(expires, deadline)) deny("E_TIMEOUT", "wait-stopped");
+        await sleep(5_000);
+      }
+    },
+  };
+}
