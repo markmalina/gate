@@ -226,3 +226,52 @@ test("oversized first auth read is truthful FAILED with null observed and zero s
 test("real transport safe HTTP status is retained without exposing provider payload",async()=>{
   const s=scenario({stopMode:"http503"}),r=await s.run();assert.equal(checkReceipt(r).receipt.diagnostic.httpStatus,503);assert.equal(r.success,false);
 });
+
+
+
+test("phase A prepares immutable canonical bytes without artifactId; terminal stays non-retryable across upload gaps", async () => {
+  const s = scenario(), operation = createMaintenanceOperation(s.deps);
+  const out = await operation.prepare({ admissionRequest: admission() });
+  assert.equal(out.effectState, "HELD_STOPPED"); assert.equal(out.effectSucceeded, true);
+  assert.equal(out.ledgerState, "HELD_STOPPED"); assert.equal(out.ledgerCommitted, true);
+  assert.equal(out.provenanceState, "PENDING_UPLOAD"); assert.equal(out.retryable, false);
+  assert.equal(Object.hasOwn(out.payload.context, "artifactId"), false);
+  const original = out.payload.receiptBytes; out.payload.receiptBytes.fill(0);
+  assert.deepEqual(out.payload.receiptBytes, original); assert.ok(Object.isFrozen(out.payload.context));
+  const calls = s.calls.length;
+  assert.equal((await operation.prepare({ admissionRequest: admission() })).state, "DENIED");
+  assert.equal(s.calls.length, calls);
+  // A new coordinator cannot use an unbound Phase-A receipt as a replay grant.
+  const replay = await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission(), originalHeld: out.payload });
+  assert.equal(replay.state, "DENIED"); assert.equal(s.calls.filter(x => x === "Stop").length, 1);
+});
+for (const mode of ["lost", "timeout", "oversized"]) test(`phase A stop ${mode} keeps UNKNOWN_STOP and cannot retry`, async () => {
+  const s = scenario({ stopMode: mode });
+  const out = await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission() });
+  assert.equal(out.effectState, "UNKNOWN_STOP"); assert.equal(out.effectSucceeded, false);
+  assert.equal(out.retryable, false); assert.equal(out.provenanceState, "PENDING_UPLOAD");
+  const next = await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission() });
+  assert.equal(next.state, "DENIED"); assert.equal(s.calls.filter(x => x === "Stop").length, 1);
+});
+test("phase A lost terminal ACK leaves durable terminal and denies replay; no upload rollback", async () => {
+  const s = scenario({ ledgerMode: "lost:HELD_STOPPED" });
+  const out = await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission() });
+  assert.equal(out.retryable, false); assert.equal(JSON.parse(s.content).history.at(-1).state, "HELD_STOPPED");
+  assert.equal((await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission() })).state, "DENIED");
+  assert.equal(s.calls.filter(x => x === "Stop").length, 1);
+});
+test("phase A rejects fake artifact identity before any I/O", async () => {
+  const s = scenario(); const out = await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission(), artifactId: "1" });
+  assert.equal(out.state, "DENIED"); assert.equal(s.calls.length, 0);
+});
+
+
+test("phase A lost durable STOP_INTENT ACK denies stop and preserves latch", async () => {
+  const s = scenario({ ledgerMode: "lost:STOP_INTENT" });
+  const out = await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission() });
+  assert.equal(out.effectState, "FAILED"); assert.equal(out.effectSucceeded, false);
+  assert.equal(JSON.parse(s.content).history.at(-1).state, "STOP_INTENT");
+  const before = s.content; s.calls.length = 0;
+  assert.equal((await createMaintenanceOperation(s.deps).prepare({ admissionRequest: admission() })).state, "DENIED");
+  assert.deepEqual(s.calls, ["GH:GET"]); assert.equal(s.content, before);
+});

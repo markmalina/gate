@@ -6,7 +6,7 @@ import { admitMaintenanceRequest, MAINTENANCE_TARGET, MAINTENANCE_CONTRACT_SHA25
   PROPOSED_WORKFLOW_REF } from "./maintenance-admission.mjs";
 import { createMaintenanceLedger } from "./maintenance-ledger.mjs";
 import { makeFixedGateMaintenance } from "./gate-deploy.mjs";
-import { verifyMaintenanceReceipt, MAINTENANCE_RECEIPT_NAME } from "./maintenance-receipt.mjs";
+import { verifyMaintenanceReceipt, verifyMaintenancePayload, MAINTENANCE_RECEIPT_NAME } from "./maintenance-receipt.mjs";
 const canon = (x) => Array.isArray(x) ? `[${x.map(canon).join(",")}]` : x !== null && typeof x === "object"
   ? `{${Object.keys(x).sort().map(k => `${JSON.stringify(k)}:${canon(x[k])}`).join(",")}}` : JSON.stringify(x);
 const hash = (x) => createHash("sha256").update(x).digest("hex");
@@ -16,7 +16,7 @@ export function createMaintenanceOperation({ githubToken, providerToken, githubF
   const enabled = [githubFetch, providerFetch, clock, sleep].every(x => typeof x === "function")
     && [githubToken, providerToken].every(x => typeof x === "string" && x.length > 0);
   let used = false;
-  return Object.freeze({ async run({ admissionRequest, artifactId, originalHeld = null } = {}) {
+  async function execute({ admissionRequest, artifactId, originalHeld = null } = {}, payloadOnly = false) {
     if (!enabled || used) return refusal("DISABLED_OR_USED");
     used = true;
     let admission, request, startedAt, start, deadline, lastTime;
@@ -31,7 +31,7 @@ export function createMaintenanceOperation({ githubToken, providerToken, githubF
       admission = admitMaintenanceRequest({ ...admissionRequest, now: startedAt });
       request = { grantBytes: Buffer.from(admissionRequest.grantBytes), command: admissionRequest.command,
         context: { ...admissionRequest.context }, now: startedAt };
-      requireValue(typeof artifactId === "string" && /^[1-9][0-9]{0,19}$/u.test(artifactId));
+      requireValue(payloadOnly ? artifactId === undefined : typeof artifactId === "string" && /^[1-9][0-9]{0,19}$/u.test(artifactId));
       deadline = Math.min(start + 600000, Date.parse(admission.grant.expiresAt));
     } catch { return refusal("ADMISSION"); }
     let githubRequests = 0;
@@ -117,9 +117,9 @@ export function createMaintenanceOperation({ githubToken, providerToken, githubF
       const envelope = { receiptBytes, digestBytes: Buffer.from(`sha256:${digest}  ${MAINTENANCE_RECEIPT_NAME}\n`),
         context: { repository: "markmalina/gate", repositoryId: 1293746267, ownerId: 23397294, actorId: 23397294,
           workflowRef: PROPOSED_WORKFLOW_REF, workflowSha: admission.expectedExecutorSha, executorSha: admission.expectedExecutorSha,
-          clientSha: admission.expectedExecutorSha, runId: request.context.runId, runAttempt: 1, artifactId,
+          clientSha: admission.expectedExecutorSha, runId: request.context.runId, runAttempt: 1, ...(payloadOnly ? {} : { artifactId }),
           artifactName: MAINTENANCE_RECEIPT_NAME, outputDigest: `sha256:${digest}`, outputResult: result } };
-      const verified = verifyMaintenanceReceipt({ ...envelope, admissionRequest: { ...request, now: now() },
+      const verified = (payloadOnly ? verifyMaintenancePayload : verifyMaintenanceReceipt)({ ...envelope, admissionRequest: { ...request, now: now() },
         originalHeld: result === "NOOP_ALREADY_HELD" ? originalHeld : null });
       return { envelope, verified };
     };
@@ -139,8 +139,20 @@ export function createMaintenanceOperation({ githubToken, providerToken, githubF
         try { output = produce(); } catch { output = null; }
       }
     }
+    if (payloadOnly) {
+      // Capture private byte copies. Every getter returns a copy, so a caller
+      // cannot mutate the frozen receipt between upload and binding.
+      const e = output?.envelope, raw = e && Buffer.from(e.receiptBytes), detached = e && Buffer.from(e.digestBytes);
+      const payload = e ? Object.freeze({ get receiptBytes() { return Buffer.from(raw); },
+        get digestBytes() { return Buffer.from(detached); }, context: Object.freeze({ ...e.context }) }) : null;
+      return Object.freeze({ effectState: result, effectSucceeded: output?.verified.effectSucceeded === true && (replay || persistenceAccepted),
+        ledgerState: terminal?.snapshot?.state ?? snapshot.state, ledgerCommitted: terminal?.status === "COMMITTED",
+        provenanceState: payload ? "PENDING_UPLOAD" : "PAYLOAD_INVALID", payload, githubRequests, retryable: false });
+    }
     return Object.freeze({ state: result, success: output?.verified.success === true && (replay || persistenceAccepted),
       receipt: output?.envelope ?? null, githubRequests, lastAcknowledgedLedgerState: terminal?.snapshot?.state ?? snapshot.state,
       ledgerCommitted: terminal?.status === "COMMITTED", retryable: false });
-  } });
+  }
+  return Object.freeze({ run: input => execute(input, false), prepare: input => execute(input, true) });
 }
+
