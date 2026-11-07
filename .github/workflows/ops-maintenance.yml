@@ -1,0 +1,78 @@
+name: Gate Maintenance Caller Candidate (OFF)
+run-name: 'Gate maintenance #${{ github.event.comment.id }}'
+on:
+  issue_comment:
+    types: [created]
+permissions: {}
+concurrency:
+  group: gate-maintenance-fixed
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: >-
+      ${{ false && github.repository == 'markmalina/gate' && github.repository_id == '1293746267' &&
+          github.actor_id == '23397294' && github.event.issue.number == 815 && !github.event.issue.pull_request &&
+          github.event.action == 'created' && github.ref == 'refs/heads/main' && github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      admitted: ${{ steps.admit.outputs.admitted }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - id: admit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKED_OUT_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node .github/actions/gate-deploy/maintenance-entry.mjs preflight "$RUNNER_TEMP/maintenance-preflight.json"
+  effect:
+    needs: preflight
+    if: ${{ false && needs.preflight.outputs.admitted == 'true' && github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: gate-production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          CHECKED_OUT_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node .github/actions/gate-deploy/maintenance-entry.mjs prepare "$RUNNER_TEMP/maintenance-originals"
+      - name: Upload immutable originals (carrier only)
+        if: ${{ steps.prepare.outputs.payload_ready == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: maintenance-hold-receipt.json
+          path: |
+            ${{ runner.temp }}/maintenance-originals/maintenance-hold-receipt.json
+            ${{ runner.temp }}/maintenance-originals/maintenance-hold-receipt.json.sha256
+          archive: true
+          compression-level: 6
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 1
+      - name: Preserve non-success as non-success after upload
+        if: ${{ always() && steps.prepare.outputs.payload_ready == 'true' }}
+        env:
+          EFFECT_RESULT: ${{ steps.prepare.outputs.effect_result }}
+        run: test "$EFFECT_RESULT" = HELD_STOPPED

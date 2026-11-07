@@ -405,3 +405,246 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   await main();
 }
 
+
+// Gate-local, unregistered maintenance transport. No caller, grants, ledger or
+// durable idempotency is supplied here. Constructing/importing performs no I/O.
+export class MaintenanceTransportError extends FastDeployError {
+  constructor(code, stage, attempted = false, details = {}) {
+    super(code, stage, attempted, details);
+    this.result = attempted ? "UNKNOWN_STOP" : "FAILED";
+    this.retryable = false;
+  }
+}
+
+export function makeFixedGateMaintenance({ token, fetchFn = fetch, clock = Date.now,
+  sleep = (ms) => new Promise((done) => setTimeout(done, ms)), recordedSourceBinding, absoluteDeadline = Infinity }) {
+  let expires = null, requests = 0, stopAttempted = false, stopAcknowledged = false;
+  let polls = 0, maxHttpMs = 0, maxBodyBytes = 0;
+  let inspection = null, stoppedChain = null, observedDeployment = null;
+  const canonical = (x) => Array.isArray(x) ? `[${x.map(canonical).join(",")}]` : x !== null && typeof x === "object"
+    ? `{${Object.keys(x).sort().map(k => `${JSON.stringify(k)}:${canonical(x[k])}`).join(",")}}` : JSON.stringify(x);
+  const freeze = (x) => { if (x && typeof x === "object") { Object.values(x).forEach(freeze); Object.freeze(x); } return x; };
+  const timedFleet = (f) => { const raw = { ...f, complete: true, observedAt: new Date(clock()).toISOString() };
+    return freeze({ ...raw, sha256: createHash("sha256").update(canonical(raw)).digest("hex") }); };
+  const core = ({ observedAt, sha256, ...f }) => canonical(f);
+  const evidence = () => freeze({ inspection, stoppedChain, deployment: observedDeployment,
+    stopAttempted, acknowledged: stopAcknowledged,
+    counters: { providerRequests: requests, stop: Number(stopAttempted), restart: 0, deploy: 0, config: 0,
+      stt: 0, messages: 0, retries: 0, redirects: 0, polls, maxHttpMs, maxBodyBytes, pollIntervalMs: 5000 } });
+  const target = { projectId: RAILWAY.projectId, environmentId: RAILWAY.environmentId,
+    serviceId: TARGETS.gate.serviceId };
+  const deny = (code, stage, details = {}) => {
+    throw new MaintenanceTransportError(code, stage, stopAttempted, details);
+  };
+  // gate.recorded-source-binding/v1 is consistency input, NOT authentication or
+  // permission. A future trusted admission/caller must establish the provenance
+  // of BOTH evidence/owner-grant bytes whose SHA256 digests are recorded here.
+  // This factory never fetches those bytes, verifies consent or rebinds source.
+  const bindingFixed = { schemaVersion: "gate.recorded-source-binding/v1",
+    repositoryId: 1293746267, ownerId: 23397294, ...target, repository: "AlphaCenter/gate" };
+  const bindingKeys = [...Object.keys(bindingFixed), "expectedDeploymentId", "expectedSha",
+    "evidenceSha256", "ownerGrantSha256"];
+  function readBinding() {
+    try {
+      if (!recordedSourceBinding || Object.getPrototypeOf(recordedSourceBinding) !== Object.prototype) throw Error();
+      const descriptors = Object.getOwnPropertyDescriptors(recordedSourceBinding);
+      if (Reflect.ownKeys(descriptors).length !== bindingKeys.length ||
+          bindingKeys.some((key) => !Object.hasOwn(descriptors, key) ||
+            !Object.hasOwn(descriptors[key], "value") || !descriptors[key].enumerable)) throw Error();
+      const value = Object.fromEntries(bindingKeys.map((key) => [key, descriptors[key].value]));
+      if (Object.entries(bindingFixed).some(([key, expected]) => value[key] !== expected) ||
+          !isUuid(value.expectedDeploymentId) || typeof value.expectedSha !== "string" || !SHA_RE.test(value.expectedSha) ||
+          [value.evidenceSha256, value.ownerGrantSha256].some((digest) => typeof digest !== "string" || !/^[0-9a-f]{64}$/u.test(digest))) throw Error();
+      return Object.freeze(value);
+    } catch { deny("E_SOURCE_BINDING", "input"); }
+  }
+  const binding = recordedSourceBinding === undefined ? null : readBinding();
+  const checkBinding = () => {
+    if (binding) {
+      const current = readBinding();
+      if (bindingKeys.some((key) => current[key] !== binding[key])) deny("E_SOURCE_BINDING", "input");
+    }
+  };
+  const inputs = (sha, id) => {
+    if (typeof sha !== "string" || !SHA_RE.test(sha) || !isUuid(id)) deny("E_INPUT", "input");
+    checkBinding();
+    if (binding && (sha !== binding.expectedSha || id !== binding.expectedDeploymentId)) deny("E_SOURCE_BINDING", "input");
+  };
+  const checkBudget = (deadline = Infinity) => {
+    expires ??= clock() + 600_000;
+    if (clock() >= Math.min(expires, absoluteDeadline, deadline)) deny("E_TIMEOUT", "maintenance");
+    if (requests >= 20) deny("E_REQUEST_LIMIT", "maintenance");
+  };
+  async function request(query, variables, stage, mutation = false, deadline = Infinity) {
+    checkBinding();
+    if (typeof token !== "string" || token.length < 20 || token.length > 512 || /\s/u.test(token)) deny("E_AUTH", "auth-token");
+    checkBudget(deadline);
+    if (mutation) {
+      // Synchronous reservation after all async preflights, before outgoing I/O.
+      if (stopAttempted) deny("E_STOP_USED", "stop");
+      stopAttempted = true;
+    }
+    requests++;
+    const controller = new AbortController();
+    const began = clock();
+    const timeoutMs = Math.min(API_TIMEOUT_MS, expires - began, absoluteDeadline - began, deadline - began);
+    const requestExpires = clock() + timeoutMs;
+    let timer, reader;
+    let details = {};
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new MaintenanceTransportError("E_TIMEOUT", stage, stopAttempted, details));
+      }, timeoutMs);
+    });
+    try {
+      const response = await Promise.race([fetchFn("https://backboard.railway.com/graphql/v2", {
+        method: "POST", redirect: "error", cache: "no-store", signal: controller.signal,
+        headers: { "Content-Type": "application/json", "Project-Access-Token": token },
+        body: JSON.stringify({ query, variables }),
+      }), timeout]);
+      details = { httpStatus: safeHttpStatus(response.status) };
+      reader = response.body.getReader();
+      let size = 0;
+      const chunks = [];
+      for (;;) {
+        const { done, value } = await Promise.race([reader.read(), timeout]);
+        if (clock() >= requestExpires) deny("E_TIMEOUT", stage, details);
+        if (done) break;
+        if (!(value instanceof Uint8Array)) deny("E_PROVIDER_SHAPE", stage, details);
+        size += value.byteLength;
+        maxBodyBytes = Math.max(maxBodyBytes, size);
+        if (size > MAX_PROVIDER_BODY_BYTES) deny("E_BODY_LIMIT", stage, details);
+        chunks.push(value);
+      }
+      const envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, size)));
+      if (envelope?.errors) details.graphqlCodes = safeGraphqlCodes(envelope.errors);
+      if (!response.ok || envelope?.errors || !envelope?.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)) {
+        deny(response.status === 401 || response.status === 403 ? "E_AUTH" : "E_PROVIDER_API", stage, details);
+      }
+      return envelope.data;
+    } catch (error) {
+      if (error instanceof MaintenanceTransportError) throw error;
+      deny(error?.name === "AbortError" || error?.name === "TimeoutError" ? "E_TIMEOUT" : "E_PROVIDER_RESPONSE", stage, details);
+    } finally {
+      maxHttpMs = Math.max(maxHttpMs, Math.max(0, Math.ceil(clock() - began)));
+      clearTimeout(timer);
+      try { void reader?.cancel().catch(() => {}); } catch { /* safe best effort */ }
+      try { reader?.releaseLock(); } catch { /* pending read */ }
+    }
+  }
+  async function auth(deadline = Infinity) {
+    const data = await request(`query GateMaintenanceAuth($projectId: String!) {
+      projectToken { id project { id } environment { id } }
+      project(id: $projectId) { id services { edges { node { id } } } }
+    }`, { projectId: target.projectId }, "authenticate", false, deadline);
+    const services = data.project?.services?.edges;
+    if (!isUuid(data.projectToken?.id) || data.projectToken.project?.id !== target.projectId ||
+        data.projectToken.environment?.id !== target.environmentId || data.project?.id !== target.projectId ||
+        !Array.isArray(services) || services.filter((edge) => edge?.node?.id === target.serviceId).length !== 1) deny("E_AUTH", "authenticate");
+  }
+  function deployment(item, sha, id) {
+    const values = [item?.meta?.commitSha, item?.meta?.commitHash, item?.meta?.sourceSha, item?.meta?.repoCommit]
+      .filter((value) => value !== undefined && value !== null);
+    const statuses = new Set(["SUCCESS", "FAILED", "CRASHED", "REMOVED", "SKIPPED", "SLEEPING"]);
+    if (item?.id !== id || !values.length || values.some((value) => typeof value !== "string" || value !== sha) ||
+        typeof item.deploymentStopped !== "boolean" || !statuses.has(item.status)) deny("E_DEPLOYMENT_SCOPE", "inspect");
+    return { id, sha, stopped: item.deploymentStopped, status: item.status };
+  }
+  async function fleet(sha, id, deadline = Infinity) {
+    const data = await request(`query GateMaintenanceFleet($projectId: String!, $environmentId: String!, $serviceId: String!) {
+      environment(id: $environmentId, projectId: $projectId) { id unmergedChangesCount }
+      environmentStagedChanges(environmentId: $environmentId) { environmentId status patch(decryptVariables: false) }
+      serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+        serviceId environmentId numReplicas source { repo image }
+        latestDeployment { id status meta deploymentStopped }
+        activeDeployments { id status meta deploymentStopped }
+      }
+      serviceInstanceAutoDeployStatus(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId) { enabled }
+    }`, target, "fleet", false, deadline);
+    checkBinding();
+    const env = data.environment, staged = data.environmentStagedChanges, service = data.serviceInstance;
+    if (env?.id !== target.environmentId || !Object.hasOwn(env, "unmergedChangesCount") ||
+        (env.unmergedChangesCount !== 0 && env.unmergedChangesCount !== null) ||
+        staged?.environmentId !== target.environmentId || staged.status !== "STAGED" ||
+        !staged.patch || typeof staged.patch !== "object" || Array.isArray(staged.patch) || Object.keys(staged.patch).length !== 0 ||
+        service?.serviceId !== target.serviceId || service.environmentId !== target.environmentId ||
+        service.source?.repo !== (binding?.repository ?? TARGETS.gate.repository) || service.source.image !== null ||
+        data.serviceInstanceAutoDeployStatus?.enabled !== false ||
+        !Number.isSafeInteger(service.numReplicas) || service.numReplicas < 1 || service.numReplicas > 8 ||
+        !Array.isArray(service.activeDeployments) || service.activeDeployments.length > 1 ||
+        !Object.hasOwn(service, "latestDeployment")) deny("E_FLEET", "fleet");
+    const active = service.activeDeployments.map((item) => deployment(item, sha, id));
+    const latest = service.latestDeployment === null ? null : deployment(service.latestDeployment, sha, id);
+    if (active.some((item) => item.stopped || item.status !== "SUCCESS") ||
+        (latest && !latest.stopped && !active.some((item) => item.id === latest.id)) ||
+        (latest && active.length && (latest.stopped !== active[0].stopped || latest.status !== active[0].status))) deny("E_FLEET", "fleet");
+    return timedFleet({ ...target, repository: service.source.repo, source: { repo: service.source.repo, image: service.source.image },
+      sourceRepoState: binding ? "HISTORICAL_GATE_ALIAS" : "CANONICAL_GATE", sourceMatches: !binding,
+      autoDeploy: false, pendingChanges: false,
+      numReplicas: service.numReplicas, activeDeployments: active, latestDeployment: latest });
+  }
+  async function exact(sha, id, deadline = Infinity) {
+    const data = await request(`query GateMaintenanceDeployment($id: String!) {
+      deployment(id: $id) { id projectId environmentId serviceId status meta deploymentStopped }
+    }`, { id }, "inspect", false, deadline);
+    const item = data.deployment;
+    if (Object.entries(target).some(([key, value]) => item?.[key] !== value)) deny("E_DEPLOYMENT_SCOPE", "inspect");
+    const value = deployment(item, sha, id);
+    observedDeployment = freeze({ ...value, ...target, observedAt: new Date(clock()).toISOString() });
+    return value;
+  }
+  async function inspectFixedGate(expectedSha, expectedDeploymentId) {
+    inputs(expectedSha, expectedDeploymentId);
+    await auth();
+    const before = await fleet(expectedSha, expectedDeploymentId);
+    const recorded = await exact(expectedSha, expectedDeploymentId);
+    const after = await fleet(expectedSha, expectedDeploymentId);
+    if (core(before) !== core(after) ||
+        (after.activeDeployments.length && recorded.stopped !== false)) deny("E_STATE_DRIFT", "inspect");
+    inspection = freeze({ fleets: [before, after], deployment: observedDeployment,
+      fingerprint: createHash("sha256").update(core(after)).digest("hex") });
+    return { fleet: after, deployment: recorded };
+  }
+  return {
+    inspectFixedGate,
+    evidence,
+    async stopExactDeployment({ deploymentId, expectedSha, expectedFleetFingerprint }) {
+      inputs(expectedSha, deploymentId);
+      if (stopAttempted) deny("E_STOP_USED", "stop");
+      const observed = await inspectFixedGate(expectedSha, deploymentId);
+      if (expectedFleetFingerprint !== undefined && (typeof expectedFleetFingerprint !== "string" ||
+          !/^[0-9a-f]{64}$/u.test(expectedFleetFingerprint) || expectedFleetFingerprint !== inspection.fingerprint)) deny("E_STATE_DRIFT", "stop");
+      const running = observed.fleet.activeDeployments;
+      if (running.length !== 1 || observed.deployment.stopped !== false || observed.deployment.status !== "SUCCESS" ||
+          observed.fleet.latestDeployment?.id !== deploymentId) deny("E_NOT_RUNNING", "stop");
+      const data = await request(`mutation GateMaintenanceStop($id: String!) { deploymentStop(id: $id) }`,
+        { id: deploymentId }, "stop", true);
+      if (data.deploymentStop !== true) deny("E_STOP_ACK", "stop");
+      stopAcknowledged = true;
+      return { deploymentId, acknowledged: true };
+    },
+    async waitStopped({ deploymentId, expectedSha, deadline }) {
+      inputs(expectedSha, deploymentId);
+      if (typeof deadline !== "number" || !Number.isFinite(deadline) || deadline <= clock()) deny("E_INPUT", "input");
+      if (stopAttempted && !stopAcknowledged) deny("E_STOP_UNCERTAIN", "wait-stopped");
+      await auth(deadline);
+      for (let poll = 0; poll < 12; poll++) {
+        checkBudget(deadline);
+        polls++;
+        const recorded = await exact(expectedSha, deploymentId, deadline);
+        if (recorded.stopped) {
+          const before = await fleet(expectedSha, deploymentId, deadline);
+          const confirmed = await exact(expectedSha, deploymentId, deadline);
+          const after = await fleet(expectedSha, deploymentId, deadline);
+          if (!confirmed.stopped || before.activeDeployments.length || after.activeDeployments.length ||
+              core(before) !== core(after)) deny("E_NOT_STOPPED", "wait-stopped");
+          stoppedChain = freeze({ fleets: [before, after], deployment: observedDeployment });
+          return { deployment: confirmed, fleet: after, stopped: true };
+        }
+        if (poll === 11 || clock() + 5_000 >= Math.min(expires, absoluteDeadline, deadline)) deny("E_TIMEOUT", "wait-stopped");
+        await sleep(5_000);
+      }
+    },
+  };
+}
