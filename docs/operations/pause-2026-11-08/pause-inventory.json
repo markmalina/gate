@@ -1,0 +1,872 @@
+{
+  "schema_version": "gate.pause-checkpoint.v1",
+  "observed_at": "2026-11-08T18:48:00+03:00",
+  "decision": {
+    "development": "paused_by_owner",
+    "runtime": "left_running_unchanged",
+    "resume": "only_after_new_explicit_owner_instruction",
+    "issues_and_prs": "preserved_open_not_completed"
+  },
+  "base_main": {
+    "sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+    "tree": "e17b705e67747f52a937d9f2574b157600c0db9d"
+  },
+  "runtime": {
+    "observation_source": "Gate M gate_get_status; scoped mark-personal aggregate",
+    "reported_commit": "afe0c6b85193",
+    "watch": {
+      "enabled": true,
+      "workflow_pin_configured": true,
+      "ordinary_worker_enabled": false,
+      "scope_allowed": true,
+      "run_claim_count": 1208,
+      "delivery_counts": {
+        "pending": 3,
+        "delivered": 67
+      },
+      "transcription_counts": {
+        "received": 1,
+        "transcribed": 67,
+        "unknown": 1,
+        "rejected": 1
+      },
+      "recovery_counts": {
+        "rejected": 1
+      },
+      "private_content_exposed": false
+    },
+    "telegram_business_text_parity": {
+      "state": "ready",
+      "matched_count": 6361,
+      "mismatch_count": 0,
+      "covered_account_count": 2
+    },
+    "personal_telegram": {
+      "runtime_connected": false,
+      "send_enabled": false,
+      "error_code": "local_session_not_bound"
+    },
+    "calls_recent_sample": {
+      "n": 20,
+      "counts": {
+        "rejected": 20
+      },
+      "reason_counts": {
+        "unclassified_error": 7,
+        "dropbox_call_media_unreadable": 13
+      }
+    }
+  },
+  "issues": [
+    {
+      "number": 838,
+      "title": "[W1 integration / WAITING_NEW_GRANT] PR842 READ → PR835 + recovery",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/838",
+      "updated_at": "2026-11-07T22:20:47Z"
+    },
+    {
+      "number": 788,
+      "title": "[C1 / Gate787] Полный текст одной сохранённой длинной записи звонка",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/788",
+      "updated_at": "2026-11-05T11:11:44Z"
+    },
+    {
+      "number": 787,
+      "title": "[GATE-RELIABILITY] Рабочие маршруты Марка: единый план, измеримые спринты и приёмка",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/787",
+      "updated_at": "2026-11-07T22:20:57Z"
+    },
+    {
+      "number": 781,
+      "title": "[S1 BLOCKED] OFF integration source accepted; apply settlement and full budget pending",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/781",
+      "updated_at": "2026-11-04T10:10:03Z"
+    },
+    {
+      "number": 778,
+      "title": "Дефект: неактивные label-workflow конкурируют за pending slot Watch scope",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/778",
+      "updated_at": "2026-11-01T20:09:22Z"
+    },
+    {
+      "number": 772,
+      "title": "Дефект: metadata client допускает protected key input до проверки original human command",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/772",
+      "updated_at": "2026-11-01T18:40:22Z"
+    },
+    {
+      "number": 770,
+      "title": "[WATCH-VOICE] Сразу создавать issue в Mark по аудио; добавлять текст позже от Gate или ChatGPT",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/770",
+      "updated_at": "2026-11-01T20:09:20Z"
+    },
+    {
+      "number": 764,
+      "title": "Update Gate's pinned Ops caller after repository ownership transfer",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/764",
+      "updated_at": "2026-10-16T18:22:46Z"
+    },
+    {
+      "number": 745,
+      "title": "Gate: запрет отправки ответа по устаревшему снимку диалога",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/745",
+      "updated_at": "2026-11-01T19:42:06Z"
+    },
+    {
+      "number": 742,
+      "title": "[Rich Sprint 2] Готовые изображения, альбомы, native slideshow/collage через Gate M — под ключ из RU",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/742",
+      "updated_at": "2026-10-07T15:01:02Z"
+    },
+    {
+      "number": 736,
+      "title": "[WATCH-VOICE] Завершить автономный Galaxy Watch → Gate → private Mark",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/736",
+      "updated_at": "2026-11-05T14:03:18Z"
+    },
+    {
+      "number": 735,
+      "title": "Telegram Rich Messages: блоки кода, Mermaid, изображения и слайд-шоу",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/735",
+      "updated_at": "2026-10-08T09:07:51Z"
+    },
+    {
+      "number": 731,
+      "title": "[WATCH-VOICE-MARK] Dropbox Voice → durable transcription → private Mark inbox",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/731",
+      "updated_at": "2026-11-01T20:09:21Z"
+    },
+    {
+      "number": 730,
+      "title": "[План] Ход работы AI-агента в Telegram: статусы, анимации и Stop",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/730",
+      "updated_at": "2026-10-05T14:57:24Z"
+    },
+    {
+      "number": 726,
+      "title": "[G1a→G2] Regression fixture never reaches local write-admission denial",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/726",
+      "updated_at": "2026-09-29T14:47:56Z"
+    },
+    {
+      "number": 722,
+      "title": "[Release] Личный Gate: выпуск серий 2–50, inbound stop и постоянная работа",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/722",
+      "updated_at": "2026-09-29T14:48:20Z"
+    },
+    {
+      "number": 718,
+      "title": "[Reply sequences] Stop pending messages when recipient sends an inbound message",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/718",
+      "updated_at": "2026-09-27T21:05:53Z"
+    },
+    {
+      "number": 716,
+      "title": "[Reply sequences] Поддержать параллельную отправку серий разным адресатам",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/716",
+      "updated_at": "2026-09-29T14:36:55Z"
+    },
+    {
+      "number": 712,
+      "title": "Русская транскрипция: разделение и опознание говорящих",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/712",
+      "updated_at": "2026-09-25T11:53:01Z"
+    },
+    {
+      "number": 696,
+      "title": "[MTPROTO-RU-CLOUD] Полный маршрут AI → российский Telegram через Gate",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/696",
+      "updated_at": "2026-10-12T06:45:03Z"
+    },
+    {
+      "number": 689,
+      "title": "Gate: скачивание Telegram-вложений больше 20 МБ по запросу Work",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/689",
+      "updated_at": "2026-09-21T09:15:23Z"
+    },
+    {
+      "number": 663,
+      "title": "Food #273: emit evidence-only media envelopes for contextual sessions",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/663",
+      "updated_at": "2026-08-27T20:15:50Z"
+    },
+    {
+      "number": 629,
+      "title": "Kakhovich General Cube: allow 30-second AQUB runtime budget",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/629",
+      "updated_at": "2026-08-25T19:41:22Z"
+    },
+    {
+      "number": 625,
+      "title": "P1: reconcile failed Railway deploy and blocked Production verification",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/625",
+      "updated_at": "2026-08-25T13:27:22Z"
+    },
+    {
+      "number": 617,
+      "title": "AQUB handoff: subject-bound Food export/delete lifecycle and terminal receipts",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/617",
+      "updated_at": "2026-08-23T09:13:41Z"
+    },
+    {
+      "number": 614,
+      "title": "AQUB handoff: emit strict versioned Food receipt v1",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/614",
+      "updated_at": "2026-08-23T06:29:07Z"
+    },
+    {
+      "number": 592,
+      "title": "AQUB MVP: default-off owner photo byte archive",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/592",
+      "updated_at": "2026-08-20T11:50:09Z"
+    },
+    {
+      "number": 577,
+      "title": "AQUB-FOOD-DELIVERY-V2-01: default-off food command acceptance readiness",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/577",
+      "updated_at": "2026-08-19T16:37:16Z"
+    },
+    {
+      "number": 570,
+      "title": "[AQUB-CONSOLIDATION] Reduce Gate to transport and harden delivery",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/570",
+      "updated_at": "2026-08-10T14:44:29Z"
+    },
+    {
+      "number": 485,
+      "title": "[BETA-KATYA-ACTIVATION-001] Activate the isolated “Зубы Кати” Telegram Space",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/485",
+      "updated_at": "2026-08-05T21:31:33Z"
+    },
+    {
+      "number": 478,
+      "title": "Prove root cause of four historical missing reply tasks",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/478",
+      "updated_at": "2026-08-04T12:51:33Z"
+    },
+    {
+      "number": 476,
+      "title": "Classify historical voice debt and text-parity mismatches",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/476",
+      "updated_at": "2026-08-04T09:34:41Z"
+    },
+    {
+      "number": 467,
+      "title": "Independent production acceptance — Alfa transcription",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/467",
+      "updated_at": "2026-08-03T12:43:26Z"
+    },
+    {
+      "number": 431,
+      "title": "BECOME controlled pilot: emit durable provider-disabled intake receipts",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/431",
+      "updated_at": "2026-08-02T03:08:15Z"
+    },
+    {
+      "number": 376,
+      "title": "[BETA-BOT-001] Add isolated BetaViaBot connector",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/376",
+      "updated_at": "2026-07-30T09:28:39Z"
+    },
+    {
+      "number": 365,
+      "title": "[BETA-CONTEXT-003] Serve OIDC-bound encrypted checkpoint batches",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/365",
+      "updated_at": "2026-07-26T15:19:23Z"
+    },
+    {
+      "number": 300,
+      "title": "[GATE-MAYAK-DM-RUNTIME-001] Wire the default-off Oko Mayak Telegram Business runtime",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/300",
+      "updated_at": "2026-10-04T20:15:31Z"
+    },
+    {
+      "number": 277,
+      "title": "[GATE-UNFREEZE-001] Зафиксировать продуктовую платформу Gate и план разморозки",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/277",
+      "updated_at": "2026-07-25T04:59:10Z"
+    },
+    {
+      "number": 272,
+      "title": "[CENTER-CUTOVER] Канонический cross-project pointer — markmalina/center",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/272",
+      "updated_at": "2026-07-21T20:13:40Z"
+    },
+    {
+      "number": 261,
+      "title": "[3.Gate][ALPHA-GROUP-CANARY-001] Make the owner test group answer through AlphaV",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/261",
+      "updated_at": "2026-07-26T12:19:55Z"
+    },
+    {
+      "number": 260,
+      "title": "[3.Gate][TAKE-CAPTURE-CANARY-001] Run one private owner-media canary",
+      "state": "open",
+      "url": "https://github.com/markmalina/gate/issues/260",
+      "updated_at": "2026-07-25T16:18:32Z"
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 842,
+      "title": "Prepare proposed current-main reader window (#841)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/842",
+      "head_sha": "b5bcc065b2c0948bf63dee8cce5a45babfdca57d",
+      "head_ref": "agent/841-proposed-reader-window",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-07T21:24:45Z"
+    },
+    {
+      "number": 840,
+      "title": "Prepare default-OFF current-main typed metadata reader (#839)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/840",
+      "head_sha": "528d381c617fc8303135e354df3dbc6f574f7137",
+      "head_ref": "agent/839-current-main-read-preflight",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-07T13:35:51Z"
+    },
+    {
+      "number": 837,
+      "title": "fix: matching hard-OFF Watch recovery for PR835",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/837",
+      "head_sha": "731d9bb03b2b8c791afea5c3a2d5210a76e1729c",
+      "head_ref": "agent/836-matching-off-recovery",
+      "base_ref": "agent/834-watch-off-release",
+      "base_sha": "44531dc06f1a0b3438f70b83de110dffa525b3b1",
+      "updated_at": "2026-11-07T11:52:10Z"
+    },
+    {
+      "number": 835,
+      "title": "Consolidate OFF maintenance release and fail-closed Watch startup (#834)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/835",
+      "head_sha": "44531dc06f1a0b3438f70b83de110dffa525b3b1",
+      "head_ref": "agent/834-watch-off-release",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-07T11:06:34Z"
+    },
+    {
+      "number": 833,
+      "title": "Wire default-OFF maintenance caller and completed-run verifier (#832)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/833",
+      "head_sha": "283791baa6c7a4c2ef11b3e2d8bd8b96315e1af8",
+      "head_ref": "agent/832-maintenance-hosted-integration",
+      "base_ref": "agent/830-maintenance-artifact-binding",
+      "base_sha": "720726ceae6fcf27ff89a505d450336d0faf81ea",
+      "updated_at": "2026-11-07T09:59:52Z"
+    },
+    {
+      "number": 831,
+      "title": "Separate maintenance receipt preparation and artifact binding (#830)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/831",
+      "head_sha": "720726ceae6fcf27ff89a505d450336d0faf81ea",
+      "head_ref": "agent/830-maintenance-artifact-binding",
+      "base_ref": "agent/828-maintenance-entry",
+      "base_sha": "d654baa1405a9a0f2c6f0b2432ecf7c0b4725203",
+      "updated_at": "2026-11-07T08:55:11Z"
+    },
+    {
+      "number": 829,
+      "title": "Add default-off maintenance caller gap candidate (#828)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/829",
+      "head_sha": "d654baa1405a9a0f2c6f0b2432ecf7c0b4725203",
+      "head_ref": "agent/828-maintenance-entry",
+      "base_ref": "agent/826-maintenance-operation",
+      "base_sha": "5b730132b12196d7d28fbf1d0439770ddc09b639",
+      "updated_at": "2026-11-07T07:47:59Z"
+    },
+    {
+      "number": 827,
+      "title": "Integrate default-off maintenance operation with actual components",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/827",
+      "head_sha": "5b730132b12196d7d28fbf1d0439770ddc09b639",
+      "head_ref": "agent/826-maintenance-operation",
+      "base_ref": "agent/824-maintenance-ledger",
+      "base_sha": "6dca2490c2d579fd105ce4c037f8f0a4614b8871",
+      "updated_at": "2026-11-07T06:38:30Z"
+    },
+    {
+      "number": 825,
+      "title": "Add fixed single-slot maintenance intent ledger source",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/825",
+      "head_sha": "6dca2490c2d579fd105ce4c037f8f0a4614b8871",
+      "head_ref": "agent/824-maintenance-ledger",
+      "base_ref": "agent/822-maintenance-receipt",
+      "base_sha": "ca3506ec8ece8a991709af44d19c2b36c8593944",
+      "updated_at": "2026-11-07T05:32:52Z"
+    },
+    {
+      "number": 823,
+      "title": "Strict pure maintenance receipt consumer",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/823",
+      "head_sha": "ca3506ec8ece8a991709af44d19c2b36c8593944",
+      "head_ref": "agent/822-maintenance-receipt",
+      "base_ref": "agent/820-maintenance-admission",
+      "base_sha": "9a4a0d18a3ddbcd538e5830e6723ebae4f8026c8",
+      "updated_at": "2026-11-07T04:37:56Z"
+    },
+    {
+      "number": 821,
+      "title": "Pure owner-request maintenance admission predicate",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/821",
+      "head_sha": "9a4a0d18a3ddbcd538e5830e6723ebae4f8026c8",
+      "head_ref": "agent/820-maintenance-admission",
+      "base_ref": "agent/818-recorded-gate-binding",
+      "base_sha": "70e5fff7577ea99539154a2bcb8750df388d2c38",
+      "updated_at": "2026-11-07T03:36:52Z"
+    },
+    {
+      "number": 819,
+      "title": "Bind historical Gate source only through explicit recorded identity (#818)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/819",
+      "head_sha": "70e5fff7577ea99539154a2bcb8750df388d2c38",
+      "head_ref": "agent/818-recorded-gate-binding",
+      "base_ref": "agent/816-fixed-maintenance-transport",
+      "base_sha": "7e2849144a348be2bfc05de3629a4864da37b2d3",
+      "updated_at": "2026-11-07T02:39:56Z"
+    },
+    {
+      "number": 817,
+      "title": "Add fixed Gate maintenance transport and uncertain-stop tests (#816)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/817",
+      "head_sha": "7e2849144a348be2bfc05de3629a4864da37b2d3",
+      "head_ref": "agent/816-fixed-maintenance-transport",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-07T01:45:05Z"
+    },
+    {
+      "number": 813,
+      "title": "fix(watch): preserve explicit OIDC OFF at production startup",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/813",
+      "head_sha": "c7d7f71013368cd2dbd14adb674cc119b72c7a33",
+      "head_ref": "agent/812-watch-startup-off",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-06T22:36:30Z"
+    },
+    {
+      "number": 811,
+      "title": "Prepare fixed Mark caller pause and complete queue component (#810)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/811",
+      "head_sha": "f8aab483af08a1d2a6dc941fc2a7c63a30d5cb2b",
+      "head_ref": "agent/810-mark-caller-pause",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-06T22:15:11Z"
+    },
+    {
+      "number": 808,
+      "title": "Prepare accepted W1 recovery on actual merged main (#807)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/808",
+      "head_sha": "657b7581f4e7bde5638b93acb7607b702d106082",
+      "head_ref": "agent/807-actual-main-recovery",
+      "base_ref": "main",
+      "base_sha": "e7b3e32998706f7ef19053331466ea6c63105beb",
+      "updated_at": "2026-11-06T20:58:40Z"
+    },
+    {
+      "number": 805,
+      "title": "Prepare default-OFF Gate-local READ preflight for public Gate (#804)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/805",
+      "head_sha": "42b8dbf110789c545c8b2137c02aaca197a00e92",
+      "head_ref": "agent/804-local-read-preflight",
+      "base_ref": "main",
+      "base_sha": "285e2bc92d20f1b35d2dc7d6f8f77a8812fff9a8",
+      "updated_at": "2026-11-06T20:36:27Z"
+    },
+    {
+      "number": 802,
+      "title": "Publish accepted W1 forward recovery for source-only CI (#801)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/802",
+      "head_sha": "f9fc876a48952f9163a01ba6ec6a57f6ee0da95d",
+      "head_ref": "agent/801-forward-recovery",
+      "base_ref": "agent/796-w1-guard",
+      "base_sha": "e319328af87ccb5444e6ea505697250d5661d57f",
+      "updated_at": "2026-11-06T18:23:18Z"
+    },
+    {
+      "number": 784,
+      "title": "Prepare exact forward recovery for PR782 release",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/784",
+      "head_sha": "3ef9c56d67bea51772c4960a756226a70d16e2c6",
+      "head_ref": "quiet/gate-pr782-forward-recovery-20261104",
+      "base_ref": "main",
+      "base_sha": "95914ab4075275cc17936e8541fde52bdccc737d",
+      "updated_at": "2026-11-04T19:58:19Z"
+    },
+    {
+      "number": 783,
+      "title": "Gate diagnostic helper: bounded main ref reader, default off",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/783",
+      "head_sha": "bb1880a088e8d149b6de2056b415fafaa57cfbea",
+      "head_ref": "quiet/gate-release-readonly-client-20261104",
+      "base_ref": "main",
+      "base_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "updated_at": "2026-11-05T13:52:24Z"
+    },
+    {
+      "number": 771,
+      "title": "Gate745: prepare canonical signed metadata v2 client",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/771",
+      "head_sha": "a48344348350cafbac597a1890477f09a3fc57f0",
+      "head_ref": "agent/745-metadata-bootstrap-client",
+      "base_ref": "main",
+      "base_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "updated_at": "2026-11-01T18:55:03Z"
+    },
+    {
+      "number": 766,
+      "title": "Watch Voice: early Inbox, fenced Work journal and safe writer boundary",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/766",
+      "head_sha": "45ba499a5f1852208ba8a478a606358fd0fe3bd5",
+      "head_ref": "agent/736-autonomous-watch-queue",
+      "base_ref": "main",
+      "base_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "updated_at": "2026-11-03T09:57:10Z"
+    },
+    {
+      "number": 762,
+      "title": "Gate745: disabled fixed-source fixture caller",
+      "state": "open",
+      "draft": true,
+      "url": "https://github.com/markmalina/gate/pull/762",
+      "head_sha": "e28b1db0776d0dd1f2a20b2247d6179938e4627f",
+      "head_ref": "agent/745-fixture-caller-source",
+      "base_ref": "main",
+      "base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+      "updated_at": "2026-10-12T05:46:25Z"
+    },
+    {
+      "number": 761,
+      "title": "MTProto RU: durable Work commands and default-off cloud foundation",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/761",
+      "head_sha": "cc874f16f328bdbe0143f8ff175e1bb941cbbbc6",
+      "head_ref": "agent/696-ru-cloud-runtime",
+      "base_ref": "main",
+      "base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+      "updated_at": "2026-10-12T06:50:45Z"
+    },
+    {
+      "number": 760,
+      "title": "Gate745: default-off hosted fixture controller source",
+      "state": "open",
+      "draft": true,
+      "url": "https://github.com/markmalina/gate/pull/760",
+      "head_sha": "7ec459467b606ac67ec2110289e9018fa322b8fa",
+      "head_ref": "agent/745-fixture-controller-source",
+      "base_ref": "main",
+      "base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+      "updated_at": "2026-10-12T05:35:41Z"
+    },
+    {
+      "number": 759,
+      "title": "docs: MTProto RU — ТЗ v3, ревизия исходников и план выпуска (#696)",
+      "state": "open",
+      "draft": true,
+      "url": "https://github.com/markmalina/gate/pull/759",
+      "head_sha": "d9a2866603d835983fd80e40688ce1c355e17a51",
+      "head_ref": "agent/696-ru-mtproto-plan",
+      "base_ref": "main",
+      "base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+      "updated_at": "2026-10-12T05:35:12Z"
+    },
+    {
+      "number": 758,
+      "title": "Gate745: authenticated hosted fixture helper and durable operation ledger",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/758",
+      "head_sha": "ac0e2dacefb258cff26095b1fdf58b85ee1c9169",
+      "head_ref": "agent/745-fixture-bootstrap-source",
+      "base_ref": "main",
+      "base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+      "updated_at": "2026-10-12T05:46:26Z"
+    },
+    {
+      "number": 747,
+      "title": "Reject stale-dialog replies and prepare default-off fixture contracts (#745)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/747",
+      "head_sha": "b975475c1c6c81035e38d9bd13a40d777933e83c",
+      "head_ref": "agent/745-dialog-snapshot",
+      "base_ref": "main",
+      "base_sha": "461088d68d047e4cd08c7a4f581300d591af241e",
+      "updated_at": "2026-10-27T10:58:00Z"
+    },
+    {
+      "number": 744,
+      "title": "Work image upload, albums and native Rich media (#742)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/744",
+      "head_sha": "08c499b943b432ab1ceca78c2d6df6bba57174c1",
+      "head_ref": "agent/742-media-sprint-2",
+      "base_ref": "main",
+      "base_sha": "d5a9fbb8a0b5444c0734cba040e0a67bd1a7424e",
+      "updated_at": "2026-10-07T14:52:51Z"
+    },
+    {
+      "number": 724,
+      "title": "feat: baseline process observation and legacy freeze before schema migration (#722)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/724",
+      "head_sha": "e1cb39dc7ae49b364787ccdb0a84303d7d9719ff",
+      "head_ref": "agent/722-baseline-bootstrap",
+      "base_ref": "main",
+      "base_sha": "8e0b1672b6dc345e121cd55f5ba28540b7e18673",
+      "updated_at": "2026-09-29T14:35:35Z"
+    },
+    {
+      "number": 721,
+      "title": "docs: полное ТЗ выпуска личного Gate (#716, #718)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/721",
+      "head_sha": "460c27288de20d3a3b9199c816855ebde5b526de",
+      "head_ref": "docs/personal-gate-sequence-release-spec-20260928",
+      "base_ref": "main",
+      "base_sha": "8e0b1672b6dc345e121cd55f5ba28540b7e18673",
+      "updated_at": "2026-09-28T20:06:45Z"
+    },
+    {
+      "number": 720,
+      "title": "feat: durable inbound stop and bounded parallel reply sequences (#718, #716)",
+      "state": "open",
+      "draft": false,
+      "url": "https://github.com/markmalina/gate/pull/720",
+      "head_sha": "af929dd6dd0bf28a9ff29f6945d1265600161c67",
+      "head_ref": "agent/716-parallel-sequences-spec",
+      "base_ref": "main",
+      "base_sha": "8e0b1672b6dc345e121cd55f5ba28540b7e18673",
+      "updated_at": "2026-09-29T14:48:41Z"
+    },
+    {
+      "number": 719,
+      "title": "docs(#718): полное ТЗ остановки серии при входящем сообщении",
+      "state": "open",
+      "draft": true,
+      "url": "https://github.com/markmalina/gate/pull/719",
+      "head_sha": "a05f13658b25ae953c6c852baa7d0ea54eb95703",
+      "head_ref": "agent/gate-718-stop-on-inbound-spec",
+      "base_ref": "main",
+      "base_sha": "9630135f5ac8098c3bf9f63fc6a691cb96f2a40e",
+      "updated_at": "2026-09-27T18:40:09Z"
+    },
+    {
+      "number": 578,
+      "title": "Add default-off AQUB food v2 acceptance readiness",
+      "state": "open",
+      "draft": true,
+      "url": "https://github.com/markmalina/gate/pull/578",
+      "head_sha": "8b1b1fa4f82edc03586898b4b6615da4855f0f51",
+      "head_ref": "agent/aqub-food-v2-delivery-readiness-2026-08-15",
+      "base_ref": "main",
+      "base_sha": "5504f977b2adc683e007922d17b2a75938809be5",
+      "updated_at": "2026-08-15T20:16:44Z"
+    },
+    {
+      "number": 468,
+      "title": "Sprint 2A: add default-off Gate downstream adapter",
+      "state": "open",
+      "draft": true,
+      "url": "https://github.com/markmalina/gate/pull/468",
+      "head_sha": "ee09145a00030f70dfc93ce51ff5c32b214b5116",
+      "head_ref": "agent/sprint-2a-role-aware-downstream",
+      "base_ref": "main",
+      "base_sha": "59b9bd62bf3975f25b6d0616a03e690072b8fa43",
+      "updated_at": "2026-08-03T14:02:52Z"
+    }
+  ],
+  "verified_ci": [
+    {
+      "url": "https://github.com/markmalina/gate/actions/runs/42366773001",
+      "id": 42366773001,
+      "head_sha": "44531dc06f1a0b3438f70b83de110dffa525b3b1",
+      "run_attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-07T11:06:37Z",
+      "updated_at": "2026-11-07T11:12:49Z"
+    },
+    {
+      "url": "https://github.com/markmalina/gate/actions/runs/42369989568",
+      "id": 42369989568,
+      "head_sha": "731d9bb03b2b8c791afea5c3a2d5210a76e1729c",
+      "run_attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-07T11:52:14Z",
+      "updated_at": "2026-11-07T11:57:38Z"
+    },
+    {
+      "url": "https://github.com/markmalina/gate/actions/runs/42415738305",
+      "id": 42415738305,
+      "head_sha": "b5bcc065b2c0948bf63dee8cce5a45babfdca57d",
+      "run_attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-07T21:24:49Z",
+      "updated_at": "2026-11-07T21:30:58Z"
+    }
+  ],
+  "actions": {
+    "in_progress": 0,
+    "waiting": 0,
+    "queued": [
+      {
+        "id": 31127247901,
+        "url": "https://github.com/markmalina/gate/actions/runs/31127247901",
+        "created_at": "2026-08-06T19:57:30Z",
+        "status": "queued",
+        "head_sha": "06e176fc7efda8df0c8cf30983869f4ceaee858a"
+      }
+    ],
+    "queued_cancellation": "not_performed; no exposed cancel operation found"
+  },
+  "development_automations": [
+    {
+      "title": "Проверить запуск Gate",
+      "is_enabled": false,
+      "next_run_time": null,
+      "updated_at": "2026-11-07T22:30:41.742983+00:00"
+    },
+    {
+      "title": "Продвигать Gate",
+      "is_enabled": false,
+      "next_run_time": null,
+      "updated_at": "2026-11-07T22:22:37.862214+00:00"
+    },
+    {
+      "title": "Ночной контроль Gate736",
+      "is_enabled": false,
+      "next_run_time": null,
+      "updated_at": "2026-11-04T21:46:53.331026+00:00"
+    },
+    {
+      "title": "Ночной контроль Gate",
+      "is_enabled": false,
+      "next_run_time": null,
+      "updated_at": "2026-11-04T06:22:40.664393+00:00"
+    },
+    {
+      "title": "Результат MTProto Gate",
+      "is_enabled": false,
+      "next_run_time": null,
+      "updated_at": "2026-10-12T05:47:39.548086+00:00"
+    },
+    {
+      "title": "Продолжить Gate #745",
+      "is_enabled": false,
+      "next_run_time": null,
+      "updated_at": "2026-10-09T12:40:30.120689+00:00"
+    }
+  ],
+  "night_controller_observation": {
+    "title": "Продвигать Gate",
+    "is_enabled": false,
+    "updated_at": "2026-11-07T22:22:37.862214+00:00",
+    "last_run": {
+      "scheduled_for": "2026-11-07T22:10:00Z",
+      "started_at": "2026-11-07T22:11:39.178440Z",
+      "completed_at": "2026-11-07T22:21:34.147598Z",
+      "recorded_status": "failed"
+    },
+    "failure_cause": "unknown"
+  },
+  "agents": {
+    "current_tree": "only root checkpoint writer; no children",
+    "other_work_sessions": "not directly controllable or independently observable; project pause published in canonical issues"
+  },
+  "privacy": "No raw Gate response, automation/conversation IDs, private note/call identifiers, payloads, credentials or secret values stored."
+}
