@@ -11,6 +11,12 @@ from pathlib import PurePosixPath
 from typing import Protocol
 from uuid import UUID
 
+from app.application.document_formats import (
+    DOCUMENT_TYPES,
+    MAX_DOCUMENT_BASE64_LENGTH,
+    MAX_DOCUMENT_BYTES,
+    check_document_content,
+)
 from app.application.reply_drafts import ReplyDraftError
 from app.application.telegram_formatting import (
     FormattingError,
@@ -18,9 +24,6 @@ from app.application.telegram_formatting import (
     compile_text,
 )
 from app.core.mcp_security import Principal
-
-MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
-MAX_DOCUMENT_BASE64_LENGTH = ((MAX_DOCUMENT_BYTES + 2) // 3) * 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,8 +86,15 @@ class PrepareReplyDocumentService:
             or len(filename.encode("utf-8")) > 255
         ):
             raise ReplyDraftError(code="invalid_document", message="Invalid filename")
-        allowed = {".pdf": "application/pdf", ".zip": "application/zip"}
-        if allowed.get(PurePosixPath(filename).suffix.lower()) != command.media_type:
+        extension = PurePosixPath(filename).suffix.lower()
+        if extension not in DOCUMENT_TYPES:
+            raise ReplyDraftError(
+                code="unsupported_document_type",
+                message=(
+                    "Supported formats: PDF, ZIP, XLSX/XLS, DOCX/DOC, PPTX/PPT, JPEG/PNG/WEBP/GIF"
+                ),
+            )
+        if DOCUMENT_TYPES[extension] != command.media_type:
             raise ReplyDraftError(code="invalid_document", message="Filename and MIME mismatch")
         formatting = None
         if command.caption_format is None:
@@ -122,11 +132,13 @@ class PrepareReplyDocumentService:
         is_zip = command.media_type == "application/zip" and data.startswith(
             (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
         )
-        if not (is_pdf or is_zip):
+        if extension in {".pdf", ".zip"} and not (is_pdf or is_zip):
             raise ReplyDraftError(code="invalid_document", message="Document content type mismatch")
         digest = hashlib.sha256(data).hexdigest()
         if not hmac.compare_digest(digest, command.expected_sha256):
             raise ReplyDraftError(code="document_changed", message="Document SHA-256 differs")
+        if extension not in {".pdf", ".zip"}:
+            await check_document_content(filename, data)
         return await self._writer.save(
             replace(
                 command,
@@ -135,3 +147,4 @@ class PrepareReplyDocumentService:
             ),
             data,
         )
+

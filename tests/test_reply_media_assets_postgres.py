@@ -239,7 +239,7 @@ async def test_exact_execution_deadline_and_budget_counters_survive_prepare_repl
 
 
 @pytest.mark.anyio
-async def test_actual_0115_migration_roundtrip_has_no_media_metadata_drift_and_keeps_core_data():
+async def test_actual_0116_migration_roundtrip_has_no_media_metadata_drift_and_keeps_core_data():
     """Run the authored migration, not create_all, for every new media table."""
     import importlib.util
     from pathlib import Path
@@ -262,8 +262,8 @@ async def test_actual_0115_migration_roundtrip_has_no_media_metadata_drift_and_k
         "reply_media_packages",
         "reply_media_execution_budgets",
     )
-    path = Path(__file__).resolve().parents[1] / "alembic/versions/0115_reply_media_packages.py"
-    spec = importlib.util.spec_from_file_location("gate742_migration_0115", path)
+    path = Path(__file__).resolve().parents[1] / "alembic/versions/0116_reply_media_packages.py"
+    spec = importlib.util.spec_from_file_location("gate742_migration_0116", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 

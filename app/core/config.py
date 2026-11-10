@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     )
     gate_send_enabled: bool = Field(default=True, validation_alias="GATE_SEND_ENABLED")
     gate_rich_send_enabled: bool = Field(default=False, validation_alias="GATE_RICH_SEND_ENABLED")
+    gate_rich_media_send_enabled: bool = Field(
+        default=False, validation_alias="GATE_RICH_MEDIA_SEND_ENABLED"
+    )
+    gate_reply_media_send_enabled: bool = Field(
+        default=True, validation_alias="GATE_REPLY_MEDIA_SEND_ENABLED"
+    )
     gate_document_send_enabled: bool = Field(
         default=False, validation_alias="GATE_DOCUMENT_SEND_ENABLED"
     )
@@ -564,6 +570,12 @@ class Settings(BaseSettings):
     )
     gate_watch_voice_actions_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
+    )
+    gate_watch_voice_w1_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_W1_ENABLED"
+    )
+    gate_watch_voice_w1_admission: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_VOICE_W1_ADMISSION"
     )
     gate_watch_voice_actions_workflow_sha256: str = Field(
         default="",

@@ -24,7 +24,12 @@ from app.models.billing import (
     BillingUsageEventModel,
 )
 from app.models.canonical import Workspace
-from app.models.watch_voice import WatchVoiceDrainRun, WatchVoiceNote, WatchVoiceRecoveryClaim
+from app.models.watch_voice import (
+    WatchVoiceDrainRun,
+    WatchVoiceNote,
+    WatchVoicePostPaymentClaim,
+    WatchVoiceRecoveryClaim,
+)
 from app.worker import watch_voice as worker
 from sqlalchemy import select
 
@@ -47,6 +52,7 @@ async def seed(factory, world, *, hard_limit=3_000_000):
             BillingLedgerEntryModel.__table__,
             WatchVoiceDrainRun.__table__,
             WatchVoiceRecoveryClaim.__table__,
+            WatchVoicePostPaymentClaim.__table__,
         ):
             await session.run_sync(lambda s, table=table: table.create(s.connection()))
         session.add(

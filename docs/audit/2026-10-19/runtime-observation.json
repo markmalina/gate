@@ -1,0 +1,50 @@
+{
+  "schema_version": "gate.audit.snapshot.v1",
+  "repository": "markmalina/gate",
+  "repository_id": 1293746267,
+  "source_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "source_tree": "7b5ddc0e6317fc475e2256953a69a07b109463dc",
+  "captured_on": "2026-10-19",
+  "audit_issue": 767,
+  "source": "Gate M gate_get_status",
+  "observation_order": "after GitHub comment created at 2026-10-19T16:41:49Z",
+  "environment": "production",
+  "commit": "afe0c6b85193",
+  "default_mode": "manual",
+  "send_enabled": true,
+  "scope": "one authorized owner workspace; not a global user census",
+  "personal_telegram": {
+    "runtime_connected": false,
+    "send_enabled": false,
+    "create_group_enabled": false,
+    "configured": null,
+    "authenticated": null,
+    "error_code": "local_session_not_bound"
+  },
+  "watch_voice_actions": {
+    "enabled": true,
+    "workflow_pin_configured": true,
+    "ordinary_worker_enabled": false,
+    "scope_allowed": true,
+    "run_claim_count": 95,
+    "delivery_counts": {
+      "delivered": 18
+    },
+    "transcription_counts": {
+      "transcribed": 18
+    },
+    "recovery_counts": {
+      "rejected": 1
+    },
+    "private_content_exposed": false
+  },
+  "telegram_voice_state": "reconciliation_required",
+  "connection_state_summary": "Scoped RU/BY readiness is stored provider-state evidence, not a fresh connection probe. RU last_checked_at2026-10-19T08:59:35.037625Z; BY last_checked_at2026-10-06T20:22:41.340328Z.",
+  "limitations": [
+    "Does not prove actual Railway start/predeploy/secret bindings or deployed schema",
+    "No provider call/send/live canary executed",
+    "No raw messages, identifiers or private source payload recorded"
+  ],
+  "observed_at_upper_bound": "2026-10-19T16:42:51.938Z",
+  "observed_after": "2026-10-19T16:41:49Z"
+}

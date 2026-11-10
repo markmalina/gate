@@ -189,7 +189,7 @@ class TelegramClient:
         caption: str = "",
         caption_entities: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Upload one literal PDF or ZIP as a Business document.
+        """Upload one original supported file as a Business document.
 
         The caller owns recipient authorization, durable reservation and replay.
         This transport never retries an ambiguous provider outcome.
@@ -206,10 +206,9 @@ class TelegramClient:
             or len(filename.encode("utf-8")) > 255
         ):
             raise ValueError("Invalid document filename")
-        allowed = {
-            ".pdf": "application/pdf",
-            ".zip": "application/zip",
-        }
+        from app.application.document_formats import DOCUMENT_TYPES
+
+        allowed = DOCUMENT_TYPES
         if allowed.get(PurePosixPath(filename).suffix.lower()) != media_type:
             raise ValueError("Document extension and MIME type do not match")
         if not isinstance(data, bytes) or not 0 < len(data) <= 8 * 1024 * 1024:
@@ -222,6 +221,8 @@ class TelegramClient:
             "business_connection_id": business_connection_id,
             "caption": caption,
         }
+        if PurePosixPath(filename).suffix.lower() not in {".pdf", ".zip"}:
+            payload["disable_content_type_detection"] = "true"
         if caption_entities is not None:
             payload["caption_entities"] = json.dumps(
                 list(validate_entities(caption, caption_entities)),
@@ -253,9 +254,10 @@ class TelegramClient:
             "chat_id": chat_id,
             "business_connection_id": business_connection_id,
             "photo": "attach://photo_1",
-            "caption": caption,
-            "caption_entities": _caption_entities_json(caption, caption_entities or []),
         }
+        entities_json = _caption_entities_json(caption, caption_entities or [])
+        if caption:
+            payload.update(caption=caption, caption_entities=entities_json)
         return await self._post_telegram_multipart(
             url=f"{self._api_base_url}/bot{self._credential}/sendPhoto",
             payload=payload,
@@ -288,8 +290,7 @@ class TelegramClient:
                 {
                     "type": "photo",
                     "media": f"attach://photo_{index}",
-                    "caption": caption,
-                    "caption_entities": entities,
+                    **({"caption": caption, "caption_entities": entities} if caption else {}),
                 }
             )
         return await self._post_telegram_multipart(

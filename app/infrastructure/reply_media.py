@@ -111,11 +111,13 @@ class SqlReplyMediaWriter:
                 )
                 if draft is None:
                     raise RuntimeError("Media draft disappeared")
-                connection_id = await self._session.scalar(
-                    select(Conversation.business_connection_id).where(
-                        Conversation.id == conversation_id
+                connection_id, recipient_label = (
+                    await self._session.execute(
+                        select(Conversation.business_connection_id, Conversation.title).where(
+                            Conversation.id == conversation_id
+                        )
                     )
-                )
+                ).one()
                 if not connection_id:
                     connection_id = await self._session.scalar(
                         select(Message.business_connection_id).where(
@@ -150,6 +152,7 @@ class SqlReplyMediaWriter:
                     "package_id": str(package_id),
                     "mode": command.mode,
                     "account_label": saved.account_label,
+                    "recipient_label": recipient_label,
                     "execution_expires_at": _utc(budget.expires_at).isoformat(),
                     "draft_text": draft_text,
                     "expected_message_count": expected_count,

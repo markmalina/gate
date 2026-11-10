@@ -1,5 +1,22 @@
 # Gate Work instructions
 
+## Required current context for every Gate task
+
+Before working on any Gate issue, read [docs/GATE-CURRENT.md](docs/GATE-CURRENT.md),
+[the recovery program](docs/GATE-RECOVERY-PLAN.md), its active sprint/latest receipt,
+and [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md).
+Program [#787](https://github.com/markmalina/gate/issues/787) is the current coordination
+pointer for Mark's Watch, Calls and reply-freshness routes. Read historical audits
+only when needed for the current question; dated snapshots are not fresh authority.
+
+Before implementation, the issue records one user outcome, dated baseline, target,
+scope and responsible execution. Keep material findings/errors/decisions and
+CI/runtime evidence in that issue as work progresses. Report actual before/after,
+latency sample size, incomplete cases and cost/time under
+[the metrics contract](docs/GATE-METRICS.md). Source, CI, merge, installation and
+product acceptance are separate states. No heartbeat-only repository writes.
+This documentation adds no provider, deployment, data or message authority.
+
 
 Canonical company policy and ownership live in
 [AlphaCenter/center](https://github.com/AlphaCenter/center). This repository
@@ -17,21 +34,65 @@ limit fails closed. Credentials remain server-side, provider calls remain
 default-off, and real provider smoke requires the exact owner gate recorded by
 the current Work.
 
-### Production deploy route
+### AQUB frozen; independent Gate
 
-For a direct owner request to deploy Gate's current Production code, use the registered short Ops lane:
+Owner decision [Center #152](https://github.com/AlphaCenter/center/issues/152) activates `aqub.frozen.gate-independent.v1`
+([boundary](docs/aqub-boundary.v1.json)).
+AQUB is frozen historical source. Gate must not use its repository as a routine
+dependency, forward messages/media to it, initialize its provider, run its
+worker or product acceptance, or request any operation through AQUB issues,
+workflows or credentials. Old routes/grants, including Gate745, are superseded.
+Historical contracts and migrations do not authorize reactivation.
 
-`/ops-deploy production target=gate`
+### Public visibility preparation — Gate789, NEW_UNRELEASED
 
-For the paired AQUB and Gate publication, use `target=all`. The requester is centralized in `AlphaCenter/aqub/.github/workflows/ops-deploy.yml` and its control issue `#72`; Gate does not need a duplicate workflow. The route accepts only Mark's allowlisted GitHub identity and exact current `main`, invokes the pinned Ops fast-deploy action, and returns a receipt.
+This source package prepares a Gate-local copy of the narrow Ops Gate-only executor.
+Its upstream is Ops `02ef5f1c6f4273ca2a3194643383d646dbf37648`; its actual executor
+revision is the checked-out Gate workflow SHA, recorded separately in receipts.
+In this unmerged PR797 activation candidate (#799), `.github/workflows/ops-deploy.yml`
+removes only the literal OFF gate; owner/main/SHA/target/environment/token and receipt
+checks remain. Main still has literal OFF. This source does not authorize a live
+release: exact-source acceptance, current provider/UNKNOWN reconciliation, recovery
+and a separate owner grant remain required. W1 defaults OFF; S1 stays OFF.
+Ops remains private and continues source maintenance/review.
 
-This is the default current-main publication route. Do not replace it with a Railway login, provider plugin, the frozen Routine Release workflow, or a new Gate deployment workflow. Other infrastructure operations still follow their pinned contract and safety boundaries.
+The four private Ops dependencies in `gate-snapshot-cutover.yml` are explicitly
+quarantined. S1 is NOT_ACCEPTED; its old source/workflow lock is not rewritten to
+claim compatibility. Do not execute it or treat this change as S1 acceptance.
+
+As of 2026-11-05, the read-only history scanner ran once; source registration and
+its scoped findings triage are recorded in [Gate789 checkpoint](https://github.com/markmalina/gate/issues/789#issuecomment-6666029141)
+and [Delta515](https://github.com/AlphaCenter/delta/issues/515#issuecomment-6666171645).
+Main's deployment route remains OFF; this unmerged candidate grants no live release.
+Do not repeat the scan merely to obtain a green check.
+NO_FINDINGS covers only fetched Git refs under its scanner rules; it cannot clear issues, comments, attachments,
+unreachable objects, LFS payloads or runtime data. Publication remains a separate
+owner action after review. See `docs/operations/GATE-PUBLIC-PREP.md`.
+
+### Production deploy route (unmerged owner-gated activation candidate)
+
+Gate owns `.github/workflows/ops-deploy.yml` and control issue #751.
+After the exact owner Gate-only release gate and exact-head checks, post only:
+
+`/ops-deploy production target=gate expected-source-sha=<reviewed full current main SHA>`
+
+The requester accepts only Mark's immutable identity, the exact control issue
+and reviewed current main; it invokes the pinned Ops Gate-only executor.
+AQUB/all and an AQUB caller are forbidden. Source access uses this Gate workflow's ephemeral `GITHUB_TOKEN` at
+`contents:read`; no permanent GitHub App source key is needed. Existing
+protected Gate Railway credentials must validate against the fixed target.
+Missing/mismatched credentials stop
+before mutation: never copy AQUB secrets or use a provider UI/API fallback.
+This grants no migration, source drift, credential provisioning or AQUB action.
+Other Gate operations, including Gate745, need a reviewed independent
+Gate-owned Ops contract; this short route does not authorize cutover.
 
 On the first turn of every newly opened Gate Work:
 
 
 1. Read Center `AGENTS.md`, this repository's `WORK-PARENT.json`,
-   `docs/work-bootstrap.md`, the current GitHub issue, latest receipt and
+   `docs/work-bootstrap.md`, `docs/GATE-CURRENT.md`, the program/active sprint,
+   the current GitHub issue, latest receipt and
    next pointer.
 2. Re-query current main, open PR/issues, executions, leases, receipts and
    scheduled automations before mutation.
@@ -109,3 +170,4 @@ mutation requires an explicit owner decision or accepted project-to-project
 handoff. If the local pointer conflicts with Center's registry, stop
 cross-repository mutation and reconcile the pointers first.
 <!-- WORK-HIERARCHY:END -->
+

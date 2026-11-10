@@ -7,8 +7,9 @@
 `d5a9fbb8a0b5444c0734cba040e0a67bd1a7424e`. Это исходная ревизия исполнения,
 не утверждение о текущем Production SHA или о завершённой live-приёмке.
 
-Execution: `gate-media-742-20261007T1041Z`, неизменяемый срок разрешённых действий:
-`2026-10-09T10:37:34Z`. Live scope — собственный RU Business владельца → его
+Исторический execution `gate-media-742-20261007T1041Z` истёк
+`2026-10-09T10:37:34Z`. Для нового запуска нужен действующий допуск и
+отдельная квитанция. Live scope — собственный RU Business владельца → его
 собственный BY-получатель. BY native outbound отложен владельцем; покупки Premium
 и изменения credentials/OAuth отсутствуют. Проверка BY в синтетических тестах
 не доказывает его действующее право на Rich-отправку.
@@ -54,6 +55,10 @@ issue, логи или текст draft. Git содержит только ра�
 | `rich_slideshow` | 2–10 | `sendRichMessage`, native slideshow/photos | 1 |
 | `rich_collage` | 2–10 | `sendRichMessage`, native collage/photos | 1 |
 
+Обычные режимы отправки включены при действующих общих разрешениях. Для
+Rich media требуется отдельное включение `GATE_RICH_MEDIA_SEND_ENABLED`.
+Этот флаг по умолчанию выключен и не меняет отправку текстового Rich.
+
 Альбом сохраняет отдельные фотографии и captions. Collage сохраняет нативные
 photo blocks; единое сведённое изображение не создаётся. Порядок элементов
 одобренного пакета фиксирован; пиксельная сетка зависит от Telegram-клиента.
@@ -85,6 +90,9 @@ Opaque refs и output hashes реального prepare являются око�
 | Source и normalized файл | каждый 1 byte–8 MiB |
 | Base64 string файла | до 11 184 812 ASCII characters, strict decode |
 | Сумма source; отдельно сумма normalized | каждая до 24 MiB/package |
+| Тело запроса MCP | максимум 34 MiB до JSON decode |
+| Декодер на изображение | отдельный процесс, 384 MiB адресного пространства, 3 s CPU, 5 s по часам |
+| Декодирование пакета | максимум 30 s по часам, 2 активных декодера на процесс Gate, без очереди |
 | Items | 1–10; одиночные modes ровно 1, групповые 2–10 |
 | Максимальная сторона | 4096 px |
 | Width + height | 8192 px |
@@ -111,9 +119,9 @@ crop/resize/ретушь отсутствуют. Transform version содерж�
 source и output SHA256 хранятся раздельно. Telegram photo может дополнительно
 перекодировать изображение: byte-perfect доставка original не заявляется.
 
-Отдельный фиксированный application memory/time/concurrency лимит decoder
-этот документ не заявляет: нужны точные runtime bounds и их проверки перед
-приёмкой. Byte/pixel bounds выше не заменяют такой проверки.
+Суммарный размер исходных байтов проверяется до первого декодирования.
+При занятом лимите staging возвращает `media_validation_busy`. По таймауту
+или отмене Gate завершает дочерний процесс и освобождает слот после его выхода.
 
 ## Approval, долговечность и retention
 
@@ -132,8 +140,9 @@ execution имеет caps **12 provider writes / 20 visible messages**, вклю
 не создаёт второй provider POST и не повторно списывает бюджет.
 
 Album требует ровно N различных подтверждённых message IDs, согласованные
-chat/Business connection и media group. Short/duplicate/malformed reply не
-объявляется полным успехом. Timeout, 5xx, crash after POST и pending receipt
+chat/Business connection и media group. При неполном ответе Gate сохраняет
+известные message IDs отдельно, поскольку их позиции могут быть неизвестны.
+Пустые подписи не добавляются в multipart. Timeout, 5xx, crash after POST и pending receipt
 возвращают truthful unknown/partial без слепого retry или fallback. Generic
 provider 400 — подтверждённый отказ операции, но сам по себе не доказательство
 `unsupported` для аккаунта/режима. Заглушка не считается native delivery.
@@ -231,13 +240,17 @@ media sprint. Итог #742 обязан сослаться на доказат�
 
 ## Rollback
 
-До публикации сохранить current-main/runtime receipt и текущую совместимую
-схему. При дефекте остановить media canaries и использовать поддерживаемый
-kill switch либо reviewed media-only revert/fixforward. Production маршрут
-`/ops-deploy production target=gate` принимает **текущий main** и возвращает
-новый deploy receipt; произвольный исторический SHA этот lane не принимает.
+До публикации подтвердить current-main/runtime, состояние схемы и защищённый
+допуск на миграцию. Gate-owned workflow в control issue #751 принимает
+`/ops-deploy production target=gate expected-source-sha=<reviewed full main SHA>`.
+Проверить отдельно production fingerprint, миграцию и `/ready`.
 
-Recovery сохраняет Alembic head 0115, модели и существующие private payloads: старый d5 codehead 0114 после migration не проходит exact /ready. Использовать reviewed fix-forward текущего main, отключающий новую media behavior при сохранённой совместимой схеме.
+При дефекте остановить media canaries. Защищённое выключение
+`GATE_REPLY_MEDIA_SEND_ENABLED` блокирует новые отправки фото и альбомов
+и позволяет читать прежние квитанции. Если переключение недоступно, подготовить
+и проверить fix-forward с выключенной отправкой. Recovery сохраняет 0116,
+модели и существующие private payloads. Код с head 0115 после миграции
+не проходит exact `/ready`.
 
 Revert сохраняет интегрированные voice и прежний text Rich. Не откатывать всё
 дерево к устаревшему #737 SHA. Media schema хранит неизменяемые evidence;

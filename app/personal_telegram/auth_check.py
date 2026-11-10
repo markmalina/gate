@@ -1,4 +1,4 @@
-"""Capped, read-only Telegram authorization check on the original owner host."""
+"""Capped, read-only Telegram authorization check on a protected session source."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from app.application.personal_telegram_transport import (
     PersonalTelegramTransportError,
     _require_prefixed_ref,
 )
-from app.personal_telegram.local_runtime import LocalEncryptedSessionSource
+from app.personal_telegram.local_runtime import PersonalTelegramSessionSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +52,7 @@ def _status(
 
 async def check_local_authorization(
     *,
-    source: LocalEncryptedSessionSource,
+    source: PersonalTelegramSessionSource,
     session_ref: str,
     api_id: int,
     api_hash: str,
@@ -121,6 +121,7 @@ async def check_local_authorization(
         )
     finally:
         try:
-            await client.disconnect()
+            await asyncio.wait_for(client.disconnect(), timeout=10)
         except Exception:
             pass
+

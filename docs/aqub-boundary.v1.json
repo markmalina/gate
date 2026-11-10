@@ -1,0 +1,34 @@
+{
+  "schema_version": "aqub.frozen.gate-independent.v1",
+  "effective_at": "2026-10-09T11:12:21Z",
+  "authority": "owner",
+  "source_ref": "https://github.com/AlphaCenter/center/issues/152",
+  "aqub": {
+    "lifecycle": "frozen_source",
+    "new_product_work": false,
+    "operational_workflows": false,
+    "gate_control_plane": false,
+    "unfreeze_requires_new_owner_decision": true
+  },
+  "gate": {
+    "depends_on_aqub": false,
+    "forwards_to_aqub": false,
+    "initializes_aqub_provider": false,
+    "runs_aqub_media_worker": false,
+    "deploy_request_repository": "AlphaCenter/gate",
+    "deploy_target": "gate"
+  },
+  "preserved": [
+    "historical_source",
+    "contracts",
+    "migrations",
+    "database_history",
+    "receipts"
+  ],
+  "non_claims": [
+    "No repository or provider resources deleted",
+    "No credentials copied or provisioned",
+    "Source freeze alone is not proof of deployed runtime"
+  ]
+}
+

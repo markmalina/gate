@@ -1,14 +1,15 @@
 # Telegram Business document delivery · Gate #700
 
-Status: repository implementation on the `agent/gate-700-document-send`
-branch. `GATE_DOCUMENT_SEND_ENABLED=false` is the default. No live document
-send, recipient receipt or Production activation is claimed by the branch.
+Current contract: PDF/ZIP plus original Office and image documents. The original
+PDF/ZIP canary is historical evidence in #700; the 08 October extension has its
+own implementation/CI/runtime/connected-Work/receiver checks. This document does
+not claim that extension live acceptance has occurred.
 
 ## Provider and local bounds
 
 Telegram Bot API `sendDocument` supports `business_connection_id` and a
 multipart document upload. Telegram's current general limit is 50 MB. Gate's
-initial transport bound is 8 MiB for PDF and ZIP only, with a filename of at
+transport bound is 8 MiB for every supported original document, with a filename of at
 most 255 UTF-8 bytes and an optional literal caption of at most 1024 characters.
 The document call uses a 30-second write/read timeout; an upload timeout is
 an **unknown** delivery outcome, never a safe automatic retry.
@@ -16,7 +17,7 @@ The separate inbound `getFile` >20 MB issue does not govern this upload.
 
 ## Required Work-facing path
 
-1. Work selects and locally hashes a PDF or ZIP. Its bytes enter Gate only
+1. Work selects and locally hashes one supported original file. Its bytes enter Gate only
    through the dedicated authenticated `gate_prepare_reply_document` tool's
    `content_base64` upload argument. The 8 MiB limit is checked before
    decoding. Neither text draft nor tool response contains the bytes. The
@@ -66,3 +67,96 @@ never automatically retry after an ambiguous provider result.
 
 Before live acceptance, record one owner-approved test dialog and exact message
 cap without publishing chat, user, or Business connection identifiers.
+
+
+## Original-format allowlist · 08 October extension
+
+| Extensions | Canonical MIME |
+| --- | --- |
+| `.pdf` | `application/pdf` |
+| `.zip` | `application/zip` |
+| `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
+| `.xls` | `application/vnd.ms-excel` |
+| `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| `.doc` | `application/msword` |
+| `.pptx` | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| `.ppt` | `application/vnd.ms-powerpoint` |
+| `.jpg`, `.jpeg` | `image/jpeg` |
+| `.png` | `image/png` |
+| `.webp` | `image/webp` |
+| `.gif` | `image/gif` |
+
+The registry is `app/application/document_formats.py::DOCUMENT_TYPES`. Extending
+it also requires a bounded parser, matching input/output MCP enums and tests.
+Unknown types return `unsupported_document_type` with supported formats.
+Office names/MIMEs are never changed to ZIP just because OOXML is a ZIP container.
+No automatic ZIP, PDF conversion, image compression or format switching occurs.
+The preview explicitly says `mode document (original file)`. Photo/album/native
+Rich media belong to #742/PR744; this change reuses the existing document staging,
+SqlTelegramReplySender, durable attempt, scope fences and Telegram HTTP client.
+
+### Parser and resource bounds
+
+All new-format validation runs in a disposable Linux subprocess, up to two
+active validators per ASGI process, queue wait 100 ms, wall deadline 5 s,
+CPU 3 s, address space 384 MiB. Timeout/cancellation kills and waits for the
+child before releasing the slot. Bytes, filenames and parser exceptions are
+not logged. Busy validation returns a clear preparation error, never a send.
+
+OOXML: at most 2048 ZIP entries, total declared inflation 64 MiB, inspected XML
+parts at most 2 MiB each; no encryption, duplicate/traversing names or unsupported
+compression. Main part content type, package relationship and document root must
+match the chosen extension. Defused XML refuses DTD/entities/external resolution
+including UTF-16. Macro-enabled/encrypted OOXML is unsupported; `.xlsm/.docm/.pptm`
+are outside the allowlist. Legacy OLE uses the bounded read-only olefile parser
+and requires the corresponding Workbook/WordDocument/PowerPoint Document stream.
+Legacy macros remain bytes and are never executed. These are format integrity
+checks, not antivirus or proof that every application will open arbitrary content.
+
+Images: Pillow verifies and decodes in the same bounded subprocess solely for
+validation. Original bytes stay unchanged. At most 64 frames and 16 million
+aggregate decoded pixels; decompression bombs/corruption/MIME mismatch fail closed.
+A GIF remains a document, not an animation; WEBP is not silently converted to PNG.
+
+PDF/ZIP preserve their accepted legacy signature checks and response shape.
+Every pre-send still verifies bytes/hash/size/expiry/scope; canonical MIME is
+rederived from the unchanged filename to reject metadata substitution before I/O.
+Provider acknowledgement must match file name, MIME, size and bound route.
+
+### Concrete local Work bridge
+
+A `sandbox:` link is not a Gate server file. Use the selected absolute local
+path with `scripts/gate_document_upload.py::upload_arguments`, or its CLI:
+
+```bash
+python scripts/gate_document_upload.py /absolute/selected/report.xlsx \
+  --task-id VERIFIED_TASK_UUID --caption 'Согласованный отчёт' --follow-up
+```
+
+Consume its JSON stdout privately in code and pass that object directly to the
+connected `gate_prepare_reply_document` tool. Do not print the returned upload
+JSON/base64 to the chat, store it in logs/Git, or send it as a text draft. The bridge
+refuses URLs, relative paths, leaf symlinks, non-regular/oversized files and changes
+during reading. Gate separately validates its SHA-256, content and authenticated
+workspace/task/account/project scope. Staging returns metadata only and does not
+create permission to send. Show the exact returned preview, then call
+`gate_send_approved_document` with its draft id, exact account/recipient/file
+name/size/SHA-256/caption and formatting payload SHA-256 after owner approval.
+
+The staging bytes expire after 24 hours (hourly cleanup); unresolved provider
+attempts never authorize a second upload/send. The actual connected Work catalogue
+must advertise the new MIME enums, not merely the server schema. Refresh the
+installed Gate M tools through the supported connector control if the Work still
+shows PDF/ZIP only. No provider credential or parallel sender is needed.
+
+### Extension acceptance evidence to record
+
+- Literal PR head/green CI, including PostgreSQL byte/replay/scope/concurrency cases.
+- Current-main Ops receipt and scoped deployed fingerprint/health.
+- Actual connected Work upload and preview calls for Office and original images.
+- Exact synthetic owner-only approval manifest and hard message/attempt caps before live.
+- Provider receipt + scoped outbound attachment + recipient download hash/openability.
+
+No synthetic legacy CFB container fixture alone proves Word/Excel/PowerPoint can
+open it. No provider HTTP 200 alone proves recipient download/hash equality.
+Keep #700 open until those remaining product checks are evidenced.

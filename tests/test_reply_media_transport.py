@@ -1,23 +1,31 @@
 """Native media wire shapes and full durable cardinality/replay checks."""
 
 import asyncio
+import base64
+import hashlib
 import json
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from app.api import mcp_routes
+from app.api.deps import get_db_session
+from app.api.routes import get_telegram_client
 from app.application.reply_media import PrepareReplyMediaCommand, PrepareReplyMediaService
 from app.application.reply_sends import ReplySendError
 from app.application.telegram_formatting import FormattingError
 from app.application.telegram_rich_media import compile_rich_media, validate_rich_media_attachments
+from app.core.config import get_settings
 from app.infrastructure.reply_media import SqlReplyMediaWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
-from app.models.domain import Message, ReplyDraft, ReplyTask, SendAttempt
+from app.main import create_app
+from app.models.domain import Conversation, Message, ReplyDraft, ReplyTask, SendAttempt
 from app.models.reply_media import ReplyMediaExecutionBudget, ReplyMediaItem
 from app.services.telegram import TelegramApiError, TelegramClient
 from sqlalchemy import func, select
@@ -197,6 +205,141 @@ async def test_wire_one_multipart_post_correct_caption_and_attachments(mode: str
         assert "media" not in rich and "parse_mode" not in fields
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("mode", "caption"), [("photo", ""), ("photo", "Кадр 1"), ("album", "")]
+)
+async def test_mcp_upload_preview_confirm_send_and_replay_over_real_http_routes(
+    mode: str, caption: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    count = 1 if mode == "photo" else 4
+    fixtures = Path(__file__).parent / "fixtures" / "gate_media_sprint2"
+    uploads = [
+        replace(
+            media_input((fixtures / f"image-{i}.png").read_bytes(), caption=caption),
+            filename=f"image-{i}.png",
+        )
+        for i in range(1, count + 1)
+    ]
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        async with sessions() as session:
+            conversation = await session.get(Conversation, seed.conversation_id)
+            assert conversation is not None
+            conversation.title = "Synthetic recipient"
+            await session.commit()
+        principal = replace(
+            _command(seed, seed.draft_ids[0]).principal,
+            scopes=frozenset({"gate:drafts:write", "gate:inbox:read", "gate:messages:send"}),
+        )
+        provider_posts = []
+        preview_hashes = []
+
+        async def authenticate(**kwargs):
+            assert kwargs["required_scope"] in principal.scopes
+            return principal
+
+        async def session_dependency():
+            async with sessions() as session:
+                yield session
+
+        async def telegram_api(request):
+            if request.url.path.endswith("/getBusinessConnection"):
+                return httpx.Response(200, json=_live_connection(seed.business_connection_id))
+            provider_posts.append(request)
+            fields = parts(request)
+            assert fields["chat_id"].get_content() == seed.recipient_chat_id
+            assert fields["business_connection_id"].get_content() == seed.business_connection_id
+            for i, digest in enumerate(preview_hashes, 1):
+                image = fields[f"photo_{i}"].get_payload(decode=True)
+                assert hashlib.sha256(image).hexdigest() == digest
+            if mode == "photo":
+                assert request.url.path.endswith("/sendPhoto")
+                assert ("caption" in fields) == bool(caption)
+                if caption:
+                    assert fields["caption"].get_payload(decode=True).decode("utf-8") == caption
+            else:
+                assert request.url.path.endswith("/sendMediaGroup")
+                media = json.loads(fields["media"].get_payload(decode=True))
+                assert media == [
+                    {"type": "photo", "media": f"attach://photo_{i}"} for i in range(1, count + 1)
+                ]
+            messages = [
+                {
+                    "message_id": 742 + i,
+                    "chat": {"id": int(seed.recipient_chat_id)},
+                    "business_connection_id": seed.business_connection_id,
+                    "photo": native_photo(),
+                    **({"caption": caption} if caption else {}),
+                    **({"media_group_id": "synthetic-album"} if mode == "album" else {}),
+                }
+                for i in range(count)
+            ]
+            return httpx.Response(200, json={
+                "ok": True, "result": messages if mode == "album" else messages[0]
+            })
+
+        monkeypatch.setattr(mcp_routes, "_require_mcp_principal", authenticate)
+        settings = _settings().model_copy(update={"gate_mcp_enabled": True})
+        app = create_app()
+        app.dependency_overrides[get_db_session] = session_dependency
+        app.dependency_overrides[get_settings] = lambda: settings
+        async with (
+            httpx.AsyncClient(transport=httpx.MockTransport(telegram_api)) as provider,
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="https://gate.example"
+            ) as client,
+        ):
+            telegram = TelegramClient("synthetic-credential", http_client=provider)
+            app.dependency_overrides[get_telegram_client] = lambda: telegram
+
+            async def call(name, arguments):
+                response = await client.post("/mcp", json={
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                })
+                response.raise_for_status()
+                return response.json()["result"]
+
+            upload = await call("gate_prepare_reply_media", {
+                "task_id": str(seed.task_id), "mode": mode,
+                "staging_key": "work-upload", "execution_id": "work-test",
+                "execution_expires_at": TEST_EXECUTION_DEADLINE.isoformat(),
+                "items": [asdict(item) for item in uploads],
+            })
+            assert not upload["isError"], upload
+            snapshot = upload["structuredContent"]
+            preview = await call("gate_preview_reply_media", {"package_id": snapshot["package_id"]})
+            assert preview == upload
+            assert snapshot["confirmation"]["expected_account"] == "RU"
+            assert snapshot["confirmation"]["expected_recipient_chat_id"] == seed.recipient_chat_id
+            assert snapshot["snapshot"]["recipient_label"] == "Synthetic recipient"
+            assert [item["filename"] for item in snapshot["items"]] == [
+                item.filename for item in uploads
+            ]
+            assert [item["caption"] for item in snapshot["items"]] == [caption] * count
+            preview_hashes.extend(
+                hashlib.sha256(base64.b64decode(block["data"], validate=True)).hexdigest()
+                for block in preview["content"] if block["type"] == "image"
+            )
+            assert preview_hashes == [item["output_sha256"] for item in snapshot["items"]]
+
+            approval = {
+                **snapshot["confirmation"], "draft_id": snapshot["draft_id"],
+                "confirmed": True, "execution_id": "work-test",
+            }
+            rejected = await call(
+                "gate_send_approved_reply", {**approval, "expected_media_package_sha256": "0" * 64}
+            )
+            assert rejected["isError"] and provider_posts == []
+            first = (await call("gate_send_approved_reply", approval))["structuredContent"]
+            replay = (await call("gate_send_approved_reply", approval))["structuredContent"]
+            assert first["sent"] and replay["idempotent_replay"], (first, replay)
+            assert first["attempt_id"] == replay["attempt_id"] and first["media"] == replay["media"]
+            assert first["media"]["provider_message_ids"] == [str(742 + i) for i in range(count)]
+            assert len(provider_posts) == 1
+
+
 class MediaTelegram:
     def __init__(self, outcome: str = "sent", *, blocked: bool = False) -> None:
         self.outcome, self.blocked = outcome, blocked
@@ -269,7 +412,7 @@ class MediaTelegram:
             else:
                 message["text"] = kwargs["text"]
         if self.outcome == "short":
-            messages.pop()
+            messages.pop(1)
         elif self.outcome == "duplicate":
             messages[1]["message_id"] = messages[0]["message_id"]
         elif self.outcome == "reorder":
@@ -285,7 +428,9 @@ class MediaTelegram:
         return {"ok": True, "result": messages if mode == "album" else messages[0]}
 
 
-async def prepared(sessions: Any, seed: Any, mode: str = "album") -> tuple[Any, Any]:
+async def prepared(
+    sessions: Any, seed: Any, mode: str = "album", *, blank_captions: bool = False
+) -> tuple[Any, Any]:
     send = _command(seed, seed.draft_ids[0])
     send = replace(
         send,
@@ -296,7 +441,7 @@ async def prepared(sessions: Any, seed: Any, mode: str = "album") -> tuple[Any, 
     n = 1 if mode in {"photo", "rich_photo"} else 3
     items = tuple(
         media_input(caption=f"Фото 💚 {i}", caption_format="markdown")
-        if not mode.startswith("rich_")
+        if not blank_captions and not mode.startswith("rich_")
         else media_input()
         for i in range(1, n + 1)
     )
@@ -342,7 +487,11 @@ async def deliver(
             telegram=telegram,
             settings=settings
             or _settings().model_copy(
-                update={"gate_rich_send_enabled": True, "deployment_sha": "synthetic-runtime"}
+                update={
+                    "gate_rich_send_enabled": True,
+                    "gate_rich_media_send_enabled": True,
+                    "deployment_sha": "synthetic-runtime",
+                }
             ),
         ).send(command)
 
@@ -405,7 +554,7 @@ async def test_durable_media_modes_restarted_replay_exact_n_outward_no_tasks(mod
 async def test_album_inconsistent_or_ambiguous_receipt_never_resends(outcome: str) -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
-        _, command = await prepared(sessions, seed)
+        _, command = await prepared(sessions, seed, blank_captions=outcome == "short")
         telegram = MediaTelegram(outcome)
         first = await deliver(sessions, telegram, command)
         second = await deliver(sessions, telegram, command)
@@ -414,9 +563,10 @@ async def test_album_inconsistent_or_ambiguous_receipt_never_resends(outcome: st
         assert second.status == first.status and len(telegram.calls) == 1
         assert first.media == second.media
         if outcome == "short":
-            assert (
-                first.media["confirmed_item_count"] == 2 and first.media["unknown_item_count"] == 1
-            )
+            assert first.media["provider_message_ids"] == ["742", "744"]
+            assert first.media["confirmed_message_count"] == 2
+            assert first.media["confirmed_item_count"] == 0
+            assert first.media["unknown_item_count"] == 3
         if outcome == "400":
             assert (
                 first.error_detail == "telegram_api_400" and first.media["unknown_item_count"] == 0
@@ -425,6 +575,52 @@ async def test_album_inconsistent_or_ambiguous_receipt_never_resends(outcome: st
             budget = await session.scalar(select(ReplyMediaExecutionBudget))
             assert budget.writes_reserved == 1 and budget.messages_reserved == 3
             assert await session.scalar(select(func.count()).select_from(ReplyTask)) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["sent", "timeout"])
+async def test_media_replay_keeps_original_receipt_after_business_reconnect(outcome: str) -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        _, command = await prepared(sessions, seed)
+        telegram = MediaTelegram(outcome)
+        first = await deliver(sessions, telegram, command)
+        async with sessions() as session:
+            conversation = await session.get(Conversation, seed.conversation_id)
+            assert conversation is not None
+            conversation.business_connection_id = "synthetic-reconnected"
+            await session.commit()
+
+        replay = await deliver(
+            sessions, telegram, command,
+            settings=_settings().model_copy(update={"gate_reply_media_send_enabled": False}),
+        )
+        assert first.status == ("sent" if outcome == "sent" else "unknown")
+        assert replay.status == first.status and replay.media == first.media
+        assert replay.idempotent_replay
+        assert len(telegram.calls) == 1 and len(telegram.probes) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("mode", "media_enabled", "error"),
+    [("photo", False, "media_send_disabled"), ("rich_photo", True, "rich_send_disabled")],
+)
+async def test_media_flags_stop_new_attempts_without_affecting_old_text_rich(
+    mode: str, media_enabled: bool, error: str
+) -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        _, command = await prepared(sessions, seed, mode)
+        telegram = MediaTelegram()
+        settings = _settings().model_copy(update={
+            "gate_reply_media_send_enabled": media_enabled,
+            "gate_rich_send_enabled": True,
+        })
+        with pytest.raises(ReplySendError) as exc:
+            await deliver(sessions, telegram, command, settings=settings)
+        assert exc.value.code == error
+        assert telegram.probes == telegram.calls == []
 
 
 @pytest.mark.anyio

@@ -287,3 +287,51 @@ async def test_existing_budget_deadline_cannot_extend_and_reservations_are_prese
         await _ensure_budget(session, principal(), "same", deadline + timedelta(minutes=1))
     assert error.value.code == "media_execution_conflict"
     assert (budget.expires_at, budget.writes_reserved, budget.messages_reserved) == (deadline, 3, 7)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("mode", "transparent", "opaque"),
+    [("RGB", (8, 16, 32), (20, 30, 40)), ("L", 12, 100)],
+)
+async def test_png_transparency_key_survives_normalization(mode, transparent, opaque) -> None:
+    writer = CapturingWriter()
+    image = Image.new(mode, (2, 1))
+    image.putpixel((0, 0), transparent)
+    image.putpixel((1, 0), opaque)
+    output = io.BytesIO()
+    image.save(output, format="PNG", transparency=transparent)
+    await PrepareReplyMediaService(writer).execute(command(media_input(output.getvalue())))
+    with Image.open(io.BytesIO(writer.calls[0][0].data)) as prepared:
+        assert prepared.mode == "RGBA"
+        alpha = prepared.getchannel("A")
+        assert alpha.getpixel((0, 0)) == 0
+        assert alpha.getpixel((1, 0)) == 255
+
+
+@pytest.mark.anyio
+async def test_source_package_budget_uses_exact_padding_before_any_decode(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.application import reply_media
+
+    decoder = AsyncMock()
+    monkeypatch.setattr(reply_media, "decode_image", decoder)
+    monkeypatch.setattr(reply_media, "MAX_MEDIA_PACKAGE_BYTES", 6)
+    writer = CapturingWriter()
+    service = PrepareReplyMediaService(writer)
+    inputs = tuple(media_input(b"x" * length) for length in (1, 2, 3))
+
+    # These fixtures are deliberately invalid PNGs. At exactly six source
+    # bytes the mocked decoder must still be reached after preflight.
+    decoder.side_effect = reply_media.ImageDecodeError("test decoder reached")
+    with pytest.raises(ReplyDraftError, match="test decoder reached"):
+        await service.execute(command(*inputs, mode="album"))
+    decoder.assert_awaited_once()
+    decoder.reset_mock()
+
+    monkeypatch.setattr(reply_media, "MAX_MEDIA_PACKAGE_BYTES", 5)
+    with pytest.raises(ReplyDraftError, match="Source package exceeds"):
+        await service.execute(command(*inputs, mode="album"))
+    decoder.assert_not_awaited()
+    assert not writer.calls

@@ -1,0 +1,73 @@
+{
+  "schema_version": "gate.audit.validation.v1",
+  "repository": "markmalina/gate",
+  "source_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "performed_at": "2026-10-19T16:47:44.868Z",
+  "result": "PASS",
+  "source_verification": {
+    "total": 943,
+    "mismatches": [],
+    "total_bytes": 8637975,
+    "algorithm": "Git blob SHA-1 over UTF-8 bytes; SHA-1 abc self-check passed"
+  },
+  "artifact_checks": {
+    "json_documents_including_this": 8,
+    "markdown_relative_links_checked": 76,
+    "evidence_coordinates": 58,
+    "unique_domain_issues": 34,
+    "unique_open_prs": 14,
+    "orm_tables": 113,
+    "mapped_column_declarations": 1473,
+    "migration_revisions": 119,
+    "migration_graph_acyclic": true,
+    "expected_head": "0115_watch_voice_post_payment",
+    "settings_aliases": 161,
+    "settings_aliases_missing_from_example": 48,
+    "source_mcp_core_tools": 19,
+    "shadowed_transcription_tools": 5,
+    "generated_sensitive_pattern_candidates": 0,
+    "standalone_verifier_syntax_parsed": true,
+    "standalone_verifier_invoked_as_local_cli": false,
+    "markdown_file_links_checked": 60,
+    "markdown_anchor_links_checked": 16
+  },
+  "checks": [
+    "source Git blob hashes and byte sizes",
+    "all JSON parse/source revision",
+    "34 unique issue coverage /14 unique PR coverage",
+    "113 tables /119 migration revisions /161 config aliases",
+    "MCP first-match source model 19 core /5 shadowed",
+    "Markdown relative links/anchors/fences",
+    "standalone verifier syntax parsed after module import stripping",
+    "generated artifact high-confidence sensitive-pattern scan"
+  ],
+  "ci_baseline": {
+    "run_id": 38718360230,
+    "job_id": 116366494513,
+    "source_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+    "run_date": "2026-10-15",
+    "result": "success",
+    "pytest": {
+      "passed": 2914,
+      "skipped": 1,
+      "subtests_passed": 12
+    },
+    "mypy_source_files": 309,
+    "reexecuted_by_this_work": false
+  },
+  "runtime_observation": {
+    "source": "Gate M scoped get_status",
+    "observed_after": "2026-10-19T16:41:49Z",
+    "observed_before": "2026-10-19T16:42:51.938Z",
+    "reported_commit": "afe0c6b85193",
+    "ordinary_watch_worker_enabled": false
+  },
+  "limitations": [
+    "No local pytest/ruff/mypy/Docker/ASGI execution by this Work",
+    "Static source/MCP route analysis is not dynamic HTTP reproduction",
+    "No provider/transcription/send/config/deploy/merge effects",
+    "No global user census or all-project acceptance",
+    "No complete historical secret/CVE/purge/backup verification"
+  ],
+  "remote_publication_evidence": "See Gate issue767 for exact branch/commit/tree/PR and post-publication blob readback receipt."
+}

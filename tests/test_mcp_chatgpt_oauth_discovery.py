@@ -136,6 +136,24 @@ async def _get(path: str):
 
 
 @pytest.mark.anyio
+async def test_mcp_bounds_declared_and_streamed_bodies_before_json(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.mcp_routes._MAX_MCP_BODY_BYTES", 48)
+
+    async def chunks():
+        yield b"x" * 32
+        yield b"x" * 32
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="https://gate.example"
+    ) as client:
+        declared = await client.post("/mcp", content=b"x" * 64)
+        streamed = await client.post("/mcp", content=chunks())
+        invalid = await client.post("/mcp", content=b"invalid")
+    assert declared.status_code == streamed.status_code == 413
+    assert invalid.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
     response = await _get("/.well-known/oauth-protected-resource/mcp")
 

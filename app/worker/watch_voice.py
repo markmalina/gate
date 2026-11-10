@@ -272,9 +272,12 @@ async def transcribe_claimed_note(
     note: WatchVoiceNote,
     *,
     recovery: bool = False,
+    post_payment: bool = False,
 ) -> None:
     """Only callers with a committed normal/recovery claim may enter this boundary."""
     assert note.duration_seconds is not None
+    if post_payment and not recovery:
+        raise ValueError("watch_voice_post_payment_recovery_required")
     model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
     received = note.received_at
     if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
@@ -304,7 +307,8 @@ async def transcribe_claimed_note(
                 ),
                 workspace_key=settings.gate_workspace_id,
                 connector_ref="telegram_business",
-                reservation_key=f"watch-voice:{note.id}" + (":recovery1" if recovery else ""),
+                reservation_key=f"watch-voice:{note.id}"
+                + (":postpayment1" if post_payment else ":recovery1" if recovery else ""),
                 period_key=received.strftime("%Y-%m"),
                 requested_microusd=max(
                     100,

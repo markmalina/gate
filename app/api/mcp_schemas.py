@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.api.mcp_media import MEDIA_OUTPUT_SCHEMA
+from app.application.document_formats import DOCUMENT_MIME_TYPES
 from app.application.owner_reply_readiness import (
     OWNER_REPLY_READINESS_OUTPUT_SCHEMA,
     OWNER_REPLY_READINESS_TOOL_NAME,
@@ -162,6 +163,37 @@ CONTACT_DETAILS_SCHEMA = _object(
         "source_message_id": {"type": "integer", "minimum": 1},
     }
 )
+REPLY_DETAILS_SCHEMA = _object(
+    {
+        "status": {"type": "string", "enum": ["snapshot", "unavailable"]},
+        "reason_code": _nullable("string"),
+        "provider_message_id": _nullable("string"),
+        "author": _nullable("string"),
+        "sent_at": _nullable("string"),
+        "text": {"type": ["string", "null"], "maxLength": 4096},
+        "caption": {"type": ["string", "null"], "maxLength": 1024},
+        "attachments": {
+            "type": "array",
+            "maxItems": 1,
+            "items": _object({
+                "kind": {"type": "string", "enum": [
+                    "document", "photo", "voice", "audio", "video", "animation", "video_note",
+                ]},
+                "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+                "mime_type": _nullable("string"),
+                "size_bytes": {"type": ["integer", "null"], "minimum": 1},
+            }),
+        },
+        "quote": {"anyOf": [
+            _object({
+                "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "position": {"type": "integer", "minimum": 0},
+                "is_manual": {"type": "boolean"},
+            }),
+            {"type": "null"},
+        ]},
+    }
+)
 REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
     {
         **MESSAGE_SCHEMA["properties"],
@@ -186,6 +218,7 @@ REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
                 {"type": "null"},
             ]
         },
+        "reply_to": REPLY_DETAILS_SCHEMA,
         "counterparty": _ref("counterparty"),
     },
     required=[
@@ -1934,7 +1967,7 @@ GATE_DOCUMENT_PREPARE_OUTPUT_SCHEMA: JsonObject = _success_or_error(
             "account": {"type": "string", "enum": ["RU", "BY"]},
             "recipient_chat_id": {"type": "string", "minLength": 1},
             "filename": {"type": "string", "minLength": 1},
-            "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+            "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
             "size_bytes": {"type": "integer", "minimum": 1},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "caption": {"type": "string"},
@@ -1953,7 +1986,7 @@ GATE_DOCUMENT_SEND_OUTPUT_SCHEMA: JsonObject = _success_or_error(
             "account": {"type": "string", "enum": ["RU", "BY"]},
             "recipient_chat_id": {"type": "string", "minLength": 1},
             "filename": {"type": "string", "minLength": 1},
-            "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+            "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
             "size_bytes": {"type": "integer", "minimum": 1},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "status": {"type": "string", "minLength": 1},

@@ -1,0 +1,131 @@
+name: Gate Independent Ops Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected-source-sha:
+        description: Exact reviewed current Gate main SHA
+        required: true
+        type: string
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  # Unmerged owner-gated activation candidate (#799); no live release grant.
+  deploy:
+    if: >-
+      ${{
+        github.repository == 'markmalina/gate' &&
+        github.repository_id == '1293746267' &&
+        github.run_attempt == 1 &&
+        github.ref == 'refs/heads/main' &&
+        github.actor == 'markmalina' &&
+        github.actor_id == '23397294' &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          (
+            github.event_name == 'issue_comment' &&
+            github.event.issue.number == 751 &&
+            !github.event.issue.pull_request &&
+            startsWith(github.event.comment.body, '/ops-deploy production target=')
+          )
+        )
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    concurrency:
+      group: gate-production-deploy
+      cancel-in-progress: false
+    environment: gate-production
+    steps:
+      - name: Resolve exact owner command
+        id: request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          INPUT_SOURCE_SHA: ${{ inputs.expected-source-sha }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          set -euo pipefail
+          test "$ACTOR" = markmalina
+          test "$ACTOR_ID" = 23397294
+          if test "$EVENT_NAME" = workflow_dispatch; then
+            source_sha="$INPUT_SOURCE_SHA"
+          elif [[ "$COMMENT_BODY" =~ ^/ops-deploy\ production\ target=gate\ expected-source-sha=([0-9a-f]{40})$ ]]; then
+            source_sha="${BASH_REMATCH[1]}"
+          else
+            exit 1
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact trusted Gate executor
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify executor source
+        id: source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          APPROVED_SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$WORKFLOW_SHA" = "$EXPECTED_SHA"
+          test "$APPROVED_SOURCE_SHA" = "$EXPECTED_SHA"
+          echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
+
+      - id: deploy
+        name: Deploy through Gate-local Ops-derived executor
+        continue-on-error: true
+        uses: ./.github/actions/gate-deploy
+        with:
+          target: gate
+          executor-source-sha: ${{ steps.source.outputs.sha }}
+          expected-source-sha: ${{ steps.request.outputs.source_sha }}
+        env:
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Save receipt
+        if: ${{ always() && steps.deploy.outputs.receipt-path != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ops-fast-deploy-${{ github.run_id }}
+          path: |
+            ops-fast-deploy-receipt.json
+            ops-fast-deploy-receipt.sha256
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+
+      - name: Accept terminal result
+        if: ${{ always() }}
+        shell: bash
+        env:
+          RESULT: ${{ steps.deploy.outputs.result }}
+          RECEIPT: ${{ steps.deploy.outputs.receipt-digest }}
+          APPROVED_SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          EXECUTOR_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          CHECKED_OUT_SHA: ${{ steps.source.outputs.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          node .github/actions/gate-deploy/release-checks.mjs
+

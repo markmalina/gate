@@ -2,38 +2,35 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
 import hmac
-import io
 import json
 import re
-import struct
 import unicodedata
-import warnings
-import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any, Protocol
 from uuid import UUID
 
-from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL import __version__ as pillow_version
 
 from app.application.reply_drafts import ReplyDraftError
+from app.application.reply_media_decoder import (
+    MAX_MEDIA_BYTES,
+    ImageDecodeError,
+    decode_image,
+)
 from app.application.telegram_formatting import FormattingError, compile_text
 from app.core.mcp_security import Principal
 
-MAX_MEDIA_BYTES = 8 * 1024 * 1024
 MAX_MEDIA_PACKAGE_BYTES = 24 * 1024 * 1024
 MAX_MEDIA_BASE64_LENGTH = ((MAX_MEDIA_BYTES + 2) // 3) * 4
 MAX_MEDIA_ITEMS = 10
-MAX_MEDIA_SIDE = 4096
-MAX_MEDIA_DIMENSION_SUM = 8192
-MAX_MEDIA_PIXELS = 16_000_000
-MAX_MEDIA_ASPECT_RATIO = 20
+MAX_MEDIA_PACKAGE_DECODE_SECONDS = 30
 MAX_MEDIA_CAPTION_SOURCE_LENGTH = 4096
 MEDIA_PACKAGE_KEY = "_gate_media_package"
 MEDIA_SCHEMA_VERSION = "gate.media.v1"
@@ -213,17 +210,24 @@ class PrepareReplyMediaService:
             if len(encoded_source.encode("utf-8")) > 65536:
                 raise _error("Rich media source exceeds 64 KiB")
         # All bytes and captions are validated before the writer can touch SQL.
+        if sum(_decoded_source_size(item.content_base64) for item in command.items) > (
+            MAX_MEDIA_PACKAGE_BYTES
+        ):
+            raise _error("Source package exceeds 24 MiB")
         validated_items: list[ValidatedMediaItem] = []
-        source_total = output_total = 0
-        for source_item in command.items:
-            item = _validate_image(source_item)
-            source_total += item.source_size_bytes
-            output_total += item.size_bytes
-            if source_total > MAX_MEDIA_PACKAGE_BYTES:
-                raise _error("Source package exceeds 24 MiB")
-            if output_total > MAX_MEDIA_PACKAGE_BYTES:
-                raise _error("Prepared package exceeds 24 MiB")
-            validated_items.append(item)
+        output_total = 0
+        try:
+            async with asyncio.timeout(MAX_MEDIA_PACKAGE_DECODE_SECONDS):
+                for source_item in command.items:
+                    item = await _validate_image(source_item)
+                    output_total += item.size_bytes
+                    if output_total > MAX_MEDIA_PACKAGE_BYTES:
+                        raise _error("Prepared package exceeds 24 MiB")
+                    validated_items.append(item)
+        except TimeoutError as exc:
+            raise _error(
+                "Image package validation exceeded its deadline", "media_validation_timeout"
+            ) from exc
         validated = tuple(validated_items)
         if command.mode.startswith("rich_") and any(item.caption for item in validated):
             raise _error("Rich captions belong in rich_content, not ordinary item captions")
@@ -254,7 +258,19 @@ class PrepareReplyMediaService:
         return await self._writer.save(command, validated, input_sha256)
 
 
-def _validate_image(item: ReplyMediaInput) -> ValidatedMediaItem:
+def _decoded_source_size(content: str) -> int:
+    if not isinstance(content, str) or not 0 < len(content) <= MAX_MEDIA_BASE64_LENGTH:
+        raise _error("Image exceeds 8 MiB")
+    if len(content) % 4 or content.endswith("==="):
+        raise _error("Invalid image encoding")
+    padding = 2 if content.endswith("==") else int(content.endswith("="))
+    size = len(content) // 4 * 3 - padding
+    if not 0 < size <= MAX_MEDIA_BYTES:
+        raise _error("Image size must be 1 byte–8 MiB")
+    return size
+
+
+async def _validate_image(item: ReplyMediaInput) -> ValidatedMediaItem:
     filename = item.filename
     if (
         not filename
@@ -272,25 +288,13 @@ def _validate_image(item: ReplyMediaInput) -> ValidatedMediaItem:
         char not in "0123456789abcdef" for char in item.expected_sha256
     ):
         raise _error("Invalid image SHA-256")
-    if (
-        not isinstance(item.content_base64, str)
-        or not item.content_base64
-        or len(item.content_base64) > MAX_MEDIA_BASE64_LENGTH
-    ):
-        raise _error("Image exceeds 8 MiB")
     try:
         source = base64.b64decode(item.content_base64, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise _error("Invalid image encoding") from exc
-    if not 0 < len(source) <= MAX_MEDIA_BYTES:
-        raise _error("Image size must be 1 byte–8 MiB")
     source_sha256 = hashlib.sha256(source).hexdigest()
     if not hmac.compare_digest(source_sha256, item.expected_sha256):
         raise _error("Image SHA-256 differs", "media_changed")
-    if item.media_type == "image/png":
-        _validate_png_container(source)
-    else:
-        _validate_jpeg_container(source)
     if item.caption_format not in {"plain", "markdown"}:
         raise _error("Caption format must be plain or markdown")
     if not isinstance(item.caption, str) or len(item.caption) > MAX_MEDIA_CAPTION_SOURCE_LENGTH:
@@ -300,53 +304,10 @@ def _validate_image(item: ReplyMediaInput) -> ValidatedMediaItem:
     except FormattingError as exc:
         raise ReplyDraftError(code=exc.code, message=exc.message) from exc
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(source)) as check:
-                expected_format = "PNG" if item.media_type == "image/png" else "JPEG"
-                if check.format != expected_format or getattr(check, "n_frames", 1) != 1:
-                    raise _error("Unsupported image encoding or animation")
-                _validate_dimensions(*check.size)
-                check.verify()
-            with Image.open(io.BytesIO(source)) as original:
-                original.load()
-                orientation = original.getexif().get(274, 1)
-                image = ImageOps.exif_transpose(original)
-                _validate_dimensions(*image.size)
-                # Re-encode before consent: removes EXIF/IPTC/comments/ICC and makes the
-                # transmitted artifact deterministic. Never crop or resize the image.
-                wanted_mode = (
-                    "RGBA" if item.media_type == "image/png" and "A" in image.getbands() else "RGB"
-                )
-                if (
-                    item.media_type == "image/png"
-                    and image.mode == "P"
-                    and "transparency" in image.info
-                ):
-                    wanted_mode = "RGBA"
-                image = image.convert(wanted_mode)
-                image.info.clear()
-                output = io.BytesIO()
-                if item.media_type == "image/png":
-                    image.save(output, format="PNG", compress_level=9, optimize=False)
-                else:
-                    image.save(output, format="JPEG", quality=95, subsampling=0, optimize=False)
-                data = output.getvalue()
-                width, height = image.size
-    except ReplyDraftError:
-        raise
-    except (
-        UnidentifiedImageError,
-        OSError,
-        SyntaxError,
-        ValueError,
-        struct.error,
-        Image.DecompressionBombError,
-        Image.DecompressionBombWarning,
-    ) as exc:
-        raise _error("Image decode failed or image is unsafe") from exc
-    if not 0 < len(data) <= MAX_MEDIA_BYTES:
-        raise _error("Normalized image exceeds 8 MiB")
+        decoded = await decode_image(source, item.media_type)
+    except ImageDecodeError as exc:
+        raise _error(str(exc), exc.code) from exc
+    data = decoded.data
     return ValidatedMediaItem(
         filename=filename,
         media_type=item.media_type,
@@ -354,84 +315,15 @@ def _validate_image(item: ReplyMediaInput) -> ValidatedMediaItem:
         size_bytes=len(data),
         source_sha256=source_sha256,
         output_sha256=hashlib.sha256(data).hexdigest(),
-        width=width,
-        height=height,
+        width=decoded.width,
+        height=decoded.height,
         transform_version=MEDIA_TRANSFORM_VERSION,
-        transform=f"metadata_strip;orientation={orientation};colorspace={wanted_mode};reencode",
+        transform=(
+            f"metadata_strip;orientation={decoded.orientation};"
+            f"colorspace={decoded.colorspace};reencode"
+        ),
         caption=caption.text,
         caption_format=item.caption_format,
         caption_formatting_json=caption.to_dict(),
         data=data,
     )
-
-
-def _validate_dimensions(width: int, height: int) -> None:
-    if (
-        width <= 0
-        or height <= 0
-        or max(width, height) > MAX_MEDIA_SIDE
-        or width + height > MAX_MEDIA_DIMENSION_SUM
-        or width * height > MAX_MEDIA_PIXELS
-        or max(width, height) > min(width, height) * MAX_MEDIA_ASPECT_RATIO
-    ):
-        raise _error("Image exceeds application dimensions, pixels or aspect limits")
-
-
-def _validate_png_container(data: bytes) -> None:
-    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise _error("PNG signature mismatch")
-    position = 8
-    while position + 12 <= len(data):
-        length = int.from_bytes(data[position : position + 4], "big")
-        kind = data[position + 4 : position + 8]
-        end = position + 12 + length
-        if end > len(data) or kind == b"acTL":
-            raise _error("Truncated or animated PNG")
-        crc = int.from_bytes(data[end - 4 : end], "big")
-        if zlib.crc32(data[position + 4 : end - 4]) & 0xFFFFFFFF != crc:
-            raise _error("Invalid PNG chunk CRC")
-        position = end
-        if kind == b"IEND":
-            if length != 0 or position != len(data):
-                raise _error("PNG has trailing or invalid data")
-            return
-    raise _error("PNG has no complete end marker")
-
-
-def _validate_jpeg_container(data: bytes) -> None:
-    if not data.startswith(b"\xff\xd8"):
-        raise _error("JPEG signature mismatch")
-    position = 2
-    entropy = False
-    while position < len(data):
-        if entropy:
-            position = data.find(b"\xff", position)
-            if position < 0:
-                break
-        elif data[position] != 255:
-            raise _error("Invalid JPEG marker")
-        while position < len(data) and data[position] == 255:
-            position += 1
-        if position >= len(data):
-            break
-        marker = data[position]
-        position += 1
-        if entropy and (marker == 0 or 0xD0 <= marker <= 0xD7):
-            continue
-        entropy = False
-        if marker == 0xD9:
-            if position != len(data):
-                raise _error("JPEG has trailing data")
-            return
-        if marker in {0, 0xD8}:
-            raise _error("Invalid JPEG marker")
-        if marker == 1 or 0xD0 <= marker <= 0xD7:
-            continue
-        if position + 2 > len(data):
-            break
-        length = int.from_bytes(data[position : position + 2], "big")
-        if length < 2 or position + length > len(data):
-            break
-        position += length
-        entropy = marker == 0xDA
-    raise _error("Truncated JPEG")

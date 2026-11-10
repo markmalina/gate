@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
+from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.mcp_media import PREPARE_INPUT_SCHEMA, PREVIEW_INPUT_SCHEMA, media_tool_result
@@ -41,7 +42,6 @@ from app.application.alpha_owner_control import (
     control_alpha_installation,
 )
 from app.application.alpha_shadow_reviews import alpha_shadow_reviews_payload
-from app.application.aqub_transport import AQUB_TELEGRAM_WEBHOOK_PATH
 from app.application.mcp_inbox import (
     build_unanswered_list,
     counterparty as _counterparty,
@@ -64,6 +64,7 @@ from app.application.owner_reply_readiness import (
     OwnerReplyReadinessError,
     build_owner_reply_readiness,
 )
+from app.application.document_formats import DOCUMENT_MIME_TYPES
 from app.application.reply_documents import (
     PrepareReplyDocumentCommand,
     PrepareReplyDocumentService,
@@ -104,14 +105,6 @@ from app.infrastructure.alpha_owner_test_runtime import (
     verify_owner_test_review_replay,
 )
 from app.infrastructure.alpha_shadow_reviews import list_alpha_shadow_reviews
-from app.infrastructure.aqub_general_release_replay import (
-    AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF,
-    AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF,
-    AQUBGeneralReleaseReplayError,
-    recover_aqub_general_cube0,
-    send_aqub_general_release_replay,
-    verify_aqub_general_release_replay,
-)
 from app.infrastructure.become_controlled_intake import (
     become_controlled_intake_status,
 )
@@ -195,8 +188,10 @@ from app.application.telegram_attachments import (
     TelegramAttachmentReference,
     extract_telegram_attachments,
     validated_telegram_receipt_payload,
+    validated_telegram_sent_document_payload,
 )
 from app.application.telegram_voice_update import extract_telegram_voice
+from app.application.telegram_replies import format_telegram_reply
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -268,9 +263,35 @@ MCP_TOOL_SCOPES = {
 }
 
 
+# 24 MiB of image bytes expand to 32 MiB as base64. The remaining space
+# covers captions, item metadata and the JSON-RPC envelope.
+_MAX_MCP_BODY_BYTES = 34 * 1024 * 1024
+
+
+async def _read_mcp_request(request: Request) -> JsonObject:
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        if not declared.isascii() or not declared.isdecimal() or len(declared) > 20:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if int(declared) > _MAX_MCP_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="MCP request is too large")
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > _MAX_MCP_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="MCP request is too large")
+        body.extend(chunk)
+    try:
+        payload = json.loads(body)
+    except (ValueError, RecursionError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid JSON-RPC body") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="JSON-RPC body must be an object")
+    return payload
+
+
 @router.post("/mcp")
 async def mcp_endpoint(
-    payload: JsonObject,
+    payload: Annotated[JsonObject, Depends(_read_mcp_request)],
     request: Request = None,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
@@ -1073,6 +1094,7 @@ async def _watch_voice_tool_result(
     }
     if row.model == "gpt-4o-transcribe":
         receipt["recovery"] = await protected_recovery_receipt(session, row)
+        receipt["post_payment"] = await protected_post_payment_receipt(session, row)
     return _jsonrpc_result(
         request_id=request_id,
         result={
@@ -1573,7 +1595,14 @@ async def _attachment_reply_context_tool_result(
             Message.business_connection_id.is_not_distinct_from(
                 conversation["business_connection_id"]
             ),
-            Message.source == "telegram",
+            (
+                (Message.source == "telegram")
+                | (
+                    (Message.source == "gate-approved-document")
+                    & (Message.direction == MessageDirection.OUTBOUND.value)
+                    & (Message.event_type == "telegram_business_document")
+                )
+            ),
         )
     )
     row = result.one_or_none()
@@ -1597,12 +1626,21 @@ async def _attachment_reply_context_tool_result(
         if telegram_receipt is not None
         else None
     )
-    attachments = extract_telegram_attachments(
-        telegram_update.payload if telegram_update is not None else None,
-        gate_event.payload if gate_event is not None else None,
-        message.payload,
-        receipt_payload,
-    )
+    if message.source == "gate-approved-document":
+        sent_payload = validated_telegram_sent_document_payload(
+            message.payload,
+            telegram_message_id=message.telegram_message_id,
+            chat_id=message.chat_id,
+            business_connection_id=message.business_connection_id,
+        )
+        attachments = extract_telegram_attachments(sent_payload)
+    else:
+        attachments = extract_telegram_attachments(
+            telegram_update.payload if telegram_update is not None else None,
+            gate_event.payload if gate_event is not None else None,
+            message.payload,
+            receipt_payload,
+        )
     if attachment_index >= len(attachments):
         return _tool_error_result(
             request_id=request_id,
@@ -2419,104 +2457,11 @@ async def _alpha_send_review_tool_result(
                 "and confirmed=true are required"
             ),
         )
-    if raw_ref == AQUB_GENERAL_CUBE0_RECOVERY_INSTALLATION_REF:
-        if request is None:
-            return _tool_error_result(
-                request_id=request_id,
-                code="aqub_general_cube0_recovery_request_missing",
-                message="AQUB General Cube 0 recovery failed closed",
-            )
-
-        async def replay_update(update: JsonObject) -> JsonObject:
-            secret = settings.telegram_aqub_webhook_secret.get_secret_value()
-            if not secret:
-                raise AQUBGeneralReleaseReplayError(
-                    "aqub_general_cube0_recovery_webhook_secret_missing"
-                )
-            transport = httpx.ASGITransport(
-                app=request.app,
-                raise_app_exceptions=False,
-            )
-            async with httpx.AsyncClient(
-                transport=transport,
-                base_url="http://gate.internal",
-                timeout=40.0,
-            ) as internal_client:
-                response = await internal_client.post(
-                    AQUB_TELEGRAM_WEBHOOK_PATH,
-                    json=update,
-                    headers={
-                        "X-Telegram-Bot-Api-Secret-Token": secret,
-                        "X-AQUB-Recovery-Diagnostic": "cube0-v1",
-                    },
-                )
-            if response.status_code != 200:
-                raise AQUBGeneralReleaseReplayError(
-                    "aqub_general_cube0_recovery_ingress_failed"
-                )
-            try:
-                value = response.json()
-            except ValueError as exc:
-                raise AQUBGeneralReleaseReplayError(
-                    "aqub_general_cube0_recovery_ingress_failed"
-                ) from exc
-            if not isinstance(value, dict):
-                raise AQUBGeneralReleaseReplayError(
-                    "aqub_general_cube0_recovery_ingress_failed"
-                )
-            return {str(key): item for key, item in value.items()}
-
-        try:
-            payload = await recover_aqub_general_cube0(
-                session=session,
-                installation_ref=raw_ref,
-                turn_ref=raw_turn,
-                expected_candidate_sha256=raw_digest,
-                confirmed=True,
-                replay_update=replay_update,
-            )
-        except AQUBGeneralReleaseReplayError as exc:
-            await session.rollback()
-            return _tool_error_result(
-                request_id=request_id,
-                code=exc.code,
-                message="AQUB General Cube 0 recovery failed closed",
-            )
-        return _tool_result(
-            payload,
-            (
-                f"AQUB General Cube 0 recovery: {payload['state']}; "
-                f"replay={payload['replay']}"
-            ),
-            request_id,
-        )
-
-    if raw_ref == AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF:
-        try:
-            async with httpx.AsyncClient() as http_client:
-                payload = await send_aqub_general_release_replay(
-                    session=session,
-                    settings=settings,
-                    http_client=http_client,
-                    installation_ref=raw_ref,
-                    turn_ref=raw_turn,
-                    expected_candidate_sha256=raw_digest,
-                    confirmed=True,
-                )
-        except AQUBGeneralReleaseReplayError as exc:
-            await session.rollback()
-            return _tool_error_result(
-                request_id=request_id,
-                code=exc.code,
-                message="AQUB General release replay failed closed",
-            )
-        return _tool_result(
-            payload,
-            (
-                f"AQUB General release replay: {payload['state']}; "
-                f"replay={payload['replay']}"
-            ),
-            request_id,
+    if isinstance(raw_ref, str) and raw_ref.startswith("aqub-"):
+        return _tool_error_result(
+            request_id=request_id,
+            code="aqub_project_frozen",
+            message="AQUB is frozen and disconnected from Gate",
         )
 
     try:
@@ -2572,28 +2517,11 @@ async def _alpha_verify_review_replay_tool_result(
                 "are required"
             ),
         )
-    if raw_ref == AQUB_GENERAL_RELEASE_REPLAY_INSTALLATION_REF:
-        try:
-            payload = await verify_aqub_general_release_replay(
-                session=session,
-                installation_ref=raw_ref,
-                turn_ref=raw_turn,
-                expected_candidate_sha256=raw_digest,
-            )
-        except AQUBGeneralReleaseReplayError as exc:
-            await session.rollback()
-            return _tool_error_result(
-                request_id=request_id,
-                code=exc.code,
-                message="AQUB General replay verification failed closed",
-            )
-        return _tool_result(
-            payload,
-            (
-                f"AQUB General replay proof: {payload['state']}; "
-                f"replay={payload['replay']}"
-            ),
-            request_id,
+    if isinstance(raw_ref, str) and raw_ref.startswith("aqub-"):
+        return _tool_error_result(
+            request_id=request_id,
+            code="aqub_project_frozen",
+            message="AQUB is frozen and disconnected from Gate",
         )
 
     try:
@@ -3148,6 +3076,9 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "description": (
             "Return one scoped RU/BY conversation as a chronological text, voice "
             "and attachment timeline. Attachment metadata is listed without a "
+            "provider call. Immediate same-chat reply snapshots and quoted excerpts "
+            "identify the original text or document, even outside the history page. "
+            "Unavailable reply sources are explicit. Attachment metadata needs no "
             "provider call; an exact task:attachment:message:index selector retrieves "
             "one file on explicit request. Existing exact voice and latest call/voice "
             "selectors remain available for compatibility."
@@ -3406,8 +3337,8 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
         "name": "gate_prepare_reply_document",
         "title": "Prepare one Gate Business document",
         "description": (
-            "Stage one selected local PDF or ZIP; choose caption_format=plain (literal) or markdown. "
-            "Omitting caption_format keeps the legacy literal caption contract without a preview. "
+            "Stage one original PDF/ZIP, Excel/Word/PowerPoint or JPEG/PNG/WEBP/GIF file as a document; "
+            "No conversion/compression. Max 8 MiB; private staging 24 hours. Use caption_format=plain or markdown. Omitting it preserves legacy literal captions. "
             "Returns saved caption text/entities/version/hash; max 1024 UTF-16 units after conversion. "
             "Pass its formatting.payload_sha256 to approved send after showing the preview. "
             "The base64 bytes are accepted only in this upload argument, never "
@@ -3419,7 +3350,7 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
                 "filename": {"type": "string", "minLength": 1, "maxLength": 255},
-                "media_type": {"type": "string", "enum": ["application/pdf", "application/zip"]},
+                "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
                 "content_base64": {"type": "string", "minLength": 1, "maxLength": 11184812},
                 "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 "caption": {"type": "string", "maxLength": 65536, "default": ""},
@@ -3871,7 +3802,7 @@ async def _prepare_reply_document_tool_result(
         (
             f"Document prepared; not sent. Account {prepared.account_label}; "
             f"recipient {prepared.recipient_chat_id}; file {prepared.filename}; "
-            f"MIME {prepared.media_type}; size {prepared.size_bytes}; "
+            f"mode document (original file); MIME {prepared.media_type}; size {prepared.size_bytes}; "
             f"SHA-256 {prepared.sha256}; caption {prepared.caption!r}. "
             "Show these exact values to Mark for confirmation."
         ),
@@ -4445,6 +4376,8 @@ def _format_reply_context_text(context: JsonObject) -> str:
                 f"[{direction}] {message['text_preview'] or '<empty>'}",
             ]
         )
+        if message.get("reply_to") is not None:
+            lines.extend(format_telegram_reply(message["reply_to"]))
         for attachment in message.get("attachments", []):
             availability = (
                 "available on request"

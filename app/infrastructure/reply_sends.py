@@ -5,6 +5,7 @@ import json
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.document_formats import DOCUMENT_TYPES
 from app.application.reply_sends import (
     ReplySendError,
     ReplySendResult,
@@ -411,12 +413,16 @@ class SqlTelegramReplySender:
     async def _probe_connection(self, intent: _SendIntent) -> _ConnectionProbe:
         """Validate Telegram connection rights without any database transaction."""
 
+        bound_connection_id = None
+        if intent.context.media is not None:
+            bound_connection_id = intent.context.media["snapshot"]["scope"]["connection_id"]
+        elif isinstance(intent.context.formatting, RichPreview):
+            bound_connection_id = intent.context.formatting.scope["connection_id"]
         validation_unavailable = False
         for candidate in intent.candidates:
             if (
-                isinstance(intent.context.formatting, RichPreview)
-                and candidate.business_connection_id
-                != intent.context.formatting.scope["connection_id"]
+                bound_connection_id is not None
+                and candidate.business_connection_id != bound_connection_id
             ):
                 continue
             self._require_provider_outside_transaction()
@@ -1085,13 +1091,22 @@ class SqlTelegramReplySender:
             item_statement = item_statement.with_for_update()
         rows = list((await self._session.scalars(item_statement)).all())
         snapshot = deepcopy(package.snapshot_json)
+        # A reconnect can invalidate an unsent approval. Once an attempt exists,
+        # its original connection identifies the receipt even after reconnect.
+        attempted_connection_id = await self._session.scalar(
+            select(SendAttempt.business_connection_id).where(
+                SendAttempt.reply_draft_id == draft.id
+            )
+        )
         expected_scope = {
             "workspace_id": command.principal.access_scope.workspace_id,
             "account_id": str(draft.account_id),
             "project_id": str(draft.project_id),
             "principal_subject": command.principal.subject,
             "recipient_chat_id": trigger.sender_id,
-            "connection_id": conversation.business_connection_id or trigger.business_connection_id,
+            "connection_id": attempted_connection_id
+            or conversation.business_connection_id
+            or trigger.business_connection_id,
             "draft_id": str(draft.id),
             "draft_revision": 1,
             "execution_id": package.execution_id,
@@ -1820,8 +1835,15 @@ class SqlTelegramReplySender:
 
     def _validate_context_delivery(self, context: _SendContextSnapshot) -> None:
         if context.media is not None:
+            if not self._settings.gate_reply_media_send_enabled:
+                raise ReplySendError(
+                    code="media_send_disabled", message="Business media sending is disabled"
+                )
             media = context.media
-            if media["mode"].startswith("rich_") and not self._settings.gate_rich_send_enabled:
+            if media["mode"].startswith("rich_") and not (
+                self._settings.gate_rich_send_enabled
+                and self._settings.gate_rich_media_send_enabled
+            ):
                 raise ReplySendError(
                     code="rich_send_disabled", message="Rich Business sending is disabled"
                 )
@@ -1859,6 +1881,9 @@ class SqlTelegramReplySender:
                 or context.document_size_bytes != len(context.document_data)
                 or hashlib.sha256(context.document_data).hexdigest() != context.document_sha256
                 or context.draft_text != context.document_filename
+                or DOCUMENT_TYPES.get(
+                    PurePosixPath(context.document_filename or "").suffix.lower()
+                ) != context.document_media_type
             ):
                 raise ReplySendError(
                     code="document_unavailable",
@@ -2260,7 +2285,9 @@ def _assess_media_provider_result(
     messages: list[dict[str, Any]] = []
     positions: dict[int, int | None] = {}
     seen: set[int] = set()
-    complete = result.get("ok") is True and len(raw_messages) == media["expected_message_count"]
+    expected_count = media["expected_message_count"]
+    cardinality_matches = len(raw_messages) == expected_count
+    complete = result.get("ok") is True and cardinality_matches
     group_ids: set[str] = set()
     ordered_ids: list[int] = []
     for index, message in enumerate(raw_messages):
@@ -2317,9 +2344,13 @@ def _assess_media_provider_result(
                 continue
             for item in receipt_items:
                 item.update({"outcome": "sent", "provider_message_id": str(message_id)})
-    if media["mode"] == "album" and (len(group_ids) != 1 or ordered_ids != sorted(ordered_ids)):
+    if media["mode"] == "album" and (
+        not cardinality_matches
+        or len(group_ids) != 1
+        or ordered_ids != sorted(ordered_ids)
+    ):
         complete = False
-        # A wrong group/order cannot prove the requested album item linkage.
+        # A missing result, a wrong group or a wrong order makes positions ambiguous.
         for item in receipt_items:
             item.update(
                 {"outcome": "unknown", "provider_message_id": None, "provider_media_group_id": None}
@@ -2327,7 +2358,7 @@ def _assess_media_provider_result(
         positions = dict.fromkeys(positions)
     complete = (
         complete
-        and len(messages) == media["expected_message_count"]
+        and len(messages) == expected_count
         and all(item["outcome"] == "sent" for item in receipt_items)
     )
     return {
