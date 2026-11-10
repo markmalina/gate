@@ -136,6 +136,24 @@ async def _get(path: str):
 
 
 @pytest.mark.anyio
+async def test_mcp_bounds_declared_and_streamed_bodies_before_json(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.mcp_routes._MAX_MCP_BODY_BYTES", 48)
+
+    async def chunks():
+        yield b"x" * 32
+        yield b"x" * 32
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="https://gate.example"
+    ) as client:
+        declared = await client.post("/mcp", content=b"x" * 64)
+        streamed = await client.post("/mcp", content=chunks())
+        invalid = await client.post("/mcp", content=b"invalid")
+    assert declared.status_code == streamed.status_code == 413
+    assert invalid.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
     response = await _get("/.well-known/oauth-protected-resource/mcp")
 
@@ -153,6 +171,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_get_owner_reply_readiness",
+        "gate_preview_reply_media",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
@@ -162,6 +181,7 @@ async def test_oauth_metadata_advertises_only_active_scopes_and_tools() -> None:
     assert payload["mcp"]["write_tools"] == [
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_get_test_group_presence",
@@ -192,6 +212,8 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -206,6 +228,13 @@ async def test_chatgpt_can_initialize_and_scan_tools_before_oauth() -> None:
         "gate_beta_export_space_checkpoint",
         "gate_beta_get_provider_probe",
     ]
+    media_tools = {tool["name"]: tool for tool in tools if tool["name"] in {
+        "gate_prepare_reply_media", "gate_preview_reply_media"
+    }}
+    assert media_tools["gate_preview_reply_media"]["securitySchemes"] == [
+        {"type": "oauth2", "scopes": ["gate:inbox:read"]}
+    ]
+    tools = [tool for tool in tools if tool["name"] not in media_tools]
     assert tools[0]["securitySchemes"] == [
         {"type": "oauth2", "scopes": ["gate:status:read"]}
     ]

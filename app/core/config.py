@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     )
     gate_send_enabled: bool = Field(default=True, validation_alias="GATE_SEND_ENABLED")
     gate_rich_send_enabled: bool = Field(default=False, validation_alias="GATE_RICH_SEND_ENABLED")
+    gate_rich_media_send_enabled: bool = Field(
+        default=False, validation_alias="GATE_RICH_MEDIA_SEND_ENABLED"
+    )
+    gate_reply_media_send_enabled: bool = Field(
+        default=True, validation_alias="GATE_REPLY_MEDIA_SEND_ENABLED"
+    )
     gate_document_send_enabled: bool = Field(
         default=False, validation_alias="GATE_DOCUMENT_SEND_ENABLED"
     )

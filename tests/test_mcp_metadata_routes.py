@@ -46,6 +46,7 @@ async def test_oauth_protected_resource_metadata() -> None:
     assert payload["mcp"]["write_tools"] == [
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_get_test_group_presence",
@@ -80,6 +81,7 @@ async def test_oauth_protected_resource_mcp_metadata() -> None:
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_get_owner_reply_readiness",
+        "gate_preview_reply_media",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
@@ -121,6 +123,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
         "gate_list_unanswered",
         "gate_get_reply_context",
         "gate_get_owner_reply_readiness",
+        "gate_preview_reply_media",
         "gate_alpha_list_installations",
         "gate_alpha_get_webhook_status",
         "gate_alpha_list_shadow_reviews",
@@ -130,6 +133,7 @@ async def test_mcp_metadata_debug_endpoint(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["tools"]["write"] == [
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
         "gate_alpha_control_installation",
         "gate_alpha_run_model_preflight",
         "gate_alpha_get_test_group_presence",

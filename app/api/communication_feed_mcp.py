@@ -163,7 +163,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
 @router.post("/mcp")
 async def communication_feed_mcp_endpoint(
     request: Request,
-    payload: JsonObject,
+    payload: Annotated[JsonObject, Depends(mcp_routes._read_mcp_request)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
