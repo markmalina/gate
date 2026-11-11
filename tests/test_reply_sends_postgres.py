@@ -28,9 +28,11 @@ from app.application.reply_sequences import (
 )
 from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
+from app.infrastructure.dialog_snapshots import dialog_snapshot
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
+from app.models import canonical, relationship_crm  # noqa: F401
 from app.models.domain import (
     Account,
     AuditLog,
@@ -76,6 +78,7 @@ class _SeededReply:
     draft_ids: tuple[UUID, ...]
     business_connection_id: str
     recipient_chat_id: str
+    context_snapshot: str = ""
 
 
 @asynccontextmanager
@@ -211,6 +214,12 @@ async def _seed_reply(
             )
         )
         await session.flush()
+        conversation = await session.get(Conversation, conversation_id)
+        assert conversation is not None
+        context_snapshot = await dialog_snapshot(session, scope=AccessScope(
+            workspace_id="mark-personal", account_ids=frozenset({account_id}),
+            project_ids=frozenset({project_id}),
+        ), conversation=conversation)
         session.add_all(
             [
                 ReplyDraft(
@@ -225,7 +234,7 @@ async def _seed_reply(
                     draft_text=(
                         draft_text if draft_text is not None else f"Approved draft {index}"
                     ),
-                    prompt_context={},
+                    prompt_context={"dialog_snapshot": context_snapshot},
                 )
                 for index, draft_id in enumerate(draft_ids, start=1)
             ]
@@ -242,10 +251,11 @@ async def _seed_reply(
         draft_ids=draft_ids,
         business_connection_id=connection_id,
         recipient_chat_id=recipient,
+        context_snapshot=context_snapshot,
     )
 
 
-async def _add_reply_task_in_same_conversation(
+async def _add_reply_task_and_review_current_dialog(
     sessions: async_sessionmaker[AsyncSession],
     *,
     seed: _SeededReply,
@@ -302,6 +312,18 @@ async def _add_reply_task_in_same_conversation(
         conversation.requires_reply = True
         conversation.last_inbound_at = received_at
         conversation.last_message_at = received_at
+        # These concurrency/binding fixtures explicitly review the newer dialog
+        # for every draft. Stale baseline behavior has separate ingress tests.
+        await session.flush()
+        reviewed = await dialog_snapshot(
+            session, scope=_command(seed, seed.draft_ids[0]).principal.access_scope,
+            conversation=conversation,
+        )
+        drafts = (await session.scalars(select(ReplyDraft).where(
+            ReplyDraft.id.in_(seed.draft_ids + (draft_id,)),
+        ))).all()
+        for draft in drafts:
+            draft.prompt_context = {**(draft.prompt_context or {}), "dialog_snapshot": reviewed}
         await session.commit()
     return task_id, draft_id
 
@@ -339,6 +361,7 @@ def _save_draft_command(seed: _SeededReply, text_value: str) -> SaveReplyDraftCo
         ),
         task_id=seed.task_id,
         text=text_value,
+        expected_context_snapshot=seed.context_snapshot,
     )
 
 
@@ -605,7 +628,9 @@ async def test_fifty_reply_drafts_commit_atomically_in_requested_order() -> None
 
 
 @pytest.mark.anyio
-async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send() -> None:
+async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send(
+    monkeypatch,
+) -> None:
     class DistinctTelegram(_LiteralRecordingTelegram):
         async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
             self.plain_calls.append(kwargs)
@@ -622,6 +647,15 @@ async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send(
 
         telegram = DistinctTelegram()
         observed_at = datetime.now(UTC)
+        from app.infrastructure import reply_sends, reply_sequence_state
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return observed_at + timedelta(minutes=position + 1)
+
+        monkeypatch.setattr(reply_sends, "datetime", Clock)
+        monkeypatch.setattr(reply_sequence_state, "datetime", Clock)
         for position in range(50):
             assert await run_reply_sequence_once(
                 settings=_settings(),
@@ -654,7 +688,7 @@ async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send(
 async def test_fiftieth_draft_binding_mismatch_cannot_partially_queue() -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions, draft_count=50)
-        _, other_draft = await _add_reply_task_in_same_conversation(
+        _, other_draft = await _add_reply_task_and_review_current_dialog(
             sessions, seed=seed
         )
         command = _sequence_command(seed, seed.draft_ids[:49] + (other_draft,))
@@ -693,7 +727,7 @@ async def _attach_document(
         assert draft is not None
         draft.source = "chatgpt-mcp-document"
         draft.draft_text = filename
-        draft.prompt_context = {"kind": "document"}
+        draft.prompt_context = {**(draft.prompt_context or {}), "kind": "document"}
         session.add(
             ReplyDocument(
                 reply_draft_id=draft.id,
@@ -1105,7 +1139,7 @@ async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
             assert len(completed) == 1
             blocked_error = next(iter(completed)).exception()
             assert isinstance(blocked_error, ReplySendError)
-            assert blocked_error.code == "task_send_blocked"
+            assert blocked_error.code == "context_changed"
         finally:
             telegram.release_probes.set()
             telegram.release_send.set()
@@ -1118,7 +1152,7 @@ async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
         assert successes[0].sent is True
         assert successes[0].idempotent_replay is False
         assert len(failures) == 1
-        assert failures[0].code == "task_send_blocked"
+        assert failures[0].code == "context_changed"
         assert telegram.probe_calls == 2
         assert telegram.send_calls == 1
 
@@ -1138,7 +1172,7 @@ async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
 async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
-        second_task_id, second_draft_id = await _add_reply_task_in_same_conversation(
+        second_task_id, second_draft_id = await _add_reply_task_and_review_current_dialog(
             sessions,
             seed=seed,
         )
@@ -1180,7 +1214,7 @@ async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() ->
             assert len(completed) == 1
             blocked_error = next(iter(completed)).exception()
             assert isinstance(blocked_error, ReplySendError)
-            assert blocked_error.code == "task_send_blocked"
+            assert blocked_error.code == "context_changed"
         finally:
             telegram.release_probes.set()
             telegram.release_send.set()
@@ -1202,7 +1236,7 @@ async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() ->
         assert successes[0].sent is True
         assert successes[0].idempotent_replay is False
         assert len(failures) == 1
-        assert failures[0].code == "task_send_blocked"
+        assert failures[0].code == "context_changed"
         assert telegram.probe_calls == 2
         assert telegram.send_calls == 1
 
@@ -1718,7 +1752,7 @@ async def test_new_inbound_during_probe_changes_context_before_reservation() -> 
             telegram.release_probe.set()
             with pytest.raises(ReplySendError) as exc_info:
                 await asyncio.wait_for(send, timeout=5)
-            assert exc_info.value.code == "send_context_changed"
+            assert exc_info.value.code == "context_changed"
         finally:
             telegram.release_probe.set()
             if not send.done():
@@ -2227,3 +2261,4 @@ async def test_document_mime_substitution_is_rejected_before_provider_io() -> No
                     settings=Settings(_env_file=None, GATE_DOCUMENT_SEND_ENABLED=True),
                 ).send(_document_command(seed, data))
         assert telegram.calls == []
+

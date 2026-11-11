@@ -187,7 +187,9 @@ async def test_existing_durable_update_reads_as_scoped_contact() -> None:
     stored_update = SimpleNamespace(payload=update())
     session = FakeSession([
         [(task, conversation, message, stored_update,
-          SimpleNamespace(id=ACCOUNT_ID, alias="telegram_mark_ru", country_code="RU"),
+          SimpleNamespace(
+            id=ACCOUNT_ID, alias="telegram_mark_ru", country_code="RU", telegram_user_id=999,
+        ),
           "Отправитель")],
         [(message, stored_update, None, None, "Отправитель")],
         [],
@@ -217,3 +219,28 @@ async def test_existing_durable_update_reads_as_scoped_contact() -> None:
         MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"],
         format_checker=FormatChecker(),
     ).validate(context)
+
+
+@pytest.fixture(autouse=True)
+def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
+    async def snapshot(*args, **kwargs):
+        return "dialog-v1:" + "0" * 64
+    async def events(*args, **kwargs):
+        return [], False, True
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
+    monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)
+
+
+@pytest.fixture(autouse=True)
+def stub_readset_issue_for_chronology_units(monkeypatch):
+    async def issue(*args, **kwargs):
+        return None
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", issue)
+
+    async def no_sequences(*args, **kwargs):
+        return []
+
+    # Contact chronology has no draft journal; S4 SQL tests cover series status.
+    monkeypatch.setattr(
+        "app.infrastructure.reply_sequence_state.scoped_sequence_status", no_sequences,
+    )

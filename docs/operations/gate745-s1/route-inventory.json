@@ -1,0 +1,321 @@
+{
+  "schemaVersion": "gate745.s1-source-packet/v1",
+  "observedAt": "2026-10-19T09:42:00Z",
+  "executionId": "gate-745-snapshot-20261008T1458Z",
+  "scope": "S1_ONLY",
+  "state": "BLOCKED_DEPENDENCY_NOT_SOURCE_READY",
+  "runtimeEffects": [],
+  "independentVerdict": null,
+  "repositories": {
+    "gate": {
+      "name": "markmalina/gate",
+      "id": 1293746267,
+      "ownerId": 23397294,
+      "main": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "mainTree": "7b5ddc0e6317fc475e2256953a69a07b109463dc",
+      "candidate": "605f136970a8334b73e2a670f45e42e2514befc8",
+      "candidateTree": "270bc16295496231e48097f4f812efb89983c64a"
+    },
+    "ops": {
+      "name": "markmalina/ops",
+      "id": 1331657982,
+      "ownerId": 23397294,
+      "main": "b2d0587126488cebb0ff48e16ba397cd7e97e27f",
+      "mainTree": "1441501e84bc4926cd99177bda655f1a59510ced",
+      "patchBase": "a58d84798d0471792d391987c27a3cd2f6e7bb03"
+    }
+  },
+  "identities": {
+    "owner": {
+      "login": "markmalina",
+      "id": 23397294
+    },
+    "requester": {
+      "login": "alphacenter-ops-reviewer[bot]",
+      "id": 316468440,
+      "appId": 4578389
+    },
+    "historicalOwner": {
+      "login": "AlphaCenter",
+      "id": 310893851
+    },
+    "independentReviewRepository": "AlphaCenter/delta"
+  },
+  "routes": [
+    {
+      "id": "ordinary751",
+      "installed": true,
+      "source": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "workflow": ".github/workflows/ops-deploy.yml",
+      "blob": "1a1dac30eb1b1d75f632ae9d58bfcc8b997bda63",
+      "opsSource": "512decbbd81d1d824563af995fc0df435fbf2429",
+      "opsFiles": [
+        {
+          "path": "agent-ops/actions/gate-deploy/action.yml",
+          "blob": "4cbf96b5fb61f8e215e54cc4e3eded4ae3e95e60"
+        },
+        {
+          "path": "agent-ops/actions/gate-deploy/gate-deploy.mjs",
+          "blob": "8230f1fbda14813f3d6767175177dc0a6471a5bc"
+        }
+      ],
+      "environment": "gate-production",
+      "permissions": {
+        "contents": "read",
+        "issues": "read"
+      },
+      "actorId": 23397294,
+      "app": null,
+      "credentials": [
+        "existing Gate Railway binding",
+        "ephemeral Gate GITHUB_TOKEN"
+      ],
+      "effects": [
+        "DEPLOY_CURRENT_MAIN for exact fixed Gate target"
+      ],
+      "admissionState": "CURRENT_PERSONAL_CALLER_IN_SOURCE",
+      "liveState": "NOT_RUN_IN_S1",
+      "doesNotAuthorize": [
+        "snapshot cutover",
+        "readonly preflight",
+        "0116"
+      ]
+    },
+    {
+      "id": "snapshot745",
+      "installed": true,
+      "source": "86dbc0f429dce089bf733fc422f20f556535895b",
+      "workflow": ".github/workflows/gate-snapshot-cutover.yml",
+      "blob": "49c9f6643b148b6e2c610b69f9fad66f36d1fa8f",
+      "lock": {
+        "path": "agent-ops.gate-snapshot.lock.json",
+        "blob": "2d323c89022b4644a5ada12efb6ea632e7301ea0"
+      },
+      "opsSource": "b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85",
+      "installedRelease": {
+        "blob": "e5931366b63523825e521603745907efd15f97ea",
+        "schemaVersion": "agent-ops.gate-snapshot-release/v1",
+        "operation": "gate-snapshot-cutover",
+        "enabled": false,
+        "fixtureAcceptance": "PENDING",
+        "independentSourceReview": "ACCEPT",
+        "reviewedExecutorSourceSha": "6957e465b905f3b26771db32fce48e83d12354a2",
+        "allocationPolicy": null,
+        "contract": {
+          "schemaVersion": "agent-ops.gate-snapshot-cutover/v1",
+          "target": "gate",
+          "ownerOnlyMode": true,
+          "baselineSha": "8e6b870e5038140a8654eb6bd9a52106ca2362f5",
+          "candidateSha": "303a7aca19513070235a943bd5c798e9f4bf1b84",
+          "migration": "0116_reply_dialog_versions"
+        }
+      },
+      "opsMainRelease": {
+        "blob": "d24afde6020a7f194166bc6c71167e8e398e2519",
+        "schemaVersion": "agent-ops.gate-snapshot-release/v1",
+        "operation": "gate-snapshot-cutover",
+        "enabled": false,
+        "fixtureAcceptance": "PENDING",
+        "independentSourceReview": "PENDING",
+        "reviewedExecutorSourceSha": null,
+        "allocationPolicy": null,
+        "contract": {
+          "schemaVersion": "agent-ops.gate-snapshot-cutover/v1",
+          "target": "gate",
+          "ownerOnlyMode": true,
+          "baselineSha": "8e6b870e5038140a8654eb6bd9a52106ca2362f5",
+          "candidateSha": "303a7aca19513070235a943bd5c798e9f4bf1b84",
+          "migration": "0116_reply_dialog_versions"
+        }
+      },
+      "environment": "gate-production",
+      "permissions": {
+        "contents": "read",
+        "actions": "read",
+        "issues": "read"
+      },
+      "requesterApp": 4578389,
+      "planActorId": 316468440,
+      "approverActorId": 23397294,
+      "terminalVerifierEnvironment": null,
+      "effects": [
+        "source-admitted readonly observation after separate authorization",
+        "disabled fixed flag/fleet/backup/0116 cutover after separate gates"
+      ],
+      "admissionState": "E_CALLER_FOR_CURRENT_PERSONAL_CONTEXT",
+      "liveState": "NOT_RUN_IN_S1"
+    },
+    {
+      "id": "P762",
+      "installed": false,
+      "source": "e28b1db0776d0dd1f2a20b2247d6179938e4627f",
+      "tree": "5fefecc054b8341989dfdf32069f9730fd682524",
+      "workflow": ".github/workflows/gate745-native-fixture.yml",
+      "blob": "6466e8b0752ad07ee1e4f7f2c5602f8f872e0183",
+      "callerBlob": "ccc1a36d02b1fa3eb7f98cd3d97a6637a83c2c33",
+      "controllerPin": "7ec459467b606ac67ec2110289e9018fa322b8fa",
+      "ownerId": 310893851,
+      "environment": null,
+      "sourcePermissions": {
+        "contents": "read"
+      },
+      "unreachableFixturePermissions": {
+        "contents": "read",
+        "actions": "read",
+        "issues": "write",
+        "id-token": "write"
+      },
+      "effectBarrier": "unconditional E_CALLER_UNBOUND plus if:false",
+      "liveState": "NOT_RUN_IN_S1"
+    },
+    {
+      "id": "C0760",
+      "installed": false,
+      "source": "7ec459467b606ac67ec2110289e9018fa322b8fa",
+      "tree": "83b2a20bbbf467bf89fb8ff28e9a8aa42ca7c2cb",
+      "workflow": ".github/workflows/gate745-fixture-controller.yml",
+      "blob": "05dfb65fa5cb70fba81717fee44e7de25d38fa8d",
+      "lockBlob": "b89706ae7d401deab1e32d54fda7c7640859cbbf",
+      "opsPin": "b2ca3677ec5f664d9ac0eca2359b4cbcceed605e",
+      "reviewedOpsSource": "56529160b39f92e27779ad2f5e3416c3a63a6947",
+      "sourceLockState": "UNBOUND",
+      "environments": [
+        "gate-production",
+        "gate745-isolated-fixture"
+      ],
+      "permissions": {
+        "contents": "read",
+        "actions": "read",
+        "issues": "write",
+        "id-token": "write"
+      },
+      "opsAppReadAccess": "private Ops and Gate source through existing App",
+      "effectBarrier": "source locks/proposal/grant/reservation and P default-denial",
+      "liveState": "NOT_RUN_IN_S1"
+    },
+    {
+      "id": "H2758",
+      "installed": false,
+      "source": "ac0e2dacefb258cff26095b1fdf58b85ee1c9169",
+      "tree": "270494894bbd62fe9677dca13008476d0135c9d5",
+      "alsoInGuardHead": "605f136970a8334b73e2a670f45e42e2514befc8",
+      "hostedBlob": "590239f8f2cd3edc461b300d0561cdb771ca2e1f",
+      "workflow": null,
+      "githubActionsPermissions": null,
+      "runtimeAuthentication": "signed exact GitHub OIDC; issuer actor23397294; repository1293746267; old owner310893851; exact controller/workflow/audience/run/attempt; durable operation ledger",
+      "effectBarrier": "UNBOUND/default-off; dedicated DB credential after authenticated admission; no production permission",
+      "liveState": "NOT_RUN_IN_S1"
+    },
+    {
+      "id": "originalArtifactLoader",
+      "installedOnOpsMain": true,
+      "reachableFromUninstalledC0": true,
+      "source": "a58d84798d0471792d391987c27a3cd2f6e7bb03",
+      "path": "agent-ops/actions/gate745-fixture-controller/artifact-loader.mjs",
+      "blob": "58ed44ccf1c01bb64fa5d82857fbe5e104259cdb",
+      "origin": "fixed /repos/AlphaCenter/gate; original run1; named artifacts; authenticated source job/metadata/raw and archive digests",
+      "permissions": {
+        "actions": "read",
+        "issues": "read",
+        "contents": "read"
+      },
+      "credential": "ephemeral Gate token; no provider key in loader",
+      "effects": [
+        "bounded GitHub GET only"
+      ],
+      "limits": {
+        "runReads": 1,
+        "jobsReads": 1,
+        "listReads": 1
+      },
+      "liveState": "NOT_RUN_IN_S1"
+    },
+    {
+      "id": "snapshotRequester",
+      "installedViaSnapshotWorkflow": true,
+      "opsSource": "b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85",
+      "path": "agent-ops/actions/github-app-requester/src/main.js",
+      "blob": "91ee790e6464a601ade1623f4a8ba75856f7f2a2",
+      "currentNamespace": "AlphaCenter/gate",
+      "permissions": {
+        "issues": "write"
+      },
+      "appId": 4578389,
+      "actorId": 316468440,
+      "effects": [
+        "App JWT/installation token",
+        "one exact plan command comment"
+      ],
+      "admissionState": "CURRENT_PERSONAL_REPOSITORY_DENIED",
+      "liveState": "NOT_RUN_IN_S1"
+    },
+    {
+      "id": "snapshotTerminalVerifier",
+      "installedViaSnapshotWorkflow": true,
+      "opsSource": "b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85",
+      "path": "agent-ops/actions/gate-snapshot-artifact-verifier/entry.mjs",
+      "blob": "fc0136647a07690604ff172733ff2ee59fe11acf",
+      "environment": null,
+      "permissions": {
+        "contents": "read",
+        "actions": "read",
+        "issues": "read"
+      },
+      "effects": [
+        "fixed GitHub artifact metadata GET",
+        "pure raw-byte receipt verification"
+      ],
+      "forbiddenCredentials": [
+        "Railway token",
+        "App private key"
+      ],
+      "admissionState": "LEGACY_NAMESPACE; artifact identity gaps in pure verifier",
+      "liveState": "NOT_RUN_IN_S1"
+    }
+  ],
+  "authorization": {
+    "legacyProfile": "agent-ops.gate-snapshot-profile/v2",
+    "bodyDigest": "sha256:d8ae2e0e680c3876dd9baf872e5972e868e3b9b83aa7d2b449633f8935922d61",
+    "currentBodyDigest": "sha256:da37bc133eab3aa0bd21bc3ab700490c9f9c82e9c1b04b50ec0b4f3b150721ae",
+    "immutableEvidence": {
+      "repository": "markmalina/ops",
+      "commit": "b0993f9fcd51db33e94a2f2e3bbec28f6b1d8c85",
+      "path": "agent-ops/actions/gate-snapshot-cutover/owner-authorization.fixture.json",
+      "blob": "40da201b018c81b58dc8e93ef829ed7e4ac1e3db"
+    },
+    "authorityRestored": false,
+    "liveGrant": null
+  },
+  "blockers": [
+    {
+      "id": "B1",
+      "owner": "α Gate → α Ops375",
+      "evidence": "https://github.com/markmalina/ops/issues/375#issuecomment-6264008931",
+      "state": "dependency read but explicitly not accepted",
+      "request": "https://github.com/markmalina/ops/issues/375#issuecomment-6264132515"
+    },
+    {
+      "id": "B2",
+      "owner": "α Gate/α Ops; Mark only for authority decision",
+      "state": "immutable original authority reader contract not accepted; legacy digest unchanged"
+    },
+    {
+      "id": "B3",
+      "owner": "α Gate → independent δ",
+      "state": "new exact-source review and required CI/Security pending; old ACCEPT cannot transfer"
+    }
+  ],
+  "certificateFlow": {
+    "order": [
+      "O: accepted exact Ops source",
+      "C0: accepted exact reusable controller",
+      "H2: accepted exact helper",
+      "P: accepted exact caller",
+      "source certificate + separate owner acceptance",
+      "exact effect grant",
+      "original run reservation and B"
+    ],
+    "cycleRule": "no code source SHA inferred from its own manifest; code and binding separate; no install merely to obtain control",
+    "current": "NOT_BOUND"
+  }
+}

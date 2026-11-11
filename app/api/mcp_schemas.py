@@ -38,7 +38,12 @@ def _ref(name: str) -> JsonObject:
 
 
 def _error_schema() -> JsonObject:
-    return _object({"error": {"type": "string", "minLength": 1}})
+    return _object({
+        "error": {"type": "string", "minLength": 1},
+        "sent": {"type": "boolean", "const": False},
+        "current_context": {"type": ["object", "null"]},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 128},
+    }, required=["error"])
 
 
 def _success_or_error(success: JsonObject, definitions: JsonObject) -> JsonObject:
@@ -1807,6 +1812,12 @@ GATE_UNANSWERED_OUTPUT_SCHEMA: JsonObject = {
 
 REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
     {
+        "context_snapshot": {"type": ["string", "null"], "pattern": "^dialog-v1:[0-9a-f]{64}$"},
+        "context_ready": {"type": "boolean"},
+        "context_reason": {"type": ["string", "null"]},
+        "dialog_events_next_cursor": {"type": ["string", "null"]},
+        "dialog_events": {"type": "array", "items": {"type": "object"}},
+        "dialog_events_has_more": {"type": "boolean"},
         "task_id": {"type": "string", "format": "uuid"},
         "task_ref": {"type": "string", "minLength": 1, "maxLength": 8},
         "status": {"type": "string", "minLength": 1},
@@ -1824,6 +1835,9 @@ REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
         "has_more": {"type": "boolean"},
     }
 )
+REPLY_CONTEXT_SUCCESS_SCHEMA["properties"]["reply_sequences"] = {
+    "type": "array", "items": {"type": "object"},
+}
 GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     REPLY_CONTEXT_SUCCESS_SCHEMA,
     {

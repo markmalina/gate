@@ -11,11 +11,12 @@ from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import and_, case, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.application.account_labels import account_label
+from app.application.dialog_snapshots import SNAPSHOT_KEY
 from app.application.document_formats import DOCUMENT_TYPES
 from app.application.reply_sends import (
     ReplySendError,
@@ -31,6 +32,13 @@ from app.application.telegram_formatting import (
 )
 from app.application.telegram_rich import RichPreview
 from app.core.config import Settings
+from app.infrastructure.dialog_snapshots import (
+    bump_dialog_version,
+    dialog_snapshot,
+    require_dialog_snapshot,
+    require_saved_dialog_snapshot,
+)
+from app.infrastructure.reply_sequence_state import stop_sequences
 from app.models.domain import (
     Account,
     AuditLog,
@@ -103,6 +111,7 @@ class _SendContextSnapshot:
     document_data: bytes | None = None
     document_expires_at: datetime | None = None
     formatting: FormattingPreview | None = None
+    dialog_snapshot: str | None = None
     media: dict[str, Any] | None = None
 
     @property
@@ -164,6 +173,7 @@ class _Reservation:
     attempt: _AttemptSnapshot
     business_connection_id: str
     covered_task_ids: tuple[UUID, ...]
+    admission_snapshot: str | None = None
 
 
 class SqlTelegramReplySender:
@@ -183,18 +193,45 @@ class SqlTelegramReplySender:
         self._media_receipts: dict[UUID, dict[str, Any]] = {}
 
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
-        preflight = await self._preflight(command)
-        if isinstance(preflight, ReplySendResult):
-            return preflight
+        try:
+            preflight = await self._preflight(command)
+            if isinstance(preflight, ReplySendResult):
+                return preflight
 
-        probe = await self._probe_connection(preflight)
-        reservation = await self._reserve(
-            command=command,
-            intent=preflight,
-            probe=probe,
-        )
+            probe = await self._probe_connection(preflight)
+            reservation = await self._reserve(
+                command=command,
+                intent=preflight,
+                probe=probe,
+            )
+        except (SQLAlchemyError, OSError, TimeoutError) as exc:
+            await self._session.rollback()
+            raise ReplySendError(
+                code="context_unavailable", message="authoritative_version_unavailable",
+            ) from exc
         if isinstance(reservation, ReplySendResult):
             return reservation
+
+        # A receipt can commit after reservation. Recheck again at dispatch;
+        # a proven refusal before HTTP is FAILED, never UNKNOWN or SENT.
+        try:
+            await self._admit_dispatch(command=command, reservation=reservation)
+        except (ReplySendError, SQLAlchemyError, OSError, TimeoutError) as exc:
+            refusal = exc if isinstance(exc, ReplySendError) else ReplySendError(
+                code="context_unavailable", message="authoritative_version_unavailable",
+            )
+            await self._session.rollback()
+            try:
+                await self._finalize_failure(
+                    command=command, reservation=reservation,
+                    status=SendAttemptStatus.FAILED.value,
+                    error_code=refusal.code, error_detail=refusal.message,
+                )
+            except (SQLAlchemyError, OSError, TimeoutError):
+                # No send occurred. If the journal is also unavailable, preserve
+                # its reservation for conservative UNKNOWN recovery, never retry.
+                await self._session.rollback()
+            raise refusal from exc
 
         self._require_provider_outside_transaction()
         assessment: dict[str, Any] | None = None
@@ -345,6 +382,88 @@ class SqlTelegramReplySender:
                 media_evidence=assessment if reservation.context.media else None,
             )
 
+    async def _admit_dispatch(
+        self, *, command: SendApprovedReplyCommand, reservation: _Reservation,
+    ) -> None:
+        async with self._session.begin():
+            draft, _task, conversation, _trigger, _account = await self._load_context_models(
+                command, for_update=False,
+            )
+            if (
+                (draft.prompt_context or {}).get(SNAPSHOT_KEY)
+                != reservation.context.dialog_snapshot
+            ):
+                raise ReplySendError(
+                    code="context_changed", message="Saved dialog snapshot changed",
+                )
+            if isinstance((draft.prompt_context or {}).get("reply_sequence"), dict):
+                await require_saved_dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    draft=draft, conversation=conversation, lock=True,
+                    current_attempt_id=reservation.attempt.id,
+                )
+            else:
+                await require_dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    conversation=conversation, expected=reservation.admission_snapshot, lock=True,
+                )
+            # Read scalar flags after the fence: the ORM Account above may
+            # predate a committed disable while admission waited for that lock.
+            flags = (await self._session.execute(
+                select(Account.is_active, Account.send_enabled)
+                .where(Account.id == reservation.context.account_id)
+            )).one_or_none()
+            if flags is None or not flags.is_active or not flags.send_enabled:
+                raise ReplySendError(
+                    code="account_send_disabled", message="Sending is disabled for this account",
+                )
+            await self._require_reserved_execution_budget(command, reservation)
+            # Expiry/hashes still apply after waiting for the final fence,
+            # including documents, not only the media transport branch.
+            self._validate_context_delivery(reservation.context)
+
+    async def _require_reserved_execution_budget(
+        self, command: SendApprovedReplyCommand, reservation: _Reservation,
+    ) -> None:
+        if command.execution_id is None and reservation.context.media is None:
+            return
+        from app.models.reply_media import ReplyMediaBudgetReservation, ReplyMediaExecutionBudget
+
+        # Follow this attempt's durable reservation, not a new budget selected
+        # only by the caller's execution id. Scalar columns bypass stale ORM
+        # state. This check never changes counters, deadlines or receipts.
+        budget = (await self._session.execute(
+            select(
+                ReplyMediaExecutionBudget.expires_at,
+                ReplyMediaExecutionBudget.writes_reserved,
+                ReplyMediaExecutionBudget.messages_reserved,
+            )
+            .join(ReplyMediaBudgetReservation,
+                  ReplyMediaBudgetReservation.budget_id == ReplyMediaExecutionBudget.id)
+            .where(
+                ReplyMediaBudgetReservation.send_attempt_id == reservation.attempt.id,
+                ReplyMediaExecutionBudget.workspace_id
+                == command.principal.access_scope.workspace_id,
+                ReplyMediaExecutionBudget.principal_subject == command.principal.subject,
+                ReplyMediaExecutionBudget.execution_id == command.execution_id,
+                ReplyMediaExecutionBudget.write_cap == 12,
+                ReplyMediaExecutionBudget.message_cap == 20,
+                ReplyMediaBudgetReservation.expected_messages == (
+                    reservation.context.media["expected_message_count"]
+                    if reservation.context.media else 1
+                ),
+            )
+        )).one_or_none()
+        if (budget is None or budget.expires_at <= datetime.now(UTC)
+                or budget.writes_reserved < 1 or budget.messages_reserved < (
+                    reservation.context.media["expected_message_count"]
+                    if reservation.context.media else 1
+                )):
+            raise ReplySendError(
+                code="media_execution_expired",
+                message="Current reserved execution budget is required at final admission",
+            )
+
     async def _preflight(
         self,
         command: SendApprovedReplyCommand,
@@ -371,6 +490,23 @@ class SqlTelegramReplySender:
                     idempotent_replay=True,
                 )
             else:
+                draft, _task, conversation, _trigger, _account = await self._load_context_models(
+                    command, for_update=False,
+                )
+                if conversation.chat_id != context.target_chat_id:
+                    raise ReplySendError(
+                        code="context_scope_mismatch",
+                        message="Reviewed dialog does not match the delivery destination",
+                    )
+                await require_saved_dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    draft=draft, conversation=conversation,
+                )
+                if (context.media is not None and
+                    context.media["snapshot"].get("context_snapshot") != context.dialog_snapshot):
+                    raise ReplySendError(
+                        code="context_changed", message="Saved media dialog binding changed",
+                    )
                 await self._raise_if_task_send_blocked(
                     conversation_id=context.conversation_id,
                     task_id=context.task_id,
@@ -496,6 +632,13 @@ class SqlTelegramReplySender:
         replay: ReplySendResult | None = None
         try:
             async with self._session.begin():
+                conversation = await self._session.get(Conversation, intent.context.conversation_id)
+                if conversation is None:
+                    raise ReplySendError(code="context_unavailable", message="Dialog unavailable")
+                await dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    conversation=conversation, lock=True,
+                )
                 await self._lock_reservation_conversation(
                     command=command,
                     conversation_id=intent.context.conversation_id,
@@ -523,6 +666,13 @@ class SqlTelegramReplySender:
                         idempotent_replay=True,
                     )
                 else:
+                    draft, _task, conversation, _trigger, _account = (
+                        await self._load_context_models(command, for_update=False)
+                    )
+                    await require_saved_dialog_snapshot(
+                        self._session, scope=command.principal.access_scope,
+                        draft=draft, conversation=conversation, lock=True,
+                    )
                     await self._raise_if_task_send_blocked(
                         conversation_id=intent.context.conversation_id,
                         task_id=intent.context.task_id,
@@ -645,16 +795,15 @@ class SqlTelegramReplySender:
                 code="task_closed",
                 message="Reply task no longer needs a reply",
             )
-        if current.task_status == ReplyTaskStatus.REPLIED.value and covered_task_ids:
-            raise ReplySendError(
-                code="task_superseded",
-                message=(
-                    "A newer inbound reply task exists; review that context and "
-                    "confirm a draft for the current task"
-                ),
-            )
+        # Pending tasks already covered by the reviewed dialog do not
+        # supersede a follow-up. Snapshot admission and the stable locked
+        # coverage check above reject changes, including new inbound events.
 
         now = datetime.now(UTC)
+        await bump_dialog_version(
+            self._session, connection_id=probe.business_connection_id,
+            chat_id=current.target_chat_id,
+        )
         attempt = SendAttempt(
             id=uuid4(),
             reply_draft_id=current.draft_id,
@@ -671,6 +820,13 @@ class SqlTelegramReplySender:
             started_at=now,
         )
         self._session.add(attempt)
+        draft = await self._session.get(ReplyDraft, current.draft_id)
+        sequence = (draft.prompt_context or {}).get("reply_sequence") if draft else None
+        await stop_sequences(
+            self._session, account_id=current.account_id, chat_id=current.target_chat_id,
+            except_sequence=sequence.get("id") if isinstance(sequence, dict) else None,
+            reason="other_work_send", event_ref=str(attempt.id),
+        )
         await self._reserve_execution_budget(command, attempt, current)
         if (
             isinstance(current.formatting, RichPreview)
@@ -701,6 +857,7 @@ class SqlTelegramReplySender:
                         if current.media
                         else (current.formatting.payload_sha256 if current.formatting else None)
                     ),
+                    SNAPSHOT_KEY: current.dialog_snapshot,
                     **(
                         {
                             "delivery_mode": current.media["mode"] if current.media else "rich",
@@ -718,11 +875,18 @@ class SqlTelegramReplySender:
                 },
             )
         )
+        conversation = await self._session.get(Conversation, current.conversation_id)
+        if conversation is None:
+            raise ReplySendError(code="context_unavailable", message="Dialog is unavailable")
         return _Reservation(
             context=current,
             attempt=_snapshot_attempt(attempt),
             business_connection_id=probe.business_connection_id,
             covered_task_ids=covered_task_ids,
+            admission_snapshot=await dialog_snapshot(
+                self._session, scope=command.principal.access_scope,
+                conversation=conversation,
+            ),
         )
 
     async def _load_concurrent_replay(
@@ -830,6 +994,15 @@ class SqlTelegramReplySender:
     ) -> ReplySendResult:
         finished_at = datetime.now(UTC)
         async with self._session.begin():
+            conversation = await self._session.get(
+                Conversation, reservation.context.conversation_id,
+            )
+            if conversation is None:
+                raise RuntimeError("Reply send context disappeared after delivery")
+            await dialog_snapshot(
+                self._session, scope=command.principal.access_scope,
+                conversation=conversation, lock=True,
+            )
             attempt = await self._load_attempt_by_id(
                 attempt_id=reservation.attempt.id,
                 for_update=True,
@@ -1000,6 +1173,7 @@ class SqlTelegramReplySender:
                         business_connection_id=reservation.business_connection_id,
                         payload={
                             **telegram_result,
+                            "_gate_send_attempt_id": str(attempt.id),
                             "_gate_counterparty": {
                                 "display_name": (reservation.context.counterparty_display_name)
                             },
@@ -1486,6 +1660,7 @@ class SqlTelegramReplySender:
                     code="rich_scope_changed", message="Saved rich approval scope changed"
                 )
         return _SendContextSnapshot(
+            dialog_snapshot=raw_context.get(SNAPSHOT_KEY),
             formatting=formatting,
             media=media,
             draft_id=draft.id,
@@ -1934,6 +2109,11 @@ class SqlTelegramReplySender:
             if isinstance(reservation_metadata, dict)
             else None
         )
+        if (isinstance(reservation_metadata, dict)
+            and reservation_metadata.get(SNAPSHOT_KEY) != context.dialog_snapshot):
+            raise ReplySendError(
+                code="send_attempt_payload_mismatch", message="Saved dialog snapshot changed",
+            )
         if isinstance(reservation_metadata, dict):
             runtime_revision = reservation_metadata.get("runtime_revision")
             reservation_time = reservation_metadata.get("reservation_time")
@@ -2076,6 +2256,7 @@ def _snapshot_attempt(attempt: SendAttempt) -> _AttemptSnapshot:
 
 def _send_fingerprint(context: _SendContextSnapshot) -> tuple[Any, ...]:
     return (
+        context.dialog_snapshot,
         context.draft_id,
         context.draft_text,
         context.draft_status,

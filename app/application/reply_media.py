@@ -18,6 +18,7 @@ from uuid import UUID
 
 from PIL import __version__ as pillow_version
 
+from app.application.dialog_snapshots import snapshot_matches
 from app.application.reply_drafts import ReplyDraftError
 from app.application.reply_media_decoder import (
     MAX_MEDIA_BYTES,
@@ -61,6 +62,7 @@ class PrepareReplyMediaCommand:
     execution_expires_at: datetime
     follow_up: bool = False
     rich_content: dict[str, Any] | None = None
+    expected_context_snapshot: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +171,10 @@ class PrepareReplyMediaService:
     async def execute(self, command: PrepareReplyMediaCommand) -> PreparedReplyMedia:
         if "gate:drafts:write" not in command.principal.scopes:
             raise _error("Scope gate:drafts:write is required", "insufficient_scope")
+        if not snapshot_matches(
+            command.expected_context_snapshot, command.expected_context_snapshot or ""
+        ):
+            raise _error("Read current context before preparing media", "context_snapshot_required")
         scope = command.principal.access_scope
         if not scope.is_explicit:
             raise _error(
@@ -241,6 +247,7 @@ class PrepareReplyMediaService:
                     "execution_id": command.execution_id,
                     "execution_expires_at": deadline.astimezone(UTC).isoformat(),
                     "follow_up": command.follow_up,
+                    "context_snapshot": command.expected_context_snapshot,
                     "items": [
                         {
                             "filename": item.filename,

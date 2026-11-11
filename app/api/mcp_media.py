@@ -41,6 +41,7 @@ PREPARE_INPUT_SCHEMA: JsonObject = {
     "type": "object",
     "properties": {
         "task_id": {"type": "string", "format": "uuid"},
+        "expected_context_snapshot": {"type": "string", "pattern": "^dialog-v1:[0-9a-f]{64}$"},
         "mode": {
             "type": "string",
             "enum": ["photo", "album", "rich_photo", "rich_slideshow", "rich_collage"],
@@ -52,7 +53,15 @@ PREPARE_INPUT_SCHEMA: JsonObject = {
         "follow_up": {"type": "boolean"},
         "rich_content": {"type": "object"},
     },
-    "required": ["task_id", "mode", "items", "staging_key", "execution_id", "execution_expires_at"],
+    "required": [
+        "expected_context_snapshot",
+        "task_id",
+        "mode",
+        "items",
+        "staging_key",
+        "execution_id",
+        "execution_expires_at",
+    ],
     "additionalProperties": False,
 }
 PREVIEW_INPUT_SCHEMA: JsonObject = {
@@ -103,7 +112,12 @@ MEDIA_OUTPUT_SCHEMA: JsonObject = {
         },
         {
             "type": "object",
-            "properties": {"error": {"type": "string"}},
+            "properties": {
+                "error": {"type": "string"},
+                "sent": {"type": "boolean", "const": False},
+                "current_context": {"type": ["object", "null"]},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 128},
+            },
             "required": ["error"],
             "additionalProperties": False,
         },
@@ -177,6 +191,7 @@ async def media_tool_result(
                     execution_expires_at=deadline,
                     follow_up=follow_up,
                     rich_content=rich,
+                    expected_context_snapshot=arguments.get("expected_context_snapshot"),
                 )
             )
             package_id, replay = prepared.package_id, prepared.idempotent_replay
@@ -232,6 +247,17 @@ async def media_tool_result(
         )
         return _result(request_id, content, blocks)
     except ReplyDraftError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            from app.api.mcp_routes import _dialog_context_error_result
+
+            return await _dialog_context_error_result(
+                request_id=request_id,
+                code=exc.code,
+                message=exc.message,
+                principal=principal,
+                session=session,
+                task_id=UUID(arguments["task_id"]) if prepare else None,
+            )
         return _result(
             request_id, {"error": exc.code}, [{"type": "text", "text": exc.message}], error=True
         )

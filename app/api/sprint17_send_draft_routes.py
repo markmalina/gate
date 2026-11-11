@@ -33,7 +33,6 @@ from app.models.domain import (
     TelegramUpdate,
 )
 from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
-from app.application.telegram_rich_media import is_media_draft
 from app.services.telegram import TelegramClient
 
 router = APIRouter()
@@ -101,9 +100,7 @@ async def sprint17_telegram_webhook(
             settings=settings,
             draft_ref=draft_ref,
             account_id=admin_context.scoped_account_id,
-            scope_label="all"
-            if admin_context.is_super_admin
-            else admin_context.account_alias or "unknown",
+            scope_label="all" if admin_context.is_super_admin else admin_context.account_alias or "unknown",
         )
         audit_action = "telegram_admin_console_send_draft_sent"
     else:
@@ -171,12 +168,7 @@ async def _send_draft_reply(
     scope_label: str,
 ) -> str:
     if not settings.gate_send_enabled:
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="blocked",
-            detail="global send disabled",
-        )
+        return _send_result_text(settings=settings, scope_label=scope_label, status="blocked", detail="global send disabled")
 
     rows = await _load_draft_rows_by_ref(
         session=session,
@@ -184,149 +176,16 @@ async def _send_draft_reply(
         account_id=account_id,
     )
     if not rows:
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="not_found",
-            detail=f"draft not found: {draft_ref}",
-        )
+        return _send_result_text(settings=settings, scope_label=scope_label, status="not_found", detail=f"draft not found: {draft_ref}")
     if len(rows) > 1:
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="ambiguous",
-            detail=f"draft reference is ambiguous: {draft_ref}",
-        )
+        return _send_result_text(settings=settings, scope_label=scope_label, status="ambiguous", detail=f"draft reference is ambiguous: {draft_ref}")
 
     draft, task, conversation, trigger_message = rows[0]
-    if (
-        is_media_draft(draft)
-        or FORMAT_KEY in (draft.prompt_context or {})
-        or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
-    ):
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="blocked",
-            detail="saved formatting requires Gate MCP preview/hash confirmation",
-        )
-    if draft.status == ReplyDraftStatus.APPROVED.value:
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="already_sent",
-            detail=f"draft already approved: {str(draft.id)[:8]}",
-        )
-
-    connection, account = await _resolve_send_connection(
-        session=session,
-        account_id=account_id,
-        conversation=conversation,
-        trigger_message=trigger_message,
-    )
-    if connection is None or account is None:
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="blocked",
-            detail="active send connection not found",
-        )
-    if not _account_send_enabled(settings=settings, account_alias=account.alias):
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="blocked",
-            detail=f"send disabled for {account.alias}",
-        )
-    if connection.rights.get("can_reply") is False:
-        return _send_result_text(
-            settings=settings,
-            scope_label=scope_label,
-            status="blocked",
-            detail="business connection can_reply=false",
-        )
-
-    target_chat_id = _resolve_target_chat_id(
-        trigger_message=trigger_message,
-        connection=connection,
-    )
-    try:
-        telegram_result = await telegram.send_message(
-            chat_id=target_chat_id,
-            text=draft.draft_text,
-            business_connection_id=connection.business_connection_id,
-        )
-    except Exception as exc:
-        error_detail = _telegram_exception_detail(exc)
-        session.add(
-            AuditLog(
-                actor="gate",
-                action="reply_draft_send_failed",
-                bot_id=conversation.bot_id,
-                gate_event_id=None,
-                account_id=conversation.account_id,
-                project_id=conversation.project_id,
-                metadata_={
-                    "draft_id": str(draft.id),
-                    "task_id": str(task.id),
-                    "target_chat_id": target_chat_id,
-                    "business_connection_id": connection.business_connection_id,
-                    "error_type": exc.__class__.__name__,
-                    "error_detail": error_detail,
-                },
-            )
-        )
-        return _send_result_text(
-            settings=settings, scope_label=scope_label, status="failed", detail=error_detail
-        )
-
-    now = datetime.now(UTC)
-    draft.status = ReplyDraftStatus.APPROVED.value
-    task.status = ReplyTaskStatus.REPLIED.value
-    task.due_at = None
-    conversation.status = ConversationStatus.REPLIED.value
-    conversation.requires_reply = False
-    conversation.last_outbound_at = now
-    conversation.last_message_at = now
-    session.add(
-        Message(
-            bot_id=conversation.bot_id,
-            gate_event_id=None,
-            account_id=connection.account_id,
-            project_id=conversation.project_id,
-            direction=MessageDirection.OUTBOUND.value,
-            source="gate-approved-draft",
-            event_type="telegram_business_reply",
-            chat_id=target_chat_id,
-            sender_id="gate",
-            recipient_id=target_chat_id,
-            text=draft.draft_text,
-            business_connection_id=connection.business_connection_id,
-            payload=telegram_result,
-            sent_at=now,
-        )
-    )
-    session.add(
-        AuditLog(
-            actor="gate",
-            action="reply_draft_sent_from_telegram",
-            bot_id=conversation.bot_id,
-            gate_event_id=None,
-            account_id=connection.account_id,
-            project_id=conversation.project_id,
-            metadata_={
-                "draft_id": str(draft.id),
-                "task_id": str(task.id),
-                "target_chat_id": target_chat_id,
-                "business_connection_id": connection.business_connection_id,
-            },
-        )
-    )
+    # This legacy route has no immutable snapshot-bound approval or shared
+    # send-attempt journal. Direct delivery would bypass the MCP dispatch guard.
     return _send_result_text(
-        settings=settings,
-        scope_label=scope_label,
-        status="sent",
-        detail=f"draft {str(draft.id)[:8]} → chat {target_chat_id}",
+        settings=settings, scope_label=scope_label, status="blocked",
+        detail="Use Gate MCP: read current context, prepare a snapshot-bound draft and confirm send",
     )
 
 
@@ -364,9 +223,7 @@ async def _load_draft_rows_by_ref(
             )
         )
     result = await session.execute(query)
-    return [
-        (draft, task, conversation, message) for draft, task, conversation, message in result.all()
-    ]
+    return [(draft, task, conversation, message) for draft, task, conversation, message in result.all()]
 
 
 async def _resolve_send_connection(
@@ -432,15 +289,9 @@ async def _origin_connection_allowed_for_scope(
     return trigger_message.chat_id in user_chat_ids or trigger_message.sender_id in user_chat_ids
 
 
-def _resolve_target_chat_id(
-    *, trigger_message: Message, connection: TelegramBusinessConnection
-) -> str:
+def _resolve_target_chat_id(*, trigger_message: Message, connection: TelegramBusinessConnection) -> str:
     owner_chat_id = str(connection.user_chat_id) if connection.user_chat_id is not None else None
-    if (
-        owner_chat_id
-        and trigger_message.chat_id == owner_chat_id
-        and trigger_message.sender_id != owner_chat_id
-    ):
+    if owner_chat_id and trigger_message.chat_id == owner_chat_id and trigger_message.sender_id != owner_chat_id:
         return trigger_message.sender_id
     return trigger_message.chat_id
 

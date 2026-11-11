@@ -1,0 +1,234 @@
+--- a/agent-ops/actions/gate-snapshot-cutover/action-runner.mjs
++++ b/agent-ops/actions/gate-snapshot-cutover/action-runner.mjs
+@@ -21,14 +21,21 @@
+ // trusted only after read-only REST provenance verifies its exact run/actor,
+ // workflow/source/attempt/name and lifetime. No caller-selected endpoint exists.
+ export async function assertPlanProvenance({ githubFetch, transport, plan, lock, env }) {
+-  const run = await githubFetch(`/repos/AlphaCenter/gate/actions/runs/${transport.planRunId}`);
+-  const artifact = await githubFetch(`/repos/AlphaCenter/gate/actions/artifacts/${transport.artifactId}`);
+-  const workflow = await githubFetch('/repos/AlphaCenter/gate/actions/workflows/gate-snapshot-cutover.yml');
++  const run = await githubFetch(`/repos/markmalina/gate/actions/runs/${transport.planRunId}`);
++  const artifact = await githubFetch(`/repos/markmalina/gate/actions/artifacts/${transport.artifactId}`);
++  const workflow = await githubFetch('/repos/markmalina/gate/actions/workflows/gate-snapshot-cutover.yml');
+   if (run.id !== Number(transport.planRunId) || run.run_attempt !== 1 || run.event !== 'issue_comment' ||
+       run.actor?.id !== REQUESTER.id || run.actor.login !== REQUESTER.login ||
+       run.head_sha !== env.GITHUB_SHA || run.head_branch !== 'main' || run.workflow_id !== workflow.id ||
++      run.repository?.id !== 1293746267 || run.repository?.full_name !== 'markmalina/gate' ||
++      run.repository.owner?.id !== 23397294 || run.repository.owner?.login !== 'markmalina' ||
++      run.triggering_actor?.id !== REQUESTER.id || run.triggering_actor?.login !== REQUESTER.login ||
++      run.path !== '.github/workflows/gate-snapshot-cutover.yml' ||
++      workflow.path !== '.github/workflows/gate-snapshot-cutover.yml' ||
+       run.status !== 'completed' || run.conclusion !== 'success' ||
+       artifact.id !== Number(transport.artifactId) || artifact.workflow_run?.id !== run.id ||
++      artifact.workflow_run?.repository_id !== 1293746267 || artifact.workflow_run?.head_repository_id !== 1293746267 ||
++      artifact.workflow_run?.head_sha !== env.GITHUB_SHA ||
+       artifact.expired !== false || artifact.name !== 'gate-snapshot-plan' ||
+       !Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes < 2 || artifact.size_in_bytes > 16384 ||
+       plan.executorSha !== lock.commit || plan.clientSha !== env.GITHUB_SHA ||
+@@ -52,21 +59,29 @@
+   const mutableReleased = release.enabled === true && release.fixtureAcceptance === 'ACCEPT';
+   if (transport.phase === 'apply' && !mutableReleased) fail('E_CAPABILITY_NOT_RELEASED');
+   const contract = validateContract(release.contract);
+-  const gate = gateGithub ?? await gateGithubFactory?.();
+-  if (!gate || typeof gate.resolveMain !== 'function' || typeof gate.assertCandidate !== 'function' ||
+-      typeof gate.assertExecutorRelease !== 'function') fail('E_GITHUB_ADAPTER');
+-  await gate.assertExecutorRelease(lock.commit, release.reviewedExecutorSourceSha);
+-  const provider = suppliedProvider ?? makeFixedProvider({ token: env.RAILWAY_PROJECT_TOKEN, allocationPolicy: release.allocationPolicy, fetchFn });
++  if (env.AGENT_OPS_PROFILE_MODE !== undefined && !['control', 'verify'].includes(env.AGENT_OPS_PROFILE_MODE)) fail('E_PROFILE_MODE');
++  if (env.AGENT_OPS_PROFILE_MODE === 'verify' && transport.phase !== 'apply') fail('E_VERIFY_TRANSPORT');
++  // No App credential factory or provider construction until caller, source,
++  // original authorization and (for apply/verify) artifact admission succeed.
++  async function admittedAdapters() {
++    const gate = gateGithub ?? await gateGithubFactory?.();
++    if (!gate || typeof gate.resolveMain !== 'function' || typeof gate.assertCandidate !== 'function' ||
++        typeof gate.assertExecutorRelease !== 'function') fail('E_GITHUB_ADAPTER');
++    await gate.assertExecutorRelease(lock.commit, release.reviewedExecutorSourceSha);
++    const provider = suppliedProvider ?? makeFixedProvider({ token: env.RAILWAY_PROJECT_TOKEN, allocationPolicy: release.allocationPolicy, fetchFn });
++    return { gate, provider };
++  }
+   async function githubFetch(path) {
+-    if (!/^\/repos\/AlphaCenter\/gate\/(actions\/(runs\/\d+|artifacts\/\d+|workflows\/gate-snapshot-cutover\.yml)|commits\/main|issues\/745)$/u.test(path)) fail('E_GITHUB_SCOPE');
++    if (!/^\/repos\/markmalina\/gate\/(actions\/(runs\/\d+|artifacts\/\d+|workflows\/gate-snapshot-cutover\.yml)|commits\/main|issues\/745)$/u.test(path)) fail('E_GITHUB_SCOPE');
+     const response = await fetchFn(`https://api.github.com${path}`, { method: 'GET', redirect: 'error',
+       headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) });
+     if (!response.ok) fail('E_GITHUB'); return response.json();
+   }
+-  if ((await githubFetch('/repos/AlphaCenter/gate/commits/main')).sha !== env.GITHUB_SHA) fail('E_CLIENT_SOURCE_DRIFT');
+-  assertOwnerAuthorizationBody(await githubFetch('/repos/AlphaCenter/gate/issues/745'), profile);
++  if ((await githubFetch('/repos/markmalina/gate/commits/main')).sha !== env.GITHUB_SHA) fail('E_CLIENT_SOURCE_DRIFT');
++  assertOwnerAuthorizationBody(await githubFetch('/repos/markmalina/gate/issues/745'), profile);
+   const out = resolve(workspace, '.agent-ops/out'); await mkdir(out, { recursive: true });
+   if (transport.phase === 'observe' || (transport.phase === 'plan' && !mutableReleased)) {
++    const { gate, provider } = await admittedAdapters();
+     await provider.authenticate();
+     const inventory = await provider.captureAllocationInventory();
+     const observation = { schemaVersion: 'agent-ops.gate-snapshot-preflight/v1', operation: OP,
+@@ -82,9 +97,10 @@
+   if (env.AGENT_OPS_PROFILE_MODE === 'verify') {
+     if (transport.phase !== 'apply' || !RUN.test(env.AGENT_OPS_RECEIPT_ARTIFACT_ID ?? '') ||
+         !/^sha256:[a-f0-9]{64}$/u.test(env.AGENT_OPS_RECEIPT_DIGEST ?? '')) fail('E_VERIFY_TRANSPORT');
+-    const artifact = await githubFetch(`/repos/AlphaCenter/gate/actions/artifacts/${env.AGENT_OPS_RECEIPT_ARTIFACT_ID}`);
++    const artifact = await githubFetch(`/repos/markmalina/gate/actions/artifacts/${env.AGENT_OPS_RECEIPT_ARTIFACT_ID}`);
+     if (artifact.id !== Number(env.AGENT_OPS_RECEIPT_ARTIFACT_ID) || artifact.workflow_run?.id !== Number(env.GITHUB_RUN_ID) ||
+-        artifact.name !== 'gate-snapshot-receipt' || artifact.expired !== false || artifact.size_in_bytes > 16384) fail('E_RECEIPT_PROVENANCE');
++        artifact.workflow_run?.repository_id !== 1293746267 || artifact.workflow_run?.head_repository_id !== 1293746267 ||
++        artifact.workflow_run?.head_sha !== env.GITHUB_SHA || artifact.name !== 'gate-snapshot-receipt' || artifact.expired !== false || artifact.size_in_bytes > 16384) fail('E_RECEIPT_PROVENANCE');
+     const input = resolve(workspace, '.agent-ops/input/snapshot-receipt/gate-snapshot-receipt.json');
+     const st = await lstat(input);
+     if (!st.isFile() || st.isSymbolicLink() || st.size > 16384 ||
+@@ -97,6 +113,7 @@
+     // First validate all artifact values before using its IDs in read-only queries.
+     verifyReceiptBytes(bytes, env.AGENT_OPS_RECEIPT_DIGEST, contract,
+       { expectedRunId: env.GITHUB_RUN_ID, expectedExecutorSha: lock.commit, live: common });
++    const { gate, provider } = await admittedAdapters();
+     await provider.authenticate();
+     if (await gate.resolveMain(TARGET.repository) !== contract.candidateSha) fail('E_SOURCE_DRIFT');
+     await gate.assertCandidate(contract.candidateSha, contract.baselineSha);
+@@ -132,6 +149,7 @@
+   }
+   if (env.AGENT_OPS_PROFILE_MODE !== undefined && env.AGENT_OPS_PROFILE_MODE !== 'control') fail('E_PROFILE_MODE');
+   if (transport.phase === 'plan') {
++    const { gate, provider } = await admittedAdapters();
+     await provider.authenticate();
+     const state = await provider.observe();
+     if (state.activeDeployments?.length !== 1 || state.activeDeployments[0].sha !== contract.baselineSha ||
+@@ -160,6 +178,7 @@
+   if (!Number.isFinite(issued) || !Number.isFinite(expiry) || current < issued || current > expiry ||
+       expiry - issued !== 30 * 60000 || canonical(plan.contract) !== canonical(contract) ||
+       plan.operation !== OP || canonical(plan.target) !== canonical(TARGET)) fail('E_PLAN_EXPIRED_OR_CHANGED');
++  const { gate, provider } = await admittedAdapters();
+   await provider.authenticate();
+   if (digest('gate-snapshot-state/v1', await provider.observe()) !== plan.stateFingerprint) fail('E_STATE_CHANGED');
+   const receipt = await snapshotCutover({ provider, github: gate,
+--- a/agent-ops/actions/gate-snapshot-cutover/artifact-verifier.mjs
++++ b/agent-ops/actions/gate-snapshot-cutover/artifact-verifier.mjs
+@@ -12,12 +12,18 @@
+       !ID.test(env.GITHUB_RUN_ID ?? '') || !SHA.test(env.GITHUB_SHA ?? '') ||
+       run?.id !== Number(env.GITHUB_RUN_ID) || run.run_attempt !== 1 || run.event !== 'issue_comment' ||
+       run.actor?.id !== 23397294 || run.actor.login !== 'markmalina' || run.head_sha !== env.GITHUB_SHA ||
++      run.repository?.id !== 1293746267 || run.repository?.full_name !== 'markmalina/gate' ||
++      run.repository.owner?.id !== 23397294 || run.repository.owner?.login !== 'markmalina' ||
++      run.triggering_actor?.id !== 23397294 || run.triggering_actor?.login !== 'markmalina' ||
++      run.path !== '.github/workflows/gate-snapshot-cutover.yml' ||
++      workflow?.path !== '.github/workflows/gate-snapshot-cutover.yml' ||
+       run.head_branch !== 'main' || run.workflow_id !== workflow?.id ||
+       !['in_progress','completed'].includes(run.status) || (run.status === 'completed' && run.conclusion !== 'success')) fail('E_ARTIFACT_PROVENANCE');
+   const runTime=Date.parse(run.created_at),receiptTime=Date.parse(receiptArtifact?.created_at),liveTime=Date.parse(liveArtifact?.created_at);
+   if (![runTime,receiptTime,liveTime,now].every(Number.isFinite) || runTime>receiptTime || receiptTime>liveTime || liveTime>now+60000) fail('E_ARTIFACT_TIME');
+   for (const [artifact, id, name] of [[receiptArtifact,receiptId,'gate-snapshot-receipt'],[liveArtifact,liveId,'gate-snapshot-live']]) {
+-    if (artifact?.id !== Number(id) || artifact.workflow_run?.id !== run.id || artifact.expired !== false || artifact.name !== name ||
++    if (artifact?.id !== Number(id) || artifact.workflow_run?.id !== run.id || artifact.workflow_run?.repository_id !== 1293746267 || artifact.workflow_run?.head_repository_id !== 1293746267 ||
++        artifact.workflow_run?.head_sha !== env.GITHUB_SHA || artifact.expired !== false || artifact.name !== name ||
+         !Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes < 2 || artifact.size_in_bytes > 16384) fail('E_ARTIFACT_PROVENANCE');
+   }
+ }
+--- a/agent-ops/actions/gate-snapshot-cutover/caller-context.mjs
++++ b/agent-ops/actions/gate-snapshot-cutover/caller-context.mjs
+@@ -15,17 +15,25 @@
+ export const digest = (domain, value) => `sha256:${createHash('sha256').update(`${domain}\0${canonical(value)}`).digest('hex')}`;
+ 
+ export function assertCaller(env, event, lock, workflowBytes, profileBytes) {
+-  if (env.GITHUB_REPOSITORY !== 'AlphaCenter/gate' || env.GITHUB_REF !== 'refs/heads/main' ||
++  if (env.GITHUB_REPOSITORY !== 'markmalina/gate' ||
++      env.GITHUB_REPOSITORY_ID !== '1293746267' ||
++      env.GITHUB_REPOSITORY_OWNER !== 'markmalina' || env.GITHUB_REPOSITORY_OWNER_ID !== '23397294' || env.GITHUB_REF !== 'refs/heads/main' ||
+       env.GITHUB_EVENT_NAME !== 'issue_comment' || env.GITHUB_RUN_ATTEMPT !== '1' ||
+       !SHA.test(env.GITHUB_SHA ?? '') || !RUN.test(env.GITHUB_RUN_ID ?? '') ||
+-      env.GITHUB_WORKFLOW_REF !== 'AlphaCenter/gate/.github/workflows/gate-snapshot-cutover.yml@refs/heads/main' ||
+-      event?.action !== 'created' || event.repository?.full_name !== 'AlphaCenter/gate' ||
++      env.GITHUB_WORKFLOW_REF !== 'markmalina/gate/.github/workflows/gate-snapshot-cutover.yml@refs/heads/main' ||
++      event?.action !== 'created' || event.repository?.full_name !== 'markmalina/gate' ||
++      event.repository?.id !== 1293746267 || event.repository.owner?.id !== 23397294 ||
++      event.repository.owner?.login !== 'markmalina' ||
++      event.issue?.repository_url !== 'https://api.github.com/repos/markmalina/gate' ||
++      event.comment?.issue_url !== 'https://api.github.com/repos/markmalina/gate/issues/745' ||
++      typeof event.comment?.created_at !== 'string' || !Number.isFinite(Date.parse(event.comment.created_at)) ||
++      event.comment.updated_at !== event.comment.created_at ||
+       event.issue?.number !== 745 || event.issue.pull_request ||
+       env.GITHUB_ACTOR !== event.sender?.login || env.GITHUB_TRIGGERING_ACTOR !== env.GITHUB_ACTOR ||
+       env.GITHUB_ACTOR_ID !== String(event.sender?.id) ||
+       event.comment?.user?.id !== event.sender?.id || event.comment?.user?.login !== event.sender?.login) fail('E_CALLER');
+   if (!lock || Object.keys(lock).sort().join(',') !== 'actionPath,commit,profilePath,profileSha256,repository,schemaVersion,workflowSha256' ||
+-      lock.schemaVersion !== 'agent-ops.gate-snapshot-lock/v1' || lock.repository !== 'AlphaCenter/ops' ||
++      lock.schemaVersion !== 'agent-ops.gate-snapshot-lock/v1' || lock.repository !== 'markmalina/ops' ||
+       lock.actionPath !== 'agent-ops/actions/gate-snapshot-cutover' || !SHA.test(lock.commit ?? '') ||
+       lock.profilePath !== 'agent-ops/actions/gate-snapshot-cutover/profile.json' || !Buffer.isBuffer(profileBytes) ||
+       lock.profileSha256 !== `sha256:${createHash('sha256').update(profileBytes).digest('hex')}` ||
+@@ -33,12 +41,17 @@
+       lock.workflowSha256 !== `sha256:${createHash('sha256').update(workflowBytes).digest('hex')}` ||
+       env.AGENT_OPS_GITHUB_ENVIRONMENT !== 'gate-production') fail('E_LOCK');
+   const body = event.comment.body;
++  const isOwner = event.sender.id === APPROVER.id && event.sender.login === APPROVER.login &&
++    event.sender.type === 'User' && event.comment.user.type === 'User';
++  const isRequester = event.sender.id === REQUESTER.id && event.sender.login === REQUESTER.login &&
++    event.sender.type === 'Bot' && event.comment.user.type === 'Bot' &&
++    event.comment.performed_via_github_app?.id === 4578389;
+   if (body === '/ops-gate745 observe' &&
+-      event.sender.id === APPROVER.id && event.sender.login === APPROVER.login) return { phase: 'observe' };
++      isOwner) return { phase: 'observe' };
+   if (body === `/agent-ops v1 plan operation=${OP} target=${TARGET_ID}` &&
+-      event.sender.id === REQUESTER.id && event.sender.login === REQUESTER.login) return { phase: 'plan' };
++      isRequester) return { phase: 'plan' };
+   const m = /^\/agent-ops v1 apply operation=gate-snapshot-cutover target=gate-production plan-run=([1-9][0-9]{0,19}) plan-artifact=([1-9][0-9]{0,19}) plan-digest=(sha256:[a-f0-9]{64})$/u.exec(body);
+-  if (m && event.sender.id === APPROVER.id && event.sender.login === APPROVER.login)
++  if (m && isOwner)
+     return { phase: 'apply', planRunId: m[1], artifactId: m[2], planDigest: m[3] };
+   fail('E_ACTOR_OR_COMMAND');
+ }
+--- a/agent-ops/actions/gate-snapshot-cutover/contract.mjs
++++ b/agent-ops/actions/gate-snapshot-cutover/contract.mjs
+@@ -4,7 +4,7 @@
+   serviceId: '099cbf8c-1d94-43fe-8714-90725bf93998',
+   postgresServiceId: '561d3da3-ddb5-4d3d-8fa2-c9454b0996bf',
+   volumeInstanceId: '7d2de9ed-c63e-454a-811e-4f206f3dfef3',
+-  repository: 'AlphaCenter/gate', workspace: 'mark-personal',
++  repository: 'markmalina/gate', workspace: 'mark-personal',
+ });
+ const SHA = /^[a-f0-9]{40}$/u;
+ export class CutoverError extends Error {
+--- a/agent-ops/actions/gate-snapshot-cutover/profile-policy.mjs
++++ b/agent-ops/actions/gate-snapshot-cutover/profile-policy.mjs
+@@ -1,8 +1,8 @@
+ import { createHash } from 'node:crypto';
+ import { TARGET, CutoverError } from './contract.mjs';
+ const fail=()=>{throw new CutoverError('E_PROFILE_POLICY');};
+-const fixed={schemaVersion:'agent-ops.gate-snapshot-profile/v2',profileId:'gate745-independent-cutover-v2',operation:'gate-snapshot-cutover',targetId:'gate-production',ownerRepository:'AlphaCenter/gate',parentTargetManifestPath:null,target:TARGET,
+- ownerAuthorization:{repository:'AlphaCenter/gate',issue:745,actorId:23397294,login:'markmalina',bodyDigest:'sha256:d8ae2e0e680c3876dd9baf872e5972e868e3b9b83aa7d2b449633f8935922d61'},
++const fixed={schemaVersion:'agent-ops.gate-snapshot-profile/v2',profileId:'gate745-independent-cutover-v2',operation:'gate-snapshot-cutover',targetId:'gate-production',ownerRepository:'markmalina/gate',parentTargetManifestPath:null,target:TARGET,
++ ownerAuthorization:{repository:'markmalina/gate',issue:745,actorId:23397294,login:'markmalina',bodyDigest:'sha256:d8ae2e0e680c3876dd9baf872e5972e868e3b9b83aa7d2b449633f8935922d61'},
+  registeredServiceIds:['099cbf8c-1d94-43fe-8714-90725bf93998','0e16e0f3-ec16-4e47-992a-4c7e14b77d51','561d3da3-ddb5-4d3d-8fa2-c9454b0996bf','b9867b43-80de-40da-b8cd-66c8fc73e523','124e1f44-8c5b-46c0-b382-55becb9e6ddb','35df1378-ec07-49c4-8fd4-8213fd921eb7','fc623faa-455e-4703-897f-4cc215307abc'],
+  authorityExtension:{scope:'Gate745-only',supersedesOnly:['Gate-only-fixed-send-flag','Gate-only-returned-known-deployment-stop','Gate-DB-fixed-volume-backup-before0116','Gate-fixed-native-predeploy0116','Gate-same-reviewed-guarded-SHA-two-deploy'],legacyManifestGatesUnchanged:true,requiresNewNativeFixtureAcceptance:true},
+  observation:{sourceAcceptedOnly:true,applyPlan:false,providerMutation:false},
+@@ -11,6 +11,6 @@
+ function canonical(x){if(x===null||typeof x!=='object')return JSON.stringify(x);if(Array.isArray(x))return `[${x.map(canonical).join(',')}]`;return `{${Object.keys(x).sort().map(k=>`${JSON.stringify(k)}:${canonical(x[k])}`).join(',')}}`;}
+ export function validateProfilePolicy(profile){if(canonical(profile)!==canonical(fixed))fail();return profile;}
+ export function assertOwnerAuthorizationBody(issue,profile){validateProfilePolicy(profile);const a=profile.ownerAuthorization;
+- if(issue?.number!==a.issue||issue.user?.id!==a.actorId||issue.user.login!==a.login||typeof issue.body!=='string'||`sha256:${createHash('sha256').update(issue.body).digest('hex')}`!==a.bodyDigest)throw new CutoverError('E_OWNER_AUTHORIZATION');}
++ if(issue?.number!==a.issue||issue.repository_url!=='https://api.github.com/repos/markmalina/gate'||issue.user?.id!==a.actorId||issue.user.login!==a.login||typeof issue.body!=='string'||`sha256:${createHash('sha256').update(issue.body).digest('hex')}`!==a.bodyDigest)throw new CutoverError('E_OWNER_AUTHORIZATION');}
+ export const REVIEWED_PROFILE=Object.freeze(fixed);
+ 
+--- a/agent-ops/actions/gate-snapshot-cutover/profile.json
++++ b/agent-ops/actions/gate-snapshot-cutover/profile.json
+@@ -3,7 +3,7 @@
+   "profileId": "gate745-independent-cutover-v2",
+   "operation": "gate-snapshot-cutover",
+   "targetId": "gate-production",
+-  "ownerRepository": "AlphaCenter/gate",
++  "ownerRepository": "markmalina/gate",
+   "parentTargetManifestPath": null,
+   "target": {
+     "projectId": "972b6ab7-988a-421c-abfa-425451ad714f",
+@@ -11,11 +11,11 @@
+     "serviceId": "099cbf8c-1d94-43fe-8714-90725bf93998",
+     "postgresServiceId": "561d3da3-ddb5-4d3d-8fa2-c9454b0996bf",
+     "volumeInstanceId": "7d2de9ed-c63e-454a-811e-4f206f3dfef3",
+-    "repository": "AlphaCenter/gate",
++    "repository": "markmalina/gate",
+     "workspace": "mark-personal"
+   },
+   "ownerAuthorization": {
+-    "repository": "AlphaCenter/gate",
++    "repository": "markmalina/gate",
+     "issue": 745,
+     "actorId": 23397294,
+     "login": "markmalina",

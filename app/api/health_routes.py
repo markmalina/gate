@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.api.admin_auth import require_admin_bearer
+from app.api.deps import get_database_runtime
 from app.application.readiness import (
     CheckReadinessService,
     ReadinessComponentStatus,
@@ -19,6 +20,7 @@ from app.application.worker_health import (
     WorkerRuntimeState,
 )
 from app.core.config import Settings, get_settings
+from app.infrastructure.reply_cutover import observe_reply_cutover
 
 router = APIRouter()
 settings_dependency = Depends(get_settings)
@@ -170,3 +172,36 @@ async def operations_health(
         headers={"Cache-Control": "no-store"},
     )
 
+
+@router.get("/admin/ops/reply-cutover")
+async def reply_cutover_health(
+    request: Request,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    settings: Settings = settings_dependency,
+) -> JSONResponse:
+    """Report redacted database observations; never assert remote fleet quiescence."""
+
+    require_admin_bearer(authorization=authorization, settings=settings)
+    try:
+        runtime = get_database_runtime(request)
+        async with runtime.session_factory() as session:
+            observation = await observe_reply_cutover(session)
+        payload = {
+            "status": "observed",
+            "deployment_sha": settings.deployment_sha,
+            "schema_revisions": list(observation.schema_revisions),
+            "reserved": observation.reserved,
+            "sending": observation.sending,
+            "unknown": observation.unknown,
+            "send_enabled": settings.gate_send_enabled,
+            "guard_contract": "dialog-v1",
+        }
+        status_code = status.HTTP_200_OK
+    except Exception:
+        payload = {"status": "unavailable", "reason": "reply_cutover_observation_failed"}
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(
+        status_code=status_code,
+        content=payload,
+        headers={"Cache-Control": "no-store"},
+    )

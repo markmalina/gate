@@ -634,6 +634,7 @@ def reply_context() -> Iterator[FakeMcpSession]:
         id=UUID(ACCOUNT_ID),
         alias="telegram_mark_ru",
         country_code="RU",
+        telegram_user_id=999,
     )
     outbound = SimpleNamespace(
         id=UUID("66666666-6666-6666-6666-666666666666"),
@@ -1303,9 +1304,25 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("changes_during_read", [False, True])
 async def test_mcp_reply_context_shows_account_and_chronological_history(
     reply_context: FakeMcpSession,
+    monkeypatch: pytest.MonkeyPatch,
+    changes_during_read: bool,
 ) -> None:
+    reads = 0
+    async def snapshot(*args, **kwargs):
+        nonlocal reads
+        reads += 1
+        return "dialog-v1:" + ("1" if changes_during_read and reads > 1 else "0") * 64
+    async def events(*args, **kwargs):
+        return [], False, True
+    async def read_issue(*args, **kwargs):
+        return None
+    # Chronology/schema unit test; real revision SQL is covered in PostgreSQL.
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", read_issue)
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
+    monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)
     response = await _post(
         {
             "jsonrpc": "2.0",
@@ -1324,6 +1341,8 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
     result = response.json()["result"]
     structured = result["structuredContent"]
     _assert_valid_output("gate_get_reply_context", structured)
+    assert structured["context_ready"] is (not changes_during_read)
+    assert (structured["context_snapshot"] is None) is changes_during_read
     assert structured["account"]["label"] == "RU"
     assert structured["counterparty"]["label"] == "Аня — бухгалтер"
     assert {
@@ -1334,7 +1353,13 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
         "outbound",
     ]
     assert "[RU]" in result["content"][0]["text"]
-    assert len(reply_context.statements) == 2
+    assert len(reply_context.statements) == 3
+    assert structured["reply_sequences"] == []
+    series_query = str(reply_context.statements[2])
+    assert "reply_drafts.account_id IN" in series_query
+    assert "reply_drafts.project_id IN" in series_query
+    assert "reply_drafts.reply_task_id =" in series_query
+    assert "workspace_id" in str(reply_context.statements[2].compile().params)
 
 
 @pytest.mark.anyio

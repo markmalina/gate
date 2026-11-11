@@ -30,6 +30,7 @@ def _prepare(seed, *, key="fixture-stage", mode="photo", items=None, rich_conten
     return PrepareReplyMediaCommand(
         principal=_save_draft_command(seed, "unused").principal,
         task_id=seed.task_id,
+        expected_context_snapshot=seed.context_snapshot,
         mode=mode,
         items=items or (media_input(),),
         staging_key=key,

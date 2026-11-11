@@ -78,6 +78,17 @@ class TelegramClient:
         if not self._credential:
             raise RuntimeError("Telegram credential is required")
 
+        if business_connection_id is not None:
+            # Legacy auto/admin routes have no immutable reviewed snapshot or
+            # durable send attempt. All Business replies use the shared sender's
+            # literal/formatted/document/media methods after final admission.
+            from app.application.reply_sends import ReplySendError
+
+            raise ReplySendError(
+                code="context_snapshot_required",
+                message="Use a snapshot-bound Gate draft and shared final admission",
+            )
+
         payload: dict[str, Any] = {
             "chat_id": chat_id,
             "text": text,

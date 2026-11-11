@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -759,6 +760,18 @@ class PersonalTelegramSendFence(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReplyDialogVersion(Base):
+    """Monotonic admission version; incremented atomically with ingress/send."""
+
+    __tablename__ = "reply_dialog_versions"
+    __table_args__ = (
+        CheckConstraint("revision >= 0", name="ck_reply_dialog_version_nonnegative"),
+    )
+    business_connection_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    chat_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class TelegramReceipt(Base):

@@ -28,7 +28,9 @@ from app.application.reply_media import (
     ValidatedMediaItem,
     media_package_digest,
 )
+from app.application.reply_sends import ReplySendError
 from app.core.mcp_security import Principal
+from app.infrastructure.dialog_snapshots import require_dialog_snapshot
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.models.domain import Conversation, Message, ReplyDraft, ReplyTask, SendAttempt
 from app.models.reply_media import ReplyMediaExecutionBudget, ReplyMediaItem, ReplyMediaPackage
@@ -85,6 +87,23 @@ class SqlReplyMediaWriter:
             )
             if draft is None:
                 raise ReplyTaskNotFoundError()
+            attempted = await self._session.scalar(
+                select(SendAttempt.id).where(
+                    SendAttempt.reply_draft_id == draft.id,
+                )
+            )
+            if attempted is None:
+                conversation = await self._session.get(Conversation, conversation_id)
+                assert conversation is not None
+                try:
+                    await require_dialog_snapshot(
+                        self._session,
+                        scope=scope,
+                        conversation=conversation,
+                        expected=command.expected_context_snapshot,
+                    )
+                except ReplySendError as exc:
+                    raise ReplyDraftError(code=exc.code, message=exc.message) from exc
             models = await _items(self._session, existing.id)
             _assert_integrity(existing, draft, models)
             # No expiry refresh and no reload of bytes on an exact staging replay.
@@ -104,6 +123,7 @@ class SqlReplyMediaWriter:
                         task_id=command.task_id,
                         text=draft_text,
                         follow_up=command.follow_up,
+                        expected_context_snapshot=command.expected_context_snapshot,
                     )
                 )
                 draft = await self._session.scalar(
@@ -148,6 +168,7 @@ class SqlReplyMediaWriter:
                 expected_count = len(items) if command.mode == "album" else 1
                 snapshot: dict[str, Any] = {
                     "schema_version": MEDIA_SCHEMA_VERSION,
+                    "context_snapshot": command.expected_context_snapshot,
                     "converter_version": MEDIA_CONVERTER_VERSION,
                     "package_id": str(package_id),
                     "mode": command.mode,

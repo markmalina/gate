@@ -88,6 +88,7 @@ async def test_work_upload_returns_normalized_actual_images_full_snapshot_and_ha
         request_id=1,
         arguments={
             "task_id": str(task_id),
+            "expected_context_snapshot": "dialog-v1:" + "0" * 64,
             "mode": "album",
             "items": uploads,
             "staging_key": "work-upload",

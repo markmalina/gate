@@ -146,7 +146,7 @@ async def edit_draft_form(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prepare a new Gate media package and confirm its exact preview",
         )
-    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (
+    if "dialog_snapshot" in (draft.prompt_context or {}) or FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (
         draft.prompt_context or {}
     ):
         raise HTTPException(
@@ -174,7 +174,7 @@ async def save_draft_form(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prepare a new Gate media package and confirm its exact preview",
         )
-    if FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (
+    if "dialog_snapshot" in (draft.prompt_context or {}) or FORMAT_KEY in (draft.prompt_context or {}) or CAPTION_FORMAT_KEY in (
         draft.prompt_context or {}
     ):
         raise HTTPException(
@@ -363,6 +363,7 @@ async def _send_draft_edit_link(
         if (
             is_media_draft(draft)
             or FORMAT_KEY in (draft.prompt_context or {})
+            or "dialog_snapshot" in (draft.prompt_context or {})
             or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
         ):
             text = "Saved formatting requires Gate MCP preview/hash confirmation."
@@ -548,7 +549,8 @@ async def _send_approved_draft_once(
     if (
         is_media_draft(draft)
         or FORMAT_KEY in (draft.prompt_context or {})
-        or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
+        or "dialog_snapshot" in (draft.prompt_context or {})
+            or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
     ):
         return "Saved formatting requires Gate MCP preview/hash confirmation."
     if _is_draft_open(draft=draft, task=task):

@@ -3179,8 +3179,10 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
     await _clean_pilot_fixtures(sessions)
     await _clean_pilot_fixtures(sessions)
     try:
+        # A relative -1 walk is ambiguous at the media/dialog merge revision.
+        # Exercise the same explicit target that the active grant blocked above.
         subprocess.run(
-            ["alembic", "downgrade", "-1"],
+            ["alembic", "downgrade", "0083_become_quest_corrective_m"],
             check=True,
             env=migration_env,
         )
@@ -3199,7 +3201,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0116_reply_media_packages")
+    assert heads[0].startswith("0120_reply_media_dialog_join")
 
 
 

@@ -5,6 +5,7 @@
   "execution_expires_at": "2026-10-09T10:37:34Z",
   "task_id_is_example": true,
   "instructions": [
+    "Read current context and pass its reviewed context_snapshot; the placeholder token below must be replaced.",
     "Replace the example task_id with the currently authorized own RU→BY task UUID.",
     "Read current readiness; set follow_up=true only for a justified replied-task follow-up.",
     "Prepare never sends. Render all image content blocks and the complete snapshot before approval.",
@@ -39,7 +40,8 @@
           "staging_key": "gate-media-742-20261007T1041Z-P",
           "execution_id": "gate-media-742-20261007T1041Z",
           "execution_expires_at": "2026-10-09T10:37:34Z",
-          "follow_up": false
+          "follow_up": false,
+          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
       "preview": {
@@ -105,7 +107,8 @@
           "staging_key": "gate-media-742-20261007T1041Z-A",
           "execution_id": "gate-media-742-20261007T1041Z",
           "execution_expires_at": "2026-10-09T10:37:34Z",
-          "follow_up": false
+          "follow_up": false,
+          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
       "preview": {
@@ -168,7 +171,8 @@
                 }
               }
             ]
-          }
+          },
+          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
       "preview": {
@@ -280,7 +284,8 @@
                 }
               }
             ]
-          }
+          },
+          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
       "preview": {
@@ -392,7 +397,8 @@
                 }
               }
             ]
-          }
+          },
+          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
         }
       },
       "preview": {
