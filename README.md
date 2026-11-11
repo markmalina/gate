@@ -1,5 +1,20 @@
 # Gate
 
+> **Текущий вход для любого Gate Work — программа 05.11.2026:**
+> [Спецификация и фактическое состояние](docs/GATE-CURRENT.md) ·
+> [Последовательные спринты](docs/GATE-RECOVERY-PLAN.md) ·
+> [Метрики, время и расходы](docs/GATE-METRICS.md) ·
+> [Единая задача #787](https://github.com/markmalina/gate/issues/787).
+> Читать вместе с [AGENTS](AGENTS.md), [bootstrap](docs/work-bootstrap.md)
+> и [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md).
+> Датированные аудиты ниже сохраняют историю и не заменяют текущий указатель.
+
+> **Разбор причин задержек — 01.11.2026:** [История разработки, проверенные причины и порядок исправлений](docs/audit/2026-11-01/README.md), [данные подсчётов](docs/audit/2026-11-01/evidence.json). 611 PR, полный статический source приложения и свежий scoped runtime. Это аудит; #736/#745 остаются отдельными незавершёнными продуктовыми результатами.
+>
+> Порядок работы из июльского transfer packet ниже — исторический. Для текущей задачи используйте root `AGENTS.md`, `docs/work-bootstrap.md`, актуальную issue и её последний receipt/next pointer; не возобновляйте старую очередь только по этому README.
+
+> **Исторический source audit — 19.10.2026:** [Начать здесь](docs/audit/2026-10-19/README.md). Назначение, фактическая архитектура и спецификация, API/MCP, данные, конфигурация, 16 находок, полный срез 34 задач / 14 PR и [старт для ИИ](docs/audit/2026-10-19/AI-START.md). Основа source: `86dbc0f429dce089bf733fc422f20f556535895b`; dated snapshots ниже сохраняются как история. Текущий owner scope и root AGENTS определяют разрешения; audit не активирует функции и не заменяет runtime приёмку.
+
 > [!IMPORTANT]
 > **Current ecosystem boundary — 2026-08-25:** Gate is external communication
 > transport and delivery infrastructure. It does not own OMARK, AQUB product meaning,
@@ -10,7 +25,10 @@
 
 
 > [!IMPORTANT]
-> **PROJECT TRANSFER — START A NEW GATE WORK HERE / ПЕРЕДАЧА НОВОМУ GATE WORK**
+> **HISTORICAL TRANSFER PACKET — 25.07.2026 / ИСТОРИЯ ПЕРЕДАЧИ**
+>
+> For current work use GATE-CURRENT and #787 above. The ordered instructions and
+> baseline below document the July transfer; they do not restart that queue.
 >
 > This private repository is the complete source of truth for the recreated Gate
 > Work. The previous chat, its local workspace, memory and a manually pasted

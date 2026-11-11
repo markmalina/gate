@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session
 from app.api.mcp_routes import (
     _jsonrpc_error,
+    _read_mcp_request,
     _require_mcp_principal,
     _tool_result,
     mcp_endpoint as legacy_mcp_endpoint,
@@ -48,6 +49,7 @@ db_session_dependency = Depends(get_db_session)
 telegram_client_dependency = Depends(get_telegram_client)
 JsonObject = dict[str, Any]
 
+
 _CREATE = "gate_alpha_create_transcription"
 _GET = "gate_alpha_get_transcription"
 _LIST = "gate_alpha_list_transcriptions"
@@ -64,7 +66,7 @@ _SCOPES = {
 
 @router.post("/mcp")
 async def mcp_transcription_endpoint(
-    payload: JsonObject,
+    payload: Annotated[JsonObject, Depends(_read_mcp_request)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,

@@ -22,6 +22,7 @@ from app.application.reply_sequences import (
     validate_sequence_payload_digests,
 )
 from app.application.telegram_formatting import FormattingError, stored_preview
+from app.application.telegram_rich_media import is_media_draft
 from app.infrastructure.dialog_snapshots import require_saved_dialog_snapshot
 from app.models.domain import (
     Account,
@@ -121,6 +122,11 @@ class SqlReplySequenceWriter:
             raise ReplySequenceError(
                 code="draft_closed",
                 message="Every sequence draft must be unsent and editable",
+            )
+        if any(is_media_draft(draft) for draft, *_ in ordered):
+            raise ReplySequenceError(
+                code="media_surface_unsupported",
+                message=("Media packages require exact approval and cannot enter a text sequence"),
             )
         if any((draft.prompt_context or {}).get("kind") == "document" for draft, *_ in ordered):
             raise ReplySequenceError(

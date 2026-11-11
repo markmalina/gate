@@ -55,6 +55,21 @@ def anyio_backend() -> str:
 async def test_postgres_mcp_reads_and_drafts_cannot_cross_account_or_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # This isolation test owns SQL/account/project boundaries, not downstream
+    # health. The real status handler also probes I4/Slice3, so keep every
+    # non-ASGI HTTP client synthetic instead of touching a Railway host.
+    import httpx
+
+    original_client = httpx.AsyncClient
+    def synthetic_client(*args, **kwargs):
+        if kwargs.get("transport") is None:
+            kwargs["transport"] = httpx.MockTransport(
+                lambda request: httpx.Response(503, json={"status": "synthetic-unavailable"})
+            )
+        kwargs["trust_env"] = False
+        return original_client(*args, **kwargs)
+    monkeypatch.setattr(httpx, "AsyncClient", synthetic_client)
+
     database_url = get_settings().database_url
     if not database_url:
         pytest.skip("DATABASE_URL is required for PostgreSQL isolation test")

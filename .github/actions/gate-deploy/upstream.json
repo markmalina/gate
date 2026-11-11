@@ -1,0 +1,40 @@
+{
+  "schema": "gate.ops-vendor-origin.v1",
+  "state": "NEW_UNRELEASED_DEFAULT_OFF",
+  "source_repository": "markmalina/ops",
+  "source_commit": "02ef5f1c6f4273ca2a3194643383d646dbf37648",
+  "runtime_files": 2,
+  "sources": [
+    {
+      "path": "action.yml",
+      "git_blob": "4cbf96b5fb61f8e215e54cc4e3eded4ae3e95e60",
+      "sha256": "7511102595c3122c75bda8bc7b6cdb870d34585895b62269a7a31882cab7072b",
+      "bytes": 1792
+    },
+    {
+      "path": "gate-deploy.mjs",
+      "git_blob": "a9abe2b7a8afe462d941f35764bb859b51dd537a",
+      "sha256": "15b2657d9eab3b03572e661f184c9bea85924b6d50b3d175f657dab55daeb95b",
+      "bytes": 18073
+    },
+    {
+      "path": "gate-deploy.test.mjs",
+      "git_blob": "06ac3d2e6d7cc9cc3b75708d7ace8278e62c65be",
+      "sha256": "44f3c4fbb23f91f7d7b9eecefaa14cf980e4821a571bccacb0752509c6c1f9b1",
+      "bytes": 20817
+    }
+  ],
+  "local_changes": [
+    "Gate checkout/identity provenance",
+    "Explicit upstream versus executor receipt provenance",
+    "Gate-owned gate.local-deploy/v1 receipt discriminator; old receipts unchanged"
+  ],
+  "unchanged": [
+    "provider graph",
+    "fixed target",
+    "CURRENT_MAIN check",
+    "token scope",
+    "retry behavior",
+    "UNKNOWN handling"
+  ]
+}

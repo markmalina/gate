@@ -291,10 +291,13 @@ async def test_sequence_refusal_exposes_raw_event_truncation() -> None:
                 principal=principal, session=session,
             )
         content = _content(response)
-        assert content["error"] == "context_changed"
+        assert content["error"] == "context_unavailable"
         current = content["current_context"]
         assert current["dialog_events_has_more"] is True
         assert len(current["dialog_events"]) == 20
+
+        assert current["context_ready"] is False
+        assert current["context_reason"] == "raw_readset_incomplete"
 
 
 def test_catalogue_requires_reviewed_snapshot_and_describes_refusal() -> None:

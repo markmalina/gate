@@ -23,6 +23,7 @@ from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
+from app.api.mcp_media import PREPARE_INPUT_SCHEMA, PREVIEW_INPUT_SCHEMA, media_tool_result
 from app.api.health_routes import _get_worker_health_registry
 from app.api.routes import get_telegram_client
 from app.application.alpha_group import AlphaInstallationState
@@ -214,6 +215,8 @@ MCP_TOOL_NAMES = [
     OWNER_REPLY_READINESS_TOOL_NAME,
     "gate_save_reply_draft",
     "gate_prepare_reply_document",
+    "gate_prepare_reply_media",
+    "gate_preview_reply_media",
     "gate_send_approved_reply",
     "gate_send_approved_document",
     "gate_queue_approved_reply_sequence",
@@ -231,7 +234,7 @@ MCP_TOOL_NAMES = [
 # Preserve the closed status schema used by previously registered clients.
 # This is a supported core subset; tools/list is the exhaustive current catalog.
 MCP_LEGACY_STATUS_TOOL_NAMES = [
-    name for name in MCP_TOOL_NAMES if name != OWNER_REPLY_READINESS_TOOL_NAME
+    name for name in MCP_TOOL_NAMES if name not in {OWNER_REPLY_READINESS_TOOL_NAME, "gate_prepare_reply_media", "gate_preview_reply_media"}
 ]
 MCP_AUTH_MODE_TEMPORARY_BEARER = "temporary_bearer"
 MCP_AUTH_MODE_OAUTH = "oauth"
@@ -242,6 +245,8 @@ MCP_TOOL_SCOPES = {
     OWNER_REPLY_READINESS_TOOL_NAME: OWNER_REPLY_READINESS_SCOPE,
     "gate_save_reply_draft": "gate:drafts:write",
     "gate_prepare_reply_document": "gate:drafts:write",
+    "gate_prepare_reply_media": "gate:drafts:write",
+    "gate_preview_reply_media": "gate:inbox:read",
     "gate_send_approved_reply": "gate:messages:send",
     "gate_send_approved_document": "gate:messages:send",
     "gate_queue_approved_reply_sequence": "gate:messages:send",
@@ -258,9 +263,35 @@ MCP_TOOL_SCOPES = {
 }
 
 
+# 24 MiB of image bytes expand to 32 MiB as base64. The remaining space
+# covers captions, item metadata and the JSON-RPC envelope.
+_MAX_MCP_BODY_BYTES = 34 * 1024 * 1024
+
+
+async def _read_mcp_request(request: Request) -> JsonObject:
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        if not declared.isascii() or not declared.isdecimal() or len(declared) > 20:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if int(declared) > _MAX_MCP_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="MCP request is too large")
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > _MAX_MCP_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="MCP request is too large")
+        body.extend(chunk)
+    try:
+        payload = json.loads(body)
+    except (ValueError, RecursionError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid JSON-RPC body") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="JSON-RPC body must be an object")
+    return payload
+
+
 @router.post("/mcp")
 async def mcp_endpoint(
-    payload: JsonObject,
+    payload: Annotated[JsonObject, Depends(_read_mcp_request)],
     request: Request = None,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
@@ -308,6 +339,8 @@ async def mcp_endpoint(
                     _gate_owner_reply_readiness_tool(settings),
                     _gate_save_reply_draft_tool(settings),
                     _gate_prepare_reply_document_tool(settings),
+                    _gate_prepare_reply_media_tool(settings),
+                    _gate_preview_reply_media_tool(settings),
                     _gate_send_approved_reply_tool(settings),
                     _gate_send_approved_document_tool(settings),
                     _gate_queue_approved_reply_sequence_tool(settings),
@@ -602,6 +635,16 @@ async def mcp_endpoint(
                 principal=principal,
                 session=session,
             )
+        if tool_name == "gate_prepare_reply_media":
+            return await media_tool_result(
+                request_id=request_id, arguments=arguments, principal=principal,
+                session=session, prepare=True,
+            )
+        if tool_name == "gate_preview_reply_media":
+            return await media_tool_result(
+                request_id=request_id, arguments=arguments, principal=principal,
+                session=session, prepare=False,
+            )
         if tool_name == "gate_prepare_reply_document":
             return await _prepare_reply_document_tool_result(
                 request_id=request_id,
@@ -887,6 +930,11 @@ async def _get_reply_context_tool_result(
             ),
         )
 
+    raw_events_cursor = arguments.get("dialog_events_cursor")
+    if raw_events_cursor is not None and not isinstance(raw_events_cursor, str):
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments", message="dialog_events_cursor must be a string",
+        )
     raw_cursor = arguments.get("cursor")
     if raw_cursor is not None and not isinstance(raw_cursor, str):
         return _tool_error_result(
@@ -901,6 +949,7 @@ async def _get_reply_context_tool_result(
             task_id=task_id,
             limit=_bounded_limit(arguments.get("limit"), default=20, maximum=100),
             cursor=raw_cursor,
+            **({"dialog_events_cursor": raw_events_cursor} if raw_events_cursor is not None else {}),
         )
     except ValueError:
         return _tool_error_result(
@@ -3031,6 +3080,10 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "name": "gate_get_reply_context",
         "title": "Get Gate reply context",
         "description": (
+            "Read context_ready and context_reason before composing. Historical cursor or "
+            "dialog_events_cursor pages never grant a sendable snapshot; raw text continuation "
+            "uses each event text_next_cursor. After projection catches up, perform a new "
+            "no-cursor read and review all returned events. "
             "Return one scoped RU/BY conversation as a chronological text, voice "
             "and attachment timeline. Attachment metadata is listed without a "
             "provider call. Immediate same-chat reply snapshots and quoted excerpts "
@@ -3243,6 +3296,8 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
         "name": "gate_send_approved_reply",
         "title": "Send an explicitly approved Gate reply",
         "description": (
+            "For images use expected_media_package_sha256 from the complete byte-backed image preview. "
+            "execution_id charges the same media execution budget for text regression. "
             "Use expected_payload_sha256 from the displayed formatting preview; "
             "required for explicit-mode drafts/captions. Legacy rows without a preview retain the old contract. "
             "Send the exact saved draft through its originating RU/BY Telegram "
@@ -3255,6 +3310,8 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
                 "draft_id": {"type": "string", "format": "uuid"},
                 "confirmed": {"type": "boolean", "const": True},
                 "expected_payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "expected_media_package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "execution_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
                 "expected_account": {
                     "type": "string",
                     "enum": ["RU", "BY"],
@@ -3566,6 +3623,8 @@ async def _send_approved_reply_tool_result(
         'expected_account',
         'expected_recipient_chat_id',
         'expected_payload_sha256',
+        'expected_media_package_sha256',
+        'execution_id',
     }:
         return _tool_error_result(
             request_id=request_id, code="invalid_arguments",
@@ -3574,6 +3633,11 @@ async def _send_approved_reply_tool_result(
     expected_payload_sha256 = arguments.get("expected_payload_sha256")
     if "expected_payload_sha256" in arguments and not isinstance(expected_payload_sha256, str):
         return _tool_error_result(request_id=request_id, code="invalid_arguments", message="expected_payload_sha256 must be a SHA-256 string")
+    expected_media_package_sha256 = arguments.get("expected_media_package_sha256")
+    execution_id = arguments.get("execution_id")
+    for key in ("expected_media_package_sha256", "execution_id"):
+        if key in arguments and not isinstance(arguments[key], str):
+            return _tool_error_result(request_id=request_id, code="invalid_arguments", message=f"{key} must be a string")
     raw_draft_id = arguments.get("draft_id")
     confirmed = arguments.get("confirmed")
     expected_account = arguments.get("expected_account")
@@ -3614,6 +3678,8 @@ async def _send_approved_reply_tool_result(
                 principal=principal,
                 draft_id=draft_id,
                 expected_payload_sha256=expected_payload_sha256,
+                expected_media_package_sha256=expected_media_package_sha256,
+                execution_id=execution_id,
                 confirmed=confirmed,
                 expected_account=expected_account,
                 expected_recipient_chat_id=expected_recipient,
@@ -3654,6 +3720,10 @@ async def _send_approved_reply_tool_result(
         "error_code": sent.error_code,
         "error_detail": sent.error_detail,
     }
+    if sent.media is not None:
+        content["media"] = sent.media
+        content.update(delivery_mode=sent.delivery_mode, draft_revision=sent.draft_revision,
+                       runtime_revision=sent.runtime_revision, reservation_time=sent.reservation_time)
     if sent.sent:
         text = (
             f"Reply sent through {sent.account_label} to chat "
@@ -4380,6 +4450,9 @@ def _format_reply_context_text(context: JsonObject) -> str:
         f"task: {context['task_ref']}",
         f"chat: {context['conversation']['chat_id']}",
         "",
+        f"Context ready: {context.get('context_ready', False)}; "
+        f"reason: {context.get('context_reason') or 'none'}",
+        "Snapshot is a precondition, never approval. Read structured dialog_events too.",
         f"Recent messages: {context['count']}",
     ]
     for message in context["messages"]:
@@ -4465,4 +4538,33 @@ def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
     }
 
 
+def _gate_media_tool(settings: Settings, *, prepare: bool) -> JsonObject:
+    name = "gate_prepare_reply_media" if prepare else "gate_preview_reply_media"
+    scope = "gate:drafts:write" if prepare else "gate:inbox:read"
+    return _with_security_scheme(tool={
+        "name": name,
+        "title": "Upload and prepare Gate images" if prepare else "Preview prepared Gate images",
+        "description": (
+            "Upload exact PNG/JPEG bytes as structured base64; no URLs or server paths. "
+            "Prepare photo, album or native Rich photo/slideshow/collage. Rich input uses "
+            "gate.rich.v2 and batch aliases item:1 through item:N; staging replaces them "
+            "with immutable scoped refs and output hashes. execution_expires_at is the exact "
+            "bounded authorization deadline (at most 48h); shared budget is 12 writes/20 messages. "
+            "Returns actual prepared images plus full snapshot/hash, captions and order. Not sent. "
+            if prepare else "Read the actual immutable prepared image bytes and full snapshot "
+            "inside the principal scope. Show all images, transforms, captions, order, sender, "
+            "recipient and package hash before approved send."
+        ),
+        "inputSchema": PREPARE_INPUT_SCHEMA if prepare else PREVIEW_INPUT_SCHEMA,
+        "outputSchema": MCP_TOOL_OUTPUT_SCHEMAS[name],
+        "annotations": {"readOnlyHint": not prepare, "destructiveHint": False,
+                        "idempotentHint": True, "openWorldHint": False},
+    }, settings=settings, scope=scope)
 
+
+def _gate_prepare_reply_media_tool(settings: Settings) -> JsonObject:
+    return _gate_media_tool(settings, prepare=True)
+
+
+def _gate_preview_reply_media_tool(settings: Settings) -> JsonObject:
+    return _gate_media_tool(settings, prepare=False)

@@ -32,6 +32,7 @@ from app.infrastructure.dialog_snapshots import dialog_snapshot
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
+from app.models import canonical, relationship_crm  # noqa: F401
 from app.models.domain import (
     Account,
     AuditLog,

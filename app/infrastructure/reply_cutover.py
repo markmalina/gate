@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import SendAttempt, SendAttemptStatus
 
-BASELINE_REVISION = "0115_watch_voice_post_payment"
-GUARDED_REVISION = "0116_reply_dialog_versions"
+BASELINE_REVISION = "0116_reply_media_packages"
+GUARDED_REVISION = "0120_reply_media_dialog_join"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,7 @@ class ReplyCutoverObservation:
 
 
 async def observe_reply_cutover(session: AsyncSession) -> ReplyCutoverObservation:
-    """Use only tables/columns present before 0116; do not read message payloads."""
+    """Read baseline attempt counts; preserve media tables and never read payloads."""
 
     revisions = await session.execute(text("SELECT version_num FROM alembic_version"))
     counts = await session.execute(

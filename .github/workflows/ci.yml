@@ -54,6 +54,13 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             constraints/ci.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Check Gate-local Ops executor offline
+        run: node --test tests/ops/*.test.mjs
       - name: Scan tracked runtime tree for sensitive literals
         run: python scripts/repository_sensitive_data_guard.py
       - name: Install dependencies
@@ -66,20 +73,33 @@ jobs:
       - name: Mypy
         run: mypy app
       - name: Ensure real audio regression tools
-        timeout-minutes: 5
+        timeout-minutes: 4
         run: |
-          trap 'code=$?; echo "::error::Real audio regression tools setup failed (exit ${code})."; exit "$code"' ERR
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-            apt_options=(
-              -o Acquire::Retries=1
-              -o Acquire::http::Timeout=20
-              -o Acquire::https::Timeout=20
-              -o DPkg::Lock::Timeout=30
+            . /etc/os-release
+            test "${ID:-}" = ubuntu
+            [[ "${VERSION_CODENAME:-}" =~ ^[a-z]+$ ]]
+            test -r /usr/share/keyrings/ubuntu-archive-keyring.gpg
+            gate_audio_apt_dir="$(mktemp -d "${RUNNER_TEMP}/gate-audio-apt.XXXXXX")"
+            chmod 755 "$gate_audio_apt_dir"
+            mkdir -p "$gate_audio_apt_dir/lists/partial" "$gate_audio_apt_dir/sources.list.d"
+            # Isolate this install from the runner's stalled Azure mirror.
+            # Ubuntu's existing archive keyring still verifies every package.
+            printf '%s\n' \
+              "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu ${VERSION_CODENAME} main universe" \
+              "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu ${VERSION_CODENAME}-updates main universe" \
+              "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu ${VERSION_CODENAME}-security main universe" \
+              > "$gate_audio_apt_dir/sources.list"
+            gate_audio_apt_options=(
+              -o "Dir::Etc::sourcelist=$gate_audio_apt_dir/sources.list"
+              -o "Dir::Etc::sourceparts=$gate_audio_apt_dir/sources.list.d"
+              -o "Dir::State::lists=$gate_audio_apt_dir/lists"
+              -o 'Acquire::http::Timeout=15'
+              -o 'Acquire::https::Timeout=15'
+              -o 'Acquire::Retries=1'
             )
-            sudo -n timeout --kill-after=10s 90s \
-              apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
-            sudo -n timeout --kill-after=10s 180s \
-              apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg
+            sudo apt-get "${gate_audio_apt_options[@]}" update --error-on=any -qq
+            sudo apt-get "${gate_audio_apt_options[@]}" install -y --no-install-recommends ffmpeg
           fi
           ffmpeg -version
           ffprobe -version

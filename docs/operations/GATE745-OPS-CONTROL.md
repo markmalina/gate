@@ -1,3 +1,11 @@
+> 11 November 2026: historical source/design evidence. The active integrated
+> contract is [DIALOG-SNAPSHOT-GUARD](DIALOG-SNAPSHOT-GUARD.md).
+> The current plan is [Gate745, 8 sprints](https://github.com/markmalina/gate/issues/745#issuecomment-6789115422).
+> Historical fixture workers, grants, old migration heads and operation windows
+> do not authorize or block source sprint 2. Product fixture HTTP/worker code
+> is excluded from this candidate; immutable source remains at PR747
+> b975475c1c6c81035e38d9bd13a40d777933e83c. No release is authorized here.
+
 # Gate745 independent Ops control — installed, observation only
 
 Gate owns `.github/workflows/gate-snapshot-cutover.yml`, control issue745,

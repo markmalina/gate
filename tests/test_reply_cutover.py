@@ -96,7 +96,7 @@ async def test_endpoint_reports_real_baseline_aggregate_without_payloads() -> No
             await connection.execute(text("CREATE TABLE alembic_version (version_num TEXT)"))
             await connection.execute(text("CREATE TABLE send_attempts (status TEXT)"))
             await connection.execute(text(
-                "INSERT INTO alembic_version VALUES ('0115_watch_voice_post_payment')"
+                "INSERT INTO alembic_version VALUES ('0116_reply_media_packages')"
             ))
             await connection.execute(text(
                 "INSERT INTO send_attempts VALUES ('sent'), ('unknown'), ('unknown')"

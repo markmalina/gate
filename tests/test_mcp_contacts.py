@@ -229,3 +229,10 @@ def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
         return [], False, True
     monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
     monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)
+
+
+@pytest.fixture(autouse=True)
+def stub_readset_issue_for_chronology_units(monkeypatch):
+    async def issue(*args, **kwargs):
+        return None
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", issue)

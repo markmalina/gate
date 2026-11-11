@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,12 @@ from app.infrastructure.database import DatabaseRuntime
 from app.infrastructure.reply_cutover import BASELINE_REVISION, GUARDED_REVISION
 from app.models import canonical, relationship_crm  # noqa: F401
 from app.models.domain import SendAttempt
+from app.models.reply_media import (
+    ReplyMediaBudgetReservation,
+    ReplyMediaExecutionBudget,
+    ReplyMediaItem,
+    ReplyMediaPackage,
+)
 from fastapi import FastAPI, Request
 from sqlalchemy import make_url, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -29,11 +36,17 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         pytest.skip("DATABASE_URL is required for the PostgreSQL cutover proof")
 
     database_name = "reply_cutover_test_" + uuid4().hex
-    isolated_url = make_url(database_url).set(database=database_name).render_as_string(
-        hide_password=False,
+    isolated_url = (
+        make_url(database_url)
+        .set(database=database_name)
+        .render_as_string(
+            hide_password=False,
+        )
     )
     environment = {
-        **os.environ, "DATABASE_URL": isolated_url, "GATE_SEND_ENABLED": "false",
+        **os.environ,
+        "DATABASE_URL": isolated_url,
+        "GATE_SEND_ENABLED": "false",
     }
 
     async def database_ddl(statement: str) -> None:
@@ -45,13 +58,19 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
             await engine.dispose()
 
     def process(
-        *arguments: str, send_enabled: bool = False,
+        *arguments: str,
+        send_enabled: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, "-m", *arguments], env={
-                **environment, "GATE_SEND_ENABLED": str(send_enabled).lower(),
+            [sys.executable, "-m", *arguments],
+            env={
+                **environment,
+                "GATE_SEND_ENABLED": str(send_enabled).lower(),
             },
-            capture_output=True, text=True, timeout=60, check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
 
     async def legacy_seed() -> None:
@@ -63,25 +82,119 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
 
         try:
             # The reusable reply fixture normally creates a 0116 snapshot.
-            # Here it represents legacy drafts while the real DB is still 0115.
+            # Legacy media schema lacks the dialog-version table.
             with monkeypatch.context() as seed_patch:
                 seed_patch.setattr(reply_fixtures, "dialog_snapshot", legacy_context)
                 seed = await reply_fixtures._seed_reply(sessions, draft_count=3)
             async with sessions.begin() as session:
-                session.add_all([
-                    SendAttempt(
-                        id=uuid4(), reply_draft_id=draft_id,
-                        reply_task_id=seed.task_id, conversation_id=seed.conversation_id,
-                        account_id=seed.account_id, project_id=seed.project_id,
-                        principal_subject="synthetic-cutover-owner", status=status,
-                        account_label="RU", target_chat_id=seed.recipient_chat_id,
-                        business_connection_id=seed.business_connection_id,
-                        error_code="synthetic-provider-unknown" if status == "unknown" else None,
+                session.add_all(
+                    [
+                        SendAttempt(
+                            id=uuid4(),
+                            reply_draft_id=draft_id,
+                            reply_task_id=seed.task_id,
+                            conversation_id=seed.conversation_id,
+                            account_id=seed.account_id,
+                            project_id=seed.project_id,
+                            principal_subject="synthetic-cutover-owner",
+                            status=status,
+                            account_label="RU",
+                            target_chat_id=seed.recipient_chat_id,
+                            business_connection_id=seed.business_connection_id,
+                            error_code="synthetic-provider-unknown"
+                            if status == "unknown"
+                            else None,
+                        )
+                        for draft_id, status in zip(
+                            seed.draft_ids,
+                            ("reserved", "sending", "unknown"),
+                            strict=True,
+                        )
+                    ]
+                )
+                await session.flush()
+                budget_id, package_id = uuid4(), uuid4()
+                session.add(
+                    ReplyMediaExecutionBudget(
+                        id=budget_id,
+                        workspace_id="synthetic",
+                        principal_subject="synthetic",
+                        execution_id="preserved-media",
+                        expires_at=datetime.now(UTC) + timedelta(hours=1),
+                        write_cap=12,
+                        message_cap=20,
+                        writes_reserved=1,
+                        messages_reserved=1,
                     )
-                    for draft_id, status in zip(
-                        seed.draft_ids, ("reserved", "sending", "unknown"), strict=True,
+                )
+                await session.flush()
+                session.add(
+                    ReplyMediaPackage(
+                        id=package_id,
+                        reply_draft_id=seed.draft_ids[-1],
+                        workspace_id="synthetic",
+                        principal_subject="synthetic",
+                        staging_key="preserved",
+                        execution_id="preserved-media",
+                        input_sha256="1" * 64,
+                        mode="photo",
+                        package_sha256="2" * 64,
+                        snapshot_json={"synthetic": True},
+                        expected_message_count=1,
+                        expires_at=datetime.now(UTC) + timedelta(hours=1),
+                        receipt_json={"status": "unknown"},
                     )
-                ])
+                )
+                await session.flush()
+                session.add(
+                    ReplyMediaItem(
+                        id=uuid4(),
+                        package_id=package_id,
+                        ordinal=1,
+                        filename="fixture.png",
+                        media_type="image/png",
+                        source_size_bytes=7,
+                        size_bytes=7,
+                        source_sha256="3" * 64,
+                        output_sha256="4" * 64,
+                        width=1,
+                        height=1,
+                        transform_version="synthetic",
+                        transform="none",
+                        caption="",
+                        caption_format="plain",
+                        caption_formatting_json={},
+                        data=b"fixture",
+                        receipt_json={"status": "unknown"},
+                    )
+                )
+                attempt_id = await session.scalar(
+                    select(SendAttempt.id).where(SendAttempt.status == "unknown")
+                )
+                session.add(
+                    ReplyMediaBudgetReservation(
+                        id=uuid4(),
+                        send_attempt_id=attempt_id,
+                        budget_id=budget_id,
+                        expected_messages=1,
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+    async def media_state():
+        engine = create_async_engine(isolated_url)
+        try:
+            async with engine.connect() as connection:
+                return [
+                    list((await connection.execute(select(model))).tuples())
+                    for model in (
+                        ReplyMediaExecutionBudget,
+                        ReplyMediaPackage,
+                        ReplyMediaItem,
+                        ReplyMediaBudgetReservation,
+                    )
+                ]
         finally:
             await engine.dispose()
 
@@ -90,13 +203,17 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         try:
             async with engine.connect() as connection:
                 revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                table_present = await connection.scalar(text(
-                    "SELECT to_regclass('public.reply_dialog_versions') IS NOT NULL"
-                ))
-                rows = await connection.execute(select(
-                    SendAttempt.id, SendAttempt.status, SendAttempt.error_code,
-                    SendAttempt.provider_message_id,
-                ).order_by(SendAttempt.id))
+                table_present = await connection.scalar(
+                    text("SELECT to_regclass('public.reply_dialog_versions') IS NOT NULL")
+                )
+                rows = await connection.execute(
+                    select(
+                        SendAttempt.id,
+                        SendAttempt.status,
+                        SendAttempt.error_code,
+                        SendAttempt.provider_message_id,
+                    ).order_by(SendAttempt.id)
+                )
                 return str(revision), bool(table_present), [tuple(row) for row in rows]
         finally:
             await engine.dispose()
@@ -105,9 +222,11 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         engine = create_async_engine(isolated_url)
         try:
             async with engine.begin() as connection:
-                await connection.execute(update(SendAttempt).where(
-                    SendAttempt.status.in_(("reserved", "sending"))
-                ).values(status="failed", error_code="synthetic-drain"))
+                await connection.execute(
+                    update(SendAttempt)
+                    .where(SendAttempt.status.in_(("reserved", "sending")))
+                    .values(status="failed", error_code="synthetic-drain")
+                )
         finally:
             await engine.dispose()
 
@@ -120,8 +239,10 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
                 Request({"type": "http", "app": app, "headers": []}),
                 authorization="Bearer synthetic-cutover-admin",
                 settings=Settings(
-                    _env_file=None, ADMIN_BEARER_TOKEN="synthetic-cutover-admin",
-                    RAILWAY_GIT_COMMIT_SHA="a" * 40, GATE_SEND_ENABLED=False,
+                    _env_file=None,
+                    ADMIN_BEARER_TOKEN="synthetic-cutover-admin",
+                    RAILWAY_GIT_COMMIT_SHA="a" * 40,
+                    GATE_SEND_ENABLED=False,
                 ),
             )
             assert response.status_code == 200
@@ -134,14 +255,18 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         baseline = process("alembic", "upgrade", BASELINE_REVISION)
         assert baseline.returncode == 0, baseline.stderr
         asyncio.run(legacy_seed())
+        media_before = asyncio.run(media_state())
+        assert all(len(rows) == 1 for rows in media_before)
         initial_state = asyncio.run(stored_state())
         assert initial_state[:2] == (BASELINE_REVISION, False)
 
         blocked = process("app.worker.reply_cutover")
         assert blocked.returncode == 1
         assert json.loads(blocked.stdout) == {
-            "schema_revisions": [BASELINE_REVISION], "reserved": 1,
-            "sending": 1, "unknown": 1,
+            "schema_revisions": [BASELINE_REVISION],
+            "reserved": 1,
+            "sending": 1,
+            "unknown": 1,
         }
         assert asyncio.run(stored_state()) == initial_state
 
@@ -155,6 +280,7 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         migrated = process("app.worker.reply_cutover")
         assert migrated.returncode == 0, migrated.stderr
         after = asyncio.run(stored_state())
+        assert asyncio.run(media_state()) == media_before
         assert after[:2] == (GUARDED_REVISION, True)
         assert after[2] == drained_rows
         assert next(row for row in after[2] if row[1] == "unknown") == unknown_row
@@ -163,9 +289,13 @@ def test_actual_cutover_aborts_active_attempts_and_preserves_unknown_journal(
         assert replay.returncode == 0, replay.stderr
         assert asyncio.run(stored_state()) == after
         assert asyncio.run(real_health()) == {
-            "status": "observed", "deployment_sha": "a" * 40,
-            "schema_revisions": [GUARDED_REVISION], "reserved": 0,
-            "sending": 0, "unknown": 1, "send_enabled": False,
+            "status": "observed",
+            "deployment_sha": "a" * 40,
+            "schema_revisions": [GUARDED_REVISION],
+            "reserved": 0,
+            "sending": 0,
+            "unknown": 1,
+            "send_enabled": False,
             "guard_contract": "dialog-v1",
         }
     finally:

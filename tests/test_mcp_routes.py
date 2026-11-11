@@ -852,6 +852,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -874,6 +876,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -888,6 +892,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_beta_get_provider_probe",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
+    media_tools = {tool["name"]: tool for tool in tools if tool["name"] in {
+        "gate_prepare_reply_media", "gate_preview_reply_media"
+    }}
+    assert media_tools["gate_prepare_reply_media"]["annotations"]["readOnlyHint"] is False
+    assert media_tools["gate_preview_reply_media"]["annotations"]["readOnlyHint"] is True
+    tools = [tool for tool in tools if tool["name"] not in media_tools]
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[1]["annotations"]["readOnlyHint"] is True
     assert tools[2]["annotations"]["readOnlyHint"] is True
@@ -1307,7 +1317,10 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
         return "dialog-v1:" + ("1" if changes_during_read and reads > 1 else "0") * 64
     async def events(*args, **kwargs):
         return [], False, True
+    async def read_issue(*args, **kwargs):
+        return None
     # Chronology/schema unit test; real revision SQL is covered in PostgreSQL.
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", read_issue)
     monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
     monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)
     response = await _post(

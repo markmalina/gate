@@ -4,7 +4,7 @@
 import base64
 import binascii
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -20,7 +20,11 @@ from app.application.telegram_attachments import (
 from app.application.telegram_contacts import extract_scoped_telegram_contact
 from app.application.telegram_replies import extract_scoped_telegram_reply
 from app.core.mcp_security import AccessScope
-from app.infrastructure.dialog_snapshots import dialog_snapshot, recent_dialog_events
+from app.infrastructure.dialog_snapshots import (
+    dialog_read_issue,
+    dialog_snapshot,
+    recent_dialog_events,
+)
 from app.models.canonical import CanonicalMessage
 from app.models.domain import (
     Account,
@@ -228,6 +232,7 @@ async def get_reply_context(
     task_id: UUID,
     limit: int,
     cursor: str | None = None,
+    dialog_events_cursor: str | None = None,
 ) -> JsonObject | None:
     """Return a scoped text+voice chronology with stable keyset pagination."""
 
@@ -285,7 +290,9 @@ async def get_reply_context(
     ) = row
 
     initial_snapshot = await dialog_snapshot(
-        session, scope=scope, conversation=conversation,
+        session,
+        scope=scope,
+        conversation=conversation,
     )
 
     history_counterparty_user_id = case(
@@ -411,9 +418,7 @@ async def get_reply_context(
         )
         serialized = {
             **_serialize_message(message),
-            "message_type": (
-                "contact" if contact else "attachment" if attachments else "text"
-            ),
+            "message_type": ("contact" if contact else "attachment" if attachments else "text"),
             "text_preview": (
                 "Получен контакт" if contact else _truncate_text(message.text or "", 240)
             ),
@@ -529,7 +534,10 @@ async def get_reply_context(
                 archive_update_id = getattr(archive, "telegram_update_id", None)
                 if getattr(receipt, "update_id", None) == archive_update_id:
                     for event_type in (
-                        "business_message", "edited_business_message", "message", "edited_message",
+                        "business_message",
+                        "edited_business_message",
+                        "message",
+                        "edited_message",
                     ):
                         voice_reply = extract_scoped_telegram_reply(
                             receipt.payload,
@@ -542,9 +550,7 @@ async def get_reply_context(
                         if voice_reply is not None:
                             voice_item["reply_to"] = voice_reply
                             break
-                existing_index = message_items_by_telegram_id.get(
-                    int(archive.telegram_message_id)
-                )
+                existing_index = message_items_by_telegram_id.get(int(archive.telegram_message_id))
                 if existing_index is not None:
                     existing_key, existing_item = timeline[existing_index]
                     voice_item["id"] = existing_item["id"]
@@ -599,23 +605,64 @@ async def get_reply_context(
         "next_cursor": next_cursor,
         "has_more": has_more,
     }
+    raw_args = _decode_dialog_events_cursor(
+        dialog_events_cursor,
+        snapshot=initial_snapshot,
+        task_id=task.id,
+    )
     events, events_has_more, dialog_scope_complete = await recent_dialog_events(
-        session, scope=scope, conversation=conversation, owner_id=account.telegram_user_id,
+        session,
+        scope=scope,
+        conversation=conversation,
+        owner_id=account.telegram_user_id,
+        **raw_args,
+    )
+    issue = await dialog_read_issue(
+        session,
+        scope=scope,
+        conversation=conversation,
+        events=events,
     )
     final_snapshot = await dialog_snapshot(session, scope=scope, conversation=conversation)
-    context_ready = (
-        final_snapshot == initial_snapshot and cursor is None and dialog_scope_complete
-        and all(event["content_available"] for event in events)
+    reason = (
+        "context_changed_during_read"
+        if final_snapshot != initial_snapshot
+        else "historical_page"
+        if cursor is not None or dialog_events_cursor is not None
+        else "context_scope_incomplete"
+        if not dialog_scope_complete
+        else issue
     )
-    content.update({
-        "context_snapshot": final_snapshot if context_ready else None,
-        "context_ready": context_ready,
-        "dialog_events": events,
-        "dialog_events_has_more": events_has_more,
-    })
-    if cursor is not None:
-        # Historical pagination is not a new review of the latest dialog state.
-        content["context_snapshot"] = None
+    context_ready = reason is None and all(event["content_available"] for event in events)
+    next_raw = None
+    if events_has_more and events:
+        first = events[0]
+        next_raw = _encode_dialog_events_cursor(
+            snapshot=initial_snapshot,
+            task_id=task.id,
+            before=[first["received_at"], first["event_ref"]],
+        )
+    for event in events:
+        event["text_next_cursor"] = (
+            _encode_dialog_events_cursor(
+                snapshot=initial_snapshot,
+                task_id=task.id,
+                receipt_id=event["event_ref"],
+                text_offset=event.get("text_offset", 0) + 4096,
+            )
+            if event["text_truncated"]
+            else None
+        )
+    content.update(
+        {
+            "context_snapshot": final_snapshot if context_ready else None,
+            "context_ready": context_ready,
+            "context_reason": reason,
+            "dialog_events": events,
+            "dialog_events_has_more": events_has_more,
+            "dialog_events_next_cursor": next_raw,
+        }
+    )
     return content
 
 
@@ -887,9 +934,7 @@ def counterparty(
     last_name = _optional_text(profile.get("last_name"))
     title = _optional_text(profile.get("title"))
     username = _optional_text(profile.get("username"))
-    profile_name = " ".join(
-        part for part in (first_name, last_name) if part
-    ) or title
+    profile_name = " ".join(part for part in (first_name, last_name) if part) or title
     snapshot = _counterparty_snapshot(message)
     snapshot_name = _optional_text(snapshot.get("display_name"))
     imported_name = _optional_text(resolved_contact_name)
@@ -916,6 +961,7 @@ def _counterparty_snapshot(message: Message) -> JsonObject:
     value = payload.get("_gate_counterparty")
     return value if isinstance(value, dict) else {}
 
+
 def _telegram_message_payload(payload: Any) -> JsonObject:
     if not isinstance(payload, dict):
         return {}
@@ -940,17 +986,13 @@ def _owner_telegram_ids_subquery(accounts: frozenset[UUID]) -> Any:
             Account.owner.in_(owner_names),
             Account.telegram_user_id.is_not(None),
         ),
-        select(
-            cast(TelegramBusinessConnection.telegram_user_id, String).label("owner_id")
-        )
+        select(cast(TelegramBusinessConnection.telegram_user_id, String).label("owner_id"))
         .join(Account, TelegramBusinessConnection.account_id == Account.id)
         .where(
             Account.owner.in_(owner_names),
             TelegramBusinessConnection.telegram_user_id.is_not(None),
         ),
-        select(
-            cast(TelegramBusinessConnection.user_chat_id, String).label("owner_id")
-        )
+        select(cast(TelegramBusinessConnection.user_chat_id, String).label("owner_id"))
         .join(Account, TelegramBusinessConnection.account_id == Account.id)
         .where(
             Account.owner.in_(owner_names),
@@ -1001,3 +1043,44 @@ def _serialize_datetime(value: Any) -> str | None:
         return None
     return value.isoformat() if isinstance(value, datetime) else str(value)
 
+
+def _encode_dialog_events_cursor(*, snapshot: str, task_id: UUID, **position: Any) -> str:
+    # This cursor only paginates a scoped read; it NEVER grants a sendable token.
+    return base64.urlsafe_b64encode(
+        json.dumps(
+            {"task": str(task_id), "snapshot": snapshot, **position},
+            separators=(",", ":"),
+        ).encode()
+    ).decode()
+
+
+def _decode_dialog_events_cursor(
+    cursor: str | None,
+    *,
+    snapshot: str,
+    task_id: UUID,
+) -> dict[str, Any]:
+    if cursor is None:
+        return {}
+    try:
+        if len(cursor) > 2048:
+            raise ValueError()
+        value = json.loads(base64.b64decode(cursor, altchars=b"-_", validate=True))
+        if not isinstance(value, dict):
+            raise ValueError()
+        if value.pop("task") != str(task_id) or value.pop("snapshot") != snapshot:
+            raise ValueError()
+        if set(value) == {"before"}:
+            at, identifier = value["before"]
+            stamp = datetime.fromisoformat(at)
+            if stamp.tzinfo is None:
+                raise ValueError()
+            return {"before": (stamp.astimezone(UTC), UUID(identifier))}
+        if set(value) == {"receipt_id", "text_offset"}:
+            offset = value["text_offset"]
+            if type(offset) is not int or offset < 4096 or offset > 1048576 or offset % 4096:
+                raise ValueError()
+            return {"receipt_id": UUID(value["receipt_id"]), "text_offset": offset}
+    except (ValueError, TypeError, KeyError, binascii.Error):
+        pass
+    raise ValueError("invalid or changed dialog event cursor")

@@ -1,6 +1,8 @@
 """Durable dialog revisions shared by ingress and reply-send admission."""
 
+from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -21,9 +23,7 @@ from app.models.domain import (
 )
 
 
-async def bump_dialog_version(
-    session: AsyncSession, *, connection_id: str, chat_id: str
-) -> None:
+async def bump_dialog_version(session: AsyncSession, *, connection_id: str, chat_id: str) -> None:
     """Caller commits this increment with its durable receipt or send attempt."""
     await session.execute(
         insert(ReplyDialogVersion)
@@ -36,7 +36,10 @@ async def bump_dialog_version(
 
 
 async def dialog_snapshot(
-    session: AsyncSession, *, scope: AccessScope, conversation: Conversation,
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    conversation: Conversation,
     lock: bool = False,
 ) -> str:
     """Bind the fingerprint to scope, every account connection and projected facts.
@@ -49,11 +52,15 @@ async def dialog_snapshot(
         or conversation.project_id not in scope.project_ids
     ):
         raise ReplySendError(code="context_scope_mismatch", message="Dialog outside allowed scope")
-    connections = set((await session.scalars(
-        select(TelegramBusinessConnection.business_connection_id).where(
-            TelegramBusinessConnection.account_id == conversation.account_id
-        )
-    )).all())
+    connections = set(
+        (
+            await session.scalars(
+                select(TelegramBusinessConnection.business_connection_id).where(
+                    TelegramBusinessConnection.account_id == conversation.account_id
+                )
+            )
+        ).all()
+    )
     if conversation.business_connection_id:
         connections.add(conversation.business_connection_id)
     # Imported/legacy history is still readable without a Business connection.
@@ -68,65 +75,114 @@ async def dialog_snapshot(
                     set_={"revision": ReplyDialogVersion.revision},
                 )
             )
-    revision_rows = (await session.execute(
-        select(ReplyDialogVersion.business_connection_id, ReplyDialogVersion.revision).where(
-            ReplyDialogVersion.business_connection_id.in_(connections),
-            ReplyDialogVersion.chat_id == conversation.chat_id,
+    revision_rows = (
+        await session.execute(
+            select(ReplyDialogVersion.business_connection_id, ReplyDialogVersion.revision).where(
+                ReplyDialogVersion.business_connection_id.in_(connections),
+                ReplyDialogVersion.chat_id == conversation.chat_id,
+            )
         )
-    )).all()
+    ).all()
     revisions: dict[str, int] = {key: value for key, value in revision_rows}
     # Include actual stored messages as well as raw-ingress revisions. This also
     # detects imported/manual facts, edits, removals and projection advancing
     # while a Work was composing. Operational retries do not affect the token.
-    messages = (await session.execute(
-        select(Message.id, Message.text, Message.direction, Message.payload,
-               Message.created_at, Message.sent_at, Message.received_at).where(
-            Message.account_id == conversation.account_id,
-            Message.project_id.in_(scope.project_ids),
-            Message.chat_id == conversation.chat_id,
-        ).order_by(Message.id)
-    )).all()
+    messages = (
+        await session.execute(
+            select(
+                Message.id,
+                Message.text,
+                Message.direction,
+                Message.payload,
+                Message.created_at,
+                Message.sent_at,
+                Message.received_at,
+            )
+            .where(
+                Message.account_id == conversation.account_id,
+                Message.project_id.in_(scope.project_ids),
+                Message.chat_id == conversation.chat_id,
+            )
+            .order_by(Message.id)
+        )
+    ).all()
     # Opaque IDs detect projected changes in another routed project without
     # exposing that project's private message content to the current Work.
-    message_ids = (await session.scalars(select(Message.id).where(
-        Message.account_id == conversation.account_id,
-        Message.chat_id == conversation.chat_id,
-    ).order_by(Message.id))).all()
-    return snapshot_digest({
-        "workspace": scope.workspace_id,
-        "account": str(conversation.account_id),
-        "project": str(conversation.project_id),
-        "conversation": str(conversation.id),
-        "chat": conversation.chat_id,
-        "connections": [(key, revisions[key]) for key in sorted(connections)
-                        if revisions.get(key, 0) > 0],
-        "messages": [tuple(row) for row in messages],
-        "dialog_message_ids": [str(message_id) for message_id in message_ids],
-    })
+    message_ids = (
+        await session.scalars(
+            select(Message.id)
+            .where(
+                Message.account_id == conversation.account_id,
+                Message.chat_id == conversation.chat_id,
+            )
+            .order_by(Message.id)
+        )
+    ).all()
+    return snapshot_digest(
+        {
+            "workspace": scope.workspace_id,
+            "account": str(conversation.account_id),
+            "project": str(conversation.project_id),
+            "conversation": str(conversation.id),
+            "chat": conversation.chat_id,
+            "connections": [
+                (key, revisions[key]) for key in sorted(connections) if revisions.get(key, 0) > 0
+            ],
+            "messages": [tuple(row) for row in messages],
+            "dialog_message_ids": [str(message_id) for message_id in message_ids],
+        }
+    )
 
 
 async def require_dialog_snapshot(
-    session: AsyncSession, *, scope: AccessScope, conversation: Conversation,
-    expected: object, lock: bool = False,
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    conversation: Conversation,
+    expected: object,
+    lock: bool = False,
 ) -> str:
     if not isinstance(expected, str):
         raise ReplySendError(
             code="context_snapshot_required",
             message="Read current reply context and prepare a new snapshot-bound draft",
         )
+    # A cursor/read failure may reveal a fingerprint, but a fingerprint is not
+    # proof of a complete readset. Enforce the same readiness at every consumer.
+    events, _, complete = await recent_dialog_events(
+        session,
+        scope=scope,
+        conversation=conversation,
+        owner_id=None,
+    )
+    issue = await dialog_read_issue(
+        session,
+        scope=scope,
+        conversation=conversation,
+        events=events,
+    )
+    if not complete or issue is not None:
+        raise ReplySendError(
+            code="context_unavailable",
+            message="Dialog readset is incomplete or ingress is unreliable",
+        )
     current = await dialog_snapshot(session, scope=scope, conversation=conversation, lock=lock)
     if not snapshot_matches(expected, current):
         raise ReplySendError(
             code="context_changed",
             message="Отправка остановлена: диалог изменился. Прочитайте новые сообщения "
-                    "и подготовьте ответ по актуальному контексту.",
+            "и подготовьте ответ по актуальному контексту.",
         )
     return current
 
 
 async def require_saved_dialog_snapshot(
-    session: AsyncSession, *, scope: AccessScope, draft: ReplyDraft,
-    conversation: Conversation, lock: bool = False,
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    draft: ReplyDraft,
+    conversation: Conversation,
+    lock: bool = False,
 ) -> None:
     context: dict[str, Any] = draft.prompt_context or {}
     expected = context.get(SNAPSHOT_KEY)
@@ -134,66 +190,116 @@ async def require_saved_dialog_snapshot(
     if isinstance(sequence, dict) and isinstance(sequence.get("position"), int):
         position = sequence["position"]
         if position > 0:
-            progress = await session.scalar(select(AuditLog.metadata_).where(
-                AuditLog.action == "reply_sequence_snapshot_advanced",
-                AuditLog.account_id == draft.account_id,
-                AuditLog.project_id == draft.project_id,
-                AuditLog.metadata_["sequence_id"].as_string() == sequence.get("id"),
-                AuditLog.metadata_["position"].as_integer() == position - 1,
-                AuditLog.metadata_["baseline_snapshot"].as_string() == expected,
-            ).limit(1))
+            progress = await session.scalar(
+                select(AuditLog.metadata_)
+                .where(
+                    AuditLog.action == "reply_sequence_snapshot_advanced",
+                    AuditLog.account_id == draft.account_id,
+                    AuditLog.project_id == draft.project_id,
+                    AuditLog.metadata_["sequence_id"].as_string() == sequence.get("id"),
+                    AuditLog.metadata_["position"].as_integer() == position - 1,
+                    AuditLog.metadata_["baseline_snapshot"].as_string() == expected,
+                )
+                .limit(1)
+            )
             if not isinstance(progress, dict):
                 raise ReplySendError(
-                    code="context_changed", message="Sequence has no verified snapshot progression",
+                    code="context_changed",
+                    message="Sequence has no verified snapshot progression",
                 )
             expected = progress.get("next_snapshot")
     await require_dialog_snapshot(
-        session, scope=scope, conversation=conversation,
-        expected=expected, lock=lock,
+        session,
+        scope=scope,
+        conversation=conversation,
+        expected=expected,
+        lock=lock,
     )
 
 
 async def recent_dialog_events(
-    session: AsyncSession, *, scope: AccessScope, conversation: Conversation,
-    owner_id: int | None, limit: int = 20,
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    conversation: Conversation,
+    owner_id: int | None,
+    limit: int = 20,
+    before: tuple[datetime, UUID] | None = None,
+    receipt_id: UUID | None = None,
+    text_offset: int = 0,
 ) -> tuple[list[dict[str, Any]], bool, bool]:
     """Expose accepted events before projection, only for an unambiguous scope.
 
     A connection/chat may have multiple routed projects. In that case raw text
     cannot be attributed safely; expose only the change and projection status.
     """
-    connections = set((await session.scalars(
-        select(TelegramBusinessConnection.business_connection_id).where(
-            TelegramBusinessConnection.account_id == conversation.account_id
-        )
-    )).all())
+    connections = set(
+        (
+            await session.scalars(
+                select(TelegramBusinessConnection.business_connection_id).where(
+                    TelegramBusinessConnection.account_id == conversation.account_id
+                )
+            )
+        ).all()
+    )
     if conversation.business_connection_id:
         connections.add(conversation.business_connection_id)
-    other_project = await session.scalar(select(Conversation.id).where(
-        Conversation.account_id == conversation.account_id,
-        Conversation.chat_id == conversation.chat_id,
-        or_(Conversation.project_id.is_(None), Conversation.project_id.not_in(scope.project_ids)),
-    ).limit(1))
-    hidden_message = await session.scalar(select(Message.id).where(
-        Message.account_id == conversation.account_id,
-        Message.chat_id == conversation.chat_id,
-        or_(Message.project_id.is_(None), Message.project_id.not_in(scope.project_ids)),
-    ).limit(1))
+    other_project = await session.scalar(
+        select(Conversation.id)
+        .where(
+            Conversation.account_id == conversation.account_id,
+            Conversation.chat_id == conversation.chat_id,
+            or_(
+                Conversation.project_id.is_(None), Conversation.project_id.not_in(scope.project_ids)
+            ),
+        )
+        .limit(1)
+    )
+    hidden_message = await session.scalar(
+        select(Message.id)
+        .where(
+            Message.account_id == conversation.account_id,
+            Message.chat_id == conversation.chat_id,
+            or_(Message.project_id.is_(None), Message.project_id.not_in(scope.project_ids)),
+        )
+        .limit(1)
+    )
     # Scope completeness is independent of the bounded receipt page: a hidden
     # projected message can exist without a recent receipt or conversation row.
     scope_complete = other_project is None and hidden_message is None
     predicates = []
     for key in ("business_message", "edited_business_message", "deleted_business_messages"):
         raw_event = TelegramReceipt.payload[key]
-        predicates.append(and_(
-            raw_event["business_connection_id"].as_string().in_(connections),
-            raw_event["chat"]["id"].as_string() == conversation.chat_id,
-        ))
-    receipts = (await session.scalars(select(TelegramReceipt).where(
-        TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
-        or_(*predicates),
-    ).order_by(TelegramReceipt.received_at.desc(), TelegramReceipt.id.desc())
-        .limit(limit + 1))).all()
+        predicates.append(
+            and_(
+                raw_event["business_connection_id"].as_string().in_(connections),
+                raw_event["chat"]["id"].as_string() == conversation.chat_id,
+            )
+        )
+    predicates_scope = or_(*predicates)
+    continuation = []
+    if before is not None:
+        at, identifier = before
+        continuation.append(
+            or_(
+                TelegramReceipt.received_at < at,
+                and_(TelegramReceipt.received_at == at, TelegramReceipt.id < identifier),
+            )
+        )
+    if receipt_id is not None:
+        continuation.append(TelegramReceipt.id == receipt_id)
+    receipts = (
+        await session.scalars(
+            select(TelegramReceipt)
+            .where(
+                TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
+                predicates_scope,
+                *continuation,
+            )
+            .order_by(TelegramReceipt.received_at.desc(), TelegramReceipt.id.desc())
+            .limit(limit + 1)
+        )
+    ).all()
     result: list[dict[str, Any]] = []
     for receipt in reversed(receipts[:limit]):
         for key in ("business_message", "edited_business_message", "deleted_business_messages"):
@@ -201,21 +307,115 @@ async def recent_dialog_events(
             if isinstance(event, dict):
                 sender = event.get("from")
                 direction = (
-                    "outbound" if isinstance(sender, dict) and sender.get("id") == owner_id
-                    else "inbound" if isinstance(sender, dict) else "unknown"
+                    "outbound"
+                    if isinstance(sender, dict) and sender.get("id") == owner_id
+                    else "inbound"
+                    if isinstance(sender, dict)
+                    else "unknown"
                 )
                 value = event.get("text", event.get("caption"))
                 text_value = value if isinstance(value, str) and scope_complete else None
-                result.append({
-                    "event_ref": str(receipt.id), "kind": key, "direction": direction,
-                    "received_at": receipt.received_at.isoformat(),
-                    "text": text_value[:4096] if text_value is not None else None,
-                    "text_truncated": text_value is not None and len(text_value) > 4096,
-                    "projection_status": receipt.status,
-                    "content_available": scope_complete,
-                    "content_type": next((kind for kind in (
-                        "voice", "photo", "document", "video", "audio", "sticker", "text"
-                    ) if kind in event), "other"),
-                })
+                result.append(
+                    {
+                        "event_ref": str(receipt.id),
+                        "kind": key,
+                        "direction": direction,
+                        "received_at": receipt.received_at.isoformat(),
+                        "text": text_value[text_offset : text_offset + 4096]
+                        if text_value is not None
+                        else None,
+                        "text_offset": text_offset,
+                        "text_truncated": text_value is not None
+                        and len(text_value) > text_offset + 4096,
+                        "projection_status": receipt.status,
+                        "content_available": scope_complete,
+                        "content_type": next(
+                            (
+                                kind
+                                for kind in (
+                                    "voice",
+                                    "photo",
+                                    "document",
+                                    "video",
+                                    "audio",
+                                    "sticker",
+                                    "text",
+                                )
+                                if kind in event
+                            ),
+                            "other",
+                        ),
+                    }
+                )
                 break
     return result, len(receipts) > limit, scope_complete
+
+
+async def known_dialog_gap(
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    conversation: Conversation,
+) -> bool:
+    """Consume an explicit durable gap signal, never infer continuity from heartbeat.
+
+    Sprint 3 owns wiring real ingress-gap producers. A restoration must be an
+    explicit later marker; reading context never clears a gap.
+    """
+    action = await session.scalar(
+        select(AuditLog.action)
+        .where(
+            AuditLog.account_id == conversation.account_id,
+            AuditLog.action.in_(("reply_dialog_ingress_gap", "reply_dialog_ingress_restored")),
+            AuditLog.metadata_["chat_id"].as_string() == conversation.chat_id,
+        )
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(1)
+    )
+    return action == "reply_dialog_ingress_gap"
+
+
+async def dialog_read_issue(
+    session: AsyncSession,
+    *,
+    scope: AccessScope,
+    conversation: Conversation,
+    events: list[dict[str, Any]],
+) -> str | None:
+    """Old projected history may exceed a page; unseen accepted raw facts may not."""
+    if await known_dialog_gap(session, scope=scope, conversation=conversation):
+        return "known_ingress_gap"
+    connections = select(TelegramBusinessConnection.business_connection_id).where(
+        TelegramBusinessConnection.account_id == conversation.account_id
+    )
+    predicates = []
+    for kind in ("business_message", "edited_business_message", "deleted_business_messages"):
+        event = TelegramReceipt.payload[kind]
+        predicates.append(
+            and_(
+                or_(
+                    event["business_connection_id"].as_string().in_(connections),
+                    event["business_connection_id"].as_string()
+                    == conversation.business_connection_id,
+                ),
+                event["chat"]["id"].as_string() == conversation.chat_id,
+            )
+        )
+    pending = (
+        await session.scalars(
+            select(TelegramReceipt.id)
+            .where(
+                TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
+                TelegramReceipt.status != "processed",
+                or_(*predicates),
+            )
+            .limit(21)
+        )
+    ).all()
+    visible = {event["event_ref"] for event in events}
+    if any(str(identifier) not in visible for identifier in pending):
+        return "raw_readset_incomplete"
+    pending_ids = {str(identifier) for identifier in pending}
+    if any(event["event_ref"] in pending_ids and event["text_truncated"] for event in events):
+        return "raw_text_truncated"
+    return None

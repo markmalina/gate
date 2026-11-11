@@ -66,6 +66,19 @@ TOOL_CONTRACTS = (
         "_gate_prepare_reply_document_tool",
     ),
     ToolContract(
+        "gate_prepare_reply_media",
+        "gate:drafts:write",
+        "write_tools",
+        "_gate_prepare_reply_media_tool",
+    ),
+    ToolContract(
+        "gate_preview_reply_media",
+        "gate:inbox:read",
+        "read_only_tools",
+        "_gate_preview_reply_media_tool",
+        True,
+    ),
+    ToolContract(
         "gate_send_approved_reply",
         "gate:messages:send",
         "send_tools",
@@ -156,7 +169,7 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio
-async def test_every_mcp_projection_matches_the_nineteen_tool_contract() -> None:
+async def test_every_mcp_projection_matches_the_twenty_one_tool_contract() -> None:
     settings = Settings(
         _env_file=None,
         GATE_MCP_ENABLED=True,
@@ -174,15 +187,20 @@ async def test_every_mcp_projection_matches_the_nineteen_tool_contract() -> None
     )
     advertised_tools = tools_response["result"]["tools"]
     expected_names = [contract.name for contract in TOOL_CONTRACTS]
-    expected_scopes = {
-        contract.name: contract.scope for contract in TOOL_CONTRACTS
-    }
+    expected_scopes = {contract.name: contract.scope for contract in TOOL_CONTRACTS}
 
-    assert len(TOOL_CONTRACTS) == 19
+    assert len(TOOL_CONTRACTS) == 21
     assert [tool["name"] for tool in advertised_tools] == expected_names
     assert mcp_routes.MCP_TOOL_NAMES == expected_names
     expected_legacy_core = [
-        name for name in expected_names if name != "gate_get_owner_reply_readiness"
+        name
+        for name in expected_names
+        if name
+        not in {
+            "gate_get_owner_reply_readiness",
+            "gate_prepare_reply_media",
+            "gate_preview_reply_media",
+        }
     ]
     assert len(expected_legacy_core) == 18
     assert mcp_routes.MCP_LEGACY_STATUS_TOOL_NAMES == expected_legacy_core
@@ -202,28 +220,20 @@ async def test_every_mcp_projection_matches_the_nineteen_tool_contract() -> None
         assert descriptor["securitySchemes"] == security
         assert descriptor["_meta"]["securitySchemes"] == security
 
-    endpoint_tree = ast.parse(
-        textwrap.dedent(inspect.getsource(mcp_routes.mcp_endpoint))
-    )
+    endpoint_tree = ast.parse(textwrap.dedent(inspect.getsource(mcp_routes.mcp_endpoint)))
     assert _handled_tool_names(endpoint_tree) == set(expected_names)
     assert _status_uses_legacy_core_tool_names(endpoint_tree)
 
     metadata = mcp_metadata_routes._mcp_metadata(settings=settings)
     for bucket in ("read_only_tools", "write_tools", "send_tools"):
         assert metadata[bucket] == [
-            contract.name
-            for contract in TOOL_CONTRACTS
-            if contract.metadata_bucket == bucket
+            contract.name for contract in TOOL_CONTRACTS if contract.metadata_bucket == bucket
         ]
     assert mcp_metadata_routes.MCP_RESOURCE_SCOPES == list(
         dict.fromkeys(contract.scope for contract in TOOL_CONTRACTS)
     )
     assert mcp_metadata_routes.MCP_READ_ONLY_SCOPES == list(
-        dict.fromkeys(
-            contract.scope
-            for contract in TOOL_CONTRACTS
-            if contract.scope_is_read_only
-        )
+        dict.fromkeys(contract.scope for contract in TOOL_CONTRACTS if contract.scope_is_read_only)
     )
 
 
