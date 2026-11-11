@@ -116,6 +116,7 @@ MEDIA_OUTPUT_SCHEMA: JsonObject = {
                 "error": {"type": "string"},
                 "sent": {"type": "boolean", "const": False},
                 "current_context": {"type": ["object", "null"]},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 128},
             },
             "required": ["error"],
             "additionalProperties": False,

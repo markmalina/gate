@@ -42,6 +42,7 @@ def _error_schema() -> JsonObject:
         "error": {"type": "string", "minLength": 1},
         "sent": {"type": "boolean", "const": False},
         "current_context": {"type": ["object", "null"]},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 128},
     }, required=["error"])
 
 

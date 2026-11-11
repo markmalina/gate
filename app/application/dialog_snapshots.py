@@ -8,6 +8,10 @@ from typing import Any
 
 SNAPSHOT_KEY = "dialog_snapshot"
 SNAPSHOT_PATTERN = r"^dialog-v1:[0-9a-f]{64}$"
+DIALOG_EVENT_KINDS = (
+    "business_message", "edited_business_message", "deleted_business_messages",
+    "message", "edited_message",
+)
 
 
 def snapshot_digest(state: dict[str, Any]) -> str:
@@ -25,7 +29,7 @@ def snapshot_matches(expected: object, current: str) -> bool:
 
 def telegram_dialog_key(payload: dict[str, Any]) -> tuple[str, str] | None:
     """Select changes before content classification, projection or transcription."""
-    for kind in ("business_message", "edited_business_message", "deleted_business_messages"):
+    for kind in DIALOG_EVENT_KINDS:
         event = payload.get(kind)
         if not isinstance(event, dict):
             continue

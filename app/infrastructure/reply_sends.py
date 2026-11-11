@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import and_, case, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
@@ -192,16 +192,22 @@ class SqlTelegramReplySender:
         self._media_receipts: dict[UUID, dict[str, Any]] = {}
 
     async def send(self, command: SendApprovedReplyCommand) -> ReplySendResult:
-        preflight = await self._preflight(command)
-        if isinstance(preflight, ReplySendResult):
-            return preflight
+        try:
+            preflight = await self._preflight(command)
+            if isinstance(preflight, ReplySendResult):
+                return preflight
 
-        probe = await self._probe_connection(preflight)
-        reservation = await self._reserve(
-            command=command,
-            intent=preflight,
-            probe=probe,
-        )
+            probe = await self._probe_connection(preflight)
+            reservation = await self._reserve(
+                command=command,
+                intent=preflight,
+                probe=probe,
+            )
+        except (SQLAlchemyError, OSError, TimeoutError) as exc:
+            await self._session.rollback()
+            raise ReplySendError(
+                code="context_unavailable", message="authoritative_version_unavailable",
+            ) from exc
         if isinstance(reservation, ReplySendResult):
             return reservation
 
@@ -209,14 +215,22 @@ class SqlTelegramReplySender:
         # a proven refusal before HTTP is FAILED, never UNKNOWN or SENT.
         try:
             await self._admit_dispatch(command=command, reservation=reservation)
-        except ReplySendError as exc:
-            await self._session.rollback()
-            await self._finalize_failure(
-                command=command, reservation=reservation,
-                status=SendAttemptStatus.FAILED.value,
-                error_code=exc.code, error_detail=exc.code,
+        except (ReplySendError, SQLAlchemyError, OSError, TimeoutError) as exc:
+            refusal = exc if isinstance(exc, ReplySendError) else ReplySendError(
+                code="context_unavailable", message="authoritative_version_unavailable",
             )
-            raise
+            await self._session.rollback()
+            try:
+                await self._finalize_failure(
+                    command=command, reservation=reservation,
+                    status=SendAttemptStatus.FAILED.value,
+                    error_code=refusal.code, error_detail=refusal.message,
+                )
+            except (SQLAlchemyError, OSError, TimeoutError):
+                # No send occurred. If the journal is also unavailable, preserve
+                # its reservation for conservative UNKNOWN recovery, never retry.
+                await self._session.rollback()
+            raise refusal from exc
 
         self._require_provider_outside_transaction()
         assessment: dict[str, Any] | None = None
@@ -385,6 +399,13 @@ class SqlTelegramReplySender:
                 self._session, scope=command.principal.access_scope,
                 conversation=conversation, expected=reservation.admission_snapshot, lock=True,
             )
+            # Expiry/flags/hashes still apply after waiting for the final fence,
+            # including documents, not only the media transport branch.
+            self._validate_context_delivery(reservation.context)
+            if not _account.is_active or not _account.send_enabled:
+                raise ReplySendError(
+                    code="account_send_disabled", message="Sending is disabled for this account",
+                )
 
     async def _preflight(
         self,

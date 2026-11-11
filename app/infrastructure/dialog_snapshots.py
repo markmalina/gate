@@ -6,9 +6,15 @@ from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.dialog_snapshots import SNAPSHOT_KEY, snapshot_digest, snapshot_matches
+from app.application.dialog_snapshots import (
+    DIALOG_EVENT_KINDS,
+    SNAPSHOT_KEY,
+    snapshot_digest,
+    snapshot_matches,
+)
 from app.application.reply_sends import ReplySendError
 from app.core.mcp_security import AccessScope
 from app.core.telegram_connectors import TelegramConnectorKey
@@ -21,6 +27,32 @@ from app.models.domain import (
     TelegramBusinessConnection,
     TelegramReceipt,
 )
+
+# Not a Telegram connection id: a durable, monotonic connector-wide fence.
+# A nonzero fence is sticky; no heartbeat/ordinary successful receipt clears it.
+INGRESS_FENCE = "gate:business-ingress"
+INGRESS_CHAT = "*"
+
+
+async def mark_ingress_unavailable(
+    session: AsyncSession,
+    *,
+    reason: str,
+    connection_id: str | None = None,
+) -> None:
+    """Persist an observed loss of trust, using the same final-admission keys."""
+    await bump_dialog_version(
+        session,
+        connection_id=connection_id or INGRESS_FENCE,
+        chat_id=INGRESS_CHAT,
+    )
+    session.add(
+        AuditLog(
+            actor="telegram_ingress",
+            action="reply_ingress_unavailable",
+            metadata_={"reason": reason, "connection_scoped": connection_id is not None},
+        )
+    )
 
 
 async def bump_dialog_version(session: AsyncSession, *, connection_id: str, chat_id: str) -> None:
@@ -66,10 +98,15 @@ async def dialog_snapshot(
     # Imported/legacy history is still readable without a Business connection.
     # The sender separately requires an authorized live origin before any I/O.
     if lock:
-        for connection in sorted(connections):
+        keys = (
+            [(INGRESS_FENCE, INGRESS_CHAT)]
+            + [(connection, INGRESS_CHAT) for connection in sorted(connections)]
+            + [(connection, conversation.chat_id) for connection in sorted(connections)]
+        )
+        for connection, chat_id in keys:
             await session.execute(
                 insert(ReplyDialogVersion)
-                .values(business_connection_id=connection, chat_id=conversation.chat_id, revision=0)
+                .values(business_connection_id=connection, chat_id=chat_id, revision=0)
                 .on_conflict_do_update(
                     index_elements=["business_connection_id", "chat_id"],
                     set_={"revision": ReplyDialogVersion.revision},
@@ -149,24 +186,37 @@ async def require_dialog_snapshot(
         )
     # A cursor/read failure may reveal a fingerprint, but a fingerprint is not
     # proof of a complete readset. Enforce the same readiness at every consumer.
-    events, _, complete = await recent_dialog_events(
-        session,
-        scope=scope,
-        conversation=conversation,
-        owner_id=None,
-    )
-    issue = await dialog_read_issue(
-        session,
-        scope=scope,
-        conversation=conversation,
-        events=events,
-    )
+    try:
+        # Acquire the ingress fence before reading readiness. Otherwise a gap
+        # can commit while admission waits, after the old readiness was read.
+        current = await dialog_snapshot(
+            session,
+            scope=scope,
+            conversation=conversation,
+            lock=lock,
+        )
+        events, _, complete = await recent_dialog_events(
+            session,
+            scope=scope,
+            conversation=conversation,
+            owner_id=None,
+        )
+        issue = await dialog_read_issue(
+            session,
+            scope=scope,
+            conversation=conversation,
+            events=events,
+        )
+    except (SQLAlchemyError, OSError, TimeoutError) as exc:
+        raise ReplySendError(
+            code="context_unavailable",
+            message="authoritative_version_unavailable",
+        ) from exc
     if not complete or issue is not None:
         raise ReplySendError(
             code="context_unavailable",
-            message="Dialog readset is incomplete or ingress is unreliable",
+            message=issue or "context_scope_incomplete",
         )
-    current = await dialog_snapshot(session, scope=scope, conversation=conversation, lock=lock)
     if not snapshot_matches(expected, current):
         raise ReplySendError(
             code="context_changed",
@@ -268,7 +318,7 @@ async def recent_dialog_events(
     # projected message can exist without a recent receipt or conversation row.
     scope_complete = other_project is None and hidden_message is None
     predicates = []
-    for key in ("business_message", "edited_business_message", "deleted_business_messages"):
+    for key in DIALOG_EVENT_KINDS:
         raw_event = TelegramReceipt.payload[key]
         predicates.append(
             and_(
@@ -302,7 +352,7 @@ async def recent_dialog_events(
     ).all()
     result: list[dict[str, Any]] = []
     for receipt in reversed(receipts[:limit]):
-        for key in ("business_message", "edited_business_message", "deleted_business_messages"):
+        for key in DIALOG_EVENT_KINDS:
             event = receipt.payload.get(key)
             if isinstance(event, dict):
                 sender = event.get("from")
@@ -357,11 +407,25 @@ async def known_dialog_gap(
     scope: AccessScope,
     conversation: Conversation,
 ) -> bool:
-    """Consume an explicit durable gap signal, never infer continuity from heartbeat.
-
-    Sprint 3 owns wiring real ingress-gap producers. A restoration must be an
-    explicit later marker; reading context never clears a gap.
-    """
+    """Consume sticky observed ingress failures; heartbeat never restores trust."""
+    connections = select(TelegramBusinessConnection.business_connection_id).where(
+        TelegramBusinessConnection.account_id == conversation.account_id,
+    )
+    sticky = await session.scalar(
+        select(ReplyDialogVersion.revision)
+        .where(
+            ReplyDialogVersion.chat_id == INGRESS_CHAT,
+            ReplyDialogVersion.revision > 0,
+            or_(
+                ReplyDialogVersion.business_connection_id == INGRESS_FENCE,
+                ReplyDialogVersion.business_connection_id.in_(connections),
+                ReplyDialogVersion.business_connection_id == conversation.business_connection_id,
+            ),
+        )
+        .limit(1)
+    )
+    if sticky is not None:
+        return True
     action = await session.scalar(
         select(AuditLog.action)
         .where(
@@ -389,7 +453,7 @@ async def dialog_read_issue(
         TelegramBusinessConnection.account_id == conversation.account_id
     )
     predicates = []
-    for kind in ("business_message", "edited_business_message", "deleted_business_messages"):
+    for kind in DIALOG_EVENT_KINDS:
         event = TelegramReceipt.payload[kind]
         predicates.append(
             and_(

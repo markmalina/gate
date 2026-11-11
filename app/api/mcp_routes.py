@@ -4141,11 +4141,14 @@ async def _dialog_context_error_result(
 ) -> JsonObject:
     await session.rollback()
     current_context = None
+    details: JsonObject = {"sent": False, "current_context": None}
+    if code == "context_unavailable":
+        details["reason"] = message
     try:
         if "gate:inbox:read" not in principal.scopes:
             return _tool_error_result(
                 request_id=request_id, code=code, message=message,
-                details={"sent": False, "current_context": None},
+                details=details,
             )
         if task_id is None and draft_id is not None:
             scope = principal.access_scope
@@ -4161,9 +4164,10 @@ async def _dialog_context_error_result(
     except Exception:
         # A failed context read cannot turn a refusal into a send or leak DB details.
         await session.rollback()
+    details["current_context"] = current_context
     return _tool_error_result(
         request_id=request_id, code=code, message=message,
-        details={"sent": False, "current_context": current_context},
+        details=details,
     )
 
 

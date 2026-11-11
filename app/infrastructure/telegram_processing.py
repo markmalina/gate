@@ -24,7 +24,7 @@ from app.application.telegram_processing import (
     is_alpha_membership_update,
 )
 from app.core.telegram_connectors import TelegramConnectorKey
-from app.infrastructure.dialog_snapshots import bump_dialog_version
+from app.infrastructure.dialog_snapshots import bump_dialog_version, mark_ingress_unavailable
 from app.models.domain import (
     TelegramOutboxEvent,
     TelegramOutboxStatus,
@@ -60,6 +60,16 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def mark_unavailable(self, reason: str) -> None:
+        """Independent transaction after rejected authenticated acceptance."""
+        await self._session.rollback()
+        try:
+            await mark_ingress_unavailable(self._session, reason=reason)
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
 
     async def create_if_absent(
         self,
@@ -101,9 +111,7 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 )
                 existing = existing_result.one()
                 if _durable_payload_digest(existing[2]) != incoming_digest:
-                    raise TelegramReceiptError(
-                        "telegram_receipt_mutated_replay"
-                    )
+                    raise TelegramReceiptError("telegram_receipt_mutated_replay")
                 await self._session.commit()
                 return TelegramReceiptAcceptance(
                     receipt_id=str(existing[0]),
@@ -112,6 +120,36 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 )
 
             dialog_key = telegram_dialog_key(command.payload)
+            if command.bot_key == TelegramConnectorKey.BUSINESS.value:
+                if (
+                    any(
+                        kind in command.payload
+                        for kind in (
+                            "business_message",
+                            "edited_business_message",
+                            "deleted_business_messages",
+                        )
+                    )
+                    or any(
+                        isinstance(command.payload.get(kind), dict)
+                        and "business_connection_id" in command.payload[kind]
+                        for kind in ("message", "edited_message")
+                    )
+                ) and dialog_key is None:
+                    await mark_ingress_unavailable(
+                        self._session,
+                        reason="business_event_scope_unavailable",
+                    )
+                connection = command.payload.get("business_connection")
+                if isinstance(connection, dict) and connection.get("is_enabled") is False:
+                    identifier = connection.get("id")
+                    await mark_ingress_unavailable(
+                        self._session,
+                        reason="business_connection_disabled",
+                        connection_id=identifier
+                        if isinstance(identifier, str) and identifier
+                        else None,
+                    )
             if command.bot_key == TelegramConnectorKey.BUSINESS.value and dialog_key:
                 await bump_dialog_version(
                     self._session, connection_id=dialog_key[0], chat_id=dialog_key[1]
@@ -129,6 +167,12 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 outbox_event_id=str(outbox_event_id),
                 duplicate=False,
             )
+        except TelegramReceiptError:
+            if command.bot_key == TelegramConnectorKey.BUSINESS.value:
+                await self.mark_unavailable("receipt_integrity_unavailable")
+            else:
+                await self._session.rollback()
+            raise
         except Exception:
             await self._session.rollback()
             raise
