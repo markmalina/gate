@@ -65,7 +65,12 @@ def _reject_writer(monkeypatch, code: str) -> None:
             self.session = session
 
         async def queue(self, command):
-            raise ReplySequenceError(code=code, message="Synthetic refusal")
+            raise ReplySequenceError(
+                code=code,
+                message=(
+                    "known_ingress_gap" if code == "context_unavailable" else "Synthetic refusal"
+                ),
+            )
 
     monkeypatch.setattr(mcp_routes, "SqlReplySequenceWriter", RejectingWriter)
 
@@ -92,6 +97,7 @@ async def test_sequence_freshness_errors_share_scoped_context_contract(
     assert response["result"]["isError"] is True
     assert _content(response) == {
         "error": code, "sent": False, "current_context": context if read else None,
+        **({"reason": "known_ingress_gap"} if code == "context_unavailable" else {}),
     }
     session.commit.assert_not_awaited()
     session.rollback.assert_awaited_once()
@@ -292,6 +298,7 @@ async def test_sequence_refusal_exposes_raw_event_truncation() -> None:
             )
         content = _content(response)
         assert content["error"] == "context_unavailable"
+        assert content["reason"] == "raw_readset_incomplete"
         current = content["current_context"]
         assert current["dialog_events_has_more"] is True
         assert len(current["dialog_events"]) == 20
