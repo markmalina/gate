@@ -26,6 +26,7 @@ from app.application.telegram_processing import (
 from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.dialog_snapshots import bump_dialog_version, mark_ingress_unavailable
 from app.models.domain import (
+    TelegramBusinessConnection,
     TelegramOutboxEvent,
     TelegramOutboxStatus,
     TelegramReceipt,
@@ -141,14 +142,32 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                         reason="business_event_scope_unavailable",
                     )
                 connection = command.payload.get("business_connection")
+                if dialog_key is not None:
+                    account_id = await self._session.scalar(
+                        select(TelegramBusinessConnection.account_id).where(
+                            TelegramBusinessConnection.business_connection_id == dialog_key[0],
+                        )
+                    )
+                    if account_id is None:
+                        # Projection has not established which account owns this
+                        # new connection. Its private revision cannot protect an
+                        # old snapshot under a different, known connection id.
+                        await mark_ingress_unavailable(
+                            self._session, reason="business_connection_mapping_unavailable",
+                        )
                 if isinstance(connection, dict) and connection.get("is_enabled") is False:
                     identifier = connection.get("id")
+                    mapped_account: UUID | None = None
+                    if isinstance(identifier, str) and identifier:
+                        mapped_account = await self._session.scalar(
+                            select(TelegramBusinessConnection.account_id).where(
+                                TelegramBusinessConnection.business_connection_id == identifier,
+                            )
+                        )
                     await mark_ingress_unavailable(
                         self._session,
                         reason="business_connection_disabled",
-                        connection_id=identifier
-                        if isinstance(identifier, str) and identifier
-                        else None,
+                        connection_id=identifier if mapped_account is not None else None,
                     )
             if command.bot_key == TelegramConnectorKey.BUSINESS.value and dialog_key:
                 await bump_dialog_version(

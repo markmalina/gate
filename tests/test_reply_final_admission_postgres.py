@@ -65,7 +65,16 @@ async def envelope(sessions, payload, update_id):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("failure", ["connection_disabled", "unscoped_event", "mutated_replay"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "connection_disabled",
+        "unscoped_event",
+        "mutated_replay",
+        "unknown_connection",
+        "unknown_disabled_connection",
+    ],
+)
 async def test_observed_failures_are_durable_sticky_and_block_prepare_send(failure):
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
@@ -93,10 +102,33 @@ async def test_observed_failures_are_durable_sticky_and_block_prepare_send(failu
             )
         elif failure == "unscoped_event":
             await envelope(sessions, {"business_message": {"voice": {}}}, 51)
-        else:
+        elif failure == "mutated_replay":
             await receive(sessions, seed, update_id=51)
             with pytest.raises(TelegramReceiptError):
                 await receive(sessions, seed, update_id=51, content={"text": "Changed replay"})
+        elif failure == "unknown_disabled_connection":
+            await envelope(
+                sessions,
+                {
+                    "business_connection": {
+                        "id": "unmapped-disabled-connection",
+                        "is_enabled": False,
+                    }
+                },
+                51,
+            )
+        else:
+            await envelope(
+                sessions,
+                {
+                    "business_message": {
+                        "business_connection_id": "unmapped-new-connection",
+                        "chat": {"id": int(seed.recipient_chat_id)},
+                        "voice": {},
+                    }
+                },
+                51,
+            )
         await receive(sessions, seed, update_id=53)
         command = _command(seed, seed.draft_ids[0])
         telegram = _LiteralRecordingTelegram()
@@ -157,6 +189,7 @@ async def test_legacy_business_envelope_is_invalidated_before_async_projection(k
 async def test_same_text_new_event_changes_version_but_duplicate_and_other_connection_do_not():
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
+        other_account = await _seed_reply(sessions)
         scope = _command(seed, seed.draft_ids[0]).principal.access_scope
 
         async def token():
@@ -172,7 +205,7 @@ async def test_same_text_new_event_changes_version_but_duplicate_and_other_conne
             sessions,
             {
                 "business_message": {
-                    "business_connection_id": "other-account-connection",
+                    "business_connection_id": other_account.business_connection_id,
                     "chat": {"id": int(seed.recipient_chat_id)},
                     "text": "same",
                 }
@@ -184,13 +217,21 @@ async def test_same_text_new_event_changes_version_but_duplicate_and_other_conne
             sessions,
             {
                 "business_connection": {
-                    "id": "other-account-connection",
+                    "id": other_account.business_connection_id,
                     "is_enabled": False,
                 }
             },
             61,
         )
         assert await token() == first
+        async with sessions() as session:
+            context = await get_reply_context(
+                session=session,
+                scope=scope,
+                task_id=seed.task_id,
+                limit=30,
+            )
+            assert context["context_ready"] and context["context_snapshot"] == first
         await receive(sessions, seed, update_id=62, content={"text": "same"})
         second = await token()
         assert second != first

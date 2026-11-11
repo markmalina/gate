@@ -2,7 +2,8 @@
 
 Author implementation evidence, 11 November 2026. This is not independent acceptance,
 installation or product acceptance. Same #745, branch `agent/745-dialog-snapshot`, PR747.
-Parent: `4c726a82014398ae33f58dcf28c373e4c672b437`, tree
+S3 integration baseline (not each follow-up commit's parent):
+`4c726a82014398ae33f58dcf28c373e4c672b437`, tree
 `7a989fb311c1bb93067f6ff3c20554050518a34c`. Main baseline:
 `8d17d0b40a86c856bec1072633c721212a34a9dc`. Exact published commit/tree and
 original exact-head CI results are recorded in the sprint receipt in #745.
@@ -60,7 +61,8 @@ for the published head remains a separate #745 receipt.
 | Observed receipt persistence exception | Actual authenticated catch → independent durable gap transaction if database permits it; webhook remains 503 | Same gap consumer | `test_webhook_durable_acceptance_failure_records_gap_if_database_can_write`: PASS |
 | Mutated replay / missing original integrity evidence | Receipt store rolls back; Business connector gap in independent transaction; original receipt/outbox preserved | Same gap consumer | `test_observed_failures_are_durable_sticky_and_block_prepare_send[mutated_replay]`: PASS |
 | Business event cannot be attributed to a connection/chat | Same receipt transaction marks connector gap; no content is guessed | Same gap consumer | `test_observed_failures_are_durable_sticky_and_block_prepare_send[unscoped_event]`: PASS |
-| Accepted `business_connection.is_enabled=false` | Same receipt transaction marks that connection unavailable; missing id uses connector fence | Same gap consumer | `test_observed_failures_are_durable_sticky_and_block_prepare_send[connection_disabled]`: PASS, later enabled/ordinary success does not restore |
+| Business event has a connection/chat but its connection has no durable account mapping yet | Same transaction marks connector unavailable before projection can establish the account; a private revision for the unknown id cannot protect an old connection's snapshot | Same gap consumer | `test_observed_failures_are_durable_sticky_and_block_prepare_send[unknown_connection]`: PASS; the other-account control uses a real second registered account/connection and remains ready |
+| Accepted `business_connection.is_enabled=false` | Same receipt transaction marks that connection unavailable; missing id or unknown account mapping uses connector fence | Same gap consumer | `test_observed_failures_are_durable_sticky_and_block_prepare_send[connection_disabled/unknown_disabled_connection]`: PASS, later enabled/ordinary success does not restore |
 | Another bot's corrupt receipt replay | Its own store rejection; no Business fence | Business sender remains usable | `test_other_connector_corrupt_replay_does_not_poison_business_admission`: PASS |
 | Version SQL/table unavailable | Explicit safe refusal; no invented version | Preflight/final sender | `test_real_postgres_authoritative_version_unavailable_returns_refusal` and injected version-read failure: PASS |
 
