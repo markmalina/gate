@@ -1353,7 +1353,13 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
         "outbound",
     ]
     assert "[RU]" in result["content"][0]["text"]
-    assert len(reply_context.statements) == 2
+    assert len(reply_context.statements) == 3
+    assert structured["reply_sequences"] == []
+    series_query = str(reply_context.statements[2])
+    assert "reply_drafts.account_id IN" in series_query
+    assert "reply_drafts.project_id IN" in series_query
+    assert "reply_drafts.reply_task_id =" in series_query
+    assert "workspace_id" in str(reply_context.statements[2].compile().params)
 
 
 @pytest.mark.anyio
