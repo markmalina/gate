@@ -407,13 +407,62 @@ class SqlTelegramReplySender:
                     self._session, scope=command.principal.access_scope,
                     conversation=conversation, expected=reservation.admission_snapshot, lock=True,
                 )
-            # Expiry/flags/hashes still apply after waiting for the final fence,
-            # including documents, not only the media transport branch.
-            self._validate_context_delivery(reservation.context)
-            if not _account.is_active or not _account.send_enabled:
+            # Read scalar flags after the fence: the ORM Account above may
+            # predate a committed disable while admission waited for that lock.
+            flags = (await self._session.execute(
+                select(Account.is_active, Account.send_enabled)
+                .where(Account.id == reservation.context.account_id)
+            )).one_or_none()
+            if flags is None or not flags.is_active or not flags.send_enabled:
                 raise ReplySendError(
                     code="account_send_disabled", message="Sending is disabled for this account",
                 )
+            await self._require_reserved_execution_budget(command, reservation)
+            # Expiry/hashes still apply after waiting for the final fence,
+            # including documents, not only the media transport branch.
+            self._validate_context_delivery(reservation.context)
+
+    async def _require_reserved_execution_budget(
+        self, command: SendApprovedReplyCommand, reservation: _Reservation,
+    ) -> None:
+        if command.execution_id is None and reservation.context.media is None:
+            return
+        from app.models.reply_media import ReplyMediaBudgetReservation, ReplyMediaExecutionBudget
+
+        # Follow this attempt's durable reservation, not a new budget selected
+        # only by the caller's execution id. Scalar columns bypass stale ORM
+        # state. This check never changes counters, deadlines or receipts.
+        budget = (await self._session.execute(
+            select(
+                ReplyMediaExecutionBudget.expires_at,
+                ReplyMediaExecutionBudget.writes_reserved,
+                ReplyMediaExecutionBudget.messages_reserved,
+            )
+            .join(ReplyMediaBudgetReservation,
+                  ReplyMediaBudgetReservation.budget_id == ReplyMediaExecutionBudget.id)
+            .where(
+                ReplyMediaBudgetReservation.send_attempt_id == reservation.attempt.id,
+                ReplyMediaExecutionBudget.workspace_id
+                == command.principal.access_scope.workspace_id,
+                ReplyMediaExecutionBudget.principal_subject == command.principal.subject,
+                ReplyMediaExecutionBudget.execution_id == command.execution_id,
+                ReplyMediaExecutionBudget.write_cap == 12,
+                ReplyMediaExecutionBudget.message_cap == 20,
+                ReplyMediaBudgetReservation.expected_messages == (
+                    reservation.context.media["expected_message_count"]
+                    if reservation.context.media else 1
+                ),
+            )
+        )).one_or_none()
+        if (budget is None or budget.expires_at <= datetime.now(UTC)
+                or budget.writes_reserved < 1 or budget.messages_reserved < (
+                    reservation.context.media["expected_message_count"]
+                    if reservation.context.media else 1
+                )):
+            raise ReplySendError(
+                code="media_execution_expired",
+                message="Current reserved execution budget is required at final admission",
+            )
 
     async def _preflight(
         self,
