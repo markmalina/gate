@@ -22,7 +22,7 @@ External proxy variables removed for final SQL regression slices; task-local Pyt
 
 | Suite | Terminal result |
 |---|---|
-| New actual MCP/readset/media + legacy receipt replay | 11 PASS |
+| New actual MCP/readset/media + legacy receipt replay + no-read/failed-lookup error contracts | 17 PASS |
 | Actual authored-branch convergence + populated media/unknown cutover helper | 4 PASS |
 | Media/digest/context/catalogue/unit/bridge/helper/readiness | 147 PASS |
 | Actual MCP account/project isolation (downstream health transport mocked) | 1 PASS |
@@ -30,8 +30,11 @@ External proxy variables removed for final SQL regression slices; task-local Pyt
 | Media storage/cleanup/schema drift | 12 PASS, 2 existing cyclic-FK SQLAlchemy warnings |
 | Selected current media wire/MCP/replay/legacy-deny regression | 23 PASS, 35 unrelated transport cases deselected in this slice |
 | Plain/markdown/Rich/document/sequence formatting regression | 118 PASS |
+| Explicit joined-graph downgrade guard and clean round trip | 1 PASS |
 
-Total: 335 distinct terminal passing cases in these disjoint suites, no PG skips in them. Ruff repository and strict Mypy 320 source files PASS. One Alembic source head: `0120_reply_media_dialog_join`.
+Total: 342 distinct terminal passing cases in these disjoint suites, no PG skips in them. Ruff repository and strict Mypy 320 source files PASS. One Alembic source head: `0120_reply_media_dialog_join`.
+
+The first hosted Quest run on integration commit `9291ab1dcc6f2e3cfb8a50f199d421c9bf12162d` exposed a relative `downgrade -1` ambiguity at the joined graph (191 PASS / 1 FAIL). The migration regression now exercises the same explicit `0083_become_quest_corrective_m` target for both the active-grant refusal and the clean round trip. Local actual PostgreSQL verification passes; original run results are retained rather than rerun unchanged.
 
 A broad local pytest attempt was not completed and is NOT PASS. Automatic approval review rejected its continuation because an existing MCP status test could reach downstream Railway health through the inherited proxy. The test now injects a synthetic downstream transport; the actual SQL/read/draft/send paths remain real. Scoped offline terminal slices above supersede incomplete exploratory runs. Several combined 25-second slices timed out and were split; no timeout is counted as PASS.
 

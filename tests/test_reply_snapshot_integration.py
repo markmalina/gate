@@ -363,3 +363,49 @@ async def test_legacy_completed_media_receipt_replays_without_snapshot_or_budget
             assert (budget.writes_reserved, budget.messages_reserved) == (1, 1)
             draft = await session.get(ReplyDraft, command.draft_id)
             assert "dialog_snapshot" not in draft.prompt_context
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("kind", ["text", "document", "media"])
+@pytest.mark.parametrize("failure", ["no_read_scope", "lookup_failed"])
+async def test_actual_prepare_refusal_keeps_original_error_without_private_context(
+    monkeypatch, kind, failure,
+):
+    from unittest.mock import AsyncMock
+
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        reader = AsyncMock(side_effect=RuntimeError("synthetic private context detail"))
+        monkeypatch.setattr(mcp_routes, "get_reply_context", reader)
+        async with connected(
+            monkeypatch, sessions, seed, read=failure != "no_read_scope",
+        ) as (call, telegram, _):
+            args = {"task_id": str(seed.task_id)}
+            if kind == "text":
+                name = "gate_save_reply_draft"
+                args["text"] = "Synthetic reply"
+            elif kind == "document":
+                name = "gate_prepare_reply_document"
+                data = b"%PDF-1.7\nsynthetic fixture"
+                args.update(
+                    filename="synthetic.pdf", media_type="application/pdf",
+                    content_base64=base64.b64encode(data).decode(),
+                    expected_sha256=hashlib.sha256(data).hexdigest(),
+                )
+            else:
+                name = "gate_prepare_reply_media"
+                args.update(
+                    mode="photo", items=[asdict(media_input())],
+                    staging_key="synthetic-no-snapshot", execution_id="synthetic",
+                    execution_expires_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+                )
+            result = await call(name, args)
+            assert result == {
+                "error": "context_snapshot_required", "sent": False, "current_context": None,
+            }
+            assert "synthetic private context detail" not in str(result)
+            assert telegram.plain_calls == []
+            if failure == "no_read_scope":
+                reader.assert_not_awaited()
+            else:
+                reader.assert_awaited_once()
