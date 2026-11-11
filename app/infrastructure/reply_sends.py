@@ -38,6 +38,7 @@ from app.infrastructure.dialog_snapshots import (
     require_dialog_snapshot,
     require_saved_dialog_snapshot,
 )
+from app.infrastructure.reply_sequence_state import stop_sequences
 from app.models.domain import (
     Account,
     AuditLog,
@@ -395,10 +396,17 @@ class SqlTelegramReplySender:
                 raise ReplySendError(
                     code="context_changed", message="Saved dialog snapshot changed",
                 )
-            await require_dialog_snapshot(
-                self._session, scope=command.principal.access_scope,
-                conversation=conversation, expected=reservation.admission_snapshot, lock=True,
-            )
+            if isinstance((draft.prompt_context or {}).get("reply_sequence"), dict):
+                await require_saved_dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    draft=draft, conversation=conversation, lock=True,
+                    current_attempt_id=reservation.attempt.id,
+                )
+            else:
+                await require_dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    conversation=conversation, expected=reservation.admission_snapshot, lock=True,
+                )
             # Expiry/flags/hashes still apply after waiting for the final fence,
             # including documents, not only the media transport branch.
             self._validate_context_delivery(reservation.context)
@@ -575,6 +583,13 @@ class SqlTelegramReplySender:
         replay: ReplySendResult | None = None
         try:
             async with self._session.begin():
+                conversation = await self._session.get(Conversation, intent.context.conversation_id)
+                if conversation is None:
+                    raise ReplySendError(code="context_unavailable", message="Dialog unavailable")
+                await dialog_snapshot(
+                    self._session, scope=command.principal.access_scope,
+                    conversation=conversation, lock=True,
+                )
                 await self._lock_reservation_conversation(
                     command=command,
                     conversation_id=intent.context.conversation_id,
@@ -756,6 +771,13 @@ class SqlTelegramReplySender:
             started_at=now,
         )
         self._session.add(attempt)
+        draft = await self._session.get(ReplyDraft, current.draft_id)
+        sequence = (draft.prompt_context or {}).get("reply_sequence") if draft else None
+        await stop_sequences(
+            self._session, account_id=current.account_id, chat_id=current.target_chat_id,
+            except_sequence=sequence.get("id") if isinstance(sequence, dict) else None,
+            reason="other_work_send", event_ref=str(attempt.id),
+        )
         await self._reserve_execution_budget(command, attempt, current)
         if (
             isinstance(current.formatting, RichPreview)
@@ -923,6 +945,15 @@ class SqlTelegramReplySender:
     ) -> ReplySendResult:
         finished_at = datetime.now(UTC)
         async with self._session.begin():
+            conversation = await self._session.get(
+                Conversation, reservation.context.conversation_id,
+            )
+            if conversation is None:
+                raise RuntimeError("Reply send context disappeared after delivery")
+            await dialog_snapshot(
+                self._session, scope=command.principal.access_scope,
+                conversation=conversation, lock=True,
+            )
             attempt = await self._load_attempt_by_id(
                 attempt_id=reservation.attempt.id,
                 for_update=True,
@@ -963,17 +994,6 @@ class SqlTelegramReplySender:
             draft = draft_result.scalar_one_or_none()
             if draft is None or conversation is None:
                 raise RuntimeError("Reply send context disappeared after delivery")
-
-            sequence = (draft.prompt_context or {}).get("reply_sequence")
-            advance_sequence = False
-            if isinstance(sequence, dict):
-                # Only an exact own package receipt can advance its cursor. Any
-                # separately accepted event while HTTP was in flight stops it.
-                before_effect = await dialog_snapshot(
-                    self._session, scope=command.principal.access_scope,
-                    conversation=conversation, lock=True,
-                )
-                advance_sequence = before_effect == reservation.admission_snapshot
 
             provider_message_id = _provider_message_id(telegram_result)
             if reservation.context.media is not None:
@@ -1104,6 +1124,7 @@ class SqlTelegramReplySender:
                         business_connection_id=reservation.business_connection_id,
                         payload={
                             **telegram_result,
+                            "_gate_send_attempt_id": str(attempt.id),
                             "_gate_counterparty": {
                                 "display_name": (reservation.context.counterparty_display_name)
                             },
@@ -1147,24 +1168,6 @@ class SqlTelegramReplySender:
                     },
                 )
             )
-            if advance_sequence and isinstance(sequence, dict):
-                await self._session.flush()
-                next_snapshot = await dialog_snapshot(
-                    self._session, scope=command.principal.access_scope,
-                    conversation=conversation,
-                )
-                self._session.add(AuditLog(
-                    actor="gate", action="reply_sequence_snapshot_advanced",
-                    account_id=reservation.context.account_id,
-                    project_id=reservation.context.project_id,
-                    metadata_={
-                        "sequence_id": sequence.get("id"),
-                        "position": sequence.get("position"),
-                        "baseline_snapshot": reservation.context.dialog_snapshot,
-                        "next_snapshot": next_snapshot,
-                        "attempt_id": str(attempt.id),
-                    },
-                ))
             return self._attempt_result(
                 attempt=_snapshot_attempt(attempt),
                 context=reservation.context,

@@ -628,7 +628,9 @@ async def test_fifty_reply_drafts_commit_atomically_in_requested_order() -> None
 
 
 @pytest.mark.anyio
-async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send() -> None:
+async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send(
+    monkeypatch,
+) -> None:
     class DistinctTelegram(_LiteralRecordingTelegram):
         async def send_plain_message(self, **kwargs: object) -> dict[str, object]:
             self.plain_calls.append(kwargs)
@@ -645,6 +647,15 @@ async def test_fifty_item_worker_restart_preserves_order_without_duplicate_send(
 
         telegram = DistinctTelegram()
         observed_at = datetime.now(UTC)
+        from app.infrastructure import reply_sends, reply_sequence_state
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return observed_at + timedelta(minutes=position + 1)
+
+        monkeypatch.setattr(reply_sends, "datetime", Clock)
+        monkeypatch.setattr(reply_sequence_state, "datetime", Clock)
         for position in range(50):
             assert await run_reply_sequence_once(
                 settings=_settings(),

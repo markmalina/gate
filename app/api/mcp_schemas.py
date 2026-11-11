@@ -1835,6 +1835,9 @@ REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
         "has_more": {"type": "boolean"},
     }
 )
+REPLY_CONTEXT_SUCCESS_SCHEMA["properties"]["reply_sequences"] = {
+    "type": "array", "items": {"type": "object"},
+}
 GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     REPLY_CONTEXT_SUCCESS_SCHEMA,
     {

@@ -284,7 +284,10 @@ async def test_duplicate_receipt_is_stable_and_other_chat_does_not_block() -> No
         seed = await _seed_reply(sessions)
         await receive(sessions, seed, chat_id="54321")
         async with sessions() as session:
-            assert await session.scalar(select(func.count()).select_from(ReplyDialogVersion)) == 1
+            assert await session.scalar(
+                select(func.count()).select_from(ReplyDialogVersion)
+                .where(ReplyDialogVersion.revision > 0)
+            ) == 1
             conversation = await session.get(Conversation, seed.conversation_id)
             assert await dialog_snapshot(
                 session, scope=_command(seed, seed.draft_ids[0]).principal.access_scope,

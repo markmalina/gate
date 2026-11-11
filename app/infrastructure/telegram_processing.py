@@ -24,7 +24,14 @@ from app.application.telegram_processing import (
     is_alpha_membership_update,
 )
 from app.core.telegram_connectors import TelegramConnectorKey
-from app.infrastructure.dialog_snapshots import bump_dialog_version, mark_ingress_unavailable
+from app.infrastructure.dialog_snapshots import (
+    INGRESS_CHAT,
+    INGRESS_FENCE,
+    bump_dialog_version,
+    lock_dialog_keys,
+    mark_ingress_unavailable,
+)
+from app.infrastructure.reply_sequence_state import confirmed_echo_sequence, stop_sequences
 from app.models.domain import (
     TelegramBusinessConnection,
     TelegramOutboxEvent,
@@ -121,6 +128,9 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 )
 
             dialog_key = telegram_dialog_key(command.payload)
+            account_id = None
+            if command.bot_key == TelegramConnectorKey.BUSINESS.value:
+                await lock_dialog_keys(self._session, keys=[(INGRESS_FENCE, INGRESS_CHAT)])
             if command.bot_key == TelegramConnectorKey.BUSINESS.value:
                 if (
                     any(
@@ -173,6 +183,15 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                 await bump_dialog_version(
                     self._session, connection_id=dialog_key[0], chat_id=dialog_key[1]
                 )
+                if account_id is not None:
+                    own_sequence = await confirmed_echo_sequence(
+                        self._session, account_id=account_id, connection_id=dialog_key[0],
+                        chat_id=dialog_key[1], payload=command.payload, receipt_id=receipt_id,
+                    )
+                    await stop_sequences(
+                        self._session, account_id=account_id, chat_id=dialog_key[1],
+                        except_sequence=own_sequence, event_ref=str(receipt_id),
+                    )
             await self._session.execute(
                 insert(TelegramOutboxEvent).values(
                     id=outbox_event_id,

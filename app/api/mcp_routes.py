@@ -3080,6 +3080,8 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "name": "gate_get_reply_context",
         "title": "Get Gate reply context",
         "description": (
+            "Read reply_sequences for scoped series state, stop reason, sent/remaining items "
+            "and ambiguous attempts. Stopped tails never resume automatically. "
             "Read context_ready and context_reason before composing. Historical cursor or "
             "dialog_events_cursor pages never grant a sendable snapshot; raw text continuation "
             "uses each event text_next_cursor. After projection catches up, perform a new "
@@ -3450,7 +3452,9 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
             "Call only after showing Mark the account, recipient and every final "
             "message in order and receiving one explicit confirmation of the whole "
             "sequence. The first item becomes due immediately and later items no "
-            "sooner than 60 seconds after the preceding confirmed delivery."
+            "sooner than 60 seconds after the preceding confirmed delivery. "
+            "A new foreign dialog event durably stops the unsent tail. Read reply_sequences "
+            "in scoped reply context; no automatic resume or implicit approval of remaining drafts."
         ),
         "inputSchema": {
             "type": "object",
@@ -4459,6 +4463,14 @@ def _format_reply_context_text(context: JsonObject) -> str:
         "Snapshot is a precondition, never approval. Read structured dialog_events too.",
         f"Recent messages: {context['count']}",
     ]
+    for sequence in context.get("reply_sequences", []):
+        lines.append(
+            f"Series {sequence['sequence_id']}: {sequence['state']}; "
+            f"reason: {sequence['stop_reason'] or 'none'}; "
+            f"sent {sequence['sent_count']}, remaining {sequence['remaining_count']}, "
+            f"ambiguous {sequence['ambiguous_count']}. "
+            f"Auto-resume: false. Owner notification: {sequence['notification_status']}."
+        )
     for message in context["messages"]:
         direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
         lines.extend(

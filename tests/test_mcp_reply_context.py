@@ -259,3 +259,12 @@ def stub_readset_issue_for_chronology_units(monkeypatch):
     async def issue(*args, **kwargs):
         return None
     monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", issue)
+
+    async def no_sequences(*args, **kwargs):
+        return []
+
+    # These chronology units have no draft journal; real scoped series status
+    # and access are exercised against PostgreSQL in the S4 suite.
+    monkeypatch.setattr(
+        "app.infrastructure.reply_sequence_state.scoped_sequence_status", no_sequences,
+    )

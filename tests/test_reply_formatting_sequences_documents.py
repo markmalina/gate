@@ -409,7 +409,7 @@ async def test_sequence_rejects_unconfirmed_or_changed_formatting_atomically(fai
 
 
 @pytest.mark.anyio
-async def test_sequence_frozen_payload_survives_discovery_and_worker_replay() -> None:
+async def test_sequence_frozen_payload_survives_discovery_and_worker_replay(monkeypatch) -> None:
     class _EntityTelegram(_LiteralRecordingTelegram):
         async def send_formatted_message(self, **kwargs: object) -> dict[str, object]:
             self.plain_calls.append(kwargs)
@@ -436,6 +436,15 @@ async def test_sequence_frozen_payload_survives_discovery_and_worker_replay() ->
         rows = await _discover_sequence_rows(sessions)
         assert _due_items(rows, now=now)[0].payload_sha256 == digests[0]
         telegram = _EntityTelegram()
+        from app.infrastructure import reply_sends, reply_sequence_state
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now + timedelta(minutes=minute)
+
+        monkeypatch.setattr(reply_sends, "datetime", Clock)
+        monkeypatch.setattr(reply_sequence_state, "datetime", Clock)
         for minute in (0, 2):
             assert (
                 await run_reply_sequence_once(

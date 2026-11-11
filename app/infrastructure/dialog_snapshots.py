@@ -41,11 +41,18 @@ async def mark_ingress_unavailable(
     connection_id: str | None = None,
 ) -> None:
     """Persist an observed loss of trust, using the same final-admission keys."""
+    await lock_dialog_keys(session, keys=[(INGRESS_FENCE, INGRESS_CHAT)])
     await bump_dialog_version(
         session,
         connection_id=connection_id or INGRESS_FENCE,
         chat_id=INGRESS_CHAT,
     )
+    from app.infrastructure.reply_sequence_state import stop_sequences
+
+    account_id = await session.scalar(select(TelegramBusinessConnection.account_id).where(
+        TelegramBusinessConnection.business_connection_id == connection_id,
+    )) if connection_id is not None else None
+    await stop_sequences(session, account_id=account_id, reason=reason)
     session.add(
         AuditLog(
             actor="telegram_ingress",
@@ -67,12 +74,27 @@ async def bump_dialog_version(session: AsyncSession, *, connection_id: str, chat
     )
 
 
+async def lock_dialog_keys(session: AsyncSession, *, keys: list[tuple[str, str]]) -> None:
+    """Canonical order: global, connection gaps, account/chat; before any draft locks."""
+    for connection, chat_id in keys:
+        await session.execute(
+            insert(ReplyDialogVersion)
+            .values(business_connection_id=connection, chat_id=chat_id, revision=0)
+            .on_conflict_do_update(
+                index_elements=["business_connection_id", "chat_id"],
+                set_={"revision": ReplyDialogVersion.revision},
+            )
+        )
+
+
 async def dialog_snapshot(
     session: AsyncSession,
     *,
     scope: AccessScope,
     conversation: Conversation,
     lock: bool = False,
+    own_revisions: dict[str, int] | None = None,
+    own_messages: set[UUID] | None = None,
 ) -> str:
     """Bind the fingerprint to scope, every account connection and projected facts.
 
@@ -103,15 +125,7 @@ async def dialog_snapshot(
             + [(connection, INGRESS_CHAT) for connection in sorted(connections)]
             + [(connection, conversation.chat_id) for connection in sorted(connections)]
         )
-        for connection, chat_id in keys:
-            await session.execute(
-                insert(ReplyDialogVersion)
-                .values(business_connection_id=connection, chat_id=chat_id, revision=0)
-                .on_conflict_do_update(
-                    index_elements=["business_connection_id", "chat_id"],
-                    set_={"revision": ReplyDialogVersion.revision},
-                )
-            )
+        await lock_dialog_keys(session, keys=keys)
     revision_rows = (
         await session.execute(
             select(ReplyDialogVersion.business_connection_id, ReplyDialogVersion.revision).where(
@@ -120,7 +134,11 @@ async def dialog_snapshot(
             )
         )
     ).all()
-    revisions: dict[str, int] = {key: value for key, value in revision_rows}
+    revisions: dict[str, int] = {
+        key: value - (own_revisions or {}).get(key, 0) for key, value in revision_rows
+    }
+    if any(value < 0 for value in revisions.values()):
+        raise ReplySendError(code="context_unavailable", message="Invalid own revision journal")
     # Include actual stored messages as well as raw-ingress revisions. This also
     # detects imported/manual facts, edits, removals and projection advancing
     # while a Work was composing. Operational retries do not affect the token.
@@ -139,6 +157,7 @@ async def dialog_snapshot(
                 Message.account_id == conversation.account_id,
                 Message.project_id.in_(scope.project_ids),
                 Message.chat_id == conversation.chat_id,
+                Message.id.not_in(own_messages or set()),
             )
             .order_by(Message.id)
         )
@@ -151,6 +170,7 @@ async def dialog_snapshot(
             .where(
                 Message.account_id == conversation.account_id,
                 Message.chat_id == conversation.chat_id,
+                Message.id.not_in(own_messages or set()),
             )
             .order_by(Message.id)
         )
@@ -178,6 +198,9 @@ async def require_dialog_snapshot(
     conversation: Conversation,
     expected: object,
     lock: bool = False,
+    own_revisions: dict[str, int] | None = None,
+    own_messages: set[UUID] | None = None,
+    own_receipts: set[str] | None = None,
 ) -> str:
     if not isinstance(expected, str):
         raise ReplySendError(
@@ -194,6 +217,7 @@ async def require_dialog_snapshot(
             scope=scope,
             conversation=conversation,
             lock=lock,
+            own_revisions=own_revisions, own_messages=own_messages,
         )
         events, _, complete = await recent_dialog_events(
             session,
@@ -206,6 +230,7 @@ async def require_dialog_snapshot(
             scope=scope,
             conversation=conversation,
             events=events,
+            own_receipts=own_receipts,
         )
     except (SQLAlchemyError, OSError, TimeoutError) as exc:
         raise ReplySendError(
@@ -233,37 +258,32 @@ async def require_saved_dialog_snapshot(
     draft: ReplyDraft,
     conversation: Conversation,
     lock: bool = False,
+    current_attempt_id: UUID | None = None,
 ) -> None:
     context: dict[str, Any] = draft.prompt_context or {}
     expected = context.get(SNAPSHOT_KEY)
     sequence = context.get("reply_sequence")
-    if isinstance(sequence, dict) and isinstance(sequence.get("position"), int):
-        position = sequence["position"]
-        if position > 0:
-            progress = await session.scalar(
-                select(AuditLog.metadata_)
-                .where(
-                    AuditLog.action == "reply_sequence_snapshot_advanced",
-                    AuditLog.account_id == draft.account_id,
-                    AuditLog.project_id == draft.project_id,
-                    AuditLog.metadata_["sequence_id"].as_string() == sequence.get("id"),
-                    AuditLog.metadata_["position"].as_integer() == position - 1,
-                    AuditLog.metadata_["baseline_snapshot"].as_string() == expected,
-                )
-                .limit(1)
-            )
-            if not isinstance(progress, dict):
-                raise ReplySendError(
-                    code="context_changed",
-                    message="Sequence has no verified snapshot progression",
-                )
-            expected = progress.get("next_snapshot")
+    own_revisions, own_messages, own_receipts = None, None, None
+    if isinstance(sequence, dict):
+        from app.infrastructure.reply_sequence_state import sequence_progress
+
+        # Fence precedes reading the stop latch and receipt journal. Refresh a
+        # draft loaded before a concurrent committed ingress stop.
+        if lock:
+            await dialog_snapshot(session, scope=scope, conversation=conversation, lock=True)
+            await session.refresh(draft)
+        if await known_dialog_gap(session, scope=scope, conversation=conversation):
+            raise ReplySendError(code="context_unavailable", message="known_ingress_gap")
+        own_revisions, own_messages, own_receipts = await sequence_progress(
+            session, draft=draft, current_attempt_id=current_attempt_id,
+        )
     await require_dialog_snapshot(
         session,
         scope=scope,
         conversation=conversation,
         expected=expected,
         lock=lock,
+        own_revisions=own_revisions, own_messages=own_messages, own_receipts=own_receipts,
     )
 
 
@@ -445,6 +465,7 @@ async def dialog_read_issue(
     scope: AccessScope,
     conversation: Conversation,
     events: list[dict[str, Any]],
+    own_receipts: set[str] | None = None,
 ) -> str | None:
     """Old projected history may exceed a page; unseen accepted raw facts may not."""
     if await known_dialog_gap(session, scope=scope, conversation=conversation):
@@ -471,6 +492,7 @@ async def dialog_read_issue(
             .where(
                 TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
                 TelegramReceipt.status != "processed",
+                TelegramReceipt.id.not_in([UUID(value) for value in own_receipts or set()]),
                 or_(*predicates),
             )
             .limit(21)

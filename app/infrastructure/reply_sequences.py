@@ -23,7 +23,7 @@ from app.application.reply_sequences import (
 )
 from app.application.telegram_formatting import FormattingError, stored_preview
 from app.application.telegram_rich_media import is_media_draft
-from app.infrastructure.dialog_snapshots import require_saved_dialog_snapshot
+from app.infrastructure.dialog_snapshots import dialog_snapshot, require_saved_dialog_snapshot
 from app.models.domain import (
     Account,
     AuditLog,
@@ -58,6 +58,16 @@ class SqlReplySequenceWriter:
         validate_sequence_draft_ids(command.draft_ids)
         validate_sequence_payload_digests(command.draft_ids, command.expected_payload_sha256s)
         scope = command.principal.access_scope
+        # Same fence order as ingress/send/outcome; do not hold draft locks
+        # while waiting for a committed tail-stop.
+        conversation = await self._session.scalar(
+            select(Conversation).join(ReplyDraft, ReplyDraft.conversation_id == Conversation.id)
+            .where(ReplyDraft.id == command.draft_ids[0],
+                   Conversation.account_id.in_(scope.account_ids),
+                   Conversation.project_id.in_(scope.project_ids))
+        )
+        if conversation is not None:
+            await dialog_snapshot(self._session, scope=scope, conversation=conversation, lock=True)
         result = await self._session.execute(
             select(ReplyDraft, ReplyTask, Conversation, Message, Account)
             .options(undefer(ReplyTask.account_id))

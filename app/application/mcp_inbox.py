@@ -653,6 +653,9 @@ async def get_reply_context(
             if event["text_truncated"]
             else None
         )
+    from app.infrastructure.reply_sequence_state import scoped_sequence_status
+
+    content["reply_sequences"] = await scoped_sequence_status(session, scope=scope, task_id=task.id)
     content.update(
         {
             "context_snapshot": final_snapshot if context_ready else None,
