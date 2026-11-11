@@ -63,7 +63,8 @@ Proof chain: durable account/connection/chat -> sequence ID and ordered item ->
 exact draft/task/conversation/project/principal attempt -> reservation audit -> SENT
 provider result/message ID and finished_at. All predecessor positions must be
 present, confirmed, and at least 60 seconds old; interval=60 and size 2..50 remain
-mandatory. Missing/mismatched journal, any failed/unknown predecessor, changed
+mandatory. Proofs are read in one bounded series batch; no predecessor proof is
+re-read with its own SQL round trip. Missing/mismatched journal, any failed/unknown predecessor, changed
 binding or stop latch fails closed. The common final sender repeats this check;
 a caller cannot skip the worker to deliver item N early. Media/document/Rich
 sequence prohibitions and existing exact formatting hashes remain unchanged.

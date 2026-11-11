@@ -147,6 +147,29 @@ async def sequence_progress(
     if (type(size) is not int or not 2 <= size <= 50 or len(rows) != size
             or set(by_position) != set(range(size))):
         raise ReplySendError(code="context_changed", message="Incomplete sequence journal")
+    # One bounded read of the exact series journal, rather than re-reading
+    # every predecessor's proof separately at each admission of 50 items.
+    attempt_ids = {str(attempt.id) for _item, attempt in rows if attempt is not None}
+    proof_rows = (await session.execute(select(AuditLog.action, AuditLog.metadata_).where(
+        AuditLog.action.in_(("reply_send_reserved_from_mcp", "reply_sequence_own_echo")),
+        AuditLog.account_id == draft.account_id, AuditLog.project_id == draft.project_id,
+        AuditLog.metadata_["attempt_id"].as_string().in_(attempt_ids),
+    ))).all() if attempt_ids else []
+    reservations: dict[str, list[dict[str, Any]]] = {}
+    own_echoes: dict[str, list[dict[str, Any]]] = {}
+    for action, proof in proof_rows:
+        destination = reservations if action == "reply_send_reserved_from_mcp" else own_echoes
+        if action == "reply_sequence_own_echo" and proof.get("sequence_id") != sequence_id:
+            continue
+        destination.setdefault(proof["attempt_id"], []).append(proof)
+    provider_ids = {int(attempt.provider_message_id) for _item, attempt in rows
+                    if attempt is not None and attempt.provider_message_id
+                    and attempt.provider_message_id.isdigit() and attempt.status == "sent"}
+    own_rows = (await session.scalars(select(Message).where(
+        Message.account_id == draft.account_id, Message.project_id == draft.project_id,
+        Message.chat_id == metadata.get("expected_recipient_chat_id"),
+        Message.direction == "outbound", Message.telegram_message_id.in_(provider_ids),
+    ))).all() if provider_ids else []
     revisions: dict[str, int] = {}
     ignored_messages: set[UUID] = set()
     ignored_receipts: set[str] = set()
@@ -181,13 +204,9 @@ async def sequence_progress(
         if attempt is None:
             continue
         # Reservation audit proves exactly one increment; legacy/unbound journal refuses.
-        reservation = await session.scalar(select(AuditLog.id).where(
-            AuditLog.action == "reply_send_reserved_from_mcp",
-            AuditLog.account_id == draft.account_id, AuditLog.project_id == draft.project_id,
-            AuditLog.metadata_["attempt_id"].as_string() == str(attempt.id),
-            AuditLog.metadata_["draft_id"].as_string() == str(item.id),
-        ))
-        if reservation is None or attempt.business_connection_id is None:
+        reservation = reservations.get(str(attempt.id), [])
+        if (len(reservation) != 1 or reservation[0].get("draft_id") != str(item.id)
+                or attempt.business_connection_id is None):
             raise ReplySendError(code="context_changed", message="Missing reservation proof")
         connection = attempt.business_connection_id
         revisions[connection] = revisions.get(connection, 0) + 1
@@ -195,23 +214,14 @@ async def sequence_progress(
             if attempt.id != current_attempt_id or attempt.status != "sending":
                 raise ReplySendError(code="context_changed", message="Ambiguous own progress")
             continue
-        echoes = (await session.scalars(select(AuditLog.metadata_).where(
-            AuditLog.action == "reply_sequence_own_echo",
-            AuditLog.account_id == draft.account_id, AuditLog.project_id == draft.project_id,
-            AuditLog.metadata_["sequence_id"].as_string() == sequence_id,
-            AuditLog.metadata_["attempt_id"].as_string() == str(attempt.id),
-        ))).all()
+        echoes = own_echoes.get(str(attempt.id), [])
         update_ids = [echo["update_id"] for echo in echoes]
         ignored_receipts.update(echo["receipt_id"] for echo in echoes)
         revisions[connection] += len(echoes)
-        provider_id = attempt.provider_message_id
-        messages = (await session.scalars(select(Message).where(
-            Message.account_id == draft.account_id, Message.project_id == draft.project_id,
-            Message.chat_id == attempt.target_chat_id,
-            Message.business_connection_id == connection, Message.direction == "outbound",
-            Message.telegram_message_id == int(provider_id),
-        ))).all() if provider_id and provider_id.isdigit() else []
-        for message in messages:
+        for message in own_rows:
+            if (message.business_connection_id != connection
+                    or str(message.telegram_message_id) != attempt.provider_message_id):
+                continue
             proven = (
                 (message.source == "gate-approved-draft"
                  and (message.payload or {}).get("_gate_send_attempt_id") == str(attempt.id))

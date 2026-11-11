@@ -236,3 +236,11 @@ def stub_readset_issue_for_chronology_units(monkeypatch):
     async def issue(*args, **kwargs):
         return None
     monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", issue)
+
+    async def no_sequences(*args, **kwargs):
+        return []
+
+    # Contact chronology has no draft journal; S4 SQL tests cover series status.
+    monkeypatch.setattr(
+        "app.infrastructure.reply_sequence_state.scoped_sequence_status", no_sequences,
+    )

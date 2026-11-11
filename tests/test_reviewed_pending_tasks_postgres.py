@@ -133,7 +133,7 @@ async def test_reviewed_pending_task_allows_single_or_follow_up(
 @pytest.mark.parametrize("size", [2, 50])
 @pytest.mark.parametrize("newer_than_origin", [False, True])
 async def test_reviewed_pending_tasks_allow_ordered_sequence(
-    size: int, replied: bool, newer_than_origin: bool,
+    size: int, replied: bool, newer_than_origin: bool, monkeypatch,
 ) -> None:
     async with _postgres_sessions() as sessions:
         seed, _old = await _review_pending_sibling(
@@ -149,6 +149,15 @@ async def test_reviewed_pending_tasks_allow_ordered_sequence(
             await session.commit()
         assert tuple(item.draft_id for item in queued.items) == draft_ids
         telegram = _DistinctTelegram()
+        from app.infrastructure import reply_sends, reply_sequence_state
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now + timedelta(minutes=position + 1)
+
+        monkeypatch.setattr(reply_sends, "datetime", Clock)
+        monkeypatch.setattr(reply_sequence_state, "datetime", Clock)
         for position in range(size):
             assert await run_reply_sequence_once(
                 settings=_settings(), session_factory=sessions, telegram=telegram,
