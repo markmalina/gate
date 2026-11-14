@@ -18,6 +18,16 @@ def upgrade() -> None:
         sa.Column("cutover_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_table(
+        "watch_early_rejections",
+        sa.Column("workspace_key", sa.String(128), primary_key=True),
+        sa.Column("account_id", sa.String(255), primary_key=True),
+        sa.Column("metadata_sha256", sa.String(64), primary_key=True),
+        sa.Column("file_id", sa.String(255), nullable=True),
+        sa.Column("revision", sa.String(255), nullable=True),
+        sa.Column("reason", sa.String(128), nullable=False),
+        sa.Column("detected_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    op.create_table(
         "watch_early_cards",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("workspace_key", sa.String(128), nullable=False),
@@ -44,4 +54,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("watch_early_cards")
+    op.drop_table("watch_early_rejections")
     op.drop_table("watch_early_cursors")

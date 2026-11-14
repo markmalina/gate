@@ -66,6 +66,18 @@ class WatchEarlyCard(Base):
     last_error: Mapped[str | None] = mapped_column(String(128))
 
 
+class WatchEarlyRejection(Base):
+    __tablename__ = "watch_early_rejections"
+
+    workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    metadata_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    file_id: Mapped[str | None] = mapped_column(String(255))
+    revision: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str] = mapped_column(String(128))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class WatchVoiceNote(Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -16,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError, marker
 from app.infrastructure.watch_voice_recovery import _utc
-from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor
+from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor, WatchEarlyRejection
 from app.worker.dropbox_calls import _refresh_access_token, _verify_account_id
 from app.worker.watch_voice import PATH, timestamp
 
@@ -144,7 +146,36 @@ async def run_early_cards(
             ):
                 raise WatchVoiceError("watch_early_delta_invalid")
             for obj in data["entries"]:
-                item = metadata(obj)
+                try:
+                    item = metadata(obj)
+                except WatchVoiceError as exc:
+                    # Keep only validated identifiers and a digest, never source payload.
+                    digest = hashlib.sha256(
+                        json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                    ).hexdigest()
+                    source_id = obj.get("id") if isinstance(obj, dict) else None
+                    revision = obj.get("rev") if isinstance(obj, dict) else None
+                    if not isinstance(source_id, str) or not re.fullmatch(
+                        r"id:[A-Za-z0-9_-]{1,252}", source_id
+                    ):
+                        source_id = None
+                    if not isinstance(revision, str) or not re.fullmatch(
+                        r"[a-f0-9]{1,255}", revision
+                    ):
+                        revision = None
+                    await session.execute(
+                        insert(WatchEarlyRejection)
+                        .values(
+                            **key,
+                            metadata_sha256=digest,
+                            file_id=source_id,
+                            revision=revision,
+                            reason=exc.code,
+                            detected_at=datetime.now(UTC),
+                        )
+                        .on_conflict_do_nothing()
+                    )
+                    continue
                 if item is None or not after_cutover(
                     timestamp(item["server_modified"]), cursor.cutover_at
                 ):

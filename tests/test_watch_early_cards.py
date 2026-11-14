@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import httpx
 from app.infrastructure import watch_voice_early_cards as early
 from app.infrastructure.watch_voice_github import GithubReceipt, WatchVoiceError
-from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor
+from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor, WatchEarlyRejection
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -18,6 +18,7 @@ def test_replay_and_lost_ack_reconcile_without_second_post(monkeypatch):
         async with engine.begin() as connection:
             await connection.run_sync(WatchEarlyCursor.__table__.create)
             await connection.run_sync(WatchEarlyCard.__table__.create)
+            await connection.run_sync(WatchEarlyRejection.__table__.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         settings = SimpleNamespace(
             gate_workspace_id="mark-personal", dropbox_call_account_id="test"
@@ -147,6 +148,9 @@ def test_postgres_concurrent_workers_do_not_create_two_cards(tmp_path, monkeypat
         async with database(tmp_path) as factory:
             async with factory() as session:
                 await session.run_sync(lambda s: WatchEarlyCard.__table__.create(s.connection()))
+                await session.run_sync(
+                    lambda s: WatchEarlyRejection.__table__.create(s.connection())
+                )
                 await session.commit()
             settings = SimpleNamespace(
                 gate_workspace_id="mark-personal", dropbox_call_account_id="synthetic-owner"
@@ -197,5 +201,59 @@ def test_postgres_concurrent_workers_do_not_create_two_cards(tmp_path, monkeypat
                 cards = (await session.scalars(select(WatchEarlyCard))).all()
                 assert len(cards) == 1 and cards[0].state == "saved" and cards[0].issue_number == 42
             assert client.posts == 1
+
+    asyncio.run(scenario())
+
+
+def test_bad_metadata_does_not_block_valid_new_recording(monkeypatch):
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            await connection.run_sync(WatchEarlyCursor.__table__.create)
+            await connection.run_sync(WatchEarlyCard.__table__.create)
+            await connection.run_sync(WatchEarlyRejection.__table__.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal", dropbox_call_account_id="test"
+        )
+        monkeypatch.setattr(early, "_refresh_access_token", lambda *_: _return("test"))
+        monkeypatch.setattr(early, "_verify_account_id", lambda *_: _return(None))
+        item = {
+            ".tag": "file",
+            "path_display": "/Alpha/Voice/test.m4a",
+            "name": "test.m4a",
+            "id": "id:test",
+            "rev": "abc",
+            "size": 123,
+            "server_modified": (datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+        }
+        old_bad = {**item, "id": "id:old", "size": 0, "server_modified": "2020-01-01T00:00:00Z"}
+        new_bad = {**item, "id": "id:bad", "size": -1}
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={"entries": [old_bad, new_bad, item], "cursor": "cursor", "has_more": False},
+            )
+
+        class Client:
+            async def post(self, **kwargs):
+                return GithubReceipt(
+                    42, "https://github.com/markmalina/mark/issues/42", datetime.now(UTC)
+                )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            receipt = await early.run_early_cards(settings, factory, http, Client())
+            again = await early.run_early_cards(settings, factory, http, Client())
+        async with factory() as session:
+            cards = (await session.scalars(select(WatchEarlyCard))).all()
+            assert len(cards) == 1 and cards[0].file_id == "id:test" and cards[0].state == "saved"
+            rejections = (await session.scalars(select(WatchEarlyRejection))).all()
+            assert len(rejections) == 2
+            assert all(r.reason == "watch_early_size_invalid" for r in rejections)
+            assert all(len(r.metadata_sha256) == 64 for r in rejections)
+        assert receipt["published_parts"] == 1
+        assert again["result"] == "idle"
+        await engine.dispose()
 
     asyncio.run(scenario())
