@@ -23,6 +23,12 @@ from app.worker.watch_voice import PATH, timestamp
 _EXTENSIONS = {".m4a", ".mp4", ".mp3", ".wav", ".ogg", ".webm", ".flac"}
 
 
+def after_cutover(modified: datetime, cutover: datetime) -> bool:
+    # Dropbox reports whole seconds. Include the boundary second, since a file
+    # arriving later within that second is indistinguishable from one before it.
+    return _utc(modified) >= _utc(cutover).replace(microsecond=0)
+
+
 def metadata(entry: object) -> dict[str, Any] | None:
     if not isinstance(entry, dict) or entry.get(".tag") != "file":
         return None
@@ -139,7 +145,9 @@ async def run_early_cards(
                 raise WatchVoiceError("watch_early_delta_invalid")
             for obj in data["entries"]:
                 item = metadata(obj)
-                if item is None or timestamp(item["server_modified"]) <= _utc(cursor.cutover_at):
+                if item is None or not after_cutover(
+                    timestamp(item["server_modified"]), cursor.cutover_at
+                ):
                     continue
                 values = card_values(settings, item, datetime.now(UTC))
                 await session.execute(

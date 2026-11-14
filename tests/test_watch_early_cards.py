@@ -79,6 +79,12 @@ async def _return(value):
     return value
 
 
+def test_cutover_preserves_files_in_the_same_second():
+    cutover = datetime(2026, 11, 14, 15, 0, 0, 500000, tzinfo=UTC)
+    assert early.after_cutover(datetime(2026, 11, 14, 15, 0, 0, tzinfo=UTC), cutover)
+    assert not early.after_cutover(datetime(2026, 11, 14, 14, 59, 59, tzinfo=UTC), cutover)
+
+
 def test_metadata_filters_and_oversized_audio_is_still_reported():
     entry = {
         ".tag": "file",
