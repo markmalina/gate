@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 
 
-def test_recovery_overrides_activation_flags():
+def test_activation_enables_only_early_card_route():
     config = tomllib.loads(Path("railway.toml").read_text())
     command = config["deploy"]["startCommand"]
     launch = "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
@@ -30,4 +30,4 @@ def test_recovery_overrides_activation_flags():
             "GATE_WATCH_VOICE_EARLY_CARDS_ONLY": "false",
         },
     )
-    assert result.stdout == "false,false,false,5"
+    assert result.stdout == "false,true,true,5"
