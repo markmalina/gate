@@ -178,7 +178,7 @@ async def run_early_cards(
                 .values(state="sending")
             )
             await session.commit()
-            if not claimed.rowcount:
+            if not claimed.rowcount:  # type: ignore[attr-defined]
                 return result("deferred")
         else:
             # A lost or in-flight POST is never repeated: only exact-body reconciliation.
