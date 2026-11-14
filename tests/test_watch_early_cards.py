@@ -147,6 +147,7 @@ def test_postgres_concurrent_workers_do_not_create_two_cards(tmp_path, monkeypat
         async with database(tmp_path) as factory:
             async with factory() as session:
                 await session.run_sync(lambda s: WatchEarlyCard.__table__.create(s.connection()))
+                await session.commit()
             settings = SimpleNamespace(
                 gate_workspace_id="mark-personal", dropbox_call_account_id="synthetic-owner"
             )
