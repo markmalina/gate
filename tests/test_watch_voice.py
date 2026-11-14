@@ -18,7 +18,7 @@ from app.infrastructure.watch_voice_github import (
     WatchVoiceError,
     transcript_parts,
 )
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
+from app.models.watch_voice import WatchEarlyCursor, WatchVoiceCursor, WatchVoiceNote
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import DropboxCallWorkerError
 from sqlalchemy import select, text
@@ -54,7 +54,11 @@ async def database(tmp_path):
         admin = None
         engine = create_async_engine("sqlite+aiosqlite:///" + str(tmp_path / "watch.sqlite"))
     async with engine.begin() as connection:
-        for table in (WatchVoiceCursor.__table__, WatchVoiceNote.__table__):
+        for table in (
+            WatchEarlyCursor.__table__,
+            WatchVoiceCursor.__table__,
+            WatchVoiceNote.__table__,
+        ):
             await connection.run_sync(table.create)
     try:
         yield async_sessionmaker(engine, expire_on_commit=False)
@@ -589,3 +593,12 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
             session.scalar.assert_not_awaited()
 
     asyncio.run(run())
+
+
+def test_metadata_only_preflight_does_not_require_stt_credentials():
+    from pydantic import SecretStr
+
+    configured = settings().model_copy(update={"openai_api_key": SecretStr("")})
+    worker.validate_settings(configured, require_stt=False)
+    with pytest.raises(WatchVoiceError, match="watch_voice_transcription_key_missing"):
+        worker.validate_settings(configured)

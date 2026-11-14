@@ -30,6 +30,67 @@ class WatchVoiceCursor(Base):
     future_cutover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class WatchEarlyCursor(Base):
+    __tablename__ = "watch_early_cursors"
+
+    workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    cursor: Mapped[str | None] = mapped_column(Text)
+    cutover_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WatchEarlyCard(Base):
+    __tablename__ = "watch_early_cards"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_key", "account_id", "file_id", "revision", name="uq_watch_early_source"
+        ),
+        CheckConstraint(
+            "state IN ('pending','sending','unknown','saved','blocked')",
+            name="ck_watch_early_state",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_key: Mapped[str] = mapped_column(String(128))
+    account_id: Mapped[str] = mapped_column(String(255))
+    file_id: Mapped[str] = mapped_column(String(255))
+    revision: Mapped[str] = mapped_column(String(255))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source_modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    body: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(16))
+    issue_number: Mapped[int | None] = mapped_column(Integer)
+    issue_url: Mapped[str | None] = mapped_column(String(512))
+    last_error: Mapped[str | None] = mapped_column(String(128))
+
+
+class WatchEarlyRejection(Base):
+    __tablename__ = "watch_early_rejections"
+
+    workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    metadata_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    file_id: Mapped[str | None] = mapped_column(String(255))
+    revision: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str] = mapped_column(String(128))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WatchScheduleControl(Base):
+    __tablename__ = "watch_schedule_control"
+    __table_args__ = (
+        CheckConstraint("state IN ('idle','inflight','unknown')", name="ck_watch_schedule_state"),
+    )
+
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+    last_slot: Mapped[int] = mapped_column(Integer)
+    last_outcome: Mapped[str | None] = mapped_column(String(32))
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class WatchVoiceNote(Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
