@@ -32,12 +32,18 @@ def after_cutover(modified: datetime, cutover: datetime) -> bool:
 
 
 def metadata(entry: object) -> dict[str, Any] | None:
-    if not isinstance(entry, dict) or entry.get(".tag") != "file":
+    if not isinstance(entry, dict):
+        raise WatchVoiceError("watch_early_entry_unclassified")
+    if entry.get(".tag") in ("folder", "deleted"):
         return None
+    if entry.get(".tag") != "file":
+        raise WatchVoiceError("watch_early_entry_unclassified")
     path, name = entry.get("path_display"), entry.get("name")
-    if not isinstance(path, str) or not path.casefold().startswith(PATH.casefold() + "/"):
+    if not isinstance(path, str) or not path or not isinstance(name, str) or not name:
+        raise WatchVoiceError("watch_early_name_or_path_missing")
+    if not path.casefold().startswith(PATH.casefold() + "/"):
         return None
-    if not isinstance(name, str) or PurePosixPath(name).suffix.lower() not in _EXTENSIONS:
+    if PurePosixPath(name).suffix.lower() not in _EXTENSIONS:
         return None
     if len(path) > 1024 or len(name) > 255:
         raise WatchVoiceError("watch_early_name_invalid")
@@ -52,7 +58,10 @@ def metadata(entry: object) -> dict[str, Any] | None:
         raise WatchVoiceError("watch_early_metadata_invalid")
     if type(entry.get("size")) is not int or entry["size"] <= 0:
         raise WatchVoiceError("watch_early_size_invalid")
-    timestamp(entry["server_modified"])
+    try:
+        timestamp(entry["server_modified"])
+    except (OverflowError, ValueError):
+        raise WatchVoiceError("watch_early_time_invalid") from None
     return entry
 
 
