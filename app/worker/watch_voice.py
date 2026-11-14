@@ -53,7 +53,7 @@ MAX_DURATION = 60 * 60
 logger = logging.getLogger(__name__)
 
 
-def validate_settings(settings: Settings) -> None:
+def validate_settings(settings: Settings, *, require_stt: bool = True) -> None:
     if not settings.gate_watch_voice_data_gate_approved:
         raise WatchVoiceError("watch_voice_data_gate_required")
     if (
@@ -68,13 +68,14 @@ def validate_settings(settings: Settings) -> None:
         or not settings.dropbox_call_account_id
     ):
         raise WatchVoiceError("watch_voice_dropbox_credentials_missing")
-    if not settings.openai_api_key.get_secret_value():
-        raise WatchVoiceError("watch_voice_transcription_key_missing")
-    if (
-        settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
-        or settings.gate_telegram_voice_transcription_model != "gpt-4o-mini-transcribe"
-    ):
-        raise WatchVoiceError("watch_voice_pinned_provider_mismatch")
+    if require_stt:
+        if not settings.openai_api_key.get_secret_value():
+            raise WatchVoiceError("watch_voice_transcription_key_missing")
+        if (
+            settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
+            or settings.gate_telegram_voice_transcription_model != "gpt-4o-mini-transcribe"
+        ):
+            raise WatchVoiceError("watch_voice_pinned_provider_mismatch")
     if (
         not settings.gate_mark_github_token.get_secret_value()
         or not settings.gate_mark_github_writer

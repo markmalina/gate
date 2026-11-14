@@ -274,7 +274,7 @@ async def bound_settings(
             for name, field in Settings.model_fields.items()
         }
     )
-    worker.validate_settings(scoped)
+    worker.validate_settings(scoped, require_stt=not settings.gate_watch_voice_early_cards_only)
     return scoped
 
 

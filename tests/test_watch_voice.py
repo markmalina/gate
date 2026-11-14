@@ -593,3 +593,12 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
             session.scalar.assert_not_awaited()
 
     asyncio.run(run())
+
+
+def test_metadata_only_preflight_does_not_require_stt_credentials():
+    from pydantic import SecretStr
+
+    configured = settings().model_copy(update={"openai_api_key": SecretStr("")})
+    worker.validate_settings(configured, require_stt=False)
+    with pytest.raises(WatchVoiceError, match="watch_voice_transcription_key_missing"):
+        worker.validate_settings(configured)
