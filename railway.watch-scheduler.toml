@@ -1,0 +1,9 @@
+# Separate, unprovisioned scheduler service; disabled in its own environment by default.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python -m app.worker.watch_voice_scheduler"
+cronSchedule = "*/15 * * * *"
+restartPolicyType = "NEVER"

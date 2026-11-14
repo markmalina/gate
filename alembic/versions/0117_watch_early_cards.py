@@ -11,6 +11,17 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
+        "watch_schedule_control",
+        sa.Column("name", sa.String(32), primary_key=True),
+        sa.Column("state", sa.String(16), nullable=False),
+        sa.Column("last_slot", sa.Integer(), nullable=False),
+        sa.Column("last_outcome", sa.String(32), nullable=True),
+        sa.Column("changed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "state IN ('idle','inflight','unknown')", name="ck_watch_schedule_state"
+        ),
+    )
+    op.create_table(
         "watch_early_cursors",
         sa.Column("workspace_key", sa.String(128), primary_key=True),
         sa.Column("account_id", sa.String(255), primary_key=True),
@@ -56,3 +67,4 @@ def downgrade() -> None:
     op.drop_table("watch_early_cards")
     op.drop_table("watch_early_rejections")
     op.drop_table("watch_early_cursors")
+    op.drop_table("watch_schedule_control")

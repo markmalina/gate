@@ -78,6 +78,19 @@ class WatchEarlyRejection(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class WatchScheduleControl(Base):
+    __tablename__ = "watch_schedule_control"
+    __table_args__ = (
+        CheckConstraint("state IN ('idle','inflight','unknown')", name="ck_watch_schedule_state"),
+    )
+
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+    last_slot: Mapped[int] = mapped_column(Integer)
+    last_outcome: Mapped[str | None] = mapped_column(String(32))
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class WatchVoiceNote(Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
