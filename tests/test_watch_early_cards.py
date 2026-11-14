@@ -130,3 +130,71 @@ def test_actions_selects_metadata_only_and_never_calls_stt(monkeypatch):
         actions.drain(settings=settings, factory=None, http=None, claims={}, job_token="")
     )
     assert result == {"result": "metadata-only"}
+
+
+def test_postgres_concurrent_workers_do_not_create_two_cards(tmp_path, monkeypatch):
+    """Reproduce the overlap between an in-flight create and a second scan."""
+    import os
+
+    import pytest
+
+    from test_watch_voice import database
+
+    if not os.environ.get("DATABASE_URL"):
+        pytest.skip("requires PostgreSQL for row-lock semantics")
+
+    async def scenario():
+        async with database(tmp_path) as factory:
+            async with factory() as session:
+                await session.run_sync(lambda s: WatchEarlyCard.__table__.create(s.connection()))
+            settings = SimpleNamespace(
+                gate_workspace_id="mark-personal", dropbox_call_account_id="synthetic-owner"
+            )
+            monkeypatch.setattr(early, "_refresh_access_token", lambda *_: _return("test"))
+            monkeypatch.setattr(early, "_verify_account_id", lambda *_: _return(None))
+            item = {
+                ".tag": "file",
+                "path_display": "/Alpha/Voice/test.m4a",
+                "name": "test.m4a",
+                "id": "id:test",
+                "rev": "abc",
+                "size": 123,
+                "server_modified": (datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+            }
+            entered, release = asyncio.Event(), asyncio.Event()
+
+            class Client:
+                posts = 0
+
+                async def post(self, *, part, issue_number, title, body):
+                    self.posts += 1
+                    entered.set()
+                    await release.wait()
+                    return GithubReceipt(
+                        42, "https://github.com/markmalina/mark/issues/42", datetime.now(UTC)
+                    )
+
+                async def reconcile(self, *, part, issue_number, body):
+                    return None
+
+            def handler(request):
+                return httpx.Response(
+                    200, json={"entries": [item], "cursor": "cursor", "has_more": False}
+                )
+
+            client = Client()
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+                first = asyncio.create_task(early.run_early_cards(settings, factory, http, client))
+                await asyncio.wait_for(entered.wait(), 5)
+                second = await asyncio.wait_for(
+                    early.run_early_cards(settings, factory, http, client), 5
+                )
+                assert second["result"] == "deferred"
+                release.set()
+                await asyncio.wait_for(first, 5)
+            async with factory() as session:
+                cards = (await session.scalars(select(WatchEarlyCard))).all()
+                assert len(cards) == 1 and cards[0].state == "saved" and cards[0].issue_number == 42
+            assert client.posts == 1
+
+    asyncio.run(scenario())
