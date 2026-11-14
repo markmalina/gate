@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from app.infrastructure import watch_voice_early_cards as early
 from app.infrastructure.watch_voice_github import GithubReceipt, WatchVoiceError
 from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor, WatchEarlyRejection
@@ -70,7 +71,8 @@ def test_replay_and_lost_ack_reconcile_without_second_post(monkeypatch):
             assert (card.state, card.issue_number, count) == ("saved", 42, 1)
         assert client.posts == 1
         assert first["considered"] == 1 and second["reconciled"] == 1 and third["result"] == "idle"
-        assert len(calls) == 3
+        # Reconciliation no longer waits for a Dropbox scan.
+        assert len(calls) == 2
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -305,3 +307,297 @@ def test_incomplete_and_overflow_metadata_are_explicitly_rejected():
         early.metadata(None)
     assert early.metadata({".tag": "folder"}) is None
     assert early.metadata({**item, "name": "notes.txt"}) is None
+
+
+@pytest.mark.parametrize("state", ["pending", "unknown"])
+def test_pending_card_is_delivered_without_dropbox(monkeypatch, state):
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            for table in (
+                WatchEarlyCursor.__table__,
+                WatchEarlyCard.__table__,
+                WatchEarlyRejection.__table__,
+            ):
+                await connection.run_sync(table.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal", dropbox_call_account_id="test"
+        )
+        now = datetime.now(UTC)
+        entry = {
+            ".tag": "file",
+            "path_display": "/Alpha/Voice/test.m4a",
+            "name": "test.m4a",
+            "id": "id:test",
+            "rev": "abc",
+            "size": 123,
+            "server_modified": now.isoformat(),
+        }
+        async with factory() as session:
+            session.add(
+                WatchEarlyCursor(
+                    workspace_key="mark-personal", account_id="test", cursor="saved", cutover_at=now
+                )
+            )
+            values = early.card_values(settings, entry, now)
+            values["state"] = state
+            session.add(WatchEarlyCard(**values))
+            await session.commit()
+
+        async def unavailable(*args):
+            raise WatchVoiceError("dropbox_unavailable")
+
+        monkeypatch.setattr(early, "_refresh_access_token", unavailable)
+
+        class Client:
+            async def post(self, **kwargs):
+                assert state == "pending"
+                return GithubReceipt(
+                    42, "https://github.com/markmalina/mark/issues/42", datetime.now(UTC)
+                )
+
+            async def reconcile(self, **kwargs):
+                assert state == "unknown"
+                return GithubReceipt(
+                    42, "https://github.com/markmalina/mark/issues/42", datetime.now(UTC)
+                )
+
+        async with httpx.AsyncClient(trust_env=False) as http:
+            receipt = await early.run_early_cards(settings, factory, http, Client())
+        async with factory() as session:
+            card = await session.scalar(select(WatchEarlyCard))
+            assert card.state == "saved" and card.issue_number == 42
+        assert receipt["published_parts"] == (state == "pending")
+        assert receipt["reconciled"] == (state == "unknown")
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_missing_cursor_with_existing_cards_fails_closed():
+    import pytest
+
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            for table in (
+                WatchEarlyCursor.__table__,
+                WatchEarlyCard.__table__,
+                WatchEarlyRejection.__table__,
+            ):
+                await connection.run_sync(table.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal", dropbox_call_account_id="test"
+        )
+        now = datetime.now(UTC)
+        entry = {
+            ".tag": "file",
+            "path_display": "/Alpha/Voice/test.m4a",
+            "name": "test.m4a",
+            "id": "id:test",
+            "rev": "abc",
+            "size": 123,
+            "server_modified": now.isoformat(),
+        }
+        async with factory() as session:
+            session.add(WatchEarlyCard(**early.card_values(settings, entry, now)))
+            await session.commit()
+        async with httpx.AsyncClient(trust_env=False) as http:
+            with pytest.raises(WatchVoiceError, match="watch_early_cursor_missing_with_cards"):
+                await early.run_early_cards(settings, factory, http, object())
+        async with factory() as session:
+            assert await session.scalar(select(func.count()).select_from(WatchEarlyCursor)) == 0
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_unknown_reconciliation_failure_does_not_block_new_discovery(monkeypatch):
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            for table in (
+                WatchEarlyCursor.__table__,
+                WatchEarlyCard.__table__,
+                WatchEarlyRejection.__table__,
+            ):
+                await connection.run_sync(table.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal", dropbox_call_account_id="test"
+        )
+        now = datetime.now(UTC)
+        entry = {
+            ".tag": "file",
+            "path_display": "/Alpha/Voice/test.m4a",
+            "name": "test.m4a",
+            "id": "id:old",
+            "rev": "abc",
+            "size": 123,
+            "server_modified": (now + timedelta(minutes=1)).isoformat(),
+        }
+        async with factory() as session:
+            session.add(
+                WatchEarlyCursor(
+                    workspace_key="mark-personal", account_id="test", cursor="saved", cutover_at=now
+                )
+            )
+            values = early.card_values(settings, entry, now)
+            values["state"] = "unknown"
+            session.add(WatchEarlyCard(**values))
+            await session.commit()
+        monkeypatch.setattr(early, "_refresh_access_token", lambda *_: _return("test"))
+        monkeypatch.setattr(early, "_verify_account_id", lambda *_: _return(None))
+
+        class Client:
+            async def reconcile(self, **kwargs):
+                raise WatchVoiceError("github_unavailable", unknown=True)
+
+            async def post(self, **kwargs):
+                return GithubReceipt(
+                    42, "https://github.com/markmalina/mark/issues/42", datetime.now(UTC)
+                )
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={"entries": [{**entry, "id": "id:new"}], "cursor": "new", "has_more": False},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            await early.run_early_cards(settings, factory, http, Client())
+            second = await early.run_early_cards(settings, factory, http, Client())
+        async with factory() as session:
+            cards = (await session.scalars(select(WatchEarlyCard))).all()
+            assert {card.state for card in cards} == {"unknown", "saved"}
+        assert second["published_parts"] == 1
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_batch_publishes_up_to_five_and_preserves_remaining_queue(monkeypatch):
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            for table in (
+                WatchEarlyCursor.__table__,
+                WatchEarlyCard.__table__,
+                WatchEarlyRejection.__table__,
+            ):
+                await connection.run_sync(table.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal",
+            dropbox_call_account_id="test",
+            gate_watch_voice_early_batch_size=5,
+        )
+        monkeypatch.setattr(early, "_refresh_access_token", lambda *_: _return("test"))
+        monkeypatch.setattr(early, "_verify_account_id", lambda *_: _return(None))
+        modified = (datetime.now(UTC) + timedelta(minutes=1)).isoformat()
+        entries = [
+            {
+                ".tag": "file",
+                "path_display": f"/Alpha/Voice/{i}.m4a",
+                "name": f"{i}.m4a",
+                "id": f"id:file{i}",
+                "rev": "abc",
+                "size": 123,
+                "server_modified": modified,
+            }
+            for i in range(7)
+        ]
+
+        def handler(request):
+            return httpx.Response(
+                200, json={"entries": entries, "cursor": "next", "has_more": False}
+            )
+
+        class Client:
+            posts = 0
+
+            async def post(self, **kwargs):
+                self.posts += 1
+                return GithubReceipt(
+                    self.posts,
+                    f"https://github.com/markmalina/mark/issues/{self.posts}",
+                    datetime.now(UTC),
+                )
+
+        client = Client()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            first = await early.run_early_cards(settings, factory, http, client)
+            second = await early.run_early_cards(settings, factory, http, client)
+            third = await early.run_early_cards(settings, factory, http, client)
+        assert (first["considered"], first["published_parts"]) == (5, 5)
+        assert (second["considered"], second["published_parts"]) == (2, 2)
+        assert third["result"] == "idle" and client.posts == 7
+        async with factory() as session:
+            assert await session.scalar(select(func.count()).select_from(WatchEarlyCard)) == 7
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_batch_drains_saved_queue_when_dropbox_is_unavailable(monkeypatch):
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            for table in (
+                WatchEarlyCursor.__table__,
+                WatchEarlyCard.__table__,
+                WatchEarlyRejection.__table__,
+            ):
+                await connection.run_sync(table.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal",
+            dropbox_call_account_id="test",
+            gate_watch_voice_early_batch_size=5,
+        )
+        now = datetime.now(UTC)
+        async with factory() as session:
+            session.add(
+                WatchEarlyCursor(
+                    workspace_key="mark-personal", account_id="test", cursor="saved", cutover_at=now
+                )
+            )
+            for i in range(3):
+                entry = {
+                    ".tag": "file",
+                    "path_display": f"/Alpha/Voice/{i}.m4a",
+                    "name": f"{i}.m4a",
+                    "id": f"id:file{i}",
+                    "rev": "abc",
+                    "size": 123,
+                    "server_modified": now.isoformat(),
+                }
+                session.add(WatchEarlyCard(**early.card_values(settings, entry, now)))
+            await session.commit()
+
+        async def unavailable(*args):
+            raise WatchVoiceError("dropbox_unavailable")
+
+        monkeypatch.setattr(early, "_refresh_access_token", unavailable)
+
+        class Client:
+            posts = 0
+
+            async def post(self, **kwargs):
+                self.posts += 1
+                return GithubReceipt(
+                    self.posts,
+                    f"https://github.com/markmalina/mark/issues/{self.posts}",
+                    datetime.now(UTC),
+                )
+
+        client = Client()
+        async with httpx.AsyncClient(trust_env=False) as http:
+            receipt = await early.run_early_cards(settings, factory, http, client)
+        assert receipt["published_parts"] == 3 and receipt["considered"] == 3
+        assert client.posts == 3
+        await engine.dispose()
+
+    asyncio.run(scenario())

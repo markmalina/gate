@@ -107,12 +107,39 @@ async def run_early_cards(
         "account_id": settings.dropbox_call_account_id,
     }
     async with factory() as session:
-        await session.execute(
+        created = await session.execute(
             insert(WatchEarlyCursor)
             .values(**key, cutover_at=datetime.now(UTC))
             .on_conflict_do_nothing()
         )
+        if created.rowcount:  # type: ignore[attr-defined]
+            existing = await session.scalar(
+                select(WatchEarlyCard.id)
+                .where(
+                    WatchEarlyCard.workspace_key == key["workspace_key"],
+                    WatchEarlyCard.account_id == key["account_id"],
+                )
+                .limit(1)
+            )
+            if existing is None:
+                existing = await session.scalar(
+                    select(WatchEarlyRejection.metadata_sha256)
+                    .where(
+                        WatchEarlyRejection.workspace_key == key["workspace_key"],
+                        WatchEarlyRejection.account_id == key["account_id"],
+                    )
+                    .limit(1)
+                )
+            if existing is not None:
+                raise WatchVoiceError("watch_early_cursor_missing_with_cards")
         await session.commit()
+    # A durable pending card does not depend on Dropbox availability.
+    limit = getattr(settings, "gate_watch_voice_early_batch_size", 1)
+    if type(limit) is not int or not 1 <= limit <= 5:
+        raise WatchVoiceError("watch_early_batch_limit_invalid")
+    prior = await drain_saved(factory, client, key, limit)
+    if prior["published_parts"] or prior["reconciled"]:
+        return prior
     async with factory() as session:
         cursor = await session.scalar(
             select(WatchEarlyCursor)
@@ -201,6 +228,40 @@ async def run_early_cards(
         # Metadata and cursor advance commit atomically; no audio bytes are fetched.
         cursor.cursor = page_cursor
         await session.commit()
+    if prior["result"] != "idle":
+        return prior
+    return await drain_saved(factory, client, key, limit)
+
+
+async def drain_saved(
+    factory: async_sessionmaker[AsyncSession],
+    client: MarkInboxClient,
+    key: dict[str, str],
+    limit: int,
+) -> dict[str, Any]:
+    """Publish at most the approved cap and return actual, never truncated counts."""
+    from app.infrastructure.watch_voice_actions import result
+
+    totals = {"considered": 0, "published_parts": 0, "delivered": 0, "reconciled": 0}
+    last = "idle"
+    for _ in range(limit):
+        item = await publish_saved(factory, client, key)
+        if item["result"] == "idle":
+            break
+        last = item["result"]
+        for name in totals:
+            totals[name] += item[name]
+        # Unknown, rejected or contested work must not be selected repeatedly in the same run.
+        if not item["published_parts"] and not item["reconciled"]:
+            break
+    return result(last, **totals)
+
+
+async def publish_saved(
+    factory: async_sessionmaker[AsyncSession], client: MarkInboxClient, key: dict[str, str]
+) -> dict[str, Any]:
+    from app.infrastructure.watch_voice_actions import result
+
     async with factory() as session:
         card = await session.scalar(
             select(WatchEarlyCard)
