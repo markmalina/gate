@@ -242,3 +242,26 @@ def test_scheduler_is_default_off_without_exposing_token():
     )
     assert completed.stdout.strip() == "watch_scheduler_disabled"
     assert "synthetic-private-token" not in completed.stdout + completed.stderr
+
+
+def test_scheduler_never_falls_back_to_main_database_url():
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ)
+    env["GATE_WATCH_SCHEDULER_ENABLED"] = "true"
+    env["GATE_WATCH_DISPATCH_TOKEN"] = "synthetic-private-token"
+    env["DATABASE_URL"] = "postgresql://private-main-database"
+    env.pop("GATE_WATCH_SCHEDULER_DATABASE_URL", None)
+    completed = subprocess.run(
+        [sys.executable, "-m", "app.worker.watch_voice_scheduler"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert completed.returncode == 1
+    assert completed.stdout.strip() == "watch_scheduler_configuration_missing"
+    assert "synthetic-private-token" not in completed.stdout + completed.stderr
+    assert "private-main-database" not in completed.stdout + completed.stderr

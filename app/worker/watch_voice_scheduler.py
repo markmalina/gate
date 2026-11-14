@@ -149,7 +149,8 @@ async def _main() -> None:
         print("watch_scheduler_disabled")
         return
     token = os.environ.get("GATE_WATCH_DISPATCH_TOKEN", "")
-    url = os.environ.get("DATABASE_URL", "")
+    # Scheduler gets a separately scoped DB role, never the main Gate URL by default.
+    url = os.environ.get("GATE_WATCH_SCHEDULER_DATABASE_URL", "")
     if not url or (not status_only and not token):
         print("watch_scheduler_configuration_missing")
         raise SystemExit(1)
