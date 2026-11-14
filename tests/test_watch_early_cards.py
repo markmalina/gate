@@ -229,11 +229,24 @@ def test_bad_metadata_does_not_block_valid_new_recording(monkeypatch):
         }
         old_bad = {**item, "id": "id:old", "size": 0, "server_modified": "2020-01-01T00:00:00Z"}
         new_bad = {**item, "id": "id:bad", "size": -1}
+        no_name = {
+            key: value for key, value in {**item, "id": "id:noname"}.items() if key != "name"
+        }
+        no_path = {
+            key: value
+            for key, value in {**item, "id": "id:nopath"}.items()
+            if key != "path_display"
+        }
+        bad_time = {**item, "id": "id:badtime", "server_modified": "9999-12-31T23:59:59-01:00"}
 
         def handler(request):
             return httpx.Response(
                 200,
-                json={"entries": [old_bad, new_bad, item], "cursor": "cursor", "has_more": False},
+                json={
+                    "entries": [old_bad, new_bad, no_name, no_path, bad_time, None, item],
+                    "cursor": "cursor",
+                    "has_more": False,
+                },
             )
 
         class Client:
@@ -249,11 +262,46 @@ def test_bad_metadata_does_not_block_valid_new_recording(monkeypatch):
             cards = (await session.scalars(select(WatchEarlyCard))).all()
             assert len(cards) == 1 and cards[0].file_id == "id:test" and cards[0].state == "saved"
             rejections = (await session.scalars(select(WatchEarlyRejection))).all()
-            assert len(rejections) == 2
-            assert all(r.reason == "watch_early_size_invalid" for r in rejections)
+            assert len(rejections) == 6
+            assert sorted(r.reason for r in rejections) == sorted(
+                [
+                    "watch_early_size_invalid",
+                    "watch_early_size_invalid",
+                    "watch_early_name_or_path_missing",
+                    "watch_early_name_or_path_missing",
+                    "watch_early_time_invalid",
+                    "watch_early_entry_unclassified",
+                ]
+            )
             assert all(len(r.metadata_sha256) == 64 for r in rejections)
         assert receipt["published_parts"] == 1
         assert again["result"] == "idle"
         await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_incomplete_and_overflow_metadata_are_explicitly_rejected():
+    import pytest
+
+    item = {
+        ".tag": "file",
+        "path_display": "/Alpha/Voice/test.m4a",
+        "name": "test.m4a",
+        "id": "id:test",
+        "rev": "abc",
+        "size": 123,
+        "server_modified": "2026-11-14T16:00:00Z",
+    }
+    for field in ("name", "path_display"):
+        invalid = {key: value for key, value in item.items() if key != field}
+        with pytest.raises(WatchVoiceError):
+            early.metadata(invalid)
+    with pytest.raises(WatchVoiceError):
+        early.metadata({**item, "server_modified": "9999-12-31T23:59:59-01:00"})
+    with pytest.raises(WatchVoiceError):
+        early.metadata({key: value for key, value in item.items() if key != ".tag"})
+    with pytest.raises(WatchVoiceError):
+        early.metadata(None)
+    assert early.metadata({".tag": "folder"}) is None
+    assert early.metadata({**item, "name": "notes.txt"}) is None
