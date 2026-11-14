@@ -31,6 +31,7 @@ from app.infrastructure.watch_voice_recovery import (
 )
 from app.infrastructure.watch_voice_w1 import W1Admission
 from app.models.watch_voice import (
+    WatchEarlyCursor,
     WatchVoiceCursor,
     WatchVoiceDrainRun,
     WatchVoiceNote,
@@ -314,9 +315,25 @@ async def drain(
     )
     if admission is not None and binding["scope"] != "future-only":
         raise WatchVoiceError("watch_voice_w1_future_only_required")
+    if settings.gate_watch_voice_early_cards_only and (
+        admission is not None or binding["scope"] != "future-only"
+    ):
+        raise WatchVoiceError("watch_voice_early_card_scope_mismatch")
     scoped = await bound_settings(settings, binding, factory, job_token=job_token)
     if not await claim_run(factory, claims):
         return result("replayed")
+    if settings.gate_watch_voice_early_cards_only:
+        from app.infrastructure.watch_voice_early_cards import run_early_cards
+
+        return await run_early_cards(scoped, factory, http, client)
+    # Do not let the legacy publisher create a second issue after an early-card
+    # lane has been initialized. A future integration must share its receipts.
+    async with factory() as session:
+        early = await session.get(
+            WatchEarlyCursor, (settings.gate_workspace_id, settings.dropbox_call_account_id)
+        )
+        if early is not None:
+            raise WatchVoiceError("watch_voice_early_card_handoff_required")
     if admission is not None:
         # Always returns: never recovery, cursor initialization, stale sweep or scan.
         return await _process_w1_note(scoped, factory, http, client, admission)
@@ -612,4 +629,3 @@ async def operational_status(
         "recovery_counts": recovery_counts,
         "private_content_exposed": False,
     }
-
