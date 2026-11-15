@@ -5,7 +5,7 @@ import unittest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from watch_app_auth import AppAuthError, issue_mark_token
+from app.infrastructure.watch_app_auth import AppAuthError, issue_mark_token
 
 
 def private_key():
