@@ -2,7 +2,7 @@
 
 import httpx
 
-from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
+from app.infrastructure.watch_voice_github import GithubReceipt, MarkInboxClient, WatchVoiceError
 
 APP_WRITER = "markmalina-n8n-upload[bot]"
 LEGACY_WRITER = "github-actions[bot]"
@@ -25,7 +25,9 @@ class AppInboxClient(MarkInboxClient):
                 or repo["owner"].get("id") != 23397294):
             raise WatchVoiceError("github_private_target_mismatch")
 
-    async def reconcile(self, *, part: int, issue_number: int | None, body: str):
+    async def reconcile(
+        self, *, part: int, issue_number: int | None, body: str
+    ) -> GithubReceipt | None:
         app_receipt = await super().reconcile(part=part, issue_number=issue_number, body=body)
         legacy_receipt = await self.legacy.reconcile(part=part, issue_number=issue_number, body=body)
         if app_receipt is not None and legacy_receipt is not None:
