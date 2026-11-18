@@ -1237,7 +1237,8 @@ async def _run_from_settings(
                 or settings.gate_alpha_group_capacity < 2
             ):
                 raise RuntimeError(
-                    "Alpha membership replay requires the enabled canary and group capacity above one"
+                    "Alpha membership replay requires the enabled canary "
+                    "and group capacity above one"
                 )
             async with sessions() as replay_session:
                 replayed = await SqlAlphaCapacityDeadLetterReplayer(

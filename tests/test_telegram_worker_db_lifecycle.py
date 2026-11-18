@@ -5,12 +5,11 @@ import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+import app.worker.telegram_processing as worker
 import pytest
+from app.core.config import Settings
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-import app.worker.telegram_processing as worker
-from app.core.config import Settings
 
 
 class FakeSession:
