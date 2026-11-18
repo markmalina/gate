@@ -3,12 +3,17 @@
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from uuid import uuid4
 
 import app.worker.telegram_processing as worker
 import pytest
+from app.application.telegram_processing import AcceptTelegramReceiptCommand
 from app.core.config import Settings
-from sqlalchemy import text
+from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
+from app.models.domain import Base, TelegramReceipt, TelegramReceiptStatus
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
@@ -250,6 +255,78 @@ def test_shared_pool_reconnects_after_server_ends_idle_connection(monkeypatch):
             assert backend_pids[0] != backend_pids[1]
         finally:
             await engine.dispose()
+            await admin.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_persistent_pool_processes_real_queue_and_recovers_idle_connection(monkeypatch):
+    if os.environ.get("GATE_ENV") != "ci" or "@localhost:5432/" not in os.environ.get(
+        "DATABASE_URL", ""
+    ):
+        pytest.skip("requires the isolated localhost CI PostgreSQL service")
+    database_url = os.environ["DATABASE_URL"]
+    seen = []
+
+    class Processor:
+        async def process(self, item):
+            seen.append(item.update_id)
+
+    monkeypatch.setattr(worker, "ShadowClassifyingTelegramProcessor", lambda **kwargs: Processor())
+
+    async def scenario():
+        schema = f"worker_pool_test_{uuid4().hex}"
+        admin = create_async_engine(database_url)
+        async with admin.begin() as connection:
+            await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        engine = create_async_engine(
+            database_url,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=0,
+            connect_args={"server_settings": {"search_path": schema}},
+        )
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            sessions = async_sessionmaker(engine, expire_on_commit=False)
+            async with sessions() as session:
+                await SqlTelegramReceiptStore(session).create_if_absent(
+                    AcceptTelegramReceiptCommand(
+                        bot_key="gate_m_bot",
+                        update_id=42,
+                        payload={"update_id": 42},
+                        received_at=datetime.now(UTC),
+                    )
+                )
+
+            async def pid():
+                async with sessions() as session:
+                    return await session.scalar(text("SELECT pg_backend_pid()"))
+
+            configured = settings().model_copy(update={"database_url": database_url})
+            before = await pid()
+            first = await worker.run_telegram_worker_with_sessions(configured, sessions)
+            second = await worker.run_telegram_worker_with_sessions(configured, sessions)
+            assert first.disposition == "processed"
+            assert second.disposition == "idle"
+            assert await pid() == before
+            assert seen == [42]
+            async with sessions() as session:
+                receipt = (await session.execute(select(TelegramReceipt))).scalar_one()
+                assert receipt.status == TelegramReceiptStatus.PROCESSED.value
+            async with admin.begin() as connection:
+                assert await connection.scalar(
+                    text("SELECT pg_terminate_backend(:pid)"), {"pid": before}
+                )
+            recovered = await worker.run_telegram_worker_with_sessions(configured, sessions)
+            assert recovered.disposition == "idle"
+            assert await pid() != before
+            assert seen == [42]
+        finally:
+            await engine.dispose()
+            async with admin.begin() as connection:
+                await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
             await admin.dispose()
 
     asyncio.run(scenario())
