@@ -1175,75 +1175,89 @@ def _optional_installation_key(raw_value: str) -> str | None:
     return normalized or None
 
 
-async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
+async def run_telegram_worker_with_sessions(
+    settings: Settings,
+    sessions: async_sessionmaker[AsyncSession],
+) -> TelegramWorkerRuntimeResult:
+    """Run one iteration using the process-owned database session factory."""
+    return await _run_from_settings(settings, sessions=sessions)
+
+
+async def _run_from_settings(
+    settings: Settings,
+    *,
+    sessions: async_sessionmaker[AsyncSession] | None = None,
+) -> TelegramWorkerRuntimeResult:
     if not settings.gate_telegram_worker_enabled:
         return await run_telegram_worker_once(settings=settings)
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is required for an enabled Telegram worker")
 
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    if (
-        settings.gate_become_connector_enabled
-        and settings.gate_become_canary_enabled
-        and settings.gate_become_privacy_mode_confirmed
-        and settings.gate_become_group_capacity == 1
-    ):
-        recovered_registration = await SessionFactoryBecomeRegistrationReplayer(
-            sessions
-        ).requeue_latest(now=datetime.now(UTC))
-        if recovered_registration:
-            logger.info(
-                "Requeued one durable BECOME registration for controlled intake"
-            )
-        projected_consent = await SessionFactoryBecomeRelationsHandoffBackfiller(
-            sessions
-        ).ensure_one()
-        if projected_consent:
-            logger.info(
-                "Projected one durable BECOME consent for Relations handoff"
-            )
-        retention = await SessionFactoryBecomeMediaRetention(
-            sessions
-        ).purge_expired(now=datetime.now(UTC))
-        if retention.raw_purged or retention.transcripts_purged:
-            logger.info(
-                (
-                    "Purged expired BECOME content: "
-                    "raw=%s transcripts=%s"
-                ),
-                retention.raw_purged,
-                retention.transcripts_purged,
-            )
-    if settings.gate_alpha_membership_replay_limit:
-        if (
-            not settings.gate_alpha_connector_enabled
-            or not settings.gate_alpha_canary_enabled
-            or settings.gate_alpha_group_capacity < 2
-        ):
-            raise RuntimeError(
-                "Alpha membership replay requires the enabled canary and group capacity above one"
-            )
-        async with sessions() as replay_session:
-            replayed = await SqlAlphaCapacityDeadLetterReplayer(
-                replay_session
-            ).requeue(
-                bot_key=TelegramConnectorKey.ALPHA_GROUP.value,
-                now=datetime.now(UTC),
-                limit=settings.gate_alpha_membership_replay_limit,
-            )
-        if replayed:
-            logger.info(
-                "Requeued bounded Alpha membership capacity failures: count=%s",
-                replayed,
-            )
-    identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
-    canonical_store = SessionFactoryCanonicalIngressStore(sessions)
-    business_text_parity = SessionFactoryTelegramBusinessTextParityObserver(
-        sessions
-    )
-    business_text_inbox = SessionFactoryTelegramBusinessTextInboxProjector(sessions)
+    engine = None
+    if sessions is None:
+        engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
+        if (
+            settings.gate_become_connector_enabled
+            and settings.gate_become_canary_enabled
+            and settings.gate_become_privacy_mode_confirmed
+            and settings.gate_become_group_capacity == 1
+        ):
+            recovered_registration = await SessionFactoryBecomeRegistrationReplayer(
+                sessions
+            ).requeue_latest(now=datetime.now(UTC))
+            if recovered_registration:
+                logger.info(
+                    "Requeued one durable BECOME registration for controlled intake"
+                )
+            projected_consent = await SessionFactoryBecomeRelationsHandoffBackfiller(
+                sessions
+            ).ensure_one()
+            if projected_consent:
+                logger.info(
+                    "Projected one durable BECOME consent for Relations handoff"
+                )
+            retention = await SessionFactoryBecomeMediaRetention(
+                sessions
+            ).purge_expired(now=datetime.now(UTC))
+            if retention.raw_purged or retention.transcripts_purged:
+                logger.info(
+                    (
+                        "Purged expired BECOME content: "
+                        "raw=%s transcripts=%s"
+                    ),
+                    retention.raw_purged,
+                    retention.transcripts_purged,
+                )
+        if settings.gate_alpha_membership_replay_limit:
+            if (
+                not settings.gate_alpha_connector_enabled
+                or not settings.gate_alpha_canary_enabled
+                or settings.gate_alpha_group_capacity < 2
+            ):
+                raise RuntimeError(
+                    "Alpha membership replay requires the enabled canary and group capacity above one"
+                )
+            async with sessions() as replay_session:
+                replayed = await SqlAlphaCapacityDeadLetterReplayer(
+                    replay_session
+                ).requeue(
+                    bot_key=TelegramConnectorKey.ALPHA_GROUP.value,
+                    now=datetime.now(UTC),
+                    limit=settings.gate_alpha_membership_replay_limit,
+                )
+            if replayed:
+                logger.info(
+                    "Requeued bounded Alpha membership capacity failures: count=%s",
+                    replayed,
+                )
+        identity_reader = SessionFactoryTelegramIngressIdentityReader(sessions)
+        canonical_store = SessionFactoryCanonicalIngressStore(sessions)
+        business_text_parity = SessionFactoryTelegramBusinessTextParityObserver(
+            sessions
+        )
+        business_text_inbox = SessionFactoryTelegramBusinessTextInboxProjector(sessions)
         if (
             settings.gate_alpha_canary_enabled
             or settings.gate_beta_canary_enabled
@@ -2018,7 +2032,8 @@ async def _run_from_settings(settings: Settings) -> TelegramWorkerRuntimeResult:
         await _drain_beta_context(sessions)
         return result
     finally:
-        await engine.dispose()
+        if engine is not None:
+            await engine.dispose()
 
 
 async def _drain_beta_context(
