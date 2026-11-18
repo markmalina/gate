@@ -149,8 +149,8 @@ def test_managed_loop_reuses_its_own_pool_and_disposes_on_cancellation(monkeypat
         engines.append((args, kwargs))
         return engine
 
-    async def run_once(_settings, supplied_sessions):
-        seen.append(supplied_sessions)
+    async def run_once(_settings, *, sessions):
+        seen.append(sessions)
         return SimpleNamespace(disposition="idle", error_code=None)
 
     async def run_loop(configured, *, run_iteration, health_reporter):
@@ -162,8 +162,12 @@ def test_managed_loop_reuses_its_own_pool_and_disposes_on_cancellation(monkeypat
     monkeypatch.setattr(worker, "async_sessionmaker", lambda *a, **k: sessions)
     monkeypatch.setattr(worker, "run_telegram_worker_with_sessions", run_once)
     monkeypatch.setattr(worker, "run_telegram_worker_loop", run_loop)
+
+    async def scenario():
+        await asyncio.wait_for(worker.run_telegram_worker_managed_loop(settings()), timeout=2)
+
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(worker.run_telegram_worker_managed_loop(settings()))
+        asyncio.run(scenario())
     assert len(engines) == 1
     assert engines[0][1]["pool_pre_ping"] is True
     assert seen == [sessions, sessions]
