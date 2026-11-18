@@ -134,6 +134,67 @@ def test_standalone_disposes_pool_on_cancellation(monkeypatch):
     assert engine.disposed == 1
 
 
+def test_managed_loop_reuses_its_own_pool_and_disposes_on_cancellation(monkeypatch):
+    engine = FakeEngine()
+    sessions = FakeSessions()
+    engines = []
+    seen = []
+
+    def create_engine(*args, **kwargs):
+        engines.append((args, kwargs))
+        return engine
+
+    async def run_once(_settings, supplied_sessions):
+        seen.append(supplied_sessions)
+        return SimpleNamespace(disposition="idle", error_code=None)
+
+    async def run_loop(configured, *, run_iteration, health_reporter):
+        await run_iteration(configured)
+        await run_iteration(configured)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(worker, "create_async_engine", create_engine)
+    monkeypatch.setattr(worker, "async_sessionmaker", lambda *a, **k: sessions)
+    monkeypatch.setattr(worker, "run_telegram_worker_with_sessions", run_once)
+    monkeypatch.setattr(worker, "run_telegram_worker_loop", run_loop)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(worker.run_telegram_worker_managed_loop(settings()))
+    assert len(engines) == 1
+    assert engines[0][1]["pool_pre_ping"] is True
+    assert seen == [sessions, sessions]
+    assert engine.disposed == 1
+
+
+def test_managed_loop_retries_failed_pool_initialization(monkeypatch):
+    engine = FakeEngine()
+    attempts = []
+    failures = []
+    sleeps = []
+
+    def create_engine(*_args, **_kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("synthetic initialization failure")
+        return engine
+
+    async def run_loop(*_args, **_kwargs):
+        return None
+
+    async def sleep(delay):
+        sleeps.append(delay)
+
+    reporter = SimpleNamespace(record_failure=lambda *a, **k: failures.append((a, k)))
+    monkeypatch.setattr(worker, "create_async_engine", create_engine)
+    monkeypatch.setattr(worker, "async_sessionmaker", lambda *a, **k: FakeSessions())
+    monkeypatch.setattr(worker, "run_telegram_worker_loop", run_loop)
+    monkeypatch.setattr(worker.asyncio, "sleep", sleep)
+    asyncio.run(worker.run_telegram_worker_managed_loop(settings(), health_reporter=reporter))
+    assert len(attempts) == 2
+    assert len(failures) == 1
+    assert sleeps == [5.0]
+    assert engine.disposed == 1
+
+
 def test_shared_sessions_are_used_when_voice_archive_is_enabled(monkeypatch):
     seen = configure(monkeypatch)
     sessions = FakeSessions()

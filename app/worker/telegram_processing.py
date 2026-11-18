@@ -2118,6 +2118,48 @@ async def run_telegram_worker_loop(
             pass
 
 
+async def run_telegram_worker_managed_loop(
+    settings: Settings,
+    *,
+    health_reporter: WorkerHealthReporter | None = None,
+) -> None:
+    """Keep a worker-only connection pool for the lifetime of the loop."""
+    if not settings.gate_telegram_worker_enabled:
+        return
+    while True:
+        engine = None
+        try:
+            if not settings.database_url:
+                raise RuntimeError("DATABASE_URL is required for an enabled Telegram worker")
+            engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+            sessions = async_sessionmaker(engine, expire_on_commit=False)
+            await run_telegram_worker_loop(
+                settings,
+                run_iteration=lambda configured: run_telegram_worker_with_sessions(
+                    configured, sessions
+                ),
+                health_reporter=health_reporter,
+            )
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if health_reporter is not None:
+                health_reporter.record_failure(
+                    TELEGRAM_WORKER,
+                    error_code="telegram_worker_iteration_failed",
+                    observed_at=datetime.now(UTC),
+                )
+            logger.warning(
+                "Telegram worker managed loop failed: error_type=%s",
+                exc.__class__.__name__,
+            )
+        finally:
+            if engine is not None:
+                await engine.dispose()
+        await asyncio.sleep(5.0)
+
+
 def main() -> None:
     """Run one explicitly invoked iteration; never start a scheduler or loop."""
 
