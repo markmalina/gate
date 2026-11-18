@@ -9,6 +9,7 @@ import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -2135,9 +2136,7 @@ async def run_telegram_worker_managed_loop(
             sessions = async_sessionmaker(engine, expire_on_commit=False)
             await run_telegram_worker_loop(
                 settings,
-                run_iteration=lambda configured: run_telegram_worker_with_sessions(
-                    configured, sessions
-                ),
+                run_iteration=partial(run_telegram_worker_with_sessions, sessions=sessions),
                 health_reporter=health_reporter,
             )
             return
