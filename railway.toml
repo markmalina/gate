@@ -1,3 +1,4 @@
+# Apply only to the separate Watch App scheduler. The runner defaults to OFF.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"

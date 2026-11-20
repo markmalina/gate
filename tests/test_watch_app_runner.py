@@ -1,64 +1,59 @@
 import asyncio
-import importlib.util
-import os
-import sys
-import types
-import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from app.worker import watch_app_runner as runner
 
 
-def load_runner():
-    names = ["sqlalchemy", "sqlalchemy.ext", "sqlalchemy.ext.asyncio", "app.core.config",
-             "app.infrastructure.watch_app_auth", "app.infrastructure.watch_app_inbox",
-             "app.infrastructure.watch_voice_early_cards"]
-    fake = {name: types.ModuleType(name) for name in names}
-    fake["sqlalchemy.ext.asyncio"].async_sessionmaker = lambda *_a, **_kw: None
-    fake["sqlalchemy.ext.asyncio"].create_async_engine = lambda *_a, **_kw: None
-    fake["app.core.config"].get_settings = lambda: types.SimpleNamespace(
-        gate_workspace_id="mark-personal", gate_watch_voice_enabled=False,
-        dropbox_call_account_id="")
-    fake["app.infrastructure.watch_app_auth"].issue_mark_token = None
-    fake["app.infrastructure.watch_app_inbox"].AppInboxClient = None
-    fake["app.infrastructure.watch_voice_early_cards"].run_early_cards = None
-    with patch.dict(sys.modules, fake):
-        spec = importlib.util.spec_from_file_location("candidate_runner", "app/worker/watch_app_runner.py")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-    return module
+def test_default_off(monkeypatch):
+    monkeypatch.delenv("GATE_WATCH_APP_RUNNER_ENABLED", raising=False)
+    monkeypatch.setattr(runner, "get_settings", MagicMock(side_effect=AssertionError))
+    assert asyncio.run(runner.main()) == 0
 
 
-class RunnerTests(unittest.TestCase):
-    def test_default_off(self):
-        module = load_runner()
-        with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(asyncio.run(module.main()), 0)
+@pytest.mark.parametrize("discovery_outage", [False, True])
+def test_active_writer_drains_even_on_dropbox_outage(monkeypatch, discovery_outage):
+    monkeypatch.setenv("GATE_WATCH_APP_RUNNER_ENABLED", "true")
+    monkeypatch.setenv("GATE_WATCH_APP_PRIVATE_KEY", "synthetic")
+    monkeypatch.setenv("GATE_WATCH_APP_DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("GATE_WATCH_APP_ID", "123")
+    monkeypatch.setenv("GATE_WATCH_APP_INSTALLATION_ID", "456")
+    monkeypatch.setenv("GATE_WATCH_APP_SLUG", "watch-fixture")
+    engine = SimpleNamespace(dispose=AsyncMock())
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value.get = AsyncMock(
+        return_value=SimpleNamespace(writer_mode="app")
+    )
+    monkeypatch.setattr(runner, "create_async_engine", MagicMock(return_value=engine))
+    monkeypatch.setattr(runner, "async_sessionmaker", MagicMock(return_value=factory))
+    monkeypatch.setattr(
+        runner,
+        "get_settings",
+        lambda: SimpleNamespace(
+            gate_workspace_id="mark-personal",
+            gate_watch_voice_enabled=False,
+            dropbox_call_account_id="test",
+        ),
+    )
+    discover = AsyncMock(
+        side_effect=runner.WatchVoiceError("dropbox_unavailable") if discovery_outage else None
+    )
+    monkeypatch.setattr(runner, "discover_early_cards", discover)
+    monkeypatch.setattr(runner, "issue_mark_token", AsyncMock(return_value="temporary"))
+    client = SimpleNamespace(preflight=AsyncMock())
+    monkeypatch.setattr(runner, "AppInboxClient", MagicMock(return_value=client))
+    drain = AsyncMock(return_value={"result": "processed"})
+    monkeypatch.setattr(runner, "drain_saved", drain)
 
-    def test_missing_credentials_fail_closed(self):
-        module = load_runner()
-        with patch.dict(os.environ, {"GATE_WATCH_APP_RUNNER_ENABLED": "true"}, clear=True):
-            self.assertEqual(asyncio.run(module.main()), 1)
+    assert asyncio.run(runner.main()) == int(discovery_outage)
+    assert discover.await_args.kwargs == {"writer": "app"}
+    assert drain.await_args.kwargs == {"writer": "app"}
+    engine.dispose.assert_awaited_once()
 
-    def test_one_enabled_pass(self):
-        module = load_runner()
-        engine = MagicMock()
-        engine.dispose = AsyncMock()
-        client = MagicMock()
-        client.preflight = AsyncMock()
-        module.create_async_engine = MagicMock(return_value=engine)
-        module.async_sessionmaker = MagicMock(return_value="factory")
-        module.get_settings = lambda: types.SimpleNamespace(
-            gate_workspace_id="mark-personal", gate_watch_voice_enabled=False,
-            dropbox_call_account_id="test")
-        module.issue_mark_token = AsyncMock(return_value="temporary")
-        module.AppInboxClient = MagicMock(return_value=client)
-        module.run_early_cards = AsyncMock(return_value={"result": "processed"})
-        values = {"GATE_WATCH_APP_RUNNER_ENABLED": "true", "GATE_WATCH_APP_PRIVATE_KEY": "fake",
-                  "GATE_WATCH_APP_DATABASE_URL": "postgresql://test:test@localhost/test"}
-        with patch.dict(os.environ, values, clear=True):
-            self.assertEqual(asyncio.run(module.main()), 0)
-        module.run_early_cards.assert_awaited_once()
-        engine.dispose.assert_awaited_once()
-
-
-if __name__ == "__main__":
-    unittest.main()
+    factory.return_value.__aenter__.return_value.get.return_value.writer_mode = "legacy_actions"
+    discover.reset_mock()
+    runner.issue_mark_token.reset_mock()
+    assert asyncio.run(runner.main()) == 1
+    discover.assert_not_awaited()
+    runner.issue_mark_token.assert_not_awaited()

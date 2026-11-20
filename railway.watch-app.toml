@@ -1,0 +1,9 @@
+# Apply only to the separate Watch App scheduler. The runner defaults to OFF.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python -m app.worker.watch_app_runner"
+cronSchedule = "*/15 * * * *"
+restartPolicyType = "NEVER"

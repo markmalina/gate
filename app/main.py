@@ -58,7 +58,9 @@ from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.reply_documents import run_reply_document_cleanup_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.watch_voice import run_watch_voice_worker_loop
-from app.worker.telegram_processing import run_telegram_worker_loop
+from app.worker.telegram_processing import (
+    run_telegram_worker_managed_loop,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +200,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         )
                     if telegram_worker_enabled:
                         worker_task = asyncio.create_task(
-                            run_telegram_worker_loop(
+                            run_telegram_worker_managed_loop(
                                 settings,
                                 health_reporter=worker_health,
                             )
