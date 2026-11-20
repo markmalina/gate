@@ -17,6 +17,9 @@ def test_active_writer_drains_even_on_dropbox_outage(monkeypatch, discovery_outa
     monkeypatch.setenv("GATE_WATCH_APP_RUNNER_ENABLED", "true")
     monkeypatch.setenv("GATE_WATCH_APP_PRIVATE_KEY", "synthetic")
     monkeypatch.setenv("GATE_WATCH_APP_DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("GATE_WATCH_APP_ID", "123")
+    monkeypatch.setenv("GATE_WATCH_APP_INSTALLATION_ID", "456")
+    monkeypatch.setenv("GATE_WATCH_APP_SLUG", "watch-fixture")
     engine = SimpleNamespace(dispose=AsyncMock())
     factory = MagicMock()
     factory.return_value.__aenter__.return_value.get = AsyncMock(

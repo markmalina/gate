@@ -36,7 +36,7 @@ def run_case(authors):
 
     async def call():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = AppInboxClient(http, "fake-token")
+            client = AppInboxClient(http, "fake-token", app_slug="markmalina-n8n-upload")
             await client.preflight()
             return await client.reconcile(part=0, issue_number=None, body="same body")
 

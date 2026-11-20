@@ -2,7 +2,7 @@ import asyncio
 import unittest
 
 import httpx
-from app.infrastructure.watch_app_auth import AppAuthError, issue_mark_token
+from app.infrastructure.watch_app_auth import AppAuthError, WatchAppInstallation, issue_mark_token
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -14,7 +14,7 @@ def private_key():
     ).decode()
 
 
-def run_case(*, wrong_owner=False, broad=False, wrong_repo=False):
+def run_case(*, wrong_owner=False, broad=False, wrong_repo=False, all_repos=False, broad_app=False):
     calls = []
 
     def handler(req):
@@ -28,6 +28,12 @@ def run_case(*, wrong_owner=False, broad=False, wrong_repo=False):
                     "app_slug": "markmalina-n8n-upload",
                     "account": {"id": 1 if wrong_owner else 23397294},
                     "suspended_at": None,
+                    "repository_selection": "all" if all_repos else "selected",
+                    "permissions": {
+                        "issues": "write",
+                        "metadata": "read",
+                        **({"contents": "write"} if broad_app else {}),
+                    },
                 },
             )
         if req.url.path.endswith("/access_tokens"):
@@ -54,7 +60,11 @@ def run_case(*, wrong_owner=False, broad=False, wrong_repo=False):
 
     async def call():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await issue_mark_token(http, private_key())
+            return await issue_mark_token(
+                http,
+                private_key(),
+                WatchAppInstallation(5641721, 179245428, "markmalina-n8n-upload"),
+            )
 
     return asyncio.run(call()), calls
 
@@ -66,7 +76,13 @@ class TestAppAuth(unittest.TestCase):
         self.assertEqual(len(calls), 3)
 
     def test_reject_invalid_identity_scope_or_target(self):
-        for options in ({"wrong_owner": True}, {"broad": True}, {"wrong_repo": True}):
+        for options in (
+            {"wrong_owner": True},
+            {"broad": True},
+            {"wrong_repo": True},
+            {"all_repos": True},
+            {"broad_app": True},
+        ):
             with self.subTest(options=options), self.assertRaises(AppAuthError):
                 run_case(**options)
 
