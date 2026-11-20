@@ -18,6 +18,7 @@ from app.application.telegram_attachments import (
     validated_telegram_receipt_payload,
 )
 from app.application.telegram_contacts import extract_scoped_telegram_contact
+from app.application.telegram_message_content import read_telegram_message_text
 from app.application.telegram_replies import extract_scoped_telegram_reply
 from app.core.mcp_security import AccessScope
 from app.models.canonical import CanonicalMessage
@@ -404,15 +405,22 @@ async def get_reply_context(
             chat_id=message.chat_id,
             business_connection_id=getattr(message, "business_connection_id", None),
         )
+        text, text_status = read_telegram_message_text(
+            message,
+            telegram_update.payload if telegram_update is not None else None,
+            gate_event.payload if gate_event is not None else None,
+            receipt_payload,
+        )
         serialized = {
             **_serialize_message(message),
             "message_type": (
                 "contact" if contact else "attachment" if attachments else "text"
             ),
             "text_preview": (
-                "Получен контакт" if contact else _truncate_text(message.text or "", 240)
+                "Получен контакт" if contact else _truncate_text(text or "", 240)
             ),
-            "text": message.text,
+            "text": text,
+            "text_status": "no_text" if contact and text is None else text_status,
             "voice": None,
             "attachments": attachments,
             "contact": (
