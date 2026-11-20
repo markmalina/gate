@@ -8,7 +8,12 @@ import httpx
 import pytest
 from app.infrastructure import watch_voice_early_cards as early
 from app.infrastructure.watch_voice_github import GithubReceipt, WatchVoiceError
-from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor, WatchEarlyRejection
+from app.models.watch_voice import (
+    WatchEarlyCard,
+    WatchEarlyCursor,
+    WatchEarlyRejection,
+    WatchVoiceNote,
+)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -19,6 +24,7 @@ def test_replay_and_lost_ack_reconcile_without_second_post(monkeypatch):
         async with engine.begin() as connection:
             await connection.run_sync(WatchEarlyCursor.__table__.create)
             await connection.run_sync(WatchEarlyCard.__table__.create)
+            await connection.run_sync(WatchVoiceNote.__table__.create)
             await connection.run_sync(WatchEarlyRejection.__table__.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         settings = SimpleNamespace(
@@ -71,8 +77,8 @@ def test_replay_and_lost_ack_reconcile_without_second_post(monkeypatch):
             assert (card.state, card.issue_number, count) == ("saved", 42, 1)
         assert client.posts == 1
         assert first["considered"] == 1 and second["reconciled"] == 1 and third["result"] == "idle"
-        # Reconciliation no longer waits for a Dropbox scan.
-        assert len(calls) == 2
+        # Each tick gives discovery its own pass, even when a receipt needs reconciliation.
+        assert len(calls) == 3
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -213,6 +219,7 @@ def test_bad_metadata_does_not_block_valid_new_recording(monkeypatch):
         async with engine.begin() as connection:
             await connection.run_sync(WatchEarlyCursor.__table__.create)
             await connection.run_sync(WatchEarlyCard.__table__.create)
+            await connection.run_sync(WatchVoiceNote.__table__.create)
             await connection.run_sync(WatchEarlyRejection.__table__.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         settings = SimpleNamespace(
@@ -318,6 +325,7 @@ def test_pending_card_is_delivered_without_dropbox(monkeypatch, state):
                 WatchEarlyCursor.__table__,
                 WatchEarlyCard.__table__,
                 WatchEarlyRejection.__table__,
+                WatchVoiceNote.__table__,
             ):
                 await connection.run_sync(table.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -385,6 +393,7 @@ def test_missing_cursor_with_existing_cards_fails_closed():
                 WatchEarlyCursor.__table__,
                 WatchEarlyCard.__table__,
                 WatchEarlyRejection.__table__,
+                WatchVoiceNote.__table__,
             ):
                 await connection.run_sync(table.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -422,6 +431,7 @@ def test_unknown_reconciliation_failure_does_not_block_new_discovery(monkeypatch
                 WatchEarlyCursor.__table__,
                 WatchEarlyCard.__table__,
                 WatchEarlyRejection.__table__,
+                WatchVoiceNote.__table__,
             ):
                 await connection.run_sync(table.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -467,12 +477,13 @@ def test_unknown_reconciliation_failure_does_not_block_new_discovery(monkeypatch
             )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            await early.run_early_cards(settings, factory, http, Client())
+            first = await early.run_early_cards(settings, factory, http, Client())
             second = await early.run_early_cards(settings, factory, http, Client())
         async with factory() as session:
             cards = (await session.scalars(select(WatchEarlyCard))).all()
             assert {card.state for card in cards} == {"unknown", "saved"}
-        assert second["published_parts"] == 1
+        assert first["published_parts"] == 1
+        assert second["published_parts"] == 0
         await engine.dispose()
 
     asyncio.run(scenario())
@@ -486,6 +497,7 @@ def test_batch_publishes_up_to_five_and_preserves_remaining_queue(monkeypatch):
                 WatchEarlyCursor.__table__,
                 WatchEarlyCard.__table__,
                 WatchEarlyRejection.__table__,
+                WatchVoiceNote.__table__,
             ):
                 await connection.run_sync(table.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -549,6 +561,7 @@ def test_batch_drains_saved_queue_when_dropbox_is_unavailable(monkeypatch):
                 WatchEarlyCursor.__table__,
                 WatchEarlyCard.__table__,
                 WatchEarlyRejection.__table__,
+                WatchVoiceNote.__table__,
             ):
                 await connection.run_sync(table.create)
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -599,5 +612,122 @@ def test_batch_drains_saved_queue_when_dropbox_is_unavailable(monkeypatch):
         assert receipt["published_parts"] == 3 and receipt["considered"] == 3
         assert client.posts == 3
         await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_page_commits_before_next_provider_failure(monkeypatch):
+    async def scenario():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            for table in (
+                WatchEarlyCursor.__table__,
+                WatchEarlyCard.__table__,
+                WatchEarlyRejection.__table__,
+            ):
+                await connection.run_sync(table.create)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = SimpleNamespace(
+            gate_workspace_id="mark-personal", dropbox_call_account_id="test"
+        )
+        monkeypatch.setattr(early, "_refresh_access_token", lambda *_: _return("test"))
+        monkeypatch.setattr(early, "_verify_account_id", lambda *_: _return(None))
+        scope = early.watch_scope(settings)
+        await early.ensure_early_cursor(factory, scope)
+        calls = []
+
+        def handler(request):
+            calls.append(request.url.path)
+            if len(calls) == 2:
+                return httpx.Response(503, json={})
+            entry = {
+                ".tag": "file",
+                "path_display": "/Alpha/Voice/test.m4a",
+                "name": "test.m4a",
+                "id": "id:test",
+                "rev": "abc",
+                "size": 123,
+                "server_modified": (datetime.now(UTC) + timedelta(seconds=5)).isoformat(),
+            }
+            return httpx.Response(
+                200, json={"entries": [entry], "cursor": "next-page", "has_more": True}
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            with pytest.raises(WatchVoiceError, match="watch_early_delta_invalid"):
+                await early.discover_early_cards(settings, factory, http, writer="legacy_actions")
+            with pytest.raises(WatchVoiceError, match="watch_early_writer_inactive"):
+                await early.discover_early_cards(settings, factory, http, writer="app")
+        async with factory() as session:
+            cursor = await session.get(WatchEarlyCursor, ("mark-personal", "test"))
+            assert cursor.cursor == "next-page"
+            assert (await session.scalar(select(WatchEarlyCard))).state == "pending"
+        assert len(calls) == 2
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("legacy_state", ["delivered", "unknown"])
+def test_early_card_respects_existing_legacy_binding(tmp_path, legacy_state):
+    from test_watch_voice import database
+
+    async def scenario():
+        async with database(tmp_path) as factory:
+            settings = SimpleNamespace(
+                gate_workspace_id="mark-personal", dropbox_call_account_id="test"
+            )
+            now = datetime.now(UTC)
+            values = early.card_values(
+                settings, {"id": "id:legacy", "rev": "abc", "server_modified": now.isoformat()}, now
+            )
+            async with factory() as session:
+                await session.run_sync(lambda s: WatchEarlyCard.__table__.create(s.connection()))
+                session.add(
+                    WatchEarlyCursor(
+                        workspace_key="mark-personal",
+                        account_id="test",
+                        writer_mode="app",
+                        cutover_at=now,
+                    )
+                )
+                session.add(WatchEarlyCard(**values))
+                session.add(
+                    WatchVoiceNote(
+                        id=values["id"],
+                        workspace_key="mark-personal",
+                        account_id="test",
+                        file_id="id:legacy",
+                        revision="abc",
+                        source_path="/Alpha/Voice/test.m4a",
+                        filename="test.m4a",
+                        media_type="audio/mp4",
+                        size_bytes=1,
+                        sha256="0" * 64,
+                        data=b"x",
+                        dropbox_modified_at=now,
+                        received_at=now,
+                        delivery_state=legacy_state,
+                        issue_url="https://github.com/markmalina/mark/issues/42",
+                    )
+                )
+                await session.commit()
+
+            class Client:
+                async def post(self, **kwargs):
+                    raise AssertionError("must not create a second issue")
+
+            key = early.watch_scope(settings)
+            assert (await early.publish_saved(factory, Client(), key))["result"] == "deferred"
+            await early.publish_saved(factory, Client(), key, writer="app")
+            async with factory() as session:
+                card = await session.get(WatchEarlyCard, values["id"])
+                if legacy_state == "delivered":
+                    assert (card.state, card.issue_number) == ("saved", 42)
+                else:
+                    assert (card.state, card.last_error) == (
+                        "blocked",
+                        "watch_early_legacy_receipt_required",
+                    )
 
     asyncio.run(scenario())
