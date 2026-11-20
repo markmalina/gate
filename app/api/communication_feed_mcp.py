@@ -24,6 +24,7 @@ from app.api.mcp_schemas import (
 )
 from app.api.routes import get_telegram_client
 from app.application.telegram_contacts import extract_scoped_telegram_contact
+from app.application.telegram_message_content import read_telegram_message_text
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError
 from app.models.domain import (
@@ -71,7 +72,10 @@ FEED_ITEM_SCHEMA: JsonObject = {
         },
         "semantic_status": {
             "type": "string",
-            "enum": ["source_ready", "transcript_pending"],
+            "enum": [
+                "source_ready", "transcript_pending", "no_text",
+                "source_unavailable", "processing_failed",
+            ],
         },
         "original_available": {"type": "boolean"},
         "transcript_status": {"type": ["string", "null"], "maxLength": 32},
@@ -468,7 +472,10 @@ def _message_feed_item(
         business_connection_id=message.business_connection_id,
     )
     # Never put a contact's name, phone or vCard in the global feed.
-    semantic_input = "Получен контакт" if contact_card else _clean_text(message.text)
+    text, text_status = read_telegram_message_text(
+        message, telegram_update.payload if telegram_update is not None else None,
+    )
+    semantic_input = "Получен контакт" if contact_card else text
     return _feed_item(
         source_ref=f"telegram-message:{message.id}",
         occurred_at=occurred_at,
@@ -481,7 +488,7 @@ def _message_feed_item(
         semantic_input=semantic_input,
         summary=None,
         summary_status=None,
-        semantic_status="source_ready" if semantic_input else "transcript_pending",
+        semantic_status="source_ready" if semantic_input is not None else text_status,
         original_available=False,
         transcript_status=None,
         transcription_reason_code=None,

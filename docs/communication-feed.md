@@ -41,6 +41,13 @@ calling Alfa/ChatGPT layer can derive meaning. The default presentation must:
 Gate owns durable facts and provenance. Relations owns normalized person identity.
 Alfa owns semantic interpretation, importance, commitments and follow-up extraction.
 
+For Telegram text, `source_ready` includes ordinary text, captions and the
+visible text of Rich messages in original block order. `no_text` means a
+matching event has no textual body, for example a sticker. `source_unavailable`
+means Gate lacks a matching source with identifiable content.
+`processing_failed` means the stored Rich content cannot be rendered in full.
+`transcript_pending` is reserved for the voice and call projections.
+
 ## Safety
 
 The selector is read-only and reuses `gate:inbox:read`. It does not add a tool or OAuth

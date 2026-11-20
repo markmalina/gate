@@ -14,6 +14,10 @@ from app.api import routes as legacy
 from app.api import sprint11b_routes as sprint11b
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
+from app.application.telegram_rich_readback import (
+    TelegramRichReadbackError,
+    project_telegram_rich_text,
+)
 from app.core.config import Settings, get_settings
 from app.models.domain import (
     DEFAULT_PROJECT_ID,
@@ -185,6 +189,15 @@ async def sprint14_telegram_webhook(
         sender_id=normalized.sender_id,
         owner_identity_ids=owner_identity_ids,
     )
+    # Rich content is stored as message text without feeding it into the legacy
+    # admin/auto-reply command parsers or changing the durable cutover class.
+    stored_text = normalized.text
+    raw_message = update.get("business_message")
+    if stored_text is None and isinstance(raw_message, dict) and "rich_message" in raw_message:
+        try:
+            stored_text = project_telegram_rich_text(raw_message["rich_message"])
+        except TelegramRichReadbackError:
+            pass  # The original is retained and readback can report the failure.
     message_direction = (
         MessageDirection.OUTBOUND.value if is_outbound else MessageDirection.INBOUND.value
     )
@@ -202,7 +215,7 @@ async def sprint14_telegram_webhook(
         chat_id=normalized.chat_id,
         sender_id=normalized.sender_id,
         event_type=normalized.event_type,
-        text=normalized.text,
+        text=stored_text,
         payload=update,
         telegram_update_id=normalized.update_id,
         telegram_message_id=normalized.message_id,
@@ -247,7 +260,7 @@ async def sprint14_telegram_webhook(
         chat_id=normalized.chat_id,
         sender_id=normalized.sender_id,
         recipient_id=normalized.chat_id if is_outbound else None,
-        text=normalized.text,
+        text=stored_text,
         telegram_update_id=normalized.update_id,
         telegram_message_id=normalized.message_id,
         business_connection_id=normalized.business_connection_id,

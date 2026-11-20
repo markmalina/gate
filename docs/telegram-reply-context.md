@@ -26,6 +26,14 @@ no `reply_to` field. External-reply content is deliberately not projected.
 Ephemeral sources omitted by Telegram cannot be reconstructed by this change.
 No filename similarity or chronological-neighbor guess is used.
 
+The main timeline supplies `messages[].text_status` for non-voice rows.
+`available` includes the full plain-text projection of Telegram Rich blocks;
+`text_preview` is its bounded preview. `no_text` identifies an event without
+a text body, `source_unavailable` identifies missing source content, and
+`processing_failed` identifies a Rich payload Gate could not fully project.
+Historical Rich text is read from the matching stored Telegram update. New
+Telegram Business Rich text is also written to the normalized message on intake.
+
 This is metadata discovery, not a download grant: quoted attachment summaries
 do not contain a download selector. Existing explicit attachment selectors
 remain restricted to their original message and allowed page. Provider file

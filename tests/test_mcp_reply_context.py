@@ -9,6 +9,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from app.api.communication_feed_mcp import (
+    FEED_REPLY_CONTEXT_OUTPUT_SCHEMA,
+    _build_feed_payload,
+)
 from app.api.mcp_routes import _format_reply_context_text
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS, REPLY_DETAILS_SCHEMA
 from app.application.mcp_inbox import get_reply_context
@@ -236,3 +240,75 @@ async def test_query_schema_and_text_project_reply_outside_history_page(source: 
     assert account_id in history_params.values()
     assert project_id in history_params.values()
     assert "synthetic-connection" in history_params.values()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "content, wrong_chat, expected_text, status",
+    [
+        (
+            {"rich_message": {"blocks": [
+                {"type": "paragraph", "text": "Первая строка"},
+                {"type": "paragraph", "text": ["Вторая ", {"type": "bold", "text": "строка"}]},
+            ]}},
+            False, "Первая строка\n\nВторая строка", "available",
+        ),
+        ({"sticker": {"file_id": "private-file-token"}}, False, None, "no_text"),
+        ({"text": "   "}, False, None, "no_text"),
+        ({"text": "Other dialog's text"}, True, None, "source_unavailable"),
+        ({}, False, None, "source_unavailable"),
+        (
+            {"rich_message": {"blocks": [
+                {"type": "paragraph", "text": "Incomplete"},
+                {"type": "future_unknown_block"},
+            ]}},
+            False, None, "processing_failed",
+        ),
+    ],
+)
+async def test_missing_normalized_text_is_resolved_in_both_read_surfaces(
+    content: dict[str, Any], wrong_chat: bool, expected_text: str | None, status: str,
+) -> None:
+    now = datetime(2026, 10, 8, tzinfo=UTC)
+    account_id, project_id, task_id, message_id, dialog_id = (UUID(int=i) for i in range(1, 6))
+    message = SimpleNamespace(
+        id=message_id, account_id=account_id, project_id=project_id,
+        direction="outbound", source="telegram", event_type="business_message", chat_id="300",
+        sender_id="700", recipient_id="300", text=None, telegram_update_id=100,
+        telegram_message_id=200, business_connection_id="synthetic-connection",
+        payload={"raw_update_ref": "telegram_updates"}, created_at=now, sent_at=now,
+        received_at=None,
+    )
+    conversation = SimpleNamespace(
+        id=dialog_id, account_id=account_id, project_id=project_id, person_id=None,
+        chat_id="300", business_connection_id="synthetic-connection", title="Synthetic dialog",
+    )
+    task = SimpleNamespace(id=task_id, status="replied", person_id=None)
+    account = SimpleNamespace(id=account_id, alias="telegram_mark_ru", country_code="RU")
+    raw = {"update_id": 100, "business_message": {
+        "message_id": 200, "chat": {"id": 301 if wrong_chat else 300},
+        "business_connection_id": "synthetic-connection", **content,
+    }}
+    update = SimpleNamespace(payload=raw)
+    scope = AccessScope(
+        workspace_id="synthetic-workspace", account_ids=(account_id,), project_ids=(project_id,),
+    )
+    dialog_session = FakeSession([
+        [(task, conversation, message, update, account, None)],
+        [(message, update, None, None, None)],
+    ])
+    feed_session = FakeSession([[(message, account, None, update)], [], []])
+
+    reply = await get_reply_context(session=dialog_session, scope=scope, task_id=task_id, limit=1)
+    feed = await _build_feed_payload(
+        session=feed_session, principal=SimpleNamespace(access_scope=scope),
+        feed_day=now.date(), limit=1,
+    )
+    assert reply is not None
+    assert reply["messages"][0]["text"] == expected_text
+    assert feed["items"][0]["semantic_input_private"] == expected_text
+    assert reply["messages"][0]["text_status"] == status
+    assert feed["items"][0]["semantic_status"] == ("source_ready" if expected_text else status)
+    assert "<empty>" not in _format_reply_context_text(reply)
+    Draft202012Validator(MCP_TOOL_OUTPUT_SCHEMAS["gate_get_reply_context"]).validate(reply)
+    Draft202012Validator(FEED_REPLY_CONTEXT_OUTPUT_SCHEMA).validate(feed)

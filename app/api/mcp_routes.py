@@ -4370,10 +4370,15 @@ def _format_reply_context_text(context: JsonObject) -> str:
     ]
     for message in context["messages"]:
         direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
+        preview = message["text_preview"] or {
+            "no_text": "<no text>",
+            "source_unavailable": "<text source unavailable>",
+            "processing_failed": "<text processing failed>",
+        }.get(message.get("text_status"), "<empty>")
         lines.extend(
             [
                 "",
-                f"[{direction}] {message['text_preview'] or '<empty>'}",
+                f"[{direction}] {preview}",
             ]
         )
         if message.get("reply_to") is not None:

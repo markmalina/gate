@@ -202,6 +202,10 @@ REPLY_CONTEXT_MESSAGE_SCHEMA = _object(
             "enum": ["text", "voice", "attachment", "contact"],
         },
         "text": _nullable("string"),
+        "text_status": {
+            "type": "string",
+            "enum": ["available", "no_text", "source_unavailable", "processing_failed"],
+        },
         "voice": {
             "anyOf": [
                 _ref("voice_details"),
