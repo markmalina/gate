@@ -37,6 +37,8 @@ class WatchEarlyCursor(Base):
     account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     cursor: Mapped[str | None] = mapped_column(Text)
     cutover_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    writer_mode: Mapped[str] = mapped_column(String(16), server_default="legacy_actions")
+    writer_generation: Mapped[int] = mapped_column(Integer, server_default="0")
 
 
 class WatchEarlyCard(Base):
@@ -64,6 +66,7 @@ class WatchEarlyCard(Base):
     issue_number: Mapped[int | None] = mapped_column(Integer)
     issue_url: Mapped[str | None] = mapped_column(String(512))
     last_error: Mapped[str | None] = mapped_column(String(128))
+    attempt_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WatchEarlyRejection(Base):

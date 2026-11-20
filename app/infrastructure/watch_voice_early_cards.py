@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -18,8 +19,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError, marker
 from app.infrastructure.watch_voice_recovery import _utc
-from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor, WatchEarlyRejection
-from app.worker.dropbox_calls import _refresh_access_token, _verify_account_id
+from app.models.watch_voice import (
+    WatchEarlyCard,
+    WatchEarlyCursor,
+    WatchEarlyRejection,
+    WatchVoiceNote,
+)
+from app.worker.dropbox_calls import (
+    DropboxCallWorkerError,
+    _refresh_access_token,
+    _verify_account_id,
+)
 from app.worker.watch_voice import PATH, timestamp
 
 _EXTENSIONS = {".m4a", ".mp4", ".mp3", ".wav", ".ogg", ".webm", ".flac"}
@@ -99,13 +109,32 @@ async def run_early_cards(
     http: httpx.AsyncClient,
     client: MarkInboxClient,
 ) -> dict[str, Any]:
-    # Imported lazily to keep the actions module as the existing response contract.
-    from app.infrastructure.watch_voice_actions import result
+    key = watch_scope(settings)
+    limit = getattr(settings, "gate_watch_voice_early_batch_size", 1)
+    if type(limit) is not int or not 1 <= limit <= 5:
+        raise WatchVoiceError("watch_early_batch_limit_invalid")
+    await ensure_early_cursor(factory, key)
+    discovery_error: WatchVoiceError | None = None
+    try:
+        await discover_early_cards(settings, factory, http, writer="legacy_actions")
+    except WatchVoiceError as exc:
+        discovery_error = exc
+    receipt = await drain_saved(factory, client, key, limit)
+    if discovery_error is not None and receipt["result"] == "idle":
+        raise discovery_error
+    return receipt
 
-    key = {
+
+def watch_scope(settings: Settings) -> dict[str, str]:
+    return {
         "workspace_key": settings.gate_workspace_id,
         "account_id": settings.dropbox_call_account_id,
     }
+
+
+async def ensure_early_cursor(
+    factory: async_sessionmaker[AsyncSession], key: dict[str, str]
+) -> None:
     async with factory() as session:
         created = await session.execute(
             insert(WatchEarlyCursor)
@@ -133,54 +162,93 @@ async def run_early_cards(
             if existing is not None:
                 raise WatchVoiceError("watch_early_cursor_missing_with_cards")
         await session.commit()
-    # A durable pending card does not depend on Dropbox availability.
-    limit = getattr(settings, "gate_watch_voice_early_batch_size", 1)
-    if type(limit) is not int or not 1 <= limit <= 5:
-        raise WatchVoiceError("watch_early_batch_limit_invalid")
-    prior = await drain_saved(factory, client, key, limit)
-    if prior["published_parts"] or prior["reconciled"]:
-        return prior
+
+
+async def discover_early_cards(
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    *,
+    writer: str,
+) -> None:
+    """Commit each provider page and its cursor together, with no lock during HTTP."""
+    key = watch_scope(settings)
     async with factory() as session:
-        cursor = await session.scalar(
-            select(WatchEarlyCursor)
-            .where(
-                WatchEarlyCursor.workspace_key == key["workspace_key"],
-                WatchEarlyCursor.account_id == key["account_id"],
-            )
-            .with_for_update(skip_locked=True)
+        cursor = await session.get(WatchEarlyCursor, (key["workspace_key"], key["account_id"]))
+        if cursor is None or cursor.writer_mode != writer:
+            raise WatchVoiceError("watch_early_writer_inactive")
+        page_cursor, generation, cutover_at = (
+            cursor.cursor,
+            cursor.writer_generation,
+            cursor.cutover_at,
         )
-        if cursor is None:
-            return result("deferred")
-        token = await _refresh_access_token(settings, http)
-        await _verify_account_id(settings, http, token)
-        page_cursor = cursor.cursor
-        for _ in range(100):
-            endpoint = "list_folder/continue" if page_cursor else "list_folder"
-            body = (
-                {"cursor": page_cursor}
-                if page_cursor
-                else {"path": PATH, "recursive": False, "include_deleted": False}
+    try:
+        async with asyncio.timeout(55):
+            await _discover_pages(
+                settings, factory, http, writer, page_cursor, generation, cutover_at
             )
-            try:
-                response = await http.post(
-                    "https://api.dropboxapi.com/2/files/" + endpoint,
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=body,
-                    follow_redirects=False,
-                    timeout=30.0,
+    except (TimeoutError, httpx.HTTPError, DropboxCallWorkerError):
+        raise WatchVoiceError("watch_early_delta_unavailable") from None
+
+
+async def _discover_pages(
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    writer: str,
+    page_cursor: str | None,
+    generation: int,
+    cutover_at: datetime,
+) -> None:
+    token = await _refresh_access_token(settings, http)
+    await _verify_account_id(settings, http, token)
+    key = watch_scope(settings)
+    for _ in range(4):
+        endpoint = "list_folder/continue" if page_cursor else "list_folder"
+        body = (
+            {"cursor": page_cursor}
+            if page_cursor
+            else {"path": PATH, "recursive": False, "include_deleted": False}
+        )
+        response = await http.post(
+            "https://api.dropboxapi.com/2/files/" + endpoint,
+            headers={"Authorization": f"Bearer {token}"},
+            json=body,
+            follow_redirects=False,
+            timeout=12.0,
+        )
+        try:
+            data = response.json()
+        except ValueError:
+            raise WatchVoiceError("watch_early_delta_invalid") from None
+        if response.status_code == 409 and isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict) and error.get(".tag") == "reset":
+                raise WatchVoiceError("watch_early_cursor_reset_required")
+        if (
+            response.status_code != 200
+            or not isinstance(data, dict)
+            or not isinstance(data.get("entries"), list)
+            or not isinstance(data.get("cursor"), str)
+            or not data["cursor"]
+            or type(data.get("has_more")) is not bool
+            or (data["has_more"] and data["cursor"] == page_cursor)
+        ):
+            raise WatchVoiceError("watch_early_delta_invalid")
+        async with factory() as session:
+            claimed = await session.execute(
+                update(WatchEarlyCursor)
+                .where(
+                    WatchEarlyCursor.workspace_key == key["workspace_key"],
+                    WatchEarlyCursor.account_id == key["account_id"],
+                    WatchEarlyCursor.writer_mode == writer,
+                    WatchEarlyCursor.writer_generation == generation,
+                    WatchEarlyCursor.cursor == page_cursor,
                 )
-                data = response.json()
-            except (httpx.HTTPError, ValueError):
-                raise WatchVoiceError("watch_early_delta_unavailable") from None
-            if (
-                response.status_code != 200
-                or not isinstance(data, dict)
-                or not isinstance(data.get("entries"), list)
-                or not isinstance(data.get("cursor"), str)
-                or not data["cursor"]
-                or type(data.get("has_more")) is not bool
-            ):
-                raise WatchVoiceError("watch_early_delta_invalid")
+                .values(cursor=data["cursor"])
+            )
+            if not claimed.rowcount:  # type: ignore[attr-defined]
+                return
             for obj in data["entries"]:
                 try:
                     item = metadata(obj)
@@ -213,24 +281,17 @@ async def run_early_cards(
                     )
                     continue
                 if item is None or not after_cutover(
-                    timestamp(item["server_modified"]), cursor.cutover_at
+                    timestamp(item["server_modified"]), cutover_at
                 ):
                     continue
                 values = card_values(settings, item, datetime.now(UTC))
                 await session.execute(
                     insert(WatchEarlyCard).values(**values).on_conflict_do_nothing()
                 )
-            page_cursor = data["cursor"]
-            if not data["has_more"]:
-                break
-        else:
-            raise WatchVoiceError("watch_early_page_limit")
-        # Metadata and cursor advance commit atomically; no audio bytes are fetched.
-        cursor.cursor = page_cursor
-        await session.commit()
-    if prior["result"] != "idle":
-        return prior
-    return await drain_saved(factory, client, key, limit)
+            await session.commit()
+        page_cursor = data["cursor"]
+        if not data["has_more"]:
+            return
 
 
 async def drain_saved(
@@ -238,6 +299,8 @@ async def drain_saved(
     client: MarkInboxClient,
     key: dict[str, str],
     limit: int,
+    *,
+    writer: str = "legacy_actions",
 ) -> dict[str, Any]:
     """Publish at most the approved cap and return actual, never truncated counts."""
     from app.infrastructure.watch_voice_actions import result
@@ -245,7 +308,7 @@ async def drain_saved(
     totals = {"considered": 0, "published_parts": 0, "delivered": 0, "reconciled": 0}
     last = "idle"
     for _ in range(limit):
-        item = await publish_saved(factory, client, key)
+        item = await publish_saved(factory, client, key, writer=writer)
         if item["result"] == "idle":
             break
         last = item["result"]
@@ -258,11 +321,20 @@ async def drain_saved(
 
 
 async def publish_saved(
-    factory: async_sessionmaker[AsyncSession], client: MarkInboxClient, key: dict[str, str]
+    factory: async_sessionmaker[AsyncSession],
+    client: MarkInboxClient,
+    key: dict[str, str],
+    *,
+    writer: str = "legacy_actions",
 ) -> dict[str, Any]:
     from app.infrastructure.watch_voice_actions import result
 
     async with factory() as session:
+        cursor = await session.get(
+            WatchEarlyCursor, (key["workspace_key"], key["account_id"]), with_for_update=True
+        )
+        if cursor is None or cursor.writer_mode != writer:
+            return result("deferred")
         card = await session.scalar(
             select(WatchEarlyCard)
             .where(
@@ -281,16 +353,46 @@ async def publish_saved(
             return result("idle")
         was_pending = card.state == "pending"
         if was_pending:
+            legacy = (
+                await session.execute(
+                    select(WatchVoiceNote.delivery_state, WatchVoiceNote.issue_url).where(
+                        WatchVoiceNote.id == card.id,
+                        WatchVoiceNote.workspace_key == key["workspace_key"],
+                        WatchVoiceNote.account_id == key["account_id"],
+                        WatchVoiceNote.file_id == card.file_id,
+                        WatchVoiceNote.revision == card.revision,
+                    )
+                )
+            ).one_or_none()
+            if legacy is not None:
+                match = re.fullmatch(
+                    r"https://github\.com/markmalina/mark/issues/([1-9][0-9]{0,9})",
+                    legacy.issue_url or "",
+                )
+                if legacy.delivery_state == "delivered" and match:
+                    card.issue_number = int(match.group(1))
+                    card.issue_url = legacy.issue_url
+                    card.state = "saved"
+                    await session.commit()
+                    return result("processed", considered=1, reconciled=1)
+                card.state = "blocked"
+                card.last_error = "watch_early_legacy_receipt_required"
+                await session.commit()
+                return result("processed", considered=1)
+            started_at = datetime.now(UTC)
             claimed = await session.execute(
                 update(WatchEarlyCard)
                 .where(WatchEarlyCard.id == card.id, WatchEarlyCard.state == "pending")
-                .values(state="sending")
+                .values(state="sending", attempt_started_at=started_at)
             )
             await session.commit()
             if not claimed.rowcount:  # type: ignore[attr-defined]
                 return result("deferred")
         else:
-            # A lost or in-flight POST is never repeated: only exact-body reconciliation.
+            if card.state == "sending" and card.attempt_started_at is not None:
+                if datetime.now(UTC) < _utc(card.attempt_started_at) + timedelta(seconds=180):
+                    return result("deferred")
+            # A stale attempt can only be reconciled by reading its receipt.
             await session.execute(
                 update(WatchEarlyCard)
                 .where(WatchEarlyCard.id == card.id, WatchEarlyCard.state == "sending")
@@ -299,11 +401,22 @@ async def publish_saved(
             await session.commit()
         card_id, card_body, title = card.id, card.body, card.title
     try:
-        receipt = (
-            await client.post(part=0, issue_number=None, title=title, body=card_body)
-            if was_pending
-            else await client.reconcile(part=0, issue_number=None, body=card_body)
-        )
+        async with asyncio.timeout(30 if was_pending else 20):
+            receipt = (
+                await client.post(part=0, issue_number=None, title=title, body=card_body)
+                if was_pending
+                else await client.reconcile(part=0, issue_number=None, body=card_body)
+            )
+    except TimeoutError:
+        # A canceled HTTP request has an uncertain external outcome.
+        async with factory() as session:
+            await session.execute(
+                update(WatchEarlyCard)
+                .where(WatchEarlyCard.id == card_id, WatchEarlyCard.state == "sending")
+                .values(state="unknown", last_error="watch_early_publish_timeout")
+            )
+            await session.commit()
+        return result("processed", considered=1)
     except WatchVoiceError as exc:
         async with factory() as session:
             await session.execute(
