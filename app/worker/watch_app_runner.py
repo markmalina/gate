@@ -21,6 +21,19 @@ from app.infrastructure.watch_voice_github import WatchVoiceError
 from app.models.watch_voice import WatchEarlyCursor
 
 
+def app_installation() -> WatchAppInstallation | None:
+    app_id = os.getenv("GATE_WATCH_APP_ID", "")
+    installation_id = os.getenv("GATE_WATCH_APP_INSTALLATION_ID", "")
+    slug = os.getenv("GATE_WATCH_APP_SLUG", "")
+    if (
+        not re.fullmatch(r"[1-9][0-9]{0,14}", app_id)
+        or not re.fullmatch(r"[1-9][0-9]{0,14}", installation_id)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", slug)
+    ):
+        return None
+    return WatchAppInstallation(int(app_id), int(installation_id), slug)
+
+
 async def main() -> int:
     if os.getenv("GATE_WATCH_APP_RUNNER_ENABLED", "false").lower() != "true":
         print("watch_app_runner_disabled")
@@ -44,17 +57,10 @@ async def main() -> int:
     if not url.startswith("postgresql+asyncpg://"):
         print("watch_app_runner_configuration_invalid")
         return 1
-    app_id = os.getenv("GATE_WATCH_APP_ID", "")
-    installation_id = os.getenv("GATE_WATCH_APP_INSTALLATION_ID", "")
-    slug = os.getenv("GATE_WATCH_APP_SLUG", "")
-    if (
-        not re.fullmatch(r"[1-9][0-9]{0,14}", app_id)
-        or not re.fullmatch(r"[1-9][0-9]{0,14}", installation_id)
-        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", slug)
-    ):
+    identity = app_installation()
+    if identity is None:
         print("watch_app_runner_configuration_invalid")
         return 1
-    identity = WatchAppInstallation(int(app_id), int(installation_id), slug)
     limit = os.getenv("GATE_WATCH_APP_BATCH_SIZE", "5")
     if limit not in {str(size) for size in range(1, 11)}:
         print("watch_app_runner_configuration_invalid")
