@@ -1,4 +1,4 @@
-"""Issue a short-lived, repository-scoped token for a dedicated GitHub App.
+"""Issue a short-lived token for Watch's private Mark repository.
 
 This module has no scheduling or publishing side effects. Callers must hold the
 private key securely, verify their target, and never log tokens or exceptions.
@@ -71,6 +71,7 @@ async def issue_mark_token(
             ),
             200,
         )
+        installation_permissions = install.get("permissions")
         if (
             install.get("id") != identity.installation_id
             or install.get("app_id") != identity.app_id
@@ -78,8 +79,9 @@ async def issue_mark_token(
             or not isinstance(install.get("account"), dict)
             or install["account"].get("id") != OWNER_ID
             or install.get("suspended_at") is not None
-            or install.get("repository_selection") != "selected"
-            or install.get("permissions") != {"issues": "write", "metadata": "read"}
+            or install.get("repository_selection") not in ("all", "selected")
+            or not isinstance(installation_permissions, dict)
+            or installation_permissions.get("issues") != "write"
         ):
             raise AppAuthError("github_app_identity_mismatch")
         payload = {"repository_ids": [REPO_ID], "permissions": {"issues": "write"}}
@@ -101,23 +103,33 @@ async def issue_mark_token(
             or "\r" in token
             or not isinstance(permissions, dict)
             or permissions.get("issues") != "write"
+            or permissions.get("metadata", "read") != "read"
             or any(k not in {"issues", "metadata"} for k in permissions)
         ):
             raise AppAuthError("github_app_token_invalid")
-        repo = await _json(
+        accessible = await _json(
             await http.get(
-                f"{API}/repos/{REPO}",
+                f"{API}/installation/repositories",
+                params={"per_page": 2},
                 headers={**headers, "Authorization": f"Bearer {token}"},
                 follow_redirects=False,
                 timeout=15.0,
             ),
             200,
         )
+        repositories = accessible.get("repositories")
+        if (
+            accessible.get("total_count") != 1
+            or not isinstance(repositories, list)
+            or len(repositories) != 1
+            or not isinstance(repositories[0], dict)
+        ):
+            raise AppAuthError("github_app_token_scope_mismatch")
+        repo = repositories[0]
         if (
             repo.get("id") != REPO_ID
+            or repo.get("full_name") != REPO
             or repo.get("private") is not True
-            or repo.get("archived") is not False
-            or repo.get("has_issues") is not True
             or not isinstance(repo.get("owner"), dict)
             or repo["owner"].get("id") != OWNER_ID
         ):

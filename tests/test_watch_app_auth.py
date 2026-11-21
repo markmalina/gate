@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 
 import httpx
@@ -14,7 +15,18 @@ def private_key():
     ).decode()
 
 
-def run_case(*, wrong_owner=False, broad=False, wrong_repo=False, all_repos=False, broad_app=False):
+def run_case(
+    *,
+    wrong_owner=False,
+    broad=False,
+    wrong_repo=False,
+    all_repos=False,
+    broad_app=False,
+    read_only_app=False,
+    metadata_write=False,
+    extra_repo=False,
+    public_repo=False,
+):
     calls = []
 
     def handler(req):
@@ -30,32 +42,36 @@ def run_case(*, wrong_owner=False, broad=False, wrong_repo=False, all_repos=Fals
                     "suspended_at": None,
                     "repository_selection": "all" if all_repos else "selected",
                     "permissions": {
-                        "issues": "write",
+                        "issues": "read" if read_only_app else "write",
                         "metadata": "read",
                         **({"contents": "write"} if broad_app else {}),
                     },
                 },
             )
         if req.url.path.endswith("/access_tokens"):
-            import json
-
             payload = json.loads(req.content)
             assert payload == {"repository_ids": [1336157811], "permissions": {"issues": "write"}}
-            perms = {"issues": "write", "metadata": "read"}
+            perms = {"issues": "write", "metadata": "write" if metadata_write else "read"}
             if broad:
                 perms["contents"] = "write"
             return httpx.Response(
                 201, json={"token": "secret-placeholder-1234567890", "permissions": perms}
             )
-        return httpx.Response(
-            200,
-            json={
+        assert req.url.path == "/installation/repositories"
+        assert req.url.params["per_page"] == "2"
+        assert req.headers["Authorization"] == "Bearer secret-placeholder-1234567890"
+        repositories = [
+            {
                 "id": 1 if wrong_repo else 1336157811,
-                "private": True,
-                "archived": False,
-                "has_issues": True,
+                "full_name": "markmalina/mark",
+                "private": not public_repo,
                 "owner": {"id": 23397294},
-            },
+            }
+        ]
+        if extra_repo:
+            repositories.append({"id": 2})
+        return httpx.Response(
+            200, json={"total_count": len(repositories), "repositories": repositories}
         )
 
     async def call():
@@ -75,13 +91,20 @@ class TestAppAuth(unittest.TestCase):
         self.assertEqual(token, "secret-placeholder-1234567890")
         self.assertEqual(len(calls), 3)
 
+    def test_scoped_token_for_shared_installation_with_additional_permissions(self):
+        token, calls = run_case(all_repos=True, broad_app=True)
+        self.assertEqual(token, "secret-placeholder-1234567890")
+        self.assertEqual(len(calls), 3)
+
     def test_reject_invalid_identity_scope_or_target(self):
         for options in (
             {"wrong_owner": True},
             {"broad": True},
             {"wrong_repo": True},
-            {"all_repos": True},
-            {"broad_app": True},
+            {"read_only_app": True},
+            {"metadata_write": True},
+            {"all_repos": True, "extra_repo": True},
+            {"public_repo": True},
         ):
             with self.subTest(options=options), self.assertRaises(AppAuthError):
                 run_case(**options)
