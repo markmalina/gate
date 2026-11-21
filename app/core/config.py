@@ -571,6 +571,9 @@ class Settings(BaseSettings):
     gate_watch_voice_actions_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
     )
+    gate_watch_webhook_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_WEBHOOK_ENABLED"
+    )
     gate_watch_voice_early_cards_only: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_EARLY_CARDS_ONLY"
     )

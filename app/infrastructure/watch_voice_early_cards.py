@@ -170,7 +170,8 @@ async def discover_early_cards(
     http: httpx.AsyncClient,
     *,
     writer: str,
-) -> None:
+    wake_received_at: datetime | None = None,
+) -> bool:
     """Commit each provider page and its cursor together, with no lock during HTTP."""
     key = watch_scope(settings)
     async with factory() as session:
@@ -184,8 +185,9 @@ async def discover_early_cards(
         )
     try:
         async with asyncio.timeout(55):
-            await _discover_pages(
-                settings, factory, http, writer, page_cursor, generation, cutover_at
+            return await _discover_pages(
+                settings, factory, http, writer, page_cursor, generation, cutover_at,
+                wake_received_at,
             )
     except (TimeoutError, httpx.HTTPError, DropboxCallWorkerError):
         raise WatchVoiceError("watch_early_delta_unavailable") from None
@@ -199,7 +201,8 @@ async def _discover_pages(
     page_cursor: str | None,
     generation: int,
     cutover_at: datetime,
-) -> None:
+    wake_received_at: datetime | None = None,
+) -> bool:
     token = await _refresh_access_token(settings, http)
     await _verify_account_id(settings, http, token)
     key = watch_scope(settings)
@@ -248,7 +251,7 @@ async def _discover_pages(
                 .values(cursor=data["cursor"])
             )
             if not claimed.rowcount:  # type: ignore[attr-defined]
-                return
+                return True
             for obj in data["entries"]:
                 try:
                     item = metadata(obj)
@@ -285,13 +288,18 @@ async def _discover_pages(
                 ):
                     continue
                 values = card_values(settings, item, datetime.now(UTC))
+                if wake_received_at is not None and (
+                    _utc(wake_received_at) >= values["source_modified_at"]
+                ):
+                    values["wake_received_at"] = wake_received_at
                 await session.execute(
                     insert(WatchEarlyCard).values(**values).on_conflict_do_nothing()
                 )
             await session.commit()
         page_cursor = data["cursor"]
         if not data["has_more"]:
-            return
+            return False
+    return True
 
 
 async def drain_saved(

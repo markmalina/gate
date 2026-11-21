@@ -41,3 +41,35 @@ Railway может пропустить слот при незавершённо
 6. Для одной новой owner записи проверить metadata → одна private issue без STT, затем серию из нескольких записей, повторы, Dropbox outage и порядок. Измерить Dropbox server_modified → issue и фактические интервалы scheduler, указать размер выборки. Не объявлять 15–30min достигнутыми по одному run.
 
 При повреждении/ошибке новый OFF source останавливает admission только после завершения переключения fleet; старый binary без журнала и downgrade не являются безопасным автоматическим rollback. Хранить originals, cursors, claims, receipts и unknown. Проверить фактический deployed revision/flags/health и отсутствие новых writers. При неизвестном исходе остановиться, зафиксировать его и не повторять эффект вслепую.
+
+## Dropbox wake candidate (#770)
+
+The existing `/dropbox/calls/webhook` verifies the installed Dropbox app's
+signature and configured account. Watch uses that same account binding and
+OAuth refresh/verification for metadata calls. It has an independent
+nonrecursive `/Alpha/Voice` cursor. Calls keeps its independent intake state,
+cursor and `/Alpha/Calls` path. The shared callback commits a Watch wake
+generation before returning. The API process signals its writer immediately;
+startup and a 60-second recovery interval drive the same writer if a signal
+was missed. One PostgreSQL advisory lock serializes wake-writer passes across
+Gate processes. The cursor writer fence distinguishes `app_webhook` from
+`legacy_actions` and the standalone `app` runner. A lost GitHub response
+follows the existing mark-and-reconcile contract.
+
+Stage migration `0119_watch_webhook_wake` with
+`GATE_WATCH_WEBHOOK_ENABLED=false`. Before the controlled transition verify the
+callback registration and the account's metadata access to `/Alpha/Voice`.
+Provision the existing GitHub App PEM through the Railway secret interface as
+`GATE_WATCH_APP_PRIVATE_KEY` **on the Gate API service that serves the callback**,
+alongside the App, installation and slug settings. The cron service does not
+run this route. The PEM is used to request the installation token restricted
+to private Mark with Issues: write. Verify the legacy writer is quiescent,
+the Watch cursor exists, and the fence is switched deliberately to
+`app_webhook` before enabling the webhook writer.
+
+For controlled acceptance record Dropbox `server_modified`, the wake
+timestamp on the early-card row, and GitHub issue `created_at` read back from
+private Mark for each of two different input files. A wake timestamp identifies
+the account notification that drove the scan. Correlate it with controlled
+uploads, since a Dropbox callback carries no file ID. Verify batch, signed
+repeat, restart and recovery without a wake, recording card counts and writer.

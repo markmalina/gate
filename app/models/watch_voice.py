@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -39,6 +40,9 @@ class WatchEarlyCursor(Base):
     cutover_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     writer_mode: Mapped[str] = mapped_column(String(16), server_default="legacy_actions")
     writer_generation: Mapped[int] = mapped_column(Integer, server_default="0")
+    wake_generation: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    wake_processed_generation: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    wake_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WatchEarlyCard(Base):
@@ -60,6 +64,7 @@ class WatchEarlyCard(Base):
     revision: Mapped[str] = mapped_column(String(255))
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     source_modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    wake_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     body: Mapped[str] = mapped_column(Text)
     title: Mapped[str] = mapped_column(String(255))
     state: Mapped[str] = mapped_column(String(16))
