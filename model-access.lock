@@ -16,6 +16,11 @@
   "feature_default": false,
   "provider": "openai",
   "endpoint": "https://api.openai.com/v1/audio/transcriptions",
+  "certificate_authentication": {
+    "default": false,
+    "token_endpoint": "https://mtls.auth.openai.com/oauth/token",
+    "transcription_endpoint": "https://mtls.api.openai.com/v1/audio/transcriptions"
+  },
   "models": [
     "gpt-4o-mini-transcribe",
     "gpt-4o-transcribe"
