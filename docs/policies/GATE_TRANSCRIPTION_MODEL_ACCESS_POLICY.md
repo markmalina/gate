@@ -17,6 +17,28 @@ The provider, endpoint and model allowlist are application-owned. User input
 cannot select them. No tools, Responses conversation, provider memory,
 background mode, file object, search, shell, MCP or automatic retry is allowed.
 
+### Production X.509 workload identity
+
+On 2026-11-21 Mark authorized certificate authentication for the existing Gate
+Production project. The ordinary credential and endpoint remain available
+when the certificate option is off, including for rollback.
+
+When `OPENAI_TRANSCRIPTION_WIF_ENABLED=true`, the two bounded OpenAI
+transcription adapters use `https://mtls.auth.openai.com/oauth/token` for
+identity exchange without audio and send audio only to
+`https://mtls.api.openai.com/v1/audio/transcriptions`. Both calls verify
+the OpenAI server and present the same Gate client certificate.
+The mapping is limited to the project service account and Audio API requests.
+The service cannot fall back to an API key when certificate mode is enabled.
+
+Configure `OPENAI_TRANSCRIPTION_WIF_PROVIDER_ID` and
+`OPENAI_TRANSCRIPTION_WIF_SERVICE_ACCOUNT_ID` on the Gate service.
+Keep `OPENAI_TRANSCRIPTION_WIF_KEY_PEM` and its corresponding
+`OPENAI_TRANSCRIPTION_WIF_CERT_PEM` in the service's protected configuration.
+Rotate before certificate expiry. Disable project certificate enforcement and
+disable the opt-in together when reverting to the previous configuration.
+The model and existing admission, retention, and settlement rules still apply.
+
 ## Input, output and call bounds
 
 - Telegram download limit remains 25 MiB.

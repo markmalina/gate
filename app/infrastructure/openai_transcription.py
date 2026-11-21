@@ -14,6 +14,7 @@ from app.application.telegram_voice_transcription import (
     ProviderTranscript,
     TranscriptionProviderError,
 )
+from app.infrastructure.openai_transcription_wif import transcription_workload_identity
 
 _SUPPORTED_MODELS = {
     "gpt-4o-mini-transcribe",
@@ -124,14 +125,21 @@ class OpenAITranscriptionClient:
             data["language"] = language
         if prompt is not None:
             data["prompt"] = prompt
+        identity = transcription_workload_identity(self._config.base_url)
+        file = (voice.filename, voice.data, voice.media_type)
         try:
-            response = await self._http.post(
-                f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
-                headers={"Authorization": f"Bearer {self._config.api_key}"},
-                data=data,
-                files={"file": (voice.filename, voice.data, voice.media_type)},
-                timeout=self._config.timeout_seconds,
-            )
+            if identity is None:
+                response = await self._http.post(
+                    f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {self._config.api_key}"},
+                    data=data,
+                    files={"file": file},
+                    timeout=self._config.timeout_seconds,
+                )
+            else:
+                response = await identity.post(
+                    data=data, file=file, timeout=self._config.timeout_seconds
+                )
         except httpx.HTTPError:
             raise TranscriptionProviderError(
                 "openai_transcription_transport_unknown",
