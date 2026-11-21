@@ -1,4 +1,4 @@
-"""Metadata-only publisher using a dedicated GitHub App installation."""
+"""Metadata-only publisher using a repository-scoped GitHub App token."""
 
 import httpx
 
