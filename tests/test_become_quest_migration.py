@@ -824,6 +824,6 @@ def test_migration_graph_is_linear_and_0082_is_not_rewritten() -> None:
         env={**os.environ, "DATABASE_URL": _database_url()},
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0120_watch_webhook_archive ")
+    assert heads[0].startswith("0121_dropbox_call_rejections ")
 
 
