@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from sqlalchemy import select, update
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
@@ -73,19 +74,21 @@ async def receive_dropbox_call_webhook(
         return {"ok": True}
 
     now = datetime.now(UTC)
-    if settings.gate_dropbox_call_intake_enabled:
-        result = await session.execute(
-            select(DropboxCallInboxState)
-            .where(DropboxCallInboxState.account_id == account_id)
-            .with_for_update()
+    calls_enabled = settings.gate_dropbox_call_intake_enabled
+    if calls_enabled:
+        await session.execute(
+            insert(DropboxCallInboxState)
+            .values(account_id=account_id, webhook_received_at=now)
+            .on_conflict_do_update(
+                index_elements=[DropboxCallInboxState.account_id],
+                set_={
+                    "pending": True,
+                    "next_attempt_at": None,
+                    "webhook_received_at": now,
+                    "updated_at": now,
+                },
+            )
         )
-        state = result.scalar_one_or_none()
-        if state is None:
-            state = DropboxCallInboxState(account_id=account_id)
-            session.add(state)
-        state.pending = True
-        state.next_attempt_at = None
-        state.webhook_received_at = now
     watch_signaled = False
     if watch_enabled and settings.gate_workspace_id == "mark-personal":
         wake = await session.execute(
@@ -101,6 +104,8 @@ async def receive_dropbox_call_webhook(
         )
         watch_signaled = bool(wake.rowcount)  # type: ignore[attr-defined]
     await session.commit()
+    if calls_enabled:
+        request.app.state.dropbox_call_wake_event.set()
     if watch_signaled:
         request.app.state.watch_wake_event.set()
     return {"ok": True}

@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import SendAttempt, SendAttemptStatus
 
-BASELINE_REVISION = "0120_watch_webhook_archive"
-GUARDED_REVISION = "0121_watch_reply_join"
+BASELINE_REVISION = "0121_dropbox_call_rejections"
+GUARDED_REVISION = "0122_calls_reply_join"
 
 
 @dataclass(frozen=True, slots=True)

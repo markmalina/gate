@@ -74,6 +74,7 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
         app = FastAPI()
         app.include_router(router)
         app.state.watch_wake_event = asyncio.Event()
+        app.state.dropbox_call_wake_event = asyncio.Event()
         archive_wake = asyncio.Event()
         mark_wake = asyncio.Event()
         speech_wake = asyncio.Event()
@@ -182,9 +183,11 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
                 assert (await callback(ingress, "owner", valid=False)).status_code == 401
                 assert (await callback(ingress, "other")).status_code == 200
                 assert not app.state.watch_wake_event.is_set()
+                assert not app.state.dropbox_call_wake_event.is_set()
                 assert (await callback(ingress, "owner")).status_code == 200
                 assert (await callback(ingress, "owner")).status_code == 200
                 assert app.state.watch_wake_event.is_set()
+                assert app.state.dropbox_call_wake_event.is_set()
                 assert not requests and not Inbox.posts
                 async with factory() as session:
                     cursor = await session.get(WatchEarlyCursor, pk)

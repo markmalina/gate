@@ -980,6 +980,20 @@ class DropboxCallInboxState(Base):
     )
 
 
+class DropboxCallIntakeRejection(Base):
+    """A terminal intake rejection without the original audio or Dropbox path."""
+
+    __tablename__ = "dropbox_call_intake_rejections"
+
+    workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    source_revision_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    reason_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    rejected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+
 class PhoneCallRecording(Base):
     """Bounded original mobile call recording and its automatic transcript."""
 

@@ -22,6 +22,7 @@ _SAFE_ERRORS = frozenset(
         "dropbox_call_duration_exceeded",
         "dropbox_call_duration_recovered",
         "dropbox_call_recovery_prior_reservation",
+        "dropbox_call_interrupted_after_reservation",
         "dropbox_call_file_id_invalid",
         "dropbox_call_filename_invalid",
         "dropbox_call_path_invalid",

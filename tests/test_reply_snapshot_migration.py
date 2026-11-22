@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
         "0116_reply_media_packages",
         "0120_watch_webhook_archive",
         "0120_reply_media_dialog_join",
+        "0121_watch_reply_join",
+        "0121_dropbox_call_rejections",
     ],
 )
 def test_authored_branch_upgrades_to_exact_join_without_rewriting_history(baseline):
@@ -51,8 +53,8 @@ def test_authored_branch_upgrades_to_exact_join_without_rewriting_history(baseli
     asyncio.run(ddl(f'CREATE DATABASE "{name}"'))
     try:
         migrate("upgrade", baseline)
-        migrate("upgrade", "0121_watch_reply_join")
-        assert "0121_watch_reply_join (head)" in migrate("current")
+        migrate("upgrade", "0122_calls_reply_join")
+        assert "0122_calls_reply_join (head)" in migrate("current")
         migrate("check")
     finally:
         asyncio.run(ddl(f'DROP DATABASE "{name}"'))
