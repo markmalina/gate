@@ -121,7 +121,7 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
     assert _is_supported_file({**entry, "size": 37_585_783}) is True
     oversize = {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
     assert _is_supported_file(oversize) is False
-    # The separate intake guard reports it instead of advancing the cursor.
+    # The intake worker records it separately without downloading it.
     assert _is_oversize_audio_file(oversize) is True
     assert _is_oversize_audio_file({**oversize, "name": "photo.jpg"}) is False
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False

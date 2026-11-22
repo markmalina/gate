@@ -48,6 +48,9 @@ def test_recovery_and_restart_keep_same_new_reservation(monkeypatch, status, rea
 
         async def scalar(self, statement):
             compiled = str(statement)
+            if "FROM billing_budget_reservations" in compiled:
+                # This recovery run was interrupted before any paid claim.
+                return None
             assert "FOR UPDATE" in compiled
             return recording
 

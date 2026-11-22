@@ -1716,6 +1716,11 @@ GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"] = _object(
 )
 _dropbox_status_properties = GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"]["properties"]
 _dropbox_status_properties.update({
+    "intake_rejections": {"type": "array", "items": _object({
+        "reason_code": _nullable("string"),
+        "count": {"type": "integer", "minimum": 1},
+        "last_at": _nullable("string"),
+    })},
     "no_speech_count": {"type": "integer", "minimum": 0},
     "requires_attention_count": {"type": "integer", "minimum": 0},
     "incomplete_recordings": {

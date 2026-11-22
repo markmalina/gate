@@ -21,6 +21,10 @@ class ReadSession:
         self.connection = create_engine("sqlite://").connect()
         self.reads: list[str] = []
         self.connection.execute(text(
+            "CREATE TABLE dropbox_call_intake_rejections (workspace_key TEXT, account_id TEXT, "
+            "source_revision_sha256 TEXT, reason_code TEXT, rejected_at TEXT)"
+        ))
+        self.connection.execute(text(
             "CREATE TABLE dropbox_call_inbox_states (account_id TEXT, cursor TEXT, "
             "backfill_version INTEGER, pending BOOLEAN, attempt_count INTEGER, "
             "next_attempt_at TEXT, last_error_code TEXT, webhook_received_at TEXT, updated_at TEXT)"
@@ -74,6 +78,12 @@ def test_status_fences_owner_project_and_source_account_without_payload() -> Non
         "INSERT INTO dropbox_call_inbox_states VALUES "
         "('configured','private-cursor',1,1,7,NULL,'dropbox_call_oauth_rejected',NULL,NULL)"
     ))
+    session.connection.execute(text(
+        "INSERT INTO dropbox_call_intake_rejections VALUES "
+        "('owner','configured','private-id','dropbox_call_download_limit_exceeded',NULL), "
+        "('other','configured','foreign-id','dropbox_call_download_limit_exceeded',NULL), "
+        "('owner','other','foreign-account-id','dropbox_call_download_limit_exceeded',NULL)"
+    ))
     snapshot = inspect(session)
     assert [row["recording_id"] for row in snapshot["recent_recordings"]] == ["visible"]
     assert snapshot["inbox"]["last_error_code"] == "dropbox_call_oauth_rejected"
@@ -84,10 +94,14 @@ def test_status_fences_owner_project_and_source_account_without_payload() -> Non
     assert row["transcription_status"] == "unknown"
     assert row["transcript_present"] is True
     serialized = json.dumps(snapshot)
-    for private in ("private-cursor", "private-source", "private-transcript", "private-error-body"):
+    for private in ("private-cursor", "private-source", "private-transcript", "private-error-body",
+                    "private-id", "foreign-id", "foreign-account-id"):
         assert private not in serialized
-    assert "transcript_text IS NOT NULL" in session.reads[2]
-    assert len(session.reads) == 4
+    assert "transcript_text IS NOT NULL" in session.reads[3]
+    assert len(session.reads) == 5
+    assert snapshot["intake_rejections"] == [{
+        "reason_code": "dropbox_call_download_limit_exceeded", "count": 1, "last_at": None,
+    }]
     assert snapshot["archive_counts"] == {
         "total": 1, "completed": 0, "superseded": 0, "incomplete": 1,
     }
