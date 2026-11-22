@@ -35,6 +35,7 @@ async def run_watch_pass(
     http: httpx.AsyncClient,
     key: str,
     installation: WatchAppInstallation,
+    archive_wake: asyncio.Event | None = None,
 ) -> bool:
     """Return whether the bounded pass left work that should run immediately."""
     scope = watch_scope(settings)
@@ -55,6 +56,8 @@ async def run_watch_pass(
             )
         except WatchVoiceError as exc:
             discovery_error = exc
+        if archive_wake is not None:
+            archive_wake.set()
 
         if trigger is not None and not more_pages and discovery_error is None:
             async with factory.begin() as session:
@@ -120,6 +123,7 @@ async def run_watch_webhook_loop(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     wake: asyncio.Event,
+    archive_wake: asyncio.Event | None = None,
 ) -> None:
     key = os.getenv("GATE_WATCH_APP_PRIVATE_KEY", "")
     installation = app_installation()
@@ -138,7 +142,7 @@ async def run_watch_webhook_loop(
             # Clear before the scan so a signal concurrent with it remains visible.
             wake.clear()
             try:
-                if await run_watch_pass(settings, factory, http, key, installation):
+                if await run_watch_pass(settings, factory, http, key, installation, archive_wake):
                     continue
             except Exception:
                 # Error details may include a provider URL or credential.

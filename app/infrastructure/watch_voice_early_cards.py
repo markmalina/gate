@@ -30,7 +30,7 @@ from app.worker.dropbox_calls import (
     _refresh_access_token,
     _verify_account_id,
 )
-from app.worker.watch_voice import PATH, timestamp
+from app.worker.watch_voice import PATH, SOURCE_LIMIT, timestamp
 
 _EXTENSIONS = {".m4a", ".mp4", ".mp3", ".wav", ".ogg", ".webm", ".flac"}
 
@@ -288,6 +288,14 @@ async def _discover_pages(
                 ):
                     continue
                 values = card_values(settings, item, datetime.now(UTC))
+                if (
+                    writer == "app_webhook"
+                    and settings.gate_watch_webhook_archive_enabled
+                    and item["size"] <= SOURCE_LIMIT
+                ):
+                    values["archive_input"] = {
+                        name: item[name] for name in ("name", "path_display", "size")
+                    }
                 if wake_received_at is not None and (
                     _utc(wake_received_at) >= values["source_modified_at"]
                 ):
@@ -363,7 +371,11 @@ async def publish_saved(
         if was_pending:
             legacy = (
                 await session.execute(
-                    select(WatchVoiceNote.delivery_state, WatchVoiceNote.issue_url).where(
+                    select(
+                        WatchVoiceNote.delivery_state,
+                        WatchVoiceNote.issue_url,
+                        WatchVoiceNote.webhook_archived,
+                    ).where(
                         WatchVoiceNote.id == card.id,
                         WatchVoiceNote.workspace_key == key["workspace_key"],
                         WatchVoiceNote.account_id == key["account_id"],
@@ -372,7 +384,11 @@ async def publish_saved(
                     )
                 )
             ).one_or_none()
-            if legacy is not None:
+            if legacy is not None and not (
+                legacy.webhook_archived
+                and legacy.delivery_state == "pending"
+                and legacy.issue_url is None
+            ):
                 match = re.fullmatch(
                     r"https://github\.com/markmalina/mark/issues/([1-9][0-9]{0,9})",
                     legacy.issue_url or "",
