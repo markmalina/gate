@@ -8,6 +8,7 @@ from typing import Any
 
 from app.api.mcp_schemas import GATE_STATUS_OUTPUT_SCHEMA
 from app.infrastructure.dropbox_call_status import (
+    _safe_error,
     _timestamp,
     dropbox_call_operational_status,
 )
@@ -155,3 +156,13 @@ def test_timestamp_serialization_preserves_actual_observation() -> None:
     observed = datetime(2026, 9, 21, 8, 0, tzinfo=UTC)
     assert _timestamp(observed) == "2026-09-21T08:00:00+00:00"
     assert _timestamp(None) is None
+
+
+def test_recognized_provider_refusals_are_visible_but_arbitrary_text_is_redacted() -> None:
+    for reason in (
+        "openai_transcription_workload_identity_unavailable",
+        "openai_transcription_quota_unavailable",
+        "openai_transcription_rate_limited",
+    ):
+        assert _safe_error(reason) == reason
+        assert _safe_error(reason + ": untrusted detail") == "unclassified_error"

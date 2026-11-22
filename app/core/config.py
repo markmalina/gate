@@ -577,6 +577,11 @@ class Settings(BaseSettings):
     gate_watch_webhook_archive_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_WEBHOOK_ARCHIVE_ENABLED"
     )
+    gate_watch_webhook_transcription_admission: SecretStr = Field(
+        default=SecretStr(""),
+        repr=False,
+        validation_alias="GATE_WATCH_WEBHOOK_TRANSCRIPTION_ADMISSION",
+    )
     gate_watch_voice_early_cards_only: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_EARLY_CARDS_ONLY"
     )
