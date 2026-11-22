@@ -112,7 +112,6 @@ async def dropbox_call_operational_status(
         "enabled": False,
         "configuration": {},
         "inbox": None,
-        "intake_rejections": [],
         "recent_recordings": [],
         "incomplete_recordings": [],
         "archive_counts": {
@@ -153,20 +152,6 @@ async def dropbox_call_operational_status(
             # This is state activity, not necessarily a successful poll/heartbeat.
             "state_updated_at": _timestamp(state["updated_at"]),
         }
-    rejections = await session.execute(
-        text(
-            "SELECT reason_code, count(*) AS count, max(rejected_at) AS last_at "
-            "FROM dropbox_call_intake_rejections "
-            "WHERE workspace_key = :workspace_key AND account_id = :account_id "
-            "GROUP BY reason_code ORDER BY reason_code"
-        ),
-        {"workspace_key": workspace_key, "account_id": account_id},
-    )
-    result["intake_rejections"] = [
-        {"reason_code": _safe_error(row["reason_code"]), "count": int(row["count"]),
-         "last_at": _timestamp(row["last_at"])}
-        for row in rejections.mappings()
-    ]
 
     parameters = {
         "workspace_key": workspace_key, "account_id": account_id,

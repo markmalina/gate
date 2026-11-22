@@ -520,7 +520,7 @@ async def _record_intake_rejection(
 ) -> None:
     workspace, account_id, source_key = rejection_key
     async with session_factory() as session:
-        await session.execute(
+        inserted = await session.scalar(
             insert(DropboxCallIntakeRejection)
             .values(
                 workspace_key=workspace,
@@ -529,8 +529,11 @@ async def _record_intake_rejection(
                 reason_code=code,
             )
             .on_conflict_do_nothing()
+            .returning(DropboxCallIntakeRejection.reason_code)
         )
         await session.commit()
+    if inserted is not None:
+        logger.warning("Dropbox call source rejected: code=%s", inserted)
 
 
 async def _recover_duration_unknown_recordings(
