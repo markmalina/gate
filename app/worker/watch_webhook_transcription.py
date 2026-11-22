@@ -14,7 +14,12 @@ from sqlalchemy import and_, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.infrastructure.openai_transcription import WATCH_CANARY_MAX_BYTES, WATCH_CANARY_MAX_SECONDS
+from app.infrastructure.openai_transcription import (
+    WATCH_BENCHMARK_MAX_SECONDS,
+    WATCH_BENCHMARK_SHA256,
+    WATCH_CANARY_MAX_BYTES,
+    WATCH_CANARY_MAX_SECONDS,
+)
 from app.infrastructure.openai_transcription_wif import transcription_workload_identity
 from app.models.watch_voice import WatchVoiceNote
 from app.worker.watch_voice import note_scope, timestamp, transcribe_note
@@ -143,7 +148,10 @@ async def drain_watch_transcription(
         selector = and_(selector, ordinary_filename)
 
         canary_id = None
+        canary_max_seconds = WATCH_CANARY_MAX_SECONDS
         if (canary := admission.model_canary) is not None:
+            if canary.sha256 == WATCH_BENCHMARK_SHA256:
+                canary_max_seconds = WATCH_BENCHMARK_MAX_SECONDS
             canary_filename = WatchVoiceNote.filename == canary.filename
             canary_id = await lock.scalar(
                 select(WatchVoiceNote.id)
@@ -160,7 +168,7 @@ async def drain_watch_transcription(
                 selector,
                 and_(
                     WatchVoiceNote.id == canary_id,
-                    WatchVoiceNote.duration_seconds <= WATCH_CANARY_MAX_SECONDS,
+                    WatchVoiceNote.duration_seconds <= canary_max_seconds,
                     WatchVoiceNote.size_bytes <= WATCH_CANARY_MAX_BYTES,
                 ),
             )
@@ -191,7 +199,8 @@ async def drain_watch_transcription(
         for note_id in jobs:
             await transcribe_note(
                 settings, factory, http, note_id,
-                ignore_legacy_selector=True, model_canary=note_id == canary_id,
+                ignore_legacy_selector=True,
+                canary_max_seconds=canary_max_seconds if note_id == canary_id else None,
             )
         return len(jobs) == BATCH_SIZE
 

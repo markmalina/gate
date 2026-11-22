@@ -311,3 +311,17 @@ Sources checked 2026-11-22:
 https://developers.openai.com/api/docs/models/gpt-transcribe,
 https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create,
 https://developers.openai.com/api/docs/guides/your-data.
+
+### Exact public recording for a quality comparison
+
+The owner-requested comparison in Gate #859 uses one 159.48-second M4A
+derived from the public-domain 1908 phonograph recording by Leo Tolstoy.
+The locked SHA-256 in `watch_model_quality_benchmark` is the only input for
+which the source duration limit is 165 seconds and the reported-duration
+limit is 166 seconds. Activate only through the exact owner-approved canary
+grant. The destination, existing shared USD 3 budget, charge rate,
+response bounds, one-part, one-call and zero-retry rules are the same as the
+short canary. The OpenAI adapter rejects any additional parts before provider
+I/O. A normally admitted mini run on the same bytes is the comparison base.
+
+Source: https://commons.wikimedia.org/wiki/File:Tolstoy_Vremya_prishlo.ogg
