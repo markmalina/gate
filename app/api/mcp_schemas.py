@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.api.audio_processing_history import AUDIO_PROCESSING_HISTORY_SCHEMA
 from app.api.mcp_media import MEDIA_OUTPUT_SCHEMA
 from app.application.document_formats import DOCUMENT_MIME_TYPES
 from app.application.owner_reply_readiness import (
@@ -1828,6 +1829,14 @@ REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
         "has_more": {"type": "boolean"},
     }
 )
+REPLY_CONTEXT_SUCCESS_SCHEMA["properties"]["processing_history"] = AUDIO_PROCESSING_HISTORY_SCHEMA
+REPLY_CONTEXT_ERROR_SCHEMA = _object(
+    {
+        "error": {"type": "string", "minLength": 1},
+        "processing_history": AUDIO_PROCESSING_HISTORY_SCHEMA,
+    },
+    required=["error"],
+)
 GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
     REPLY_CONTEXT_SUCCESS_SCHEMA,
     {
@@ -1838,6 +1847,7 @@ GATE_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = _success_or_error(
         "reply_context_message": REPLY_CONTEXT_MESSAGE_SCHEMA,
     },
 )
+GATE_REPLY_CONTEXT_OUTPUT_SCHEMA["oneOf"][1] = REPLY_CONTEXT_ERROR_SCHEMA
 
 
 TELEGRAM_ENTITY_SCHEMA = _object(

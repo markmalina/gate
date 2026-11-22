@@ -24,6 +24,7 @@ from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateResult,
     TelegramVoiceUpdateDisposition,
 )
+from app.application.telegram_voice_transcription import DownloadedVoice
 from app.core.config import Settings
 from app.worker.telegram_processing import ShadowClassifyingTelegramProcessor
 
@@ -55,6 +56,8 @@ class RecordingVoiceArchive:
     def __init__(self) -> None:
         self.commands: list[ArchiveTelegramVoiceCommand] = []
         self.transcripts: list[PersistTelegramVoiceTranscriptCommand] = []
+        self.recognition_starts: list[datetime] = []
+        self.interruptions: list[str] = []
 
     async def archive(
         self,
@@ -66,6 +69,9 @@ class RecordingVoiceArchive:
             duplicate=False,
             size_bytes=1024,
             media_type="audio/ogg",
+            archived_audio=DownloadedVoice(
+                data=b"synthetic-archived-original", filename="voice.oga", media_type="audio/ogg",
+            ),
         )
 
     async def persist_transcript(
@@ -78,6 +84,16 @@ class RecordingVoiceArchive:
             duplicate=False,
             status=command.status,
         )
+
+    async def mark_recognition_started(self, archive_id: str, at: datetime) -> None:
+        assert archive_id == "archive-1"
+        self.recognition_starts.append(at)
+
+    async def mark_interrupted(
+        self, archive_id: str, at: datetime, reason: str, started_at: datetime | None,
+    ) -> None:
+        assert archive_id == "archive-1"
+        self.interruptions.append(reason)
 
 
 class PersistedTranscriptVoiceArchive(RecordingVoiceArchive):
@@ -114,6 +130,10 @@ class ProjectingVoiceUpdates:
         command: ProcessTelegramVoiceUpdateCommand,
     ) -> ProcessTelegramVoiceUpdateResult:
         self.commands.append(command)
+        assert command.archived_audio is not None
+        assert command.archived_audio.data == b"synthetic-archived-original"
+        assert command.on_recognition_start is not None
+        await command.on_recognition_start(datetime.now(UTC))
         update: dict[str, Any] = {
             "update_id": command.update["update_id"],
             "business_message": {
@@ -207,6 +227,9 @@ def test_business_voice_is_projected_before_downstream_processing() -> None:
         TelegramVoiceTranscriptStatus.TRANSCRIBED
     )
     assert voice_archive.transcripts[0].text == "расшифрованный текст"
+    saved = voice_archive.transcripts[0]
+    assert saved.recognition_started_at == voice_archive.recognition_starts[0]
+    assert archive_command.received_at < voice_archive.recognition_starts[0] <= saved.transcribed_at
 
 
 def test_persisted_transcript_replay_bypasses_provider_orchestration() -> None:

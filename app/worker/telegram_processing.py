@@ -113,6 +113,7 @@ from app.application.telegram_voice_archive import (
     PersistTelegramVoiceTranscriptCommand,
     TelegramVoiceArchiveDirection,
     TelegramVoiceArchiver,
+    TelegramVoiceRecognition,
     TelegramVoiceTranscriptStatus,
 )
 from app.application.telegram_voice_orchestration import (
@@ -550,11 +551,19 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                         or "telegram_voice_transcription_blocked"
                     )
                 else:
+                    recognition = TelegramVoiceRecognition(archived.archive_id, self._voice_archive)
                     if self._voice_updates is None:
+                        await recognition.interrupt(
+                            datetime.now(UTC), "telegram_voice_not_configured",
+                        )
                         raise TelegramUpdateProcessingError(
                             "telegram_voice_not_configured"
                         )
                     try:
+                        if archived.archived_audio is None:
+                            raise TelegramUpdateProcessingError(
+                                "telegram_voice_archive_audio_missing"
+                            )
                         voice_result = await self._voice_updates.execute(
                             ProcessTelegramVoiceUpdateCommand(
                                 update=payload,
@@ -573,14 +582,27 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                                 enabled=(
                                     self._settings.gate_telegram_voice_transcription_enabled
                                 ),
+                                archived_audio=archived.archived_audio,
+                                on_recognition_start=recognition.start,
                             )
                         )
+                    except asyncio.CancelledError:
+                        await recognition.interrupt(
+                            datetime.now(UTC), "telegram_voice_recognition_interrupted",
+                        )
+                        raise
                     except Exception:
+                        await recognition.interrupt(
+                            datetime.now(UTC), "telegram_voice_processing_failed",
+                        )
                         raise TelegramUpdateProcessingError(
                             "telegram_voice_processing_failed"
                         ) from None
                     transcription = voice_result.transcription
                     if transcription is None:
+                        await recognition.interrupt(
+                            datetime.now(UTC), "telegram_voice_transcription_result_missing",
+                        )
                         raise TelegramUpdateProcessingError(
                             "telegram_voice_transcription_result_missing"
                         )
@@ -591,7 +613,8 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                                 status=TelegramVoiceTranscriptStatus(
                                     transcription.outcome.value
                                 ),
-                                transcribed_at=item.received_at,
+                                transcribed_at=datetime.now(UTC),
+                                recognition_started_at=recognition.started_at,
                                 text=transcription.alpha_input_text,
                                 language=(
                                     self._settings.gate_telegram_voice_language
@@ -603,7 +626,15 @@ class ShadowClassifyingTelegramProcessor(TelegramUpdateProcessor):
                                 reason_code=transcription.reason_code,
                             )
                         )
+                    except asyncio.CancelledError:
+                        await recognition.interrupt(
+                            datetime.now(UTC), "telegram_voice_recognition_interrupted",
+                        )
+                        raise
                     except Exception:
+                        await recognition.interrupt(
+                            datetime.now(UTC), "telegram_voice_transcript_persist_failed",
+                        )
                         raise TelegramUpdateProcessingError(
                             "telegram_voice_transcript_persist_failed"
                         ) from None

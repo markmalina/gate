@@ -106,6 +106,7 @@ async def test_call_webhook_advances_past_large_file_while_transcription_is_busy
 
     async def transcribe(_service, command):
         dispatches.append(command.voice.file_id)
+        await command.on_recognition_start(datetime.now(UTC))
         if command.voice.file_id == "id:slow":
             async with sessions.begin() as session:
                 session.add(BillingBudgetReservationModel(
@@ -228,11 +229,19 @@ async def test_call_webhook_advances_past_large_file_while_transcription_is_busy
                 ))
                 assert next_call.transcription_status == "transcribed"
                 assert next_call.transcript_text == "synthetic transcript"
+                assert (next_call.received_at == next_call.transcription_queued_at
+                        <= next_call.recognition_started_at <= next_call.text_saved_at)
+                assert next_call.transcription_stopped_at is None
                 interrupted = await session.get(PhoneCallRecording, interrupted.id)
                 assert interrupted.transcription_status == "unknown"
                 assert interrupted.transcription_reason_code == (
                     "dropbox_call_interrupted_after_reservation"
                 )
+                assert interrupted.transcription_stop_reason == (
+                    "dropbox_call_recognition_interrupted"
+                )
+                assert interrupted.recognition_started_at <= interrupted.transcription_stopped_at
+                assert interrupted.text_saved_at is None
             assert downloads == ["rev-slow", "rev-next"]
             assert dispatches == ["id:slow", "id:next"]
     finally:

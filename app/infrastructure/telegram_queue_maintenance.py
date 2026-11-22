@@ -1,8 +1,8 @@
 """PostgreSQL queue health and abandoned-claim recovery adapters."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.telegram_queue_maintenance import (
@@ -80,6 +80,42 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def _record_interrupted_voice_processing(
+        self, command: RecoverStaleTelegramClaimsCommand,
+    ) -> None:
+        # Allow the complete multipart request to finish before treating the lease as stale.
+        stale_before = command.recovered_at - timedelta(hours=1)
+        stale_archives = (
+            select(TelegramVoiceArchive.id)
+            .join(
+                TelegramOutboxEvent,
+                TelegramOutboxEvent.receipt_id == TelegramVoiceArchive.receipt_id,
+            )
+            .join(TelegramReceipt, TelegramReceipt.id == TelegramVoiceArchive.receipt_id)
+            .where(
+                TelegramReceipt.bot_key == "telegram_business",
+                TelegramOutboxEvent.status == TelegramOutboxStatus.PROCESSING.value,
+                TelegramOutboxEvent.locked_at <= stale_before,
+                TelegramVoiceArchive.transcription_status.is_(None),
+                TelegramVoiceArchive.transcription_stopped_at.is_(None),
+                or_(
+                    TelegramVoiceArchive.recognition_started_at.is_(None),
+                    TelegramVoiceArchive.recognition_started_at <= stale_before,
+                ),
+            )
+            .order_by(TelegramOutboxEvent.locked_at, TelegramVoiceArchive.id)
+            .limit(command.limit)
+            .with_for_update(of=TelegramVoiceArchive, skip_locked=True)
+        )
+        await self._session.execute(
+            update(TelegramVoiceArchive)
+            .where(TelegramVoiceArchive.id.in_(stale_archives))
+            .values(
+                transcription_stopped_at=command.recovered_at,
+                transcription_stop_reason="telegram_voice_stale_transcription",
+            )
+        )
+
     async def recover_stale(
         self,
         command: RecoverStaleTelegramClaimsCommand,
@@ -112,6 +148,7 @@ class SqlTelegramQueueMaintenance(TelegramQueueMaintenance):
                 )
                 query_limit += 1
             elif command.require_missing_voice_archive:
+                await self._record_interrupted_voice_processing(command)
                 voice_payload = or_(
                     TelegramReceipt.payload["business_message"]["voice"].is_not(
                         None

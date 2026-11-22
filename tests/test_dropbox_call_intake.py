@@ -21,6 +21,7 @@ from app.application.telegram_voice_transcription import (
 )
 from app.core.config import Settings
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
+from app.models.domain import PhoneCallRecording
 from app.worker.dropbox_calls import (
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
     _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
@@ -406,7 +407,7 @@ def test_duration_recovery_never_replays_prior_provider_work(
     expected_status, expected_reason,
 ) -> None:
     data = b"synthetic audio"
-    row = SimpleNamespace(
+    row = PhoneCallRecording(
         id=uuid.uuid4(), workspace_key="mark-personal", source_account_id="account-id",
         source_file_id="id:exact", source_revision="revision-exact",
         transcription_status="rejected", transcription_reason_code=source_reason,
