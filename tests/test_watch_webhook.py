@@ -37,6 +37,7 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
         @event.listens_for(engine.sync_engine, "connect")
         def register_test_lock(connection, _):
             connection.create_function("pg_try_advisory_xact_lock", 1, lambda _: locking)
+            connection.create_function("pg_advisory_xact_lock", 1, lambda _: None)
 
         async with engine.begin() as connection:
             for model in (
@@ -74,6 +75,8 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
         app.include_router(router)
         app.state.watch_wake_event = asyncio.Event()
         archive_wake = asyncio.Event()
+        mark_wake = asyncio.Event()
+        speech_wake = asyncio.Event()
 
         async def get_session():
             async with factory() as session:
@@ -125,11 +128,7 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
                 pass
 
             async def preflight(self):
-                # Run archive intake before GitHub publication, including when
-                # the early card is still pending or its first POST was lost.
-                assert archive_wake.is_set()
-                archive_wake.clear()
-                await watch_webhook_archive.archive_watch_pass(settings, factory, provider)
+                assert mark_wake.is_set()
 
             async def post(self, *, part, issue_number, title, body):
                 self.posts.append(body)
@@ -196,12 +195,19 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
                 # Drop the in-memory signal, as on restart. The database signal survives.
                 app.state.watch_wake_event = asyncio.Event()
                 locking = False
-                args = (settings, factory, provider, "synthetic", installation, archive_wake)
-                assert not await watch_webhook.run_watch_pass(*args)
+                discover = (settings, factory, provider, archive_wake, mark_wake)
+                publish = (settings, factory, provider, "synthetic", installation)
+                assert not await watch_webhook.publish_watch_pass(*publish)
                 assert not requests
+                assert not await watch_webhook.discover_watch_pass(*discover)
+                assert archive_wake.is_set() and not Inbox.posts
+                await watch_webhook_archive.archive_watch_pass(
+                    settings, factory, provider, speech_wake
+                )
+                assert speech_wake.is_set() and not Inbox.posts
                 locking = True
-                assert await watch_webhook.run_watch_pass(*args)  # first POST response lost
-                assert not await watch_webhook.run_watch_pass(*args)  # second + read reconciliation
+                assert await watch_webhook.publish_watch_pass(*publish)  # first POST response lost
+                assert not await watch_webhook.publish_watch_pass(*publish)  # reconcile then second
                 assert len(Inbox.posts) == 2 and Inbox.reconciliations == Inbox.posts[:1]
                 async with factory() as session:
                     cursor = await session.get(WatchEarlyCursor, pk)
@@ -224,7 +230,9 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
 
                 # A file arriving with no webhook uses the exact same recovery path.
                 entries.append(source("missed"))
-                assert not await watch_webhook.run_watch_pass(*args)
+                assert not await watch_webhook.discover_watch_pass(*discover)
+                await watch_webhook_archive.archive_watch_pass(settings, factory, provider)
+                assert not await watch_webhook.publish_watch_pass(*publish)
                 async with factory.begin() as session:
                     missed = await session.scalar(
                         select(WatchEarlyCard).where(WatchEarlyCard.file_id == "id:missed")
@@ -258,17 +266,16 @@ def test_worker_uses_signal_before_recovery_timeout(monkeypatch):
             passes.put_nowait(None)
             return False
 
-        monkeypatch.setenv("GATE_WATCH_APP_PRIVATE_KEY", "synthetic")
-        monkeypatch.setattr(
-            watch_webhook, "app_installation", lambda: WatchAppInstallation(1, 2, "synthetic")
-        )
-        monkeypatch.setattr(watch_webhook, "run_watch_pass", run_pass)
+        monkeypatch.delenv("GATE_WATCH_APP_PRIVATE_KEY", raising=False)
+        monkeypatch.setattr(watch_webhook, "discover_watch_pass", run_pass)
         settings = SimpleNamespace(
             gate_workspace_id="mark-personal",
             gate_watch_voice_enabled=False,
             dropbox_call_account_id="owner",
         )
-        task = asyncio.create_task(watch_webhook.run_watch_webhook_loop(settings, None, wake))
+        task = asyncio.create_task(
+            watch_webhook.run_watch_webhook_loop(settings, None, wake, None, asyncio.Event())
+        )
         try:
             await asyncio.wait_for(passes.get(), timeout=2)
             wake.set()

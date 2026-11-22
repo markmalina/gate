@@ -1,4 +1,4 @@
-"""Wake the existing metadata publisher after a committed Dropbox webhook."""
+"""Drive Watch Dropbox discovery and Mark delivery independently."""
 
 from __future__ import annotations
 
@@ -18,48 +18,41 @@ from app.infrastructure.watch_voice_early_cards import (
     drain_saved,
     watch_scope,
 )
-from app.infrastructure.watch_voice_github import WatchVoiceError
 from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor
 from app.worker.watch_app_runner import app_installation
 
 logger = logging.getLogger(__name__)
 RECOVERY_SECONDS = 60
 BATCH_SIZE = 5
-# Dedicated PostgreSQL advisory-lock namespace for the one Mark Watch route.
 WRITER_LOCK = 0x57415443
+DISCOVERY_LOCK = 0x57415446
 
 
-async def run_watch_pass(
+async def discover_watch_pass(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
-    key: str,
-    installation: WatchAppInstallation,
-    archive_wake: asyncio.Event | None = None,
+    archive_wake: asyncio.Event | None,
+    mark_wake: asyncio.Event,
 ) -> bool:
-    """Return whether the bounded pass left work that should run immediately."""
+    """Advance the Dropbox cursor without contacting GitHub."""
     scope = watch_scope(settings)
     pk = (scope["workspace_key"], scope["account_id"])
     async with factory() as lock:
-        if not await lock.scalar(select(func.pg_try_advisory_xact_lock(WRITER_LOCK))):
-            return False
+        await lock.execute(select(func.pg_advisory_xact_lock(DISCOVERY_LOCK)))
         cursor = await lock.get(WatchEarlyCursor, pk)
         if cursor is None or cursor.writer_mode != "app_webhook":
             return False
         generation = cursor.wake_generation
         trigger = cursor.wake_received_at if generation > cursor.wake_processed_generation else None
-        more_pages = False
-        discovery_error: WatchVoiceError | None = None
-        try:
-            more_pages = await discover_early_cards(
-                settings, factory, http, writer="app_webhook", wake_received_at=trigger
-            )
-        except WatchVoiceError as exc:
-            discovery_error = exc
+        more = await discover_early_cards(
+            settings, factory, http, writer="app_webhook", wake_received_at=trigger
+        )
         if archive_wake is not None:
             archive_wake.set()
+        mark_wake.set()
 
-        if trigger is not None and not more_pages and discovery_error is None:
+        if trigger is not None and not more:
             async with factory.begin() as session:
                 await session.execute(
                     update(WatchEarlyCursor)
@@ -72,59 +65,86 @@ async def run_watch_pass(
                     )
                     .values(wake_processed_generation=generation)
                 )
+        return more
 
+
+async def publish_watch_pass(
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    key: str,
+    installation: WatchAppInstallation,
+) -> bool:
+    """Keep the existing single-writer contract for early Mark cards."""
+    scope = watch_scope(settings)
+    pk = (scope["workspace_key"], scope["account_id"])
+    async with factory() as lock:
+        if not await lock.scalar(select(func.pg_try_advisory_xact_lock(WRITER_LOCK))):
+            return False
+        cursor = await lock.get(WatchEarlyCursor, pk)
+        if cursor is None or cursor.writer_mode != "app_webhook":
+            return False
+        has_cards = await lock.scalar(
+            select(WatchEarlyCard.id)
+            .where(
+                WatchEarlyCard.workspace_key == pk[0],
+                WatchEarlyCard.account_id == pk[1],
+                WatchEarlyCard.state.in_(("pending", "sending", "unknown")),
+            )
+            .limit(1)
+        )
+        if not has_cards:
+            return False
+        async with asyncio.timeout(95):
+            token = await issue_mark_token(http, key, installation)
+            client = AppInboxClient(http, token, app_slug=installation.slug)
+            await client.preflight()
+            receipt = await drain_saved(factory, client, scope, BATCH_SIZE, writer="app_webhook")
+        if not receipt["considered"]:
+            return False
         async with factory() as session:
-            has_cards = await session.scalar(
+            return bool(await session.scalar(
                 select(WatchEarlyCard.id)
                 .where(
                     WatchEarlyCard.workspace_key == pk[0],
                     WatchEarlyCard.account_id == pk[1],
-                    WatchEarlyCard.state.in_(("pending", "sending", "unknown")),
+                    WatchEarlyCard.state == "pending",
                 )
                 .limit(1)
-            )
-        immediate = False
-        if has_cards:
-            async with asyncio.timeout(95):
-                token = await issue_mark_token(http, key, installation)
-                client = AppInboxClient(http, token, app_slug=installation.slug)
-                await client.preflight()
-                receipt = await drain_saved(
-                    factory, client, scope, BATCH_SIZE, writer="app_webhook"
-                )
-            if receipt["considered"]:
-                async with factory() as session:
-                    immediate = bool(
-                        await session.scalar(
-                            select(WatchEarlyCard.id)
-                            .where(
-                                WatchEarlyCard.workspace_key == pk[0],
-                                WatchEarlyCard.account_id == pk[1],
-                                WatchEarlyCard.state == "pending",
-                            )
-                            .limit(1)
-                        )
-                    )
-        if discovery_error is not None:
-            logger.warning("Watch delta unavailable")
-        async with factory() as session:
-            newer_wake = await session.scalar(
-                select(WatchEarlyCursor.wake_generation).where(
-                    WatchEarlyCursor.workspace_key == pk[0],
-                    WatchEarlyCursor.account_id == pk[1],
-                    WatchEarlyCursor.writer_mode == "app_webhook",
-                    WatchEarlyCursor.wake_generation > generation,
-                )
-            )
-        return more_pages or immediate or newer_wake is not None
+            ))
 
 
 async def run_watch_webhook_loop(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     wake: asyncio.Event,
-    archive_wake: asyncio.Event | None = None,
-    transcription_wake: asyncio.Event | None = None,
+    archive_wake: asyncio.Event | None,
+    mark_wake: asyncio.Event,
+) -> None:
+    if (
+        settings.gate_workspace_id != "mark-personal"
+        or settings.gate_watch_voice_enabled
+        or not settings.dropbox_call_account_id
+    ):
+        logger.warning("Watch Dropbox discovery configuration invalid")
+        return
+    async with httpx.AsyncClient(timeout=12, trust_env=False) as http:
+        while True:
+            wake.clear()
+            try:
+                if await discover_watch_pass(settings, factory, http, archive_wake, mark_wake):
+                    continue
+            except Exception:
+                logger.warning("Watch Dropbox discovery deferred")
+                await asyncio.sleep(RECOVERY_SECONDS)
+                continue
+            await wake.wait()
+
+
+async def run_watch_mark_loop(
+    settings: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    wake: asyncio.Event,
 ) -> None:
     key = os.getenv("GATE_WATCH_APP_PRIVATE_KEY", "")
     installation = app_installation()
@@ -135,25 +155,16 @@ async def run_watch_webhook_loop(
         or settings.gate_watch_voice_enabled
         or not settings.dropbox_call_account_id
     ):
-        logger.error("Watch webhook writer configuration invalid")
+        logger.warning("Watch Mark writer configuration invalid")
         return
-
-    async with httpx.AsyncClient(timeout=12.0, trust_env=False) as http:
+    async with httpx.AsyncClient(timeout=12, trust_env=False) as http:
         while True:
-            # Clear before the scan so a signal concurrent with it remains visible.
             wake.clear()
             try:
-                more = await run_watch_pass(
-                    settings, factory, http, key, installation, archive_wake
-                )
-                if transcription_wake is not None:
-                    transcription_wake.set()
-                if more:
+                if await publish_watch_pass(settings, factory, http, key, installation):
                     continue
             except Exception:
-                # Error details may include a provider URL or credential.
-                logger.warning("Watch webhook writer pass failed")
-                # A broken provider must not be hammered by repeated webhooks.
+                logger.warning("Watch Mark writer pass deferred")
                 await asyncio.sleep(RECOVERY_SECONDS)
                 continue
             try:

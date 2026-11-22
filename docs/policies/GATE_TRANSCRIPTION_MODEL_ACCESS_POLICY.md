@@ -255,3 +255,24 @@ the watermark before download and excludes stored notes whose Dropbox timestamp
 is not later, even when Gate received them after cutover. Replays do not move
 the watermark; excluded delta pages still advance the existing cursor. No
 historical backfill or additional automation is authorized by this addition.
+
+
+## Owner Watch transcription in Gate — 2026-11-22
+
+The owner approved the Watch-only event path: authenticated Dropbox
+`/Alpha/Voice` → owner-scoped Gate archive → existing OpenAI X.509 speech
+service → transcript in protected Gate. It is default-off. This path uses the
+owner data-gate, the configured Dropbox account and workspace, the protected
+Gate archive, and an explicit server-side admission. It has no GitHub check or
+publication authority. The earlier rules for private Mark delivery continue
+to govern the separate paths that deliver there.
+
+The audio scope, endpoint, approved model, retention, shared USD 3 budget,
+part/timeout bounds and durable at-most-once claim remain those in this
+policy and `model-access.lock`. The initial admission is the first new
+owner-created short test recording after the configured UTC cutoff. It
+remains a single recording even after completion, rejection, or an uncertain
+effect. The owner will record a short non-sensitive phrase when readiness is
+confirmed. After acceptance, live admission selects later webhook-archived
+recordings and may separately name an exact approved backlog. No automatic
+provider retry or fallback is added.
