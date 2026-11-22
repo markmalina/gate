@@ -3199,7 +3199,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0120_watch_webhook_archive ")
+    assert heads[0].startswith("0121_dropbox_call_rejections ")
 
 
 
