@@ -5,16 +5,21 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from decimal import ROUND_CEILING, Decimal
 from typing import Any
 
 import httpx
 
+from app.application.billing import UsageUnit
 from app.application.telegram_voice_transcription import (
     NormalizedVoice,
     ProviderTranscript,
     TranscriptionProviderError,
 )
-from app.infrastructure.openai_transcription_wif import transcription_workload_identity
+from app.infrastructure.openai_transcription_wif import (
+    API_BASE_URL,
+    transcription_workload_identity,
+)
 
 _SUPPORTED_MODELS = {
     "gpt-4o-mini-transcribe",
@@ -27,6 +32,11 @@ _TOKEN_RATES_HUNDREDTHS_MICROUSD = {
     "gpt-4o-mini-transcribe": (125, 500),
     "gpt-4o-transcribe": (250, 1000),
 }
+WATCH_CANARY_MODEL = "gpt-transcribe"
+WATCH_CANARY_MAX_SECONDS = 30
+WATCH_CANARY_MAX_BYTES = 2_000_000
+WATCH_CANARY_RESPONSE_MAX_BYTES = 262_144
+WATCH_CANARY_MICROUSD_PER_SECOND = 75
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,9 +46,17 @@ class OpenAITranscriptionConfig:
     model: str = "gpt-4o-mini-transcribe"
     base_url: str = "https://api.openai.com/v1"
     timeout_seconds: float = 60
+    watch_canary: bool = False
 
     def __post_init__(self) -> None:
-        if self.model not in _SUPPORTED_MODELS:
+        if self.watch_canary:
+            if (
+                self.model != WATCH_CANARY_MODEL
+                or self.base_url.rstrip("/") != API_BASE_URL
+                or self.timeout_seconds != 60
+            ):
+                raise ValueError("openai_transcription_canary_config_invalid")
+        elif self.model not in _SUPPORTED_MODELS:
             raise ValueError("openai_transcription_model_unsupported")
         if self.enabled and not self.api_key:
             raise ValueError("openai_transcription_api_key_required")
@@ -77,6 +95,12 @@ class OpenAITranscriptionClient:
             )
 
         parts = (voice, *voice.additional_parts)
+        if self._config.watch_canary and (
+            len(parts) != 1 or len(voice.data) > WATCH_CANARY_MAX_BYTES
+        ):
+            raise TranscriptionProviderError(
+                "openai_transcription_canary_audio_out_of_scope", outcome_unknown=False
+            )
         transcripts: list[ProviderTranscript] = []
         for index, part in enumerate(parts):
             prompt = (transcripts[-1].text[-1_000:] or None) if transcripts else None
@@ -109,6 +133,7 @@ class OpenAITranscriptionClient:
                 ";".join(operation_refs)[:255] if operation_refs else None
             ),
             billed_quantity=sum(item.billed_quantity for item in transcripts),
+            billed_unit=transcripts[0].billed_unit,
             actual_microusd=sum(item.actual_microusd for item in transcripts),
             no_speech=all(item.no_speech for item in transcripts),
         )
@@ -128,7 +153,17 @@ class OpenAITranscriptionClient:
         identity = transcription_workload_identity(self._config.base_url)
         file = (voice.filename, voice.data, voice.media_type)
         try:
-            if identity is None:
+            if self._config.watch_canary:
+                if identity is None:
+                    raise TranscriptionProviderError(
+                        "openai_transcription_workload_identity_unavailable", outcome_unknown=False
+                    )
+                # An uploaded recording has a single bounded response. No API-key fallback.
+                response = await identity.post(
+                    data=data, file=file, timeout=self._config.timeout_seconds,
+                    max_response_bytes=WATCH_CANARY_RESPONSE_MAX_BYTES,
+                )
+            elif identity is None:
                 response = await self._http.post(
                     f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
                     headers={"Authorization": f"Bearer {self._config.api_key}"},
@@ -152,6 +187,10 @@ class OpenAITranscriptionClient:
                 _provider_error_code(response),
                 outcome_unknown=response.status_code >= 500,
             )
+        if self._config.watch_canary and not response.is_success:
+            raise TranscriptionProviderError(
+                "openai_transcription_response_unknown", outcome_unknown=True,
+            )
         try:
             payload: Any = response.json()
         except ValueError:
@@ -171,6 +210,9 @@ class OpenAITranscriptionClient:
                 outcome_unknown=True,
             )
         usage = payload.get("usage")
+        operation_ref = response.headers.get("x-request-id")
+        if self._config.watch_canary:
+            return _watch_canary_transcript(text.strip(), usage, operation_ref)
         if not isinstance(usage, dict) or usage.get("type") != "tokens":
             raise TranscriptionProviderError(
                 "openai_transcription_usage_unknown",
@@ -190,7 +232,6 @@ class OpenAITranscriptionClient:
                 "openai_transcription_usage_unknown",
                 outcome_unknown=True,
             )
-        operation_ref = response.headers.get("x-request-id")
         return ProviderTranscript(
             text=text.strip(),
             provider_operation_ref=operation_ref,
@@ -202,6 +243,31 @@ class OpenAITranscriptionClient:
             ),
             no_speech=not text.strip(),
         )
+
+
+def _watch_canary_transcript(
+    text: str, usage: object, operation_ref: str | None,
+) -> ProviderTranscript:
+    raw = (
+        usage.get("seconds")
+        if isinstance(usage, dict) and usage.get("type") == "duration" else None
+    )
+    if type(raw) not in (int, float):
+        raise TranscriptionProviderError("openai_transcription_usage_unknown", outcome_unknown=True)
+    seconds = Decimal(str(raw))
+    # Allow a one-second provider rounding margin over the archived duration gate.
+    if not seconds.is_finite() or not 0 < seconds <= WATCH_CANARY_MAX_SECONDS + 1:
+        raise TranscriptionProviderError("openai_transcription_usage_unknown", outcome_unknown=True)
+    return ProviderTranscript(
+        text=text,
+        provider_operation_ref=operation_ref,
+        billed_quantity=int(seconds.to_integral_value(rounding=ROUND_CEILING)),
+        billed_unit=UsageUnit.SECONDS,
+        actual_microusd=int(
+            (seconds * WATCH_CANARY_MICROUSD_PER_SECOND).to_integral_value(rounding=ROUND_CEILING)
+        ),
+        no_speech=not text,
+    )
 
 def _usage_count(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:

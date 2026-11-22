@@ -1,6 +1,14 @@
 import json
 from pathlib import Path
 
+from app.infrastructure.openai_transcription import (
+    WATCH_CANARY_MAX_BYTES,
+    WATCH_CANARY_MAX_SECONDS,
+    WATCH_CANARY_MICROUSD_PER_SECOND,
+    WATCH_CANARY_MODEL,
+    WATCH_CANARY_RESPONSE_MAX_BYTES,
+)
+
 ROOT = Path(__file__).parents[1]
 
 
@@ -12,7 +20,7 @@ def test_transcription_model_access_lock_is_accepted_and_bounded() -> None:
     assert lock["skill"]["id"] == "6a8c4f8397088191bdda343824817fe2"
     assert lock["project_policy"] == {
         "path": "docs/policies/GATE_TRANSCRIPTION_MODEL_ACCESS_POLICY.md",
-        "version": "gate-transcription-model-access-v2",
+        "version": "gate-transcription-model-access-v3",
     }
     assert lock["feature_default"] is False
     assert lock["endpoint"] == "https://api.openai.com/v1/audio/transcriptions"
@@ -26,6 +34,19 @@ def test_transcription_model_access_lock_is_accepted_and_bounded() -> None:
     assert lock["max_parts"] == 20
     assert lock["monthly_hard_limit_microusd"] == 3_000_000
     assert lock["retention"]["zero_data_retention_claimed"] is False
+    assert lock["watch_model_canary"] == {
+        "model": WATCH_CANARY_MODEL,
+        "default": False,
+        "requires_exact_owner_release_and_recording_grant": True,
+        "certificate_authentication_required": True,
+        "max_source_bytes": WATCH_CANARY_MAX_BYTES,
+        "max_source_seconds": WATCH_CANARY_MAX_SECONDS,
+        "max_reported_seconds": WATCH_CANARY_MAX_SECONDS + 1,
+        "max_response_bytes": WATCH_CANARY_RESPONSE_MAX_BYTES,
+        "max_recordings_per_grant": 1,
+        "max_provider_calls_per_grant": 1,
+        "pricing_microusd_per_second": WATCH_CANARY_MICROUSD_PER_SECOND,
+    }
 
 
 def test_transcription_policy_matches_runtime_constants() -> None:
