@@ -90,23 +90,19 @@ original use the same event ID as Mark. The feature performs no transcription
 calls and does not sweep older cards. On rollback, turn off the archive flag;
 the stored originals and pending jobs remain for later recovery.
 
-## Watch transcription and same-card delivery (#736)
+## Watch transcription in Gate (#736)
 
-With audio intake active, configure the protected
-`GATE_WATCH_WEBHOOK_TRANSCRIPTION_ADMISSION` as `canary:<event UUID>` for one
-owner-selected webhook-archived note. An empty value disables this consumer.
-Verify the protected audio receipt and existing private Mark card before
-activation. The owner data gate, approved X.509 identity, shared monthly
-budget, and existing repository-scoped App remain required.
+Dropbox discovery signals archive intake and early-card delivery separately.
+The Gate archive wakes the default-off speech consumer after each committed
+original. The consumer has no Mark credentials or HTTP operations. Its
+durable claim and shared budget precede the existing certificate-backed
+OpenAI service. The entire transcript stays in the protected Gate receipt.
 
-The archive commit and the saved-card commit both wake the consumer. Before
-provider I/O it verifies the private repository and reads back the exact
-early card. It reuses the shared speech service and its durable single claim.
-It posts all ordered text parts as comments on that verified issue through
-the same App. Unknown external effects remain quarantined. Restart recovery
-can reconcile an uncertain comment by exact readback without posting it again.
-
-After independent readback of the complete canary and its settled usage,
-`future:<same event UUID>` admits subsequent source timestamps. The consumer
-requires the selected canary to be delivered in Gate. Clearing admission
-stops this consumer without changing webhook intake or other audio routes.
+In the Gate service, use protected JSON admission
+`{"mode":"next","after":"<UTC timestamp>"}` for the first fresh Watch file.
+After it passes, switch to `{"mode":"live","after":"<UTC timestamp>"}`
+for future files and optionally include exact owner-approved Dropbox
+`[file_id, revision]` pairs in the `backlog` array. The archived original remains readable across restarts.
+The worker drains pending work on startup and on archive events. Clearing
+the admission disables this consumer. No periodic transcription schedule
+is needed. A timeout or uncertain provider effect is held for review.

@@ -7,7 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
@@ -33,12 +33,12 @@ async def archive_watch_pass(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
+    transcription_wake: asyncio.Event | None = None,
 ) -> bool:
     scope = watch_scope(settings)
     workspace, account = scope["workspace_key"], scope["account_id"]
     async with factory() as lock:
-        if not await lock.scalar(select(func.pg_try_advisory_xact_lock(ARCHIVE_LOCK))):
-            return False
+        await lock.execute(select(func.pg_advisory_xact_lock(ARCHIVE_LOCK)))
         cursor = await lock.get(WatchEarlyCursor, (workspace, account))
         if cursor is None or cursor.writer_mode != "app_webhook":
             return False
@@ -78,6 +78,8 @@ async def archive_watch_pass(
                 changes = {"archive_retry_at": datetime.now(UTC) + RETRY_DELAY}
                 logger.warning("Watch archive deferred")
             else:
+                if transcription_wake is not None:
+                    transcription_wake.set()
                 changes = {"archive_input": None, "archive_retry_at": None}
             async with factory.begin() as session:
                 await session.execute(
@@ -104,16 +106,32 @@ async def run_watch_archive_loop(
         while True:
             wake.clear()
             try:
-                more = await archive_watch_pass(settings, factory, http)
-                if transcription_wake is not None:
-                    transcription_wake.set()
-                if more:
+                if await archive_watch_pass(settings, factory, http, transcription_wake):
                     continue
+                async with factory() as session:
+                    retry_at = await session.scalar(
+                        select(func.min(WatchEarlyCard.archive_retry_at))
+                        .select_from(WatchEarlyCard)
+                        .join(WatchEarlyCursor, and_(
+                            WatchEarlyCursor.workspace_key == WatchEarlyCard.workspace_key,
+                            WatchEarlyCursor.account_id == WatchEarlyCard.account_id,
+                            WatchEarlyCursor.writer_mode == "app_webhook",
+                        ))
+                        .where(
+                            WatchEarlyCard.workspace_key == settings.gate_workspace_id,
+                            WatchEarlyCard.account_id == settings.dropbox_call_account_id,
+                            WatchEarlyCard.archive_input.is_not(None),
+                        )
+                    )
             except Exception:
                 logger.warning("Watch archive pass deferred")
                 await asyncio.sleep(RECOVERY_SECONDS)
                 continue
             try:
-                await asyncio.wait_for(wake.wait(), RECOVERY_SECONDS)
+                if retry_at is None:
+                    await wake.wait()
+                else:
+                    delay = max(0.01, (_utc(retry_at) - datetime.now(UTC)).total_seconds())
+                    await asyncio.wait_for(wake.wait(), delay)
             except TimeoutError:
                 pass
