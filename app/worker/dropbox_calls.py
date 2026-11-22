@@ -473,7 +473,9 @@ async def _ingest_entry(
                 PhoneCallRecording.source_revision == revision,
             )
         )
-        if duplicate is not None or await session.get(DropboxCallIntakeRejection, rejection_key):
+        if duplicate is not None or (
+            await session.get(DropboxCallIntakeRejection, rejection_key)
+        ) is not None:
             return False
 
     try:
