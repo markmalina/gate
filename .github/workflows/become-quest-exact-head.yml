@@ -181,7 +181,7 @@ jobs:
     name: Mandatory full synthetic-merge CI
     needs: quest
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17
@@ -243,7 +243,9 @@ jobs:
           # than consuming the entire job without a diagnosable failure.
           diagnostic_log="$RUNNER_TEMP/synthetic-merge-pytest.log"
           set +e
-          timeout --signal=ABRT --kill-after=10s 8m \
+          # The exact-head PostgreSQL suite took 618s in CI 45055546738.
+          # Preserve bounded diagnostics while allowing realistic runner variance.
+          timeout --signal=ABRT --kill-after=10s 16m \
             python -u -X faulthandler -m pytest -vv \
             -o faulthandler_timeout=60 --durations=25 \
             > "$diagnostic_log" 2>&1
