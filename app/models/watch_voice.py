@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -15,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -72,6 +76,8 @@ class WatchEarlyCard(Base):
     issue_url: Mapped[str | None] = mapped_column(String(512))
     last_error: Mapped[str | None] = mapped_column(String(128))
     attempt_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archive_input: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    archive_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WatchEarlyRejection(Base):
@@ -136,6 +142,7 @@ class WatchVoiceNote(Base):
     dropbox_modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     transcription_state: Mapped[str] = mapped_column(String(16), default="received")
+    webhook_archived: Mapped[bool] = mapped_column(Boolean, server_default=false())
     transcript: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String(64))
     transcribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -164,6 +164,8 @@ async def store_entry(
     http: httpx.AsyncClient,
     token: str,
     entry: dict[str, Any],
+    *,
+    webhook_archived: bool = False,
 ) -> None:
     file_id, revision = entry["id"], entry["rev"]
     scope = (settings.gate_workspace_id, settings.dropbox_call_account_id)
@@ -198,6 +200,7 @@ async def store_entry(
         dropbox_modified_at=modified,
         received_at=now,
         transcription_state="received",
+        webhook_archived=webhook_archived,
         delivery_state="pending",
         next_part=0,
     )

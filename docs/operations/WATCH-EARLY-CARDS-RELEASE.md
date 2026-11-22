@@ -73,3 +73,19 @@ private Mark for each of two different input files. A wake timestamp identifies
 the account notification that drove the scan. Correlate it with controlled
 uploads, since a Dropbox callback carries no file ID. Verify batch, signed
 repeat, restart and recovery without a wake, recording card counts and writer.
+
+## Watch original and transcription queue (#736)
+
+After migration `0120_watch_webhook_archive`, opt in on the owner Gate service
+with `GATE_WATCH_WEBHOOK_ARCHIVE_ENABLED=true` while the webhook writer owns the
+cursor. The same delta transaction records an archive job for each newly
+discovered eligible source revision. A separate worker downloads that exact
+revision into the protected Gate archive and leaves it in `received` for
+transcription. Transient archive failures retain the job and are deferred in
+the queue. GitHub availability does not block archiving, and archiving does
+not change the timing or target of the early Mark card.
+
+The protected `watch-voice:<event-id>` receipt and `watch-voice-file:<event-id>`
+original use the same event ID as Mark. The feature performs no transcription
+calls and does not sweep older cards. On rollback, turn off the archive flag;
+the stored originals and pending jobs remain for later recovery.

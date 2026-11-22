@@ -21,7 +21,8 @@ from app.models.watch_voice import (
     WatchEarlyRejection,
     WatchVoiceNote,
 )
-from app.worker import watch_webhook
+from app.worker import watch_voice, watch_webhook, watch_webhook_archive
+from app.worker.dropbox_calls import DropboxCallWorkerError
 from fastapi import FastAPI
 from pydantic import SecretStr
 from sqlalchemy import event, select
@@ -53,6 +54,7 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
             dropbox_call_app_secret=SecretStr("synthetic"),
             gate_dropbox_call_intake_enabled=True,
             gate_watch_webhook_enabled=True,
+            gate_watch_webhook_archive_enabled=True,
         )
         pk = ("mark-personal", "owner")
         now = datetime.now(UTC)
@@ -71,6 +73,7 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
         app = FastAPI()
         app.include_router(router)
         app.state.watch_wake_event = asyncio.Event()
+        archive_wake = asyncio.Event()
 
         async def get_session():
             async with factory() as session:
@@ -122,7 +125,11 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
                 pass
 
             async def preflight(self):
-                pass
+                # Run archive intake before GitHub publication, including when
+                # the early card is still pending or its first POST was lost.
+                assert archive_wake.is_set()
+                archive_wake.clear()
+                await watch_webhook_archive.archive_watch_pass(settings, factory, provider)
 
             async def post(self, *, part, issue_number, title, body):
                 self.posts.append(body)
@@ -143,8 +150,25 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
         async def account(*args):
             pass
 
+        downloads = []
+
+        async def download(**kwargs):
+            name = kwargs["fallback_name"]
+            downloads.append(name)
+            if name == "missed.m4a" and downloads.count(name) == 1:
+                raise DropboxCallWorkerError("dropbox_call_download_transport_failed")
+            return b"test audio", "audio/mp4"
+
+        async def duration(data):
+            assert data == b"test audio"
+            return 2
+
         monkeypatch.setattr(early, "_refresh_access_token", token)
         monkeypatch.setattr(early, "_verify_account_id", account)
+        monkeypatch.setattr(watch_webhook_archive, "_refresh_access_token", token)
+        monkeypatch.setattr(watch_webhook_archive, "_verify_account_id", account)
+        monkeypatch.setattr(watch_voice, "_download_revision", download)
+        monkeypatch.setattr(watch_voice, "_probe_duration_seconds", duration)
         monkeypatch.setattr(watch_webhook, "issue_mark_token", token)
         monkeypatch.setattr(watch_webhook, "AppInboxClient", Inbox)
         installation = WatchAppInstallation(1, 2, "synthetic")
@@ -172,7 +196,7 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
                 # Drop the in-memory signal, as on restart. The database signal survives.
                 app.state.watch_wake_event = asyncio.Event()
                 locking = False
-                args = (settings, factory, provider, "synthetic", installation)
+                args = (settings, factory, provider, "synthetic", installation, archive_wake)
                 assert not await watch_webhook.run_watch_pass(*args)
                 assert not requests
                 locking = True
@@ -182,21 +206,43 @@ def test_signed_wake_restart_replay_batch_and_recovery(monkeypatch):
                 async with factory() as session:
                     cursor = await session.get(WatchEarlyCursor, pk)
                     cards = (await session.scalars(select(WatchEarlyCard))).all()
+                    notes = (await session.scalars(select(WatchVoiceNote))).all()
                     assert cursor.wake_processed_generation == cursor.wake_generation == 2
                     assert len(cards) == 2 and all(
-                        card.wake_received_at is not None and card.state == "saved"
+                        card.wake_received_at is not None
+                        and card.state == "saved"
+                        and card.archive_input is None
                         for card in cards
                     )
+                    assert {note.id for note in notes} == {card.id for card in cards}
+                    assert all(
+                        note.webhook_archived and note.transcription_state == "received"
+                        and note.transcript is None and note.data == b"test audio"
+                        for note in notes
+                    )
+                    assert sorted(downloads) == ["first.m4a", "second.m4a"]
 
                 # A file arriving with no webhook uses the exact same recovery path.
                 entries.append(source("missed"))
                 assert not await watch_webhook.run_watch_pass(*args)
-                async with factory() as session:
+                async with factory.begin() as session:
                     missed = await session.scalar(
                         select(WatchEarlyCard).where(WatchEarlyCard.file_id == "id:missed")
                     )
                     assert missed.state == "saved" and missed.wake_received_at is None
+                    assert missed.archive_input is not None and missed.archive_retry_at is not None
+                    assert await session.get(WatchVoiceNote, missed.id) is None
+                    missed.archive_retry_at = now - timedelta(minutes=1)
+                assert not await watch_webhook_archive.archive_watch_pass(
+                    settings, factory, provider
+                )
+                async with factory() as session:
+                    missed_note = await session.get(WatchVoiceNote, missed.id)
+                    assert missed_note is not None and missed_note.transcription_state == "received"
                 assert len(Inbox.posts) == 3
+                assert sorted(downloads) == [
+                    "first.m4a", "missed.m4a", "missed.m4a", "second.m4a"
+                ]
         finally:
             await engine.dispose()
 
