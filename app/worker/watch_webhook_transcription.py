@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.infrastructure.openai_transcription import WATCH_CANARY_MAX_BYTES, WATCH_CANARY_MAX_SECONDS
 from app.infrastructure.openai_transcription_wif import transcription_workload_identity
 from app.models.watch_voice import WatchVoiceNote
 from app.worker.watch_voice import note_scope, timestamp, transcribe_note
@@ -26,10 +27,18 @@ CANARY_MAX_DURATION_SECONDS = 30
 
 
 @dataclass(frozen=True)
+class WatchModelCanary:
+    after: datetime
+    filename: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class TranscriptionAdmission:
     mode: str
     after: datetime
     backlog: tuple[tuple[str, str], ...]
+    model_canary: WatchModelCanary | None = None
 
 
 def watch_transcription_admission(settings: Settings) -> TranscriptionAdmission | None:
@@ -69,8 +78,29 @@ def watch_transcription_admission(settings: Settings) -> TranscriptionAdmission 
             )
         ):
             return None
+        cutoff = timestamp(after)
+        candidate = None
+        model_gate = settings.gate_watch_gpt_transcribe_canary.get_secret_value()
+        if model_gate:
+            spec = json.loads(model_gate)
+            if mode != "live" or not isinstance(spec, dict) or set(spec) != {
+                "after", "filename", "sha256",
+            }:
+                return None
+            test_after, filename, digest = spec["after"], spec["filename"], spec["sha256"]
+            if (
+                not isinstance(test_after, str)
+                or not isinstance(filename, str)
+                or not re.fullmatch(r"gate-gpt-transcribe-canary-[a-f0-9]{12}\.m4a", filename)
+                or not isinstance(digest, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", digest)
+            ):
+                return None
+            candidate = WatchModelCanary(timestamp(test_after), filename, digest)
+            if candidate.after < cutoff:
+                return None
         return TranscriptionAdmission(
-            mode, timestamp(after), tuple((item[0], item[1]) for item in backlog)
+            mode, cutoff, tuple((item[0], item[1]) for item in backlog), candidate,
         )
     except (ValueError, RuntimeError):
         return None
@@ -88,13 +118,14 @@ async def drain_watch_transcription(
         WatchVoiceNote.dropbox_modified_at >= admission.after,
         WatchVoiceNote.received_at >= admission.after,
     )
+    ordinary_filename = ~WatchVoiceNote.filename.like("gate-gpt-transcribe-canary-%.m4a")
     async with factory() as lock:
         # Concurrent wakeups wait their turn instead of dropping a committed event.
         await lock.execute(select(func.pg_advisory_xact_lock(TRANSCRIPTION_LOCK)))
         if admission.mode == "next":
             first_id = await lock.scalar(
                 select(WatchVoiceNote.id)
-                .where(*scope, eligible)
+                .where(*scope, eligible, ordinary_filename)
                 .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
                 .limit(1)
             )
@@ -108,6 +139,30 @@ async def drain_watch_transcription(
             selector = or_(
                 eligible,
                 tuple_(WatchVoiceNote.file_id, WatchVoiceNote.revision).in_(admission.backlog),
+            )
+        selector = and_(selector, ordinary_filename)
+
+        canary_id = None
+        if (canary := admission.model_canary) is not None:
+            canary_filename = WatchVoiceNote.filename == canary.filename
+            canary_id = await lock.scalar(
+                select(WatchVoiceNote.id)
+                .where(
+                    *scope, eligible, canary_filename,
+                    WatchVoiceNote.sha256 == canary.sha256,
+                    WatchVoiceNote.received_at >= canary.after,
+                    WatchVoiceNote.dropbox_modified_at >= canary.after,
+                )
+                .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
+                .limit(1)
+            )
+            selector = or_(
+                selector,
+                and_(
+                    WatchVoiceNote.id == canary_id,
+                    WatchVoiceNote.duration_seconds <= WATCH_CANARY_MAX_SECONDS,
+                    WatchVoiceNote.size_bytes <= WATCH_CANARY_MAX_BYTES,
+                ),
             )
 
         stale = datetime.now(UTC) - timedelta(hours=1)
@@ -134,7 +189,10 @@ async def drain_watch_transcription(
             logger.warning("Watch Gate transcription identity unavailable")
             return False
         for note_id in jobs:
-            await transcribe_note(settings, factory, http, note_id, ignore_legacy_selector=True)
+            await transcribe_note(
+                settings, factory, http, note_id,
+                ignore_legacy_selector=True, model_canary=note_id == canary_id,
+            )
         return len(jobs) == BATCH_SIZE
 
 

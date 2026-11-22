@@ -582,6 +582,9 @@ class Settings(BaseSettings):
         repr=False,
         validation_alias="GATE_WATCH_WEBHOOK_TRANSCRIPTION_ADMISSION",
     )
+    gate_watch_gpt_transcribe_canary: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_GPT_TRANSCRIBE_CANARY",
+    )
     gate_watch_voice_early_cards_only: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_EARLY_CARDS_ONLY"
     )
