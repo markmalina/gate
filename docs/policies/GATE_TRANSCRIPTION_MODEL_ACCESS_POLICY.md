@@ -1,6 +1,7 @@
 # Gate transcription model-access policy
 
-Version: `gate-transcription-model-access-v2`  
+Version: `gate-transcription-model-access-v3`
+
 Feature: bounded server-side voice and Dropbox phone-call transcription  
 Status: owner-approved implementation and exact-call Production processing policy
 
@@ -276,3 +277,51 @@ effect. The owner will record a short non-sensitive phrase when readiness is
 confirmed. After acceptance, live admission selects later webhook-archived
 recordings and may separately name an exact approved backlog. No automatic
 provider retry or fallback is added.
+
+## GPT Transcribe one-recording Watch canary
+
+Gate #859 prepares a disabled-by-default canary for `gpt-transcribe`. Apply an
+exact owner release and recording grant before setting
+`GATE_WATCH_GPT_TRANSCRIBE_CANARY` as a separate protected JSON variable on
+the existing Watch live runtime. Its fields are an ISO-8601 UTC `after`, the exact synthetic filename
+`gate-gpt-transcribe-canary-<12 lowercase hex>.m4a` and its exact SHA-256.
+The first matching revision in the configured owner archive consumes the grant.
+Later revisions and replays cannot dispatch another request. The dedicated
+filename prefix is reserved by the Watch webhook worker, including with the
+canary variable unset. Other Watch records, Calls, Telegram and recovery use their existing
+allowlist. No live model switch or backlog operation is authorized here.
+
+Only the existing OpenAI certificate identity and fixed mTLS Audio
+Transcriptions endpoint are allowed. The source is at most 2,000,000 bytes and
+30 seconds, the response at most 262,144 bytes, with one normalized part, one
+60-second request, zero retries and no API-key fallback. The existing provider
+retention and data restrictions apply. Roll back by removing the canary grant
+after reviewing its terminal result. Do not reset or
+replay a claimed record or change the credential or provider configuration.
+
+The canary uses the existing monthly hard ceiling of USD 3 and single-part
+reservation floor of 5,000 micro-USD. Settle by provider-reported
+`usage.type=duration` with positive finite `seconds` at most 31 (one second of
+provider rounding margin), at USD 0.0045/minute. Round the micro-USD total and
+ledger seconds up separately. An invalid or unknown usage response stays
+unknown, with no repeat. Verify access, provider billing and these limits on
+one synthetic recording before any live model rollout.
+
+Sources checked 2026-11-22:
+https://developers.openai.com/api/docs/models/gpt-transcribe,
+https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create,
+https://developers.openai.com/api/docs/guides/your-data.
+
+### Exact public recording for a quality comparison
+
+The owner-requested comparison in Gate #859 uses one 159.48-second M4A
+derived from the public-domain 1908 phonograph recording by Leo Tolstoy.
+The locked SHA-256 in `watch_model_quality_benchmark` is the only input for
+which the source duration limit is 165 seconds and the reported-duration
+limit is 166 seconds. Activate only through the exact owner-approved canary
+grant. The destination, existing shared USD 3 budget, charge rate,
+response bounds, one-part, one-call and zero-retry rules are the same as the
+short canary. The OpenAI adapter rejects any additional parts before provider
+I/O. A normally admitted mini run on the same bytes is the comparison base.
+
+Source: https://commons.wikimedia.org/wiki/File:Tolstoy_Vremya_prishlo.ogg

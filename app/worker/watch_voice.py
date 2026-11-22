@@ -27,6 +27,8 @@ from app.application.telegram_voice_transcription import (
 from app.core.config import Settings
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.openai_transcription import (
+    WATCH_CANARY_MAX_SECONDS,
+    WATCH_CANARY_MODEL,
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
@@ -244,7 +246,10 @@ async def transcribe_note(
     note_id: str,
     *,
     ignore_legacy_selector: bool = False,
+    canary_max_seconds: int | None = None,
 ) -> None:
+    if canary_max_seconds is not None and not ignore_legacy_selector:
+        raise ValueError("watch_model_canary_requires_webhook")
     async with factory() as session:
         claimed = await session.execute(
             update(WatchVoiceNote)
@@ -269,7 +274,9 @@ async def transcribe_note(
             "Watch Gate transcription started archive_to_claim_ms=%d",
             round((started - received).total_seconds() * 1000),
         )
-    await transcribe_claimed_note(settings, factory, http, note)
+    await transcribe_claimed_note(
+        settings, factory, http, note, canary_max_seconds=canary_max_seconds,
+    )
 
 
 class RecoveryVoiceNormalizer(TelegramVoiceNormalizer):
@@ -288,12 +295,19 @@ async def transcribe_claimed_note(
     *,
     recovery: bool = False,
     post_payment: bool = False,
+    canary_max_seconds: int | None = None,
 ) -> None:
     """Only callers with a committed normal/recovery claim may enter this boundary."""
     assert note.duration_seconds is not None
     if post_payment and not recovery:
         raise ValueError("watch_voice_post_payment_recovery_required")
-    model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
+    if canary_max_seconds is not None and recovery:
+        raise ValueError("watch_model_canary_recovery_forbidden")
+    model = settings.gate_telegram_voice_transcription_model
+    if canary_max_seconds is not None:
+        model = WATCH_CANARY_MODEL
+    elif recovery:
+        model = "gpt-4o-transcribe"
     received = note.received_at
     if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
         received = received.replace(tzinfo=UTC)
@@ -307,6 +321,8 @@ async def transcribe_claimed_note(
                 enabled=True,
                 model=model,
                 base_url=settings.openai_api_base_url,
+                watch_canary=canary_max_seconds is not None,
+                watch_canary_max_seconds=canary_max_seconds or WATCH_CANARY_MAX_SECONDS,
             ),
             http=http,
         ),

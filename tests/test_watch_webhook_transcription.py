@@ -1,10 +1,16 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from json import dumps
 
 from app.core.config import Settings
+from app.infrastructure.openai_transcription import (
+    WATCH_BENCHMARK_MAX_SECONDS,
+    WATCH_BENCHMARK_SHA256,
+)
 from app.models.watch_voice import WatchVoiceNote
 from app.worker import watch_voice
 from app.worker import watch_webhook_transcription as worker
+from pydantic import SecretStr
 from sqlalchemy import event, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -44,21 +50,29 @@ def test_gate_transcribes_without_mark_and_only_releases_approved_notes(monkeypa
             cfg.model_copy(update={"gate_watch_voice_enabled": True})
         ) is None
 
-        async def archive(note_id, at, *, owner="owner", via_webhook=True):
+        async def archive(
+            note_id, at, *, owner="owner", via_webhook=True, filename="test.m4a",
+            digest="synthetic", duration=1,
+        ):
             async with factory.begin() as session:
                 session.add(WatchVoiceNote(
                     id=note_id, workspace_key="mark-personal", account_id=owner,
                     file_id=f"id:{note_id}", revision="abcd", source_path="/Alpha/Voice/test.m4a",
-                    filename="test.m4a", media_type="audio/mp4", size_bytes=3, sha256="synthetic",
-                    data=b"abc", duration_seconds=1, received_at=at, dropbox_modified_at=at,
+                    filename=filename, media_type="audio/mp4", size_bytes=3, sha256=digest,
+                    data=b"abc", duration_seconds=duration, received_at=at, dropbox_modified_at=at,
                     webhook_archived=via_webhook,
                 ))
 
         calls: list[str] = []
+        canary_calls: list[str] = []
+        canary_limits: list[int] = []
 
-        async def speech(settings, factory, http, note):
+        async def speech(settings, factory, http, note, *, canary_max_seconds=None):
             assert note.transcription_state == "processing"
             calls.append(note.id)
+            if canary_max_seconds is not None:
+                canary_calls.append(note.id)
+                canary_limits.append(canary_max_seconds)
             async with factory.begin() as session:
                 await session.execute(
                     update(WatchVoiceNote).where(WatchVoiceNote.id == note.id).values(
@@ -90,6 +104,44 @@ def test_gate_transcribes_without_mark_and_only_releases_approved_notes(monkeypa
                 for note_id in (FIRST, SECOND, BACKLOG):
                     assert (await session.get(WatchVoiceNote, note_id)).transcript
                 assert (await session.get(WatchVoiceNote, FOREIGN)).transcript is None
+
+            filename = "gate-gpt-transcribe-canary-abcd1234abcd.m4a"
+            digest = "b" * 64
+            probe = "5ac6d623-d0a6-47f7-a358-935ebf2fd5ad"
+            repeat = "6ac6d623-d0a6-47f7-a358-935ebf2fd5ad"
+            unrelated = "7ac6d623-d0a6-47f7-a358-935ebf2fd5ad"
+            wrong_bytes = "8ac6d623-d0a6-47f7-a358-935ebf2fd5ad"
+            await archive(wrong_bytes, now + timedelta(seconds=2), filename=filename)
+            await archive(probe, now + timedelta(seconds=3), filename=filename, digest=digest)
+            await archive(repeat, now + timedelta(seconds=4), filename=filename, digest=digest)
+            await archive(unrelated, now + timedelta(seconds=5))
+            candidate = worker.watch_transcription_admission(cfg.model_copy(update={
+                "gate_watch_webhook_transcription_admission": SecretStr(dumps({
+                    "mode": "live", "after": now.isoformat(),
+                })),
+                "gate_watch_gpt_transcribe_canary": SecretStr(dumps({
+                    "after": now.isoformat(), "filename": filename, "sha256": digest,
+                })),
+            }))
+            assert candidate and candidate.model_canary
+            assert not await worker.drain_watch_transcription(cfg, factory, None, candidate)
+            assert not await worker.drain_watch_transcription(cfg, factory, None, candidate)
+            assert not await worker.drain_watch_transcription(cfg, factory, None, live)
+            assert calls[-2:] == [probe, unrelated]
+            assert canary_calls == [probe]
+
+            benchmark = "9ac6d623-d0a6-47f7-a358-935ebf2fd5ad"
+            benchmark_name = "gate-gpt-transcribe-canary-859a17b840c9.m4a"
+            await archive(
+                benchmark, now + timedelta(seconds=6), filename=benchmark_name,
+                digest=WATCH_BENCHMARK_SHA256, duration=160,
+            )
+            benchmark_grant = worker.WatchModelCanary(now, benchmark_name, WATCH_BENCHMARK_SHA256)
+            admission = worker.TranscriptionAdmission("live", now, (), benchmark_grant)
+            assert not await worker.drain_watch_transcription(cfg, factory, None, admission)
+            assert not await worker.drain_watch_transcription(cfg, factory, None, admission)
+            assert canary_calls == [probe, benchmark]
+            assert canary_limits == [30, WATCH_BENCHMARK_MAX_SECONDS]
         finally:
             await engine.dispose()
 

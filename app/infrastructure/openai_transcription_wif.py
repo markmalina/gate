@@ -37,6 +37,7 @@ class TranscriptionWorkloadIdentity:
         data: dict[str, str],
         file: tuple[str, bytes, str],
         timeout: float,
+        max_response_bytes: int | None = None,
     ) -> httpx.Response:
         async with httpx.AsyncClient(
             verify=self._context, trust_env=False, follow_redirects=False
@@ -48,6 +49,34 @@ class TranscriptionWorkloadIdentity:
                 raise _identity_error()
             try:
                 async with asyncio.timeout(remaining):
+                    if max_response_bytes is not None:
+                        async with http.stream(
+                            "POST", MTLS_TRANSCRIPTIONS,
+                            headers={
+                                "Authorization": f"Bearer {token}", "Accept-Encoding": "identity",
+                            },
+                            data=data, files={"file": file}, timeout=remaining,
+                        ) as response:
+                            if response.headers.get("content-encoding", "identity") != "identity":
+                                raise TranscriptionProviderError(
+                                    "openai_transcription_response_unknown", outcome_unknown=True,
+                                )
+                            payload = bytearray()
+                            async for part in response.aiter_bytes(chunk_size=65_536):
+                                if len(payload) + len(part) > max_response_bytes:
+                                    raise TranscriptionProviderError(
+                                        "openai_transcription_response_unknown",
+                                        outcome_unknown=True,
+                                    )
+                                payload.extend(part)
+                            headers = {
+                                name: response.headers[name]
+                                for name in ("x-request-id", "content-type")
+                                if name in response.headers
+                            }
+                            return httpx.Response(
+                                response.status_code, content=bytes(payload), headers=headers,
+                            )
                     return await http.post(
                         MTLS_TRANSCRIPTIONS,
                         headers={"Authorization": f"Bearer {token}"},

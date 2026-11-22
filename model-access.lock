@@ -11,7 +11,7 @@
   },
   "project_policy": {
     "path": "docs/policies/GATE_TRANSCRIPTION_MODEL_ACCESS_POLICY.md",
-    "version": "gate-transcription-model-access-v2"
+    "version": "gate-transcription-model-access-v3"
   },
   "feature_default": false,
   "provider": "openai",
@@ -25,6 +25,26 @@
     "gpt-4o-mini-transcribe",
     "gpt-4o-transcribe"
   ],
+  "watch_model_canary": {
+    "model": "gpt-transcribe",
+    "default": false,
+    "requires_exact_owner_release_and_recording_grant": true,
+    "certificate_authentication_required": true,
+    "max_source_bytes": 2000000,
+    "max_source_seconds": 30,
+    "max_reported_seconds": 31,
+    "max_response_bytes": 262144,
+    "max_recordings_per_grant": 1,
+    "max_provider_calls_per_grant": 1,
+    "pricing_microusd_per_second": 75
+  },
+  "watch_model_quality_benchmark": {
+    "sha256": "c70c430400cf443069a4495df3cfa2cdfc2682385892543208198bdf0dea5e44",
+    "max_source_seconds": 165,
+    "max_reported_seconds": 166,
+    "requires_exact_owner_release_and_recording_grant": true,
+    "max_provider_calls": 1
+  },
   "timeout_seconds_per_part": 60,
   "automatic_retry_count": 0,
   "max_source_bytes": 104857600,

@@ -1,17 +1,114 @@
 """OpenAI transcription HTTP adapter remains explicit and dormant by default."""
 
 import logging
+import ssl
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from app.application.billing import UsageUnit
 from app.application.telegram_voice_transcription import (
     NormalizedVoice,
     TranscriptionProviderError,
 )
 from app.infrastructure.openai_transcription import (
+    WATCH_BENCHMARK_MAX_SECONDS,
+    WATCH_CANARY_MAX_SECONDS,
+    WATCH_CANARY_RESPONSE_MAX_BYTES,
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
+from app.infrastructure.openai_transcription_wif import (
+    MTLS_TRANSCRIPTIONS,
+    TranscriptionWorkloadIdentity,
+)
+
+
+@pytest.mark.anyio
+async def test_watch_canary_with_missing_certificate_never_uses_api_key(monkeypatch) -> None:
+    request = AsyncMock(side_effect=AssertionError("Unexpected provider request"))
+    monkeypatch.setattr(
+        "app.infrastructure.openai_transcription.transcription_workload_identity",
+        lambda _: None,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(request)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(
+                api_key="synthetic", enabled=True, model="gpt-transcribe", watch_canary=True,
+            ),
+            http=http,
+        )
+        voice = NormalizedVoice(b"audio", "test.m4a", "audio/mp4")
+        with pytest.raises(
+            TranscriptionProviderError, match="workload_identity_unavailable",
+        ) as err:
+            await client.transcribe(voice, language="ru")
+    assert not err.value.outcome_unknown
+    request.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("usage", [
+    {"type": "duration", "seconds": 2.43},
+    {"type": "duration", "seconds": 159.48},
+    {"type": "duration", "seconds": True},
+    {"type": "duration", "seconds": 31.01},
+    {"type": "tokens", "input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+    None,
+])
+async def test_watch_canary_settles_duration_via_certificate_only(monkeypatch, usage) -> None:
+    with pytest.raises(ValueError, match="model_unsupported"):
+        OpenAITranscriptionConfig(api_key="synthetic", enabled=True, model="gpt-transcribe")
+    requests = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if usage is None:
+            return httpx.Response(200, content=b"x" * (WATCH_CANARY_RESPONSE_MAX_BYTES + 1))
+        return httpx.Response(200, json={"text": " synthetic ", "usage": usage})
+
+    identity = TranscriptionWorkloadIdentity(ssl.create_default_context(), "test", "test")
+    is_benchmark = bool(usage and usage.get("seconds") == 159.48)
+    monkeypatch.setattr(identity, "_authorization", AsyncMock(return_value="synthetic-wif"))
+    monkeypatch.setattr(
+        "app.infrastructure.openai_transcription.transcription_workload_identity",
+        lambda _: identity,
+    )
+    async with httpx.AsyncClient() as unused_http:
+        wif_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(
+            "app.infrastructure.openai_transcription_wif.httpx.AsyncClient", lambda **_: wif_http,
+        )
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(
+                api_key="should-not-be-sent", enabled=True, model="gpt-transcribe",
+                watch_canary=True,
+                watch_canary_max_seconds=(
+                    WATCH_BENCHMARK_MAX_SECONDS if is_benchmark else WATCH_CANARY_MAX_SECONDS
+                ),
+            ),
+            http=unused_http,
+        )
+        voice = NormalizedVoice(b"audio", "watch.m4a", "audio/mp4")
+        if usage and usage.get("seconds") == 2.43:
+            result = await client.transcribe(voice, language="ru")
+            assert result.text == "synthetic"
+            assert result.billed_unit is UsageUnit.SECONDS
+            assert result.billed_quantity == 3
+            assert result.actual_microusd == 183
+        elif is_benchmark:
+            result = await client.transcribe(voice, language="ru")
+            assert result.billed_unit is UsageUnit.SECONDS
+            assert result.billed_quantity == 160
+            assert result.actual_microusd == 11_961
+        else:
+            with pytest.raises(TranscriptionProviderError) as failure:
+                await client.transcribe(voice, language="ru")
+            assert failure.value.outcome_unknown
+        assert len(requests) == 1
+        assert requests[0].url == MTLS_TRANSCRIPTIONS
+        assert requests[0].headers["authorization"] == "Bearer synthetic-wif"
+        assert b"gpt-transcribe" in requests[0].content
 
 
 @pytest.mark.anyio
