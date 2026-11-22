@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 from app.infrastructure.openai_transcription import (
+    WATCH_BENCHMARK_MAX_SECONDS,
+    WATCH_BENCHMARK_SHA256,
     WATCH_CANARY_MAX_BYTES,
     WATCH_CANARY_MAX_SECONDS,
     WATCH_CANARY_MICROUSD_PER_SECOND,
@@ -46,6 +48,13 @@ def test_transcription_model_access_lock_is_accepted_and_bounded() -> None:
         "max_recordings_per_grant": 1,
         "max_provider_calls_per_grant": 1,
         "pricing_microusd_per_second": WATCH_CANARY_MICROUSD_PER_SECOND,
+    }
+    assert lock["watch_model_quality_benchmark"] == {
+        "sha256": WATCH_BENCHMARK_SHA256,
+        "max_source_seconds": WATCH_BENCHMARK_MAX_SECONDS,
+        "max_reported_seconds": WATCH_BENCHMARK_MAX_SECONDS + 1,
+        "requires_exact_owner_release_and_recording_grant": True,
+        "max_provider_calls": 1,
     }
 
 

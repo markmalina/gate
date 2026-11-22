@@ -12,6 +12,8 @@ from app.application.telegram_voice_transcription import (
     TranscriptionProviderError,
 )
 from app.infrastructure.openai_transcription import (
+    WATCH_BENCHMARK_MAX_SECONDS,
+    WATCH_CANARY_MAX_SECONDS,
     WATCH_CANARY_RESPONSE_MAX_BYTES,
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
@@ -48,6 +50,7 @@ async def test_watch_canary_with_missing_certificate_never_uses_api_key(monkeypa
 @pytest.mark.anyio
 @pytest.mark.parametrize("usage", [
     {"type": "duration", "seconds": 2.43},
+    {"type": "duration", "seconds": 159.48},
     {"type": "duration", "seconds": True},
     {"type": "duration", "seconds": 31.01},
     {"type": "tokens", "input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
@@ -65,6 +68,7 @@ async def test_watch_canary_settles_duration_via_certificate_only(monkeypatch, u
         return httpx.Response(200, json={"text": " synthetic ", "usage": usage})
 
     identity = TranscriptionWorkloadIdentity(ssl.create_default_context(), "test", "test")
+    is_benchmark = bool(usage and usage.get("seconds") == 159.48)
     monkeypatch.setattr(identity, "_authorization", AsyncMock(return_value="synthetic-wif"))
     monkeypatch.setattr(
         "app.infrastructure.openai_transcription.transcription_workload_identity",
@@ -79,6 +83,9 @@ async def test_watch_canary_settles_duration_via_certificate_only(monkeypatch, u
             config=OpenAITranscriptionConfig(
                 api_key="should-not-be-sent", enabled=True, model="gpt-transcribe",
                 watch_canary=True,
+                watch_canary_max_seconds=(
+                    WATCH_BENCHMARK_MAX_SECONDS if is_benchmark else WATCH_CANARY_MAX_SECONDS
+                ),
             ),
             http=unused_http,
         )
@@ -89,6 +96,11 @@ async def test_watch_canary_settles_duration_via_certificate_only(monkeypatch, u
             assert result.billed_unit is UsageUnit.SECONDS
             assert result.billed_quantity == 3
             assert result.actual_microusd == 183
+        elif is_benchmark:
+            result = await client.transcribe(voice, language="ru")
+            assert result.billed_unit is UsageUnit.SECONDS
+            assert result.billed_quantity == 160
+            assert result.actual_microusd == 11_961
         else:
             with pytest.raises(TranscriptionProviderError) as failure:
                 await client.transcribe(voice, language="ru")

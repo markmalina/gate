@@ -34,6 +34,8 @@ _TOKEN_RATES_HUNDREDTHS_MICROUSD = {
 }
 WATCH_CANARY_MODEL = "gpt-transcribe"
 WATCH_CANARY_MAX_SECONDS = 30
+WATCH_BENCHMARK_MAX_SECONDS = 165
+WATCH_BENCHMARK_SHA256 = "c70c430400cf443069a4495df3cfa2cdfc2682385892543208198bdf0dea5e44"
 WATCH_CANARY_MAX_BYTES = 2_000_000
 WATCH_CANARY_RESPONSE_MAX_BYTES = 262_144
 WATCH_CANARY_MICROUSD_PER_SECOND = 75
@@ -47,6 +49,7 @@ class OpenAITranscriptionConfig:
     base_url: str = "https://api.openai.com/v1"
     timeout_seconds: float = 60
     watch_canary: bool = False
+    watch_canary_max_seconds: int = WATCH_CANARY_MAX_SECONDS
 
     def __post_init__(self) -> None:
         if self.watch_canary:
@@ -54,6 +57,9 @@ class OpenAITranscriptionConfig:
                 self.model != WATCH_CANARY_MODEL
                 or self.base_url.rstrip("/") != API_BASE_URL
                 or self.timeout_seconds != 60
+                or self.watch_canary_max_seconds not in (
+                    WATCH_CANARY_MAX_SECONDS, WATCH_BENCHMARK_MAX_SECONDS,
+                )
             ):
                 raise ValueError("openai_transcription_canary_config_invalid")
         elif self.model not in _SUPPORTED_MODELS:
@@ -212,7 +218,9 @@ class OpenAITranscriptionClient:
         usage = payload.get("usage")
         operation_ref = response.headers.get("x-request-id")
         if self._config.watch_canary:
-            return _watch_canary_transcript(text.strip(), usage, operation_ref)
+            return _watch_canary_transcript(
+                text.strip(), usage, operation_ref, self._config.watch_canary_max_seconds,
+            )
         if not isinstance(usage, dict) or usage.get("type") != "tokens":
             raise TranscriptionProviderError(
                 "openai_transcription_usage_unknown",
@@ -246,7 +254,7 @@ class OpenAITranscriptionClient:
 
 
 def _watch_canary_transcript(
-    text: str, usage: object, operation_ref: str | None,
+    text: str, usage: object, operation_ref: str | None, max_seconds: int,
 ) -> ProviderTranscript:
     raw = (
         usage.get("seconds")
@@ -256,7 +264,7 @@ def _watch_canary_transcript(
         raise TranscriptionProviderError("openai_transcription_usage_unknown", outcome_unknown=True)
     seconds = Decimal(str(raw))
     # Allow a one-second provider rounding margin over the archived duration gate.
-    if not seconds.is_finite() or not 0 < seconds <= WATCH_CANARY_MAX_SECONDS + 1:
+    if not seconds.is_finite() or not 0 < seconds <= max_seconds + 1:
         raise TranscriptionProviderError("openai_transcription_usage_unknown", outcome_unknown=True)
     return ProviderTranscript(
         text=text,
