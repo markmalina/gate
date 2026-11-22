@@ -467,3 +467,84 @@ async def test_empty_response_requires_known_usage(usage, valid):
                 await client.transcribe(voice, language="ru")
             assert caught.value.code == "openai_transcription_usage_unknown"
             assert caught.value.outcome_unknown
+
+
+@pytest.mark.anyio
+async def test_x509_exchange_is_pinned_and_audio_uses_the_short_lived_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ssl
+
+    from app.infrastructure import openai_transcription_wif as wif
+
+    requests: list[httpx.Request] = []
+    async_client = httpx.AsyncClient
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if str(request.url) == wif.TOKEN_EXCHANGE:
+            assert "audio" not in request.content.decode()
+            assert "idp_gate" in request.content.decode()
+            assert "user_gate" in request.content.decode()
+            return httpx.Response(200, json={
+                "access_token": "temporary-gate-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            })
+        assert str(request.url) == wif.MTLS_TRANSCRIPTIONS
+        assert request.headers["Authorization"] == "Bearer temporary-gate-token"
+        return httpx.Response(200, json={
+            "text": "gate test",
+            "usage": {"type": "tokens", "input_tokens": 5, "output_tokens": 2, "total_tokens": 7},
+        })
+
+    context = ssl.create_default_context()
+
+    def make_client(**kwargs: object) -> httpx.AsyncClient:
+        assert kwargs == {"verify": context, "trust_env": False, "follow_redirects": False}
+        return async_client(transport=httpx.MockTransport(handler), follow_redirects=False)
+
+    identity = wif.TranscriptionWorkloadIdentity(context, "idp_gate", "user_gate")
+    monkeypatch.setenv("OPENAI_TRANSCRIPTION_WIF_ENABLED", "true")
+    monkeypatch.setattr(wif, "_identity", identity)
+    monkeypatch.setattr(wif.httpx, "AsyncClient", make_client)
+
+    async with async_client() as http:
+        adapter = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="legacy-key", enabled=True),
+            http=http,
+        )
+        voice = NormalizedVoice(b"wav", "voice.wav", "audio/wav")
+        for _ in range(2):
+            transcript = await adapter.transcribe(voice, language="en")
+            assert transcript.text == "gate test"
+
+    assert [str(item.url) for item in requests] == [
+        wif.TOKEN_EXCHANGE, wif.MTLS_TRANSCRIPTIONS, wif.MTLS_TRANSCRIPTIONS
+    ]
+    assert "Authorization" not in requests[0].headers
+
+
+@pytest.mark.anyio
+async def test_configured_x509_missing_credentials_never_uses_the_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.infrastructure import openai_transcription_wif as wif
+
+    async def reject_fallback(_: httpx.Request) -> httpx.Response:
+        pytest.fail("A request using the fallback API key was sent.")
+
+    monkeypatch.setenv("OPENAI_TRANSCRIPTION_WIF_ENABLED", "true")
+    monkeypatch.delenv("OPENAI_TRANSCRIPTION_WIF_KEY_PEM", raising=False)
+    monkeypatch.setattr(wif, "_identity", None)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(reject_fallback)) as http:
+        adapter = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="legacy-key", enabled=True),
+            http=http,
+        )
+        with pytest.raises(
+            TranscriptionProviderError, match="openai_transcription_workload_identity_unavailable"
+        ):
+            await adapter.transcribe(
+                NormalizedVoice(b"wav", "voice.wav", "audio/wav"), language=None
+            )

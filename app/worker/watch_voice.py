@@ -53,7 +53,7 @@ MAX_DURATION = 60 * 60
 logger = logging.getLogger(__name__)
 
 
-def validate_settings(settings: Settings) -> None:
+def validate_settings(settings: Settings, *, require_stt: bool = True) -> None:
     if not settings.gate_watch_voice_data_gate_approved:
         raise WatchVoiceError("watch_voice_data_gate_required")
     if (
@@ -68,13 +68,14 @@ def validate_settings(settings: Settings) -> None:
         or not settings.dropbox_call_account_id
     ):
         raise WatchVoiceError("watch_voice_dropbox_credentials_missing")
-    if not settings.openai_api_key.get_secret_value():
-        raise WatchVoiceError("watch_voice_transcription_key_missing")
-    if (
-        settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
-        or settings.gate_telegram_voice_transcription_model != "gpt-4o-mini-transcribe"
-    ):
-        raise WatchVoiceError("watch_voice_pinned_provider_mismatch")
+    if require_stt:
+        if not settings.openai_api_key.get_secret_value():
+            raise WatchVoiceError("watch_voice_transcription_key_missing")
+        if (
+            settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
+            or settings.gate_telegram_voice_transcription_model != "gpt-4o-mini-transcribe"
+        ):
+            raise WatchVoiceError("watch_voice_pinned_provider_mismatch")
     if (
         not settings.gate_mark_github_token.get_secret_value()
         or not settings.gate_mark_github_writer
@@ -120,12 +121,12 @@ def timestamp(value: str) -> datetime:
     return result.astimezone(UTC)
 
 
-def note_scope(settings: Settings) -> tuple[Any, ...]:
+def note_scope(settings: Settings, *, ignore_legacy_selector: bool = False) -> tuple[Any, ...]:
     scope: tuple[Any, ...] = (
         WatchVoiceNote.workspace_key == settings.gate_workspace_id,
         WatchVoiceNote.account_id == settings.dropbox_call_account_id,
     )
-    if settings.gate_watch_voice_file_id:
+    if not ignore_legacy_selector and settings.gate_watch_voice_file_id:
         scope += (
             WatchVoiceNote.file_id == settings.gate_watch_voice_file_id,
             WatchVoiceNote.revision == settings.gate_watch_voice_revision,
@@ -163,6 +164,8 @@ async def store_entry(
     http: httpx.AsyncClient,
     token: str,
     entry: dict[str, Any],
+    *,
+    webhook_archived: bool = False,
 ) -> None:
     file_id, revision = entry["id"], entry["rev"]
     scope = (settings.gate_workspace_id, settings.dropbox_call_account_id)
@@ -197,6 +200,7 @@ async def store_entry(
         dropbox_modified_at=modified,
         received_at=now,
         transcription_state="received",
+        webhook_archived=webhook_archived,
         delivery_state="pending",
         next_part=0,
     )
@@ -238,13 +242,15 @@ async def transcribe_note(
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
     note_id: str,
+    *,
+    ignore_legacy_selector: bool = False,
 ) -> None:
     async with factory() as session:
         claimed = await session.execute(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note_id,
-                *note_scope(settings),
+                *note_scope(settings, ignore_legacy_selector=ignore_legacy_selector),
                 WatchVoiceNote.transcription_state == "received",
             )
             .values(transcription_state="processing", attempted_at=datetime.now(UTC))
@@ -254,6 +260,15 @@ async def transcribe_note(
             return
         note = await session.get(WatchVoiceNote, note_id)
         assert note is not None
+    if ignore_legacy_selector and note.attempted_at is not None:
+        received = note.received_at
+        started = note.attempted_at
+        if received.tzinfo is None or started.tzinfo is None:
+            received, started = received.replace(tzinfo=UTC), started.replace(tzinfo=UTC)
+        logger.info(
+            "Watch Gate transcription started archive_to_claim_ms=%d",
+            round((started - received).total_seconds() * 1000),
+        )
     await transcribe_claimed_note(settings, factory, http, note)
 
 

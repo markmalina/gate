@@ -81,7 +81,7 @@ from app.application.reply_sequences import (
     QueueApprovedReplySequenceService,
     ReplySequenceError,
 )
-from app.models.watch_voice import WatchVoiceNote
+from app.models.watch_voice import WatchEarlyCard, WatchVoiceNote
 from app.infrastructure.watch_voice_actions import operational_status as watch_voice_actions_status
 from app.worker.watch_voice import operational_status as watch_voice_operational_status
 from app.core.config import Settings, get_settings
@@ -1078,6 +1078,16 @@ async def _watch_voice_tool_result(
             media_type=row.media_type,
             filename_prefix="watch-voice",
         )
+    issue_url = row.issue_url
+    if issue_url is None:
+        issue_url = await session.scalar(
+            select(WatchEarlyCard.issue_url).where(
+                WatchEarlyCard.id == row.id,
+                WatchEarlyCard.workspace_key == row.workspace_key,
+                WatchEarlyCard.account_id == row.account_id,
+                WatchEarlyCard.state == "saved",
+            )
+        )
     receipt = {
         "event_id": row.id,
         "source_file_id": row.file_id,
@@ -1091,7 +1101,7 @@ async def _watch_voice_tool_result(
         "transcript": row.transcript,
         "transcription_state": row.transcription_state,
         "delivery_state": row.delivery_state,
-        "issue_url": row.issue_url,
+        "issue_url": issue_url,
         "github_received_at": row.github_received_at.isoformat()
         if row.github_received_at
         else None,
@@ -4473,10 +4483,15 @@ def _format_reply_context_text(context: JsonObject) -> str:
         )
     for message in context["messages"]:
         direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
+        preview = message["text_preview"] or {
+            "no_text": "<no text>",
+            "source_unavailable": "<text source unavailable>",
+            "processing_failed": "<text processing failed>",
+        }.get(message.get("text_status"), "<empty>")
         lines.extend(
             [
                 "",
-                f"[{direction}] {message['text_preview'] or '<empty>'}",
+                f"[{direction}] {preview}",
             ]
         )
         if message.get("reply_to") is not None:

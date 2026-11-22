@@ -15,6 +15,7 @@ from app.application.telegram_voice_transcription import (
     TranscriptionProviderError,
 )
 from app.infrastructure.openai_transcription import _quota_unavailable
+from app.infrastructure.openai_transcription_wif import transcription_workload_identity
 
 logger = logging.getLogger(__name__)
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
@@ -67,14 +68,21 @@ class OpenAITranscriptionPartClient:
         }
         if continuity_prompt:
             request["prompt"] = continuity_prompt[-1_000:]
+        identity = transcription_workload_identity(self._config.base_url)
+        file = (filename, data, "audio/mpeg")
         try:
-            response = await self._http.post(
-                f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
-                headers={"Authorization": f"Bearer {self._config.api_key}"},
-                data=request,
-                files={"file": (filename, data, "audio/mpeg")},
-                timeout=self._config.timeout_seconds,
-            )
+            if identity is None:
+                response = await self._http.post(
+                    f"{self._config.base_url.rstrip('/')}/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {self._config.api_key}"},
+                    data=request,
+                    files={"file": file},
+                    timeout=self._config.timeout_seconds,
+                )
+            else:
+                response = await identity.post(
+                    data=request, file=file, timeout=self._config.timeout_seconds
+                )
         except httpx.HTTPError:
             raise TranscriptionProviderError(
                 "openai_transcription_transport_unknown",

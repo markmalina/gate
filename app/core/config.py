@@ -571,6 +571,23 @@ class Settings(BaseSettings):
     gate_watch_voice_actions_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
     )
+    gate_watch_webhook_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_WEBHOOK_ENABLED"
+    )
+    gate_watch_webhook_archive_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_WEBHOOK_ARCHIVE_ENABLED"
+    )
+    gate_watch_webhook_transcription_admission: SecretStr = Field(
+        default=SecretStr(""),
+        repr=False,
+        validation_alias="GATE_WATCH_WEBHOOK_TRANSCRIPTION_ADMISSION",
+    )
+    gate_watch_voice_early_cards_only: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_EARLY_CARDS_ONLY"
+    )
+    gate_watch_voice_early_batch_size: int = Field(
+        default=1, ge=1, le=5, validation_alias="GATE_WATCH_VOICE_EARLY_BATCH_SIZE"
+    )
     gate_watch_voice_w1_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_W1_ENABLED"
     )

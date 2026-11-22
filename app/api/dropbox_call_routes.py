@@ -8,12 +8,13 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.core.config import Settings, get_settings
 from app.models.domain import DropboxCallInboxState
+from app.models.watch_voice import WatchEarlyCursor
 
 router = APIRouter(prefix="/dropbox/calls", tags=["dropbox-calls"])
 
@@ -40,7 +41,8 @@ async def receive_dropbox_call_webhook(
 ) -> dict[str, bool]:
     """Verify the app-secret signature and durably schedule a delta scan."""
 
-    if not settings.gate_dropbox_call_intake_enabled:
+    watch_enabled = settings.gate_watch_webhook_enabled
+    if not settings.gate_dropbox_call_intake_enabled and not watch_enabled:
         raise HTTPException(status_code=404, detail="Dropbox call intake is disabled")
     app_secret = settings.dropbox_call_app_secret.get_secret_value()
     account_id = settings.dropbox_call_account_id
@@ -63,28 +65,42 @@ async def receive_dropbox_call_webhook(
         payload: Any = await request.json()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid Dropbox payload") from None
-    users = (
-        payload.get("list_folder", {}).get("accounts")
-        if isinstance(payload, dict)
-        else None
-    )
+    changes = payload.get("list_folder") if isinstance(payload, dict) else None
+    users = changes.get("accounts") if isinstance(changes, dict) else None
     if not isinstance(users, list) or not all(isinstance(item, str) for item in users):
         raise HTTPException(status_code=400, detail="Invalid Dropbox payload")
     if account_id not in users:
         return {"ok": True}
 
     now = datetime.now(UTC)
-    result = await session.execute(
-        select(DropboxCallInboxState)
-        .where(DropboxCallInboxState.account_id == account_id)
-        .with_for_update()
-    )
-    state = result.scalar_one_or_none()
-    if state is None:
-        state = DropboxCallInboxState(account_id=account_id)
-        session.add(state)
-    state.pending = True
-    state.next_attempt_at = None
-    state.webhook_received_at = now
+    if settings.gate_dropbox_call_intake_enabled:
+        result = await session.execute(
+            select(DropboxCallInboxState)
+            .where(DropboxCallInboxState.account_id == account_id)
+            .with_for_update()
+        )
+        state = result.scalar_one_or_none()
+        if state is None:
+            state = DropboxCallInboxState(account_id=account_id)
+            session.add(state)
+        state.pending = True
+        state.next_attempt_at = None
+        state.webhook_received_at = now
+    watch_signaled = False
+    if watch_enabled and settings.gate_workspace_id == "mark-personal":
+        wake = await session.execute(
+            update(WatchEarlyCursor)
+            .where(
+                WatchEarlyCursor.workspace_key == settings.gate_workspace_id,
+                WatchEarlyCursor.account_id == account_id,
+            )
+            .values(
+                wake_generation=WatchEarlyCursor.wake_generation + 1,
+                wake_received_at=now,
+            )
+        )
+        watch_signaled = bool(wake.rowcount)  # type: ignore[attr-defined]
     await session.commit()
+    if watch_signaled:
+        request.app.state.watch_wake_event.set()
     return {"ok": True}

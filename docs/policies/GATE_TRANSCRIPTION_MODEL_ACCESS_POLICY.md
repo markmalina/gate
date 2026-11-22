@@ -17,6 +17,28 @@ The provider, endpoint and model allowlist are application-owned. User input
 cannot select them. No tools, Responses conversation, provider memory,
 background mode, file object, search, shell, MCP or automatic retry is allowed.
 
+### Production X.509 workload identity
+
+On 2026-11-21 Mark authorized certificate authentication for the existing Gate
+Production project. The ordinary credential and endpoint remain available
+when the certificate option is off, including for rollback.
+
+When `OPENAI_TRANSCRIPTION_WIF_ENABLED=true`, the two bounded OpenAI
+transcription adapters use `https://mtls.auth.openai.com/oauth/token` for
+identity exchange without audio and send audio only to
+`https://mtls.api.openai.com/v1/audio/transcriptions`. Both calls verify
+the OpenAI server and present the same Gate client certificate.
+The mapping is limited to the project service account and Audio API requests.
+The service cannot fall back to an API key when certificate mode is enabled.
+
+Configure `OPENAI_TRANSCRIPTION_WIF_PROVIDER_ID` and
+`OPENAI_TRANSCRIPTION_WIF_SERVICE_ACCOUNT_ID` on the Gate service.
+Keep `OPENAI_TRANSCRIPTION_WIF_KEY_PEM` and its corresponding
+`OPENAI_TRANSCRIPTION_WIF_CERT_PEM` in the service's protected configuration.
+Rotate before certificate expiry. Disable project certificate enforcement and
+disable the opt-in together when reverting to the previous configuration.
+The model and existing admission, retention, and settlement rules still apply.
+
 ## Input, output and call bounds
 
 - Telegram download limit remains 25 MiB.
@@ -233,3 +255,24 @@ the watermark before download and excludes stored notes whose Dropbox timestamp
 is not later, even when Gate received them after cutover. Replays do not move
 the watermark; excluded delta pages still advance the existing cursor. No
 historical backfill or additional automation is authorized by this addition.
+
+
+## Owner Watch transcription in Gate — 2026-11-22
+
+The owner approved the Watch-only event path: authenticated Dropbox
+`/Alpha/Voice` → owner-scoped Gate archive → existing OpenAI X.509 speech
+service → transcript in protected Gate. It is default-off. This path uses the
+owner data-gate, the configured Dropbox account and workspace, the protected
+Gate archive, and an explicit server-side admission. It has no GitHub check or
+publication authority. The earlier rules for private Mark delivery continue
+to govern the separate paths that deliver there.
+
+The audio scope, endpoint, approved model, retention, shared USD 3 budget,
+part/timeout bounds and durable at-most-once claim remain those in this
+policy and `model-access.lock`. The initial admission is the first new
+owner-created short test recording after the configured UTC cutoff. It
+remains a single recording even after completion, rejection, or an uncertain
+effect. The owner will record a short non-sensitive phrase when readiness is
+confirmed. After acceptance, live admission selects later webhook-archived
+recordings and may separately name an exact approved backlog. No automatic
+provider retry or fallback is added.

@@ -57,8 +57,13 @@ from app.worker.beta_space import run_beta_space_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.reply_documents import run_reply_document_cleanup_loop
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
+from app.worker.watch_webhook import run_watch_mark_loop, run_watch_webhook_loop
+from app.worker.watch_webhook_archive import run_watch_archive_loop
+from app.worker.watch_webhook_transcription import run_watch_transcription_loop
 from app.worker.watch_voice import run_watch_voice_worker_loop
-from app.worker.telegram_processing import run_telegram_worker_loop
+from app.worker.telegram_processing import (
+    run_telegram_worker_managed_loop,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +119,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         "gate_dropbox_call_intake_enabled",
         False,
     )
+    watch_wake_enabled = getattr(settings, "gate_watch_webhook_enabled", False)
+    _app.state.watch_wake_event = asyncio.Event()
+    watch_mark_wake = asyncio.Event()
+    watch_archive_wake = (
+        asyncio.Event()
+        if watch_wake_enabled and getattr(settings, "gate_watch_webhook_archive_enabled", False)
+        else None
+    )
+    watch_transcription_wake = (
+        asyncio.Event()
+        if watch_archive_wake is not None
+        and settings.gate_watch_webhook_transcription_admission.get_secret_value()
+        else None
+    )
     alpha_transcription_enabled = _alpha_transcription_configured(settings)
     worker_health = WorkerHealthRegistry()
     worker_health.register(
@@ -149,6 +168,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reply_document_cleanup_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
                 watch_voice_task: asyncio.Task[None] | None = None
+                watch_wake_task: asyncio.Task[None] | None = None
+                watch_mark_task: asyncio.Task[None] | None = None
+                watch_archive_task: asyncio.Task[None] | None = None
+                watch_transcription_task: asyncio.Task[None] | None = None
                 alpha_transcription_task: asyncio.Task[None] | None = None
                 beta_space_task: asyncio.Task[None] | None = None
                 try:
@@ -198,7 +221,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         )
                     if telegram_worker_enabled:
                         worker_task = asyncio.create_task(
-                            run_telegram_worker_loop(
+                            run_telegram_worker_managed_loop(
                                 settings,
                                 health_reporter=worker_health,
                             )
@@ -223,6 +246,32 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 session_factory=database_runtime.session_factory,
                             )
                         )
+                    if watch_wake_enabled:
+                        watch_wake_task = asyncio.create_task(
+                            run_watch_webhook_loop(
+                                settings, database_runtime.session_factory,
+                                _app.state.watch_wake_event,
+                                watch_archive_wake, watch_mark_wake,
+                            )
+                        )
+                        watch_mark_task = asyncio.create_task(
+                            run_watch_mark_loop(
+                                settings, database_runtime.session_factory, watch_mark_wake
+                            )
+                        )
+                    if watch_archive_wake is not None:
+                        watch_archive_task = asyncio.create_task(
+                            run_watch_archive_loop(
+                                settings, database_runtime.session_factory, watch_archive_wake,
+                                watch_transcription_wake,
+                            )
+                        )
+                    if watch_transcription_wake is not None:
+                        watch_transcription_task = asyncio.create_task(
+                            run_watch_transcription_loop(
+                                settings, database_runtime.session_factory, watch_transcription_wake,
+                            )
+                        )
                     if dropbox_call_worker_enabled:
                         dropbox_call_task = asyncio.create_task(
                             run_dropbox_call_worker_loop(
@@ -243,6 +292,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 alpha_transcription_task.cancel()
                             with suppress(asyncio.CancelledError):
                                 await alpha_transcription_task
+                        if watch_wake_task is not None:
+                            watch_wake_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await watch_wake_task
+                        if watch_mark_task is not None:
+                            watch_mark_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await watch_mark_task
+                        if watch_archive_task is not None:
+                            watch_archive_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await watch_archive_task
+                        if watch_transcription_task is not None:
+                            watch_transcription_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await watch_transcription_task
                         if watch_voice_task is not None:
                             watch_voice_task.cancel()
                             with suppress(asyncio.CancelledError):
