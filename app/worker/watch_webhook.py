@@ -124,6 +124,7 @@ async def run_watch_webhook_loop(
     factory: async_sessionmaker[AsyncSession],
     wake: asyncio.Event,
     archive_wake: asyncio.Event | None = None,
+    transcription_wake: asyncio.Event | None = None,
 ) -> None:
     key = os.getenv("GATE_WATCH_APP_PRIVATE_KEY", "")
     installation = app_installation()
@@ -142,7 +143,12 @@ async def run_watch_webhook_loop(
             # Clear before the scan so a signal concurrent with it remains visible.
             wake.clear()
             try:
-                if await run_watch_pass(settings, factory, http, key, installation, archive_wake):
+                more = await run_watch_pass(
+                    settings, factory, http, key, installation, archive_wake
+                )
+                if transcription_wake is not None:
+                    transcription_wake.set()
+                if more:
                     continue
             except Exception:
                 # Error details may include a provider URL or credential.

@@ -90,6 +90,7 @@ async def run_watch_archive_loop(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     wake: asyncio.Event,
+    transcription_wake: asyncio.Event | None = None,
 ) -> None:
     if (
         not settings.gate_watch_webhook_enabled
@@ -103,7 +104,10 @@ async def run_watch_archive_loop(
         while True:
             wake.clear()
             try:
-                if await archive_watch_pass(settings, factory, http):
+                more = await archive_watch_pass(settings, factory, http)
+                if transcription_wake is not None:
+                    transcription_wake.set()
+                if more:
                     continue
             except Exception:
                 logger.warning("Watch archive pass deferred")

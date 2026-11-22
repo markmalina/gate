@@ -121,11 +121,13 @@ def timestamp(value: str) -> datetime:
     return result.astimezone(UTC)
 
 
-def note_scope(settings: Settings) -> tuple[Any, ...]:
+def note_scope(settings: Settings, *, webhook_only: bool = False) -> tuple[Any, ...]:
     scope: tuple[Any, ...] = (
         WatchVoiceNote.workspace_key == settings.gate_workspace_id,
         WatchVoiceNote.account_id == settings.dropbox_call_account_id,
     )
+    if webhook_only:
+        return (*scope, WatchVoiceNote.webhook_archived.is_(True))
     if settings.gate_watch_voice_file_id:
         scope += (
             WatchVoiceNote.file_id == settings.gate_watch_voice_file_id,
@@ -242,13 +244,15 @@ async def transcribe_note(
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
     note_id: str,
+    *,
+    webhook_only: bool = False,
 ) -> None:
     async with factory() as session:
         claimed = await session.execute(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note_id,
-                *note_scope(settings),
+                *note_scope(settings, webhook_only=webhook_only),
                 WatchVoiceNote.transcription_state == "received",
             )
             .values(transcription_state="processing", attempted_at=datetime.now(UTC))
@@ -359,17 +363,30 @@ async def publish_note(
     note: WatchVoiceNote,
     *,
     max_parts: int | None = None,
+    early_issue_number: int | None = None,
 ) -> None:
     if note.transcription_state != TelegramVoiceOutcome.TRANSCRIBED.value or not note.transcript:
         return
+    if early_issue_number is not None and note.issue_number not in (None, early_issue_number):
+        raise WatchVoiceError("watch_voice_early_issue_conflict")
     completed_parts = 0
     while note.delivery_state in {"pending", "unknown"}:
         if max_parts is not None and completed_parts >= max_parts:
             return
-        part, body = note.next_part, issue_body(note, note.next_part)
+        part = note.next_part
+        github_part, issue_number = part, note.issue_number
+        if early_issue_number is None:
+            body = issue_body(note, part)
+        else:
+            github_part, issue_number = part + 1, early_issue_number
+            chunks = transcript_parts(note.transcript)
+            body = (
+                f"{marker(note.id, github_part)}\n\n"
+                f"Расшифровка, часть {github_part}/{len(chunks)}:\n\n{chunks[part]}"
+            )
         if note.delivery_state == "unknown":
             # No absence-of-search-result is allowed to authorize a second POST.
-            receipt = await client.reconcile(part=part, issue_number=note.issue_number, body=body)
+            receipt = await client.reconcile(part=github_part, issue_number=issue_number, body=body)
             if receipt is None:
                 return
         else:
@@ -388,8 +405,8 @@ async def publish_note(
                     return
             try:
                 receipt = await client.post(
-                    part=part,
-                    issue_number=note.issue_number,
+                    part=github_part,
+                    issue_number=issue_number,
                     title=(
                         f"[Gate][Voice] Входящая запись {note.received_at.date()} · {note.id[:8]}"
                     ),
