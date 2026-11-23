@@ -3199,7 +3199,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0122_audio_processing_history ")
+    assert heads[0].startswith("0123_watch_mark_updates ")
 
 
 

@@ -67,7 +67,7 @@ def test_gate_transcribes_without_mark_and_only_releases_approved_notes(monkeypa
         canary_calls: list[str] = []
         canary_limits: list[int] = []
 
-        async def speech(settings, factory, http, note, *, canary_max_seconds=None):
+        async def speech(settings, factory, http, note, *, canary_max_seconds=None, mark_wake=None):
             assert note.transcription_state == "processing"
             calls.append(note.id)
             if canary_max_seconds is not None:

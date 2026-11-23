@@ -21,7 +21,7 @@ from app.infrastructure.openai_transcription import (
     WATCH_CANARY_MAX_SECONDS,
 )
 from app.infrastructure.openai_transcription_wif import transcription_workload_identity
-from app.models.watch_voice import WatchVoiceNote
+from app.models.watch_voice import WatchVoiceNote, next_mark_publish_version
 from app.worker.watch_voice import note_scope, timestamp, transcribe_note
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,7 @@ async def drain_watch_transcription(
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
     admission: TranscriptionAdmission,
+    mark_wake: asyncio.Event | None = None,
 ) -> bool:
     scope = note_scope(settings, ignore_legacy_selector=True)
     eligible = and_(
@@ -175,7 +176,7 @@ async def drain_watch_transcription(
 
         stale = datetime.now(UTC) - timedelta(hours=1)
         async with factory.begin() as session:
-            await session.execute(
+            stale_marked = await session.execute(
                 update(WatchVoiceNote)
                 .where(
                     *scope, selector,
@@ -187,8 +188,12 @@ async def drain_watch_transcription(
                     last_error="watch_voice_stale_transcription",
                     transcription_stopped_at=datetime.now(UTC),
                     transcription_stop_reason="watch_voice_stale_transcription",
+                    mark_publish_version=next_mark_publish_version(),
                 )
             )
+
+        if mark_wake is not None and stale_marked.rowcount:  # type: ignore[attr-defined]
+            mark_wake.set()
 
         jobs = (await lock.scalars(
             select(WatchVoiceNote.id)
@@ -206,6 +211,7 @@ async def drain_watch_transcription(
                 settings, factory, http, note_id,
                 ignore_legacy_selector=True,
                 canary_max_seconds=canary_max_seconds if note_id == canary_id else None,
+                mark_wake=mark_wake,
             )
         return len(jobs) == BATCH_SIZE
 
@@ -214,6 +220,7 @@ async def run_watch_transcription_loop(
     settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     wake: asyncio.Event,
+    mark_wake: asyncio.Event | None = None,
 ) -> None:
     admission = watch_transcription_admission(settings)
     if admission is None:
@@ -223,7 +230,7 @@ async def run_watch_transcription_loop(
         while True:
             wake.clear()
             try:
-                if await drain_watch_transcription(settings, factory, http, admission):
+                if await drain_watch_transcription(settings, factory, http, admission, mark_wake):
                     continue
             except Exception:
                 logger.warning("Watch Gate transcription pass deferred")

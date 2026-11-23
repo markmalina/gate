@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    case,
     false,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -79,6 +80,11 @@ class WatchEarlyCard(Base):
     attempt_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     archive_input: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     archive_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    mark_published_version: Mapped[int] = mapped_column(Integer, server_default="0")
+    mark_update_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mark_update_error: Mapped[str | None] = mapped_column(String(128))
+    mark_update_blocked: Mapped[bool] = mapped_column(Boolean, server_default=false())
 
 
 class WatchEarlyRejection(Base):
@@ -155,6 +161,14 @@ class WatchVoiceNote(AudioProcessingMilestones, Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+
+    mark_publish_version: Mapped[int] = mapped_column(Integer, server_default="0")
+
+
+def next_mark_publish_version() -> Any:
+    """Advance only notes already enrolled in the Watch-to-Mark update queue."""
+    version = WatchVoiceNote.mark_publish_version
+    return case((version > 0, version + 1), else_=0)
 
 
 class WatchVoiceDrainRun(Base):

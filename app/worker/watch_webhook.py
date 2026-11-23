@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.infrastructure.watch_app_auth import WatchAppInstallation, issue_mark_token
 from app.infrastructure.watch_app_inbox import AppInboxClient
+from app.infrastructure.watch_mark_updates import has_mark_updates, publish_mark_update
 from app.infrastructure.watch_voice_early_cards import (
     discover_early_cards,
     drain_saved,
@@ -93,16 +94,25 @@ async def publish_watch_pass(
             )
             .limit(1)
         )
-        if not has_cards:
+        updates_enabled = getattr(settings, "gate_watch_mark_updates_enabled", False)
+        has_updates = updates_enabled and await has_mark_updates(lock, scope)
+        if not has_cards and not has_updates:
             return False
         async with asyncio.timeout(95):
             token = await issue_mark_token(http, key, installation)
             client = AppInboxClient(http, token, app_slug=installation.slug)
             await client.preflight()
-            receipt = await drain_saved(factory, client, scope, BATCH_SIZE, writer="app_webhook")
-        if not receipt["considered"]:
+            early_work = has_cards and (
+                await drain_saved(factory, client, scope, BATCH_SIZE, writer="app_webhook")
+            )["considered"]
+            updated = updates_enabled and await publish_mark_update(
+                settings, factory, client, scope
+            )
+        if not early_work and not updated:
             return False
         async with factory() as session:
+            if updates_enabled and await has_mark_updates(session, scope):
+                return True
             return bool(await session.scalar(
                 select(WatchEarlyCard.id)
                 .where(

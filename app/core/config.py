@@ -580,6 +580,9 @@ class Settings(BaseSettings):
     gate_watch_browser_owner_subject: str = Field(
         default="", validation_alias="GATE_WATCH_BROWSER_OWNER_SUBJECT"
     )
+    gate_watch_mark_updates_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_MARK_UPDATES_ENABLED"
+    )
     gate_watch_webhook_archive_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_WEBHOOK_ARCHIVE_ENABLED"
     )
