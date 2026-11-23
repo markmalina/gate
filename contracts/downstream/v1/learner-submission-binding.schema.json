@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-learner-submission-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quest_ref", "actor_person_ref", "actor_role", "exercise", "submission"],
+  "properties": {
+    "quest_ref": {"type": "string", "pattern": "^quest://[A-Za-z0-9._/-]+$"},
+    "actor_person_ref": {"type": "string", "pattern": "^(person|synthetic)://[A-Za-z0-9._/-]+$"},
+    "actor_role": {"const": "LEARNER"},
+    "exercise": {"$ref": "artifact-binding.schema.json"},
+    "submission": {"$ref": "artifact-binding.schema.json"}
+  }
+}

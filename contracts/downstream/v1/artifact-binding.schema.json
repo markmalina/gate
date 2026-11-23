@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-artifact-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact_type", "artifact_ref", "version", "content_digest"],
+  "properties": {
+    "artifact_type": {"enum": ["EXPERT_CONSENT", "RELATIONS_EVIDENCE", "EXPERT_PROFILE", "PRODUCT", "PROGRAM", "EXERCISE", "INVITATION", "SUBMISSION", "OKO_RESULT", "PRIVATE_FREE_RESULT"]},
+    "artifact_ref": {"type": "string", "pattern": "^artifact://[A-Za-z0-9._/-]+$"},
+    "version": {"type": "integer", "minimum": 1},
+    "content_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

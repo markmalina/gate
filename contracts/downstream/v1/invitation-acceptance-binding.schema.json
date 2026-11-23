@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-invitation-acceptance-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quest_ref", "invitation_ref", "invitation_version", "invitation_digest", "learner_person_ref", "accepted_by_person_ref", "acceptance_version", "acceptance_digest"],
+  "properties": {
+    "quest_ref": {"type": "string", "pattern": "^quest://[A-Za-z0-9._/-]+$"},
+    "invitation_ref": {"type": "string", "pattern": "^artifact://[A-Za-z0-9._/-]+$"},
+    "invitation_version": {"type": "integer", "minimum": 1},
+    "invitation_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "learner_person_ref": {"type": "string", "pattern": "^(person|synthetic)://[A-Za-z0-9._/-]+$"},
+    "accepted_by_person_ref": {"type": "string", "pattern": "^(person|synthetic)://[A-Za-z0-9._/-]+$"},
+    "acceptance_version": {"type": "integer", "minimum": 1},
+    "acceptance_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

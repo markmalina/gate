@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "become.role-aware-downstream-oko-result-binding@1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quest_ref", "submission", "exercise", "result"],
+  "properties": {
+    "quest_ref": {"type": "string", "pattern": "^quest://[A-Za-z0-9._/-]+$"},
+    "submission": {"$ref": "artifact-binding.schema.json"},
+    "exercise": {"$ref": "artifact-binding.schema.json"},
+    "result": {"$ref": "artifact-binding.schema.json"}
+  }
+}
