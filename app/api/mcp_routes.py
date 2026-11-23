@@ -1111,6 +1111,28 @@ async def _watch_voice_tool_result(
         "model": row.model,
         "processing_history": context["processing_history"],
     }
+    if settings.gate_watch_mark_updates_enabled and row.mark_publish_version:
+        publication = (await session.execute(
+            select(
+                WatchEarlyCard.mark_published_version, WatchEarlyCard.mark_published_at,
+                WatchEarlyCard.mark_update_blocked, WatchEarlyCard.mark_update_error,
+            ).where(
+                WatchEarlyCard.id == row.id,
+                WatchEarlyCard.workspace_key == row.workspace_key,
+                WatchEarlyCard.account_id == row.account_id,
+                WatchEarlyCard.file_id == row.file_id,
+                WatchEarlyCard.revision == row.revision,
+            )
+        )).one_or_none()
+        if publication is not None:
+            verified_at = publication.mark_published_at
+            receipt["mark_publication"] = {
+                "requested_version": row.mark_publish_version,
+                "verified_version": publication.mark_published_version,
+                "verified_at": verified_at.isoformat() if verified_at else None,
+                "blocked": publication.mark_update_blocked,
+                "error": publication.mark_update_error,
+            }
     if row.model == "gpt-4o-transcribe":
         receipt["recovery"] = await protected_recovery_receipt(session, row)
         receipt["post_payment"] = await protected_post_payment_receipt(session, row)

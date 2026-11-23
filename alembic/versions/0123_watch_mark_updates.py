@@ -26,6 +26,9 @@ def upgrade() -> None:
         "watch_early_cards", sa.Column("mark_update_blocked", sa.Boolean(), nullable=False,
                                        server_default=sa.false()),
     )
+    op.add_column("watch_early_cards", sa.Column("mark_published_at", sa.DateTime(timezone=True)))
+    op.add_column("watch_early_cards", sa.Column("mark_pending_part", sa.Integer()))
+    op.add_column("watch_early_cards", sa.Column("mark_pending_digest", sa.String(64)))
     op.create_index(
         "ix_watch_note_mark_queue", "watch_voice_notes",
         ["workspace_key", "account_id", "id"],
@@ -36,6 +39,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_watch_note_mark_queue", table_name="watch_voice_notes")
     for field in (
+        "mark_published_at", "mark_pending_digest", "mark_pending_part",
         "mark_update_blocked", "mark_update_error", "mark_update_retry_at",
         "mark_published_version",
     ):

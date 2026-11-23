@@ -583,6 +583,9 @@ class Settings(BaseSettings):
     gate_watch_mark_updates_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_MARK_UPDATES_ENABLED"
     )
+    gate_watch_mark_backfill_event_ids: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_MARK_BACKFILL_EVENT_IDS"
+    )
     gate_watch_webhook_archive_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_WEBHOOK_ARCHIVE_ENABLED"
     )

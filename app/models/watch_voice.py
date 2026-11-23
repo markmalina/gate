@@ -82,9 +82,12 @@ class WatchEarlyCard(Base):
     archive_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     mark_published_version: Mapped[int] = mapped_column(Integer, server_default="0")
+    mark_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     mark_update_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     mark_update_error: Mapped[str | None] = mapped_column(String(128))
     mark_update_blocked: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    mark_pending_part: Mapped[int | None] = mapped_column(Integer)
+    mark_pending_digest: Mapped[str | None] = mapped_column(String(64))
 
 
 class WatchEarlyRejection(Base):

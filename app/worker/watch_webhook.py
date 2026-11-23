@@ -13,12 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.infrastructure.watch_app_auth import WatchAppInstallation, issue_mark_token
 from app.infrastructure.watch_app_inbox import AppInboxClient
-from app.infrastructure.watch_mark_updates import has_mark_updates, publish_mark_update
+from app.infrastructure.watch_mark_updates import (
+    enroll_mark_backfill,
+    has_mark_updates,
+    publish_mark_update,
+)
 from app.infrastructure.watch_voice_early_cards import (
     discover_early_cards,
     drain_saved,
     watch_scope,
 )
+from app.infrastructure.watch_voice_github import WatchVoiceError
 from app.models.watch_voice import WatchEarlyCard, WatchEarlyCursor
 from app.worker.watch_app_runner import app_installation
 
@@ -167,10 +172,17 @@ async def run_watch_mark_loop(
     ):
         logger.warning("Watch Mark writer configuration invalid")
         return
+    backfill_pending = True
     async with httpx.AsyncClient(timeout=12, trust_env=False) as http:
         while True:
             wake.clear()
             try:
+                if backfill_pending:
+                    try:
+                        await enroll_mark_backfill(settings, factory, watch_scope(settings))
+                    except WatchVoiceError:
+                        logger.warning("Watch Mark backfill scope did not match")
+                    backfill_pending = False
                 if await publish_watch_pass(settings, factory, http, key, installation):
                     continue
             except Exception:

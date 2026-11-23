@@ -8,6 +8,7 @@ import hmac
 import re
 import secrets
 from html import escape
+from pathlib import PurePosixPath
 from urllib.parse import parse_qs, urlencode
 from uuid import UUID
 
@@ -15,6 +16,7 @@ import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import get_database_runtime
 from app.core.config import Settings, get_settings
@@ -180,42 +182,49 @@ async def watch_record(
         response.delete_cookie(_SESSION_COOKIE, secure=True, httponly=True, samesite="lax")
         return response
 
-    async with get_database_runtime(request).session_factory() as session:
-        card = await session.scalar(
-            select(WatchEarlyCard).where(
-                WatchEarlyCard.id == event_id,
-                WatchEarlyCard.workspace_key == settings.gate_workspace_id,
-                WatchEarlyCard.account_id == settings.dropbox_call_account_id,
+    try:
+        async with get_database_runtime(request).session_factory() as session:
+            card = await session.scalar(
+                select(WatchEarlyCard).where(
+                    WatchEarlyCard.id == event_id,
+                    WatchEarlyCard.workspace_key == settings.gate_workspace_id,
+                    WatchEarlyCard.account_id == settings.dropbox_call_account_id,
+                )
             )
-        )
-        if card is None:
-            return _error(404)
-        query = select(WatchVoiceNote).where(
-            WatchVoiceNote.id == card.id,
-            WatchVoiceNote.workspace_key == card.workspace_key,
-            WatchVoiceNote.account_id == card.account_id,
-            WatchVoiceNote.file_id == card.file_id,
-            WatchVoiceNote.revision == card.revision,
-        )
-        if original:
-            note = await session.scalar(query)
-            if (
-                note is None
-                or len(note.data) != note.size_bytes
-                or hashlib.sha256(note.data).hexdigest() != note.sha256
-            ):
+            if card is None:
                 return _error(404)
-            return Response(
-                note.data,
-                media_type="application/octet-stream",
-                headers={
-                    **_HEADERS,
-                    "Content-Disposition": f'attachment; filename="watch-{event_id}"',
-                },
+            query = select(WatchVoiceNote).where(
+                WatchVoiceNote.id == card.id,
+                WatchVoiceNote.workspace_key == card.workspace_key,
+                WatchVoiceNote.account_id == card.account_id,
+                WatchVoiceNote.file_id == card.file_id,
+                WatchVoiceNote.revision == card.revision,
             )
-        summary = (await session.execute(query.with_only_columns(
-            WatchVoiceNote.filename, WatchVoiceNote.transcription_state, WatchVoiceNote.transcript
-        ))).one_or_none()
+            if original:
+                note = await session.scalar(query)
+                if (
+                    note is None
+                    or len(note.data) != note.size_bytes
+                    or hashlib.sha256(note.data).hexdigest() != note.sha256
+                ):
+                    return _error(404)
+                suffix = PurePosixPath(note.filename).suffix.lower()
+                if suffix not in {".m4a", ".mp4", ".mp3", ".wav", ".ogg", ".webm", ".flac"}:
+                    suffix = ""
+                return Response(
+                    note.data,
+                    media_type="application/octet-stream",
+                    headers={
+                        **_HEADERS,
+                        "Content-Disposition": f'attachment; filename="watch-{event_id}{suffix}"',
+                    },
+                )
+            summary = (await session.execute(query.with_only_columns(
+                WatchVoiceNote.filename, WatchVoiceNote.transcription_state,
+                WatchVoiceNote.transcript
+            ))).one_or_none()
+    except (SQLAlchemyError, RuntimeError):
+        return _error(503)
 
     content = "<p>Оригинал ожидает сохранения в Gate.</p>"
     if summary is not None:
