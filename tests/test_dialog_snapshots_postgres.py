@@ -59,8 +59,10 @@ async def receive(sessions: Any, seed: Any, *, update_id: int = 1,
             payload={"update_id": update_id, kind: {
                 "business_connection_id": seed.business_connection_id,
                 "chat": {"id": int(chat_id or seed.recipient_chat_id)},
-                "from": {"id": 999 if owner else int(seed.recipient_chat_id)},
-                "message_id": update_id,
+                **({} if kind == "deleted_business_messages" else {
+                    "from": {"id": 999 if owner else int(seed.recipient_chat_id)},
+                    "message_id": update_id,
+                }),
                 **({"text": "New synthetic message"} if content is None else content),
             }}, received_at=datetime.now(UTC),
         ))
@@ -283,6 +285,46 @@ async def test_edit_with_same_message_id_keeps_the_approved_reply_current() -> N
                 session=session, telegram=telegram, settings=_settings(),
             ).send(_command(seed, saved.draft_id))
         assert result.sent and len(telegram.plain_calls) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("deleted_id", [101, 102])
+async def test_send_compares_the_last_remaining_message_id(deleted_id: int) -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        for message_id in (101, 102):
+            await receive(sessions, seed, update_id=message_id)
+        async with sessions() as session:
+            saved = await SaveReplyDraftService(SqlReplyDraftWriter(session)).execute(
+                replace(_save_draft_command(seed, "Reply to the latest message"),
+                        expected_context_snapshot="102"),
+            )
+            await session.commit()
+        await receive(
+            sessions, seed, update_id=103, kind="deleted_business_messages",
+            content={"message_ids": [deleted_id]},
+        )
+        telegram = _LiteralRecordingTelegram()
+        command = _command(seed, saved.draft_id)
+        async with sessions() as session:
+            conversation = await session.get(Conversation, seed.conversation_id)
+            current_id = await dialog_snapshot(
+                session, scope=command.principal.access_scope, conversation=conversation,
+            )
+            await session.rollback()
+            sender = SqlTelegramReplySender(
+                session=session, telegram=telegram, settings=_settings(),
+            )
+            if deleted_id == 102:
+                assert current_id == "101"
+                with pytest.raises(ReplySendError) as error:
+                    await sender.send(command)
+                assert error.value.code == "context_changed"
+                assert telegram.plain_calls == []
+            else:
+                assert current_id == "102"
+                assert (await sender.send(command)).sent
+                assert len(telegram.plain_calls) == 1
 
 
 @pytest.mark.anyio

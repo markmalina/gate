@@ -639,7 +639,7 @@ async def get_reply_context(
         if cursor is not None or dialog_events_cursor is not None
         else "context_scope_incomplete"
         if not dialog_scope_complete
-        else issue
+        else issue or ("last_message_id_unavailable" if final_snapshot is None else None)
     )
     context_ready = reason is None and all(event["content_available"] for event in events)
     next_raw = None
@@ -1055,7 +1055,7 @@ def _serialize_datetime(value: Any) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else str(value)
 
 
-def _encode_dialog_events_cursor(*, snapshot: str, task_id: UUID, **position: Any) -> str:
+def _encode_dialog_events_cursor(*, snapshot: str | None, task_id: UUID, **position: Any) -> str:
     # This cursor only paginates a scoped read; it NEVER grants a sendable token.
     return base64.urlsafe_b64encode(
         json.dumps(
@@ -1068,7 +1068,7 @@ def _encode_dialog_events_cursor(*, snapshot: str, task_id: UUID, **position: An
 def _decode_dialog_events_cursor(
     cursor: str | None,
     *,
-    snapshot: str,
+    snapshot: str | None,
     task_id: UUID,
 ) -> dict[str, Any]:
     if cursor is None:

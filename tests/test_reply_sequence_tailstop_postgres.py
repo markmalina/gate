@@ -118,6 +118,31 @@ async def test_exact_order_interval_echo_and_restart(size, clock):
 
 
 @pytest.mark.anyio
+async def test_only_deleting_the_reviewed_last_id_stops_the_scheduled_tail(clock):
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_count=2)
+        for message_id in (101, 102):
+            await receive(sessions, seed, update_id=message_id)
+        async with sessions() as session:
+            for draft_id in seed.draft_ids:
+                draft = await session.get(ReplyDraft, draft_id)
+                draft.prompt_context = {"dialog_snapshot": "102"}
+            await session.commit()
+        await queue(sessions, seed, clock[0])
+        await receive(sessions, seed, update_id=103, kind="deleted_business_messages",
+                      content={"message_ids": [101]})
+        assert (await status(sessions, seed))["state"] == "scheduled"
+        await receive(sessions, seed, update_id=104, kind="deleted_business_messages",
+                      content={"message_ids": [102]})
+        result = await status(sessions, seed)
+        assert result["state"] == "stopped" and result["sent_count"] == 0
+        assert result["stop_message"].startswith("Не отправлено.")
+        telegram = Recorder()
+        assert await tick(sessions, telegram, clock) == 0
+        assert telegram.plain_calls == []
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("content,owner,kind", [
     ({"text": "new"}, False, "business_message"),
     ({"voice": {"file_id": "synthetic"}}, False, "business_message"),

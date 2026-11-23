@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, and_, case, cast, func, or_, select
+from sqlalchemy import BigInteger, Text, and_, case, cast, func, or_, select, true, union_all
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,8 +64,8 @@ async def dialog_snapshot(
     lock: bool = False,
     own_messages: set[UUID] | None = None,
     own_receipts: set[str] | None = None,
-) -> str:
-    """Read one message ID, including a Business receipt awaiting projection."""
+) -> str | None:
+    """Read the latest remaining message ID, including unprojected Business receipts."""
     if (
         conversation.account_id not in scope.account_ids
         or conversation.project_id not in scope.project_ids
@@ -80,44 +81,61 @@ async def dialog_snapshot(
         Message.chat_id == conversation.chat_id,
         Message.id.not_in(own_messages or ()),
     )
-    projected = select(func.max(Message.telegram_message_id)).where(
+    projected = select(Message.telegram_message_id.label("message_id")).where(
         *message_filter, Message.telegram_message_id > 0,
-    ).scalar_subquery()
+    )
     alternatives = []
     for kind in ("business_message", "message"):
         event = TelegramReceipt.payload[kind]
-        raw_connection_id = event["business_connection_id"].as_string()
         raw_message_id = event["message_id"].as_string()
         alternatives.append((
             and_(
-                or_(
-                    raw_connection_id.in_(connections),
-                    raw_connection_id == conversation.business_connection_id,
-                ),
-                event["chat"]["id"].as_string() == conversation.chat_id,
+                _receipt_matches_dialog(event, connections=connections, conversation=conversation),
                 raw_message_id.op("~")(r"^[1-9][0-9]{0,17}$"),
             ),
             cast(raw_message_id, BigInteger),
         ))
-    accepted = select(func.max(case(*alternatives))).where(
+    accepted = select(case(*alternatives).label("message_id")).where(
         TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
         TelegramReceipt.id.not_in([UUID(identifier) for identifier in own_receipts or ()]),
-    ).scalar_subquery()
-    latest_id = await session.scalar(select(func.greatest(projected, accepted)))
+    )
+    deletion = TelegramReceipt.payload["deleted_business_messages"]
+    deleted_array = deletion["message_ids"]
+    deleted_values = func.jsonb_array_elements_text(case(
+        (func.jsonb_typeof(deleted_array) == "array", deleted_array),
+        else_=cast("[]", JSONB),
+    )).table_valued("value").render_derived().lateral()
+    deleted = select(deleted_values.c.value).select_from(TelegramReceipt).join(
+        deleted_values, true()
+    ).where(
+        TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
+        _receipt_matches_dialog(deletion, connections=connections, conversation=conversation),
+        deleted_values.c.value.is_not(None),
+    )
+    candidates = union_all(projected, accepted).subquery()
+    latest_id = await session.scalar(select(func.max(candidates.c.message_id)).where(
+        cast(candidates.c.message_id, Text).not_in(deleted),
+    ))
     if latest_id is not None:
         return str(latest_id)
     # Legacy imported messages can lack Telegram IDs. Their existing row ID
     # still identifies the last stored message without looking at its contents.
     legacy_id = await session.scalar(
         select(Message.id)
-        .where(*message_filter)
+        .where(*message_filter, Message.telegram_message_id.is_(None))
         .order_by(func.coalesce(Message.sent_at, Message.received_at, Message.created_at).desc(),
                   Message.id.desc())
         .limit(1)
     )
-    if legacy_id is None:
-        raise ReplySendError(code="context_unavailable", message="Last message ID unavailable")
-    return str(legacy_id)
+    return str(legacy_id) if legacy_id is not None else None
+
+
+def _receipt_matches_dialog(event: Any, *, connections: Any, conversation: Conversation) -> Any:
+    connection_id = event["business_connection_id"].as_string()
+    return and_(
+        or_(connection_id.in_(connections), connection_id == conversation.business_connection_id),
+        event["chat"]["id"].as_string() == conversation.chat_id,
+    )
 
 
 async def require_dialog_snapshot(
@@ -147,7 +165,7 @@ async def require_dialog_snapshot(
         raise ReplySendError(
             code="context_unavailable", message="authoritative_version_unavailable",
         ) from exc
-    if not snapshot_matches(expected, current):
+    if current is None or not snapshot_matches(expected, current):
         raise ReplySendError(
             code="context_changed",
             message="Отправка остановлена: диалог изменился. Прочитайте новые сообщения "
@@ -388,17 +406,9 @@ async def dialog_read_issue(
     )
     predicates = []
     for kind in DIALOG_EVENT_KINDS:
-        event = TelegramReceipt.payload[kind]
-        predicates.append(
-            and_(
-                or_(
-                    event["business_connection_id"].as_string().in_(connections),
-                    event["business_connection_id"].as_string()
-                    == conversation.business_connection_id,
-                ),
-                event["chat"]["id"].as_string() == conversation.chat_id,
-            )
-        )
+        predicates.append(_receipt_matches_dialog(
+            TelegramReceipt.payload[kind], connections=connections, conversation=conversation,
+        ))
     pending = (
         await session.scalars(
             select(TelegramReceipt.id)

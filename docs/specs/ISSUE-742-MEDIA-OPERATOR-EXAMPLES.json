@@ -41,7 +41,7 @@
           "execution_id": "gate-media-742-20261007T1041Z",
           "execution_expires_at": "2026-10-09T10:37:34Z",
           "follow_up": false,
-          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
+          "expected_context_snapshot": "101"
         }
       },
       "preview": {
@@ -108,7 +108,7 @@
           "execution_id": "gate-media-742-20261007T1041Z",
           "execution_expires_at": "2026-10-09T10:37:34Z",
           "follow_up": false,
-          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
+          "expected_context_snapshot": "101"
         }
       },
       "preview": {
@@ -172,7 +172,7 @@
               }
             ]
           },
-          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
+          "expected_context_snapshot": "101"
         }
       },
       "preview": {
@@ -285,7 +285,7 @@
               }
             ]
           },
-          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
+          "expected_context_snapshot": "101"
         }
       },
       "preview": {
@@ -398,7 +398,7 @@
               }
             ]
           },
-          "expected_context_snapshot": "dialog-v1:0000000000000000000000000000000000000000000000000000000000000000"
+          "expected_context_snapshot": "101"
         }
       },
       "preview": {

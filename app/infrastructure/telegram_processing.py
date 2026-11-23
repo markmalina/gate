@@ -187,6 +187,14 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                             except_sequence=own_sequence, event_ref=str(receipt_id),
                             incoming_message_id=message_id,
                         )
+                deletion = command.payload.get("deleted_business_messages")
+                if isinstance(deletion, dict) and isinstance(deletion.get("message_ids"), list):
+                    await stop_sequences(
+                        self._session, account_id=account_id, chat_id=dialog_key[1],
+                        event_ref=str(receipt_id), deleted_message_ids={
+                            str(item) for item in deletion["message_ids"] if type(item) is int
+                        },
+                    )
             await self._session.execute(
                 insert(TelegramOutboxEvent).values(
                     id=outbox_event_id,

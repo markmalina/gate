@@ -22,6 +22,7 @@ async def stop_sequences(
     session: AsyncSession, *, account_id: UUID | None = None, chat_id: str | None = None,
     except_sequence: str | None = None, reason: str = "context_changed",
     event_ref: str | None = None, incoming_message_id: int | None = None,
+    deleted_message_ids: set[str] | None = None,
 ) -> None:
     """Stop every matching series, without a discovery/page limit or attempt mutation."""
     predicates = [ReplyDraft.prompt_context.has_key(KEY)]  # noqa: E711
@@ -41,6 +42,10 @@ async def stop_sequences(
         if not isinstance(metadata, dict) or metadata.get("id") == except_sequence:
             continue
         previous_id = context.get(SNAPSHOT_KEY)
+        if deleted_message_ids is not None and (
+            not isinstance(previous_id, str) or previous_id not in deleted_message_ids
+        ):
+            continue
         if (
             incoming_message_id is not None
             and isinstance(previous_id, str)
