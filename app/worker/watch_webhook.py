@@ -110,9 +110,7 @@ async def publish_watch_pass(
             early_work = has_cards and (
                 await drain_saved(factory, client, scope, BATCH_SIZE, writer="app_webhook")
             )["considered"]
-            updated = updates_enabled and await publish_mark_update(
-                settings, factory, client, scope
-            )
+            updated = updates_enabled and await publish_mark_update(factory, client, scope)
         if not early_work and not updated:
             return False
         async with factory() as session:

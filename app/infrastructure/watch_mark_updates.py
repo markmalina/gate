@@ -12,7 +12,6 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.core.watch_browser import watch_browser, watch_path
 from app.infrastructure.watch_app_inbox import AppInboxClient
 from app.infrastructure.watch_mark_transcript import WatchMarkTranscript, watch_transcript_readback
 from app.infrastructure.watch_voice_github import REPOSITORY, WatchVoiceError, marker
@@ -100,20 +99,14 @@ _STATUS_TEXT = {
 }
 
 
-def mark_block(
-    settings: Settings, job: MarkUpdate, transcript: WatchMarkTranscript | None,
-) -> str:
+def mark_block(job: MarkUpdate, transcript: WatchMarkTranscript | None) -> str:
     state = job.phase
-    lines = [f"Статус: {_STATUS_TEXT[state]}"]
+    lines = [f"Статус: {_STATUS_TEXT[state]}", f"ID Gate: `{job.event_id}`."]
     if state == "transcribed" and job.ready_at is not None:
         ready_at = job.ready_at
         if ready_at.tzinfo is None:
             ready_at = ready_at.replace(tzinfo=UTC)
         lines.append(f"Текст сохранён в Gate: {ready_at.isoformat()}.")
-    if config := watch_browser(settings):
-        link = config.origin + watch_path(job.event_id)
-        link_line = f"ID Gate: `{job.event_id}`. [Открыть запись в Gate]({link})."
-        lines.append(link_line)
     if transcript is not None:
         lines.append(transcript.label)
         if len(transcript.parts) == 1:
@@ -151,9 +144,7 @@ def merged_issue_body(body: str, event_id: str, block: str, version: int) -> str
     before, separator, after = body.partition("\n" + EARLY_STATUS + "\n")
     if not separator or "\n" + EARLY_STATUS + "\n" in after:
         raise WatchVoiceError("watch_mark_block_mismatch")
-    for line in block.split("\n"):
-        if line.startswith("ID Gate: ") and after.startswith(line + "\n"):
-            after = after.removeprefix(line + "\n")
+    after = after.removeprefix(f"ID Gate: `{event_id}`.\n")
     return before + "\n" + block + "\n" + after
 
 
@@ -308,7 +299,6 @@ async def _prepare_transcript(
 
 
 async def publish_mark_update(
-    settings: Settings,
     factory: async_sessionmaker[AsyncSession],
     client: AppInboxClient,
     scope: dict[str, str],
@@ -337,7 +327,7 @@ async def publish_mark_update(
         if job.phase == "transcribed" and job.transcript is not None:
             transcript = WatchMarkTranscript.from_text(job.event_id, job.transcript)
             # Validate this issue before preparing any comments.
-            merged_issue_body(body, job.event_id, mark_block(settings, job, None), job.version)
+            merged_issue_body(body, job.event_id, mark_block(job, None), job.version)
             prepared = await _prepare_transcript(factory, client, job, transcript)
             if prepared is None:
                 return True
@@ -345,7 +335,7 @@ async def publish_mark_update(
         elif job.pending_part is not None:
             raise WatchVoiceError("watch_mark_pending_part_conflict")
         expected = merged_issue_body(
-            body, job.event_id, mark_block(settings, job, transcript), job.version,
+            body, job.event_id, mark_block(job, transcript), job.version,
         )
         if expected != body:
             await client.update_watch_issue(job.issue_number, expected)

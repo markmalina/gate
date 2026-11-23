@@ -22,6 +22,8 @@ async def test_same_card_converges_after_commit_lost_patch_and_restart():
     source = {"id": "id:synthetic", "rev": "abc", "server_modified": now.isoformat()}
     values = card_values(settings, source, now)
     event_id = values["id"]
+    event_id_line = f"ID Gate: `{event_id}`."
+    assert event_id_line in values["body"]
     issue_body = values["body"] + "\nТекст владельца."
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
@@ -75,7 +77,7 @@ async def test_same_card_converges_after_commit_lost_patch_and_restart():
             ))
         async with httpx.AsyncClient(transport=transport) as http:
             assert await publish_mark_update(
-                settings, factory, AppInboxClient(http, "fixture", app_slug="writer"), SCOPE
+                factory, AppInboxClient(http, "fixture", app_slug="writer"), SCOPE
             )
         async with factory.begin() as session:
             card = await session.get(WatchEarlyCard, event_id)
@@ -86,9 +88,9 @@ async def test_same_card_converges_after_commit_lost_patch_and_restart():
 
         async with httpx.AsyncClient(transport=transport) as http:
             client = AppInboxClient(http, "fixture", app_slug="writer")
-            assert await publish_mark_update(settings, factory, client, SCOPE)
+            assert await publish_mark_update(factory, client, SCOPE)
             assert patch_versions == ["<!-- version=2 state=starting -->"]
-            assert not await publish_mark_update(settings, factory, client, SCOPE)
+            assert not await publish_mark_update(factory, client, SCOPE)
             async with factory.begin() as session:
                 await session.execute(update(WatchVoiceNote).values(
                     recognition_started_at=now, mark_publish_version=next_mark_publish_version(),
@@ -97,19 +99,20 @@ async def test_same_card_converges_after_commit_lost_patch_and_restart():
                     transcription_state="transcribed", transcript="synthetic",
                     text_saved_at=now, mark_publish_version=next_mark_publish_version(),
                 ))
-            assert await publish_mark_update(settings, factory, client, SCOPE)
+            assert await publish_mark_update(factory, client, SCOPE)
             assert patch_versions == [
                 "<!-- version=2 state=starting -->", "<!-- version=4 state=transcribed -->",
             ]
             assert "расшифровка готова" in issue_body and now.isoformat() in issue_body
             assert issue_body.endswith("Текст владельца.")
+            assert issue_body.count(event_id_line) == 1
             async with factory.begin() as session:
                 await session.execute(update(WatchVoiceNote).values(
                     transcription_state="unknown",
                     issue_url=ISSUE_URL.replace("42", "43"),
                     mark_publish_version=next_mark_publish_version(),
                 ))
-            assert await publish_mark_update(settings, factory, client, SCOPE)
+            assert await publish_mark_update(factory, client, SCOPE)
             async with factory() as session:
                 card = await session.get(WatchEarlyCard, event_id)
                 assert card.mark_published_version == 4
@@ -188,7 +191,7 @@ async def test_long_text_reconciles_uncertain_comment_without_duplicate(apply_lo
         transport = httpx.MockTransport(respond)
         async with httpx.AsyncClient(transport=transport) as http:
             assert await publish_mark_update(
-                settings, factory, AppInboxClient(http, "fixture", app_slug="writer"), SCOPE
+                factory, AppInboxClient(http, "fixture", app_slug="writer"), SCOPE
             )
         async with factory.begin() as session:
             card = await session.get(WatchEarlyCard, event_id)
@@ -197,9 +200,9 @@ async def test_long_text_reconciles_uncertain_comment_without_duplicate(apply_lo
         async with httpx.AsyncClient(transport=transport) as http:
             client = AppInboxClient(http, "fixture", app_slug="writer")
             for _ in range(12):
-                if not await publish_mark_update(settings, factory, client, SCOPE):
+                if not await publish_mark_update(factory, client, SCOPE):
                     break
-            assert not await publish_mark_update(settings, factory, client, SCOPE)
+            assert not await publish_mark_update(factory, client, SCOPE)
         async with factory() as session:
             card = await session.get(WatchEarlyCard, event_id)
             if apply_lost_post:
