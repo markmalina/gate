@@ -34,6 +34,7 @@ async def archive_watch_pass(
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
     transcription_wake: asyncio.Event | None = None,
+    mark_wake: asyncio.Event | None = None,
 ) -> bool:
     scope = watch_scope(settings)
     workspace, account = scope["workspace_key"], scope["account_id"]
@@ -78,6 +79,8 @@ async def archive_watch_pass(
                 changes = {"archive_retry_at": datetime.now(UTC) + RETRY_DELAY}
                 logger.warning("Watch archive deferred")
             else:
+                if mark_wake is not None:
+                    mark_wake.set()
                 if transcription_wake is not None:
                     transcription_wake.set()
                 changes = {"archive_input": None, "archive_retry_at": None}
@@ -93,6 +96,7 @@ async def run_watch_archive_loop(
     factory: async_sessionmaker[AsyncSession],
     wake: asyncio.Event,
     transcription_wake: asyncio.Event | None = None,
+    mark_wake: asyncio.Event | None = None,
 ) -> None:
     if (
         not settings.gate_watch_webhook_enabled
@@ -106,7 +110,7 @@ async def run_watch_archive_loop(
         while True:
             wake.clear()
             try:
-                if await archive_watch_pass(settings, factory, http, transcription_wake):
+                if await archive_watch_pass(settings, factory, http, transcription_wake, mark_wake):
                     continue
                 async with factory() as session:
                     retry_at = await session.scalar(

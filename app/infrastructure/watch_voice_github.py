@@ -28,16 +28,18 @@ class GithubReceipt:
     received_at: datetime
 
 
-def transcript_parts(text: str) -> list[str]:
+def transcript_parts(
+    text: str, *, byte_limit: int = MAX_BODY_BYTES, line_prefix_bytes: int = 0,
+) -> list[str]:
     """UTF-8 bounded parts preserve every source character."""
     chunks: list[str] = []
     part: list[str] = []
-    size = 0
+    size = line_prefix_bytes
     for char in text:
-        length = len(char.encode("utf-8"))
-        if size + length > MAX_BODY_BYTES:
+        length = len(char.encode("utf-8")) + (line_prefix_bytes if char == "\n" else 0)
+        if size + length > byte_limit:
             chunks.append("".join(part))
-            part, size = [], 0
+            part, size = [], line_prefix_bytes
         part.append(char)
         size += length
     if part or not chunks:

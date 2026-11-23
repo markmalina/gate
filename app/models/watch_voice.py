@@ -13,12 +13,15 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
+    case,
     false,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -80,6 +83,14 @@ class WatchEarlyCard(Base):
     archive_input: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     archive_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    mark_published_version: Mapped[int] = mapped_column(Integer, server_default="0")
+    mark_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mark_update_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mark_update_error: Mapped[str | None] = mapped_column(String(128))
+    mark_update_blocked: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    mark_pending_part: Mapped[int | None] = mapped_column(Integer)
+    mark_pending_digest: Mapped[str | None] = mapped_column(String(64))
+
 
 class WatchEarlyRejection(Base):
     __tablename__ = "watch_early_rejections"
@@ -109,6 +120,10 @@ class WatchScheduleControl(Base):
 class WatchVoiceNote(AudioProcessingMilestones, Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
+        Index(
+            "ix_watch_note_mark_queue", "workspace_key", "account_id", "id",
+            postgresql_where=text("mark_publish_version > 0 AND webhook_archived"),
+        ),
         UniqueConstraint(
             "workspace_key",
             "account_id",
@@ -155,6 +170,14 @@ class WatchVoiceNote(AudioProcessingMilestones, Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+
+    mark_publish_version: Mapped[int] = mapped_column(Integer, server_default="0")
+
+
+def next_mark_publish_version() -> Any:
+    """Advance only notes already enrolled in the Watch-to-Mark update queue."""
+    version = WatchVoiceNote.mark_publish_version
+    return case((version > 0, version + 1), else_=0)
 
 
 class WatchVoiceDrainRun(Base):

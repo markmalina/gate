@@ -40,7 +40,7 @@ from app.infrastructure.watch_voice_github import (
     marker,
     transcript_parts,
 )
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
+from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote, next_mark_publish_version
 from app.worker.dropbox_calls import (
     _audio_media_type,
     _download_revision,
@@ -204,6 +204,9 @@ async def store_entry(
         transcription_queued_at=now,
         transcription_state="received",
         webhook_archived=webhook_archived,
+        mark_publish_version=int(
+            webhook_archived and getattr(settings, "gate_watch_mark_updates_enabled", False)
+        ),
         delivery_state="pending",
         next_part=0,
     )
@@ -250,6 +253,7 @@ async def transcribe_note(
     *,
     ignore_legacy_selector: bool = False,
     canary_max_seconds: int | None = None,
+    mark_wake: asyncio.Event | None = None,
 ) -> None:
     if canary_max_seconds is not None and not ignore_legacy_selector:
         raise ValueError("watch_model_canary_requires_webhook")
@@ -261,11 +265,17 @@ async def transcribe_note(
                 *note_scope(settings, ignore_legacy_selector=ignore_legacy_selector),
                 WatchVoiceNote.transcription_state == "received",
             )
-            .values(transcription_state="processing", attempted_at=datetime.now(UTC))
+            .values(
+                transcription_state="processing",
+                attempted_at=datetime.now(UTC),
+                mark_publish_version=next_mark_publish_version(),
+            )
         )
         await session.commit()
         if not claimed.rowcount:  # type: ignore[attr-defined]
             return
+        if mark_wake is not None:
+            mark_wake.set()
         note = await session.get(WatchVoiceNote, note_id)
         assert note is not None
     if ignore_legacy_selector and note.attempted_at is not None:
@@ -278,7 +288,7 @@ async def transcribe_note(
             round((started - received).total_seconds() * 1000),
         )
     await transcribe_claimed_note(
-        settings, factory, http, note, canary_max_seconds=canary_max_seconds,
+        settings, factory, http, note, canary_max_seconds=canary_max_seconds, mark_wake=mark_wake,
     )
 
 
@@ -299,6 +309,7 @@ async def transcribe_claimed_note(
     recovery: bool = False,
     post_payment: bool = False,
     canary_max_seconds: int | None = None,
+    mark_wake: asyncio.Event | None = None,
 ) -> None:
     """Only callers with a committed normal/recovery claim may enter this boundary."""
     assert note.duration_seconds is not None
@@ -325,11 +336,16 @@ async def transcribe_claimed_note(
             started = await session.scalar(
                 update(WatchVoiceNote)
                 .where(*claimed_note, WatchVoiceNote.recognition_started_at.is_(None))
-                .values(recognition_started_at=at)
+                .values(
+                    recognition_started_at=at,
+                    mark_publish_version=next_mark_publish_version(),
+                )
                 .returning(WatchVoiceNote.id)
             )
             if started is None:
                 raise WatchVoiceError("watch_voice_recognition_claim_lost")
+        if mark_wake is not None:
+            mark_wake.set()
 
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
@@ -387,9 +403,12 @@ async def transcribe_claimed_note(
                     last_error=reason,
                     transcription_stopped_at=datetime.now(UTC),
                     transcription_stop_reason=reason,
+                    mark_publish_version=next_mark_publish_version(),
                 )
             )
             await session.commit()
+        if mark_wake is not None:
+            mark_wake.set()
         if isinstance(exc, asyncio.CancelledError):
             raise
         return
@@ -408,9 +427,12 @@ async def transcribe_claimed_note(
                 text_saved_at=finished_at if has_text else None,
                 transcription_stopped_at=None if has_text else finished_at,
                 transcription_stop_reason=None if has_text else result.reason_code,
+                mark_publish_version=next_mark_publish_version(),
             )
         )
         await session.commit()
+    if mark_wake is not None:
+        mark_wake.set()
 
 
 async def publish_note(
