@@ -1,0 +1,26 @@
+name: Fixed Mark caller pause
+description: Owner-gated Mark-only disable and complete queue observation; never enable or cancel
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version: 24.19.0
+        check-latest: false
+        package-manager-cache: false
+    - name: Pause only the fixed Mark caller
+      id: pause
+      continue-on-error: true
+      shell: bash
+      env:
+        MARK_ACTIONS_TOKEN: ${{ github.token }}
+        PAUSE_EXECUTOR_REPOSITORY: ${{ github.action_repository }}
+        PAUSE_EXECUTOR_SHA: ${{ github.action_ref }}
+      run: node "${{ github.action_path }}/pause.mjs" run
+    - name: Verify original receipt without network access
+      if: ${{ always() }}
+      shell: bash
+      env:
+        PAUSE_EXECUTOR_REPOSITORY: ${{ github.action_repository }}
+        PAUSE_EXECUTOR_SHA: ${{ github.action_ref }}
+      run: node "${{ github.action_path }}/pause.mjs" verify
