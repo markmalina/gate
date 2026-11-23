@@ -1,0 +1,33 @@
+name: Gate745 Caller Source
+on:
+  push:
+    branches: [agent/745-fixture-caller-source]
+  pull_request:
+    paths:
+      - .github/workflows/gate745-native-fixture.yml
+      - .github/workflows/gate745-caller-source-ci.yml
+      - .agent-ops/input/fixture-proposal.json
+      - scripts/gate745/fixture-caller.mjs
+      - scripts/gate745/fixture-caller.test.mjs
+      - docs/operations/GATE745-FIXTURE-CALLER.md
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert literal source
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - run: node --test scripts/gate745/fixture-caller.test.mjs

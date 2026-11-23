@@ -1,0 +1,54 @@
+name: Gate745 Native Fixture Caller
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+concurrency:
+  group: gate745-isolated-fixture-caller-source
+  cancel-in-progress: false
+jobs:
+  source-preflight:
+    if: >-
+      ${{ github.repository == 'AlphaCenter/gate' && github.repository_id == '1293746267' &&
+          github.repository_owner_id == '310893851' &&
+          github.run_attempt == 1 && github.ref == 'refs/heads/main' &&
+          github.event.issue.number == 745 && !github.event.issue.pull_request &&
+          github.actor == 'markmalina' && github.actor_id == '23397294' &&
+          github.triggering_actor == 'markmalina' && github.event.sender.id == 23397294 &&
+          github.event.sender.login == 'markmalina' && github.event.comment.user.id == 23397294 &&
+          github.event.comment.user.login == 'markmalina' &&
+          github.event.comment.created_at == github.event.comment.updated_at &&
+          github.event.comment.body == '/ops-gate745 fixture run=complete' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert original literal P source
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Deny UNBOUND before event or effect admission
+        run: node scripts/gate745/fixture-caller.mjs preflight
+  fixture:
+    needs: source-preflight
+    # The compiled preflight currently always denies. No output or caller
+    # override can enable this reusable job; a future reviewed source is needed.
+    if: ${{ false }}
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      id-token: write
+    uses: AlphaCenter/gate/.github/workflows/gate745-fixture-controller.yml@7ec459467b606ac67ec2110289e9018fa322b8fa
