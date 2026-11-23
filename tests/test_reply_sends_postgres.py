@@ -1139,12 +1139,12 @@ async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
             assert len(completed) == 1
             blocked_error = next(iter(completed)).exception()
             assert isinstance(blocked_error, ReplySendError)
-            assert blocked_error.code == "context_changed"
+            assert blocked_error.code == "task_send_blocked"
         finally:
             telegram.release_probes.set()
             telegram.release_send.set()
+            outcomes = await asyncio.gather(*sends, return_exceptions=True)
 
-        outcomes = await asyncio.gather(*sends, return_exceptions=True)
         successes = [outcome for outcome in outcomes if isinstance(outcome, ReplySendResult)]
         failures = [outcome for outcome in outcomes if isinstance(outcome, ReplySendError)]
 
@@ -1152,7 +1152,7 @@ async def test_two_drafts_for_same_task_reserve_and_deliver_only_once() -> None:
         assert successes[0].sent is True
         assert successes[0].idempotent_replay is False
         assert len(failures) == 1
-        assert failures[0].code == "context_changed"
+        assert failures[0].code == "task_send_blocked"
         assert telegram.probe_calls == 2
         assert telegram.send_calls == 1
 
@@ -1214,7 +1214,7 @@ async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() ->
             assert len(completed) == 1
             blocked_error = next(iter(completed)).exception()
             assert isinstance(blocked_error, ReplySendError)
-            assert blocked_error.code == "context_changed"
+            assert blocked_error.code == "task_send_blocked"
         finally:
             telegram.release_probes.set()
             telegram.release_send.set()
@@ -1236,7 +1236,7 @@ async def test_two_tasks_in_same_conversation_reserve_and_deliver_only_once() ->
         assert successes[0].sent is True
         assert successes[0].idempotent_replay is False
         assert len(failures) == 1
-        assert failures[0].code == "context_changed"
+        assert failures[0].code == "task_send_blocked"
         assert telegram.probe_calls == 2
         assert telegram.send_calls == 1
 
