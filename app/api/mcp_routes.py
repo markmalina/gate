@@ -22,6 +22,9 @@ from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventor
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
 from app.api.deps import get_db_session
+from app.api.audio_processing_history import (
+    call_processing_history, telegram_processing_history, watch_processing_history,
+)
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
 from app.api.mcp_media import PREPARE_INPUT_SCHEMA, PREVIEW_INPUT_SCHEMA, media_tool_result
 from app.api.health_routes import _get_worker_health_registry
@@ -52,6 +55,10 @@ from app.application.mcp_status import (
     serialize_connection_health as _serialize_connection_health,
 )
 from app.application.telegram_rich import rich_content_schema
+from app.application.telegram_voice_archive import (
+    PersistTelegramVoiceTranscriptCommand, TelegramVoiceRecognition, TelegramVoiceTranscriptStatus,
+)
+from app.infrastructure.telegram_voice_archive import SessionFactoryTelegramVoiceArchiveStore
 from app.application.reply_drafts import (
     ReplyDraftError,
     SaveReplyDraftCommand,
@@ -1062,6 +1069,7 @@ async def _watch_voice_tool_result(
         "limit": 1,
         "next_cursor": None,
         "has_more": False,
+        "processing_history": watch_processing_history(row),
     }
     if prefix == "watch-voice-file":
         if hashlib.sha256(row.data).hexdigest() != row.sha256 or len(row.data) != row.size_bytes:
@@ -1107,6 +1115,7 @@ async def _watch_voice_tool_result(
         else None,
         "last_error": row.last_error,
         "model": row.model,
+        "processing_history": context["processing_history"],
     }
     if row.model == "gpt-4o-transcribe":
         receipt["recovery"] = await protected_recovery_receipt(session, row)
@@ -1188,6 +1197,7 @@ async def _latest_phone_call_tool_result(
         "limit": 1,
         "next_cursor": None,
         "has_more": False,
+        "processing_history": call_processing_history(recording),
     }
     effective_media_type = _effective_phone_call_media_type(
         recording.media_type,
@@ -1205,6 +1215,7 @@ async def _latest_phone_call_tool_result(
                     or "phone_call_transcription_pending"
                 ),
                 message="The latest mobile call has no completed transcript",
+                processing_history=context["processing_history"],
             )
         return _jsonrpc_result(
             request_id=request_id,
@@ -1353,6 +1364,7 @@ async def _latest_voice_archive_tool_result(
         "limit": 1,
         "next_cursor": None,
         "has_more": False,
+        "processing_history": telegram_processing_history(archive),
     }
     if transcript_payload:
         if settings is None:
@@ -1424,6 +1436,14 @@ async def _voice_transcript_tool_result(
                 or "telegram_voice_transcription_blocked"
             ),
             message="Stored OpenAI voice transcription has no text",
+            processing_history=context["processing_history"],
+        )
+    if archive.recognition_started_at is not None:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_recognition_already_claimed",
+            message="This archived voice already has a recognition claim",
+            processing_history=context["processing_history"],
         )
 
     api_key = settings.openai_api_key.get_secret_value()
@@ -1432,16 +1452,27 @@ async def _voice_transcript_tool_result(
             request_id=request_id,
             code="telegram_voice_transcription_unavailable",
             message="OpenAI voice transcription is not ready",
+            processing_history=context["processing_history"],
         )
     if session.bind is None:
         return _tool_error_result(
             request_id=request_id,
             code="telegram_voice_transcription_unavailable",
             message="Voice transcription database binding is unavailable",
+            processing_history=context["processing_history"],
+        )
+    if len(archive.data) != archive.size_bytes or hashlib.sha256(archive.data).hexdigest() != archive.sha256:
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_archive_integrity_failed",
+            message="Stored voice original integrity failed",
+            processing_history=context["processing_history"],
         )
 
     occurred_at = datetime.now(UTC)
     sessions = async_sessionmaker(session.bind, expire_on_commit=False)
+    store = SessionFactoryTelegramVoiceArchiveStore(sessions)
+    recognition = TelegramVoiceRecognition(str(archive.id), store)
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         service = TelegramVoiceTranscriptionService(
             downloader=_ArchivedVoiceDownloader(
@@ -1484,24 +1515,42 @@ async def _voice_transcript_tool_result(
                     occurred_at=occurred_at,
                     language="ru",
                     enabled=True,
+                    on_recognition_start=recognition.start,
                 )
             )
         except Exception:
+            await recognition.interrupt(datetime.now(UTC), "telegram_voice_transcription_failed")
+            await session.refresh(archive)
             return _tool_error_result(
                 request_id=request_id,
                 code="telegram_voice_transcription_failed",
                 message="OpenAI voice transcription failed closed",
+                processing_history=telegram_processing_history(archive),
             )
 
-    archive.transcription_status = transcription.outcome.value
-    archive.transcript_text = transcription.alpha_input_text
-    archive.transcript_language = "ru"
-    archive.transcription_model = (
-        settings.gate_telegram_voice_transcription_model
-    )
-    archive.transcription_reason_code = transcription.reason_code
-    archive.transcribed_at = occurred_at
-    await session.commit()
+    try:
+        await store.persist_transcript(
+            PersistTelegramVoiceTranscriptCommand(
+                archive_id=str(archive.id),
+                status=TelegramVoiceTranscriptStatus(transcription.outcome.value),
+                transcribed_at=datetime.now(UTC),
+                text=transcription.alpha_input_text,
+                model=settings.gate_telegram_voice_transcription_model,
+                reason_code=transcription.reason_code,
+                recognition_started_at=recognition.started_at,
+            )
+        )
+    except Exception:
+        await recognition.interrupt(datetime.now(UTC), "telegram_voice_transcript_persist_failed")
+        await session.refresh(archive)
+        return _tool_error_result(
+            request_id=request_id,
+            code="telegram_voice_transcript_persist_failed",
+            message="Voice transcription result could not be stored",
+            processing_history=telegram_processing_history(archive),
+        )
+    await session.refresh(archive)
+    context["processing_history"] = telegram_processing_history(archive)
 
     if (
         transcription.outcome is not TelegramVoiceOutcome.TRANSCRIBED
@@ -1511,6 +1560,7 @@ async def _voice_transcript_tool_result(
             request_id=request_id,
             code=transcription.reason_code,
             message="OpenAI voice transcription did not return text",
+            processing_history=context["processing_history"],
         )
     return _jsonrpc_result(
         request_id=request_id,
@@ -4185,13 +4235,22 @@ async def _dialog_context_error_result(
     )
 
 
-def _tool_error_result(*, request_id: Any, code: str, message: str,
-                       details: JsonObject | None = None) -> JsonObject:
+def _tool_error_result(
+    *,
+    request_id: Any,
+    code: str,
+    message: str,
+    details: JsonObject | None = None,
+    processing_history: JsonObject | None = None,
+) -> JsonObject:
+    context: JsonObject = {"error": code, **(details or {})}
+    if processing_history is not None:
+        context["processing_history"] = processing_history
     return _jsonrpc_result(
         request_id=request_id,
         result={
             "content": [{"type": "text", "text": message}],
-            "structuredContent": {"error": code, **(details or {})},
+            "structuredContent": context,
             "isError": True,
         },
     )

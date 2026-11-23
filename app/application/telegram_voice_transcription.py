@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -143,6 +144,10 @@ class TranscribeTelegramVoiceCommand:
     language: str | None = None
     enabled: bool = False
     budget_scope_kind: str = "telegram_connector"
+    archived_audio: DownloadedVoice | None = field(default=None, repr=False)
+    on_recognition_start: Callable[[datetime], Awaitable[None]] | None = field(
+        default=None, repr=False,
+    )
 
     def __post_init__(self) -> None:
         _token(self.workspace_key, "telegram_voice_workspace_invalid", 128)
@@ -278,7 +283,9 @@ class TelegramVoiceTranscriptionService:
             return _rejected("telegram_voice_download_limit_exceeded")
 
         try:
-            downloaded = await self._downloader.download(command.voice)
+            downloaded = command.archived_audio
+            if downloaded is None:
+                downloaded = await self._downloader.download(command.voice)
             if len(downloaded.data) > self._download_limit_bytes:
                 return _rejected("telegram_voice_download_limit_exceeded")
             normalized = await self._normalizer.normalize(
@@ -311,6 +318,14 @@ class TelegramVoiceTranscriptionService:
         reservation = budget.reservation
         if reservation is None:
             raise TelegramVoiceError("telegram_voice_budget_reservation_missing")
+
+        if command.on_recognition_start is not None:
+            try:
+                await command.on_recognition_start(datetime.now(UTC))
+            except Exception:
+                # The provider has not been contacted when the local checkpoint fails.
+                await self._budget.release(reservation, occurred_at=command.occurred_at)
+                raise
 
         try:
             transcript = await self._speech_to_text.transcribe(

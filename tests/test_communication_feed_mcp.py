@@ -146,6 +146,7 @@ async def test_feed_orders_sources_and_prefers_voice_over_duplicate_message() ->
         transcript_text="Предложил согласовать обмен валюты и перевозку вещей",
         transcription_status="transcribed",
         received_at=datetime(2026, 7, 25, 6, 0, tzinfo=UTC),
+        transcribed_at=datetime(2026, 7, 25, 6, 0, tzinfo=UTC),
     )
     call = SimpleNamespace(
         id=UUID("88888888-8888-8888-8888-888888888888"),
@@ -153,6 +154,9 @@ async def test_feed_orders_sources_and_prefers_voice_over_duplicate_message() ->
         transcript_text="Обсудили план встречи и договорились созвониться позже",
         transcription_status="transcribed",
         received_at=datetime(2026, 7, 25, 7, 0, tzinfo=UTC),
+        transcription_queued_at=datetime(2026, 7, 25, 7, 0, tzinfo=UTC),
+        recognition_started_at=datetime(2026, 7, 25, 7, 1, tzinfo=UTC),
+        text_saved_at=datetime(2026, 7, 25, 7, 2, 10, tzinfo=UTC),
     )
     session = FakeSession(
         [
@@ -188,6 +192,11 @@ async def test_feed_orders_sources_and_prefers_voice_over_duplicate_message() ->
     assert payload["items"][1]["actor"] == "Александр Демидчик"
     assert payload["items"][1]["source"] == "telegram_ru"
     assert payload["items"][2]["direction"] == "mixed"
+    assert "processing_history" not in payload["items"][0]
+    assert payload["items"][1]["processing_history"]["text_saved_at"] is None
+    assert payload["items"][1]["processing_history"]["received_at"] == "2026-07-25T06:00:00+00:00"
+    assert payload["items"][2]["processing_history"]["queue_wait_seconds"] == 60
+    assert payload["items"][2]["processing_history"]["recognition_seconds"] == 70
     assert payload["count"] == 3
     assert payload["present_source_verbatim_by_default"] is False
     assert len(session.statements) == 3

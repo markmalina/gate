@@ -69,6 +69,7 @@ class TelegramVoiceArchiveResult:
     transcription_status: TelegramVoiceTranscriptStatus | None = None
     transcript_text: str | None = field(default=None, repr=False)
     transcription_reason_code: str | None = None
+    archived_audio: DownloadedVoice | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,7 @@ class PersistTelegramVoiceTranscriptCommand:
     language: str = "ru"
     model: str = "gpt-4o-mini-transcribe"
     reason_code: str = "telegram_voice_transcribed"
+    recognition_started_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.archive_id or len(self.archive_id) > 128:
@@ -116,6 +118,10 @@ class TelegramVoiceTranscriptPersistenceResult:
 
 
 class TelegramVoiceArchiveStore(Protocol):
+    async def get_existing(
+        self, command: ArchiveTelegramVoiceCommand,
+    ) -> TelegramVoiceArchiveResult | None: ...
+
     async def persist(
         self,
         record: TelegramVoiceArchiveRecord,
@@ -125,6 +131,12 @@ class TelegramVoiceArchiveStore(Protocol):
         self,
         command: PersistTelegramVoiceTranscriptCommand,
     ) -> TelegramVoiceTranscriptPersistenceResult: ...
+
+    async def mark_recognition_started(self, archive_id: str, at: datetime) -> None: ...
+
+    async def mark_interrupted(
+        self, archive_id: str, at: datetime, reason: str, started_at: datetime | None,
+    ) -> None: ...
 
 
 class TelegramVoiceArchiver(Protocol):
@@ -137,6 +149,28 @@ class TelegramVoiceArchiver(Protocol):
         self,
         command: PersistTelegramVoiceTranscriptCommand,
     ) -> TelegramVoiceTranscriptPersistenceResult: ...
+
+    async def mark_recognition_started(self, archive_id: str, at: datetime) -> None: ...
+
+    async def mark_interrupted(
+        self, archive_id: str, at: datetime, reason: str, started_at: datetime | None,
+    ) -> None: ...
+
+
+@dataclass(slots=True)
+class TelegramVoiceRecognition:
+    """Keep the worker's committed recognition claim attached to its result."""
+
+    archive_id: str
+    archive: TelegramVoiceArchiver | TelegramVoiceArchiveStore
+    started_at: datetime | None = None
+
+    async def start(self, at: datetime) -> None:
+        await self.archive.mark_recognition_started(self.archive_id, at)
+        self.started_at = at
+
+    async def interrupt(self, at: datetime, reason: str) -> None:
+        await self.archive.mark_interrupted(self.archive_id, at, reason, self.started_at)
 
 
 class ArchiveTelegramVoiceService:
@@ -177,6 +211,10 @@ class ArchiveTelegramVoiceService:
         }:
             raise TelegramVoiceError("telegram_voice_archive_direction_invalid")
 
+        existing = await self._store.get_existing(command)
+        if existing is not None:
+            return existing
+
         downloaded = await self._downloader.download(envelope.voice)
         _validate_download(downloaded)
         media_type = (
@@ -208,6 +246,14 @@ class ArchiveTelegramVoiceService:
         command: PersistTelegramVoiceTranscriptCommand,
     ) -> TelegramVoiceTranscriptPersistenceResult:
         return await self._store.persist_transcript(command)
+
+    async def mark_recognition_started(self, archive_id: str, at: datetime) -> None:
+        await self._store.mark_recognition_started(archive_id, at)
+
+    async def mark_interrupted(
+        self, archive_id: str, at: datetime, reason: str, started_at: datetime | None,
+    ) -> None:
+        await self._store.mark_interrupted(archive_id, at, reason, started_at)
 
 
 def _validate_download(downloaded: DownloadedVoice) -> None:

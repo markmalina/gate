@@ -57,6 +57,7 @@ async def claim_owner_voice_recovery(
             raise ValueError("owner_voice_recovery_archive_invalid")
         archive.transcription_recovery_generation = None
         archive.transcription_recovery_authorized_at = datetime.now(UTC)
+        archive.reset_processing_attempt(queued_at=None)
         await session.commit()
         await session.refresh(archive)
         return archive
@@ -111,6 +112,13 @@ async def reconcile_exact_call_copies(
                     WHEN source.transcription_reason_code = 'telegram_voice_no_speech'
                     THEN 'telegram_voice_no_speech' ELSE 'audio_identical_source_reused' END,
                 transcribed_at = source.transcribed_at,
+                text_saved_at = CASE WHEN source.transcript_text IS NOT NULL
+                    THEN clock_timestamp() ELSE NULL END,
+                recognition_started_at = NULL,
+                transcription_stopped_at = CASE WHEN source.transcript_text IS NULL
+                    THEN clock_timestamp() ELSE NULL END,
+                transcription_stop_reason = CASE WHEN source.transcript_text IS NULL
+                    THEN 'telegram_voice_no_speech' ELSE NULL END,
                 summary_status = source.summary_status, summary_text = source.summary_text,
                 summary_model = source.summary_model,
                 summary_reason_code = source.summary_reason_code,

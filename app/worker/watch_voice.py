@@ -201,6 +201,7 @@ async def store_entry(
         recorded_at=None,
         dropbox_modified_at=modified,
         received_at=now,
+        transcription_queued_at=now,
         transcription_state="received",
         webhook_archived=webhook_archived,
         delivery_state="pending",
@@ -209,6 +210,8 @@ async def store_entry(
     if duration is None or duration > MAX_DURATION:
         row.transcription_state = "rejected"
         row.last_error = "watch_voice_media_unreadable_or_duration_exceeded"
+        row.transcription_queued_at = None
+        row.record_processing_result(now, reason=row.last_error)
     async with factory() as session:
         session.add(row)
         try:
@@ -311,6 +314,23 @@ async def transcribe_claimed_note(
     received = note.received_at
     if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
         received = received.replace(tzinfo=UTC)
+    claimed_note = (
+        WatchVoiceNote.id == note.id,
+        WatchVoiceNote.transcription_state == "processing",
+        WatchVoiceNote.attempted_at == note.attempted_at,
+    )
+
+    async def mark_recognition_started(at: datetime) -> None:
+        async with factory.begin() as session:
+            started = await session.scalar(
+                update(WatchVoiceNote)
+                .where(*claimed_note, WatchVoiceNote.recognition_started_at.is_(None))
+                .values(recognition_started_at=at)
+                .returning(WatchVoiceNote.id)
+            )
+            if started is None:
+                raise WatchVoiceError("watch_voice_recognition_claim_lost")
+
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
         normalizer=RecoveryVoiceNormalizer() if recovery else TelegramVoiceNormalizer(),
@@ -349,32 +369,45 @@ async def transcribe_claimed_note(
                 occurred_at=received,
                 language="ru",
                 enabled=True,
+                on_recognition_start=mark_recognition_started,
             )
         )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
+    except (asyncio.CancelledError, Exception) as exc:
         # A provider might have accepted work. Never automatically call it a second time.
+        reason = (
+            "watch_voice_recognition_interrupted" if isinstance(exc, asyncio.CancelledError)
+            else "watch_voice_transcription_unknown"
+        )
         async with factory() as session:
             await session.execute(
                 update(WatchVoiceNote)
-                .where(WatchVoiceNote.id == note.id)
+                .where(*claimed_note)
                 .values(
-                    transcription_state="unknown", last_error="watch_voice_transcription_unknown"
+                    transcription_state="unknown",
+                    last_error=reason,
+                    transcription_stopped_at=datetime.now(UTC),
+                    transcription_stop_reason=reason,
                 )
             )
             await session.commit()
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         return
+    finished_at = datetime.now(UTC)
+    has_text = result.outcome == TelegramVoiceOutcome.TRANSCRIBED
     async with factory() as session:
         await session.execute(
             update(WatchVoiceNote)
-            .where(WatchVoiceNote.id == note.id)
+            .where(*claimed_note)
             .values(
                 transcription_state=result.outcome.value,
                 transcript=result.alpha_input_text,
                 model=model,
-                transcribed_at=datetime.now(UTC),
+                transcribed_at=finished_at,
                 last_error=result.reason_code,
+                text_saved_at=finished_at if has_text else None,
+                transcription_stopped_at=None if has_text else finished_at,
+                transcription_stop_reason=None if has_text else result.reason_code,
             )
         )
         await session.commit()
@@ -565,7 +598,12 @@ async def process_watch_voice(
                     WatchVoiceNote.attempted_at < stale,
                     WatchVoiceNote.transcription_state == "processing",
                 )
-                .values(transcription_state="unknown", last_error="watch_voice_stale_transcription")
+                .values(
+                    transcription_state="unknown",
+                    last_error="watch_voice_stale_transcription",
+                    transcription_stopped_at=datetime.now(UTC),
+                    transcription_stop_reason="watch_voice_stale_transcription",
+                )
             )
             await session.execute(
                 update(WatchVoiceNote)

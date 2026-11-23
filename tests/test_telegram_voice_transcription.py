@@ -1,5 +1,6 @@
 """Voice bytes stay in Gate while only normalized text may reach Alpha."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -238,6 +239,38 @@ def service(
         budget,
         speech,
     )
+
+
+@pytest.mark.anyio
+async def test_saved_audio_and_committed_recognition_start_precede_provider() -> None:
+    worker, downloader, normalizer, budget, speech = service()
+    starts: list[datetime] = []
+
+    async def record_start(at: datetime) -> None:
+        assert len(budget.calls) == 1 and speech.calls == []
+        starts.append(at)
+
+    audio = DownloadedVoice(b"saved-original", "voice.ogg", "audio/ogg")
+    result = await worker.transcribe(
+        replace(command(), archived_audio=audio, on_recognition_start=record_start),
+    )
+    assert result.outcome == TelegramVoiceOutcome.TRANSCRIBED
+    assert len(starts) == len(speech.calls) == 1
+    assert normalizer.calls[0].data == audio.data
+    assert downloader.calls == []
+
+
+@pytest.mark.anyio
+async def test_a_failed_recognition_checkpoint_prevents_provider_io() -> None:
+    worker, _, _, budget, speech = service()
+
+    async def lose_claim(at: datetime) -> None:
+        raise RuntimeError("recognition claim unavailable")
+
+    with pytest.raises(RuntimeError, match="recognition claim unavailable"):
+        await worker.transcribe(replace(command(), on_recognition_start=lose_claim))
+    assert speech.calls == []
+    assert budget.releases == [command().reservation_key]
 
 
 @pytest.mark.anyio

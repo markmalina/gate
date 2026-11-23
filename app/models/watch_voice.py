@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models.audio_processing import AudioProcessingMilestones
 from app.models.domain import Base
 
 
@@ -105,7 +106,7 @@ class WatchScheduleControl(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class WatchVoiceNote(Base):
+class WatchVoiceNote(AudioProcessingMilestones, Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
         UniqueConstraint(

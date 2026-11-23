@@ -30,7 +30,13 @@ def test_active_attempts_block_migration(reserved: int, sending: int) -> None:
         observation.require_migration_preconditions(sends_enabled=False)
 
 
-@pytest.mark.parametrize("revisions", [(), ("unreviewed",), (BASELINE_REVISION, "other")])
+@pytest.mark.parametrize("revisions", [
+    (),
+    ("unreviewed",),
+    ("0121_dropbox_call_rejections",),
+    ("0122_calls_reply_join",),
+    (BASELINE_REVISION, "other"),
+])
 def test_unknown_schema_or_multiple_heads_block_migration(revisions: tuple[str, ...]) -> None:
     with pytest.raises(RuntimeError, match="reply_cutover_schema_unexpected"):
         ReplyCutoverObservation(revisions, 0, 0, 0).require_migration_preconditions(
@@ -96,9 +102,10 @@ async def test_endpoint_reports_real_baseline_aggregate_without_payloads() -> No
         async with engine.begin() as connection:
             await connection.execute(text("CREATE TABLE alembic_version (version_num TEXT)"))
             await connection.execute(text("CREATE TABLE send_attempts (status TEXT)"))
-            await connection.execute(text(
-                "INSERT INTO alembic_version VALUES ('0121_dropbox_call_rejections')"
-            ))
+            await connection.execute(
+                text("INSERT INTO alembic_version VALUES (:revision)"),
+                {"revision": BASELINE_REVISION},
+            )
             await connection.execute(text(
                 "INSERT INTO send_attempts VALUES ('sent'), ('unknown'), ('unknown')"
             ))

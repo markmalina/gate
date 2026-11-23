@@ -13,12 +13,18 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import mcp_routes
+from app.api.audio_processing_history import (
+    AUDIO_PROCESSING_HISTORY_SCHEMA,
+    call_processing_history,
+    telegram_processing_history,
+)
 from app.api.deps import get_db_session
 from app.api.mcp_schemas import (
     ATTACHMENT_DETAILS_SCHEMA,
     COMMON_DEFINITIONS,
     CONTACT_DETAILS_SCHEMA,
     REPLY_CONTEXT_MESSAGE_SCHEMA,
+    REPLY_CONTEXT_ERROR_SCHEMA,
     REPLY_CONTEXT_SUCCESS_SCHEMA,
     VOICE_DETAILS_SCHEMA,
 )
@@ -87,6 +93,7 @@ FEED_ITEM_SCHEMA: JsonObject = {
             "type": ["string", "null"],
             "maxLength": 128,
         },
+        "processing_history": AUDIO_PROCESSING_HISTORY_SCHEMA,
     },
     "required": [
         "source_ref",
@@ -154,12 +161,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
     "oneOf": [
         REPLY_CONTEXT_SUCCESS_SCHEMA,
         FEED_SUCCESS_SCHEMA,
-        {
-            "type": "object",
-            "properties": {"error": {"type": "string", "minLength": 1}},
-            "required": ["error"],
-            "additionalProperties": False,
-        },
+        REPLY_CONTEXT_ERROR_SCHEMA,
     ],
 }
 
@@ -527,6 +529,7 @@ def _voice_feed_item(
         ),
         summary_reason_code=getattr(archive, "summary_reason_code", None),
         owner_timezone=owner_timezone,
+        processing_history=telegram_processing_history(archive),
     )
 
 
@@ -552,6 +555,7 @@ def _call_feed_item(recording: Any, owner_timezone: ZoneInfo) -> JsonObject:
         ),
         summary_reason_code=getattr(recording, "summary_reason_code", None),
         owner_timezone=owner_timezone,
+        processing_history=call_processing_history(recording),
     )
 
 
@@ -574,6 +578,7 @@ def _feed_item(
     transcription_reason_code: str | None,
     summary_reason_code: str | None,
     owner_timezone: ZoneInfo,
+    processing_history: JsonObject | None = None,
 ) -> JsonObject:
     return {
         "source_ref": source_ref,
@@ -605,6 +610,7 @@ def _feed_item(
         "transcript_status": transcript_status,
         "transcription_reason_code": transcription_reason_code,
         "summary_reason_code": summary_reason_code,
+        **({"processing_history": processing_history} if processing_history is not None else {}),
     }
 
 
