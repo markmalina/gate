@@ -41,6 +41,26 @@ calling Alfa/ChatGPT layer can derive meaning. The default presentation must:
 Gate owns durable facts and provenance. Relations owns normalized person identity.
 Alfa owns semantic interpretation, importance, commitments and follow-up extraction.
 
+### Phone-call participant lookup in Work
+
+Work uses the Google Contacts connection of the user making the request. Gate
+supplies source facts and the scoped recording reference. Address-book access and
+the resulting contact name stay in Work.
+
+- For a request naming someone, find candidate contacts by name and compare their
+  numbers with the source phone number of the selected call.
+- For a selected call with a source phone number, look up that number directly.
+  Confirm identity only when exactly one contact matches the normalized full number,
+  including country code. A similar name or a form of address in the transcript is a clue.
+- If the call has no source phone number, Google Contacts is unavailable, or there
+  is no unique match, report that identity is unconfirmed. A correction from the
+  requesting user can identify the speaker for the current answer.
+
+The current phone-call feed provides a recording reference, timestamps, and
+transcript status. It has no source phone-number field. Use an authorized call
+source that actually provides the number when available. Keep address-book results
+in Work. Keep private numbers and contact data out of GitHub and diagnostics.
+
 For Telegram text, `source_ready` includes ordinary text, captions and the
 visible text of Rich messages in original block order. `no_text` means a
 matching event has no textual body, for example a sticker. `source_unavailable`

@@ -95,6 +95,9 @@ def test_tools_list_documents_feed_selector_without_new_tool() -> None:
     decorated = _decorate_tools_list(source)
     tool = decorated["result"]["tools"][0]
     assert tool["name"] == "gate_get_reply_context"
+    assert "requesting user's connected Google Contacts" in tool["description"]
+    assert "one exact normalized phone number match" in tool["description"]
+    assert "missing numbers and ambiguous matches as unconfirmed" in tool["description"]
     assert "format" not in tool["inputSchema"]["properties"]["task_id"]
     assert tool["inputSchema"]["properties"]["limit"]["maximum"] == 500
     assert tool["outputSchema"] == FEED_REPLY_CONTEXT_OUTPUT_SCHEMA

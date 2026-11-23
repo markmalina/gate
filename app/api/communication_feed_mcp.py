@@ -270,7 +270,13 @@ def _decorate_tools_list(result: JsonObject) -> JsonObject:
             "Return one scoped reply context, or use feed:day:YYYY-MM-DD to read "
             "Mark's RU/BY Telegram text, voice transcripts and phone-call transcripts "
             "as one chronological owner-only source projection. For feed items, derive "
-            "concise meaning from semantic_input_private and never quote it by default."
+            "concise meaning from semantic_input_private and never quote it by default. "
+            "The caller resolves phone-call participants using the requesting user's "
+            "connected Google Contacts. Search by the name in the request and verify "
+            "against the call's source phone number, or look up that number directly "
+            "when available. Confirm identity only for one exact normalized phone "
+            "number match. Treat missing numbers and ambiguous matches as unconfirmed. "
+            "Keep contact names and lookup results in the caller; Gate supplies source facts."
         )
         properties = tool.get("inputSchema", {}).get("properties")
         if isinstance(properties, dict):
