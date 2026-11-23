@@ -175,6 +175,7 @@ from app.models.domain import (
     Project,
     ReplyDraft,
     ReplyTask,
+    SendAttemptStatus,
     TelegramReceipt,
     TelegramUpdate,
     TelegramVoiceArchive,
@@ -208,6 +209,7 @@ telegram_client_dependency = Depends(get_telegram_client)
 JsonObject = dict[str, Any]
 JSONRPC_VERSION = "2.0"
 MCP_PROTOCOL_VERSION = "2025-06-18"
+CONTEXT_CHANGED_REPLY_TEXT = "Не отправлено. Пока готовился ответ, диалог изменился."
 
 READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "readOnlyHint": True,
@@ -3323,7 +3325,8 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "title": "Save a Gate reply draft",
         "description": (
             "Read gate_get_reply_context first and pass its context_snapshot as "
-            "expected_context_snapshot. A changed dialog requires a new draft and approval. "
+            "expected_context_snapshot. For context_changed, show the returned stop message "
+            "in the same conversation and wait for Mark before preparing another reply. "
             "Save proposed text with text_format=plain, markdown, or rich. Rich requires rich_content (gate.rich.v1) and omitted or empty text; supports heading, paragraph, list, blockquote, pre, table. Rich is single-message only; no series/captions. "
             "Omitting text_format keeps the legacy literal contract without a formatting preview. "
             "Markdown supports bold, italic, strike, underline, spoiler, links, code, headings, lists and quotes; unsupported or malformed syntax is rejected. "
@@ -3386,7 +3389,11 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
             "required for explicit-mode drafts/captions. Legacy rows without a preview retain the old contract. "
             "Send the exact saved draft through its originating RU/BY Telegram "
             "Business account. Call only after showing the account, recipient and "
-            "final text to Mark and receiving explicit confirmation."
+            "final text to Mark and receiving explicit confirmation. "
+            "Report the outcome in the same conversation where the send was requested. "
+            "For context_changed, show the returned stop message and wait for Mark "
+            "before preparing another reply. Report a send only when sent=true; "
+            "an unknown outcome must stay unconfirmed."
         ),
         "inputSchema": {
             "type": "object",
@@ -3815,6 +3822,8 @@ async def _send_approved_reply_tool_result(
             f"Reply sent through {sent.account_label} to chat "
             f"{sent.recipient_chat_id}. Attempt: {str(sent.attempt_id)[:8]}."
         )
+    elif sent.status == SendAttemptStatus.FAILED.value and sent.error_code == "context_changed":
+        text = CONTEXT_CHANGED_REPLY_TEXT
     else:
         text = (
             f"Reply was not confirmed as sent. Status: {sent.status}. "
@@ -4228,7 +4237,9 @@ async def _dialog_context_error_result(
     await session.rollback()
     current_context = None
     details: JsonObject = {"sent": False, "current_context": None}
-    if code == "context_unavailable":
+    if code == "context_changed":
+        message = CONTEXT_CHANGED_REPLY_TEXT
+    elif code == "context_unavailable":
         details["reason"] = message
     try:
         if "gate:inbox:read" not in principal.scopes:

@@ -65,7 +65,7 @@ async def connected(monkeypatch, sessions, seed, *, read=True):
         base_url="https://gate.example",
     ) as client:
 
-        async def call(name, args):
+        async def call(name, args, *, include_envelope=False):
             response = await client.post(
                 "/mcp",
                 json={
@@ -80,9 +80,51 @@ async def connected(monkeypatch, sessions, seed, *, read=True):
             schema = mcp_routes.MCP_TOOL_OUTPUT_SCHEMAS.get(name)
             if schema:
                 Draft202012Validator(schema).validate(result["structuredContent"])
-            return result["structuredContent"]
+            return result if include_envelope else result["structuredContent"]
 
         yield call, telegram, principal
+
+
+@pytest.mark.anyio
+async def test_text_reply_reports_stop_in_mcp_and_fresh_reply_sends_once(monkeypatch):
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        async with connected(monkeypatch, sessions, seed) as (call, telegram, _):
+            args = {"task_id": str(seed.task_id), "text": "Approved synthetic reply"}
+            context = await call("gate_get_reply_context", {"task_id": args["task_id"]})
+            assert context["context_ready"]
+            stale = await call(
+                "gate_save_reply_draft",
+                {**args, "expected_context_snapshot": context["context_snapshot"]},
+            )
+            await receive(sessions, seed)
+            result = await call(
+                "gate_send_approved_reply",
+                {"draft_id": stale["draft_id"], "confirmed": True, **stale["confirmation"]},
+                include_envelope=True,
+            )
+            assert result["isError"]
+            refusal = result["structuredContent"]
+            assert refusal["error"] == "context_changed"
+            assert refusal["sent"] is False
+            assert result["content"] == [{
+                "type": "text", "text": "Не отправлено. Пока готовился ответ, диалог изменился.",
+            }]
+            assert telegram.plain_calls == []
+
+            fresh_context = refusal["current_context"]
+            assert fresh_context["context_ready"]
+            fresh = await call(
+                "gate_save_reply_draft",
+                {**args, "expected_context_snapshot": fresh_context["context_snapshot"]},
+            )
+            approved = {"draft_id": fresh["draft_id"], "confirmed": True, **fresh["confirmation"]}
+            sent = await call("gate_send_approved_reply", approved)
+            replay = await call("gate_send_approved_reply", approved)
+            assert sent["sent"] and not sent["idempotent_replay"]
+            assert replay["sent"] and replay["idempotent_replay"]
+            assert sent["attempt_id"] == replay["attempt_id"]
+            assert len(telegram.plain_calls) == 1
 
 
 @pytest.mark.anyio

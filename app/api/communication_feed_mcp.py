@@ -270,7 +270,10 @@ def _decorate_tools_list(result: JsonObject) -> JsonObject:
             "Return one scoped reply context, or use feed:day:YYYY-MM-DD to read "
             "Mark's RU/BY Telegram text, voice transcripts and phone-call transcripts "
             "as one chronological owner-only source projection. For feed items, derive "
-            "concise meaning from semantic_input_private and never quote it by default."
+            "concise meaning from semantic_input_private and never quote it by default. "
+            "When preparing a reply, review the current dialog and its raw events. "
+            "Use context_snapshot from a fresh read with context_ready=true as "
+            "expected_context_snapshot when saving the draft."
         )
         properties = tool.get("inputSchema", {}).get("properties")
         if isinstance(properties, dict):
