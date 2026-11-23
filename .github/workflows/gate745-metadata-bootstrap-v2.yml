@@ -1,0 +1,61 @@
+name: Gate745 metadata v2
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: gate745-oidc-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: >-
+      ${{ github.repository == 'markmalina/gate' && github.repository_id == '1293746267' &&
+          github.event.number == 771 && github.event.pull_request.state == 'open' &&
+          github.event.pull_request.head.repo.id == 1293746267 &&
+          github.event.pull_request.head.ref == 'agent/745-metadata-bootstrap-client' &&
+          github.event.sender.id == 23397294 && github.event.sender.type == 'User' &&
+          github.actor_id == '23397294' && github.run_attempt == 1 &&
+          startsWith(github.event.label.name, 'r') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: gate-production
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          check-latest: false
+          package-manager-cache: false
+      - name: Refuse stale metadata output
+        shell: bash
+        run: test ! -e .agent-ops/output/gate745-metadata-v2.json
+      - name: Admit signed identity before private-key input
+        id: admission
+        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap-v2/pre-key@812a05fc4dfbd4aaf124129ec9150c206a2c6089
+        with:
+          gate-token: ${{ github.token }}
+      - name: Observe fixed private metadata and revoke issued tokens
+        id: metadata
+        if: ${{ success() && steps.admission.outputs.admitted == 'true' }}
+        uses: markmalina/ops/agent-ops/actions/gate745-metadata-bootstrap-v2@812a05fc4dfbd4aaf124129ec9150c206a2c6089
+        with:
+          gate-token: ${{ github.token }}
+          private-key: ${{ secrets.AGENT_OPS_REVIEWER_PRIVATE_KEY }}
+      - name: Save sanitized metadata receipt
+        if: ${{ always() && hashFiles('.agent-ops/output/gate745-metadata-v2.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: gate745-metadata-v2
+          path: |
+            .agent-ops/output/gate745-metadata-v2.json
+            .agent-ops/output/gate745-metadata-v2.sha256
+          retention-days: 7
+          if-no-files-found: error
