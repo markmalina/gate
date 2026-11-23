@@ -22,7 +22,6 @@ from app.models.domain import (
     Conversation,
     Message,
     Project,
-    ReplyDialogVersion,
     ReplyDraft,
     SendAttempt,
     TelegramBusinessConnection,
@@ -265,17 +264,25 @@ async def test_history_without_connection_is_readable_but_never_authorizes_deliv
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("kind", ["edited_business_message", "deleted_business_messages"])
-async def test_edit_or_delete_after_review_also_refuses(kind: str) -> None:
+async def test_edit_with_same_message_id_keeps_the_approved_reply_current() -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
-        await receive(sessions, seed, kind=kind)
+        await receive(sessions, seed, update_id=2)
         async with sessions() as session:
-            with pytest.raises(ReplySendError) as error:
-                await SqlTelegramReplySender(
-                    session=session, telegram=_LiteralRecordingTelegram(), settings=_settings(),
-                ).send(_command(seed, seed.draft_ids[0]))
-            assert error.value.code == "context_changed"
+            saved = await SaveReplyDraftService(SqlReplyDraftWriter(session)).execute(
+                replace(_save_draft_command(seed, "Reply to message 2"),
+                        expected_context_snapshot="2"),
+            )
+            await session.commit()
+        await receive(sessions, seed, update_id=3, kind="edited_business_message",
+                      content={"message_id": 2, "text": "Edited synthetic message"})
+        await receive(sessions, seed, update_id=4, content={"message_id": 1})
+        telegram = _LiteralRecordingTelegram()
+        async with sessions() as session:
+            result = await SqlTelegramReplySender(
+                session=session, telegram=telegram, settings=_settings(),
+            ).send(_command(seed, saved.draft_id))
+        assert result.sent and len(telegram.plain_calls) == 1
 
 
 @pytest.mark.anyio
@@ -284,10 +291,6 @@ async def test_duplicate_receipt_is_stable_and_other_chat_does_not_block() -> No
         seed = await _seed_reply(sessions)
         await receive(sessions, seed, chat_id="54321")
         async with sessions() as session:
-            assert await session.scalar(
-                select(func.count()).select_from(ReplyDialogVersion)
-                .where(ReplyDialogVersion.revision > 0)
-            ) == 1
             conversation = await session.get(Conversation, seed.conversation_id)
             assert await dialog_snapshot(
                 session, scope=_command(seed, seed.draft_ids[0]).principal.access_scope,
@@ -313,7 +316,7 @@ async def test_duplicate_receipt_is_stable_and_other_chat_does_not_block() -> No
 async def test_save_requires_the_snapshot_actually_reviewed_by_work() -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
-        for token in (None, "dialog-v1:" + "0" * 64):
+        for token in (None, "101"):
             async with sessions() as session:
                 with pytest.raises(ReplyDraftError):
                     await SaveReplyDraftService(SqlReplyDraftWriter(session)).execute(replace(
@@ -438,7 +441,7 @@ async def test_two_works_with_one_review_cannot_both_send() -> None:
 
 
 @pytest.mark.anyio
-async def test_ingress_commit_racing_dispatch_serializes_on_the_actual_version_row() -> None:
+async def test_ingress_commit_racing_dispatch_serializes_on_the_admission_lock() -> None:
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
         committing, release = asyncio.Event(), asyncio.Event()
@@ -459,6 +462,7 @@ async def test_ingress_commit_racing_dispatch_serializes_on_the_actual_version_r
                                 "business_connection_id": seed.business_connection_id,
                                 "chat": {"id": int(seed.recipient_chat_id)},
                                 "from": {"id": int(seed.recipient_chat_id)},
+                                "message_id": 1,
                                 "text": "Race synthetic message",
                             }},
                     )

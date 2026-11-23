@@ -9,7 +9,7 @@ from app.application.mcp_inbox import get_reply_context
 from app.application.reply_drafts import SaveReplyDraftService
 from app.application.reply_sends import ReplySendError
 from app.infrastructure import reply_sends
-from app.infrastructure.dialog_snapshots import INGRESS_CHAT, INGRESS_FENCE, lock_dialog_keys
+from app.infrastructure.dialog_snapshots import lock_dialog_ingress
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.models.domain import Account, SendAttempt
@@ -62,7 +62,7 @@ async def test_committed_account_disable_while_final_admission_waits_must_preven
                 sending = asyncio.create_task(send())
                 try:
                     await asyncio.wait_for(reserved.wait(), 10)
-                    await lock_dialog_keys(guard, keys=[(INGRESS_FENCE, INGRESS_CHAT)])
+                    await lock_dialog_ingress(guard)
                     proceed.set()
                     await _wait_for_backend_lock(sessions, backend_pid=pid)
                     async with sessions.begin() as disable:

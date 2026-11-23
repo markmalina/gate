@@ -9,7 +9,6 @@ from app.application.mcp_inbox import get_reply_context
 from app.application.reply_drafts import ReplyDraftError, SaveReplyDraftService
 from app.application.reply_sends import ReplySendError
 from app.application.reply_sequences import ReplySequenceError
-from app.infrastructure.dialog_snapshots import bump_dialog_version
 from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
@@ -22,6 +21,7 @@ from app.models.domain import (
 from app.worker.reply_sequences import run_reply_sequence_once
 from sqlalchemy import func, select
 
+from test_dialog_snapshots_postgres import receive
 from test_reply_sends_postgres import (
     _command,
     _LiteralRecordingTelegram,
@@ -182,22 +182,9 @@ async def test_new_same_text_event_still_blocks_reviewed_pending_work(
         )
         draft_ids = await _save_reviewed(sessions, seed, 2, follow_up=True)
         telegram = _DistinctTelegram()
-        # Same text, distinct event identity, either direction. The durable
-        # ingress revision changes before any asynchronous projection is needed.
-        async with sessions() as session:
-            session.add(Message(
-                bot_id=seed.bot_id, account_id=seed.account_id, project_id=seed.project_id,
-                chat_id=seed.recipient_chat_id, sender_id="999" if owner else "12345",
-                direction="outbound" if owner else "inbound", source="telegram",
-                event_type="business_message", text="Initial inbound message", payload={},
-                business_connection_id=seed.business_connection_id,
-                received_at=datetime.now(UTC),
-            ))
-            await bump_dialog_version(
-                session, connection_id=seed.business_connection_id,
-                chat_id=seed.recipient_chat_id,
-            )
-            await session.commit()
+        await receive(
+            sessions, seed, owner=owner, content={"text": "Initial inbound message"},
+        )
         async with sessions() as session:
             if stage == "draft":
                 with pytest.raises(ReplyDraftError) as error:

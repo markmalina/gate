@@ -227,7 +227,7 @@ async def test_query_schema_and_text_project_reply_outside_history_page(source: 
     )
     assert context is not None
     assert context["context_ready"] is True
-    assert context["context_snapshot"] == "dialog-v1:" + "0" * 64
+    assert context["context_snapshot"] == "101"
     assert context["count"] == 1
     assert context["messages"][0]["reply_to"] == extract(raw)
     if has_voice:
@@ -249,7 +249,7 @@ async def test_query_schema_and_text_project_reply_outside_history_page(source: 
 @pytest.fixture(autouse=True)
 def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
     async def snapshot(*args, **kwargs):
-        return "dialog-v1:" + "0" * 64
+        return "101"
 
     async def events(*args, **kwargs):
         return [], False, True

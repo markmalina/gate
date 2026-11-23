@@ -1314,7 +1314,7 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
     async def snapshot(*args, **kwargs):
         nonlocal reads
         reads += 1
-        return "dialog-v1:" + ("1" if changes_during_read and reads > 1 else "0") * 64
+        return "102" if changes_during_read and reads > 1 else "101"
     async def events(*args, **kwargs):
         return [], False, True
     async def read_issue(*args, **kwargs):

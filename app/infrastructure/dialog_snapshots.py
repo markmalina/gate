@@ -1,18 +1,16 @@
-"""Durable dialog revisions shared by ingress and reply-send admission."""
+"""Last message IDs shared by dialog reads and reply-send admission."""
 
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import BigInteger, and_, case, cast, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.dialog_snapshots import (
     DIALOG_EVENT_KINDS,
     SNAPSHOT_KEY,
-    snapshot_digest,
     snapshot_matches,
 )
 from app.application.reply_sends import ReplySendError
@@ -22,16 +20,18 @@ from app.models.domain import (
     AuditLog,
     Conversation,
     Message,
-    ReplyDialogVersion,
     ReplyDraft,
     TelegramBusinessConnection,
     TelegramReceipt,
 )
 
-# Not a Telegram connection id: a durable, monotonic connector-wide fence.
-# A nonzero fence is sticky; no heartbeat/ordinary successful receipt clears it.
-INGRESS_FENCE = "gate:business-ingress"
-INGRESS_CHAT = "*"
+
+# The same transaction lock orders durable Business acceptance and final admission.
+# This namespace is local to PostgreSQL and does not require any stored state.
+async def lock_dialog_ingress(session: AsyncSession) -> None:
+    await session.execute(select(func.pg_advisory_xact_lock(
+        func.hashtextextended("gate:business-ingress", 0)
+    )))
 
 
 async def mark_ingress_unavailable(
@@ -40,51 +40,19 @@ async def mark_ingress_unavailable(
     reason: str,
     connection_id: str | None = None,
 ) -> None:
-    """Persist an observed loss of trust, using the same final-admission keys."""
-    await lock_dialog_keys(session, keys=[(INGRESS_FENCE, INGRESS_CHAT)])
-    await bump_dialog_version(
-        session,
-        connection_id=connection_id or INGRESS_FENCE,
-        chat_id=INGRESS_CHAT,
-    )
+    await lock_dialog_ingress(session)
     from app.infrastructure.reply_sequence_state import stop_sequences
 
     account_id = await session.scalar(select(TelegramBusinessConnection.account_id).where(
         TelegramBusinessConnection.business_connection_id == connection_id,
     )) if connection_id is not None else None
     await stop_sequences(session, account_id=account_id, reason=reason)
-    session.add(
-        AuditLog(
-            actor="telegram_ingress",
-            action="reply_ingress_unavailable",
-            metadata_={"reason": reason, "connection_scoped": connection_id is not None},
-        )
-    )
-
-
-async def bump_dialog_version(session: AsyncSession, *, connection_id: str, chat_id: str) -> None:
-    """Caller commits this increment with its durable receipt or send attempt."""
-    await session.execute(
-        insert(ReplyDialogVersion)
-        .values(business_connection_id=connection_id, chat_id=chat_id, revision=1)
-        .on_conflict_do_update(
-            index_elements=["business_connection_id", "chat_id"],
-            set_={"revision": ReplyDialogVersion.revision + 1},
-        )
-    )
-
-
-async def lock_dialog_keys(session: AsyncSession, *, keys: list[tuple[str, str]]) -> None:
-    """Canonical order: global, connection gaps, account/chat; before any draft locks."""
-    for connection, chat_id in keys:
-        await session.execute(
-            insert(ReplyDialogVersion)
-            .values(business_connection_id=connection, chat_id=chat_id, revision=0)
-            .on_conflict_do_update(
-                index_elements=["business_connection_id", "chat_id"],
-                set_={"revision": ReplyDialogVersion.revision},
-            )
-        )
+    session.add(AuditLog(
+        actor="telegram_ingress",
+        action="reply_ingress_unavailable",
+        account_id=account_id,
+        metadata_={"reason": reason, "connection_scoped": account_id is not None},
+    ))
 
 
 async def dialog_snapshot(
@@ -93,102 +61,63 @@ async def dialog_snapshot(
     scope: AccessScope,
     conversation: Conversation,
     lock: bool = False,
-    own_revisions: dict[str, int] | None = None,
     own_messages: set[UUID] | None = None,
+    own_receipts: set[str] | None = None,
 ) -> str:
-    """Bind the fingerprint to scope, every account connection and projected facts.
-
-    On admission, UPSERT locks the keys including previously nonexistent rows.
-    Ingress uses the same rows. No SQL transaction crosses provider HTTP.
-    """
+    """Read one message ID, including a Business receipt awaiting projection."""
     if (
         conversation.account_id not in scope.account_ids
         or conversation.project_id not in scope.project_ids
     ):
         raise ReplySendError(code="context_scope_mismatch", message="Dialog outside allowed scope")
-    connections = set(
-        (
-            await session.scalars(
-                select(TelegramBusinessConnection.business_connection_id).where(
-                    TelegramBusinessConnection.account_id == conversation.account_id
-                )
-            )
-        ).all()
-    )
-    if conversation.business_connection_id:
-        connections.add(conversation.business_connection_id)
-    # Imported/legacy history is still readable without a Business connection.
-    # The sender separately requires an authorized live origin before any I/O.
     if lock:
-        keys = (
-            [(INGRESS_FENCE, INGRESS_CHAT)]
-            + [(connection, INGRESS_CHAT) for connection in sorted(connections)]
-            + [(connection, conversation.chat_id) for connection in sorted(connections)]
-        )
-        await lock_dialog_keys(session, keys=keys)
-    revision_rows = (
-        await session.execute(
-            select(ReplyDialogVersion.business_connection_id, ReplyDialogVersion.revision).where(
-                ReplyDialogVersion.business_connection_id.in_(connections),
-                ReplyDialogVersion.chat_id == conversation.chat_id,
-            )
-        )
-    ).all()
-    revisions: dict[str, int] = {
-        key: value - (own_revisions or {}).get(key, 0) for key, value in revision_rows
-    }
-    if any(value < 0 for value in revisions.values()):
-        raise ReplySendError(code="context_unavailable", message="Invalid own revision journal")
-    # Include actual stored messages as well as raw-ingress revisions. This also
-    # detects imported/manual facts, edits, removals and projection advancing
-    # while a Work was composing. Operational retries do not affect the token.
-    messages = (
-        await session.execute(
-            select(
-                Message.id,
-                Message.text,
-                Message.direction,
-                Message.payload,
-                Message.created_at,
-                Message.sent_at,
-                Message.received_at,
-            )
-            .where(
-                Message.account_id == conversation.account_id,
-                Message.project_id.in_(scope.project_ids),
-                Message.chat_id == conversation.chat_id,
-                Message.id.not_in(own_messages or set()),
-            )
-            .order_by(Message.id)
-        )
-    ).all()
-    # Opaque IDs detect projected changes in another routed project without
-    # exposing that project's private message content to the current Work.
-    message_ids = (
-        await session.scalars(
-            select(Message.id)
-            .where(
-                Message.account_id == conversation.account_id,
-                Message.chat_id == conversation.chat_id,
-                Message.id.not_in(own_messages or set()),
-            )
-            .order_by(Message.id)
-        )
-    ).all()
-    return snapshot_digest(
-        {
-            "workspace": scope.workspace_id,
-            "account": str(conversation.account_id),
-            "project": str(conversation.project_id),
-            "conversation": str(conversation.id),
-            "chat": conversation.chat_id,
-            "connections": [
-                (key, revisions[key]) for key in sorted(connections) if revisions.get(key, 0) > 0
-            ],
-            "messages": [tuple(row) for row in messages],
-            "dialog_message_ids": [str(message_id) for message_id in message_ids],
-        }
+        await lock_dialog_ingress(session)
+    connections = select(TelegramBusinessConnection.business_connection_id).where(
+        TelegramBusinessConnection.account_id == conversation.account_id,
     )
+    message_filter = (
+        Message.account_id == conversation.account_id,
+        Message.chat_id == conversation.chat_id,
+        Message.id.not_in(own_messages or ()),
+    )
+    projected = select(func.max(Message.telegram_message_id)).where(
+        *message_filter, Message.telegram_message_id > 0,
+    ).scalar_subquery()
+    alternatives = []
+    for kind in ("business_message", "message"):
+        event = TelegramReceipt.payload[kind]
+        raw_connection_id = event["business_connection_id"].as_string()
+        raw_message_id = event["message_id"].as_string()
+        alternatives.append((
+            and_(
+                or_(
+                    raw_connection_id.in_(connections),
+                    raw_connection_id == conversation.business_connection_id,
+                ),
+                event["chat"]["id"].as_string() == conversation.chat_id,
+                raw_message_id.op("~")(r"^[1-9][0-9]{0,17}$"),
+            ),
+            cast(raw_message_id, BigInteger),
+        ))
+    accepted = select(func.max(case(*alternatives))).where(
+        TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
+        TelegramReceipt.id.not_in([UUID(identifier) for identifier in own_receipts or ()]),
+    ).scalar_subquery()
+    latest_id = await session.scalar(select(func.greatest(projected, accepted)))
+    if latest_id is not None:
+        return str(latest_id)
+    # Legacy imported messages can lack Telegram IDs. Their existing row ID
+    # still identifies the last stored message without looking at its contents.
+    legacy_id = await session.scalar(
+        select(Message.id)
+        .where(*message_filter)
+        .order_by(func.coalesce(Message.sent_at, Message.received_at, Message.created_at).desc(),
+                  Message.id.desc())
+        .limit(1)
+    )
+    if legacy_id is None:
+        raise ReplySendError(code="context_unavailable", message="Last message ID unavailable")
+    return str(legacy_id)
 
 
 async def require_dialog_snapshot(
@@ -198,7 +127,7 @@ async def require_dialog_snapshot(
     conversation: Conversation,
     expected: object,
     lock: bool = False,
-    own_revisions: dict[str, int] | None = None,
+    require_readable: bool = False,
     own_messages: set[UUID] | None = None,
     own_receipts: set[str] | None = None,
 ) -> str:
@@ -207,47 +136,39 @@ async def require_dialog_snapshot(
             code="context_snapshot_required",
             message="Read current reply context and prepare a new snapshot-bound draft",
         )
-    # A cursor/read failure may reveal a fingerprint, but a fingerprint is not
-    # proof of a complete readset. Enforce the same readiness at every consumer.
     try:
-        # Acquire the ingress fence before reading readiness. Otherwise a gap
-        # can commit while admission waits, after the old readiness was read.
         current = await dialog_snapshot(
-            session,
-            scope=scope,
-            conversation=conversation,
-            lock=lock,
-            own_revisions=own_revisions, own_messages=own_messages,
+            session, scope=scope, conversation=conversation, lock=lock,
+            own_messages=own_messages, own_receipts=own_receipts,
         )
-        events, _, complete = await recent_dialog_events(
-            session,
-            scope=scope,
-            conversation=conversation,
-            owner_id=None,
-        )
-        issue = await dialog_read_issue(
-            session,
-            scope=scope,
-            conversation=conversation,
-            events=events,
-            own_receipts=own_receipts,
-        )
+        if await known_dialog_gap(session, scope=scope, conversation=conversation):
+            raise ReplySendError(code="context_unavailable", message="known_ingress_gap")
     except (SQLAlchemyError, OSError, TimeoutError) as exc:
         raise ReplySendError(
-            code="context_unavailable",
-            message="authoritative_version_unavailable",
+            code="context_unavailable", message="authoritative_version_unavailable",
         ) from exc
-    if not complete or issue is not None:
-        raise ReplySendError(
-            code="context_unavailable",
-            message=issue or "context_scope_incomplete",
-        )
     if not snapshot_matches(expected, current):
         raise ReplySendError(
             code="context_changed",
             message="Отправка остановлена: диалог изменился. Прочитайте новые сообщения "
             "и подготовьте ответ по актуальному контексту.",
         )
+    if require_readable:
+        try:
+            events, _, complete = await recent_dialog_events(
+                session, scope=scope, conversation=conversation, owner_id=None,
+            )
+            issue = None if complete else "scope_incomplete"
+            if issue is None:
+                issue = await dialog_read_issue(
+                    session, scope=scope, conversation=conversation, events=events,
+                )
+        except (SQLAlchemyError, OSError, TimeoutError) as exc:
+            raise ReplySendError(
+                code="context_unavailable", message="authoritative_version_unavailable",
+            ) from exc
+        if issue is not None:
+            raise ReplySendError(code="context_unavailable", message=issue)
     return current
 
 
@@ -263,18 +184,18 @@ async def require_saved_dialog_snapshot(
     context: dict[str, Any] = draft.prompt_context or {}
     expected = context.get(SNAPSHOT_KEY)
     sequence = context.get("reply_sequence")
-    own_revisions, own_messages, own_receipts = None, None, None
+    own_messages, own_receipts = None, None
     if isinstance(sequence, dict):
         from app.infrastructure.reply_sequence_state import sequence_progress
 
         # Fence precedes reading the stop latch and receipt journal. Refresh a
         # draft loaded before a concurrent committed ingress stop.
         if lock:
-            await dialog_snapshot(session, scope=scope, conversation=conversation, lock=True)
+            await lock_dialog_ingress(session)
             await session.refresh(draft)
         if await known_dialog_gap(session, scope=scope, conversation=conversation):
             raise ReplySendError(code="context_unavailable", message="known_ingress_gap")
-        own_revisions, own_messages, own_receipts = await sequence_progress(
+        own_messages, own_receipts = await sequence_progress(
             session, draft=draft, current_attempt_id=current_attempt_id,
         )
     await require_dialog_snapshot(
@@ -283,7 +204,7 @@ async def require_saved_dialog_snapshot(
         conversation=conversation,
         expected=expected,
         lock=lock,
-        own_revisions=own_revisions, own_messages=own_messages, own_receipts=own_receipts,
+        own_messages=own_messages, own_receipts=own_receipts,
     )
 
 
@@ -428,19 +349,11 @@ async def known_dialog_gap(
     conversation: Conversation,
 ) -> bool:
     """Consume sticky observed ingress failures; heartbeat never restores trust."""
-    connections = select(TelegramBusinessConnection.business_connection_id).where(
-        TelegramBusinessConnection.account_id == conversation.account_id,
-    )
     sticky = await session.scalar(
-        select(ReplyDialogVersion.revision)
+        select(AuditLog.id)
         .where(
-            ReplyDialogVersion.chat_id == INGRESS_CHAT,
-            ReplyDialogVersion.revision > 0,
-            or_(
-                ReplyDialogVersion.business_connection_id == INGRESS_FENCE,
-                ReplyDialogVersion.business_connection_id.in_(connections),
-                ReplyDialogVersion.business_connection_id == conversation.business_connection_id,
-            ),
+            AuditLog.action == "reply_ingress_unavailable",
+            or_(AuditLog.account_id.is_(None), AuditLog.account_id == conversation.account_id),
         )
         .limit(1)
     )

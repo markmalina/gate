@@ -14,7 +14,6 @@ from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
 from app.models.domain import (
     AuditLog,
     Base,
-    ReplyDialogVersion,
     TelegramOutboxEvent,
     TelegramReceipt,
 )
@@ -162,11 +161,10 @@ async def test_shared_session_remains_usable_after_first_and_duplicate_acceptanc
         # This fixture deliberately accepts an unscoped Business envelope. Its
         # first acceptance records one gap; an identical replay is not a new gap.
         async with session_factory() as session:
-            gap = await session.scalar(select(ReplyDialogVersion).where(
-                ReplyDialogVersion.business_connection_id == "gate:business-ingress",
-                ReplyDialogVersion.chat_id == "*",
+            gap = await session.scalar(select(AuditLog).where(
+                AuditLog.action == "reply_ingress_unavailable",
             ))
-            assert gap is not None and gap.revision == 1
+            assert gap is not None and gap.account_id is None
     finally:
         await engine.dispose()
         async with admin_engine.begin() as connection:

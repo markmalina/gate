@@ -1,25 +1,21 @@
-"""Snapshot integrity and authenticated event classification, provider-free."""
+"""Last message IDs and authenticated event classification, provider-free."""
 
-from copy import deepcopy
+from uuid import uuid4
 
 import pytest
 from app.application.dialog_snapshots import (
-    snapshot_digest,
     snapshot_matches,
     telegram_dialog_key,
 )
 
 
-def test_snapshot_binds_scope_version_and_projected_message() -> None:
-    state = {"workspace": "synthetic", "account": "a", "project": "p",
-             "chat": "1", "revision": 1, "text": "same"}
-    original = snapshot_digest(state)
-    assert snapshot_matches(original, snapshot_digest(deepcopy(state)))
-    for field in state:
-        changed = {**state, field: str(state[field]) + "changed"}
-        assert not snapshot_matches(original, snapshot_digest(changed))
-    for invalid in (None, True, {}, "", original.upper(), "dialog-v1:" + "g" * 64):
-        assert not snapshot_matches(invalid, original)
+def test_last_message_id_compares_by_identity() -> None:
+    assert snapshot_matches("123", "123")
+    assert not snapshot_matches("124", "123")
+    legacy_id = str(uuid4())
+    assert snapshot_matches(legacy_id, legacy_id)
+    for invalid in (None, True, 123, {}, "", "0123", "123x"):
+        assert not snapshot_matches(invalid, "123")
 
 
 @pytest.mark.parametrize("kind", [

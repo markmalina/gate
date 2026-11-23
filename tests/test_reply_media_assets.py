@@ -70,7 +70,7 @@ def principal() -> Principal:
 
 def command(*items: ReplyMediaInput, mode: str = "photo") -> PrepareReplyMediaCommand:
     return PrepareReplyMediaCommand(
-        expected_context_snapshot="dialog-v1:" + "0" * 64,
+        expected_context_snapshot="101",
         principal=principal(),
         task_id=uuid4(),
         mode=mode,

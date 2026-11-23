@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.dialog_snapshots import CONTEXT_CHANGED_REPLY_TEXT, SNAPSHOT_PATTERN
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
@@ -209,7 +210,6 @@ telegram_client_dependency = Depends(get_telegram_client)
 JsonObject = dict[str, Any]
 JSONRPC_VERSION = "2.0"
 MCP_PROTOCOL_VERSION = "2025-06-18"
-CONTEXT_CHANGED_REPLY_TEXT = "Не отправлено. Пока готовился ответ, диалог изменился."
 
 READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "readOnlyHint": True,
@@ -3324,7 +3324,7 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "name": "gate_save_reply_draft",
         "title": "Save a Gate reply draft",
         "description": (
-            "Read gate_get_reply_context first and pass its context_snapshot as "
+            "Read gate_get_reply_context first and pass its last message ID (context_snapshot) as "
             "expected_context_snapshot. For context_changed, show the returned stop message "
             "in the same conversation and wait for Mark before preparing another reply. "
             "Save proposed text with text_format=plain, markdown, or rich. Rich requires rich_content (gate.rich.v1) and omitted or empty text; supports heading, paragraph, list, blockquote, pre, table. Rich is single-message only; no series/captions. "
@@ -3340,7 +3340,7 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
             "type": "object",
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
-                "expected_context_snapshot": {"type": "string", "pattern": "^dialog-v1:[0-9a-f]{64}$"},
+                "expected_context_snapshot": {"type": "string", "pattern": SNAPSHOT_PATTERN},
                 "text": {"type": "string", "maxLength": 65536},
                 "text_format": {"type": "string", "enum": ["plain", "markdown", "rich"]},
                 "rich_content": rich_content_schema(),
@@ -3441,7 +3441,7 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
         "name": "gate_prepare_reply_document",
         "title": "Prepare one Gate Business document",
         "description": (
-            "Read gate_get_reply_context first and pass its context_snapshot as "
+            "Read gate_get_reply_context first and pass its last message ID (context_snapshot) as "
             "expected_context_snapshot. A changed dialog requires a new draft and approval. "
             "Stage one original PDF/ZIP, Excel/Word/PowerPoint or JPEG/PNG/WEBP/GIF file as a document; "
             "No conversion/compression. Max 8 MiB; private staging 24 hours. "
@@ -3456,7 +3456,7 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
             "type": "object",
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
-                "expected_context_snapshot": {"type": "string", "pattern": "^dialog-v1:[0-9a-f]{64}$"},
+                "expected_context_snapshot": {"type": "string", "pattern": SNAPSHOT_PATTERN},
                 "filename": {"type": "string", "minLength": 1, "maxLength": 255},
                 "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
                 "content_base64": {"type": "string", "minLength": 1, "maxLength": 11184812},
@@ -4571,8 +4571,10 @@ def _format_reply_context_text(context: JsonObject) -> str:
             f"reason: {sequence['stop_reason'] or 'none'}; "
             f"sent {sequence['sent_count']}, remaining {sequence['remaining_count']}, "
             f"ambiguous {sequence['ambiguous_count']}. "
-            f"Auto-resume: false. Owner notification: {sequence['notification_status']}."
+            "Auto-resume: false."
         )
+        if sequence.get("stop_message"):
+            lines.append(sequence["stop_message"])
     for message in context["messages"]:
         direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
         preview = message["text_preview"] or {

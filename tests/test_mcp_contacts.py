@@ -224,7 +224,7 @@ async def test_existing_durable_update_reads_as_scoped_contact() -> None:
 @pytest.fixture(autouse=True)
 def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
     async def snapshot(*args, **kwargs):
-        return "dialog-v1:" + "0" * 64
+        return "101"
     async def events(*args, **kwargs):
         return [], False, True
     monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)

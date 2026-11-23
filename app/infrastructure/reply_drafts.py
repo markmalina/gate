@@ -85,6 +85,7 @@ class SqlReplyDraftWriter:
             await require_dialog_snapshot(
                 self._session, scope=scope, conversation=conversation,
                 expected=command.expected_context_snapshot,
+                require_readable=True,
             )
         except ReplySendError as exc:
             raise ReplyDraftError(code=exc.code, message=exc.message) from exc

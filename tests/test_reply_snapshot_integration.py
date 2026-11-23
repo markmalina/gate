@@ -298,7 +298,7 @@ async def test_actual_prepare_stale_missing_foreign_and_fresh_binding(monkeypatc
             missing = await call(name, args)
             assert missing["error"] == "context_snapshot_required" and missing["sent"] is False
             foreign = await call(
-                name, {**args, "expected_context_snapshot": "dialog-v1:" + "a" * 64}
+                name, {**args, "expected_context_snapshot": "102"}
             )
             assert foreign["error"] == "context_changed"
             saved = await call(

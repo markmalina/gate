@@ -25,10 +25,7 @@ from app.application.telegram_processing import (
 )
 from app.core.telegram_connectors import TelegramConnectorKey
 from app.infrastructure.dialog_snapshots import (
-    INGRESS_CHAT,
-    INGRESS_FENCE,
-    bump_dialog_version,
-    lock_dialog_keys,
+    lock_dialog_ingress,
     mark_ingress_unavailable,
 )
 from app.infrastructure.reply_sequence_state import confirmed_echo_sequence, stop_sequences
@@ -130,8 +127,7 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
             dialog_key = telegram_dialog_key(command.payload)
             account_id = None
             if command.bot_key == TelegramConnectorKey.BUSINESS.value:
-                await lock_dialog_keys(self._session, keys=[(INGRESS_FENCE, INGRESS_CHAT)])
-            if command.bot_key == TelegramConnectorKey.BUSINESS.value:
+                await lock_dialog_ingress(self._session)
                 if (
                     any(
                         kind in command.payload
@@ -159,9 +155,7 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                         )
                     )
                     if account_id is None:
-                        # Projection has not established which account owns this
-                        # new connection. Its private revision cannot protect an
-                        # old snapshot under a different, known connection id.
+                        # Scope is unknown until projection maps this connection.
                         await mark_ingress_unavailable(
                             self._session, reason="business_connection_mapping_unavailable",
                         )
@@ -179,19 +173,20 @@ class SqlTelegramReceiptStore(TelegramReceiptStore):
                         reason="business_connection_disabled",
                         connection_id=identifier if mapped_account is not None else None,
                     )
-            if command.bot_key == TelegramConnectorKey.BUSINESS.value and dialog_key:
-                await bump_dialog_version(
-                    self._session, connection_id=dialog_key[0], chat_id=dialog_key[1]
-                )
-                if account_id is not None:
-                    own_sequence = await confirmed_echo_sequence(
-                        self._session, account_id=account_id, connection_id=dialog_key[0],
-                        chat_id=dialog_key[1], payload=command.payload, receipt_id=receipt_id,
-                    )
-                    await stop_sequences(
-                        self._session, account_id=account_id, chat_id=dialog_key[1],
-                        except_sequence=own_sequence, event_ref=str(receipt_id),
-                    )
+            if account_id is not None and dialog_key is not None:
+                event = command.payload.get("business_message", command.payload.get("message"))
+                if isinstance(event, dict) and type(event.get("message_id")) is int:
+                    message_id = event["message_id"]
+                    if message_id > 0:
+                        own_sequence = await confirmed_echo_sequence(
+                            self._session, account_id=account_id, connection_id=dialog_key[0],
+                            chat_id=dialog_key[1], payload=command.payload, receipt_id=receipt_id,
+                        )
+                        await stop_sequences(
+                            self._session, account_id=account_id, chat_id=dialog_key[1],
+                            except_sequence=own_sequence, event_ref=str(receipt_id),
+                            incoming_message_id=message_id,
+                        )
             await self._session.execute(
                 insert(TelegramOutboxEvent).values(
                     id=outbox_event_id,

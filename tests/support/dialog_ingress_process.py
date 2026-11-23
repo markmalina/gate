@@ -48,6 +48,7 @@ async def main() -> None:
                             "business_message": {
                                 "business_connection_id": connection_id,
                                 "chat": {"id": int(chat_id)},
+                                "message_id": 9999,
                                 "voice": {"file_id": "synthetic-untranscribed"},
                             },
                         },

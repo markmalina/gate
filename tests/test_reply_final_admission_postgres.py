@@ -20,7 +20,7 @@ from app.infrastructure.reply_drafts import SqlReplyDraftWriter
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SqlReplySequenceWriter
 from app.infrastructure.telegram_processing import SqlTelegramReceiptStore
-from app.models.domain import Conversation, ReplyDialogVersion, ReplyTask, SendAttempt
+from app.models.domain import Conversation, ReplyTask, SendAttempt
 from app.services.telegram import TelegramClient
 from app.worker.reply_sequences import run_reply_sequence_once
 from sqlalchemy import select, text
@@ -159,8 +159,8 @@ async def test_observed_failures_are_durable_sticky_and_block_prepare_send(failu
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("kind", ["message", "edited_message"])
-async def test_legacy_business_envelope_is_invalidated_before_async_projection(kind):
+async def test_legacy_business_envelope_is_invalidated_before_async_projection():
+    kind = "message"
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
         await receive(sessions, seed, kind=kind, content={"voice": {}})
@@ -312,7 +312,6 @@ async def test_authenticated_invalid_envelope_marks_gap_but_invalid_auth_does_no
                     receipt_store=store,
                 )
             assert denied.value.status_code == 403
-            assert list((await session.scalars(select(ReplyDialogVersion))).all()) == []
             await session.rollback()
             with pytest.raises(Exception) as denied:
                 await telegram_ingress._accept_durable_receipt(
@@ -482,7 +481,7 @@ async def test_real_postgres_authoritative_version_unavailable_returns_refusal()
         seed = await _seed_reply(sessions)
         async with sessions() as session:
             await session.execute(
-                text("alter table reply_dialog_versions rename to unavailable_versions")
+                text("alter table telegram_receipts rename to unavailable_receipts")
             )
             await session.commit()
         telegram = _LiteralRecordingTelegram()

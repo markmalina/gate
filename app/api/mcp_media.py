@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.dialog_snapshots import SNAPSHOT_PATTERN
 from app.application.reply_drafts import ReplyDraftError
 from app.application.reply_media import (
     MAX_MEDIA_BASE64_LENGTH,
@@ -41,7 +42,7 @@ PREPARE_INPUT_SCHEMA: JsonObject = {
     "type": "object",
     "properties": {
         "task_id": {"type": "string", "format": "uuid"},
-        "expected_context_snapshot": {"type": "string", "pattern": "^dialog-v1:[0-9a-f]{64}$"},
+        "expected_context_snapshot": {"type": "string", "pattern": SNAPSHOT_PATTERN},
         "mode": {
             "type": "string",
             "enum": ["photo", "album", "rich_photo", "rich_slideshow", "rich_collage"],

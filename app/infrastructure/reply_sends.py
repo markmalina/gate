@@ -33,8 +33,7 @@ from app.application.telegram_formatting import (
 from app.application.telegram_rich import RichPreview
 from app.core.config import Settings
 from app.infrastructure.dialog_snapshots import (
-    bump_dialog_version,
-    dialog_snapshot,
+    lock_dialog_ingress,
     require_dialog_snapshot,
     require_saved_dialog_snapshot,
 )
@@ -173,7 +172,6 @@ class _Reservation:
     attempt: _AttemptSnapshot
     business_connection_id: str
     covered_task_ids: tuple[UUID, ...]
-    admission_snapshot: str | None = None
 
 
 class SqlTelegramReplySender:
@@ -405,7 +403,8 @@ class SqlTelegramReplySender:
             else:
                 await require_dialog_snapshot(
                     self._session, scope=command.principal.access_scope,
-                    conversation=conversation, expected=reservation.admission_snapshot, lock=True,
+                    conversation=conversation, expected=reservation.context.dialog_snapshot,
+                    lock=True,
                 )
             # Read scalar flags after the fence: the ORM Account above may
             # predate a committed disable while admission waited for that lock.
@@ -632,13 +631,7 @@ class SqlTelegramReplySender:
         replay: ReplySendResult | None = None
         try:
             async with self._session.begin():
-                conversation = await self._session.get(Conversation, intent.context.conversation_id)
-                if conversation is None:
-                    raise ReplySendError(code="context_unavailable", message="Dialog unavailable")
-                await dialog_snapshot(
-                    self._session, scope=command.principal.access_scope,
-                    conversation=conversation, lock=True,
-                )
+                await lock_dialog_ingress(self._session)
                 await self._lock_reservation_conversation(
                     command=command,
                     conversation_id=intent.context.conversation_id,
@@ -800,10 +793,6 @@ class SqlTelegramReplySender:
         # coverage check above reject changes, including new inbound events.
 
         now = datetime.now(UTC)
-        await bump_dialog_version(
-            self._session, connection_id=probe.business_connection_id,
-            chat_id=current.target_chat_id,
-        )
         attempt = SendAttempt(
             id=uuid4(),
             reply_draft_id=current.draft_id,
@@ -875,18 +864,11 @@ class SqlTelegramReplySender:
                 },
             )
         )
-        conversation = await self._session.get(Conversation, current.conversation_id)
-        if conversation is None:
-            raise ReplySendError(code="context_unavailable", message="Dialog is unavailable")
         return _Reservation(
             context=current,
             attempt=_snapshot_attempt(attempt),
             business_connection_id=probe.business_connection_id,
             covered_task_ids=covered_task_ids,
-            admission_snapshot=await dialog_snapshot(
-                self._session, scope=command.principal.access_scope,
-                conversation=conversation,
-            ),
         )
 
     async def _load_concurrent_replay(
@@ -999,10 +981,7 @@ class SqlTelegramReplySender:
             )
             if conversation is None:
                 raise RuntimeError("Reply send context disappeared after delivery")
-            await dialog_snapshot(
-                self._session, scope=command.principal.access_scope,
-                conversation=conversation, lock=True,
-            )
+            await lock_dialog_ingress(self._session)
             attempt = await self._load_attempt_by_id(
                 attempt_id=reservation.attempt.id,
                 for_update=True,

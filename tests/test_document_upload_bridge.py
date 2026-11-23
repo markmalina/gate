@@ -18,14 +18,14 @@ def test_selected_local_file_becomes_exact_upload_arguments(tmp_path: Path) -> N
     selected.write_bytes(b"selected fixture bytes")
     arguments = upload_arguments(
         selected, uuid4(), caption="Ready", follow_up=True,
-        expected_context_snapshot="dialog-v1:" + "0" * 64,
+        expected_context_snapshot="101",
     )
     assert base64.b64decode(arguments["content_base64"]) == selected.read_bytes()
     assert arguments["filename"] == "chosen.xlsx"
     assert arguments["media_type"].endswith("spreadsheetml.sheet")
     assert arguments["caption_format"] == "plain"
     assert arguments["follow_up"] is True
-    assert arguments["expected_context_snapshot"] == "dialog-v1:" + "0" * 64
+    assert arguments["expected_context_snapshot"] == "101"
 
 
 def test_relative_symlink_directory_and_unknown_type_are_rejected(tmp_path: Path) -> None:
@@ -35,5 +35,5 @@ def test_relative_symlink_directory_and_unknown_type_are_rejected(tmp_path: Path
     linked.symlink_to(source)
     for path in [Path("chosen.pdf"), linked, tmp_path, tmp_path / "program.exe"]:
         with pytest.raises(ValueError):
-            upload_arguments(path, uuid4(), expected_context_snapshot="dialog-v1:" + "0" * 64)
+            upload_arguments(path, uuid4(), expected_context_snapshot="101")
 

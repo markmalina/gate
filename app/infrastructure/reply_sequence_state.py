@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.dialog_snapshots import CONTEXT_CHANGED_REPLY_TEXT, SNAPSHOT_KEY
 from app.application.reply_sends import ReplySendError
 from app.core.mcp_security import AccessScope
 from app.models.domain import Account, AuditLog, Message, ReplyDraft, SendAttempt
@@ -20,7 +21,7 @@ KEY = "reply_sequence"
 async def stop_sequences(
     session: AsyncSession, *, account_id: UUID | None = None, chat_id: str | None = None,
     except_sequence: str | None = None, reason: str = "context_changed",
-    event_ref: str | None = None,
+    event_ref: str | None = None, incoming_message_id: int | None = None,
 ) -> None:
     """Stop every matching series, without a discovery/page limit or attempt mutation."""
     predicates = [ReplyDraft.prompt_context.has_key(KEY)]  # noqa: E711
@@ -38,6 +39,16 @@ async def stop_sequences(
         context = dict(draft.prompt_context or {})
         metadata = context.get(KEY)
         if not isinstance(metadata, dict) or metadata.get("id") == except_sequence:
+            continue
+        previous_id = context.get(SNAPSHOT_KEY)
+        if (
+            incoming_message_id is not None
+            and isinstance(previous_id, str)
+            and previous_id.isascii()
+            and previous_id.isdecimal()
+            and len(previous_id) <= 19
+            and int(previous_id) >= incoming_message_id
+        ):
             continue
         # The terminal stop latch is independent of an item's delivery outcome.
         # A SENDING/UNKNOWN attempt may still complete; do not cancel that attempt.
@@ -57,8 +68,7 @@ async def stop_sequences(
                 actor="gate", action="reply_sequence_stopped",
                 account_id=draft.account_id, project_id=draft.project_id,
                 metadata_={"sequence_id": identifier, "reason": reason,
-                           "event_ref": event_ref, "auto_resume": False,
-                           "notification_status": "route_unavailable"},
+                           "event_ref": event_ref, "auto_resume": False},
             ))
             stopped.add(identifier)
     await session.flush()
@@ -118,8 +128,8 @@ async def confirmed_echo_sequence(
 
 async def sequence_progress(
     session: AsyncSession, *, draft: ReplyDraft, current_attempt_id: UUID | None = None,
-) -> tuple[dict[str, int], set[UUID], set[str]]:
-    """Subtract only journal-proven own effects from the immutable baseline.
+) -> tuple[set[UUID], set[str]]:
+    """Ignore only journal-proven own messages when checking the approved ID.
 
     Unconfirmed early echoes stop the series permanently. Later success can
     explain them, but cannot remove the stop latch or retry UNKNOWN.
@@ -170,7 +180,6 @@ async def sequence_progress(
         Message.chat_id == metadata.get("expected_recipient_chat_id"),
         Message.direction == "outbound", Message.telegram_message_id.in_(provider_ids),
     ))).all() if provider_ids else []
-    revisions: dict[str, int] = {}
     ignored_messages: set[UUID] = set()
     ignored_receipts: set[str] = set()
     for index in range(size):
@@ -203,13 +212,11 @@ async def sequence_progress(
             raise ReplySendError(code="context_changed", message="Unexpected sequence attempt")
         if attempt is None:
             continue
-        # Reservation audit proves exactly one increment; legacy/unbound journal refuses.
         reservation = reservations.get(str(attempt.id), [])
         if (len(reservation) != 1 or reservation[0].get("draft_id") != str(item.id)
                 or attempt.business_connection_id is None):
             raise ReplySendError(code="context_changed", message="Missing reservation proof")
         connection = attempt.business_connection_id
-        revisions[connection] = revisions.get(connection, 0) + 1
         if attempt.status != "sent":
             if attempt.id != current_attempt_id or attempt.status != "sending":
                 raise ReplySendError(code="context_changed", message="Ambiguous own progress")
@@ -217,7 +224,6 @@ async def sequence_progress(
         echoes = own_echoes.get(str(attempt.id), [])
         update_ids = [echo["update_id"] for echo in echoes]
         ignored_receipts.update(echo["receipt_id"] for echo in echoes)
-        revisions[connection] += len(echoes)
         for message in own_rows:
             if (message.business_connection_id != connection
                     or str(message.telegram_message_id) != attempt.provider_message_id):
@@ -229,7 +235,7 @@ async def sequence_progress(
             )
             if proven and message.text == item.draft_text:
                 ignored_messages.add(message.id)
-    return revisions, ignored_messages, ignored_receipts
+    return ignored_messages, ignored_receipts
 
 
 async def scoped_sequence_status(
@@ -251,7 +257,7 @@ async def scoped_sequence_status(
         identifier = metadata["id"]
         group = groups.setdefault(identifier, {
             "sequence_id": identifier, "state": "scheduled", "stop_reason": None,
-            "auto_resume": False, "notification_status": "route_unavailable", "items": [],
+            "auto_resume": False, "items": [],
         })
         if metadata.get("stop_reason") or metadata.get("state") in ("stopped", "cancelled"):
             group.update(state="stopped", stop_reason=metadata.get("stop_reason")
@@ -274,4 +280,6 @@ async def scoped_sequence_status(
                                        for item in group["items"])
         if group["sent_count"] == len(group["items"]):
             group["state"] = "sent"
+        elif group["state"] == "stopped" and group["stop_reason"] == "context_changed":
+            group["stop_message"] = CONTEXT_CHANGED_REPLY_TEXT
     return list(groups.values())

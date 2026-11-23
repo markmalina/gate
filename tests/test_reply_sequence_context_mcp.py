@@ -87,7 +87,7 @@ async def test_sequence_freshness_errors_share_scoped_context_contract(
     task_id = uuid4()
     session = AsyncMock()
     session.scalar.return_value = task_id
-    context = {"context_snapshot": "dialog-v1:" + "a" * 64, "context_ready": True}
+    context = {"context_snapshot": "102", "context_ready": True}
     reader = AsyncMock(return_value=context)
     monkeypatch.setattr(mcp_routes, "get_reply_context", reader)
     response = await mcp_routes._queue_approved_reply_sequence_tool_result(

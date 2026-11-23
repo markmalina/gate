@@ -124,8 +124,6 @@ async def test_exact_order_interval_echo_and_restart(size, clock):
     ({"photo": [{"file_id": "synthetic"}]}, False, "business_message"),
     ({"document": {"file_id": "synthetic"}}, False, "business_message"),
     ({"text": "Approved draft 1"}, True, "business_message"),
-    ({"text": "edit"}, True, "edited_business_message"),
-    ({"message_ids": [1001]}, False, "deleted_business_messages"),
 ])
 async def test_foreign_event_stops_immediately_without_worker(content, owner, kind, clock):
     async with _postgres_sessions() as sessions:
@@ -141,7 +139,7 @@ async def test_foreign_event_stops_immediately_without_worker(content, owner, ki
         assert result["sent_count"] == 1 and result["remaining_count"] == 49
         assert result["items"][0]["provider_message_id"] == "1001"
         assert all(item["state"] == "stopped" for item in result["items"][1:])
-        assert result["notification_status"] == "route_unavailable" and not result["auto_resume"]
+        assert result["stop_message"].startswith("Не отправлено.") and not result["auto_resume"]
         await receive(sessions, seed, update_id=7, content=content, owner=owner, kind=kind)
         async with sessions() as session:
             with pytest.raises(Exception) as denied:
@@ -217,7 +215,7 @@ async def test_scoped_status_and_other_account_chat_isolation(clock):
             ).validate(context)
             rendered = _format_reply_context_text(context)
             assert "stopped" in rendered and "Auto-resume: false" in rendered
-            assert "route_unavailable" in rendered
+            assert "Не отправлено." in rendered
         assert await tick(sessions, Recorder(), clock) == 1
 
 
