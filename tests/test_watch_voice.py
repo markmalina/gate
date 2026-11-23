@@ -173,6 +173,7 @@ class World:
                 await self.downloader.download(command.voice)
                 assert command.reservation_key.startswith("watch-voice:")
                 assert command.connector_ref == "telegram_business"
+                await command.on_recognition_start(datetime.now(UTC))
                 world.provider_calls += 1
                 if world.transcription_error:
                     raise RuntimeError("synthetic uncertain provider")
@@ -249,6 +250,10 @@ def test_full_cycle_preserves_original_transcript_times_and_deduplicates(tmp_pat
             assert note.recorded_at is None
             assert note.dropbox_modified_at.date().isoformat() == "2026-10-05"
             assert note.transcript == world.transcript
+            assert (note.received_at == note.transcription_queued_at
+                    <= note.recognition_started_at <= note.text_saved_at)
+            assert note.attempted_at >= note.text_saved_at
+            assert note.transcription_stopped_at is None
             assert note.delivery_state == "delivered"
             assert note.issue_url == "https://github.com/markmalina/mark/issues/101"
             assert note.github_received_at.date().isoformat() == "2026-10-05"
@@ -321,7 +326,11 @@ def test_unknown_provider_is_not_repeated(tmp_path, monkeypatch):
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
                 await worker.process_watch_voice(settings(), factory, http)
                 await worker.process_watch_voice(settings(), factory, http)
-            assert (await notes(factory))[0].transcription_state == "unknown"
+            note = (await notes(factory))[0]
+            assert note.transcription_state == "unknown"
+            assert note.received_at <= note.recognition_started_at <= note.transcription_stopped_at
+            assert note.transcription_stop_reason == "watch_voice_transcription_unknown"
+            assert note.text_saved_at is None
             assert world.provider_calls == 1 and world.posts == 0
 
     asyncio.run(run())

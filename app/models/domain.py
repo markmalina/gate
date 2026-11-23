@@ -23,6 +23,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.models.audio_processing import AudioProcessingMilestones
+
 TELEGRAM_MARK_RU_ACCOUNT_ID = uuid.UUID("0d8e025f-323d-5e86-a44c-a620f690ae4f")
 TELEGRAM_MARK_BY_ACCOUNT_ID = uuid.UUID("0f26e375-e470-5aa2-9a4e-c2f9ad9d24b2")
 ALPHA_PERSONAL_PROJECT_ID = uuid.UUID("9d2010e7-9583-5aa5-b7a9-ce73ac5e22eb")
@@ -827,7 +829,7 @@ class TelegramReceipt(Base):
     )
 
 
-class TelegramVoiceArchive(Base):
+class TelegramVoiceArchive(AudioProcessingMilestones, Base):
     """Durable original audio for one scoped Telegram Business voice receipt."""
 
     __tablename__ = "telegram_voice_archives"
@@ -981,7 +983,7 @@ class DropboxCallIntakeRejection(Base):
     )
 
 
-class PhoneCallRecording(Base):
+class PhoneCallRecording(AudioProcessingMilestones, Base):
     """Bounded original mobile call recording and its automatic transcript."""
 
     __tablename__ = "phone_call_recordings"

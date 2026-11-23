@@ -182,7 +182,12 @@ async def drain_watch_transcription(
                     WatchVoiceNote.transcription_state == "processing",
                     WatchVoiceNote.attempted_at < stale,
                 )
-                .values(transcription_state="unknown", last_error="watch_voice_stale_transcription")
+                .values(
+                    transcription_state="unknown",
+                    last_error="watch_voice_stale_transcription",
+                    transcription_stopped_at=datetime.now(UTC),
+                    transcription_stop_reason="watch_voice_stale_transcription",
+                )
             )
 
         jobs = (await lock.scalars(

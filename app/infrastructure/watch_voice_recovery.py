@@ -213,6 +213,7 @@ async def recover_note(
             note.transcription_state = "processing"
             note.model = "gpt-4o-transcribe"
             note.attempted_at = now
+            note.reset_processing_attempt(queued_at=None)
             await session.flush()
     except IntegrityError:
         # SQLite also proves the unique journal cap; PostgreSQL serializes the row lock.

@@ -14,6 +14,7 @@ from alembic.operations import Operations
 from app.application.telegram_voice_transcription import TelegramVoiceOutcome
 from app.core.config import Settings
 from app.infrastructure.owner_voice_recovery import EXACT_ARCHIVES, reconcile_exact_call_copies
+from app.models.domain import TelegramVoiceArchive
 from app.worker import dropbox_calls
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -25,8 +26,9 @@ def anyio_backend():
 
 
 def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
-    archive = SimpleNamespace(
+    archive = TelegramVoiceArchive(
         id=EXACT_ARCHIVES[0], transcription_recovery_generation=5,
+        transcription_status="unknown",
         data=b"synthetic audio", size_bytes=15, duration_seconds=25,
         sha256=hashlib.sha256(b"synthetic audio").hexdigest(),
     )
@@ -85,6 +87,7 @@ def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
     assert commands[0].reservation_key == f"telegram-voice-recovery-v5-20260921:{archive.id}"
     assert commands[0].period_key == datetime.now(UTC).strftime("%Y-%m")
     assert archive.transcription_status == "transcribed"
+    assert archive.text_saved_at is not None
     assert archive.summary_status == "summarized"
 
 
@@ -121,6 +124,8 @@ async def test_postgres_exact_grants_preserve_finished_and_foreign_archives(
                     "transcript_text TEXT, transcript_language TEXT, transcription_model TEXT, "
                     "transcribed_at TIMESTAMPTZ, summary_status TEXT, summary_text TEXT, "
                     "summary_model TEXT, summary_reason_code TEXT, summarized_at TIMESTAMPTZ, "
+                    "text_saved_at TIMESTAMPTZ, recognition_started_at TIMESTAMPTZ, "
+                    "transcription_stopped_at TIMESTAMPTZ, transcription_stop_reason TEXT, "
                     "size_bytes INTEGER, data BYTEA, duration_seconds INTEGER, sha256 TEXT, "
                     "CONSTRAINT ck_phone_call_recordings_transcription_status CHECK "
                     "(transcription_status IN "
@@ -195,6 +200,11 @@ async def test_postgres_exact_grants_preserve_finished_and_foreign_archives(
                     "SELECT transcript_text FROM phone_call_recordings "
                     "WHERE id='0db01180-ba79-4ba5-b253-dd2eaf86b9ab'::uuid"
                 )) == "synthetic full transcript"
+                assert await connection.scalar(text(
+                    "SELECT text_saved_at IS NOT NULL AND recognition_started_at IS NULL "
+                    "FROM phone_call_recordings "
+                    "WHERE id='0db01180-ba79-4ba5-b253-dd2eaf86b9ab'::uuid"
+                )) is True
                 assert await connection.scalar(text(
                     "SELECT transcript_text FROM phone_call_recordings "
                     "WHERE id='b9da7c16-543a-417a-9ec8-a844b43c9efc'::uuid"
