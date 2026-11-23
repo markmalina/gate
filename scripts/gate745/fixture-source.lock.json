@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "gate745.fixture-controller-source-lock/v2",
+  "state": "UNBOUND",
+  "enabled": false,
+  "independentSourceReview": "PENDING",
+  "ops": {
+    "repository": "AlphaCenter/ops",
+    "commit": "b2ca3677ec5f664d9ac0eca2359b4cbcceed605e",
+    "tree": "33af9d674e0bbd0fb452cb08fb615f24153ad391",
+    "reviewedCommit": "56529160b39f92e27779ad2f5e3416c3a63a6947",
+    "reviewedTree": "43a91c1b11e4c51ddcb158daebcd45930fc2d608",
+    "actionPath": "agent-ops/actions/gate745-fixture-controller"
+  },
+  "callerWorkflow": ".github/workflows/gate745-native-fixture.yml",
+  "controllerWorkflow": ".github/workflows/gate745-fixture-controller.yml",
+  "protectedEnvironment": "gate745-isolated-fixture",
+  "helperPolicy": "gate745.fixture-hosted-helper/v2",
+  "caps": {
+    "helperDeploys": 3,
+    "proofInvocations": 4,
+    "helperInvocations": 7,
+    "metadataChallengeGets": 6,
+    "configurationTransitions": 7,
+    "controlLedgerCreates": 1,
+    "controlLedgerRows": 7
+  },
+  "runtimeBinding": "authenticated-original-run-artifact-only",
+  "helperAdapterAcceptance": "PENDING",
+  "cleanupAcceptance": "PENDING"
+}

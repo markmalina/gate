@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "gate745.fixture-cross-component-test-vector/v2",
+  "testOnly": true,
+  "now": 1791738000000,
+  "bundleRaw": "{\"schemaVersion\":\"gate745.fixture-run-binding/v2\",\"state\":\"BOUND\",\"enabled\":true,\"run\":{\"id\":\"101\",\"attempt\":1,\"clientSha\":\"3333333333333333333333333333333333333333\",\"controllerSha\":\"4444444444444444444444444444444444444444\",\"controllerTree\":\"7777777777777777777777777777777777777777\",\"workflowPath\":\".github/workflows/gate745-native-fixture.yml\",\"repositoryId\":1293746267},\"ops\":{\"sha\":\"2222222222222222222222222222222222222222\",\"tree\":\"6666666666666666666666666666666666666666\"},\"helper\":{\"sha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"tree\":\"1111111111111111111111111111111111111111\",\"policy\":\"gate745.fixture-hosted-helper/v2\"},\"manifestRaw\":\"{\\\"schemaVersion\\\":\\\"agent-ops.gate745-fixture-runtime-manifest/v2\\\",\\\"state\\\":\\\"BOUND\\\",\\\"enabled\\\":true,\\\"binding\\\":{\\\"target\\\":{\\\"projectId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c211\\\",\\\"environmentId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c212\\\",\\\"serviceId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c213\\\",\\\"postgresServiceId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c214\\\",\\\"volumeInstanceId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c215\\\",\\\"repository\\\":\\\"AlphaCenter/gate\\\",\\\"healthUrl\\\":\\\"https://gate745-synthetic.up.railway.app/admin/ops/reply-cutover\\\"},\\\"source\\\":{\\\"reviewedHead\\\":\\\"cccccccccccccccccccccccccccccccccccccccc\\\",\\\"reviewedTree\\\":\\\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\\",\\\"deploySha\\\":\\\"cccccccccccccccccccccccccccccccccccccccc\\\",\\\"deployTree\\\":\\\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\\",\\\"baselineSha\\\":\\\"afe0c6b8519381a0007c0dcc1c145207b5d54a3f\\\",\\\"baselineTree\\\":\\\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\\\",\\\"reviewReceiptDigest\\\":\\\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\\\",\\\"reviewIssue\\\":204,\\\"reviewCommentId\\\":\\\"1204\\\"},\\\"authority\\\":{\\\"ownerId\\\":23397294,\\\"controlIssue\\\":745,\\\"workflowPath\\\":\\\".github/workflows/gate745-native-fixture.yml\\\",\\\"gateReviewIssue\\\":747,\\\"protectedEnvironment\\\":\\\"gate745-isolated-fixture\\\",\\\"ownerGrantDigest\\\":\\\"sha256:cf5ee81b4871a2621ee986279653be1c0eb446e8d6424f1ac9bfa461a3f47cc3\\\",\\\"ownerGrantCommentId\\\":\\\"701\\\",\\\"createdAt\\\":\\\"2026-10-11T16:50:00.000Z\\\",\\\"expiresAt\\\":\\\"2026-10-11T18:50:00.000Z\\\"},\\\"seed\\\":{\\\"baselineRevision\\\":\\\"0115_watch_voice_post_payment\\\",\\\"recipeDigest\\\":\\\"sha256:e2f3958bfe1cfb52db828adc6a2424d130705f9eac834289cf7577b2d0d037e0\\\",\\\"databaseIdentityDigest\\\":\\\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"unknownJournalDigest\\\":\\\"sha256:a006fa5cd877d757d054f21bedd3f87d160d0add87529d0b6d847245e10b7345\\\",\\\"expectedUnknown\\\":1,\\\"helperSourceSha\\\":\\\"ffffffffffffffffffffffffffffffffffffffff\\\",\\\"helperSourceTree\\\":\\\"1111111111111111111111111111111111111111\\\",\\\"helperManifestDigest\\\":\\\"sha256:ad6347a69ca82655760e19b753633c0607a83500077151bf6817f24e6c29e0eb\\\",\\\"proofRouteDigest\\\":\\\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"setupRouteDigest\\\":\\\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"},\\\"inventory\\\":[{\\\"role\\\":\\\"gate\\\",\\\"serviceId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c213\\\",\\\"replicas\\\":1,\\\"configurationDigest\\\":\\\"sha256:fe44a8cccd89edae70b54c5e58399979bd7d8b12643a8396ad62d089a781b692\\\",\\\"sourceDigest\\\":\\\"sha256:c5d5ba9bc847e0af6f8541203a494030402289a4846a900036de67ef41b149fb\\\",\\\"imageDigest\\\":null,\\\"externalBindings\\\":0},{\\\"role\\\":\\\"pg\\\",\\\"serviceId\\\":\\\"b527b8a3-2c7a-4bd6-92b3-f5244c74c214\\\",\\\"replicas\\\":1,\\\"configurationDigest\\\":\\\"sha256:fe44a8cccd89edae70b54c5e58399979bd7d8b12643a8396ad62d089a781b692\\\",\\\"sourceDigest\\\":\\\"sha256:e05d5b061a9bd5f77a4f21bf557fdd917c398b6ab05976f030f67dbcc4e9ae41\\\",\\\"imageDigest\\\":\\\"sha256:ccc3c4b860beb455fdc5911752d3ae6debf551929911c02bd3d4d6a7492985d1\\\",\\\"externalBindings\\\":0}],\\\"caps\\\":{\\\"projects\\\":1,\\\"services\\\":2,\\\"volumes\\\":1,\\\"replicasPerService\\\":1,\\\"vCpuPerService\\\":1,\\\"memoryMiBPerService\\\":1024,\\\"volumeMiB\\\":1024,\\\"baselineDeploys\\\":2,\\\"candidateDeploys\\\":4,\\\"backups\\\":2,\\\"helperDeploys\\\":3,\\\"pgSetupDeploys\\\":1,\\\"injectedFailures\\\":1,\\\"lifetimeMinutes\\\":120,\\\"stopNewTestsMinute\\\":100,\\\"additionalUSD\\\":5,\\\"bootstrapInvocations\\\":1,\\\"resetInvocations\\\":1,\\\"seedInvocations\\\":1,\\\"unknownProofInvocations\\\":4,\\\"maxHelperInvocations\\\":7,\\\"metadataChallengeReads\\\":6,\\\"configurationTransitions\\\":7,\\\"controlLedgerCreates\\\":1,\\\"controlLedgerRows\\\":7},\\\"cleanup\\\":{\\\"operatorIdentity\\\":23397294,\\\"routeDigest\\\":\\\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"deadline\\\":\\\"2026-10-11T18:50:00.000Z\\\",\\\"confirmed\\\":true},\\\"configuration\\\":{\\\"mechanism\\\":\\\"NEW_SERVICE_SETTINGS\\\",\\\"serviceCreatedAt\\\":\\\"2026-10-11T16:40:00.000Z\\\",\\\"phaseDigests\\\":[\\\"sha256:f19985816113964c10ff7db37cc4960357b34beb4fd0f73d4ca04f8443ee2ad9\\\",\\\"sha256:d8f092c6d7a4f81be3f646c45c121538acc6b9e0036327e9c88aee554af3fb4b\\\",\\\"sha256:87a1b3e03491de74c0ad4de61d2c7220acc5635811711f0a2376a81fc7126a46\\\",\\\"sha256:f19985816113964c10ff7db37cc4960357b34beb4fd0f73d4ca04f8443ee2ad9\\\",\\\"sha256:d8f092c6d7a4f81be3f646c45c121538acc6b9e0036327e9c88aee554af3fb4b\\\",\\\"sha256:87a1b3e03491de74c0ad4de61d2c7220acc5635811711f0a2376a81fc7126a46\\\",\\\"sha256:c687cf3c795096493799ef5244f136533120fad9a95aa34df8abf773b2b2f919\\\"]}}}\",\"manifestRawDigest\":\"sha256:46d9e99b8877ed60fd7323819fa7a956df3498b5831e90aba1accb108717e22e\",\"sourceCertificate\":{\"artifactId\":\"21\",\"artifactDigest\":\"sha256:a26b148cdf9737d78ef0efc02b9f1fcbbfbc8e263b7541873f57040dfbb997bf\"},\"ownerGrant\":{\"commentId\":\"701\",\"bodyDigest\":\"sha256:cf5ee81b4871a2621ee986279653be1c0eb446e8d6424f1ac9bfa461a3f47cc3\"},\"reservation\":{\"commentId\":\"702\",\"bodyDigest\":\"sha256:40ff5583d3d5aea59e476932c707965b543c08ca3b575a474ba3e7c9c6ed8807\"},\"targetDigest\":\"sha256:e6a1842afe3cb5b04b1750382440ca461d0842879d9ad15493c1fff08faad722\",\"createdAt\":\"2026-10-11T16:50:00.000Z\",\"expiresAt\":\"2026-10-11T18:50:00.000Z\"}",
+  "certificateRaw": "{\"schemaVersion\":\"gate745.fixture-source-certificate/v2\",\"runId\":\"101\",\"runAttempt\":1,\"clientSha\":\"3333333333333333333333333333333333333333\",\"controllerSha\":\"4444444444444444444444444444444444444444\",\"controllerTree\":\"7777777777777777777777777777777777777777\",\"opsSha\":\"2222222222222222222222222222222222222222\",\"opsTree\":\"6666666666666666666666666666666666666666\",\"helperSha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"helperTree\":\"1111111111111111111111111111111111111111\",\"review\":{\"workRepository\":\"AlphaCenter/delta\",\"issue\":204,\"commentId\":\"1204\",\"bodyDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"executionId\":\"delta-204-synthetic-source\",\"terminal\":\"ACCEPT\"},\"acceptedReview\":{\"ownerCommentId\":\"700\",\"bodyDigest\":\"sha256:0ca8f10589dd9260edf2b1e3b057aff86fed518f1831c364ba6a95a740058d48\"},\"checks\":[{\"role\":\"ops\",\"repository\":\"AlphaCenter/ops\",\"sha\":\"2222222222222222222222222222222222222222\",\"tree\":\"6666666666666666666666666666666666666666\",\"reviewedHead\":\"2222222222222222222222222222222222222222\",\"reviewedTree\":\"6666666666666666666666666666666666666666\",\"ciRunId\":\"2201\",\"ciEvent\":\"push\",\"ciRunAttempt\":1,\"ciConclusion\":\"success\",\"securityRunId\":\"2301\",\"reviewIssue\":201,\"reviewCommentId\":\"1201\",\"reviewBodyDigest\":\"sha256:9d90a4b8ba18f47a3a5c960101d88cdd85c129e8a98e52cc7efdc35996a5744a\",\"reviewExecutionId\":\"delta-201-synthetic-source\"},{\"role\":\"controller\",\"repository\":\"AlphaCenter/gate\",\"sha\":\"4444444444444444444444444444444444444444\",\"tree\":\"7777777777777777777777777777777777777777\",\"reviewedHead\":\"4444444444444444444444444444444444444444\",\"reviewedTree\":\"7777777777777777777777777777777777777777\",\"ciRunId\":\"2202\",\"ciEvent\":\"pull_request\",\"ciRunAttempt\":1,\"ciConclusion\":\"success\",\"securityRunId\":null,\"reviewIssue\":202,\"reviewCommentId\":\"1202\",\"reviewBodyDigest\":\"sha256:3d52b274e4ad7406582f115806d59990d4968414d20ccf1b21fa1c4ea3a1c2de\",\"reviewExecutionId\":\"delta-202-synthetic-source\"},{\"role\":\"helper\",\"repository\":\"AlphaCenter/gate\",\"sha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"tree\":\"1111111111111111111111111111111111111111\",\"reviewedHead\":\"ffffffffffffffffffffffffffffffffffffffff\",\"reviewedTree\":\"1111111111111111111111111111111111111111\",\"ciRunId\":\"2203\",\"ciEvent\":\"pull_request\",\"ciRunAttempt\":1,\"ciConclusion\":\"success\",\"securityRunId\":null,\"reviewIssue\":203,\"reviewCommentId\":\"1203\",\"reviewBodyDigest\":\"sha256:779c2558077cb45bf7d09f30aab44463c67320bb523d09e7d2f856e36e705ae0\",\"reviewExecutionId\":\"delta-203-synthetic-source\"},{\"role\":\"candidate\",\"repository\":\"AlphaCenter/gate\",\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"reviewedHead\":\"cccccccccccccccccccccccccccccccccccccccc\",\"reviewedTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"ciRunId\":\"2204\",\"ciEvent\":\"pull_request\",\"ciRunAttempt\":1,\"ciConclusion\":\"success\",\"securityRunId\":null,\"reviewIssue\":204,\"reviewCommentId\":\"1204\",\"reviewBodyDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"reviewExecutionId\":\"delta-204-synthetic-source\"}],\"manifestRawDigest\":\"sha256:46d9e99b8877ed60fd7323819fa7a956df3498b5831e90aba1accb108717e22e\",\"targetDigest\":\"sha256:e6a1842afe3cb5b04b1750382440ca461d0842879d9ad15493c1fff08faad722\",\"createdAt\":\"2026-10-11T16:50:00.000Z\",\"expiresAt\":\"2026-10-11T18:50:00.000Z\"}",
+  "policy": {
+    "schemaVersion": "agent-ops.gate745-fixture-controller-policy/v2",
+    "state": "SOURCE_READY",
+    "enabled": true,
+    "independentSourceReview": "ACCEPT",
+    "reviewedExecutorSourceSha": "2222222222222222222222222222222222222222",
+    "fixtureAcceptance": "PENDING",
+    "allocationPolicy": null,
+    "baselineSha": "afe0c6b8519381a0007c0dcc1c145207b5d54a3f",
+    "ownerIssueBodyDigest": "sha256:7f3c204f8409e972e2140edeb121add1ad1787066678927ed162bf81fd083974",
+    "helperPolicy": "gate745.fixture-hosted-helper/v2",
+    "helperDeploys": 3,
+    "metadataChallengeReads": 6,
+    "configurationTransitions": 7,
+    "unknownProofInvocations": 4,
+    "maxHelperInvocations": 7
+  },
+  "env": {
+    "repository": "AlphaCenter/gate",
+    "repositoryId": 1293746267,
+    "actorId": 23397294,
+    "actorLogin": "markmalina",
+    "triggeringActorId": 23397294,
+    "runId": "101",
+    "runAttempt": 1,
+    "sha": "3333333333333333333333333333333333333333",
+    "ref": "refs/heads/main",
+    "workflowPath": ".github/workflows/gate745-native-fixture.yml",
+    "protectedEnvironment": "gate745-isolated-fixture",
+    "executorSha": "2222222222222222222222222222222222222222",
+    "executorTree": "6666666666666666666666666666666666666666",
+    "controllerSha": "4444444444444444444444444444444444444444",
+    "controllerTree": "7777777777777777777777777777777777777777",
+    "eventName": "issue_comment",
+    "action": "created",
+    "command": "/ops-gate745 fixture run=complete"
+  },
+  "run": {
+    "id": 101,
+    "run_attempt": 1,
+    "head_sha": "3333333333333333333333333333333333333333",
+    "head_branch": "main",
+    "event": "issue_comment",
+    "actor": {
+      "id": 23397294,
+      "login": "markmalina"
+    },
+    "triggering_actor": {
+      "id": 23397294,
+      "login": "markmalina"
+    },
+    "repository": {
+      "id": 1293746267,
+      "full_name": "AlphaCenter/gate"
+    },
+    "path": ".github/workflows/gate745-native-fixture.yml",
+    "status": "in_progress",
+    "conclusion": null,
+    "created_at": "2026-10-11T16:50:00.000Z"
+  },
+  "sourceJob": {
+    "name": "fixture-source-admission",
+    "run_id": 101,
+    "status": "completed",
+    "conclusion": "success",
+    "steps": [
+      {
+        "name": "Admit exact source and owner",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload source certificate",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "sourceCertificateRecord": {
+    "id": 21,
+    "name": "gate745-fixture-source-certificate",
+    "rawDigest": "sha256:a26b148cdf9737d78ef0efc02b9f1fcbbfbc8e263b7541873f57040dfbb997bf",
+    "runId": "101",
+    "headSha": "3333333333333333333333333333333333333333",
+    "runAttempt": 1
+  },
+  "ownerIssue": {
+    "number": 745,
+    "repository_url": "https://api.github.com/repos/AlphaCenter/gate",
+    "body": "SYNTHETIC ISSUE BODY"
+  },
+  "ownerComment": {
+    "id": 701,
+    "user": {
+      "id": 23397294,
+      "login": "markmalina"
+    },
+    "body": "{\"schemaVersion\":\"gate745.fixture-effect-grant/v2\",\"result\":\"AUTHORIZED\",\"scope\":{\"ops\":{\"sha\":\"2222222222222222222222222222222222222222\",\"tree\":\"6666666666666666666666666666666666666666\"},\"controller\":{\"sha\":\"4444444444444444444444444444444444444444\",\"tree\":\"7777777777777777777777777777777777777777\"},\"helper\":{\"sha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"tree\":\"1111111111111111111111111111111111111111\",\"policy\":\"gate745.fixture-hosted-helper/v2\"},\"clientSha\":\"3333333333333333333333333333333333333333\",\"binding\":{\"target\":{\"projectId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c211\",\"environmentId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c212\",\"serviceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c213\",\"postgresServiceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c214\",\"volumeInstanceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c215\",\"repository\":\"AlphaCenter/gate\",\"healthUrl\":\"https://gate745-synthetic.up.railway.app/admin/ops/reply-cutover\"},\"source\":{\"reviewedHead\":\"cccccccccccccccccccccccccccccccccccccccc\",\"reviewedTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deploySha\":\"cccccccccccccccccccccccccccccccccccccccc\",\"deployTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"baselineSha\":\"afe0c6b8519381a0007c0dcc1c145207b5d54a3f\",\"baselineTree\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"reviewReceiptDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"reviewIssue\":204,\"reviewCommentId\":\"1204\"},\"authority\":{\"ownerId\":23397294,\"controlIssue\":745,\"workflowPath\":\".github/workflows/gate745-native-fixture.yml\",\"gateReviewIssue\":747,\"protectedEnvironment\":\"gate745-isolated-fixture\",\"createdAt\":\"2026-10-11T16:50:00.000Z\",\"expiresAt\":\"2026-10-11T18:50:00.000Z\"},\"seed\":{\"baselineRevision\":\"0115_watch_voice_post_payment\",\"recipeDigest\":\"sha256:e2f3958bfe1cfb52db828adc6a2424d130705f9eac834289cf7577b2d0d037e0\",\"databaseIdentityDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"unknownJournalDigest\":\"sha256:a006fa5cd877d757d054f21bedd3f87d160d0add87529d0b6d847245e10b7345\",\"expectedUnknown\":1,\"helperSourceSha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"helperSourceTree\":\"1111111111111111111111111111111111111111\",\"proofRouteDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"setupRouteDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"inventory\":[{\"role\":\"gate\",\"serviceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c213\",\"replicas\":1,\"configurationDigest\":\"sha256:fe44a8cccd89edae70b54c5e58399979bd7d8b12643a8396ad62d089a781b692\",\"sourceDigest\":\"sha256:c5d5ba9bc847e0af6f8541203a494030402289a4846a900036de67ef41b149fb\",\"imageDigest\":null,\"externalBindings\":0},{\"role\":\"pg\",\"serviceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c214\",\"replicas\":1,\"configurationDigest\":\"sha256:fe44a8cccd89edae70b54c5e58399979bd7d8b12643a8396ad62d089a781b692\",\"sourceDigest\":\"sha256:e05d5b061a9bd5f77a4f21bf557fdd917c398b6ab05976f030f67dbcc4e9ae41\",\"imageDigest\":\"sha256:ccc3c4b860beb455fdc5911752d3ae6debf551929911c02bd3d4d6a7492985d1\",\"externalBindings\":0}],\"caps\":{\"projects\":1,\"services\":2,\"volumes\":1,\"replicasPerService\":1,\"vCpuPerService\":1,\"memoryMiBPerService\":1024,\"volumeMiB\":1024,\"baselineDeploys\":2,\"candidateDeploys\":4,\"backups\":2,\"helperDeploys\":3,\"pgSetupDeploys\":1,\"injectedFailures\":1,\"lifetimeMinutes\":120,\"stopNewTestsMinute\":100,\"additionalUSD\":5,\"bootstrapInvocations\":1,\"resetInvocations\":1,\"seedInvocations\":1,\"unknownProofInvocations\":4,\"maxHelperInvocations\":7,\"metadataChallengeReads\":6,\"configurationTransitions\":7,\"controlLedgerCreates\":1,\"controlLedgerRows\":7},\"cleanup\":{\"operatorIdentity\":23397294,\"routeDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deadline\":\"2026-10-11T18:50:00.000Z\",\"confirmed\":true},\"configuration\":{\"mechanism\":\"NEW_SERVICE_SETTINGS\",\"serviceCreatedAt\":\"2026-10-11T16:40:00.000Z\",\"phaseDigests\":[\"sha256:f19985816113964c10ff7db37cc4960357b34beb4fd0f73d4ca04f8443ee2ad9\",\"sha256:d8f092c6d7a4f81be3f646c45c121538acc6b9e0036327e9c88aee554af3fb4b\",\"sha256:87a1b3e03491de74c0ad4de61d2c7220acc5635811711f0a2376a81fc7126a46\",\"sha256:f19985816113964c10ff7db37cc4960357b34beb4fd0f73d4ca04f8443ee2ad9\",\"sha256:d8f092c6d7a4f81be3f646c45c121538acc6b9e0036327e9c88aee554af3fb4b\",\"sha256:87a1b3e03491de74c0ad4de61d2c7220acc5635811711f0a2376a81fc7126a46\",\"sha256:c687cf3c795096493799ef5244f136533120fad9a95aa34df8abf773b2b2f919\"]}}},\"acceptedReview\":{\"issue\":204,\"commentId\":\"1204\",\"bodyDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"executionId\":\"delta-204-synthetic-source\",\"reviewedHead\":\"cccccccccccccccccccccccccccccccccccccccc\",\"reviewedTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"noNewSubscription\":true,\"noSharedWorkspaceHardCap\":true,\"conditionalReset\":{\"authorized\":true,\"requiresSuccess\":true,\"requiresLive\":true,\"requiresWholeFleetEmpty\":true}}",
+    "issue_url": "https://api.github.com/repos/AlphaCenter/gate/issues/745",
+    "created_at": "2026-10-11T16:49:30.000Z",
+    "updated_at": "2026-10-11T16:49:30.000Z"
+  },
+  "reservationComment": {
+    "id": 702,
+    "user": {
+      "id": 41898282,
+      "login": "github-actions[bot]",
+      "type": "Bot"
+    },
+    "body": "{\"schemaVersion\":\"gate745.fixture-run-reservation/v2\",\"runId\":\"101\",\"runAttempt\":1,\"ownerGrantCommentId\":\"701\",\"ownerGrantBodyDigest\":\"sha256:cf5ee81b4871a2621ee986279653be1c0eb446e8d6424f1ac9bfa461a3f47cc3\",\"sourceScopeDigest\":\"sha256:bcdb72788727684ce0fb5b6f28e6376eecf4bcb3bf0da4fb9dcbe6c0c09e7583\",\"manifestRawDigest\":\"sha256:46d9e99b8877ed60fd7323819fa7a956df3498b5831e90aba1accb108717e22e\",\"sourceCertificateDigest\":\"sha256:a26b148cdf9737d78ef0efc02b9f1fcbbfbc8e263b7541873f57040dfbb997bf\",\"state\":\"RESERVED\"}",
+    "issue_url": "https://api.github.com/repos/AlphaCenter/gate/issues/745",
+    "created_at": "2026-10-11T16:51:00.000Z",
+    "updated_at": "2026-10-11T16:51:00.000Z"
+  },
+  "acceptedComment": {
+    "id": 700,
+    "user": {
+      "id": 23397294,
+      "login": "markmalina"
+    },
+    "body": "{\"schemaVersion\":\"gate745.fixture-source-acceptance/v2\",\"result\":\"SOURCE_ACCEPTED\",\"reviews\":[{\"role\":\"ops\",\"issue\":201,\"commentId\":\"1201\",\"bodyDigest\":\"sha256:9d90a4b8ba18f47a3a5c960101d88cdd85c129e8a98e52cc7efdc35996a5744a\",\"executionId\":\"delta-201-synthetic-source\"},{\"role\":\"controller\",\"issue\":202,\"commentId\":\"1202\",\"bodyDigest\":\"sha256:3d52b274e4ad7406582f115806d59990d4968414d20ccf1b21fa1c4ea3a1c2de\",\"executionId\":\"delta-202-synthetic-source\"},{\"role\":\"helper\",\"issue\":203,\"commentId\":\"1203\",\"bodyDigest\":\"sha256:779c2558077cb45bf7d09f30aab44463c67320bb523d09e7d2f856e36e705ae0\",\"executionId\":\"delta-203-synthetic-source\"},{\"role\":\"candidate\",\"issue\":204,\"commentId\":\"1204\",\"bodyDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"executionId\":\"delta-204-synthetic-source\"}],\"source\":{\"ops\":{\"sha\":\"2222222222222222222222222222222222222222\",\"tree\":\"6666666666666666666666666666666666666666\"},\"controller\":{\"sha\":\"4444444444444444444444444444444444444444\",\"tree\":\"7777777777777777777777777777777777777777\"},\"helper\":{\"sha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"tree\":\"1111111111111111111111111111111111111111\",\"policy\":\"gate745.fixture-hosted-helper/v2\"},\"candidate\":{\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}}",
+    "issue_url": "https://api.github.com/repos/AlphaCenter/gate/issues/745",
+    "created_at": "2026-10-11T16:49:00.000Z",
+    "updated_at": "2026-10-11T16:49:00.000Z"
+  },
+  "reservations": [
+    {
+      "id": 700,
+      "user": {
+        "id": 23397294,
+        "login": "markmalina"
+      },
+      "body": "{\"schemaVersion\":\"gate745.fixture-source-acceptance/v2\",\"result\":\"SOURCE_ACCEPTED\",\"reviews\":[{\"role\":\"ops\",\"issue\":201,\"commentId\":\"1201\",\"bodyDigest\":\"sha256:9d90a4b8ba18f47a3a5c960101d88cdd85c129e8a98e52cc7efdc35996a5744a\",\"executionId\":\"delta-201-synthetic-source\"},{\"role\":\"controller\",\"issue\":202,\"commentId\":\"1202\",\"bodyDigest\":\"sha256:3d52b274e4ad7406582f115806d59990d4968414d20ccf1b21fa1c4ea3a1c2de\",\"executionId\":\"delta-202-synthetic-source\"},{\"role\":\"helper\",\"issue\":203,\"commentId\":\"1203\",\"bodyDigest\":\"sha256:779c2558077cb45bf7d09f30aab44463c67320bb523d09e7d2f856e36e705ae0\",\"executionId\":\"delta-203-synthetic-source\"},{\"role\":\"candidate\",\"issue\":204,\"commentId\":\"1204\",\"bodyDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"executionId\":\"delta-204-synthetic-source\"}],\"source\":{\"ops\":{\"sha\":\"2222222222222222222222222222222222222222\",\"tree\":\"6666666666666666666666666666666666666666\"},\"controller\":{\"sha\":\"4444444444444444444444444444444444444444\",\"tree\":\"7777777777777777777777777777777777777777\"},\"helper\":{\"sha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"tree\":\"1111111111111111111111111111111111111111\",\"policy\":\"gate745.fixture-hosted-helper/v2\"},\"candidate\":{\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\",\"tree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}}",
+      "issue_url": "https://api.github.com/repos/AlphaCenter/gate/issues/745",
+      "created_at": "2026-10-11T16:49:00.000Z",
+      "updated_at": "2026-10-11T16:49:00.000Z"
+    },
+    {
+      "id": 701,
+      "user": {
+        "id": 23397294,
+        "login": "markmalina"
+      },
+      "body": "{\"schemaVersion\":\"gate745.fixture-effect-grant/v2\",\"result\":\"AUTHORIZED\",\"scope\":{\"ops\":{\"sha\":\"2222222222222222222222222222222222222222\",\"tree\":\"6666666666666666666666666666666666666666\"},\"controller\":{\"sha\":\"4444444444444444444444444444444444444444\",\"tree\":\"7777777777777777777777777777777777777777\"},\"helper\":{\"sha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"tree\":\"1111111111111111111111111111111111111111\",\"policy\":\"gate745.fixture-hosted-helper/v2\"},\"clientSha\":\"3333333333333333333333333333333333333333\",\"binding\":{\"target\":{\"projectId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c211\",\"environmentId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c212\",\"serviceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c213\",\"postgresServiceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c214\",\"volumeInstanceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c215\",\"repository\":\"AlphaCenter/gate\",\"healthUrl\":\"https://gate745-synthetic.up.railway.app/admin/ops/reply-cutover\"},\"source\":{\"reviewedHead\":\"cccccccccccccccccccccccccccccccccccccccc\",\"reviewedTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"deploySha\":\"cccccccccccccccccccccccccccccccccccccccc\",\"deployTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"baselineSha\":\"afe0c6b8519381a0007c0dcc1c145207b5d54a3f\",\"baselineTree\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"reviewReceiptDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"reviewIssue\":204,\"reviewCommentId\":\"1204\"},\"authority\":{\"ownerId\":23397294,\"controlIssue\":745,\"workflowPath\":\".github/workflows/gate745-native-fixture.yml\",\"gateReviewIssue\":747,\"protectedEnvironment\":\"gate745-isolated-fixture\",\"createdAt\":\"2026-10-11T16:50:00.000Z\",\"expiresAt\":\"2026-10-11T18:50:00.000Z\"},\"seed\":{\"baselineRevision\":\"0115_watch_voice_post_payment\",\"recipeDigest\":\"sha256:e2f3958bfe1cfb52db828adc6a2424d130705f9eac834289cf7577b2d0d037e0\",\"databaseIdentityDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"unknownJournalDigest\":\"sha256:a006fa5cd877d757d054f21bedd3f87d160d0add87529d0b6d847245e10b7345\",\"expectedUnknown\":1,\"helperSourceSha\":\"ffffffffffffffffffffffffffffffffffffffff\",\"helperSourceTree\":\"1111111111111111111111111111111111111111\",\"proofRouteDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"setupRouteDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"inventory\":[{\"role\":\"gate\",\"serviceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c213\",\"replicas\":1,\"configurationDigest\":\"sha256:fe44a8cccd89edae70b54c5e58399979bd7d8b12643a8396ad62d089a781b692\",\"sourceDigest\":\"sha256:c5d5ba9bc847e0af6f8541203a494030402289a4846a900036de67ef41b149fb\",\"imageDigest\":null,\"externalBindings\":0},{\"role\":\"pg\",\"serviceId\":\"b527b8a3-2c7a-4bd6-92b3-f5244c74c214\",\"replicas\":1,\"configurationDigest\":\"sha256:fe44a8cccd89edae70b54c5e58399979bd7d8b12643a8396ad62d089a781b692\",\"sourceDigest\":\"sha256:e05d5b061a9bd5f77a4f21bf557fdd917c398b6ab05976f030f67dbcc4e9ae41\",\"imageDigest\":\"sha256:ccc3c4b860beb455fdc5911752d3ae6debf551929911c02bd3d4d6a7492985d1\",\"externalBindings\":0}],\"caps\":{\"projects\":1,\"services\":2,\"volumes\":1,\"replicasPerService\":1,\"vCpuPerService\":1,\"memoryMiBPerService\":1024,\"volumeMiB\":1024,\"baselineDeploys\":2,\"candidateDeploys\":4,\"backups\":2,\"helperDeploys\":3,\"pgSetupDeploys\":1,\"injectedFailures\":1,\"lifetimeMinutes\":120,\"stopNewTestsMinute\":100,\"additionalUSD\":5,\"bootstrapInvocations\":1,\"resetInvocations\":1,\"seedInvocations\":1,\"unknownProofInvocations\":4,\"maxHelperInvocations\":7,\"metadataChallengeReads\":6,\"configurationTransitions\":7,\"controlLedgerCreates\":1,\"controlLedgerRows\":7},\"cleanup\":{\"operatorIdentity\":23397294,\"routeDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deadline\":\"2026-10-11T18:50:00.000Z\",\"confirmed\":true},\"configuration\":{\"mechanism\":\"NEW_SERVICE_SETTINGS\",\"serviceCreatedAt\":\"2026-10-11T16:40:00.000Z\",\"phaseDigests\":[\"sha256:f19985816113964c10ff7db37cc4960357b34beb4fd0f73d4ca04f8443ee2ad9\",\"sha256:d8f092c6d7a4f81be3f646c45c121538acc6b9e0036327e9c88aee554af3fb4b\",\"sha256:87a1b3e03491de74c0ad4de61d2c7220acc5635811711f0a2376a81fc7126a46\",\"sha256:f19985816113964c10ff7db37cc4960357b34beb4fd0f73d4ca04f8443ee2ad9\",\"sha256:d8f092c6d7a4f81be3f646c45c121538acc6b9e0036327e9c88aee554af3fb4b\",\"sha256:87a1b3e03491de74c0ad4de61d2c7220acc5635811711f0a2376a81fc7126a46\",\"sha256:c687cf3c795096493799ef5244f136533120fad9a95aa34df8abf773b2b2f919\"]}}},\"acceptedReview\":{\"issue\":204,\"commentId\":\"1204\",\"bodyDigest\":\"sha256:b2ba5a3875f4379c475bf0db8e4d0970b76bfde5c65570beae477389028cb4eb\",\"executionId\":\"delta-204-synthetic-source\",\"reviewedHead\":\"cccccccccccccccccccccccccccccccccccccccc\",\"reviewedTree\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"noNewSubscription\":true,\"noSharedWorkspaceHardCap\":true,\"conditionalReset\":{\"authorized\":true,\"requiresSuccess\":true,\"requiresLive\":true,\"requiresWholeFleetEmpty\":true}}",
+      "issue_url": "https://api.github.com/repos/AlphaCenter/gate/issues/745",
+      "created_at": "2026-10-11T16:49:30.000Z",
+      "updated_at": "2026-10-11T16:49:30.000Z"
+    },
+    {
+      "id": 702,
+      "user": {
+        "id": 41898282,
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "body": "{\"schemaVersion\":\"gate745.fixture-run-reservation/v2\",\"runId\":\"101\",\"runAttempt\":1,\"ownerGrantCommentId\":\"701\",\"ownerGrantBodyDigest\":\"sha256:cf5ee81b4871a2621ee986279653be1c0eb446e8d6424f1ac9bfa461a3f47cc3\",\"sourceScopeDigest\":\"sha256:bcdb72788727684ce0fb5b6f28e6376eecf4bcb3bf0da4fb9dcbe6c0c09e7583\",\"manifestRawDigest\":\"sha256:46d9e99b8877ed60fd7323819fa7a956df3498b5831e90aba1accb108717e22e\",\"sourceCertificateDigest\":\"sha256:a26b148cdf9737d78ef0efc02b9f1fcbbfbc8e263b7541873f57040dfbb997bf\",\"state\":\"RESERVED\"}",
+      "issue_url": "https://api.github.com/repos/AlphaCenter/gate/issues/745",
+      "created_at": "2026-10-11T16:51:00.000Z",
+      "updated_at": "2026-10-11T16:51:00.000Z"
+    }
+  ]
+}
