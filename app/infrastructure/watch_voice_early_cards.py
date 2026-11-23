@@ -83,6 +83,7 @@ def card_values(settings: Settings, item: dict[str, Any], detected: datetime) ->
         f"{marker(event_id, 0)}\n\nАвтор: Марк Малиновский. Доставщик: Gate.\n"
         "Канал: Galaxy Watch → Samsung Звукозапись → Dropbox Voice.\n"
         "Статус: запись обнаружена; расшифровка ожидается.\n"
+        f"ID Gate: `{event_id}`.\n"
         f"Dropbox source: `{item['id']}`, revision `{item['rev']}`.\n"
         f"Изменён в Dropbox: {modified.isoformat()}.\n"
         f"Обнаружен Gate: {detected.isoformat()}.\n"

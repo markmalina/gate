@@ -123,6 +123,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     _app.state.watch_wake_event = asyncio.Event()
     _app.state.dropbox_call_wake_event = asyncio.Event()
     watch_mark_wake = asyncio.Event()
+    watch_update_wake = (
+        watch_mark_wake if getattr(settings, "gate_watch_mark_updates_enabled", False) else None
+    )
     watch_archive_wake = (
         asyncio.Event()
         if watch_wake_enabled and getattr(settings, "gate_watch_webhook_archive_enabled", False)
@@ -264,13 +267,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         watch_archive_task = asyncio.create_task(
                             run_watch_archive_loop(
                                 settings, database_runtime.session_factory, watch_archive_wake,
-                                watch_transcription_wake,
+                                watch_transcription_wake, watch_update_wake,
                             )
                         )
                     if watch_transcription_wake is not None:
                         watch_transcription_task = asyncio.create_task(
                             run_watch_transcription_loop(
                                 settings, database_runtime.session_factory, watch_transcription_wake,
+                                mark_wake=watch_update_wake,
                             )
                         )
                     if dropbox_call_worker_enabled:
