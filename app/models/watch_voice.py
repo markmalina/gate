@@ -13,6 +13,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     case,
     false,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -118,6 +120,10 @@ class WatchScheduleControl(Base):
 class WatchVoiceNote(AudioProcessingMilestones, Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
+        Index(
+            "ix_watch_note_mark_queue", "workspace_key", "account_id", "id",
+            postgresql_where=text("mark_publish_version > 0 AND webhook_archived"),
+        ),
         UniqueConstraint(
             "workspace_key",
             "account_id",
