@@ -274,6 +274,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                         watch_transcription_task = asyncio.create_task(
                             run_watch_transcription_loop(
                                 settings, database_runtime.session_factory, watch_transcription_wake,
+                                mark_wake=watch_update_wake,
                             )
                         )
                     if dropbox_call_worker_enabled:

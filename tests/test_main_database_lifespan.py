@@ -11,6 +11,7 @@ from app.infrastructure import database as database_module
 from app.infrastructure.database import DatabaseRuntime
 from app.services.telegram import TelegramClient
 from fastapi import FastAPI
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
@@ -26,8 +27,10 @@ def test_application_registers_liveness_and_readiness_routes() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("mark_updates_enabled", [True, False])
 async def test_application_lifespan_installs_and_removes_database_runtime(
     monkeypatch: pytest.MonkeyPatch,
+    mark_updates_enabled: bool,
 ) -> None:
     dispose = AsyncMock()
     engine = cast(AsyncEngine, type("Engine", (), {"dispose": dispose})())
@@ -75,6 +78,14 @@ async def test_application_lifespan_installs_and_removes_database_runtime(
     monkeypatch.setattr(main_module, "build_readiness_service", fake_build_readiness)
     monkeypatch.setattr(main_module, "reconcile_telegram_webhook_with_retries", fake_reconcile)
     monkeypatch.setattr(main_module, "build_telegram_http_client", lambda: http_client)
+    watch_webhook_loop = AsyncMock()
+    watch_mark_loop = AsyncMock()
+    watch_archive_loop = AsyncMock()
+    watch_transcription_loop = AsyncMock()
+    monkeypatch.setattr(main_module, "run_watch_webhook_loop", watch_webhook_loop)
+    monkeypatch.setattr(main_module, "run_watch_mark_loop", watch_mark_loop)
+    monkeypatch.setattr(main_module, "run_watch_archive_loop", watch_archive_loop)
+    monkeypatch.setattr(main_module, "run_watch_transcription_loop", watch_transcription_loop)
     monkeypatch.setattr(
         main_module,
         "get_settings",
@@ -84,6 +95,10 @@ async def test_application_lifespan_installs_and_removes_database_runtime(
             {
                 "database_url": "postgresql+asyncpg://gate",
                 "telegram_bot_token": "secret-token",
+                "gate_watch_webhook_enabled": True,
+                "gate_watch_webhook_archive_enabled": True,
+                "gate_watch_webhook_transcription_admission": SecretStr("synthetic"),
+                "gate_watch_mark_updates_enabled": mark_updates_enabled,
             },
         )(),
     )
@@ -95,6 +110,16 @@ async def test_application_lifespan_installs_and_removes_database_runtime(
         assert app.state.readiness_service is readiness_service
         assert isinstance(app.state.telegram_client, TelegramClient)
         assert not http_client.is_closed
+        settings, factory, mark_wake = watch_mark_loop.call_args.args
+        _, _, archive_wake, transcription_wake, update_wake = watch_archive_loop.call_args.args
+        expected_update_wake = mark_wake if mark_updates_enabled else None
+        assert update_wake is expected_update_wake
+        watch_webhook_loop.assert_called_once_with(
+            settings, factory, app.state.watch_wake_event, archive_wake, mark_wake,
+        )
+        watch_transcription_loop.assert_called_once_with(
+            settings, factory, transcription_wake, mark_wake=expected_update_wake,
+        )
 
     assert builds == ["postgresql+asyncpg://gate"]
     assert readiness_engines == [engine]
