@@ -99,7 +99,7 @@ async def test_one_post_across_overlapping_calls_restart_and_readback(lost_ack):
         assert len(posts) == 1
         assert posts[0]["body"] == (
             "Gate остановил серию после нового события в диалоге."
-            f"\n\n<!-- gate-reply-stop-notice:v1 {event_id} -->"
+            f"\n\n@markmalina\n\n<!-- gate-reply-stop-notice:v1 {event_id} -->"
         )
         if lost_ack:
             assert (await deliver()).state == "unknown"

@@ -56,6 +56,7 @@ from app.worker.alpha_transcriptions import run_alpha_transcription_worker_loop
 from app.worker.beta_space import run_beta_space_worker_loop
 from app.worker.reply_sequences import run_reply_sequence_worker_loop
 from app.worker.reply_documents import run_reply_document_cleanup_loop
+from app.worker.reply_stop_notice_publisher import automatic_publisher_config, run_automatic_publisher
 from app.worker.dropbox_calls import run_dropbox_call_worker_loop
 from app.worker.watch_webhook import run_watch_mark_loop, run_watch_webhook_loop
 from app.worker.watch_webhook_archive import run_watch_archive_loop
@@ -114,6 +115,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         "gate_reply_sequence_worker_enabled",
         False,
     )
+    reply_stop_notice = automatic_publisher_config(os.environ)
+    if (
+        reply_stop_notice is not None
+        and getattr(settings, "gate_workspace_id", None) != reply_stop_notice[0].scope.workspace_id
+    ):
+        reply_stop_notice = None
     dropbox_call_worker_enabled = getattr(
         settings,
         "gate_dropbox_call_intake_enabled",
@@ -169,6 +176,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 reconciliation_task: asyncio.Task[None] | None = None
                 worker_task: asyncio.Task[None] | None = None
                 reply_sequence_task: asyncio.Task[None] | None = None
+                reply_stop_notice_task: asyncio.Task[None] | None = None
                 reply_document_cleanup_task: asyncio.Task[None] | None = None
                 dropbox_call_task: asyncio.Task[None] | None = None
                 watch_voice_task: asyncio.Task[None] | None = None
@@ -237,6 +245,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 session_factory=database_runtime.session_factory,
                                 telegram=_app.state.telegram_client,
                                 health_reporter=worker_health,
+                            )
+                        )
+                    if reply_stop_notice is not None:
+                        reply_stop_notice_task = asyncio.create_task(
+                            run_automatic_publisher(
+                                database_runtime.session_factory, *reply_stop_notice,
                             )
                         )
                     if getattr(settings, "gate_document_cleanup_enabled", False):
@@ -328,6 +342,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 reply_sequence_task.cancel()
                             with suppress(asyncio.CancelledError):
                                 await reply_sequence_task
+                        if reply_stop_notice_task is not None:
+                            reply_stop_notice_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await reply_stop_notice_task
                         if reply_document_cleanup_task is not None:
                             if not reply_document_cleanup_task.done():
                                 reply_document_cleanup_task.cancel()

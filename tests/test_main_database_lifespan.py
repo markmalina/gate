@@ -1,8 +1,10 @@
 """Application integration tests for process-scoped database ownership."""
 
 import asyncio
+from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -82,10 +84,29 @@ async def test_application_lifespan_installs_and_removes_database_runtime(
     watch_mark_loop = AsyncMock()
     watch_archive_loop = AsyncMock()
     watch_transcription_loop = AsyncMock()
+    notice_cancelled = asyncio.Event()
+
+    async def fake_notice_loop(*_args: object) -> None:
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            notice_cancelled.set()
+            raise
+
+    notice_loop = AsyncMock(side_effect=fake_notice_loop)
     monkeypatch.setattr(main_module, "run_watch_webhook_loop", watch_webhook_loop)
     monkeypatch.setattr(main_module, "run_watch_mark_loop", watch_mark_loop)
     monkeypatch.setattr(main_module, "run_watch_archive_loop", watch_archive_loop)
     monkeypatch.setattr(main_module, "run_watch_transcription_loop", watch_transcription_loop)
+    monkeypatch.setattr(main_module, "run_automatic_publisher", notice_loop)
+    prefix = "GATE_REPLY_STOP_NOTICE_"
+    for name, value in {
+        "ENABLED": "true" if mark_updates_enabled else "false",
+        "AUTO_AFTER": "2026-11-23T10:00:00Z",
+        "APP_ID": "5100", "APP_INSTALLATION_ID": "5200", "APP_SLUG": "synthetic-reply",
+        "APP_PRIVATE_KEY": "synthetic", "ACCOUNT_IDS": str(uuid4()), "PROJECT_IDS": str(uuid4()),
+    }.items():
+        monkeypatch.setenv(prefix + name, value)
     monkeypatch.setattr(
         main_module,
         "get_settings",
@@ -99,6 +120,7 @@ async def test_application_lifespan_installs_and_removes_database_runtime(
                 "gate_watch_webhook_archive_enabled": True,
                 "gate_watch_webhook_transcription_admission": SecretStr("synthetic"),
                 "gate_watch_mark_updates_enabled": mark_updates_enabled,
+                "gate_workspace_id": "mark-personal",
             },
         )(),
     )
@@ -120,8 +142,17 @@ async def test_application_lifespan_installs_and_removes_database_runtime(
         watch_transcription_loop.assert_called_once_with(
             settings, factory, transcription_wake, mark_wake=expected_update_wake,
         )
+        if mark_updates_enabled:
+            notice_loop.assert_awaited_once()
+            factory, config, since = notice_loop.await_args.args
+            assert factory is runtime.session_factory
+            assert config.scope.workspace_id == "mark-personal"
+            assert since == datetime(2026, 11, 23, 10, tzinfo=UTC)
+        else:
+            notice_loop.assert_not_called()
 
     assert builds == ["postgresql+asyncpg://gate"]
+    assert notice_cancelled.is_set() == mark_updates_enabled
     assert readiness_engines == [engine]
     assert reconciliation_http_clients == [http_client]
     assert reconciliation_cancelled.is_set()

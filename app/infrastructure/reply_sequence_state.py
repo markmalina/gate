@@ -5,7 +5,7 @@ No scheduler, inferred text identity or fresh-snapshot rebinding lives here.
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,10 @@ from app.core.mcp_security import AccessScope
 from app.models.domain import Account, AuditLog, Message, ReplyDraft, SendAttempt
 
 KEY = "reply_sequence"
+
+
+def reply_stop_notice_outcome_id(event_id: UUID) -> UUID:
+    return uuid5(NAMESPACE_URL, f"gate:reply-stop-notice:outcome:{event_id}")
 
 
 async def stop_sequences(
@@ -274,4 +278,33 @@ async def scoped_sequence_status(
                                        for item in group["items"])
         if group["sent_count"] == len(group["items"]):
             group["state"] = "sent"
+    stopped = [
+        key for key, group in groups.items()
+        if group["state"] == "stopped" and group["stop_reason"] == "context_changed"
+    ]
+    if stopped:
+        sequence_id = AuditLog.metadata_["sequence_id"].as_string()
+        stops = (await session.execute(
+            select(AuditLog.id, sequence_id).where(
+                AuditLog.actor == "gate",
+                AuditLog.action == "reply_sequence_stopped",
+                AuditLog.account_id.in_(scope.account_ids),
+                AuditLog.project_id.in_(scope.project_ids),
+                sequence_id.in_(stopped),
+                AuditLog.metadata_["reason"].as_string() == "context_changed",
+            )
+        )).all()
+        events = {
+            reply_stop_notice_outcome_id(event_id): (str(event_id), identifier)
+            for event_id, identifier in stops
+        }
+        if events:
+            outcomes = await session.scalars(select(AuditLog).where(
+                AuditLog.id.in_(events),
+                AuditLog.action.in_(("reply_stop_notice_published", "reply_stop_notice_rejected")),
+            ))
+            for outcome in outcomes:
+                event, identifier = events[outcome.id]
+                if outcome.metadata_.get("event_id") == event:
+                    groups[identifier]["notification_status"] = outcome.action.rsplit("_", 1)[-1]
     return list(groups.values())

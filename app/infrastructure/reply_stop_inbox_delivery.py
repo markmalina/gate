@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.mcp_security import AccessScope
+from app.infrastructure.reply_sequence_state import reply_stop_notice_outcome_id
 from app.infrastructure.reply_sequence_stop_notice import read_reply_stop_notice
 from app.infrastructure.watch_app_inbox import AppInboxClient
 from app.infrastructure.watch_voice_github import GithubReceipt, WatchVoiceError, body_digest
@@ -42,12 +43,15 @@ async def deliver_reply_stop_notice(
         return ReplyStopDelivery("route_unavailable")
 
     claim_id = uuid5(NAMESPACE_URL, f"gate:reply-stop-notice:claim:{event_id}")
-    outcome_id = uuid5(NAMESPACE_URL, f"gate:reply-stop-notice:outcome:{event_id}")
+    outcome_id = reply_stop_notice_outcome_id(event_id)
     async with sessions() as session:
         notice = await read_reply_stop_notice(session, event_id=event_id, scope=scope)
     if notice is None:
         return ReplyStopDelivery("route_unavailable")
-    body = f"{notice.text}\n\n<!-- gate-reply-stop-notice:v1 {notice.idempotency_key} -->"
+    body = (
+        f"{notice.text}\n\n@markmalina\n\n"
+        f"<!-- gate-reply-stop-notice:v1 {notice.idempotency_key} -->"
+    )
     binding = {"event_id": str(event_id), "body_sha256": body_digest(body)}
     try:
         await inbox.preflight()
