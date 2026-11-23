@@ -1,5 +1,6 @@
 """Cutover observations fail closed without reclassifying delivery outcomes."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -202,3 +203,88 @@ def test_predeploy_enabled_sends_on_guarded_schema_allow_activation(
     assert upgrade.call_args.args[1] == GUARDED_REVISION
     assert observe.await_count == 2
     assert observation.unknown == 4
+
+
+@pytest.mark.parametrize(
+    ("follow_up", "expected"),
+    [
+        (ReplyCutoverObservation((BASELINE_REVISION,), 0, 0, 0), BASELINE_REVISION),
+        (ReplyCutoverObservation((GUARDED_REVISION,), 0, 0, 0), GUARDED_REVISION),
+        (ReplyCutoverObservation((BASELINE_REVISION, GUARDED_REVISION), 0, 0, 0), "unverified"),
+        (ReplyCutoverObservation(("synthetic-private-revision",), 0, 0, 0), "unverified"),
+        (OSError("synthetic-private-connection"), "unverified"),
+    ],
+)
+def test_migration_error_reports_one_fresh_allowlisted_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    follow_up: ReplyCutoverObservation | Exception,
+    expected: str,
+) -> None:
+    from app.worker import reply_cutover
+
+    observe = AsyncMock(side_effect=[
+        ReplyCutoverObservation((BASELINE_REVISION,), 0, 0, 0), follow_up,
+    ])
+    upgrade = MagicMock(side_effect=RuntimeError("synthetic-private-migration-error"))
+    monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(
+        reply_cutover, "get_settings",
+        lambda: Settings(_env_file=None, GATE_SEND_ENABLED=False),
+    )
+    monkeypatch.setattr(reply_cutover.command, "upgrade", upgrade)
+
+    with pytest.raises(SystemExit) as caught:
+        reply_cutover.main()
+
+    assert caught.value.code == 1
+    assert upgrade.call_count == 1
+    assert observe.await_count == 2
+    assert caplog.messages == [
+        f"reply_cutover_predeploy_failed observed_schema_after_attempt={expected}",
+    ]
+
+
+def test_postmigration_observation_failure_reports_fresh_guarded_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from app.worker import reply_cutover
+
+    observe = AsyncMock(side_effect=[
+        ReplyCutoverObservation((BASELINE_REVISION,), 0, 0, 0),
+        OSError("synthetic-private-postmigration-error"),
+        ReplyCutoverObservation((GUARDED_REVISION,), 0, 0, 0),
+    ])
+    upgrade = MagicMock()
+    monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(
+        reply_cutover, "get_settings",
+        lambda: Settings(_env_file=None, GATE_SEND_ENABLED=False),
+    )
+    monkeypatch.setattr(reply_cutover.command, "upgrade", upgrade)
+
+    with pytest.raises(SystemExit) as caught:
+        reply_cutover.main()
+
+    assert caught.value.code == 1
+    assert upgrade.call_count == 1
+    assert observe.await_count == 3
+    assert caplog.messages == [
+        f"reply_cutover_predeploy_failed observed_schema_after_attempt={GUARDED_REVISION}",
+    ]
+
+
+@pytest.mark.anyio
+async def test_failure_schema_observation_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.worker import reply_cutover
+
+    async def wait_for_connection() -> ReplyCutoverObservation:
+        await asyncio.sleep(3600)
+        pytest.fail("unbounded failure observation")
+
+    observe = AsyncMock(side_effect=wait_for_connection)
+    monkeypatch.setattr(reply_cutover, "_observe", observe)
+    monkeypatch.setattr(reply_cutover, "FAILURE_SCHEMA_READ_TIMEOUT", 0)
+    assert await reply_cutover._schema_after_migration_failure() == "unverified"
+    observe.assert_awaited_once()
