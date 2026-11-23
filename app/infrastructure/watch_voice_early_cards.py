@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.core.watch_browser import watch_browser, watch_path
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError, marker
 from app.infrastructure.watch_voice_recovery import _utc
 from app.models.watch_voice import (
@@ -79,10 +80,16 @@ def card_values(settings: Settings, item: dict[str, Any], detected: datetime) ->
     source = (settings.gate_workspace_id, settings.dropbox_call_account_id, item["id"], item["rev"])
     event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, repr(source)))
     modified = timestamp(item["server_modified"])
+    config = watch_browser(settings)
+    link = (
+        f"ID Gate: `{event_id}`. [Открыть запись в Gate]({config.origin}{watch_path(event_id)}).\n"
+        if config else ""
+    )
     body = (
         f"{marker(event_id, 0)}\n\nАвтор: Марк Малиновский. Доставщик: Gate.\n"
         "Канал: Galaxy Watch → Samsung Звукозапись → Dropbox Voice.\n"
         "Статус: запись обнаружена; расшифровка ожидается.\n"
+        f"{link}"
         f"Dropbox source: `{item['id']}`, revision `{item['rev']}`.\n"
         f"Изменён в Dropbox: {modified.isoformat()}.\n"
         f"Обнаружен Gate: {detected.isoformat()}.\n"
