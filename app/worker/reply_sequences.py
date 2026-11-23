@@ -21,13 +21,13 @@ from app.application.reply_sends import (
 from app.application.worker_health import REPLY_SEQUENCE_WORKER, WorkerHealthReporter
 from app.core.config import Settings
 from app.core.mcp_security import AccessScope, Principal
+from app.infrastructure.dialog_snapshots import dialog_snapshot
 from app.infrastructure.reply_sends import SqlTelegramReplySender
 from app.infrastructure.reply_sequences import SEQUENCE_CONTEXT_KEY
 from app.models.domain import (
     AuditLog,
+    Conversation,
     ReplyDraft,
-    ReplyTask,
-    ReplyTaskStatus,
     SendAttempt,
     SendAttemptStatus,
 )
@@ -90,18 +90,9 @@ async def run_reply_sequence_once(
     due = _due_items(rows, now=current_time)
     sent_count = 0
     for item in due:
-        if await _sequence_superseded(
-            session_factory=session_factory,
-            item=item,
-        ):
-            await _record_sequence_outcome(
-                session_factory=session_factory,
-                item=item,
-                state="stopped",
-                error_code="task_superseded",
-                stop_remaining=True,
-            )
-            continue
+        # Task age is not a freshness boundary: a newer task can already be
+        # part of the reviewed snapshot. The shared sender checks that exact
+        # snapshot (and sequence progress) before any provider dispatch.
         principal = Principal(
             subject=item.principal_subject,
             auth_method="approved-reply-sequence",
@@ -131,6 +122,8 @@ async def run_reply_sequence_once(
                     )
                 )
             except ReplySendError as exc:
+                if exc.code == "sequence_not_due":
+                    continue
                 await _record_sequence_outcome(
                     session_factory=session_factory,
                     item=item,
@@ -140,6 +133,8 @@ async def run_reply_sequence_once(
                 )
                 continue
 
+        if result.idempotent_replay or result.status in ("reserved", "sending"):
+            continue
         await _record_sequence_outcome(
             session_factory=session_factory,
             item=item,
@@ -174,7 +169,6 @@ async def _discover_sequence_rows(
             .outerjoin(SendAttempt, SendAttempt.reply_draft_id == ReplyDraft.id)
             .where(ReplyDraft.prompt_context.has_key(SEQUENCE_CONTEXT_KEY))  # noqa: E711
             .order_by(ReplyDraft.created_at, ReplyDraft.id)
-            .limit(500)
         )
         for raw in result.mappings():
             row = _sequence_row_from_scalars(
@@ -328,35 +322,6 @@ def _metadata_payload_digest(value: object) -> str | None:
     return value
 
 
-async def _sequence_superseded(
-    *,
-    session_factory: async_sessionmaker[AsyncSession],
-    item: _DueSequenceItem,
-) -> bool:
-    async with session_factory() as session:
-        current_created_at = await session.scalar(
-            select(ReplyTask.created_at).where(ReplyTask.id == item.task_id)
-        )
-        if current_created_at is None:
-            await session.rollback()
-            return True
-        newer = await session.scalar(
-            select(ReplyTask.id)
-            .where(
-                ReplyTask.conversation_id == item.conversation_id,
-                ReplyTask.account_id == item.account_id,
-                ReplyTask.project_id == item.project_id,
-                ReplyTask.status == ReplyTaskStatus.NEEDS_REPLY.value,
-                ReplyTask.id != item.task_id,
-                ReplyTask.created_at > current_created_at,
-            )
-            .order_by(ReplyTask.created_at, ReplyTask.id)
-            .limit(1)
-        )
-        await session.rollback()
-        return newer is not None
-
-
 async def _record_sequence_outcome(
     *,
     session_factory: async_sessionmaker[AsyncSession],
@@ -367,8 +332,19 @@ async def _record_sequence_outcome(
     stop_remaining: bool,
 ) -> None:
     async with session_factory() as session:
+        conversation = await session.get(Conversation, item.conversation_id)
+        if conversation is None:
+            return
+        await dialog_snapshot(session, scope=AccessScope(
+            workspace_id=item.workspace_id, account_ids=frozenset({item.account_id}),
+            project_ids=frozenset({item.project_id}),
+        ), conversation=conversation, lock=True)
         result = await session.execute(
-            select(ReplyDraft).where(ReplyDraft.account_id == item.account_id).with_for_update()
+            select(ReplyDraft).where(
+                ReplyDraft.account_id == item.account_id,
+                ReplyDraft.prompt_context[SEQUENCE_CONTEXT_KEY]["id"].as_string()
+                == item.sequence_id,
+            ).order_by(ReplyDraft.id).with_for_update()
         )
         drafts = result.scalars().all()
         for draft in drafts:
@@ -380,6 +356,9 @@ async def _record_sequence_outcome(
             position = metadata.get("position")
             if draft.id == item.draft_id:
                 metadata["state"] = state
+                if stop_remaining:
+                    metadata.setdefault("stop_reason", error_code or "prior_sequence_send_failed")
+                    metadata["auto_resume"] = False
                 metadata["finished_at"] = datetime.now(UTC).isoformat()
                 if attempt_id is not None:
                     metadata["attempt_id"] = str(attempt_id)
@@ -388,6 +367,8 @@ async def _record_sequence_outcome(
             elif stop_remaining and isinstance(position, int) and position > item.position:
                 if metadata.get("state") == "scheduled":
                     metadata["state"] = "cancelled"
+                    metadata.setdefault("stop_reason", error_code or "prior_sequence_send_failed")
+                    metadata["auto_resume"] = False
                     metadata["error_code"] = error_code or "prior_sequence_send_failed"
             context[SEQUENCE_CONTEXT_KEY] = metadata
             draft.prompt_context = context

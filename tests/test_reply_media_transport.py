@@ -206,9 +206,7 @@ async def test_wire_one_multipart_post_correct_caption_and_attachments(mode: str
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("mode", "caption"), [("photo", ""), ("photo", "Кадр 1"), ("album", "")]
-)
+@pytest.mark.parametrize(("mode", "caption"), [("photo", ""), ("photo", "Кадр 1"), ("album", "")])
 async def test_mcp_upload_preview_confirm_send_and_replay_over_real_http_routes(
     mode: str, caption: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -275,9 +273,9 @@ async def test_mcp_upload_preview_confirm_send_and_replay_over_real_http_routes(
                 }
                 for i in range(count)
             ]
-            return httpx.Response(200, json={
-                "ok": True, "result": messages if mode == "album" else messages[0]
-            })
+            return httpx.Response(
+                200, json={"ok": True, "result": messages if mode == "album" else messages[0]}
+            )
 
         monkeypatch.setattr(mcp_routes, "_require_mcp_principal", authenticate)
         settings = _settings().model_copy(update={"gate_mcp_enabled": True})
@@ -294,19 +292,32 @@ async def test_mcp_upload_preview_confirm_send_and_replay_over_real_http_routes(
             app.dependency_overrides[get_telegram_client] = lambda: telegram
 
             async def call(name, arguments):
-                response = await client.post("/mcp", json={
-                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                    "params": {"name": name, "arguments": arguments},
-                })
+                response = await client.post(
+                    "/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments},
+                    },
+                )
                 response.raise_for_status()
                 return response.json()["result"]
 
-            upload = await call("gate_prepare_reply_media", {
-                "task_id": str(seed.task_id), "mode": mode,
-                "staging_key": "work-upload", "execution_id": "work-test",
-                "execution_expires_at": TEST_EXECUTION_DEADLINE.isoformat(),
-                "items": [asdict(item) for item in uploads],
-            })
+            read = await call("gate_get_reply_context", {"task_id": str(seed.task_id)})
+            assert read["structuredContent"]["context_ready"]
+            upload = await call(
+                "gate_prepare_reply_media",
+                {
+                    "task_id": str(seed.task_id),
+                    "mode": mode,
+                    "expected_context_snapshot": read["structuredContent"]["context_snapshot"],
+                    "staging_key": "work-upload",
+                    "execution_id": "work-test",
+                    "execution_expires_at": TEST_EXECUTION_DEADLINE.isoformat(),
+                    "items": [asdict(item) for item in uploads],
+                },
+            )
             assert not upload["isError"], upload
             snapshot = upload["structuredContent"]
             preview = await call("gate_preview_reply_media", {"package_id": snapshot["package_id"]})
@@ -320,13 +331,16 @@ async def test_mcp_upload_preview_confirm_send_and_replay_over_real_http_routes(
             assert [item["caption"] for item in snapshot["items"]] == [caption] * count
             preview_hashes.extend(
                 hashlib.sha256(base64.b64decode(block["data"], validate=True)).hexdigest()
-                for block in preview["content"] if block["type"] == "image"
+                for block in preview["content"]
+                if block["type"] == "image"
             )
             assert preview_hashes == [item["output_sha256"] for item in snapshot["items"]]
 
             approval = {
-                **snapshot["confirmation"], "draft_id": snapshot["draft_id"],
-                "confirmed": True, "execution_id": "work-test",
+                **snapshot["confirmation"],
+                "draft_id": snapshot["draft_id"],
+                "confirmed": True,
+                "execution_id": "work-test",
             }
             rejected = await call(
                 "gate_send_approved_reply", {**approval, "expected_media_package_sha256": "0" * 64}
@@ -455,6 +469,7 @@ async def prepared(
             PrepareReplyMediaCommand(
                 principal=send.principal,
                 task_id=seed.task_id,
+                expected_context_snapshot=seed.context_snapshot,
                 mode=mode,
                 items=items,
                 staging_key=f"fixture-{mode}",
@@ -592,7 +607,9 @@ async def test_media_replay_keeps_original_receipt_after_business_reconnect(outc
             await session.commit()
 
         replay = await deliver(
-            sessions, telegram, command,
+            sessions,
+            telegram,
+            command,
             settings=_settings().model_copy(update={"gate_reply_media_send_enabled": False}),
         )
         assert first.status == ("sent" if outcome == "sent" else "unknown")
@@ -613,10 +630,12 @@ async def test_media_flags_stop_new_attempts_without_affecting_old_text_rich(
         seed = await _seed_reply(sessions)
         _, command = await prepared(sessions, seed, mode)
         telegram = MediaTelegram()
-        settings = _settings().model_copy(update={
-            "gate_reply_media_send_enabled": media_enabled,
-            "gate_rich_send_enabled": True,
-        })
+        settings = _settings().model_copy(
+            update={
+                "gate_reply_media_send_enabled": media_enabled,
+                "gate_rich_send_enabled": True,
+            }
+        )
         with pytest.raises(ReplySendError) as exc:
             await deliver(sessions, telegram, command, settings=settings)
         assert exc.value.code == error
@@ -729,7 +748,28 @@ async def test_shared_execution_budget_charges_plain_control_and_preserves_media
         _, command = await prepared(sessions, seed)
         telegram = MediaTelegram()
         assert (await deliver(sessions, telegram, command)).sent
-        control = replace(command, draft_id=seed.draft_ids[0], expected_media_package_sha256=None)
+        from app.application.mcp_inbox import get_reply_context
+        from app.application.reply_drafts import SaveReplyDraftService
+        from app.infrastructure.reply_drafts import SqlReplyDraftWriter
+
+        from test_reply_sends_postgres import _save_draft_command
+
+        async with sessions() as session:
+            current = await get_reply_context(
+                session=session,
+                scope=command.principal.access_scope,
+                task_id=seed.task_id,
+                limit=30,
+            )
+            saved = await SaveReplyDraftService(SqlReplyDraftWriter(session)).execute(
+                replace(
+                    _save_draft_command(seed, "Fresh control"),
+                    follow_up=True,
+                    expected_context_snapshot=current["context_snapshot"],
+                )
+            )
+            await session.commit()
+        control = replace(command, draft_id=saved.draft_id, expected_media_package_sha256=None)
         assert (await deliver(sessions, telegram, control)).sent
         assert (await deliver(sessions, telegram, command)).idempotent_replay
         async with sessions() as session:
@@ -756,6 +796,7 @@ async def test_two_conversations_share_atomic_last_budget_slot() -> None:
                 PrepareReplyMediaCommand(
                     principal=second.principal,
                     task_id=second_seed.task_id,
+                    expected_context_snapshot=second_seed.context_snapshot,
                     mode="photo",
                     items=(media_input(),),
                     staging_key="second-conversation",
@@ -885,7 +926,7 @@ async def test_media_legacy_edit_and_send_paths_block_before_body_or_provider(
             admin_business_connection_id=None,
             draft_ref="opaque",
         )
-        assert "hash confirmation" in text
+        assert "MCP" in text
     monkeypatch.setattr(
         sprint17_send_draft_routes,
         "_load_draft_rows_by_ref",

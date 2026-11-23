@@ -6,6 +6,7 @@ from typing import Any
 
 from app.api.audio_processing_history import AUDIO_PROCESSING_HISTORY_SCHEMA
 from app.api.mcp_media import MEDIA_OUTPUT_SCHEMA
+from app.application.dialog_snapshots import SNAPSHOT_PATTERN
 from app.application.document_formats import DOCUMENT_MIME_TYPES
 from app.application.owner_reply_readiness import (
     OWNER_REPLY_READINESS_OUTPUT_SCHEMA,
@@ -39,7 +40,12 @@ def _ref(name: str) -> JsonObject:
 
 
 def _error_schema() -> JsonObject:
-    return _object({"error": {"type": "string", "minLength": 1}})
+    return _object({
+        "error": {"type": "string", "minLength": 1},
+        "sent": {"type": "boolean", "const": False},
+        "current_context": {"type": ["object", "null"]},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 128},
+    }, required=["error"])
 
 
 def _success_or_error(success: JsonObject, definitions: JsonObject) -> JsonObject:
@@ -1812,6 +1818,16 @@ GATE_UNANSWERED_OUTPUT_SCHEMA: JsonObject = {
 
 REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
     {
+        "context_snapshot": {
+            "type": ["string", "null"],
+            "pattern": SNAPSHOT_PATTERN,
+            "description": "Last message ID in this dialog, when ready for reply preparation.",
+        },
+        "context_ready": {"type": "boolean"},
+        "context_reason": {"type": ["string", "null"]},
+        "dialog_events_next_cursor": {"type": ["string", "null"]},
+        "dialog_events": {"type": "array", "items": {"type": "object"}},
+        "dialog_events_has_more": {"type": "boolean"},
         "task_id": {"type": "string", "format": "uuid"},
         "task_ref": {"type": "string", "minLength": 1, "maxLength": 8},
         "status": {"type": "string", "minLength": 1},
@@ -1829,6 +1845,9 @@ REPLY_CONTEXT_SUCCESS_SCHEMA = _object(
         "has_more": {"type": "boolean"},
     }
 )
+REPLY_CONTEXT_SUCCESS_SCHEMA["properties"]["reply_sequences"] = {
+    "type": "array", "items": {"type": "object"},
+}
 REPLY_CONTEXT_SUCCESS_SCHEMA["properties"]["processing_history"] = AUDIO_PROCESSING_HISTORY_SCHEMA
 REPLY_CONTEXT_ERROR_SCHEMA = _object(
     {

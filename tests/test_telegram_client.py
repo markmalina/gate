@@ -32,7 +32,7 @@ async def test_telegram_client_parses_api_error() -> None:
         client = TelegramClient("secret-token", http_client=http_client)
 
         with pytest.raises(TelegramApiError) as exc_info:
-            await client.send_message(
+            await client.send_plain_message(
                 chat_id="123",
                 text="hello",
                 business_connection_id="connection",

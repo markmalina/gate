@@ -196,7 +196,9 @@ async def test_query_schema_and_text_project_reply_outside_history_page(source: 
     )
     task = SimpleNamespace(id=task_id, status="needs_reply", account_id=account_id,
                            project_id=project_id, person_id=conversation.person_id)
-    account = SimpleNamespace(id=account_id, alias="telegram_mark_ru", country_code="RU")
+    account = SimpleNamespace(
+        id=account_id, alias="telegram_mark_ru", country_code="RU", telegram_user_id=999,
+    )
     update = SimpleNamespace(payload=raw) if source == "update" else None
     event = SimpleNamespace(payload=raw) if source == "event" else None
     receipt = SimpleNamespace(payload=raw, update_id=100) if source == "receipt" else None
@@ -224,6 +226,8 @@ async def test_query_schema_and_text_project_reply_outside_history_page(source: 
         task_id=task_id, limit=1,
     )
     assert context is not None
+    assert context["context_ready"] is True
+    assert context["context_snapshot"] == "101"
     assert context["count"] == 1
     assert context["messages"][0]["reply_to"] == extract(raw)
     if has_voice:
@@ -240,6 +244,34 @@ async def test_query_schema_and_text_project_reply_outside_history_page(source: 
     assert account_id in history_params.values()
     assert project_id in history_params.values()
     assert "synthetic-connection" in history_params.values()
+
+
+@pytest.fixture(autouse=True)
+def stub_dialog_snapshot_for_chronology_unit_tests(monkeypatch):
+    async def snapshot(*args, **kwargs):
+        return "101"
+
+    async def events(*args, **kwargs):
+        return [], False, True
+
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
+    monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)
+
+
+@pytest.fixture(autouse=True)
+def stub_readset_issue_for_chronology_units(monkeypatch):
+    async def issue(*args, **kwargs):
+        return None
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", issue)
+
+    async def no_sequences(*args, **kwargs):
+        return []
+
+    # These chronology units have no draft journal; real scoped series status
+    # and access are exercised against PostgreSQL in the S4 suite.
+    monkeypatch.setattr(
+        "app.infrastructure.reply_sequence_state.scoped_sequence_status", no_sequences,
+    )
 
 
 @pytest.mark.anyio
@@ -284,7 +316,9 @@ async def test_missing_normalized_text_is_resolved_in_both_read_surfaces(
         chat_id="300", business_connection_id="synthetic-connection", title="Synthetic dialog",
     )
     task = SimpleNamespace(id=task_id, status="replied", person_id=None)
-    account = SimpleNamespace(id=account_id, alias="telegram_mark_ru", country_code="RU")
+    account = SimpleNamespace(
+        id=account_id, alias="telegram_mark_ru", country_code="RU", telegram_user_id="700",
+    )
     raw = {"update_id": 100, "business_message": {
         "message_id": 200, "chat": {"id": 301 if wrong_chat else 300},
         "business_connection_id": "synthetic-connection", **content,

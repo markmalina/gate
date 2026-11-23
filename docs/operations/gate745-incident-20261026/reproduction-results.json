@@ -1,0 +1,251 @@
+{
+  "scope": "source-derived predicate and pure helper diagnostics only",
+  "pass_count": 49,
+  "production_db_reads": 0,
+  "provider_calls": 0,
+  "outbound_messages": 0,
+  "sources": {
+    "pr-app-snapshot.py": {
+      "sha256": "b3de6ed4b70531810385a7f7824830045f4eb52bad446b4710026ad81ab9cbe6",
+      "git_blob_sha1": "23d2a5f614a04794d678b8fc4007d932c770a2d0"
+    },
+    "pr-sends.py": {
+      "sha256": "2e2d41dc66ca83fc434ad02c61756ff42f997ed2404753e60e6c4b6a6b6d4d31",
+      "git_blob_sha1": "dbae4f01a12fdaefcda461f0def237ae217f8323"
+    },
+    "pr-seq.py": {
+      "sha256": "318e53b86517010cc8fe684de2651607817ab56282d772ee2cec6ad845e79d31",
+      "git_blob_sha1": "79afa3453c65e74671959ecaca4a92708a63c76e"
+    },
+    "prod-sends.py": {
+      "sha256": "027af5704f44cb3ba2c56c6a9c328e237b97932ba6da1e3b81256270c83eca37",
+      "git_blob_sha1": "229a45ff6b6dd27db68aa659359de99a5035e200"
+    },
+    "prod-seq.py": {
+      "sha256": "e82b7a96f6bf34d420fad457830a1244e93625df0742f4331bcfec395dfe1bfc",
+      "git_blob_sha1": "93788e3134649b26f26999c535316047f8988ebb"
+    }
+  },
+  "checks": [
+    {
+      "check": "prod:no_sibling",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "prod:current_task_only",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "prod:older_pending_same_dialog",
+      "pass": true,
+      "task_superseded": true
+    },
+    {
+      "check": "prod:newer_pending_same_dialog",
+      "pass": true,
+      "task_superseded": true
+    },
+    {
+      "check": "prod:same_timestamp_pending",
+      "pass": true,
+      "task_superseded": true
+    },
+    {
+      "check": "prod:older_replied",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "prod:other_account",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "prod:other_project",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "prod:other_dialog",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "prod:reread_and_new_drafts_cannot_clear_sibling_predicate",
+      "pass": true
+    },
+    {
+      "check": "prod:single_send:replied:1",
+      "pass": true,
+      "rejects": true
+    },
+    {
+      "check": "prod:single_send:needs_reply:2",
+      "pass": true,
+      "rejects": false
+    },
+    {
+      "check": "prod:single_send:replied:0",
+      "pass": true,
+      "rejects": false
+    },
+    {
+      "check": "pr:no_sibling",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "pr:current_task_only",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "pr:older_pending_same_dialog",
+      "pass": true,
+      "task_superseded": true
+    },
+    {
+      "check": "pr:newer_pending_same_dialog",
+      "pass": true,
+      "task_superseded": true
+    },
+    {
+      "check": "pr:same_timestamp_pending",
+      "pass": true,
+      "task_superseded": true
+    },
+    {
+      "check": "pr:older_replied",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "pr:other_account",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "pr:other_project",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "pr:other_dialog",
+      "pass": true,
+      "task_superseded": false
+    },
+    {
+      "check": "pr:reread_and_new_drafts_cannot_clear_sibling_predicate",
+      "pass": true
+    },
+    {
+      "check": "pr:single_send:replied:1",
+      "pass": true,
+      "rejects": true
+    },
+    {
+      "check": "pr:single_send:needs_reply:2",
+      "pass": true,
+      "rejects": false
+    },
+    {
+      "check": "pr:single_send:replied:0",
+      "pass": true,
+      "rejects": false
+    },
+    {
+      "check": "unchanged_snapshot",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:workspace",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:account",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:project",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:chat",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:revision",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:message_id",
+      "pass": true
+    },
+    {
+      "check": "snapshot_change:text",
+      "pass": true
+    },
+    {
+      "check": "event:business_message:text",
+      "pass": true
+    },
+    {
+      "check": "event:business_message:voice",
+      "pass": true
+    },
+    {
+      "check": "event:business_message:photo",
+      "pass": true
+    },
+    {
+      "check": "event:business_message:document",
+      "pass": true
+    },
+    {
+      "check": "event:business_message:empty",
+      "pass": true
+    },
+    {
+      "check": "event:edited_business_message:text",
+      "pass": true
+    },
+    {
+      "check": "event:edited_business_message:voice",
+      "pass": true
+    },
+    {
+      "check": "event:edited_business_message:photo",
+      "pass": true
+    },
+    {
+      "check": "event:edited_business_message:document",
+      "pass": true
+    },
+    {
+      "check": "event:edited_business_message:empty",
+      "pass": true
+    },
+    {
+      "check": "event:deleted_business_messages:text",
+      "pass": true
+    },
+    {
+      "check": "event:deleted_business_messages:voice",
+      "pass": true
+    },
+    {
+      "check": "event:deleted_business_messages:photo",
+      "pass": true
+    },
+    {
+      "check": "event:deleted_business_messages:document",
+      "pass": true
+    },
+    {
+      "check": "event:deleted_business_messages:empty",
+      "pass": true
+    }
+  ]
+}

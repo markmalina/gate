@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.dialog_snapshots import CONTEXT_CHANGED_REPLY_TEXT, SNAPSHOT_PATTERN
 from app.infrastructure.owner_voice_recovery import owner_voice_archive_inventory
 from app.infrastructure.watch_voice_recovery import protected_recovery_receipt
 from app.infrastructure.watch_voice_post_payment import protected_post_payment_receipt
@@ -175,6 +176,7 @@ from app.models.domain import (
     Project,
     ReplyDraft,
     ReplyTask,
+    SendAttemptStatus,
     TelegramReceipt,
     TelegramUpdate,
     TelegramVoiceArchive,
@@ -937,6 +939,11 @@ async def _get_reply_context_tool_result(
             ),
         )
 
+    raw_events_cursor = arguments.get("dialog_events_cursor")
+    if raw_events_cursor is not None and not isinstance(raw_events_cursor, str):
+        return _tool_error_result(
+            request_id=request_id, code="invalid_arguments", message="dialog_events_cursor must be a string",
+        )
     raw_cursor = arguments.get("cursor")
     if raw_cursor is not None and not isinstance(raw_cursor, str):
         return _tool_error_result(
@@ -951,6 +958,7 @@ async def _get_reply_context_tool_result(
             task_id=task_id,
             limit=_bounded_limit(arguments.get("limit"), default=20, maximum=100),
             cursor=raw_cursor,
+            **({"dialog_events_cursor": raw_events_cursor} if raw_events_cursor is not None else {}),
         )
     except ValueError:
         return _tool_error_result(
@@ -3156,6 +3164,12 @@ def _gate_get_reply_context_tool(settings: Settings) -> JsonObject:
         "name": "gate_get_reply_context",
         "title": "Get Gate reply context",
         "description": (
+            "Read reply_sequences for scoped series state, stop reason, sent/remaining items "
+            "and ambiguous attempts. Stopped tails never resume automatically. "
+            "Read context_ready and context_reason before composing. Historical cursor or "
+            "dialog_events_cursor pages never grant a sendable snapshot; raw text continuation "
+            "uses each event text_next_cursor. After projection catches up, perform a new "
+            "no-cursor read and review all returned events. "
             "Return one scoped RU/BY conversation as a chronological text, voice "
             "and attachment timeline. Attachment metadata is listed without a "
             "provider call. Immediate same-chat reply snapshots and quoted excerpts "
@@ -3310,6 +3324,9 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
         "name": "gate_save_reply_draft",
         "title": "Save a Gate reply draft",
         "description": (
+            "Read gate_get_reply_context first and pass its last message ID (context_snapshot) as "
+            "expected_context_snapshot. For context_changed, show the returned stop message "
+            "in the same conversation and wait for Mark before preparing another reply. "
             "Save proposed text with text_format=plain, markdown, or rich. Rich requires rich_content (gate.rich.v1) and omitted or empty text; supports heading, paragraph, list, blockquote, pre, table. Rich is single-message only; no series/captions. "
             "Omitting text_format keeps the legacy literal contract without a formatting preview. "
             "Markdown supports bold, italic, strike, underline, spoiler, links, code, headings, lists and quotes; unsupported or malformed syntax is rejected. "
@@ -3323,12 +3340,13 @@ def _gate_save_reply_draft_tool(settings: Settings) -> JsonObject:
             "type": "object",
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
+                "expected_context_snapshot": {"type": "string", "pattern": SNAPSHOT_PATTERN},
                 "text": {"type": "string", "maxLength": 65536},
                 "text_format": {"type": "string", "enum": ["plain", "markdown", "rich"]},
                 "rich_content": rich_content_schema(),
                 "follow_up": {"type": "boolean", "default": False},
             },
-            "required": ["task_id"],
+            "required": ["task_id", "expected_context_snapshot"],
             "oneOf": [
                 {
                     "properties": {"text_format": {"const": "rich"}, "text": {"const": ""}},
@@ -3371,7 +3389,11 @@ def _gate_send_approved_reply_tool(settings: Settings) -> JsonObject:
             "required for explicit-mode drafts/captions. Legacy rows without a preview retain the old contract. "
             "Send the exact saved draft through its originating RU/BY Telegram "
             "Business account. Call only after showing the account, recipient and "
-            "final text to Mark and receiving explicit confirmation."
+            "final text to Mark and receiving explicit confirmation. "
+            "Report the outcome in the same conversation where the send was requested. "
+            "For context_changed, show the returned stop message and wait for Mark "
+            "before preparing another reply. Report a send only when sent=true; "
+            "an unknown outcome must stay unconfirmed."
         ),
         "inputSchema": {
             "type": "object",
@@ -3419,8 +3441,11 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
         "name": "gate_prepare_reply_document",
         "title": "Prepare one Gate Business document",
         "description": (
+            "Read gate_get_reply_context first and pass its last message ID (context_snapshot) as "
+            "expected_context_snapshot. A changed dialog requires a new draft and approval. "
             "Stage one original PDF/ZIP, Excel/Word/PowerPoint or JPEG/PNG/WEBP/GIF file as a document; "
-            "No conversion/compression. Max 8 MiB; private staging 24 hours. Use caption_format=plain or markdown. Omitting it preserves legacy literal captions. "
+            "No conversion/compression. Max 8 MiB; private staging 24 hours. "
+            "Use caption_format=plain or markdown. Omitting it preserves legacy literal captions. "
             "Returns saved caption text/entities/version/hash; max 1024 UTF-16 units after conversion. "
             "Pass its formatting.payload_sha256 to approved send after showing the preview. "
             "The base64 bytes are accepted only in this upload argument, never "
@@ -3431,6 +3456,7 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
             "type": "object",
             "properties": {
                 "task_id": {"type": "string", "format": "uuid"},
+                "expected_context_snapshot": {"type": "string", "pattern": SNAPSHOT_PATTERN},
                 "filename": {"type": "string", "minLength": 1, "maxLength": 255},
                 "media_type": {"type": "string", "enum": DOCUMENT_MIME_TYPES},
                 "content_base64": {"type": "string", "minLength": 1, "maxLength": 11184812},
@@ -3440,7 +3466,8 @@ def _gate_prepare_reply_document_tool(settings: Settings) -> JsonObject:
                 "follow_up": {"type": "boolean", "default": False},
             },
             "required": [
-                "task_id", "filename", "media_type", "content_base64", "expected_sha256"
+                "task_id", "filename", "media_type", "content_base64", "expected_sha256",
+                "expected_context_snapshot"
             ],
             "additionalProperties": False,
         },
@@ -3504,13 +3531,19 @@ def _gate_queue_approved_reply_sequence_tool(settings: Settings) -> JsonObject:
         "description": (
             "Include expected_payload_sha256s in draft order from each displayed formatting preview; "
             "required for explicit-mode drafts. A legacy-only sequence may omit digests. "
+            "Drafts must retain the context_snapshot reviewed at preparation. "
+            "A freshness refusal returns sent=false and scoped current_context when "
+            "gate:inbox:read is granted; review changes, prepare new drafts and obtain "
+            "a new exact approval. Never refresh stale drafts automatically. "
             "Never split or reformat during delivery. "
             f"Queue {MIN_SEQUENCE_DRAFTS} to {MAX_SEQUENCE_DRAFTS} saved drafts "
             "for the same RU/BY recipient. "
             "Call only after showing Mark the account, recipient and every final "
             "message in order and receiving one explicit confirmation of the whole "
             "sequence. The first item becomes due immediately and later items no "
-            "sooner than 60 seconds after the preceding confirmed delivery."
+            "sooner than 60 seconds after the preceding confirmed delivery. "
+            "A new foreign dialog event durably stops the unsent tail. Read reply_sequences "
+            "in scoped reply context; no automatic resume or implicit approval of remaining drafts."
         ),
         "inputSchema": {
             "type": "object",
@@ -3569,6 +3602,7 @@ async def _save_reply_draft_tool_result(
     session: AsyncSession,
 ) -> JsonObject:
     if arguments.keys() - {
+        "expected_context_snapshot",
         "task_id",
         "text",
         "text_format",
@@ -3610,6 +3644,7 @@ async def _save_reply_draft_tool_result(
             SaveReplyDraftCommand(
                 principal=principal,
                 task_id=task_id,
+                expected_context_snapshot=arguments.get("expected_context_snapshot"),
                 text=raw_text,
                 follow_up=raw_follow_up,
                 text_format=text_format,
@@ -3617,6 +3652,11 @@ async def _save_reply_draft_tool_result(
             )
         )
     except ReplyDraftError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            return await _dialog_context_error_result(
+                request_id=request_id, code=exc.code, message=exc.message,
+                principal=principal, session=session, task_id=task_id,
+            )
         return _tool_error_result(
             request_id=request_id,
             code=exc.code,
@@ -3739,6 +3779,11 @@ async def _send_approved_reply_tool_result(
             )
         )
     except ReplySendError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            return await _dialog_context_error_result(
+                request_id=request_id, code=exc.code, message=exc.message,
+                principal=principal, session=session, draft_id=draft_id,
+            )
         return _tool_error_result(
             request_id=request_id,
             code=exc.code,
@@ -3777,6 +3822,8 @@ async def _send_approved_reply_tool_result(
             f"Reply sent through {sent.account_label} to chat "
             f"{sent.recipient_chat_id}. Attempt: {str(sent.attempt_id)[:8]}."
         )
+    elif sent.status == SendAttemptStatus.FAILED.value and sent.error_code == "context_changed":
+        text = CONTEXT_CHANGED_REPLY_TEXT
     else:
         text = (
             f"Reply was not confirmed as sent. Status: {sent.status}. "
@@ -3795,6 +3842,7 @@ async def _prepare_reply_document_tool_result(
     settings: Settings,
 ) -> JsonObject:
     if arguments.keys() - {
+        "expected_context_snapshot",
         'task_id',
         'filename',
         'media_type',
@@ -3851,6 +3899,7 @@ async def _prepare_reply_document_tool_result(
             PrepareReplyDocumentCommand(
                 principal=principal,
                 task_id=task_id,
+                expected_context_snapshot=arguments.get("expected_context_snapshot"),
                 filename=arguments["filename"],
                 media_type=arguments["media_type"],
                 content_base64=arguments["content_base64"],
@@ -3861,6 +3910,11 @@ async def _prepare_reply_document_tool_result(
             )
         )
     except ReplyDraftError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            return await _dialog_context_error_result(
+                request_id=request_id, code=exc.code, message=exc.message,
+                principal=principal, session=session, task_id=task_id,
+            )
         return _tool_error_result(
             request_id=request_id, code=exc.code, message=exc.message
         )
@@ -3958,6 +4012,11 @@ async def _send_approved_document_tool_result(
             )
         )
     except ReplySendError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            return await _dialog_context_error_result(
+                request_id=request_id, code=exc.code, message=exc.message,
+                principal=principal, session=session, draft_id=draft_id,
+            )
         return _tool_error_result(
             request_id=request_id, code=exc.code, message=exc.message
         )
@@ -4060,6 +4119,11 @@ async def _queue_approved_reply_sequence_tool_result(
             )
         )
     except ReplySequenceError as exc:
+        if exc.code in {"context_changed", "context_snapshot_required", "context_unavailable"}:
+            return await _dialog_context_error_result(
+                request_id=request_id, code=exc.code, message=exc.message,
+                principal=principal, session=session, draft_id=draft_ids[0],
+            )
         await session.rollback()
         return _tool_error_result(
             request_id=request_id,
@@ -4166,10 +4230,53 @@ def _tool_result(content: JsonObject, text: str, request_id: Any) -> JsonObject:
     )
 
 
-def _tool_error_result(
-    *, request_id: Any, code: str, message: str, processing_history: JsonObject | None = None,
+async def _dialog_context_error_result(
+    *, request_id: Any, code: str, message: str, principal: Principal,
+    session: AsyncSession, task_id: UUID | None = None, draft_id: UUID | None = None,
 ) -> JsonObject:
-    context: JsonObject = {"error": code}
+    await session.rollback()
+    current_context = None
+    details: JsonObject = {"sent": False, "current_context": None}
+    if code == "context_changed":
+        message = CONTEXT_CHANGED_REPLY_TEXT
+    elif code == "context_unavailable":
+        details["reason"] = message
+    try:
+        if "gate:inbox:read" not in principal.scopes:
+            return _tool_error_result(
+                request_id=request_id, code=code, message=message,
+                details=details,
+            )
+        if task_id is None and draft_id is not None:
+            scope = principal.access_scope
+            task_id = await session.scalar(select(ReplyDraft.reply_task_id).where(
+                ReplyDraft.id == draft_id,
+                ReplyDraft.account_id.in_(scope.account_ids),
+                ReplyDraft.project_id.in_(scope.project_ids),
+            ))
+        if task_id is not None:
+            current_context = await get_reply_context(
+                session=session, scope=principal.access_scope, task_id=task_id, limit=30,
+            )
+    except Exception:
+        # A failed context read cannot turn a refusal into a send or leak DB details.
+        await session.rollback()
+    details["current_context"] = current_context
+    return _tool_error_result(
+        request_id=request_id, code=code, message=message,
+        details=details,
+    )
+
+
+def _tool_error_result(
+    *,
+    request_id: Any,
+    code: str,
+    message: str,
+    details: JsonObject | None = None,
+    processing_history: JsonObject | None = None,
+) -> JsonObject:
+    context: JsonObject = {"error": code, **(details or {})}
     if processing_history is not None:
         context["processing_history"] = processing_history
     return _jsonrpc_result(
@@ -4453,8 +4560,21 @@ def _format_reply_context_text(context: JsonObject) -> str:
         f"task: {context['task_ref']}",
         f"chat: {context['conversation']['chat_id']}",
         "",
+        f"Context ready: {context.get('context_ready', False)}; "
+        f"reason: {context.get('context_reason') or 'none'}",
+        "Snapshot is a precondition, never approval. Read structured dialog_events too.",
         f"Recent messages: {context['count']}",
     ]
+    for sequence in context.get("reply_sequences", []):
+        lines.append(
+            f"Series {sequence['sequence_id']}: {sequence['state']}; "
+            f"reason: {sequence['stop_reason'] or 'none'}; "
+            f"sent {sequence['sent_count']}, remaining {sequence['remaining_count']}, "
+            f"ambiguous {sequence['ambiguous_count']}. "
+            "Auto-resume: false."
+        )
+        if sequence.get("stop_message"):
+            lines.append(sequence["stop_message"])
     for message in context["messages"]:
         direction = "IN" if message["direction"] == MessageDirection.INBOUND.value else "OUT"
         preview = message["text_preview"] or {

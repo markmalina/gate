@@ -135,11 +135,13 @@ async def _accept_durable_receipt(
     try:
         raw_update = await request.json()
     except Exception:
+        await _mark_acceptance_unavailable(receipt_store, "authenticated_invalid_json")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Telegram update",
         ) from None
     if not isinstance(raw_update, dict):
+        await _mark_acceptance_unavailable(receipt_store, "authenticated_invalid_envelope")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Telegram update",
@@ -148,6 +150,7 @@ async def _accept_durable_receipt(
     update = cast(JsonObject, raw_update)
     update_id = update.get("update_id")
     if type(update_id) is not int or update_id < 0 or update_id > TELEGRAM_UPDATE_ID_MAX:
+        await _mark_acceptance_unavailable(receipt_store, "authenticated_invalid_update_id")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Telegram update id",
@@ -163,17 +166,31 @@ async def _accept_durable_receipt(
             )
         )
     except TelegramReceiptError:
+        await _mark_acceptance_unavailable(receipt_store, "authenticated_invalid_receipt")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Telegram receipt envelope",
         ) from None
     except Exception as exc:
+        await _mark_acceptance_unavailable(receipt_store, "durable_acceptance_failed")
         _log_acceptance_failure(exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Durable Telegram receipt is unavailable",
         ) from None
     return update
+
+
+async def _mark_acceptance_unavailable(store: TelegramReceiptStore, reason: str) -> None:
+    # Only the actual durable adapter owns this independent transaction. Do not
+    # turn untrusted/unauthenticated requests into a connector-wide denial.
+    if isinstance(store, SqlTelegramReceiptStore):
+        try:
+            await store.mark_unavailable(reason)
+        except Exception as exc:
+            # A database outage cannot be recorded in that unavailable database.
+            # The webhook remains non-2xx; do not ACK or claim durable acceptance.
+            _log_acceptance_failure(exc)
 
 
 def _is_business_voice_update(update: JsonObject) -> bool:
@@ -257,4 +274,3 @@ def include_legacy_telegram_ingress(app: FastAPI) -> None:
 
     for router in LEGACY_TELEGRAM_INGRESS_ROUTERS:
         app.include_router(router)
-
