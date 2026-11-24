@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -22,6 +21,12 @@ from app.application.telegram_voice_transcription import (
     NormalizedVoice,
     TelegramVoiceError,
     TelegramVoiceReference,
+)
+from app.infrastructure.audio_duration import (
+    container_duration_seconds,
+    decoded_duration_microseconds,
+    start_duration_decode,
+    start_duration_probe,
 )
 
 
@@ -213,38 +218,24 @@ async def _probe_audio_duration(path: Path) -> float:
     """Use decoded duration when a decodable container has no duration metadata."""
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", str(path),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
+        process = await start_duration_probe(path)
         stdout, _ = await _finish_audio_process(process)
-        duration = float(stdout.decode("ascii").strip())
+        duration = container_duration_seconds(stdout)
     except (OSError, UnicodeError, ValueError, TimeoutError):
         pass
     else:
-        if process.returncode == 0 and math.isfinite(duration) and duration > 0:
+        if process.returncode == 0 and duration is not None:
             return duration
 
     # Dropbox's intake can recover a missing duration by decoding the same
     # bytes. Chunking must accept that source too, before any provider call.
     try:
-        process = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-xerror", "-i", str(path), "-map", "0:a:0", "-vn",
-            "-f", "null", "-progress", "pipe:1", "-",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
+        process = await start_duration_decode(path)
         stdout, _ = await _finish_audio_process(process)
-        timestamps = [
-            line.removeprefix(b"out_time_us=")
-            for line in stdout.splitlines()
-            if line.startswith(b"out_time_us=")
-        ]
-        duration_us = int(timestamps[-1])
-    except (OSError, TimeoutError, IndexError, ValueError):
+        duration_us = decoded_duration_microseconds(stdout)
+    except (OSError, TimeoutError):
         raise TelegramVoiceError("telegram_voice_audio_invalid") from None
-    if process.returncode or not 0 < duration_us <= 24 * 60 * 60 * 1_000_000:
+    if process.returncode or duration_us is None:
         raise TelegramVoiceError("telegram_voice_audio_invalid")
     return duration_us / 1_000_000
 
