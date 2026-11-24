@@ -266,7 +266,7 @@ def _status_uses_legacy_core_tool_names(endpoint_tree: ast.AST) -> bool:
     for node in ast.walk(endpoint_tree):
         if not isinstance(node, ast.Call):
             continue
-        if not isinstance(node.func, ast.Name) or node.func.id != "build_gate_status":
+        if not isinstance(node.func, ast.Name) or node.func.id != "build_status_snapshot":
             continue
         for keyword in node.keywords:
             if (

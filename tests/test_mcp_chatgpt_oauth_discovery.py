@@ -606,43 +606,43 @@ async def test_verified_oauth_principal_can_call_scoped_read_tool(
     app.dependency_overrides[get_db_session] = override_session
     monkeypatch.setattr("app.api.mcp_routes.authenticate_mcp_oauth", authenticate)
     monkeypatch.setattr(
-        "app.api.mcp_routes.telegram_voice_operational_status",
+        "app.api.mcp_status.telegram_voice_operational_status",
         voice_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.telegram_business_text_parity_status",
+        "app.api.mcp_status.telegram_business_text_parity_status",
         parity_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.historical_debt_diagnostics",
+        "app.api.mcp_status.historical_debt_diagnostics",
         historical_debt_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.owner_voice_archive_inventory",
+        "app.api.mcp_status.owner_voice_archive_inventory",
         voice_archive_inventory,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_controlled_intake_status",
+        "app.api.mcp_status.become_controlled_intake_status",
         become_intake_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_i4_recovery_status",
+        "app.api.mcp_status.become_i4_recovery_status",
         recovery_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_quest_status",
+        "app.api.mcp_status.become_quest_status",
         quest_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.probe_all_i4_connectivity",
+        "app.api.mcp_status.probe_all_i4_connectivity",
         connectivity_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.beta_katya_space_operational_status",
+        "app.api.mcp_status.beta_katya_space_operational_status",
         beta_katya_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.beta_wedding_space_operational_status",
+        "app.api.mcp_status.beta_wedding_space_operational_status",
         beta_wedding_status,
     )
     response = await _post(
