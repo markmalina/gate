@@ -17,6 +17,7 @@ import httpx
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
@@ -623,55 +624,47 @@ async def _mark_superseded_revisions(
 ) -> None:
     """Close unreadable partial uploads only after the same file has a later transcript."""
 
-    async with session_factory() as session:
-        candidates = list((await session.scalars(
-            select(PhoneCallRecording.id)
-            .where(
-                PhoneCallRecording.workspace_key == settings.gate_workspace_id,
-                PhoneCallRecording.source_account_id == settings.dropbox_call_account_id,
-                PhoneCallRecording.transcription_status == "rejected",
-                PhoneCallRecording.transcription_reason_code
-                == "dropbox_call_media_unreadable",
-                PhoneCallRecording.transcript_text.is_(None),
-            )
-            .order_by(PhoneCallRecording.received_at.asc()).limit(20)
-        )).all())
-    for candidate_id in candidates:
-        async with session_factory() as session:
-            row = await session.scalar(
-                select(PhoneCallRecording)
-                .where(PhoneCallRecording.id == candidate_id)
-                .with_for_update(skip_locked=True)
-            )
-            if (
-                row is None or row.workspace_key != settings.gate_workspace_id
-                or row.source_account_id != settings.dropbox_call_account_id
-                or row.transcription_status != "rejected"
-                or row.transcription_reason_code != "dropbox_call_media_unreadable"
-                or row.transcript_text is not None
-            ):
-                continue
-            successor_id = await session.scalar(
-                select(PhoneCallRecording.id)
-                .where(
-                    PhoneCallRecording.workspace_key == row.workspace_key,
-                    PhoneCallRecording.project_id == row.project_id,
-                    PhoneCallRecording.source_account_id == row.source_account_id,
-                    PhoneCallRecording.source_file_id == row.source_file_id,
-                    PhoneCallRecording.source_revision != row.source_revision,
-                    PhoneCallRecording.source_path == row.source_path,
-                    PhoneCallRecording.filename == row.filename,
-                    PhoneCallRecording.received_at > row.received_at,
-                    PhoneCallRecording.size_bytes > row.size_bytes,
-                    PhoneCallRecording.transcription_status == "transcribed",
-                    PhoneCallRecording.transcript_text.is_not(None),
-                )
-                .order_by(PhoneCallRecording.received_at.desc()).limit(1)
-            )
-            if successor_id is None:
-                continue
-            row.transcription_reason_code = "dropbox_call_revision_superseded"
-            await session.commit()
+    partial = aliased(PhoneCallRecording)
+    final = aliased(PhoneCallRecording)
+    has_final_transcript = (
+        select(final.id)
+        .where(
+            final.workspace_key == partial.workspace_key,
+            final.project_id == partial.project_id,
+            final.source_account_id == partial.source_account_id,
+            final.source_file_id == partial.source_file_id,
+            final.source_revision != partial.source_revision,
+            final.source_path == partial.source_path,
+            final.filename == partial.filename,
+            final.received_at > partial.received_at,
+            final.size_bytes > partial.size_bytes,
+            final.transcription_status == "transcribed",
+            final.transcript_text.is_not(None),
+        )
+        .correlate(partial)
+        .exists()
+    )
+    candidates = (
+        select(partial.id)
+        .where(
+            partial.workspace_key == settings.gate_workspace_id,
+            partial.source_account_id == settings.dropbox_call_account_id,
+            partial.transcription_status == "rejected",
+            partial.transcription_reason_code == "dropbox_call_media_unreadable",
+            partial.transcript_text.is_(None),
+            has_final_transcript,
+        )
+        .order_by(partial.received_at, partial.id)
+        .limit(20)
+        .with_for_update(of=partial, skip_locked=True)
+    )
+    async with session_factory.begin() as session:
+        await session.execute(
+            update(PhoneCallRecording)
+            .where(PhoneCallRecording.id.in_(candidates))
+            .values(transcription_reason_code="dropbox_call_revision_superseded")
+            .execution_options(synchronize_session=False)
+        )
 
 
 async def _resume_received_recordings(
