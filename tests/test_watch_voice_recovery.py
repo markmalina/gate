@@ -296,15 +296,16 @@ def test_success_preserves_original_billing_audit_and_replays_once(tmp_path, mon
                 assert receipt["finished_at"] and receipt["outcome"] == "transcribed"
                 status = await operational_status(session, action_settings(), scope_allowed=True)
                 assert status["recovery_counts"] == {"transcribed": 1}
-                from app.api import mcp_routes
+                from app.api import mcp_audio_archive
+                from app.models.domain import UNCLASSIFIED_PROJECT_ID
 
                 principal = SimpleNamespace(
                     access_scope=SimpleNamespace(
                         workspace_id="mark-personal",
-                        project_ids={mcp_routes.UNCLASSIFIED_PROJECT_ID},
+                        project_ids={UNCLASSIFIED_PROJECT_ID},
                     )
                 )
-                tool_receipt = await mcp_routes._watch_voice_tool_result(
+                tool_receipt = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="synthetic",
                     selector="watch-voice:" + note_id,
                     principal=principal,
@@ -316,7 +317,7 @@ def test_success_preserves_original_billing_audit_and_replays_once(tmp_path, mon
                 assert protected["model"] == "gpt-4o-transcribe"
                 principal.access_scope.workspace_id = "foreign"
                 denied_session = AsyncMock()
-                denied = await mcp_routes._watch_voice_tool_result(
+                denied = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="synthetic",
                     selector="watch-voice:" + note_id,
                     principal=principal,

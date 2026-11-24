@@ -13,7 +13,7 @@ from app.api.communication_feed_mcp import (
     FEED_REPLY_CONTEXT_OUTPUT_SCHEMA,
     _build_feed_payload,
 )
-from app.api.mcp_routes import _format_reply_context_text
+from app.api.mcp_reply_context import _format_reply_context_text
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS, REPLY_DETAILS_SCHEMA
 from app.application.mcp_inbox import get_reply_context
 from app.application.telegram_replies import extract_scoped_telegram_reply

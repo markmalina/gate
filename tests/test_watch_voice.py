@@ -552,7 +552,8 @@ def test_exact_rollout_does_not_process_preexisting_other_note(tmp_path, monkeyp
 
 
 def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
-    from app.api import mcp_routes
+    from app.api import mcp_audio_archive
+    from app.models.domain import UNCLASSIFIED_PROJECT_ID
 
     world = World()
     world.patches(monkeypatch)
@@ -565,11 +566,11 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
             principal = SimpleNamespace(
                 access_scope=SimpleNamespace(
                     workspace_id=settings().gate_workspace_id,
-                    project_ids={mcp_routes.UNCLASSIFIED_PROJECT_ID},
+                    project_ids={UNCLASSIFIED_PROJECT_ID},
                 )
             )
             async with factory() as session:
-                response = await mcp_routes._watch_voice_tool_result(
+                response = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="test",
                     selector="watch-voice:" + row.id,
                     principal=principal,
@@ -579,7 +580,7 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
                 payload = json.loads(response["result"]["content"][0]["text"])
                 assert payload["transcript"] == world.transcript
                 assert payload["audio_sha256"] == hashlib.sha256(world.audio).hexdigest()
-                response = await mcp_routes._watch_voice_tool_result(
+                response = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="test",
                     selector="watch-voice-file:" + row.id,
                     principal=principal,
@@ -591,7 +592,7 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
                 assert base64.b64decode(original["data_base64"]) == world.audio
             principal.access_scope.workspace_id = "foreign"
             session = SimpleNamespace(scalar=AsyncMock())
-            denied = await mcp_routes._watch_voice_tool_result(
+            denied = await mcp_audio_archive._watch_voice_tool_result(
                 request_id="test",
                 selector="watch-voice-file:" + row.id,
                 principal=principal,

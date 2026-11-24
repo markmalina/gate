@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from app.api.mcp_routes import (
+from app.api.mcp_audio_archive import (
     _effective_phone_call_media_type,
     _parse_latest_call_selector,
 )
@@ -177,7 +177,7 @@ def test_m4a_media_type_is_deterministic_without_host_mime_tables(
         lambda _filename: (None, None),
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.mimetypes.guess_type",
+        "app.api.mcp_audio_archive.mimetypes.guess_type",
         lambda _filename: (None, None),
     )
 
