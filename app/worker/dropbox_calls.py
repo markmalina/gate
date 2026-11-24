@@ -29,6 +29,13 @@ from app.application.telegram_voice_transcription import (
     TranscribeTelegramVoiceCommand,
 )
 from app.core.config import DROPBOX_CALL_INBOX_PATH, Settings
+from app.infrastructure.audio_duration import (
+    MAX_DECODED_AUDIO_SECONDS,
+    container_duration_seconds,
+    decoded_duration_microseconds,
+    start_duration_decode,
+    start_duration_probe,
+)
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
@@ -1305,11 +1312,7 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
         source = Path(directory) / "source.m4a"
         await asyncio.to_thread(source.write_bytes, data)
         try:
-            process = await asyncio.create_subprocess_exec(
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", str(source),
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
+            process = await start_duration_probe(source)
         except OSError:
             process = None
         if process is not None:
@@ -1322,23 +1325,14 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
                     raise
             else:
                 if process.returncode == 0:
-                    try:
-                        duration = float(stdout.decode("ascii").strip())
-                    except (UnicodeDecodeError, ValueError):
-                        pass
-                    else:
-                        if math.isfinite(duration) and 0 < duration <= 24 * 60 * 60:
-                            return max(1, math.ceil(duration))
+                    duration = container_duration_seconds(stdout)
+                    if duration is not None and duration <= MAX_DECODED_AUDIO_SECONDS:
+                        return max(1, math.ceil(duration))
 
         # Some files contain decodable audio but no container duration. Decode
         # only to a null sink; progress reports the decoded audio end timestamp.
         try:
-            process = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-                "-xerror", "-i", str(source), "-map", "0:a:0", "-vn",
-                "-f", "null", "-progress", "pipe:1", "-",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
+            process = await start_duration_decode(source)
         except OSError:
             return None
         try:
@@ -1351,16 +1345,8 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
             return None
         if process.returncode != 0:
             return None
-        timestamps = [
-            line.removeprefix(b"out_time_us=")
-            for line in stdout.splitlines()
-            if line.startswith(b"out_time_us=")
-        ]
-        try:
-            duration_us = int(timestamps[-1])
-        except (IndexError, ValueError):
-            return None
-        if not 0 < duration_us <= 24 * 60 * 60 * 1_000_000:
+        duration_us = decoded_duration_microseconds(stdout)
+        if duration_us is None:
             return None
         return max(1, math.ceil(duration_us / 1_000_000))
 
