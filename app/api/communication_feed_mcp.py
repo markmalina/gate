@@ -19,6 +19,7 @@ from app.api.audio_processing_history import (
     telegram_processing_history,
 )
 from app.api.deps import get_db_session
+from app.api.mcp_results import tool_error_result, tool_result
 from app.api.mcp_schemas import (
     ATTACHMENT_DETAILS_SCHEMA,
     COMMON_DEFINITIONS,
@@ -223,7 +224,7 @@ async def communication_feed_mcp_endpoint(
         feed_day = _parse_feed_day(arguments.get("task_id"))
         limit = _feed_limit(arguments.get("limit", 200))
     except ValueError as exc:
-        return mcp_routes._tool_error_result(
+        return tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
             message=str(exc),
@@ -235,7 +236,7 @@ async def communication_feed_mcp_endpoint(
         feed_day=feed_day,
         limit=limit,
     )
-    return mcp_routes._tool_result(feed, _format_feed_text(feed), request_id)
+    return tool_result(feed, _format_feed_text(feed), request_id)
 
 
 async def _delegate(

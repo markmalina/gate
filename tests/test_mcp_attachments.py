@@ -5,10 +5,8 @@ from __future__ import annotations
 import base64
 from uuid import UUID
 
-from app.api.mcp_routes import (
-    _attachment_content_tool_result,
-    _parse_reply_context_selector,
-)
+from app.api.mcp_attachments import _attachment_content_tool_result
+from app.api.mcp_reply_context import _parse_reply_context_selector
 from app.application.telegram_attachments import (
     TELEGRAM_CLOUD_ATTACHMENT_LIMIT_BYTES,
     extract_telegram_attachments,

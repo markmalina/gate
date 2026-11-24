@@ -8,15 +8,17 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from app.api.mcp_routes import (
+from app.api.mcp_audio_archive import (
+    _voice_audio_tool_result,
+    _voice_file_tool_result,
+)
+from app.api.mcp_reply_context import _parse_reply_context_selector
+from app.api.mcp_telegram_voice import (
     _extract_voice_from_linked_payloads,
     _parse_latest_voice_file_selector,
     _parse_latest_voice_selector,
     _parse_latest_voice_transcript_selector,
-    _parse_reply_context_selector,
     _same_telegram_message,
-    _voice_audio_tool_result,
-    _voice_file_tool_result,
 )
 
 TASK_ID = UUID("11111111-1111-1111-1111-111111111111")

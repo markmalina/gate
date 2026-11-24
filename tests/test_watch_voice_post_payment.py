@@ -574,15 +574,16 @@ def test_private_paid_receipt_and_archive_access_keep_old_receipt_distinct(tmp_p
                 ):
                     assert private not in encoded
                 assert "quota_restored_at" not in receipt
-                from app.api import mcp_routes
+                from app.api import mcp_audio_archive
+                from app.models.domain import UNCLASSIFIED_PROJECT_ID
 
                 principal = SimpleNamespace(
                     access_scope=SimpleNamespace(
                         workspace_id="mark-personal",
-                        project_ids={mcp_routes.UNCLASSIFIED_PROJECT_ID},
+                        project_ids={UNCLASSIFIED_PROJECT_ID},
                     )
                 )
-                tool = await mcp_routes._watch_voice_tool_result(
+                tool = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="synthetic",
                     selector="watch-voice:" + context.note_id,
                     principal=principal,
@@ -594,7 +595,7 @@ def test_private_paid_receipt_and_archive_access_keep_old_receipt_distinct(tmp_p
                 assert protected["recovery"]["outcome"] == "rejected"
                 principal.access_scope.workspace_id = "foreign"
                 denied_session = AsyncMock()
-                denied = await mcp_routes._watch_voice_tool_result(
+                denied = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="synthetic",
                     selector="watch-voice:" + context.note_id,
                     principal=principal,

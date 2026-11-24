@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator, FormatChecker
 
-from app.api import mcp_routes
+from app.api import mcp_agent_reads, mcp_routes
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
@@ -1028,9 +1028,9 @@ async def test_beta_provider_probe_cannot_create_unanchored_wedding_binding(
         def __getattr__(self, _name: str) -> object:
             raise AssertionError("read-only provider probe touched the database")
 
-    monkeypatch.setattr(mcp_routes, "get_beta_provider_probe", read_probe)
+    monkeypatch.setattr(mcp_agent_reads, "get_beta_provider_probe", read_probe)
     monkeypatch.setattr(
-        mcp_routes,
+        mcp_agent_reads,
         "build_telegram_http_client",
         lambda: HttpClientContext(),
     )

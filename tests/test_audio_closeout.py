@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.api.communication_feed_mcp import _call_feed_item, _voice_feed_item
-from app.api.mcp_routes import _voice_account_selector_scope
+from app.api.mcp_telegram_voice import _voice_account_selector_scope
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
     OPENAI_TRANSCRIPTION_LIMIT_BYTES,
