@@ -24,6 +24,7 @@ from app.models.domain import (
     ReplyDraft,
     TelegramBusinessConnection,
     TelegramReceipt,
+    TelegramReceiptStatus,
 )
 
 
@@ -180,6 +181,7 @@ async def require_dialog_snapshot(
             if issue is None:
                 issue = await dialog_read_issue(
                     session, scope=scope, conversation=conversation, events=events,
+                    latest_message_id=current,
                 )
         except (SQLAlchemyError, OSError, TimeoutError) as exc:
             raise ReplySendError(
@@ -396,9 +398,10 @@ async def dialog_read_issue(
     scope: AccessScope,
     conversation: Conversation,
     events: list[dict[str, Any]],
+    latest_message_id: str | None,
     own_receipts: set[str] | None = None,
 ) -> str | None:
-    """Old projected history may exceed a page; unseen accepted raw facts may not."""
+    """Require recent accepted events when checking the latest readable message."""
     if await known_dialog_gap(session, scope=scope, conversation=conversation):
         return "known_ingress_gap"
     connections = select(TelegramBusinessConnection.business_connection_id).where(
@@ -409,20 +412,40 @@ async def dialog_read_issue(
         predicates.append(_receipt_matches_dialog(
             TelegramReceipt.payload[kind], connections=connections, conversation=conversation,
         ))
-    pending = (
-        await session.scalars(
-            select(TelegramReceipt.id)
-            .where(
-                TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
-                TelegramReceipt.status != "processed",
-                TelegramReceipt.id.not_in([UUID(value) for value in own_receipts or set()]),
-                or_(*predicates),
+    pending_query = select(TelegramReceipt.id).where(
+        TelegramReceipt.bot_key == TelegramConnectorKey.BUSINESS.value,
+        TelegramReceipt.status != TelegramReceiptStatus.PROCESSED.value,
+        TelegramReceipt.id.not_in([UUID(value) for value in own_receipts or set()]),
+        or_(*predicates),
+    )
+    visible = {UUID(event["event_ref"]) for event in events}
+    visible_processed_messages = [
+        UUID(event["event_ref"])
+        for event in events
+        if event["kind"] in ("business_message", "message")
+        and event["projection_status"] == TelegramReceiptStatus.PROCESSED.value
+    ]
+    if latest_message_id is not None and visible_processed_messages:
+        # Once the current message is visible and processed, historical
+        # receipts cannot make that message unreadable.
+        latest_received_at = await session.scalar(
+            select(func.max(TelegramReceipt.received_at)).where(
+                TelegramReceipt.id.in_(visible_processed_messages),
+                or_(
+                    TelegramReceipt.payload["business_message"]["message_id"].as_string()
+                    == latest_message_id,
+                    TelegramReceipt.payload["message"]["message_id"].as_string()
+                    == latest_message_id,
+                ),
             )
-            .limit(21)
         )
-    ).all()
-    visible = {event["event_ref"] for event in events}
-    if any(str(identifier) not in visible for identifier in pending):
+        if latest_received_at is not None:
+            pending_query = pending_query.where(or_(
+                TelegramReceipt.received_at >= latest_received_at,
+                TelegramReceipt.id.in_(visible),
+            ))
+    pending = (await session.scalars(pending_query.limit(21))).all()
+    if any(identifier not in visible for identifier in pending):
         return "raw_readset_incomplete"
     pending_ids = {str(identifier) for identifier in pending}
     if any(event["event_ref"] in pending_ids and event["text_truncated"] for event in events):

@@ -630,6 +630,7 @@ async def get_reply_context(
         scope=scope,
         conversation=conversation,
         events=events,
+        latest_message_id=initial_snapshot,
     )
     final_snapshot = await dialog_snapshot(session, scope=scope, conversation=conversation)
     reason = (
