@@ -251,3 +251,93 @@ async def test_call_webhook_advances_past_large_file_while_transcription_is_busy
         async with admin.begin() as connection:
             await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         await admin.dispose()
+
+
+@pytest.mark.anyio
+async def test_call_revision_reconciliation_skips_unmatched_and_locked_rows():
+    database_url = get_settings().database_url
+    if not database_url:
+        pytest.skip("DATABASE_URL required to exercise real PostgreSQL row locks")
+    schema = f"calls_revisions_{uuid4().hex}"
+    admin = create_async_engine(database_url)
+    engine = create_async_engine(database_url, connect_args={
+        "server_settings": {"search_path": schema},
+    })
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    workspace_key, account_id = "synthetic-workspace", "synthetic-account"
+    settings = Settings(GATE_WORKSPACE_ID=workspace_key, DROPBOX_CALL_ACCOUNT_ID=account_id)
+    intake_project, other_project = uuid4(), uuid4()
+    received_at = datetime(2026, 11, 24, tzinfo=UTC)
+    unreadable = "dropbox_call_media_unreadable"
+    superseded = "dropbox_call_revision_superseded"
+
+    def recording(name, offset, *, project=intake_project, final=False):
+        return PhoneCallRecording(
+            workspace_key=workspace_key,
+            project_id=project,
+            source_account_id=account_id,
+            source_file_id=f"id:{name}",
+            source_revision="final" if final else "partial",
+            source_path=f"/Alpha/Calls/{name}.m4a",
+            filename=f"{name}.m4a",
+            media_type="audio/mp4",
+            size_bytes=2 if final else 1,
+            sha256="a" * 64,
+            data=b"synthetic",
+            received_at=received_at + timedelta(seconds=offset),
+            transcription_status="transcribed" if final else "rejected",
+            transcription_reason_code=None if final else unreadable,
+            transcript_text="synthetic transcript" if final else None,
+        )
+
+    async def partial_reasons():
+        async with sessions() as session:
+            rows = await session.execute(select(
+                PhoneCallRecording.source_file_id, PhoneCallRecording.transcription_reason_code,
+            ).where(PhoneCallRecording.source_revision == "partial"))
+            return dict(rows.tuples().all())
+
+    try:
+        async with admin.begin() as connection:
+            await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        async with engine.begin() as connection:
+            for model in (Project, PhoneCallRecording):
+                await connection.run_sync(model.__table__.create)
+        async with sessions.begin() as session:
+            session.add_all([
+                Project(id=intake_project, alias="intake", name="Intake", adapter_type="test"),
+                Project(id=other_project, alias="other", name="Other", adapter_type="test"),
+            ])
+            await session.flush()
+            session.add_all(recording(f"unmatched-{i}", i) for i in range(20))
+            session.add(recording("unmatched-0", 100, project=other_project, final=True))
+            for i in range(22):
+                session.add(recording(f"matched-{i}", 20 + i))
+                session.add(recording(f"matched-{i}", 100 + i, final=True))
+
+        async with sessions.begin() as locking_session:
+            await locking_session.scalar(select(PhoneCallRecording.id).where(
+                PhoneCallRecording.source_file_id == "id:matched-0",
+                PhoneCallRecording.source_revision == "partial",
+            ).with_for_update())
+            # Two eligible rows remain after a bounded pass, including the locked row.
+            await asyncio.wait_for(dropbox_calls._mark_superseded_revisions(
+                settings=settings, session_factory=sessions,
+            ), timeout=5)
+            reasons = await partial_reasons()
+            assert reasons["id:matched-0"] == unreadable
+            assert reasons["id:matched-21"] == unreadable
+            assert all(reasons[f"id:matched-{i}"] == superseded for i in range(1, 21))
+
+        for _ in range(2):
+            await dropbox_calls._mark_superseded_revisions(
+                settings=settings, session_factory=sessions,
+            )
+        reasons = await partial_reasons()
+        assert all(reasons[f"id:matched-{i}"] == superseded for i in range(22))
+        assert all(reasons[f"id:unmatched-{i}"] == unreadable for i in range(20))
+    finally:
+        await engine.dispose()
+        async with admin.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        await admin.dispose()
