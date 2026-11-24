@@ -21,6 +21,7 @@ from app.models.domain import (
     AuditLog,
     Conversation,
     Message,
+    MessageDirection,
     ReplyDraft,
     TelegramBusinessConnection,
     TelegramReceipt,
@@ -425,23 +426,42 @@ async def dialog_read_issue(
         if event["kind"] in ("business_message", "message")
         and event["projection_status"] == TelegramReceiptStatus.PROCESSED.value
     ]
-    if latest_message_id is not None and visible_processed_messages:
+    if latest_message_id is not None and latest_message_id.isdecimal():
         # Once the current message is visible and processed, historical
         # receipts cannot make that message unreadable.
-        latest_received_at = await session.scalar(
-            select(func.max(TelegramReceipt.received_at)).where(
-                TelegramReceipt.id.in_(visible_processed_messages),
-                or_(
-                    TelegramReceipt.payload["business_message"]["message_id"].as_string()
-                    == latest_message_id,
-                    TelegramReceipt.payload["message"]["message_id"].as_string()
-                    == latest_message_id,
-                ),
+        latest_readable_at = None
+        if visible_processed_messages:
+            latest_readable_at = await session.scalar(
+                select(func.max(TelegramReceipt.received_at)).where(
+                    TelegramReceipt.id.in_(visible_processed_messages),
+                    or_(
+                        TelegramReceipt.payload["business_message"]["message_id"].as_string()
+                        == latest_message_id,
+                        TelegramReceipt.payload["message"]["message_id"].as_string()
+                        == latest_message_id,
+                    ),
+                )
             )
-        )
-        if latest_received_at is not None:
+        if latest_readable_at is None:
+            # Telegram can confirm a Gate send without echoing it as a webhook.
+            latest_readable_at = await session.scalar(
+                select(func.max(Message.sent_at)).where(
+                    Message.account_id == conversation.account_id,
+                    Message.project_id == conversation.project_id,
+                    Message.chat_id == conversation.chat_id,
+                    Message.business_connection_id.is_not_distinct_from(
+                        conversation.business_connection_id
+                    ),
+                    Message.telegram_message_id == int(latest_message_id),
+                    Message.direction == MessageDirection.OUTBOUND.value,
+                    Message.source.in_((
+                        "gate-approved-draft", "gate-approved-document", "gate-approved-media",
+                    )),
+                )
+            )
+        if latest_readable_at is not None:
             pending_query = pending_query.where(or_(
-                TelegramReceipt.received_at >= latest_received_at,
+                TelegramReceipt.received_at >= latest_readable_at,
                 TelegramReceipt.id.in_(visible),
             ))
     pending = (await session.scalars(pending_query.limit(21))).all()

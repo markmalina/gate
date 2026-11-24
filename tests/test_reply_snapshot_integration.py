@@ -211,14 +211,35 @@ async def test_old_unprojected_receipt_does_not_hide_a_processed_latest_id(monke
                 "gate_save_reply_draft",
                 {**task, "text": "Synthetic reply", "expected_context_snapshot": "21"},
             )
-
-            await receive(sessions, seed, update_id=22)
-            result = await call(
+            sent = await call(
                 "gate_send_approved_reply",
                 {"draft_id": draft["draft_id"], "confirmed": True, **draft["confirmation"]},
             )
+            assert sent["sent"] is True
+            outbound = await call("gate_get_reply_context", task)
+            assert outbound["context_ready"] is True
+            assert outbound["context_snapshot"] == str(sent["provider_message_id"])
+            follow_up = await call(
+                "gate_save_reply_draft",
+                {
+                    **task,
+                    "text": "Synthetic follow-up",
+                    "expected_context_snapshot": outbound["context_snapshot"],
+                    "follow_up": True,
+                },
+            )
+
+            await receive(sessions, seed, update_id=701)
+            result = await call(
+                "gate_send_approved_reply",
+                {
+                    "draft_id": follow_up["draft_id"],
+                    "confirmed": True,
+                    **follow_up["confirmation"],
+                },
+            )
             assert result["error"] == "context_changed" and result["sent"] is False
-            assert telegram.plain_calls == []
+            assert len(telegram.plain_calls) == 1
 
 
 @pytest.mark.anyio
